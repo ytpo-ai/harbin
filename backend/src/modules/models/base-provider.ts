@@ -1,0 +1,23 @@
+import { AIModel, ChatMessage } from '../../shared/types';
+
+export abstract class BaseAIProvider {
+  protected model: AIModel;
+
+  constructor(model: AIModel) {
+    this.model = model;
+  }
+
+  abstract chat(messages: ChatMessage[], options?: any): Promise<string>;
+  abstract streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void>;
+  
+  protected formatMessages(messages: ChatMessage[]): any[] {
+    return messages.map(msg => ({
+      role: msg.role,
+      content: msg.content
+    }));
+  }
+
+  get modelInfo(): AIModel {
+    return this.model;
+  }
+}
