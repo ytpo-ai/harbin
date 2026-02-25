@@ -3,6 +3,7 @@ import {
   MeetingService, 
   CreateMeetingDto, 
   MeetingMessageDto,
+  ParticipantIdentity,
   MeetingEvent 
 } from './meeting.service';
 import { MeetingType, MeetingStatus } from '../../shared/schemas/meeting.schema';
@@ -42,9 +43,12 @@ export class MeetingController {
     };
   }
 
-  @Get('by-agent/:agentId')
-  async getMeetingsByAgent(@Param('agentId') agentId: string) {
-    const meetings = await this.meetingService.getMeetingsByAgent(agentId);
+  @Get('by-participant/:participantId')
+  async getMeetingsByParticipant(
+    @Param('participantId') participantId: string,
+    @Query('type') type: 'employee' | 'agent' = 'employee',
+  ) {
+    const meetings = await this.meetingService.getMeetingsByParticipant(participantId, type);
     return {
       success: true,
       data: meetings,
@@ -69,7 +73,7 @@ export class MeetingController {
   @Post(':id/start')
   async startMeeting(
     @Param('id') id: string,
-    @Body('startedBy') startedBy: string,
+    @Body() startedBy: ParticipantIdentity,
   ) {
     const meeting = await this.meetingService.startMeeting(id, startedBy);
     return {
@@ -92,9 +96,9 @@ export class MeetingController {
   @Post(':id/join')
   async joinMeeting(
     @Param('id') id: string,
-    @Body('agentId') agentId: string,
+    @Body() participant: ParticipantIdentity,
   ) {
-    const meeting = await this.meetingService.joinMeeting(id, agentId);
+    const meeting = await this.meetingService.joinMeeting(id, participant);
     return {
       success: true,
       data: meeting,
@@ -105,9 +109,9 @@ export class MeetingController {
   @Post(':id/leave')
   async leaveMeeting(
     @Param('id') id: string,
-    @Body('agentId') agentId: string,
+    @Body() participant: ParticipantIdentity,
   ) {
-    const meeting = await this.meetingService.leaveMeeting(id, agentId);
+    const meeting = await this.meetingService.leaveMeeting(id, participant);
     return {
       success: true,
       data: meeting,
@@ -129,12 +133,12 @@ export class MeetingController {
   }
 
   @Post(':id/invite')
-  async inviteAgent(
+  async inviteParticipant(
     @Param('id') id: string,
-    @Body('agentId') agentId: string,
-    @Body('invitedBy') invitedBy: string,
+    @Body('participant') participant: ParticipantIdentity,
+    @Body('invitedBy') invitedBy: ParticipantIdentity,
   ) {
-    const meeting = await this.meetingService.inviteAgent(id, agentId, invitedBy);
+    const meeting = await this.meetingService.inviteParticipant(id, participant, invitedBy);
     return {
       success: true,
       data: meeting,

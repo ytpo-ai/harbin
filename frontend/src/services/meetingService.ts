@@ -1,4 +1,5 @@
 import api from '../lib/axios';
+import { ParticipantIdentity } from './employeeService';
 
 export enum MeetingType {
   WEEKLY = 'weekly',
@@ -24,7 +25,8 @@ export enum ParticipantRole {
 }
 
 export interface MeetingParticipant {
-  agentId: string;
+  participantId: string;
+  participantType: 'employee' | 'agent';
   role: ParticipantRole;
   isPresent: boolean;
   hasSpoken: boolean;
@@ -35,15 +37,18 @@ export interface MeetingParticipant {
 
 export interface MeetingMessage {
   id: string;
-  agentId: string;
+  senderId: string;
+  senderType: 'employee' | 'agent' | 'system';
   content: string;
   type: 'opinion' | 'question' | 'agreement' | 'disagreement' | 'suggestion' | 'conclusion' | 'introduction' | 'action_item';
   timestamp: string;
   metadata?: {
-    mentionedAgents?: string[];
+    mentionedParticipants?: Array<{ id: string; type: 'employee' | 'agent' }>;
     relatedMessageId?: string;
     sentiment?: 'positive' | 'neutral' | 'negative';
     confidence?: number;
+    isAIProxy?: boolean;
+    proxyForEmployeeId?: string;
   };
 }
 
@@ -55,13 +60,14 @@ export interface Meeting {
   type: MeetingType;
   status: MeetingStatus;
   hostId: string;
+  hostType: 'employee' | 'agent';
   participants: MeetingParticipant[];
   messages: MeetingMessage[];
   agenda?: string;
   scheduledStartTime?: string;
   startedAt?: string;
   endedAt?: string;
-  invitedAgentIds: string[];
+  invitedParticipants: Array<{ participantId: string; participantType: 'employee' | 'agent' }>;
   settings?: {
     maxParticipants?: number;
     allowAutoStart?: boolean;
@@ -86,14 +92,16 @@ export interface CreateMeetingDto {
   description?: string;
   type: MeetingType;
   hostId: string;
-  participantIds?: string[];
+  hostType: 'employee' | 'agent';
+  participantIds?: Array<{ id: string; type: 'employee' | 'agent' }>;
   agenda?: string;
   scheduledStartTime?: string;
   settings?: Meeting['settings'];
 }
 
 export interface MeetingMessageDto {
-  agentId: string;
+  senderId: string;
+  senderType: 'employee' | 'agent';
   content: string;
   type?: MeetingMessage['type'];
   metadata?: MeetingMessage['metadata'];
@@ -126,8 +134,8 @@ class MeetingService {
     return response.data.data;
   }
 
-  async getMeetingsByAgent(agentId: string): Promise<Meeting[]> {
-    const response = await api.get(`/meetings/by-agent/${agentId}`);
+  async getMeetingsByParticipant(participantId: string, type: 'employee' | 'agent' = 'employee'): Promise<Meeting[]> {
+    const response = await api.get(`/meetings/by-participant/${participantId}?type=${type}`);
     return response.data.data;
   }
 
@@ -136,8 +144,8 @@ class MeetingService {
     return response.data.data;
   }
 
-  async startMeeting(id: string, startedBy: string): Promise<Meeting> {
-    const response = await api.post(`/meetings/${id}/start`, { startedBy });
+  async startMeeting(id: string, startedBy: ParticipantIdentity): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/start`, startedBy);
     return response.data.data;
   }
 
@@ -146,13 +154,13 @@ class MeetingService {
     return response.data.data;
   }
 
-  async joinMeeting(id: string, agentId: string): Promise<Meeting> {
-    const response = await api.post(`/meetings/${id}/join`, { agentId });
+  async joinMeeting(id: string, participant: ParticipantIdentity): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/join`, participant);
     return response.data.data;
   }
 
-  async leaveMeeting(id: string, agentId: string): Promise<Meeting> {
-    const response = await api.post(`/meetings/${id}/leave`, { agentId });
+  async leaveMeeting(id: string, participant: ParticipantIdentity): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/leave`, participant);
     return response.data.data;
   }
 
@@ -161,8 +169,12 @@ class MeetingService {
     return response.data.data;
   }
 
-  async inviteAgent(id: string, agentId: string, invitedBy: string): Promise<Meeting> {
-    const response = await api.post(`/meetings/${id}/invite`, { agentId, invitedBy });
+  async inviteParticipant(
+    id: string, 
+    participant: ParticipantIdentity, 
+    invitedBy: ParticipantIdentity
+  ): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/invite`, { participant, invitedBy });
     return response.data.data;
   }
 }

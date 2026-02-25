@@ -30,7 +30,10 @@ export enum ParticipantRole {
 @Schema({ timestamps: true })
 export class MeetingParticipant {
   @Prop({ required: true })
-  agentId: string;
+  participantId: string;        // 可以是 employeeId 或 agentId
+
+  @Prop({ enum: ['employee', 'agent'], required: true })
+  participantType: 'employee' | 'agent';  // 参与者类型
 
   @Prop({ enum: ParticipantRole, default: ParticipantRole.PARTICIPANT })
   role: ParticipantRole;
@@ -57,7 +60,10 @@ export class MeetingMessage {
   id: string;
 
   @Prop({ required: true })
-  agentId: string;
+  senderId: string;              // 发送者ID（employeeId 或 agentId）
+
+  @Prop({ enum: ['employee', 'agent', 'system'], required: true })
+  senderType: 'employee' | 'agent' | 'system';  // 发送者类型
 
   @Prop({ required: true })
   content: string;
@@ -73,10 +79,12 @@ export class MeetingMessage {
 
   @Prop({ type: Object })
   metadata?: {
-    mentionedAgents?: string[];    // @提及的agent
+    mentionedParticipants?: Array<{ id: string; type: 'employee' | 'agent' }>;    // @提及的参与者
     relatedMessageId?: string;     // 回复的消息ID
     sentiment?: 'positive' | 'neutral' | 'negative';
     confidence?: number;           // AI置信度
+    isAIProxy?: boolean;          // 是否AI代理发送的消息（人类员工的代理）
+    proxyForEmployeeId?: string;   // 如果是AI代理，代理哪个员工
   };
 }
 
@@ -98,7 +106,10 @@ export class Meeting {
   status: MeetingStatus;
 
   @Prop({ required: true })
-  hostId: string;                // 主持人(agent ID)
+  hostId: string;                // 主持人ID（employeeId 或 agentId）
+
+  @Prop({ enum: ['employee', 'agent'], required: true })
+  hostType: 'employee' | 'agent';  // 主持人类型
 
   @Prop({ type: [MeetingParticipant], default: [] })
   participants: MeetingParticipant[];
@@ -118,8 +129,11 @@ export class Meeting {
   @Prop()
   endedAt?: Date;                // 结束时间
 
-  @Prop({ type: [String], default: [] })
-  invitedAgentIds: string[];     // 已邀请但未加入的agents
+  @Prop({ type: [{ participantId: String, participantType: String }], default: [] })
+  invitedParticipants: Array<{
+    participantId: string;
+    participantType: 'employee' | 'agent';
+  }>;     // 已邀请但未加入的参与者
 
   @Prop({ type: Object })
   settings?: {
@@ -149,5 +163,5 @@ export const MeetingSchema = SchemaFactory.createForClass(Meeting);
 MeetingSchema.index({ status: 1 });
 MeetingSchema.index({ type: 1 });
 MeetingSchema.index({ hostId: 1 });
-MeetingSchema.index({ 'participants.agentId': 1 });
+MeetingSchema.index({ 'participants.participantId': 1 });
 MeetingSchema.index({ createdAt: -1 });
