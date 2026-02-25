@@ -24,6 +24,18 @@ export interface Agent {
   capabilities: string[];
   systemPrompt: string;
   isActive: boolean;
+  tools: string[]; // 可使用的工具ID列表
+  permissions: string[]; // 权限ID列表
+  personality: {
+    workEthic: number; // 工作伦理 0-100
+    creativity: number; // 创造力 0-100
+    leadership: number; // 领导力 0-100
+    teamwork: number; // 团队协作 0-100
+  };
+  learningAbility: number; // 学习能力 0-100
+  salary?: number;
+  performanceScore?: number;
+  apiKeyId?: string; // 关联的API密钥ID
   createdAt: Date;
   updatedAt: Date;
 }
@@ -78,4 +90,177 @@ export interface DiscussionMessage {
   type: 'opinion' | 'question' | 'agreement' | 'disagreement' | 'suggestion';
   timestamp: Date;
   metadata?: any;
+}
+
+// ===== 新增组织架构相关类型 =====
+
+export interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  type: 'code_execution' | 'web_search' | 'file_operation' | 'data_analysis' | 'video_editing' | 'api_call' | 'custom';
+  category: string;
+  enabled: boolean;
+  config?: any;
+  requiredPermissions: Permission[];
+  tokenCost?: number;
+  executionTime?: number;
+}
+
+export interface Permission {
+  id: string;
+  name: string;
+  description: string;
+  level: 'basic' | 'intermediate' | 'advanced' | 'admin';
+}
+
+export interface AgentRole {
+  id: string;
+  title: string;
+  description: string;
+  department: string;
+  level: 'junior' | 'senior' | 'lead' | 'manager' | 'executive';
+  requiredTools: string[];
+  requiredCapabilities: string[];
+  maxEmployees?: number;
+  salaryRange: {
+    min: number;
+    max: number;
+  };
+  stockOptions?: number;
+}
+
+export interface AgentEmployee {
+  id: string;
+  agentId: string;
+  roleId: string;
+  joinDate: Date;
+  status: 'active' | 'probation' | 'terminated';
+  performance: PerformanceRecord[];
+  salary: number;
+  stockOptions: number;
+  totalShares: number;
+  lastEvaluationDate?: Date;
+  terminationReason?: string;
+}
+
+export interface PerformanceRecord {
+  id: string;
+  evaluationDate: Date;
+  kpis: {
+    taskCompletionRate: number;
+    codeQuality: number;
+    collaboration: number;
+    innovation: number;
+    efficiency: number;
+  };
+  tokenConsumption: {
+    total: number;
+    cost: number;
+  };
+  completedTasks: number;
+  earnings: number;
+  notes: string;
+  evaluator: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  description: string;
+  foundedDate: Date;
+  totalShares: number;
+  shareDistribution: ShareDistribution;
+  roles: AgentRole[];
+  employees: AgentEmployee[];
+  departments: Department[];
+  settings: OrgSettings;
+  valuation: number;
+}
+
+export interface ShareDistribution {
+  founder: {
+    userId: string;
+    shares: number;
+    percentage: number;
+    type: 'human' | 'agent';
+  };
+  cofounders: {
+    agentId: string;
+    shares: number;
+    percentage: number;
+  }[];
+  employeePool: {
+    totalShares: number;
+    percentage: number;
+    allocatedShares: number;
+    availableShares: number;
+  };
+}
+
+export interface Department {
+  id: string;
+  name: string;
+  description: string;
+  managerId?: string;
+  budget: number;
+  employees: string[];
+  kpis: {
+    productivity: number;
+    quality: number;
+    innovation: number;
+  };
+}
+
+export interface OrgSettings {
+  votingRules: {
+    requiredQuorum: number;
+    requiredApproval: number;
+    votingPeriod: number;
+  };
+  performanceThresholds: {
+    probationPeriod: number;
+    minPerformanceScore: number;
+    maxTokenConsumption: number;
+  };
+  recruitment: {
+    maxNewHiresPerMonth: number;
+    requireBoardApproval: boolean;
+    probationPeriod: number;
+  };
+}
+
+export interface Proposal {
+  id: string;
+  title: string;
+  description: string;
+  type: 'hire' | 'fire' | 'tool_access' | 'strategy' | 'budget' | 'policy';
+  proposerId: string;
+  status: 'proposed' | 'voting' | 'approved' | 'rejected' | 'implemented';
+  votes: Vote[];
+  deadline: Date;
+  createdAt: Date;
+  metadata?: any;
+}
+
+export interface Vote {
+  voterId: string;
+  shares: number;
+  decision: 'for' | 'against' | 'abstain';
+  reason: string;
+  timestamp: Date;
+}
+
+export interface ToolExecution {
+  id: string;
+  toolId: string;
+  agentId: string;
+  taskId?: string;
+  parameters: any;
+  result?: any;
+  status: 'pending' | 'executing' | 'completed' | 'failed';
+  tokenCost: number;
+  executionTime: number;
+  error?: string;
+  timestamp: Date;
 }

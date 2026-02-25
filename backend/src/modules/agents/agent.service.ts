@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
 import { ModelService } from '../models/model.service';
-import { Task, ChatMessage } from '../../shared/types';
+import { ApiKeyService } from '../api-keys/api-key.service';
+import { Task, ChatMessage, AIModel } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface AgentContext {
@@ -15,12 +16,30 @@ export interface AgentContext {
 
 @Injectable()
 export class AgentService {
+  private readonly logger = new Logger(AgentService.name);
+
   constructor(
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
-    private readonly modelService: ModelService
+    private readonly modelService: ModelService,
+    private readonly apiKeyService: ApiKeyService
   ) {}
 
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
+    // 自动注册Agent使用的模型
+    if (agentData.model) {
+      const modelConfig: AIModel = {
+        id: agentData.model.id,
+        name: agentData.model.name,
+        provider: agentData.model.provider as AIModel['provider'],
+        model: agentData.model.model,
+        maxTokens: agentData.model.maxTokens || 4096,
+        temperature: agentData.model.temperature || 0.7,
+        topP: agentData.model.topP
+      };
+      this.modelService.ensureProvider(modelConfig);
+      this.logger.log(`Agent ${agentData.name} using model: ${modelConfig.name} (${modelConfig.id})`);
+    }
+    
     const newAgent = new this.agentModel(agentData);
     return newAgent.save();
   }
@@ -29,8 +48,16 @@ export class AgentService {
     return this.agentModel.findById(agentId).exec();
   }
 
+  async getAgentByName(name: string): Promise<Agent | null> {
+    return this.agentModel.findOne({ name }).exec();
+  }
+
   async getAllAgents(): Promise<Agent[]> {
     return this.agentModel.find().exec();
+  }
+
+  async getActiveAgents(): Promise<Agent[]> {
+    return this.agentModel.find({ isActive: true }).exec();
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
@@ -52,6 +79,8 @@ export class AgentService {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
 
+    this.logger.log(`Agent ${agent.name} executing task: ${task.title}`);
+
     const agentContext: AgentContext = {
       task,
       previousMessages: task.messages || [],
@@ -62,20 +91,52 @@ export class AgentService {
 
     const messages = this.buildMessages(agent, task, agentContext);
     
-    const response = await this.modelService.chat(agent.model.id, messages, {
-      temperature: agent.model.temperature,
-      maxTokens: agent.model.maxTokens,
-    });
+    try {
+      // 确保模型已注册 - 类型转换
+      const modelConfig: AIModel = {
+        id: agent.model.id,
+        name: agent.model.name,
+        provider: agent.model.provider as AIModel['provider'],
+        model: agent.model.model,
+        maxTokens: agent.model.maxTokens || 4096,
+        temperature: agent.model.temperature || 0.7,
+        topP: agent.model.topP
+      };
 
-    // 更新任务消息历史
-    task.messages.push({
-      role: 'assistant',
-      content: response,
-      timestamp: new Date(),
-      metadata: { agentId: agent.id },
-    });
+      // 获取自定义API Key（如果配置了）
+      let customApiKey: string | undefined;
+      if (agent.apiKeyId) {
+        customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
+        if (customApiKey) {
+          this.logger.log(`Using custom API key for agent ${agent.name}`);
+          // 记录API Key使用情况
+          await this.apiKeyService.recordUsage(agent.apiKeyId);
+        }
+      }
 
-    return response;
+      // 注册provider（使用自定义key或默认key）
+      this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+      
+      const response = await this.modelService.chat(modelConfig.id, messages, {
+        temperature: modelConfig.temperature,
+        maxTokens: modelConfig.maxTokens,
+      });
+
+      this.logger.log(`Agent ${agent.name} completed task, response length: ${response.length}`);
+
+      // 更新任务消息历史
+      task.messages.push({
+        role: 'assistant',
+        content: response,
+        timestamp: new Date(),
+        metadata: { agentId: agent.id, agentName: agent.name },
+      });
+
+      return response;
+    } catch (error) {
+      this.logger.error(`Agent ${agent.name} failed to execute task: ${error.message}`);
+      throw error;
+    }
   }
 
   async executeTaskWithStreaming(
@@ -98,6 +159,28 @@ export class AgentService {
     };
 
     const messages = this.buildMessages(agent, task, agentContext);
+    
+    // 获取自定义API Key（如果配置了）
+    let customApiKey: string | undefined;
+    if (agent.apiKeyId) {
+      customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
+      if (customApiKey) {
+        this.logger.log(`Using custom API key for agent ${agent.name} (streaming)`);
+        await this.apiKeyService.recordUsage(agent.apiKeyId);
+      }
+    }
+
+    // 确保provider已注册（使用自定义key或默认key）
+    const modelConfig: AIModel = {
+      id: agent.model.id,
+      name: agent.model.name,
+      provider: agent.model.provider as AIModel['provider'],
+      model: agent.model.model,
+      maxTokens: agent.model.maxTokens || 4096,
+      temperature: agent.model.temperature || 0.7,
+      topP: agent.model.topP
+    };
+    this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
     
     let fullResponse = '';
     await this.modelService.streamingChat(

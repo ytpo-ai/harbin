@@ -5,6 +5,12 @@ import { ModelModule } from './modules/models/model.module';
 import { AgentModule } from './modules/agents/agent.module';
 import { TaskModule } from './modules/tasks/task.module';
 import { ChatModule } from './modules/chat/chat.module';
+import { ToolModule } from './modules/tools/tool.module';
+import { OrganizationModule } from './modules/organization/organization.module';
+import { HRModule } from './modules/hr/hr.module';
+import { GovernanceModule } from './modules/governance/governance.module';
+import { ApiKeysModule } from './modules/api-keys/api-keys.module';
+import { MeetingModule } from './modules/meetings/meeting.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import aiConfig from './config/ai.config';
@@ -32,6 +38,12 @@ import jwtConfig from './config/jwt.config';
     AgentModule,
     TaskModule,
     ChatModule,
+    ToolModule,
+    OrganizationModule,
+    HRModule,
+    GovernanceModule,
+    ApiKeysModule,
+    MeetingModule,
   ],
 })
 export class AppModule {}

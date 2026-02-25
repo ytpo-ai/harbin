@@ -122,7 +122,12 @@ export class DiscussionService {
     if (!discussion) return;
 
     const agent = await this.agentService.getAgent(agentId);
-    if (!agent || !agent.isActive) return;
+    if (!agent || !agent.isActive) {
+      this.logger.warn(`Agent ${agentId} not found or inactive`);
+      return;
+    }
+
+    this.logger.log(`Generating response for agent ${agent.name} in discussion ${discussionId}`);
 
     // 构建讨论上下文
     const discussionContext = this.buildDiscussionContext(discussion, agentId);
@@ -142,20 +147,34 @@ export class DiscussionService {
       updatedAt: new Date(),
     };
 
-    // 生成响应
-    const response = await this.agentService.executeTask(agentId, responseTask, {
-      teamContext: {
-        discussionId,
-        participants: discussion.participants,
-        currentTopic: discussion.messages[discussion.messages.length - 1]?.content,
-      },
-    });
+    try {
+      // 生成响应 - 这里会调用AI模型
+      this.logger.log(`Calling AI model for agent ${agent.name}, model: ${agent.model.id}`);
+      
+      const response = await this.agentService.executeTask(agentId, responseTask, {
+        teamContext: {
+          discussionId,
+          participants: discussion.participants,
+          currentTopic: discussion.messages[discussion.messages.length - 1]?.content,
+        },
+      });
 
-    // 分析响应类型
-    const messageType = this.analyzeMessageType(response);
-    
-    // 发送响应到讨论
-    await this.sendMessage(discussionId, agentId, response, messageType);
+      this.logger.log(`Agent ${agent.name} responded with ${response.length} characters`);
+
+      // 分析响应类型
+      const messageType = this.analyzeMessageType(response);
+      
+      // 发送响应到讨论
+      await this.sendMessage(discussionId, agentId, response, messageType);
+    } catch (error) {
+      this.logger.error(`Failed to generate response from agent ${agent.name}: ${error.message}`);
+      await this.sendMessage(
+        discussionId, 
+        agentId, 
+        `抱歉，我遇到了技术问题: ${error.message}`, 
+        'opinion'
+      );
+    }
   }
 
   private buildDiscussionContext(discussion: Discussion, agentId: string): ChatMessage[] {

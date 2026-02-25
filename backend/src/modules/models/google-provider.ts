@@ -5,9 +5,9 @@ import { AIModel, ChatMessage } from '../../shared/types';
 export class GoogleAIProvider extends BaseAIProvider {
   private client: GoogleGenerativeAI;
 
-  constructor(model: AIModel) {
-    super(model);
-    this.client = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY!);
+  constructor(model: AIModel, apiKey?: string) {
+    super(model, apiKey);
+    this.client = new GoogleGenerativeAI(apiKey || process.env.GOOGLE_AI_API_KEY!);
   }
 
   async chat(messages: ChatMessage[], options?: any): Promise<string> {

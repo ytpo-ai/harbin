@@ -13,24 +13,51 @@ export class ModelService {
     // 注册所有可用的模型提供商
   }
 
-  registerProvider(model: AIModel): void {
+  ensureProvider(model: AIModel): void {
+    if (!this.providers.has(model.id)) {
+      this.registerProvider(model);
+    }
+  }
+
+  registerProvider(model: AIModel, apiKey?: string): void {
     let provider: BaseAIProvider;
 
     switch (model.provider) {
       case 'openai':
-        provider = new OpenAIProvider(model);
+        provider = new OpenAIProvider(model, apiKey);
         break;
       case 'anthropic':
-        provider = new AnthropicProvider(model);
+        provider = new AnthropicProvider(model, apiKey);
         break;
       case 'google':
-        provider = new GoogleAIProvider(model);
+        provider = new GoogleAIProvider(model, apiKey);
         break;
       default:
-        throw new Error(`Unsupported provider: ${model.provider}`);
+        // 对于不直接支持的提供商，使用通用的API调用方式
+        provider = this.createGenericProvider(model);
+        break;
     }
 
     this.providers.set(model.id, provider);
+  }
+
+  ensureProviderWithKey(model: AIModel, apiKey?: string): void {
+    const providerKey = apiKey ? `${model.id}:${apiKey.substring(0, 8)}` : model.id;
+    if (!this.providers.has(providerKey)) {
+      this.registerProvider(model, apiKey);
+    }
+  }
+
+  private createGenericProvider(model: AIModel): BaseAIProvider {
+    // 创建一个通用的provider，使用axios直接调用API
+    return new (class extends BaseAIProvider {
+      async chat(messages: ChatMessage[], options?: any): Promise<string> {
+        return `[${model.provider} - ${model.name}] API调用暂未实现。请确保已配置 ${model.provider.toUpperCase()}_API_KEY 环境变量`;
+      }
+      async streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void> {
+        onToken(`[${model.provider} - ${model.name}] 流式响应暂未实现`);
+      }
+    })(model);
   }
 
   getProvider(modelId: string): BaseAIProvider {

@@ -22,6 +22,7 @@ export interface Agent {
     capabilities: string[];
     systemPrompt: string;
     isActive: boolean;
+    apiKeyId?: string;
     createdAt?: Date;
     updatedAt?: Date;
 }

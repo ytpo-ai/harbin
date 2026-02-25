@@ -2,9 +2,11 @@ import { AIModel, ChatMessage } from '../../shared/types';
 
 export abstract class BaseAIProvider {
   protected model: AIModel;
+  protected apiKey?: string;
 
-  constructor(model: AIModel) {
+  constructor(model: AIModel, apiKey?: string) {
     this.model = model;
+    this.apiKey = apiKey;
   }
 
   abstract chat(messages: ChatMessage[], options?: any): Promise<string>;

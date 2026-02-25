@@ -49,6 +49,40 @@ export class Agent {
 
   @Prop({ default: true })
   isActive: boolean;
+
+  @Prop({ type: [String], default: [] })
+  tools: string[]; // 可使用的工具ID列表
+
+  @Prop({ type: [String], default: [] })
+  permissions: string[]; // 权限ID列表
+
+  @Prop(raw({
+    workEthic: { type: Number, default: 80 },
+    creativity: { type: Number, default: 75 },
+    leadership: { type: Number, default: 70 },
+    teamwork: { type: Number, default: 80 }
+  }))
+  personality: {
+    workEthic: number; // 工作伦理 0-100
+    creativity: number; // 创造力 0-100
+    leadership: number; // 领导力 0-100
+    teamwork: number; // 团队协作 0-100
+  };
+
+  @Prop({ default: 80 })
+  learningAbility: number; // 学习能力 0-100
+
+  @Prop()
+  salary?: number;
+
+  @Prop()
+  performanceScore?: number;
+
+  @Prop()
+  apiKeyId?: string; // 关联的API密钥ID
 }
 
 export const AgentSchema = SchemaFactory.createForClass(Agent);
+
+// Create index on apiKeyId for efficient queries
+AgentSchema.index({ apiKeyId: 1 });

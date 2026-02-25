@@ -4,7 +4,12 @@ import {
   HomeIcon,
   UserGroupIcon,
   ClipboardDocumentListIcon,
-  ChatBubbleLeftRightIcon,
+  VideoCameraIcon,
+  BuildingOfficeIcon,
+  WrenchScrewdriverIcon,
+  ScaleIcon,
+  CpuChipIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 
 interface LayoutProps {
@@ -16,9 +21,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navigation = [
     { name: '仪表盘', href: '/', icon: HomeIcon },
+    { name: '模型管理', href: '/models', icon: CpuChipIcon },
+    { name: '组织管理', href: '/organization', icon: BuildingOfficeIcon },
     { name: 'Agent管理', href: '/agents', icon: UserGroupIcon },
     { name: '任务管理', href: '/tasks', icon: ClipboardDocumentListIcon },
-    { name: '讨论室', href: '/discussions', icon: ChatBubbleLeftRightIcon },
+    { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
+    { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
+    { name: '人力资源', href: '/hr', icon: UserGroupIcon },
+    { name: '公司治理', href: '/governance', icon: ScaleIcon },
+    { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
   ];
 
   return (

@@ -5,10 +5,10 @@ import { AIModel, ChatMessage } from '../../shared/types';
 export class AnthropicProvider extends BaseAIProvider {
   private client: Anthropic;
 
-  constructor(model: AIModel) {
-    super(model);
+  constructor(model: AIModel, apiKey?: string) {
+    super(model, apiKey);
     this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
+      apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
     });
   }
 
