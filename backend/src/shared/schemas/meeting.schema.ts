@@ -111,11 +111,28 @@ export class Meeting {
   @Prop({ enum: ['employee', 'agent'], required: true })
   hostType: 'employee' | 'agent';  // 主持人类型
 
-  @Prop({ type: [MeetingParticipant], default: [] })
-  participants: MeetingParticipant[];
+  @Prop({ type: [{ participantId: String, participantType: String, role: String, isPresent: Boolean, hasSpoken: Boolean, messageCount: Number, joinedAt: Date, leftAt: Date }], default: [] })
+  participants: Array<{
+    participantId: string;
+    participantType: 'employee' | 'agent';
+    role: ParticipantRole;
+    isPresent: boolean;
+    hasSpoken: boolean;
+    messageCount: number;
+    joinedAt?: Date;
+    leftAt?: Date;
+  }>;
 
-  @Prop({ type: [MeetingMessage], default: [] })
-  messages: MeetingMessage[];
+  @Prop({ type: [{ id: String, senderId: String, senderType: String, content: String, type: String, timestamp: Date, metadata: Object }], default: [] })
+  messages: Array<{
+    id: string;
+    senderId: string;
+    senderType: 'employee' | 'agent' | 'system';
+    content: string;
+    type: string;
+    timestamp: Date;
+    metadata?: any;
+  }>;
 
   @Prop()
   agenda?: string;               // 会议议程

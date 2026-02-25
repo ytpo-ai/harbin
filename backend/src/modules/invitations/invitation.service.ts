@@ -382,18 +382,16 @@ export class InvitationService {
    * 密码哈希
    */
   private hashPassword(password: string): string {
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return `${salt}:${hash}`;
+    const { hashPassword } = require('../../shared/utils/password.util');
+    return hashPassword(password);
   }
 
   /**
    * 验证密码
    */
   private verifyPassword(password: string, storedHash: string): boolean {
-    const [salt, hash] = storedHash.split(':');
-    const verifyHash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-    return hash === verifyHash;
+    const { verifyPassword } = require('../../shared/utils/password.util');
+    return verifyPassword(password, storedHash);
   }
 
   /**

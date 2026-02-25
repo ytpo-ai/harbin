@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -9,38 +9,58 @@ import Agents from './pages/Agents';
 import Tasks from './pages/Tasks';
 import Tools from './pages/Tools';
 import ApiKeys from './pages/ApiKeys';
-import HRManagement from './pages/HRManagement';
+import EmployeeManagement from './pages/EmployeeManagement';
 import Governance from './pages/Governance';
 import Meetings from './pages/Meetings';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import { authService } from './services/authService';
 import './index.css';
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 2,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
   },
 });
 
+// 受保护的路由组件
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const isLoggedIn = authService.isLoggedIn();
+  
+  if (!isLoggedIn) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/models" element={<Models />} />
-            <Route path="/organization" element={<Organization />} />
-            <Route path="/agents" element={<Agents />} />
-            <Route path="/tasks" element={<Tasks />} />
-            <Route path="/tools" element={<Tools />} />
-            <Route path="/api-keys" element={<ApiKeys />} />
-            <Route path="/hr" element={<HRManagement />} />
-            <Route path="/governance" element={<Governance />} />
-            <Route path="/meetings" element={<Meetings />} />
-          </Routes>
-        </Layout>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Routes>
+          {/* 公开路由 - 不需要Layout */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/invite" element={<Register />} />
+          
+          {/* 受保护的路由 - 需要Layout */}
+          <Route element={<Layout />}>
+            <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/models" element={<ProtectedRoute><Models /></ProtectedRoute>} />
+            <Route path="/organization" element={<ProtectedRoute><Organization /></ProtectedRoute>} />
+            <Route path="/agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
+            <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+            <Route path="/tools" element={<ProtectedRoute><Tools /></ProtectedRoute>} />
+            <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
+            <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />
+            <Route path="/governance" element={<ProtectedRoute><Governance /></ProtectedRoute>} />
+            <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
+          </Route>
+        </Routes>
       </Router>
     </QueryClientProvider>
   );

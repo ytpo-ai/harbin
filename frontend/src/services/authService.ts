@@ -92,11 +92,6 @@ class AuthService {
     return localStorage.getItem(this.tokenKey);
   }
 
-  getCurrentUser(): CurrentUser | null {
-    const stored = localStorage.getItem(this.userKey);
-    return stored ? JSON.parse(stored) : null;
-  }
-
   isLoggedIn(): boolean {
     return !!this.getToken();
   }

@@ -84,7 +84,8 @@ const Meetings: React.FC = () => {
   const sendMessageMutation = useMutation(
     ({ id, content }: { id: string; content: string }) => 
       meetingService.sendMessage(id, {
-        agentId: 'user', // 用户发送的消息
+        senderId: currentUser?.id || 'unknown',
+        senderType: 'employee',
         content,
         type: 'opinion',
       }),
@@ -521,6 +522,7 @@ const CreateMeetingModal: React.FC<{
     description: '',
     type: MeetingType.DAILY,
     hostId: agents[0]?.id || '',
+    hostType: 'agent',
     participantIds: [],
     agenda: '',
   });
@@ -631,17 +633,17 @@ const CreateMeetingModal: React.FC<{
                     <label key={agent.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.participantIds?.includes(agent.id!)}
+                        checked={formData.participantIds?.some(p => p.id === agent.id)}
                         onChange={(e) => {
                           if (e.target.checked) {
                             setFormData({
                               ...formData,
-                              participantIds: [...(formData.participantIds || []), agent.id!],
+                              participantIds: [...(formData.participantIds || []), { id: agent.id!, type: 'agent' as const }],
                             });
                           } else {
                             setFormData({
                               ...formData,
-                              participantIds: formData.participantIds?.filter(id => id !== agent.id) || [],
+                              participantIds: formData.participantIds?.filter(p => p.id !== agent.id) || [],
                             });
                           }
                         }}

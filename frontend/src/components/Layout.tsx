@@ -1,5 +1,5 @@
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
   HomeIcon,
   UserGroupIcon,
@@ -10,7 +10,9 @@ import {
   ScaleIcon,
   CpuChipIcon,
   KeyIcon,
+  ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
+import { authService } from '../services/authService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,6 +20,18 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    authService.getCurrentUser().then(setCurrentUser);
+  }, []);
+
+  const handleLogout = () => {
+    authService.logout();
+    setCurrentUser(null);
+    navigate('/login');
+  };
 
   const navigation = [
     { name: '仪表盘', href: '/', icon: HomeIcon },
@@ -68,11 +82,42 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             })}
           </nav>
 
-          {/* 底部信息 */}
+          {/* 用户信息 / 登录 */}
           <div className="px-2 py-4 border-t border-gray-200">
+            {currentUser ? (
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium">
+                    {(currentUser.name || currentUser.email || '?').substring(0, 1).toUpperCase()}
+                  </div>
+                  <div className="ml-2">
+                    <p className="text-sm font-medium text-gray-900">{currentUser.name || '用户'}</p>
+                    <p className="text-xs text-gray-500">{currentUser.email}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                  title="退出登录"
+                >
+                  <ArrowRightOnRectangleIcon className="h-5 w-5" />
+                </button>
+              </div>
+            ) : (
+              <Link
+                to="/login"
+                className="flex items-center justify-center w-full px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2" />
+                登录
+              </Link>
+            )}
+          </div>
+
+          {/* 底部信息 */}
+          <div className="px-2 py-2 border-t border-gray-200">
             <div className="text-xs text-gray-500">
               <p>© 2026 AI Agent Team</p>
-              <p>Version 1.0.0</p>
             </div>
           </div>
         </div>
@@ -82,7 +127,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <div className="pl-64">
         <main className="py-6">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>

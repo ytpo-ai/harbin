@@ -16,7 +16,7 @@ import {
   TrashIcon,
   ClipboardIcon,
   ExclamationTriangleIcon,
-  LoginIcon,
+  ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
 
 const EMPLOYEE_ROLES = [
@@ -133,7 +133,7 @@ const EmployeeManagement: React.FC = () => {
               onClick={() => setActiveTab('login')}
               className="inline-flex items-center px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800"
             >
-              <LoginIcon className="h-4 w-4 mr-1" />
+              <ArrowRightOnRectangleIcon className="h-4 w-4 mr-1" />
               登录
             </button>
           )}
