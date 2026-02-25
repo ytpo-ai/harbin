@@ -12,6 +12,8 @@ import { GovernanceModule } from './modules/governance/governance.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
+import { InvitationModule } from './modules/invitations/invitation.module';
+import { AuthModule } from './modules/auth/auth.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import aiConfig from './config/ai.config';
@@ -46,6 +48,8 @@ import jwtConfig from './config/jwt.config';
     ApiKeysModule,
     MeetingModule,
     EmployeeModule,
+    InvitationModule,
+    AuthModule,
   ],
 })
 export class AppModule {}

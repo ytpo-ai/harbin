@@ -40,15 +40,15 @@ export class Employee {
   @Prop({ enum: EmployeeType, required: true })
   type: EmployeeType;
 
-  // 如果是人类员工
+  // 登录相关（仅人类员工）
+  @Prop({ unique: true, sparse: true })
+  email?: string;           // 邮箱（用于登录）
+  
   @Prop()
-  userId?: string;           // 关联的用户ID（如果有登录系统）
+  passwordHash?: string;     // 密码哈希
   
   @Prop()
   name?: string;             // 人类员工姓名
-  
-  @Prop()
-  email?: string;            // 邮箱
   
   @Prop()
   avatar?: string;           // 头像URL
