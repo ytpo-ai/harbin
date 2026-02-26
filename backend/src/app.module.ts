@@ -14,6 +14,7 @@ import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
 import { InvitationModule } from './modules/invitations/invitation.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import aiConfig from './config/ai.config';
@@ -26,6 +27,7 @@ import jwtConfig from './config/jwt.config';
       envFilePath: '.env',
       load: [appConfig, databaseConfig, aiConfig, jwtConfig],
     }),
+    InfraModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {

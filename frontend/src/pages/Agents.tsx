@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
@@ -18,6 +18,22 @@ import {
   BeakerIcon,
   XCircleIcon,
 } from '@heroicons/react/24/outline';
+
+const normalizeProvider = (provider?: string): string => {
+  const value = (provider || '').toLowerCase().trim();
+  if (!value) return '';
+
+  if (value === 'claude' || value === 'anthropic') return 'anthropic';
+  if (value === 'chatgpt' || value === 'openai') return 'openai';
+  if (value === 'gemini' || value === 'google') return 'google';
+  if (value === 'azure-openai' || value === 'azure_openai' || value === 'microsoft') return 'microsoft';
+
+  return value;
+};
+
+const isProviderCompatible = (modelProvider?: string, keyProvider?: string): boolean => {
+  return normalizeProvider(modelProvider) === normalizeProvider(keyProvider);
+};
 
 const Agents: React.FC = () => {
   const queryClient = useQueryClient();
@@ -50,8 +66,8 @@ const Agents: React.FC = () => {
   );
 
   const updateAgentModelMutation = useMutation(
-    ({ id, model }: { id: string; model: AIModel }) => 
-      agentService.updateAgent(id, { model }),
+    ({ id, model, apiKeyId }: { id: string; model: AIModel; apiKeyId: string }) =>
+      agentService.updateAgent(id, { model, apiKeyId }),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('agents');
@@ -59,11 +75,6 @@ const Agents: React.FC = () => {
         setEditingAgent(null);
       },
     }
-  );
-
-  const testAgentModelMutation = useMutation(
-    ({ id, model }: { id: string; model: AIModel }) =>
-      agentService.testAgent(id, { model }),
   );
 
   const handleDelete = (agent: Agent) => {
@@ -280,27 +291,15 @@ const Agents: React.FC = () => {
             setIsEditModelModalOpen(false);
             setEditingAgent(null);
           }}
-          onSave={(model) => {
+          onSave={({ model, apiKeyId }) => {
             const id = getAgentId(editingAgent);
             if (!id) {
               alert('Agent ID 无效，无法保存模型');
               return;
             }
-            updateAgentModelMutation.mutate({ id, model });
-          }}
-          onTest={async (model) => {
-            const id = getAgentId(editingAgent);
-            if (!id) {
-              return {
-                success: false,
-                error: 'Agent ID 无效，无法测试',
-                timestamp: new Date().toISOString(),
-              };
-            }
-            return testAgentModelMutation.mutateAsync({ id, model });
+            updateAgentModelMutation.mutate({ id, model, apiKeyId });
           }}
           isLoading={updateAgentModelMutation.isLoading}
-          isTesting={testAgentModelMutation.isLoading}
         />
       )}
     </div>
@@ -328,7 +327,7 @@ const CreateAgentModal: React.FC<{
   const selectedModel = availableModels.find(m => m.id === formData.modelId);
   const filteredApiKeys = (apiKeys || []).filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
-    return key.provider.toLowerCase() === selectedModel.provider.toLowerCase() && key.isActive;
+    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive;
   });
 
   const createAgentMutation = useMutation(agentService.createAgent, {
@@ -539,27 +538,71 @@ const EditModelModal: React.FC<{
   agent: Agent;
   availableModels: AIModel[];
   onClose: () => void;
-  onSave: (model: AIModel) => void;
-  onTest: (model: AIModel) => Promise<AgentTestResult>;
+  onSave: (payload: { model: AIModel; apiKeyId: string }) => void;
   isLoading: boolean;
-  isTesting: boolean;
-}> = ({ agent, availableModels, onClose, onSave, onTest, isLoading, isTesting }) => {
+}> = ({ agent, availableModels, onClose, onSave, isLoading }) => {
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
+  const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
   const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
   const [testedModelId, setTestedModelId] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [streamingResponse, setStreamingResponse] = useState('');
+  const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
   
   const selectedModel = availableModels.find(m => m.id === selectedModelId);
+  const filteredApiKeys = (apiKeys || []).filter((key) => {
+    if (!selectedModel?.provider || !key?.provider) return false;
+    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive;
+  });
+  const hasChanges =
+    selectedModelId !== (agent.model?.id || '') ||
+    selectedApiKeyId !== (agent.apiKeyId || '');
+
+  const anthropicModelMayBeDeprecated =
+    selectedModel?.provider === 'anthropic' &&
+    /20240229/.test(selectedModel.model);
+
+  useEffect(() => {
+    if (!selectedApiKeyId) return;
+    const matched = filteredApiKeys.some((key) => (key.id || key._id) === selectedApiKeyId);
+    if (!matched) {
+      setSelectedApiKeyId('');
+    }
+  }, [selectedApiKeyId, filteredApiKeys]);
 
   const handleSave = () => {
     if (selectedModel) {
-      onSave(selectedModel);
+      onSave({ model: selectedModel, apiKeyId: selectedApiKeyId });
     }
   };
 
   const handleTest = async () => {
     if (!selectedModel) return;
+    const withMongoId = agent as Agent & { _id?: string };
+    const agentId = withMongoId.id || withMongoId._id;
+    if (!agentId) {
+      setTestResult({
+        success: false,
+        error: 'Agent ID 无效，无法测试',
+        timestamp: new Date().toISOString(),
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    setStreamingResponse('');
+    setTestResult(null);
+
     try {
-      const result = await onTest(selectedModel);
+      const result = await agentService.testAgentStream(
+        agentId,
+        { model: selectedModel, apiKeyId: selectedApiKeyId || undefined },
+        {
+          onStart: () => setStreamingResponse(''),
+          onChunk: (_chunk, fullText) => setStreamingResponse(fullText),
+          onDone: (fullText) => setStreamingResponse(fullText),
+        },
+      );
       setTestedModelId(selectedModel.id);
       setTestResult(result);
     } catch (error) {
@@ -570,6 +613,8 @@ const EditModelModal: React.FC<{
         error: message,
         timestamp: new Date().toISOString(),
       });
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -613,6 +658,9 @@ const EditModelModal: React.FC<{
                 {agent.model?.provider}
               </span>
             </div>
+            <p className="mt-2 text-xs text-gray-600">
+              当前密钥: {agent.apiKeyId ? 'Agent 绑定密钥' : '系统默认密钥'}
+            </p>
           </div>
 
           {/* 模型选择 */}
@@ -626,6 +674,7 @@ const EditModelModal: React.FC<{
                 setSelectedModelId(e.target.value);
                 setTestResult(null);
                 setTestedModelId(null);
+                setStreamingResponse('');
               }}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
@@ -637,6 +686,42 @@ const EditModelModal: React.FC<{
               ))}
             </select>
           </div>
+
+          {/* API Key选择 */}
+          {selectedModel && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <LockClosedIcon className="h-4 w-4 inline mr-1" />
+                选择API密钥
+                <span className="text-xs text-gray-500 ml-1">(可选，默认使用系统密钥)</span>
+              </label>
+              <select
+                value={selectedApiKeyId}
+                onChange={(e) => {
+                  setSelectedApiKeyId(e.target.value);
+                  setTestResult(null);
+                  setStreamingResponse('');
+                }}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">使用系统默认密钥</option>
+                {filteredApiKeys.map((key) => {
+                  const keyId = key.id || key._id;
+                  const masked = key.keyMasked || '****';
+                  return (
+                    <option key={keyId} value={keyId}>
+                      {masked} ({key.provider})
+                    </option>
+                  );
+                })}
+              </select>
+              {filteredApiKeys.length === 0 && (
+                <p className="mt-2 text-sm text-amber-600">
+                  未找到 {selectedModel.provider} 的可用密钥，将使用系统默认配置
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 新模型信息 */}
           {selectedModel && (
@@ -671,6 +756,12 @@ const EditModelModal: React.FC<{
             </div>
           )}
 
+          {anthropicModelMayBeDeprecated && (
+            <div className="mb-6 p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-sm">
+              当前选择的 Anthropic 模型版本可能已下线。若测试失败，请切换到较新的 Claude 模型后重试。
+            </div>
+          )}
+
           {/* 模型测试 */}
           <div className="mb-6">
             <button
@@ -682,6 +773,20 @@ const EditModelModal: React.FC<{
               {isTesting ? '测试中...' : '测试模型连接'}
             </button>
             <p className="mt-2 text-xs text-gray-500">会用当前Agent设定向所选模型发送一条测试消息。</p>
+
+            {(isTesting || streamingResponse) && (
+              <div className="mt-3 p-3 rounded-md border bg-indigo-50 border-indigo-200">
+                <div className="flex items-center mb-1">
+                  <BeakerIcon className="h-4 w-4 text-indigo-600 mr-1" />
+                  <span className="text-sm font-medium text-indigo-800">
+                    {isTesting ? '流式返回中...' : '流式返回结果'}
+                  </span>
+                </div>
+                <pre className="text-xs text-indigo-800 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                  {streamingResponse || '等待模型返回...'}
+                </pre>
+              </div>
+            )}
 
             {testResult && testedModelId === selectedModelId && (
               <div className={`mt-3 p-3 rounded-md border ${testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
@@ -724,7 +829,7 @@ const EditModelModal: React.FC<{
             </button>
             <button
               onClick={handleSave}
-              disabled={isLoading || !selectedModelId || selectedModelId === agent.model?.id}
+              disabled={isLoading || !selectedModelId || !hasChanges}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
             >
               {isLoading ? '保存中...' : '确认更换'}

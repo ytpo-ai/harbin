@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { AIModel, ChatMessage } from '@libs/contracts';
 import { BaseAIProvider } from './base-provider';
-import { AIModel, ChatMessage } from '../../shared/types';
 
 export class GoogleAIProvider extends BaseAIProvider {
   private client: GoogleGenerativeAI;
@@ -11,7 +11,7 @@ export class GoogleAIProvider extends BaseAIProvider {
   }
 
   async chat(messages: ChatMessage[], options?: any): Promise<string> {
-    const genAI = this.client.getGenerativeModel({ 
+    const genAI = this.client.getGenerativeModel({
       model: this.model.model,
       generationConfig: {
         maxOutputTokens: options?.maxTokens || this.model.maxTokens,
@@ -22,16 +22,16 @@ export class GoogleAIProvider extends BaseAIProvider {
 
     const prompt = this.formatGeminiMessages(messages);
     const result = await genAI.generateContent(prompt);
-    
+
     return result.response.text() || '';
   }
 
   async streamingChat(
-    messages: ChatMessage[], 
-    onToken: (token: string) => void, 
-    options?: any
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+    options?: any,
   ): Promise<void> {
-    const genAI = this.client.getGenerativeModel({ 
+    const genAI = this.client.getGenerativeModel({
       model: this.model.model,
       generationConfig: {
         maxOutputTokens: options?.maxTokens || this.model.maxTokens,
@@ -42,7 +42,7 @@ export class GoogleAIProvider extends BaseAIProvider {
 
     const prompt = this.formatGeminiMessages(messages);
     const result = await genAI.generateContentStream(prompt);
-    
+
     for await (const chunk of result.stream) {
       const chunkText = chunk.text();
       if (chunkText) {
@@ -53,7 +53,7 @@ export class GoogleAIProvider extends BaseAIProvider {
 
   private formatGeminiMessages(messages: ChatMessage[]): string {
     let prompt = '';
-    
+
     for (const message of messages) {
       if (message.role === 'system') {
         prompt += `System: ${message.content}\n\n`;
@@ -63,7 +63,7 @@ export class GoogleAIProvider extends BaseAIProvider {
         prompt += `Assistant: ${message.content}\n\n`;
       }
     }
-    
+
     prompt += 'Assistant: ';
     return prompt;
   }

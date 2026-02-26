@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { meetingService, Meeting, MeetingType, MeetingStatus, CreateMeetingDto, MeetingMessage } from '../services/meetingService';
+import { meetingService, Meeting, MeetingType, MeetingStatus, CreateMeetingDto, MeetingSpeakingMode, ParticipantRole } from '../services/meetingService';
 import { agentService } from '../services/agentService';
 import { authService } from '../services/authService';
+import { wsService } from '../services/wsService';
 import { Agent } from '../types';
 import { 
   VideoCameraIcon,
@@ -11,7 +12,6 @@ import {
   StopIcon,
   UserGroupIcon,
   ChatBubbleLeftRightIcon,
-  CalendarIcon,
   ClockIcon,
   CheckCircleIcon,
   PaperAirplaneIcon,
@@ -31,6 +31,13 @@ const MEETING_TYPES = [
   { id: MeetingType.EMERGENCY, name: '紧急会议', color: 'bg-red-100 text-red-800', icon: '🚨' },
 ];
 
+interface MeetingRealtimeEvent {
+  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed';
+  meetingId: string;
+  data: any;
+  timestamp: string;
+}
+
 const Meetings: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -49,22 +56,6 @@ const Meetings: React.FC = () => {
   const { data: stats } = useQuery('meeting-stats', meetingService.getMeetingStats);
   const { data: agents } = useQuery('agents', agentService.getAgents);
   
-  // Auto-refresh meeting data every 3 seconds when a meeting is selected
-  useEffect(() => {
-    if (!selectedMeeting) return;
-    
-    const interval = setInterval(async () => {
-      try {
-        const updated = await meetingService.getMeeting(selectedMeeting.id);
-        setSelectedMeeting(updated);
-      } catch (error) {
-        // Ignore errors during refresh
-      }
-    }, 3000);
-    
-    return () => clearInterval(interval);
-  }, [selectedMeeting?.id]);
-
   const createMutation = useMutation(meetingService.createMeeting, {
     onSuccess: () => {
       queryClient.invalidateQueries('meetings');
@@ -94,6 +85,33 @@ const Meetings: React.FC = () => {
       setSelectedMeeting(null);
     },
   });
+
+  const pauseMutation = useMutation(meetingService.pauseMeeting, {
+    onSuccess: (data) => {
+      setSelectedMeeting(data);
+      queryClient.invalidateQueries('meetings');
+      queryClient.invalidateQueries('meeting-stats');
+    },
+  });
+
+  const resumeMutation = useMutation(meetingService.resumeMeeting, {
+    onSuccess: (data) => {
+      setSelectedMeeting(data);
+      queryClient.invalidateQueries('meetings');
+      queryClient.invalidateQueries('meeting-stats');
+    },
+  });
+
+  const speakingModeMutation = useMutation(
+    ({ id, speakingOrder }: { id: string; speakingOrder: MeetingSpeakingMode }) =>
+      meetingService.updateSpeakingMode(id, speakingOrder),
+    {
+      onSuccess: (data) => {
+        setSelectedMeeting(data);
+        queryClient.invalidateQueries('meetings');
+      },
+    },
+  );
 
   const archiveMutation = useMutation(meetingService.archiveMeeting, {
     onSuccess: () => {
@@ -170,22 +188,121 @@ const Meetings: React.FC = () => {
     }
   }, [selectedMeeting?.messages]);
 
-  // 刷新选中会议的数据
+  // WS实时事件驱动更新
   useEffect(() => {
-    if (selectedMeeting) {
-      const interval = setInterval(async () => {
-        const updated = await meetingService.getMeeting(selectedMeeting.id);
-        if (updated) {
-          setSelectedMeeting(updated);
-        }
-      }, 3000); // 每3秒刷新一次
+    if (!selectedMeeting?.id) return;
 
-      return () => clearInterval(interval);
-    }
+    const meetingId = selectedMeeting.id;
+
+    const unsubscribe = wsService.subscribe(`meeting:${meetingId}`, (raw) => {
+      let event: MeetingRealtimeEvent;
+      try {
+        event = JSON.parse(raw) as MeetingRealtimeEvent;
+      } catch {
+        return;
+      }
+
+      if (!event || event.meetingId !== meetingId) return;
+
+      if (event.type === 'message' && event.data) {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          const existing = current.messages || [];
+          const alreadyExists = existing.some((msg) => msg.id === event.data.id);
+          if (alreadyExists) return current;
+
+          return {
+            ...current,
+            messages: [...existing, event.data],
+            messageCount: (current.messageCount || 0) + 1,
+          };
+        });
+        return;
+      }
+
+      if (event.type === 'summary_generated') {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          return {
+            ...current,
+            summary: {
+              content: event.data?.summary || '',
+              actionItems: current.summary?.actionItems || [],
+              decisions: current.summary?.decisions || [],
+              generatedAt: new Date().toISOString(),
+            },
+          };
+        });
+      }
+
+      if (event.type === 'status_changed' && event.data?.status) {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          return { ...current, status: event.data.status };
+        });
+        queryClient.invalidateQueries('meeting-stats');
+      }
+
+      if (event.type === 'settings_changed' && event.data?.speakingOrder) {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          return {
+            ...current,
+            settings: {
+              ...(current.settings || {}),
+              speakingOrder: event.data.speakingOrder,
+            },
+          };
+        });
+      }
+
+      if ((event.type === 'participant_joined' || event.type === 'participant_left') && event.data?.id) {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          const participants = [...(current.participants || [])];
+          const participantIndex = participants.findIndex(
+            (p) => p.participantId === event.data.id && p.participantType === event.data.type,
+          );
+
+          if (participantIndex >= 0) {
+            participants[participantIndex] = {
+              ...participants[participantIndex],
+              isPresent: event.type === 'participant_joined',
+            };
+          } else if (event.type === 'participant_joined') {
+            participants.push({
+              participantId: event.data.id,
+              participantType: event.data.type,
+              role: ParticipantRole.PARTICIPANT,
+              isPresent: true,
+              hasSpoken: false,
+              messageCount: 0,
+            });
+          }
+
+          return {
+            ...current,
+            participants,
+          };
+        });
+      }
+
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [selectedMeeting?.id]);
 
   const getMeetingTypeInfo = (type: MeetingType) => {
     return MEETING_TYPES.find(t => t.id === type) || MEETING_TYPES[2];
+  };
+
+  const getSpeakingModeLabel = (mode?: string) => {
+    if (mode === 'ordered' || mode === 'sequential' || mode === 'round_robin') {
+      return '有序发言';
+    }
+    return '自由讨论';
   };
 
   const getStatusBadge = (status: MeetingStatus) => {
@@ -325,6 +442,30 @@ const Meetings: React.FC = () => {
                       <span className="font-medium">议程：</span>{selectedMeeting.agenda}
                     </p>
                   )}
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-500">发言模式:</span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                      {getSpeakingModeLabel(selectedMeeting.settings?.speakingOrder)}
+                    </span>
+                    {selectedMeeting.status !== MeetingStatus.ENDED && selectedMeeting.status !== MeetingStatus.ARCHIVED && (
+                      <>
+                        <button
+                          onClick={() => speakingModeMutation.mutate({ id: selectedMeeting.id, speakingOrder: 'free' })}
+                          disabled={speakingModeMutation.isLoading || getSpeakingModeLabel(selectedMeeting.settings?.speakingOrder) === '自由讨论'}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          自由讨论
+                        </button>
+                        <button
+                          onClick={() => speakingModeMutation.mutate({ id: selectedMeeting.id, speakingOrder: 'ordered' })}
+                          disabled={speakingModeMutation.isLoading || getSpeakingModeLabel(selectedMeeting.settings?.speakingOrder) === '有序发言'}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          有序发言
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {selectedMeeting.status === MeetingStatus.PENDING && (
@@ -343,14 +484,43 @@ const Meetings: React.FC = () => {
                     </button>
                   )}
                   {selectedMeeting.status === MeetingStatus.ACTIVE && (
-                    <button
-                      onClick={() => endMutation.mutate(selectedMeeting.id)}
-                      disabled={endMutation.isLoading}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                    >
-                      <StopIcon className="h-4 w-4 mr-1" />
-                      结束会议
-                    </button>
+                    <>
+                      <button
+                        onClick={() => pauseMutation.mutate(selectedMeeting.id)}
+                        disabled={pauseMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {pauseMutation.isLoading ? '暂停中...' : '暂停会议'}
+                      </button>
+                      <button
+                        onClick={() => endMutation.mutate(selectedMeeting.id)}
+                        disabled={endMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <StopIcon className="h-4 w-4 mr-1" />
+                        结束会议
+                      </button>
+                    </>
+                  )}
+                  {selectedMeeting.status === MeetingStatus.PAUSED && (
+                    <>
+                      <button
+                        onClick={() => resumeMutation.mutate(selectedMeeting.id)}
+                        disabled={resumeMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                      >
+                        <PlayIcon className="h-4 w-4 mr-1" />
+                        {resumeMutation.isLoading ? '恢复中...' : '恢复会议'}
+                      </button>
+                      <button
+                        onClick={() => endMutation.mutate(selectedMeeting.id)}
+                        disabled={endMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <StopIcon className="h-4 w-4 mr-1" />
+                        结束会议
+                      </button>
+                    </>
                   )}
                   {selectedMeeting.status === MeetingStatus.ENDED && (
                     <>
@@ -465,7 +635,7 @@ const Meetings: React.FC = () => {
                 
                 {(selectedMeeting.invitedAgentIds || []).length > 0 && (
                   <span className="text-xs text-gray-400 ml-2">
-                    +{selectedMeeting.invitedAgentIds.length} 已邀请
+                    +{(selectedMeeting.invitedAgentIds || []).length} 已邀请
                   </span>
                 )}
               </div>
@@ -577,7 +747,7 @@ const Meetings: React.FC = () => {
                             sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
                           }
                         }}
-                        placeholder="输入消息..."
+                        placeholder="输入消息（可用 @AgentName 点名发言）..."
                         className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                       />
                       <button
@@ -594,6 +764,12 @@ const Meetings: React.FC = () => {
                 </div>
                 );
                 })()}
+              </div>
+            )}
+
+            {selectedMeeting.status === MeetingStatus.PAUSED && (
+              <div className="bg-white border-t border-gray-200 px-6 py-4 text-sm text-yellow-700">
+                会议已暂停，恢复后可继续发言。
               </div>
             )}
 

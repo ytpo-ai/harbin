@@ -6,16 +6,11 @@ import { authService } from '../services/authService';
 import { 
   UserGroupIcon,
   UserPlusIcon,
-  ClipboardDocumentIcon,
-  LinkIcon,
   CheckCircleIcon,
-  XCircleIcon,
   EnvelopeIcon,
-  KeyIcon,
   ArrowPathIcon,
   TrashIcon,
   ClipboardIcon,
-  ExclamationTriangleIcon,
   ArrowRightOnRectangleIcon,
 } from '@heroicons/react/24/outline';
 
@@ -41,7 +36,7 @@ const EmployeeManagement: React.FC = () => {
 
   const organizationId = 'default-org';
 
-  const { data: employees, isLoading: employeesLoading } = useQuery(
+  const { data: employees } = useQuery(
     ['employees', organizationId],
     () => employeeService.getEmployeesByOrganization(organizationId)
   );
@@ -51,7 +46,7 @@ const EmployeeManagement: React.FC = () => {
     () => employeeService.getEmployeeStats(organizationId)
   );
 
-  const { data: invitations, isLoading: invitationsLoading } = useQuery(
+  const { data: invitations } = useQuery(
     ['invitations', organizationId],
     () => invitationService.getByOrganization(organizationId)
   );

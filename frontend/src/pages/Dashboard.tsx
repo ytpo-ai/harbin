@@ -6,13 +6,12 @@ import {
   UserGroupIcon, 
   ClipboardDocumentListIcon, 
   CheckCircleIcon,
-  ClockIcon,
-  ExclamationTriangleIcon
+  ClockIcon
 } from '@heroicons/react/24/outline';
 
 const Dashboard: React.FC = () => {
-  const { data: agents, isLoading: agentsLoading } = useQuery('agents', agentService.getAgents);
-  const { data: tasks, isLoading: tasksLoading } = useQuery('tasks', taskService.getTasks);
+  const { data: agents } = useQuery('agents', agentService.getAgents);
+  const { data: tasks } = useQuery('tasks', taskService.getTasks);
 
   const getTaskStats = () => {
     if (!tasks) return { total: 0, pending: 0, inProgress: 0, completed: 0, failed: 0 };

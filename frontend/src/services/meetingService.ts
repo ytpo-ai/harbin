@@ -25,8 +25,11 @@ export enum ParticipantRole {
   OBSERVER = 'observer',
 }
 
+export type MeetingSpeakingMode = 'free' | 'ordered';
+
 export interface MeetingParticipant {
   participantId: string;
+  agentId?: string;
   participantType: 'employee' | 'agent';
   role: ParticipantRole;
   isPresent: boolean;
@@ -69,13 +72,14 @@ export interface Meeting {
   startedAt?: string;
   endedAt?: string;
   invitedParticipants: Array<{ participantId: string; participantType: 'employee' | 'agent' }>;
+  invitedAgentIds?: string[];
   settings?: {
     maxParticipants?: number;
     allowAutoStart?: boolean;
     aiModeration?: boolean;
     recordTranscript?: boolean;
     autoEndOnSilence?: number;
-    speakingOrder?: 'free' | 'sequential' | 'round_robin';
+    speakingOrder?: 'free' | 'ordered' | 'sequential' | 'round_robin';
   };
   summary?: {
     content: string;
@@ -152,6 +156,21 @@ class MeetingService {
 
   async endMeeting(id: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/end`);
+    return response.data.data;
+  }
+
+  async pauseMeeting(id: string): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/pause`);
+    return response.data.data;
+  }
+
+  async resumeMeeting(id: string): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/resume`);
+    return response.data.data;
+  }
+
+  async updateSpeakingMode(id: string, speakingOrder: MeetingSpeakingMode): Promise<Meeting> {
+    const response = await api.put(`/meetings/${id}/speaking-mode`, { speakingOrder });
     return response.data.data;
   }
 

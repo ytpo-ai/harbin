@@ -14,6 +14,20 @@ export interface AgentTestResult {
   timestamp: string;
 }
 
+export interface StreamChunkEvent {
+  sessionId: string;
+  type: 'start' | 'chunk' | 'done' | 'error';
+  payload?: string;
+  timestamp: number;
+}
+
+export interface AgentStreamHandlers {
+  onStart?: () => void;
+  onChunk?: (chunk: string, fullText: string) => void;
+  onDone?: (fullText: string) => void;
+  onError?: (message: string) => void;
+}
+
 export const agentService = {
   // 获取所有agent
   async getAgents(): Promise<Agent[]> {
@@ -67,5 +81,131 @@ export const agentService = {
   async testAgent(id: string, payload?: { model?: AIModel; apiKeyId?: string }): Promise<AgentTestResult> {
     const response = await api.post(`/agents/${id}/test`, payload || {});
     return response.data;
+  },
+
+  // 流式测试Agent模型连接（WS + Redis channel）
+  async testAgentStream(
+    id: string,
+    payload: { model?: AIModel; apiKeyId?: string },
+    handlers?: AgentStreamHandlers,
+  ): Promise<AgentTestResult> {
+    const sessionId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    const wsBase = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:3003/ws';
+    const channel = `stream:${sessionId}`;
+
+    return new Promise<AgentTestResult>((resolve) => {
+      const startedAt = Date.now();
+      let fullText = '';
+      let settled = false;
+
+      const finish = (result: AgentTestResult, ws?: WebSocket) => {
+        if (settled) return;
+        settled = true;
+        try {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ action: 'unsubscribe', channel }));
+            ws.close();
+          }
+        } catch {
+          // noop
+        }
+        resolve(result);
+      };
+
+      const ws = new WebSocket(wsBase);
+
+      ws.onopen = async () => {
+        try {
+          ws.send(JSON.stringify({ action: 'subscribe', channel }));
+          await api.post(`/agents/${id}/test-stream`, {
+            ...payload,
+            sessionId,
+          });
+        } catch (error: any) {
+          const message = error?.response?.data?.message || error?.message || '启动流式测试失败';
+          handlers?.onError?.(message);
+          finish({
+            success: false,
+            error: message,
+            timestamp: new Date().toISOString(),
+          }, ws);
+        }
+      };
+
+      ws.onmessage = (event) => {
+        let data: StreamChunkEvent;
+        try {
+          data = JSON.parse(event.data as string) as StreamChunkEvent;
+        } catch {
+          return;
+        }
+
+        if (!data || data.sessionId !== sessionId) return;
+
+        if (data.type === 'start') {
+          handlers?.onStart?.();
+          return;
+        }
+
+        if (data.type === 'chunk') {
+          const chunk = data.payload || '';
+          fullText += chunk;
+          handlers?.onChunk?.(chunk, fullText);
+          return;
+        }
+
+        if (data.type === 'error') {
+          const message = data.payload || '流式测试失败';
+          handlers?.onError?.(message);
+          finish({
+            success: false,
+            error: message,
+            response: fullText,
+            responseLength: fullText.length,
+            duration: `${Date.now() - startedAt}ms`,
+            timestamp: new Date().toISOString(),
+          }, ws);
+          return;
+        }
+
+        if (data.type === 'done') {
+          handlers?.onDone?.(fullText);
+          finish({
+            success: true,
+            response: fullText,
+            responseLength: fullText.length,
+            duration: `${Date.now() - startedAt}ms`,
+            timestamp: new Date().toISOString(),
+          }, ws);
+        }
+      };
+
+      ws.onerror = () => {
+        const message = 'WebSocket连接失败';
+        handlers?.onError?.(message);
+        finish({
+          success: false,
+          error: message,
+          timestamp: new Date().toISOString(),
+        }, ws);
+      };
+
+      setTimeout(() => {
+        if (settled) return;
+        const message = '流式测试超时（45s）';
+        handlers?.onError?.(message);
+        finish({
+          success: false,
+          error: message,
+          response: fullText,
+          responseLength: fullText.length,
+          duration: `${Date.now() - startedAt}ms`,
+          timestamp: new Date().toISOString(),
+        }, ws);
+      }, 45000);
+    });
   }
 };

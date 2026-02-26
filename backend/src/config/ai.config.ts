@@ -21,16 +21,22 @@ export default registerAs('ai', () => ({
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY,
     models: {
-      'claude-3-sonnet': {
-        name: 'Claude 3 Sonnet',
-        model: 'claude-3-sonnet-20240229',
-        maxTokens: 4096,
+      'claude-sonnet-4-6': {
+        name: 'Claude Sonnet 4.6',
+        model: 'claude-sonnet-4-6',
+        maxTokens: 64000,
         temperature: 0.7,
       },
-      'claude-3-haiku': {
-        name: 'Claude 3 Haiku',
-        model: 'claude-3-haiku-20240307',
-        maxTokens: 4096,
+      'claude-opus-4-6': {
+        name: 'Claude Opus 4.6',
+        model: 'claude-opus-4-6',
+        maxTokens: 128000,
+        temperature: 0.7,
+      },
+      'claude-haiku-4-5': {
+        name: 'Claude Haiku 4.5',
+        model: 'claude-haiku-4-5',
+        maxTokens: 64000,
         temperature: 0.7,
       },
     },
@@ -42,6 +48,17 @@ export default registerAs('ai', () => ({
         name: 'Gemini Pro',
         model: 'gemini-pro',
         maxTokens: 4096,
+        temperature: 0.7,
+      },
+    },
+  },
+  moonshot: {
+    apiKey: process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY,
+    models: {
+      'kimi-k2-5': {
+        name: 'Kimi K2.5',
+        model: 'kimi-latest',
+        maxTokens: 32768,
         temperature: 0.7,
       },
     },

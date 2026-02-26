@@ -41,6 +41,43 @@ AI Agent Team Platform 采用分层架构设计，实现了前后端分离、模
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## 🧭 微服务迁移架构（v2）
+
+为实现平滑迁移，后端升级为 Nest Monorepo 多应用架构，前端统一走 Gateway。
+
+```
+backend/
+├── apps/
+│   ├── gateway/      # 统一入口：鉴权 + 请求分发
+│   ├── agents/       # Agent/Task 业务与模型执行
+│   ├── ws/           # WebSocket 流式推送
+│   └── legacy/       # 未迁移模块（兼容保留）
+├── libs/
+│   ├── contracts/    # DTO/事件协议
+│   ├── auth/         # JWT校验、上下文签名
+│   ├── common/       # 通用日志/错误/工具
+│   └── infra/        # Redis等基础设施封装
+└── src/              # legacy 业务代码
+```
+
+### 请求链路
+
+1. 前端 HTTP -> `gateway`（`/api/*`）
+2. `gateway` 进行 JWT 鉴权，生成并签名 `x-user-context`
+3. `gateway` 按路由分发：
+   - `/api/agents`、`/api/tasks` -> `agents`
+   - 其他 -> `legacy`
+4. `agents` 校验 `x-user-context` 签名后执行业务
+5. 流式场景：`agents` 发布 Redis 事件，`ws` 订阅并推送前端
+
+### 安全模型（Gateway -> Service）
+
+- 下游服务不再信任前端自带身份头。
+- 身份由 Gateway 提取后签名传递：
+  - `x-user-context`: base64url(userContext)
+  - `x-user-signature`: HMAC-SHA256(context)
+- `agents` 使用 `INTERNAL_CONTEXT_SECRET` 验签，防止伪造头。
+
 ## 📦 后端架构
 
 ### 技术栈

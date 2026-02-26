@@ -3,19 +3,19 @@ import { Proposal } from '../types';
 
 export const governanceService = {
   // 创建提案
-  async createProposal(
-    title: string,
-    description: string,
-    type: Proposal['type'],
-    proposerId: string,
-    metadata?: any
-  ): Promise<Proposal> {
+  async createProposal(payload: {
+    title: string;
+    description: string;
+    type: Proposal['type'];
+    proposerId: string;
+    metadata?: any;
+  }): Promise<Proposal> {
     const response = await api.post('/governance/proposals', {
-      title,
-      description,
-      type,
-      proposerId,
-      metadata
+      title: payload.title,
+      description: payload.description,
+      type: payload.type,
+      proposerId: payload.proposerId,
+      metadata: payload.metadata,
     });
     return response.data;
   },
@@ -33,16 +33,16 @@ export const governanceService = {
   },
 
   // 投票
-  async castVote(
-    proposalId: string,
-    voterId: string,
-    decision: 'for' | 'against' | 'abstain',
-    reason: string
-  ): Promise<any> {
-    const response = await api.post(`/governance/proposals/${proposalId}/vote`, {
-      voterId,
-      decision,
-      reason
+  async castVote(payload: {
+    proposalId: string;
+    voterId: string;
+    decision: 'for' | 'against' | 'abstain';
+    reason: string;
+  }): Promise<any> {
+    const response = await api.post(`/governance/proposals/${payload.proposalId}/vote`, {
+      voterId: payload.voterId,
+      decision: payload.decision,
+      reason: payload.reason,
     });
     return response.data;
   },

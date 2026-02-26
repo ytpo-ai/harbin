@@ -8,9 +8,7 @@ import {
   CurrencyDollarIcon,
   ChartBarIcon,
   PlusIcon,
-  UsersIcon,
-  BriefcaseIcon,
-  ClipboardDocumentCheckIcon
+  UsersIcon
 } from '@heroicons/react/24/outline';
 
 const Organization: React.FC = () => {

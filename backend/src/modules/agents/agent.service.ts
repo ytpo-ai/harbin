@@ -96,9 +96,29 @@ export class AgentService {
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
+    const normalizedUpdates: any = {
+      ...updates,
+      updatedAt: new Date(),
+    };
+
+    const hasApiKeyIdField = Object.prototype.hasOwnProperty.call(updates, 'apiKeyId');
+    if (hasApiKeyIdField) {
+      const normalizedApiKeyId = typeof updates.apiKeyId === 'string' ? updates.apiKeyId.trim() : '';
+
+      if (normalizedApiKeyId) {
+        normalizedUpdates.apiKeyId = normalizedApiKeyId;
+      } else {
+        delete normalizedUpdates.apiKeyId;
+        normalizedUpdates.$unset = {
+          ...(normalizedUpdates.$unset || {}),
+          apiKeyId: 1,
+        };
+      }
+    }
+
     return this.agentModel.findByIdAndUpdate(
       agentId, 
-      { ...updates, updatedAt: new Date() }, 
+      normalizedUpdates,
       { new: true }
     ).exec();
   }
@@ -173,6 +193,11 @@ export class AgentService {
       };
     };
 
+    const isModelNotFoundError = (message: string): boolean => {
+      const lower = (message || '').toLowerCase();
+      return lower.includes('not_found_error') && lower.includes('model');
+    };
+
     // By default, model test uses system env key (e.g. OPENAI_API_KEY).
     // Only use custom key when apiKeyId is explicitly provided.
     const keyId = options?.apiKeyId?.trim() || undefined;
@@ -207,6 +232,17 @@ export class AgentService {
         } catch (customError) {
           const customMessage = customError instanceof Error ? customError.message : 'Unknown error';
           this.logger.error(`Agent ${agent.name} model test failed with custom key: ${customMessage}`);
+
+          if (isModelNotFoundError(customMessage)) {
+            return {
+              success: false,
+              agent: agent.name,
+              model: modelConfig.name,
+              error: `当前模型在提供商侧不可用，请切换模型后重试。详细信息：${customMessage}`,
+              keySource: 'custom',
+              timestamp: new Date().toISOString(),
+            };
+          }
 
           try {
             const fallbackResult = await runModelTest(undefined);

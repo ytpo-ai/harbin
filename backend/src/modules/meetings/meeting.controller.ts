@@ -4,7 +4,7 @@ import {
   CreateMeetingDto, 
   MeetingMessageDto,
   ParticipantIdentity,
-  MeetingEvent 
+  MeetingSpeakingMode,
 } from './meeting.service';
 import { MeetingType, MeetingStatus } from '../../shared/schemas/meeting.schema';
 
@@ -90,6 +90,39 @@ export class MeetingController {
       success: true,
       data: meeting,
       message: '会议已结束',
+    };
+  }
+
+  @Post(':id/pause')
+  async pauseMeeting(@Param('id') id: string) {
+    const meeting = await this.meetingService.pauseMeeting(id);
+    return {
+      success: true,
+      data: meeting,
+      message: '会议已暂停',
+    };
+  }
+
+  @Post(':id/resume')
+  async resumeMeeting(@Param('id') id: string) {
+    const meeting = await this.meetingService.resumeMeeting(id);
+    return {
+      success: true,
+      data: meeting,
+      message: '会议已恢复',
+    };
+  }
+
+  @Put(':id/speaking-mode')
+  async updateSpeakingMode(
+    @Param('id') id: string,
+    @Body('speakingOrder') speakingOrder: MeetingSpeakingMode,
+  ) {
+    const meeting = await this.meetingService.updateSpeakingMode(id, speakingOrder);
+    return {
+      success: true,
+      data: meeting,
+      message: '会议发言模式已更新',
     };
   }
 

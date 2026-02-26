@@ -1,8 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { BaseAIProvider } from './base-provider';
-import { OpenAIProvider } from './openai-provider';
-import { AnthropicProvider } from './anthropic-provider';
-import { GoogleAIProvider } from './google-provider';
+import { AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider } from '@libs/models';
 import { AIModel, ChatMessage } from '../../shared/types';
 
 @Injectable()
@@ -31,6 +28,9 @@ export class ModelService {
         break;
       case 'google':
         provider = new GoogleAIProvider(model, apiKey);
+        break;
+      case 'moonshot':
+        provider = new MoonshotProvider(model, apiKey);
         break;
       default:
         // 对于不直接支持的提供商，使用通用的API调用方式
@@ -103,11 +103,11 @@ export class ModelService {
         temperature: 0.7,
       },
       {
-        id: 'claude-3-sonnet',
-        name: 'Claude 3 Sonnet',
+        id: 'claude-sonnet-4-6',
+        name: 'Claude Sonnet 4.6',
         provider: 'anthropic',
-        model: 'claude-3-sonnet-20240229',
-        maxTokens: 4096,
+        model: 'claude-sonnet-4-6',
+        maxTokens: 64000,
         temperature: 0.7,
       },
       {

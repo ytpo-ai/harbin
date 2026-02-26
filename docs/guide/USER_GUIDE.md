@@ -71,11 +71,23 @@ MISTRAL_API_KEY=your-mistral-key
 # 终端1: 启动MongoDB
 mongod
 
-# 终端2: 启动后端
+# 终端2: 启动 legacy 服务（未迁移模块）
 cd backend
 npm run start:dev
 
-# 终端3: 启动前端
+# 终端3: 启动 agents 服务
+cd backend
+npm run start:agents:dev
+
+# 终端4: 启动 gateway 服务（前端统一入口）
+cd backend
+npm run start:gateway:dev
+
+# 终端5: 启动 ws 服务（流式推送）
+cd backend
+npm run start:ws:dev
+
+# 终端6: 启动前端
 cd frontend
 npm run dev
 ```
@@ -83,8 +95,10 @@ npm run dev
 ### 5. 访问应用
 
 - **前端界面**: http://localhost:3000
-- **后端API**: http://localhost:3001
-- **API文档**: http://localhost:3001/api/docs
+- **Gateway API入口**: http://localhost:3100/api
+- **Legacy API**: http://localhost:3001/api
+- **Agents API**: http://localhost:3002/api
+- **WS服务**: ws://localhost:3003/ws
 
 ---
 
@@ -96,8 +110,8 @@ npm run dev
    - 点击左侧导航"模型管理"
 
 2. **为创始人选择模型**
-   - CEO推荐: Claude 3 Opus, GPT-4 Turbo, GPT-4o
-   - CTO推荐: GPT-4 Turbo, Claude 3.5 Sonnet
+   - CEO推荐: Claude Opus 4.6, GPT-4 Turbo, GPT-4o
+   - CTO推荐: Claude Sonnet 4.6, GPT-4 Turbo
 
 3. **保存设置**
    - 点击"保存设置"按钮
@@ -132,6 +146,7 @@ npm run dev
 3. **配置Agent属性**
    - 系统提示词
    - 个性特征
+   - 在“更换模型”弹窗中可同时切换该Agent绑定的API Key
    - 薪资和期权
 
 ### 第四步: 分配任务
@@ -166,6 +181,26 @@ npm run dev
 3. **执行决策**
    - 通过提案自动执行
    - 查看执行历史
+
+### 会议协作模式
+
+1. **进入会议页面**
+   - 打开"会议"页面并选择一个会议
+
+2. **切换发言模式**
+   - **自由讨论**: 人类发言后，所有在场Agent都会给出回应
+   - **有序发言**: Agent发言后需要等待下一次人类发言才会继续响应
+
+3. **暂停与恢复**
+   - 会议进行中可点击"暂停会议"
+   - 暂停后可点击"恢复会议"继续讨论
+
+4. **实时消息**
+   - 会议消息通过 WebSocket 实时推送，不依赖定时轮询
+
+5. **@ 点名发言**
+   - 在消息中输入 `@AgentName` 可点名指定 Agent 回复
+   - 点名后仅被 @ 的在场 Agent 会发言
 
 ### 第六步: 绩效管理
 
@@ -231,7 +266,7 @@ npm run dev
 **步骤**:
 1. 创建多个相同角色的Agent
    - Agent A: 使用 GPT-4 Turbo
-   - Agent B: 使用 Claude 3 Opus
+   - Agent B: 使用 Claude Opus 4.6
    - Agent C: 使用 GPT-4o
 2. 分配相同任务
 3. 对比结果:
@@ -338,13 +373,13 @@ settings: {
 ### 1. 模型选择建议
 
 **CEO角色**:
-- Claude 3 Opus: 最适合战略决策
+- Claude Opus 4.6: 最适合战略决策
 - GPT-4 Turbo: 综合能力强
 - GPT-4o: 性价比高
 
 **CTO角色**:
 - GPT-4 Turbo: 编程能力最强
-- Claude 3.5 Sonnet: 代码审查优秀
+- Claude Sonnet 4.6: 代码与架构能力优秀
 - DeepSeek Coder: 中文编程支持好
 
 ### 2. 团队协作优化

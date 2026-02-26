@@ -68,38 +68,47 @@ export const AVAILABLE_MODELS: AIModel[] = [
 
   // Anthropic Models
   {
-    id: 'claude-3-opus',
-    name: 'Claude 3 Opus',
+    id: 'claude-opus-4-6',
+    name: 'Claude Opus 4.6',
     provider: 'anthropic',
-    model: 'claude-3-opus-20240229',
-    maxTokens: 4096,
+    model: 'claude-opus-4-6',
+    maxTokens: 128000,
     temperature: 0.7,
     topP: 1
   },
   {
-    id: 'claude-3-sonnet',
-    name: 'Claude 3 Sonnet',
+    id: 'claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
     provider: 'anthropic',
-    model: 'claude-3-sonnet-20240229',
-    maxTokens: 4096,
+    model: 'claude-sonnet-4-6',
+    maxTokens: 64000,
     temperature: 0.7,
     topP: 1
   },
   {
-    id: 'claude-3-haiku',
-    name: 'Claude 3 Haiku',
+    id: 'claude-haiku-4-5',
+    name: 'Claude Haiku 4.5',
     provider: 'anthropic',
-    model: 'claude-3-haiku-20240307',
-    maxTokens: 4096,
+    model: 'claude-haiku-4-5',
+    maxTokens: 64000,
     temperature: 0.7,
     topP: 1
   },
   {
-    id: 'claude-3-5-sonnet',
-    name: 'Claude 3.5 Sonnet',
+    id: 'claude-opus-4-5',
+    name: 'Claude Opus 4.5',
     provider: 'anthropic',
-    model: 'claude-3-5-sonnet-20241022',
-    maxTokens: 8192,
+    model: 'claude-opus-4-5',
+    maxTokens: 64000,
+    temperature: 0.7,
+    topP: 1
+  },
+  {
+    id: 'claude-sonnet-4-5',
+    name: 'Claude Sonnet 4.5',
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-5',
+    maxTokens: 64000,
     temperature: 0.7,
     topP: 1
   },
@@ -458,6 +467,15 @@ export const AVAILABLE_MODELS: AIModel[] = [
     temperature: 0.7,
     topP: 1
   },
+  {
+    id: 'kimi-k2-5',
+    name: 'Kimi K2.5',
+    provider: 'moonshot',
+    model: 'kimi-latest',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1
+  },
 
   // Microsoft Models
   {
@@ -508,10 +526,10 @@ export const MODEL_CATEGORIES = {
 export const getRecommendedModels = (): AIModel[] => {
   return AVAILABLE_MODELS.filter(model => [
     'gpt-4-turbo',
-    'claude-3-opus',
+    'claude-opus-4-6',
     'gemini-1.5-pro',
     'qwen-max',
-    'kimi-latest',
+    'kimi-k2-5',
     'deepseek-chat'
   ].includes(model.id));
 };

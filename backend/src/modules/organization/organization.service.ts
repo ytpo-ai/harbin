@@ -279,11 +279,11 @@ export class OrganizationService {
   private async createFoundingAgents(ceoModel: AIModel | null, ctoModel: AIModel | null): Promise<void> {
     // 使用用户选择的模型，如果没有选择则使用默认模型
     const defaultCeoModel: AIModel = ceoModel || {
-      id: 'claude-3-sonnet',
-      name: 'Claude 3 Sonnet',
+      id: 'claude-sonnet-4-6',
+      name: 'Claude Sonnet 4.6',
       provider: 'anthropic',
-      model: 'claude-3-sonnet-20240229',
-      maxTokens: 4096,
+      model: 'claude-sonnet-4-6',
+      maxTokens: 64000,
       temperature: 0.7,
     };
 

@@ -92,6 +92,7 @@ class InvitationService {
       role: string;
       title: string;
       invitedByName: string;
+      email?: string;
       message: string;
       expiresAt: string;
     };

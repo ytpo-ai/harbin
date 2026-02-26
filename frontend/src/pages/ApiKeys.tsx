@@ -6,8 +6,6 @@ import {
   PlusIcon, 
   PencilIcon, 
   TrashIcon,
-  EyeIcon,
-  EyeSlashIcon,
   ShieldCheckIcon,
   ExclamationTriangleIcon,
   CheckCircleIcon,
@@ -36,7 +34,6 @@ const ApiKeys: React.FC = () => {
   const queryClient = useQueryClient();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
-  const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
 
   const { data: apiKeys, isLoading } = useQuery('api-keys', apiKeyService.getAllApiKeys);
@@ -67,18 +64,6 @@ const ApiKeys: React.FC = () => {
       queryClient.invalidateQueries('api-key-stats');
     }
   });
-
-  const toggleKeyVisibility = (id: string) => {
-    setVisibleKeys(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) {
-        newSet.delete(id);
-      } else {
-        newSet.add(id);
-      }
-      return newSet;
-    });
-  };
 
   const filteredKeys = apiKeys?.filter(key => 
     selectedProvider === 'all' || key.provider === selectedProvider
@@ -228,7 +213,6 @@ const ApiKeys: React.FC = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredKeys.map((apiKey) => {
               const provider = getProviderInfo(apiKey.provider);
-              const isVisible = visibleKeys.has(apiKey.id);
               
               return (
                 <tr key={apiKey.id} className="hover:bg-gray-50">

@@ -1,5 +1,5 @@
 import api from './api';
-import { Organization, AgentEmployee } from '../types';
+import { Organization } from '../types';
 
 export const organizationService = {
   // 初始化组织

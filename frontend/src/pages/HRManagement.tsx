@@ -6,11 +6,7 @@ import {
   UserGroupIcon, 
   ChartBarIcon, 
   ExclamationTriangleIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  CurrencyDollarIcon,
-  AcademicCapIcon,
-  FireIcon
+  AcademicCapIcon
 } from '@heroicons/react/24/outline';
 
 const HRManagement: React.FC = () => {

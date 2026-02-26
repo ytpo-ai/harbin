@@ -33,12 +33,15 @@ export const taskService = {
   },
 
   // 执行协作任务
-  async executeWithCollaboration(
-    id: string, 
-    agents: Agent[], 
-    teamSettings: TeamSettings
-  ): Promise<any> {
-    const response = await api.post(`/tasks/${id}/execute`, { agents, teamSettings });
+  async executeWithCollaboration(payload: {
+    taskId: string;
+    agents: Agent[];
+    teamSettings: TeamSettings;
+  }): Promise<any> {
+    const response = await api.post(`/tasks/${payload.taskId}/execute`, {
+      agents: payload.agents,
+      teamSettings: payload.teamSettings,
+    });
     return response.data;
   }
 };

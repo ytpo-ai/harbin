@@ -98,6 +98,7 @@ class AuthService {
 
   logout(): void {
     localStorage.removeItem(this.tokenKey);
+    localStorage.removeItem('token');
     localStorage.removeItem(this.userKey);
   }
 }

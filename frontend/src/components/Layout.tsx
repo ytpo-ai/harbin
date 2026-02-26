@@ -14,11 +14,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
 
-interface LayoutProps {
-  children: React.ReactNode;
-}
-
-const Layout: React.FC<LayoutProps> = ({ children }) => {
+const Layout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<any>(null);

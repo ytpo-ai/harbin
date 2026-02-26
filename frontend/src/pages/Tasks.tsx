@@ -3,31 +3,15 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { taskService } from '../services/taskService';
 import { agentService } from '../services/agentService';
 import { Task, Agent, TeamSettings } from '../types';
-import { PlusIcon, PlayIcon, ClockIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, PlayIcon, ClockIcon, CheckCircleIcon, XCircleIcon, ClipboardDocumentListIcon } from '@heroicons/react/24/outline';
 
 const Tasks: React.FC = () => {
-  const queryClient = useQueryClient();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
 
   const { data: tasks, isLoading: tasksLoading } = useQuery('tasks', taskService.getTasks);
   const { data: agents, isLoading: agentsLoading } = useQuery('agents', agentService.getAgents);
-
-  const createTaskMutation = useMutation(taskService.createTask, {
-    onSuccess: () => {
-      queryClient.invalidateQueries('tasks');
-      setIsCreateModalOpen(false);
-    },
-  });
-
-  const executeTaskMutation = useMutation(taskService.executeWithCollaboration, {
-    onSuccess: () => {
-      queryClient.invalidateQueries('tasks');
-      setIsExecutionModalOpen(false);
-      setSelectedTask(null);
-    },
-  });
 
   const getStatusIcon = (status: Task['status']) => {
     switch (status) {
@@ -437,7 +421,7 @@ const TaskExecutionModal: React.FC<{
             {executeTaskMutation.error && (
               <div className="p-3 bg-red-50 border border-red-200 rounded">
                 <h4 className="font-medium text-red-800">执行失败</h4>
-                <p className="text-sm text-red-700 mt-1">{executeTaskMutation.error.message}</p>
+                <p className="text-sm text-red-700 mt-1">{(executeTaskMutation.error as Error).message}</p>
               </div>
             )}
           </div>

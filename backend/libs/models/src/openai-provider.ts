@@ -1,8 +1,8 @@
 import OpenAI from 'openai';
 import { fetch as undiciFetch } from 'undici';
+import { AIModel, ChatMessage } from '@libs/contracts';
+import { getProxyDispatcher } from '@libs/infra';
 import { BaseAIProvider } from './base-provider';
-import { AIModel, ChatMessage } from '../../shared/types';
-import { getProxyDispatcher } from '../../shared/utils/proxy.util';
 
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
@@ -41,9 +41,9 @@ export class OpenAIProvider extends BaseAIProvider {
   }
 
   async streamingChat(
-    messages: ChatMessage[], 
-    onToken: (token: string) => void, 
-    options?: any
+    messages: ChatMessage[],
+    onToken: (token: string) => void,
+    options?: any,
   ): Promise<void> {
     const stream = await this.client.chat.completions.create({
       model: this.model.model,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { modelService } from '../services/modelService';
 import { AIModel } from '../types';
@@ -7,8 +7,6 @@ import {
   PlusIcon, 
   PencilIcon, 
   TrashIcon,
-  CheckCircleIcon,
-  XCircleIcon,
   MagnifyingGlassIcon,
   FunnelIcon
 } from '@heroicons/react/24/outline';

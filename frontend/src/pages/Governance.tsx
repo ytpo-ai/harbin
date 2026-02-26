@@ -2,14 +2,11 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { governanceService } from '../services/governanceService';
 import { organizationService } from '../services/organizationService';
-import { agentService } from '../services/agentService';
 import { 
   ScaleIcon, 
   ClockIcon, 
   CheckCircleIcon,
   XCircleIcon,
-  UserGroupIcon,
-  FireIcon,
   PlusIcon,
   ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/outline';
@@ -22,7 +19,6 @@ const Governance: React.FC = () => {
 
   const { data: proposals, isLoading } = useQuery('proposals', governanceService.getAllProposals);
   const { data: organization } = useQuery('organization', organizationService.getOrganization);
-  const { data: agents } = useQuery('agents', agentService.getAgents);
 
   const createProposalMutation = useMutation(governanceService.createProposal, {
     onSuccess: () => {
@@ -53,17 +49,6 @@ const Governance: React.FC = () => {
         return <CheckCircleIcon className="h-5 w-5 text-green-600" />;
       default:
         return <ClockIcon className="h-5 w-5 text-gray-500" />;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'proposed': return '已提议';
-      case 'voting': return '投票中';
-      case 'approved': return '已通过';
-      case 'rejected': return '已拒绝';
-      case 'implemented': return '已执行';
-      default: return '未知';
     }
   };
 

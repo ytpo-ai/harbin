@@ -5,7 +5,7 @@
 ## 🌟 核心特色
 
 - 🏢 **完整的公司架构模拟** - 股权分配、角色体系、部门结构
-- 🤖 **多AI模型集成** - 支持OpenAI、Claude、Gemini等主流模型
+- 🤖 **多AI模型集成** - 支持OpenAI、Claude、Gemini、Kimi等主流模型
 - 👥 **智能Agent管理** - 个性化配置、工具权限、绩效评估
 - 🗳️ **民主决策系统** - 基于股份的投票机制和提案管理
 - 💼 **HR管理系统** - 自动绩效评估、团队健康度分析、招聘建议
@@ -62,7 +62,7 @@ mongod
 ### 后端技术栈
 - **框架**: Nest.js + TypeScript
 - **数据库**: MongoDB + Mongoose
-- **AI模型**: OpenAI, Anthropic Claude, Google Gemini
+- **AI模型**: OpenAI, Anthropic Claude, Google Gemini, Kimi (Moonshot)
 - **认证**: JWT
 - **文档**: Swagger/OpenAPI
 
@@ -119,7 +119,7 @@ mongod
 - **Sarah Kim (CTO)**: 技术架构师，95分学习能力
 
 #### 配置能力
-- AI模型选择(OpenAI/Claude/Gemini)
+- AI模型选择(OpenAI/Claude/Gemini/Kimi)
 - 系统提示定制
 - 能力标签配置
 - 工具权限分配
@@ -403,10 +403,24 @@ NODE_ENV=development
 PORT=3001
 MONGODB_URI=mongodb://localhost:27017/ai-agent-team
 
+# 微服务端口
+GATEWAY_PORT=3100
+AGENTS_PORT=3002
+WS_PORT=3003
+
+# 服务路由
+AGENTS_SERVICE_URL=http://localhost:3002
+LEGACY_SERVICE_URL=http://localhost:3001
+INTERNAL_CONTEXT_SECRET=replace_with_strong_internal_secret
+
+# Redis
+REDIS_URL=redis://127.0.0.1:6379
+
 # AI模型API密钥
 OPENAI_API_KEY=your_openai_key_here
 ANTHROPIC_API_KEY=your_claude_key_here
 GOOGLE_AI_API_KEY=your_gemini_key_here
+MOONSHOT_API_KEY=your_kimi_key_here
 
 # 可选：当本机无法直连模型服务时使用代理
 AI_PROXY_URL=http://127.0.0.1:7890
@@ -418,6 +432,25 @@ JWT_EXPIRES_IN=7d
 # 前端地址
 FRONTEND_URL=http://localhost:3000
 ```
+
+#### 微服务启动（平滑迁移）
+
+```bash
+# 终端1：legacy monolith（未迁移模块）
+npm run start:dev
+
+# 终端2：agents service（已拆分）
+npm run start:agents:dev
+
+# 终端3：gateway（统一入口）
+npm run start:gateway:dev
+
+# 终端4：ws service（流式推送）
+npm run start:ws:dev
+```
+
+- 前端 HTTP 统一走 Gateway: `http://localhost:3100/api`
+- 前端 WS 连接: `ws://localhost:3003/ws`
 
 ## 🔧 扩展开发
 

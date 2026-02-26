@@ -28,8 +28,8 @@ GET /agents
     "type": "ai-executive",
     "description": "CEO of the company",
     "model": {
-      "id": "claude-3-sonnet",
-      "name": "Claude 3 Sonnet",
+      "id": "claude-sonnet-4-6",
+      "name": "Claude Sonnet 4.6",
       "provider": "anthropic"
     },
     "isActive": true,
@@ -103,11 +103,59 @@ POST /agents/:id/test
 {
   "success": true,
   "agent": "Alex Chen",
-  "model": "Claude 3 Sonnet",
+  "model": "Claude Sonnet 4.6",
   "response": "Agent Connected to AI Model Successfully",
   "duration": "1250ms"
 }
 ```
+
+---
+
+## 1.5 会议 API（Meetings）
+
+### 获取会议列表
+```http
+GET /meetings
+```
+
+### 发送会议消息
+```http
+POST /meetings/:id/messages
+```
+
+当消息内容包含 `@AgentName` 时，仅被 @ 的在场 Agent 会响应；
+不包含 @ 时，默认所有在场 Agent 依次响应。
+
+### 暂停会议
+```http
+POST /meetings/:id/pause
+```
+
+### 恢复会议
+```http
+POST /meetings/:id/resume
+```
+
+### 切换发言模式
+```http
+PUT /meetings/:id/speaking-mode
+```
+
+**请求体**:
+```json
+{
+  "speakingOrder": "free"
+}
+```
+
+`speakingOrder` 可选值:
+- `free`: 自由讨论
+- `ordered`: 有序发言（Agent发言后需等待人类下一次发言）
+
+### 实时会议事件（WebSocket）
+- WS 地址: `ws://localhost:3003/ws`
+- 订阅频道: `meeting:<meetingId>`
+- 事件类型: `message` / `status_changed` / `participant_joined` / `participant_left` / `summary_generated` / `settings_changed`
 
 ---
 
@@ -234,8 +282,8 @@ GET /model-management/founder-models
 ```json
 {
   "ceo": {
-    "id": "claude-3-sonnet",
-    "name": "Claude 3 Sonnet"
+    "id": "claude-sonnet-4-6",
+    "name": "Claude Sonnet 4.6"
   },
   "cto": {
     "id": "gpt-4-turbo",

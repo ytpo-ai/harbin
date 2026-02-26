@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Discussion, DiscussionDocument } from '../../shared/schemas/discussion.schema';
 import { AgentService } from '../agents/agent.service';
 import { DiscussionMessage, Task, ChatMessage } from '../../shared/types';
+import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface DiscussionEvent {
@@ -19,7 +20,8 @@ export class DiscussionService {
 
   constructor(
     @InjectModel(Discussion.name) private discussionModel: Model<DiscussionDocument>,
-    private readonly agentService: AgentService
+    private readonly agentService: AgentService,
+    private readonly redisService: RedisService,
   ) {}
 
   async createDiscussion(
@@ -288,6 +290,10 @@ export class DiscussionService {
   }
 
   private emitEvent(discussionId: string, event: DiscussionEvent): void {
+    void this.redisService.publish(`discussion:${discussionId}`, event).catch(() => {
+      // ignore redis publish errors
+    });
+
     const listeners = this.eventListeners.get(discussionId);
     if (listeners) {
       listeners.forEach(callback => {

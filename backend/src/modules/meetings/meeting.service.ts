@@ -6,14 +6,17 @@ import { AgentService } from '../agents/agent.service';
 import { EmployeeService } from '../employees/employee.service';
 import { EmployeeType } from '../../shared/schemas/employee.schema';
 import { ChatMessage } from '../../shared/types';
+import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface MeetingEvent {
-  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated';
+  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed';
   meetingId: string;
   data: any;
   timestamp: Date;
 }
+
+export type MeetingSpeakingMode = 'free' | 'ordered';
 
 // 参与者标识
 export interface ParticipantIdentity {
@@ -54,7 +57,93 @@ export class MeetingService {
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
     private readonly agentService: AgentService,
     private readonly employeeService: EmployeeService,
+    private readonly redisService: RedisService,
   ) {}
+
+  private normalizeSpeakingMode(mode?: string): MeetingSpeakingMode {
+    if (mode === 'ordered' || mode === 'sequential' || mode === 'round_robin') {
+      return 'ordered';
+    }
+    return 'free';
+  }
+
+  private extractMentionTokens(content: string): string[] {
+    if (!content || !content.includes('@')) {
+      return [];
+    }
+
+    const matches = content.matchAll(/@([^\s@，。,.!?！？:：;；]+)/g);
+    const tokens = new Set<string>();
+
+    for (const match of matches) {
+      const raw = (match[1] || '').trim();
+      const normalized = raw
+        .replace(/^@+/, '')
+        .replace(/[，。,.!?！？:：;；]+$/g, '')
+        .toLowerCase();
+
+      if (normalized) {
+        tokens.add(normalized);
+      }
+    }
+
+    return Array.from(tokens);
+  }
+
+  private buildMentionAliases(agentId: string, agentName?: string): Set<string> {
+    const aliases = new Set<string>();
+    aliases.add(agentId.toLowerCase());
+
+    if (!agentName) {
+      return aliases;
+    }
+
+    const normalizedName = agentName.toLowerCase().trim();
+    if (normalizedName) {
+      aliases.add(normalizedName);
+      aliases.add(normalizedName.replace(/\s+/g, ''));
+      normalizedName
+        .split(/\s+/)
+        .filter(Boolean)
+        .forEach((part) => aliases.add(part));
+    }
+
+    return aliases;
+  }
+
+  private async resolveMentionedAgentIds(meeting: MeetingDocument, content: string): Promise<string[]> {
+    const tokens = this.extractMentionTokens(content);
+    if (tokens.length === 0) {
+      return [];
+    }
+
+    const presentAgentIds = meeting.participants
+      .filter((p) => p.isPresent && p.participantType === 'agent')
+      .map((p) => p.participantId);
+
+    if (presentAgentIds.length === 0) {
+      return [];
+    }
+
+    const mentioned = new Set<string>();
+    const uniqueAgentIds = Array.from(new Set(presentAgentIds));
+
+    for (const agentId of uniqueAgentIds) {
+      const agent = await this.agentService.getAgent(agentId);
+      const aliases = this.buildMentionAliases(agentId, agent?.name);
+
+      for (const token of tokens) {
+        if (
+          aliases.has(token) ||
+          Array.from(aliases).some((alias) => token.length >= 2 && alias.startsWith(token))
+        ) {
+          mentioned.add(agentId);
+        }
+      }
+    }
+
+    return Array.from(mentioned);
+  }
 
   private ensureMeetingCompatibility(meeting: MeetingDocument): void {
     if (!meeting.hostType) {
@@ -69,6 +158,8 @@ export class MeetingService {
     if (!meeting.participants) meeting.participants = [];
     if (!meeting.messages) meeting.messages = [];
     if (!meeting.invitedParticipants) meeting.invitedParticipants = [];
+    if (!meeting.settings) meeting.settings = {};
+    meeting.settings.speakingOrder = this.normalizeSpeakingMode(meeting.settings.speakingOrder as string | undefined);
   }
 
   /**
@@ -116,8 +207,8 @@ export class MeetingService {
         aiModeration: false,
         recordTranscript: true,
         autoEndOnSilence: 30,
-        speakingOrder: 'free',
         ...dto.settings,
+        speakingOrder: this.normalizeSpeakingMode(dto.settings?.speakingOrder as string | undefined),
       },
       messages: [],
       invitedParticipants: [],
@@ -219,6 +310,84 @@ export class MeetingService {
     });
 
     this.logger.log(`Meeting ${meetingId} ended`);
+    return meeting;
+  }
+
+  async pauseMeeting(meetingId: string): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status !== MeetingStatus.ACTIVE) {
+      throw new ConflictException('Only active meetings can be paused');
+    }
+
+    meeting.status = MeetingStatus.PAUSED;
+    await meeting.save();
+
+    this.emitEvent(meetingId, {
+      type: 'status_changed',
+      meetingId,
+      data: { status: MeetingStatus.PAUSED },
+      timestamp: new Date(),
+    });
+
+    return meeting;
+  }
+
+  async resumeMeeting(meetingId: string): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status !== MeetingStatus.PAUSED) {
+      throw new ConflictException('Only paused meetings can be resumed');
+    }
+
+    meeting.status = MeetingStatus.ACTIVE;
+    await meeting.save();
+
+    this.emitEvent(meetingId, {
+      type: 'status_changed',
+      meetingId,
+      data: { status: MeetingStatus.ACTIVE },
+      timestamp: new Date(),
+    });
+
+    return meeting;
+  }
+
+  async updateSpeakingMode(meetingId: string, speakingOrder: MeetingSpeakingMode): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status === MeetingStatus.ENDED || meeting.status === MeetingStatus.ARCHIVED) {
+      throw new ConflictException('Cannot update speaking mode for ended meeting');
+    }
+
+    meeting.settings = {
+      ...meeting.settings,
+      speakingOrder: this.normalizeSpeakingMode(speakingOrder),
+    };
+    await meeting.save();
+
+    this.emitEvent(meetingId, {
+      type: 'settings_changed',
+      meetingId,
+      data: { speakingOrder: meeting.settings.speakingOrder },
+      timestamp: new Date(),
+    });
+
     return meeting;
   }
 
@@ -408,8 +577,8 @@ export class MeetingService {
       timestamp: new Date(),
     });
 
-    // 触发Agent响应（如果是人类或Agent发送的消息）
-    if (dto.senderType === 'employee' || dto.senderType === 'agent') {
+    // 触发Agent响应（仅在人类发言后触发，避免Agent之间无限互相触发）
+    if (dto.senderType === 'employee') {
       await this.triggerAgentResponses(meetingId, message);
     }
 
@@ -534,7 +703,6 @@ export class MeetingService {
     if (!meeting || meeting.status !== MeetingStatus.ACTIVE) return;
 
     this.ensureMeetingCompatibility(meeting);
-
     // 获取在场的Agent参与者
     let presentAgents = meeting.participants.filter(
       p => p.isPresent && 
@@ -561,12 +729,27 @@ export class MeetingService {
 
     if (presentAgents.length === 0) return;
 
-    // 随机选择1-2个Agent响应
-    const shuffled = presentAgents.sort(() => 0.5 - Math.random());
-    const responders = shuffled.slice(0, Math.min(2, shuffled.length));
+    const mentionTokens = this.extractMentionTokens(triggerMessage.content || '');
+    if (mentionTokens.length > 0) {
+      const mentionedAgentIds = await this.resolveMentionedAgentIds(meeting, triggerMessage.content || '');
 
-    for (const p of responders) {
-      const delay = 1000 + Math.random() * 2000;
+      if (mentionedAgentIds.length === 0) {
+        await this.addSystemMessage(meetingId, '未匹配到被 @ 的在场 Agent，请检查名称后重试。');
+        return;
+      }
+
+      presentAgents = presentAgents.filter((p) => mentionedAgentIds.includes(p.participantId));
+      if (presentAgents.length === 0) {
+        return;
+      }
+    }
+
+    // 每次人类发言后，所有在场Agent都响应
+    const responders = [...presentAgents].sort(() => 0.5 - Math.random());
+
+    for (let i = 0; i < responders.length; i += 1) {
+      const p = responders[i];
+      const delay = 800 + i * 700 + Math.random() * 500;
       setTimeout(async () => {
         await this.generateAgentResponse(meetingId, p.participantId, triggerMessage);
       }, delay);
@@ -860,6 +1043,10 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   }
 
   private emitEvent(meetingId: string, event: MeetingEvent): void {
+    void this.redisService.publish(`meeting:${meetingId}`, event).catch(() => {
+      // ignore redis publish errors
+    });
+
     const listeners = this.eventListeners.get(meetingId);
     if (listeners) {
       listeners.forEach(callback => {

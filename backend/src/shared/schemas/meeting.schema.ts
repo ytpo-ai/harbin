@@ -160,7 +160,7 @@ export class Meeting {
     aiModeration?: boolean;      // AI moderation
     recordTranscript?: boolean;  // 是否记录文字记录
     autoEndOnSilence?: number;   // 静音多久自动结束(分钟)
-    speakingOrder?: 'free' | 'sequential' | 'round_robin';  // 发言顺序
+    speakingOrder?: 'free' | 'ordered';  // 发言模式：自由讨论/有序发言
   };
 
   @Prop({ type: Object })

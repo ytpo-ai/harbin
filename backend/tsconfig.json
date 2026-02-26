@@ -8,8 +8,9 @@
     "allowSyntheticDefaultImports": true,
     "target": "ES2020",
     "sourceMap": true,
-    "rootDir": "./src",
+    "rootDir": "./",
     "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
     "baseUrl": "./",
     "incremental": true,
     "skipLibCheck": true,
@@ -21,8 +22,26 @@
     "paths": {
       "@/*": ["src/*"],
       "@shared/*": ["src/shared/*"],
+      "@libs/contracts": ["libs/contracts/src/index"],
+      "@libs/contracts/*": ["libs/contracts/src/*"],
+      "@libs/auth": ["libs/auth/src/index"],
+      "@libs/auth/*": ["libs/auth/src/*"],
+      "@libs/common": ["libs/common/src/index"],
+      "@libs/common/*": ["libs/common/src/*"],
+      "@libs/infra": ["libs/infra/src/index"],
+      "@libs/infra/*": ["libs/infra/src/*"],
+      "@libs/models": ["libs/models/src/index"],
+      "@libs/models/*": ["libs/models/src/*"]
     },
     "types": ["node"]
   },
-  "exclude": ["node_modules", "dist", "test-encryption.ts"]
+  "include": ["src/**/*.ts", "apps/**/*.ts", "libs/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test-encryption.ts",
+    "**/*.js",
+    "**/*.js.map",
+    "**/*.d.ts"
+  ]
 }

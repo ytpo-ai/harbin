@@ -7,8 +7,8 @@
 #### 模型支持
 - [x] **OpenAI 模型** (7个)
   - GPT-4 Turbo, GPT-4, GPT-4o, GPT-4o Mini, GPT-3.5 Turbo, o1 Preview, o1 Mini
-- [x] **Anthropic 模型** (4个)
-  - Claude 3 Opus, Sonnet, Haiku, Claude 3.5 Sonnet
+- [x] **Anthropic 模型** (5个)
+  - Claude Opus 4.6, Claude Sonnet 4.6, Claude Haiku 4.5, Claude Opus 4.5, Claude Sonnet 4.5
 - [x] **Google 模型** (4个)
   - Gemini Pro, Gemini 1.5 Pro, Gemini 1.5 Flash, Gemini Ultra
 - [x] **DeepSeek 模型** (2个)
@@ -19,8 +19,8 @@
   - Llama 2 70B, Llama 3 8B/70B, Llama 3.1 8B/70B/405B
 - [x] **阿里通义模型** (5个)
   - Qwen Max, Plus, Turbo, Qwen2 72B, Qwen Coder
-- [x] **月之暗面模型** (3个)
-  - Moonshot v1 8K, 32K, 128K
+- [x] **月之暗面模型** (6个)
+  - Moonshot v1 8K, 32K, 128K, Kimi Latest, Kimi K1, Kimi K2.5
 - [x] **百川模型** (3个)
   - Baichuan 4, 3 Turbo, 2 Turbo
 - [x] **智谱模型** (3个)

@@ -13,7 +13,7 @@ interface OrganizationStore {
   updateOrganization: (updates: Partial<Organization>) => void;
 }
 
-export const useOrganizationStore = create<OrganizationStore>((set, get) => ({
+export const useOrganizationStore = create<OrganizationStore>((set) => ({
   organization: null,
   loading: false,
   error: null,

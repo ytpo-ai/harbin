@@ -15,7 +15,7 @@ interface AgentStore {
   setError: (error: string | null) => void;
 }
 
-export const useAgentStore = create<AgentStore>((set, get) => ({
+export const useAgentStore = create<AgentStore>((set) => ({
   agents: [],
   loading: false,
   error: null,

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../dist/apps/agents",
+    "rootDir": "../../",
+    "declaration": false
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../libs/**/*.ts",
+    "../../src/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+}
