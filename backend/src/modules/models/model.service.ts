@@ -42,9 +42,14 @@ export class ModelService {
   }
 
   ensureProviderWithKey(model: AIModel, apiKey?: string): void {
-    const providerKey = apiKey ? `${model.id}:${apiKey.substring(0, 8)}` : model.id;
-    if (!this.providers.has(providerKey)) {
+    if (apiKey) {
+      // Always override current provider for this model with the supplied key.
       this.registerProvider(model, apiKey);
+      return;
+    }
+
+    if (!this.providers.has(model.id)) {
+      this.registerProvider(model);
     }
   }
 

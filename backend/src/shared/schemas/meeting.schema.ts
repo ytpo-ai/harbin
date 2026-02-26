@@ -19,6 +19,7 @@ export enum MeetingStatus {
   ACTIVE = 'active',           // 进行中
   PAUSED = 'paused',           // 已暂停
   ENDED = 'ended',             // 已结束
+  ARCHIVED = 'archived',       // 已归档
 }
 
 export enum ParticipantRole {
@@ -123,11 +124,11 @@ export class Meeting {
     leftAt?: Date;
   }>;
 
-  @Prop({ type: [{ id: String, senderId: String, senderType: String, content: String, type: String, timestamp: Date, metadata: Object }], default: [] })
+  @Prop({ type: [Object], default: [] })
   messages: Array<{
     id: string;
     senderId: string;
-    senderType: 'employee' | 'agent' | 'system';
+    senderType: string;
     content: string;
     type: string;
     timestamp: Date;

@@ -56,6 +56,21 @@ export class MeetingService {
     private readonly employeeService: EmployeeService,
   ) {}
 
+  private ensureMeetingCompatibility(meeting: MeetingDocument): void {
+    if (!meeting.hostType) {
+      const hostParticipant = meeting.participants?.find(
+        p => p.role === ParticipantRole.HOST,
+      ) || meeting.participants?.find(
+        p => p.participantId === meeting.hostId,
+      );
+      meeting.hostType = (hostParticipant?.participantType || 'employee') as 'employee' | 'agent';
+    }
+
+    if (!meeting.participants) meeting.participants = [];
+    if (!meeting.messages) meeting.messages = [];
+    if (!meeting.invitedParticipants) meeting.invitedParticipants = [];
+  }
+
   /**
    * 创建新会议
    */
@@ -124,16 +139,19 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
+    this.ensureMeetingCompatibility(meeting);
+
     if (meeting.status === MeetingStatus.ACTIVE) {
       throw new ConflictException('Meeting is already active');
     }
 
-    if (meeting.status === MeetingStatus.ENDED) {
+    if (meeting.status === MeetingStatus.ENDED || meeting.status === MeetingStatus.ARCHIVED) {
       throw new ConflictException('Meeting has already ended');
     }
 
     meeting.status = MeetingStatus.ACTIVE;
     meeting.startedAt = new Date();
+    const startTime = new Date();
     
     // 主持人自动标记为在场
     const hostParticipant = meeting.participants.find(
@@ -141,8 +159,16 @@ export class MeetingService {
     );
     if (hostParticipant) {
       hostParticipant.isPresent = true;
-      hostParticipant.joinedAt = new Date();
+      hostParticipant.joinedAt = startTime;
     }
+
+    // Agent participants auto-join when meeting starts so they can respond immediately.
+    meeting.participants.forEach((participant) => {
+      if (participant.participantType === 'agent' && !participant.isPresent) {
+        participant.isPresent = true;
+        participant.joinedAt = startTime;
+      }
+    });
 
     await meeting.save();
 
@@ -168,6 +194,8 @@ export class MeetingService {
     if (!meeting) {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
+
+    this.ensureMeetingCompatibility(meeting);
 
     meeting.status = MeetingStatus.ENDED;
     meeting.endedAt = new Date();
@@ -195,6 +223,45 @@ export class MeetingService {
   }
 
   /**
+   * 归档会议
+   */
+  async archiveMeeting(meetingId: string): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status !== MeetingStatus.ENDED) {
+      throw new ConflictException('Only ended meetings can be archived');
+    }
+
+    meeting.status = MeetingStatus.ARCHIVED;
+    await meeting.save();
+
+    this.logger.log(`Meeting ${meetingId} archived`);
+    return meeting;
+  }
+
+  /**
+   * 删除会议
+   */
+  async deleteMeeting(meetingId: string): Promise<void> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    if (meeting.status !== MeetingStatus.ENDED && meeting.status !== MeetingStatus.ARCHIVED) {
+      throw new ConflictException('Only ended or archived meetings can be deleted');
+    }
+
+    await this.meetingModel.deleteOne({ id: meetingId }).exec();
+    this.logger.log(`Meeting ${meetingId} deleted`);
+  }
+
+  /**
    * 加入会议
    */
   async joinMeeting(meetingId: string, participant: ParticipantIdentity): Promise<Meeting> {
@@ -203,7 +270,9 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
-    if (meeting.status === MeetingStatus.ENDED) {
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status === MeetingStatus.ENDED || meeting.status === MeetingStatus.ARCHIVED) {
       throw new ConflictException('Meeting has already ended');
     }
 
@@ -259,6 +328,8 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
+    this.ensureMeetingCompatibility(meeting);
+
     const p = meeting.participants.find(
       p => p.participantId === participant.id && p.participantType === participant.type
     );
@@ -291,15 +362,21 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
+    this.ensureMeetingCompatibility(meeting);
+
     if (meeting.status !== MeetingStatus.ACTIVE) {
       throw new ConflictException('Meeting is not active');
     }
 
+    // Check if sender is host
+    const isHost = meeting.hostId === dto.senderId;
+    
+    // Find participant in the meeting
     const participant = meeting.participants.find(
-      p => p.participantId === dto.senderId && p.participantType === dto.senderType && p.isPresent
+      p => p.participantId === dto.senderId && p.isPresent
     );
     
-    if (!participant) {
+    if (!participant && !isHost) {
       throw new ConflictException('Participant is not in the meeting or not present');
     }
 
@@ -315,8 +392,12 @@ export class MeetingService {
 
     meeting.messages.push(message);
     meeting.messageCount += 1;
-    participant.messageCount += 1;
-    participant.hasSpoken = true;
+    
+    // Update participant stats
+    if (participant) {
+      participant.messageCount += 1;
+      participant.hasSpoken = true;
+    }
     
     await meeting.save();
 
@@ -348,6 +429,8 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
+    this.ensureMeetingCompatibility(meeting);
+
     const isAlreadyParticipant = meeting.participants.some(
       p => p.participantId === participant.id && p.participantType === participant.type
     );
@@ -355,6 +438,28 @@ export class MeetingService {
       throw new ConflictException('Already a participant');
     }
 
+    // Add agent directly to participants (for AI agents)
+    if (participant.type === 'agent') {
+      meeting.participants.push({
+        participantId: participant.id,
+        participantType: participant.type,
+        role: ParticipantRole.PARTICIPANT,
+        isPresent: true, // Agents are auto-present
+        hasSpoken: false,
+        messageCount: 0,
+        joinedAt: new Date(),
+      });
+      await meeting.save();
+      await this.addSystemMessage(meetingId, `${invitedBy.name} 邀请了 ${participant.name}。`);
+      
+      // Trigger catch-up for the newly joined agent
+      setTimeout(() => this.catchUpAgent(meetingId, participant), 1000);
+      
+      this.logger.log(`${participant.name} joined meeting ${meetingId} by invitation`);
+      return meeting;
+    }
+
+    // For employees, add to invited list (they need to join manually)
     const isAlreadyInvited = meeting.invitedParticipants.some(
       ip => ip.participantId === participant.id && ip.participantType === participant.type
     );
@@ -428,12 +533,31 @@ export class MeetingService {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting || meeting.status !== MeetingStatus.ACTIVE) return;
 
+    this.ensureMeetingCompatibility(meeting);
+
     // 获取在场的Agent参与者
-    const presentAgents = meeting.participants.filter(
+    let presentAgents = meeting.participants.filter(
       p => p.isPresent && 
            p.participantType === 'agent' && 
            p.participantId !== triggerMessage.senderId
     );
+
+    // Backward compatibility: auto-join configured agent participants in old active meetings
+    if (presentAgents.length === 0) {
+      const standbyAgents = meeting.participants.filter(
+        p => !p.isPresent && p.participantType === 'agent' && p.participantId !== triggerMessage.senderId,
+      );
+
+      if (standbyAgents.length > 0) {
+        const now = new Date();
+        standbyAgents.forEach((p) => {
+          p.isPresent = true;
+          p.joinedAt = now;
+        });
+        await meeting.save();
+        presentAgents = standbyAgents;
+      }
+    }
 
     if (presentAgents.length === 0) return;
 
@@ -604,6 +728,8 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) return;
 
+    this.ensureMeetingCompatibility(meeting);
+
     const message: MeetingMessage = {
       id: uuidv4(),
       senderId: 'system',
@@ -631,6 +757,8 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   private async generateMeetingSummary(meetingId: string): Promise<void> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting || meeting.messages.length === 0) return;
+
+    this.ensureMeetingCompatibility(meeting);
 
     const discussionContent = meeting.messages
       .filter(m => m.senderType !== 'system')

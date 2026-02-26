@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { meetingService, Meeting, MeetingType, MeetingStatus, CreateMeetingDto, MeetingMessage } from '../services/meetingService';
 import { agentService } from '../services/agentService';
+import { authService } from '../services/authService';
 import { Agent } from '../types';
 import { 
   VideoCameraIcon,
@@ -16,6 +17,8 @@ import {
   PaperAirplaneIcon,
   UserPlusIcon,
   XMarkIcon,
+  ArchiveBoxIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 
 const MEETING_TYPES = [
@@ -33,13 +36,34 @@ const Meetings: React.FC = () => {
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    authService.getCurrentUser().then(setCurrentUser);
+  }, []);
 
   const { data: meetings, isLoading: meetingsLoading } = useQuery('meetings', () => 
     meetingService.getAllMeetings()
   );
   const { data: stats } = useQuery('meeting-stats', meetingService.getMeetingStats);
   const { data: agents } = useQuery('agents', agentService.getAgents);
+  
+  // Auto-refresh meeting data every 3 seconds when a meeting is selected
+  useEffect(() => {
+    if (!selectedMeeting) return;
+    
+    const interval = setInterval(async () => {
+      try {
+        const updated = await meetingService.getMeeting(selectedMeeting.id);
+        setSelectedMeeting(updated);
+      } catch (error) {
+        // Ignore errors during refresh
+      }
+    }, 3000);
+    
+    return () => clearInterval(interval);
+  }, [selectedMeeting?.id]);
 
   const createMutation = useMutation(meetingService.createMeeting, {
     onSuccess: () => {
@@ -50,12 +74,15 @@ const Meetings: React.FC = () => {
   });
 
   const startMutation = useMutation(
-    ({ id, startedBy }: { id: string; startedBy: string }) => 
-      meetingService.startMeeting(id, startedBy),
+    ({ id, startedById, startedByType, startedByName }: { id: string; startedById: string; startedByType: 'employee' | 'agent'; startedByName: string }) => 
+      meetingService.startMeeting(id, { id: startedById, type: startedByType, name: startedByName, isHuman: startedByType === 'employee' }),
     {
       onSuccess: (data) => {
-        queryClient.invalidateQueries('meetings');
         setSelectedMeeting(data);
+        // Then invalidate to refresh in background
+        setTimeout(() => {
+          queryClient.invalidateQueries('meetings');
+        }, 500);
       },
     }
   );
@@ -68,9 +95,25 @@ const Meetings: React.FC = () => {
     },
   });
 
+  const archiveMutation = useMutation(meetingService.archiveMeeting, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('meetings');
+      queryClient.invalidateQueries('meeting-stats');
+      setSelectedMeeting(null);
+    },
+  });
+
+  const deleteMutation = useMutation(meetingService.deleteMeeting, {
+    onSuccess: () => {
+      queryClient.invalidateQueries('meetings');
+      queryClient.invalidateQueries('meeting-stats');
+      setSelectedMeeting(null);
+    },
+  });
+
   const joinMutation = useMutation(
     ({ id, agentId }: { id: string; agentId: string }) => 
-      meetingService.joinMeeting(id, agentId),
+      meetingService.joinMeeting(id, { id: agentId, type: 'employee', name: currentUser?.name || 'User', isHuman: true }),
     {
       onSuccess: (data) => {
         queryClient.invalidateQueries('meetings');
@@ -90,9 +133,20 @@ const Meetings: React.FC = () => {
         type: 'opinion',
       }),
     {
-      onSuccess: () => {
-        queryClient.invalidateQueries('meetings');
+      onSuccess: (message) => {
         setNewMessage('');
+        // Update selectedMeeting with the new message
+        if (selectedMeeting) {
+          setSelectedMeeting({
+            ...selectedMeeting,
+            messages: [...(selectedMeeting.messages || []), message],
+            messageCount: (selectedMeeting.messageCount || 0) + 1,
+          });
+        }
+        // Then invalidate to refresh in background
+        setTimeout(() => {
+          queryClient.invalidateQueries('meetings');
+        }, 500);
       },
     }
   );
@@ -135,17 +189,19 @@ const Meetings: React.FC = () => {
   };
 
   const getStatusBadge = (status: MeetingStatus) => {
-    const styles = {
+    const styles: Record<string, string> = {
       [MeetingStatus.PENDING]: 'bg-gray-100 text-gray-800',
       [MeetingStatus.ACTIVE]: 'bg-green-100 text-green-800',
       [MeetingStatus.PAUSED]: 'bg-yellow-100 text-yellow-800',
       [MeetingStatus.ENDED]: 'bg-red-100 text-red-800',
+      [MeetingStatus.ARCHIVED]: 'bg-blue-100 text-blue-800',
     };
-    const labels = {
+    const labels: Record<string, string> = {
       [MeetingStatus.PENDING]: '待开始',
       [MeetingStatus.ACTIVE]: '进行中',
       [MeetingStatus.PAUSED]: '已暂停',
       [MeetingStatus.ENDED]: '已结束',
+      [MeetingStatus.ARCHIVED]: '已归档',
     };
     return (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status]}`}>
@@ -203,7 +259,7 @@ const Meetings: React.FC = () => {
         <div className="flex-1 overflow-y-auto">
           {meetings?.map((meeting) => {
             const typeInfo = getMeetingTypeInfo(meeting.type);
-            const presentCount = meeting.participants.filter(p => p.isPresent).length;
+            const presentCount = (meeting.participants || []).filter(p => p.isPresent).length;
             
             return (
               <div
@@ -223,7 +279,7 @@ const Meetings: React.FC = () => {
                   </span>
                   <span className="flex items-center">
                     <UserGroupIcon className="h-3 w-3 mr-1" />
-                    {presentCount}/{meeting.participants.length}
+                    {presentCount}/{(meeting.participants || []).length}
                   </span>
                 </div>
                 <div className="flex items-center text-xs text-gray-400">
@@ -275,7 +331,9 @@ const Meetings: React.FC = () => {
                     <button
                       onClick={() => startMutation.mutate({ 
                         id: selectedMeeting.id, 
-                        startedBy: selectedMeeting.hostId 
+                        startedById: selectedMeeting.hostId,
+                        startedByType: selectedMeeting.hostType || 'employee',
+                        startedByName: currentUser?.name || '主持人'
                       })}
                       disabled={startMutation.isLoading}
                       className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
@@ -294,6 +352,44 @@ const Meetings: React.FC = () => {
                       结束会议
                     </button>
                   )}
+                  {selectedMeeting.status === MeetingStatus.ENDED && (
+                    <>
+                      <button
+                        onClick={() => archiveMutation.mutate(selectedMeeting.id)}
+                        disabled={archiveMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        <ArchiveBoxIcon className="h-4 w-4 mr-1" />
+                        {archiveMutation.isLoading ? '归档中...' : '归档'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm('确定要删除此会议吗？此操作不可撤销。')) {
+                            deleteMutation.mutate(selectedMeeting.id);
+                          }
+                        }}
+                        disabled={deleteMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      >
+                        <TrashIcon className="h-4 w-4 mr-1" />
+                        {deleteMutation.isLoading ? '删除中...' : '删除'}
+                      </button>
+                    </>
+                  )}
+                  {selectedMeeting.status === MeetingStatus.ARCHIVED && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm('确定要删除此已归档会议吗？此操作不可撤销。')) {
+                          deleteMutation.mutate(selectedMeeting.id);
+                        }
+                      }}
+                      disabled={deleteMutation.isLoading}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                    >
+                      <TrashIcon className="h-4 w-4 mr-1" />
+                      {deleteMutation.isLoading ? '删除中...' : '删除'}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -301,19 +397,22 @@ const Meetings: React.FC = () => {
               <div className="mt-4 flex items-center gap-2">
                 <span className="text-sm text-gray-500">参与者：</span>
                 <div className="flex items-center gap-1">
-                  {selectedMeeting.participants.map((participant) => {
-                    const agent = agents?.find(a => a.id === participant.agentId);
+                  {(selectedMeeting.participants || []).map((participant) => {
+                    const legacyParticipant = participant as any;
+                    const participantId = participant.participantId || legacyParticipant.agentId || 'unknown';
+                    const agent = agents?.find(a => a.id === participantId);
+                    const participantName = agent?.name || participantId || '未知';
                     return (
                       <div
-                        key={participant.agentId}
+                        key={participantId}
                         className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2 ${
                           participant.isPresent 
                             ? 'bg-green-500 text-white border-green-500' 
                             : 'bg-gray-200 text-gray-600 border-gray-300'
                         }`}
-                        title={`${agent?.name || participant.agentId} ${participant.isPresent ? '(在线)' : '(离线)'}`}
+                        title={`${participantName} ${participant.isPresent ? '(在线)' : '(离线)'}`}
                       >
-                        {(agent?.name || participant.agentId).charAt(0).toUpperCase()}
+                        {participantName.charAt(0).toUpperCase()}
                       </div>
                     );
                   })}
@@ -332,8 +431,8 @@ const Meetings: React.FC = () => {
                           {agents
                             .filter(a => 
                               a.isActive && 
-                              !selectedMeeting.participants.some(p => p.agentId === a.id) &&
-                              !selectedMeeting.invitedAgentIds.includes(a.id!)
+                              !(selectedMeeting.participants || []).some(p => p.agentId === a.id || p.participantId === a.id) &&
+                              !(selectedMeeting.invitedAgentIds || []).includes(a.id!)
                             )
                             .map(agent => (
                               <button
@@ -353,8 +452,8 @@ const Meetings: React.FC = () => {
                             ))}
                           {agents.filter(a => 
                             a.isActive && 
-                            !selectedMeeting.participants.some(p => p.agentId === a.id) &&
-                            !selectedMeeting.invitedAgentIds.includes(a.id!)
+                            !(selectedMeeting.participants || []).some(p => p.agentId === a.id || p.participantId === a.id) &&
+                            !(selectedMeeting.invitedAgentIds || []).includes(a.id!)
                           ).length === 0 && (
                             <p className="text-xs text-gray-400 px-2 py-1">没有可邀请的Agent</p>
                           )}
@@ -364,7 +463,7 @@ const Meetings: React.FC = () => {
                   )}
                 </div>
                 
-                {selectedMeeting.invitedAgentIds.length > 0 && (
+                {(selectedMeeting.invitedAgentIds || []).length > 0 && (
                   <span className="text-xs text-gray-400 ml-2">
                     +{selectedMeeting.invitedAgentIds.length} 已邀请
                   </span>
@@ -374,17 +473,26 @@ const Meetings: React.FC = () => {
 
             {/* 消息区域 */}
             <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {selectedMeeting.messages.length === 0 ? (
+              {selectedMeeting.status === MeetingStatus.PENDING ? (
                 <div className="text-center py-12 text-gray-400">
                   <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
                   <p>会议尚未开始</p>
-                  <p className="text-sm">会议开始后，Agents将自动参与讨论</p>
+                  <p className="text-sm">点击"开始会议"按钮开始讨论</p>
+                </div>
+              ) : (selectedMeeting.messages || []).length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
+                  <p>等待第一条消息</p>
+                  <p className="text-sm">发送消息开始讨论，AI Agent会自动回复</p>
                 </div>
               ) : (
                 selectedMeeting.messages.map((message, index) => {
-                  const agent = agents?.find(a => a.id === message.agentId);
-                  const isSystem = message.agentId === 'system';
-                  const isUser = message.agentId === 'user';
+                  const legacyMessage = message as any;
+                  const senderId = message.senderId || legacyMessage.agentId || 'unknown';
+                  const agent = agents?.find(a => a.id === senderId);
+                  const senderName = agent?.name || senderId || '未知';
+                  const isSystem = message.senderType === 'system';
+                  const isUser = message.senderType === 'employee';
                   
                   return (
                     <div
@@ -400,10 +508,10 @@ const Meetings: React.FC = () => {
                           {!isUser && (
                             <div className="flex items-center gap-2 mb-1">
                               <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
-                                {(agent?.name || message.agentId).charAt(0).toUpperCase()}
+                                {senderName.charAt(0).toUpperCase()}
                               </div>
                               <span className="text-xs font-medium text-gray-600">
-                                {agent?.name || message.agentId}
+                                {senderName}
                               </span>
                               {message.type && message.type !== 'opinion' && (
                                 <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
@@ -435,21 +543,45 @@ const Meetings: React.FC = () => {
             {/* 输入框 */}
             {selectedMeeting.status === MeetingStatus.ACTIVE && (
               <div className="bg-white border-t border-gray-200 px-6 py-4">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && newMessage.trim()) {
-                        sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
-                      }
-                    }}
-                    placeholder="输入消息..."
-                    className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
-                  <button
-                    onClick={() => {
+                {(() => {
+                  const isParticipant = (selectedMeeting.participants || []).some(
+                    p => p.participantId === currentUser?.id && p.isPresent
+                  );
+                  const isHost = selectedMeeting.hostId === currentUser?.id;
+
+                  if (!isParticipant && !isHost) {
+                    return (
+                      <div className="text-center py-4">
+                        <button
+                          onClick={() => joinMutation.mutate({ 
+                            id: selectedMeeting.id, 
+                            agentId: currentUser?.id 
+                          })}
+                          disabled={joinMutation.isLoading}
+                          className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                        >
+                          {joinMutation.isLoading ? '加入中...' : '加入会议'}
+                        </button>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter' && newMessage.trim()) {
+                            sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
+                          }
+                        }}
+                        placeholder="输入消息..."
+                        className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      />
+                      <button
+                        onClick={() => {
                       if (newMessage.trim()) {
                         sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
                       }
@@ -460,6 +592,8 @@ const Meetings: React.FC = () => {
                     <PaperAirplaneIcon className="h-5 w-5" />
                   </button>
                 </div>
+                );
+                })()}
               </div>
             )}
 
@@ -473,11 +607,11 @@ const Meetings: React.FC = () => {
                 <div className="text-sm text-blue-800 whitespace-pre-wrap">
                   {selectedMeeting.summary.content}
                 </div>
-                {selectedMeeting.summary.actionItems.length > 0 && (
+                {(selectedMeeting.summary?.actionItems || []).length > 0 && (
                   <div className="mt-2">
                     <p className="text-xs font-medium text-blue-900">行动项：</p>
                     <ul className="text-xs text-blue-800 list-disc list-inside mt-1">
-                      {selectedMeeting.summary.actionItems.map((item, i) => (
+                      {(selectedMeeting.summary?.actionItems || []).map((item, i) => (
                         <li key={i}>{item}</li>
                       ))}
                     </ul>
@@ -501,6 +635,7 @@ const Meetings: React.FC = () => {
       {isCreateModalOpen && (
         <CreateMeetingModal
           agents={agents?.filter(a => a.isActive) || []}
+          currentUser={currentUser}
           onClose={() => setIsCreateModalOpen(false)}
           onCreate={(data) => createMutation.mutate(data)}
           isLoading={createMutation.isLoading}
@@ -513,24 +648,44 @@ const Meetings: React.FC = () => {
 // 创建会议模态框
 const CreateMeetingModal: React.FC<{
   agents: Agent[];
+  currentUser: any;
   onClose: () => void;
   onCreate: (data: CreateMeetingDto) => void;
   isLoading: boolean;
-}> = ({ agents, onClose, onCreate, isLoading }) => {
+}> = ({ agents, currentUser, onClose, onCreate, isLoading }) => {
   const [formData, setFormData] = useState<Partial<CreateMeetingDto>>({
     title: '',
     description: '',
     type: MeetingType.DAILY,
-    hostId: agents[0]?.id || '',
-    hostType: 'agent',
+    hostId: currentUser ? `${currentUser.id}|employee` : '',
+    hostType: 'employee',
     participantIds: [],
     agenda: '',
   });
 
+  useEffect(() => {
+    if (currentUser) {
+      setFormData({
+        title: '',
+        description: '',
+        type: MeetingType.DAILY,
+        hostId: `${currentUser.id}|employee`,
+        hostType: 'employee',
+        participantIds: [],
+        agenda: '',
+      });
+    }
+  }, [currentUser]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (formData.title && formData.hostId) {
-      onCreate(formData as CreateMeetingDto);
+      const [hostId, hostType] = formData.hostId.split('|');
+      onCreate({
+        ...formData,
+        hostId,
+        hostType: hostType as 'employee' | 'agent',
+      } as CreateMeetingDto);
     }
   };
 
@@ -612,38 +767,73 @@ const CreateMeetingModal: React.FC<{
               <select
                 required
                 value={formData.hostId}
-                onChange={(e) => setFormData({ ...formData, hostId: e.target.value })}
+                onChange={(e) => {
+                  const [id, type] = e.target.value.split('|');
+                  setFormData({ ...formData, hostId: id, hostType: type as 'employee' | 'agent' });
+                }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
               >
                 <option value="">选择主持人</option>
+                {currentUser && (
+                  <option value={`${currentUser.id}|employee`}>
+                    {currentUser.name || currentUser.email} (我)
+                  </option>
+                )}
                 {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name} ({agent.type})
+                  <option key={agent.id} value={`${agent.id}|agent`}>
+                    {agent.name} (Agent)
                   </option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">参与者</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">参与者 (可多选)</label>
               <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
+                {currentUser && currentUser.id !== formData.hostId?.split('|')[0] && (
+                  <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer border-b mb-2">
+                    <input
+                      type="checkbox"
+                      checked={formData.participantIds?.some(p => p.id === currentUser.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setFormData({
+                            ...formData,
+                            participantIds: [...(formData.participantIds || []), { id: currentUser.id, type: 'employee' }],
+                          });
+                        } else {
+                          setFormData({
+                            ...formData,
+                            participantIds: formData.participantIds?.filter(p => p.id !== currentUser.id) || [],
+                          });
+                        }
+                      }}
+                      className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                    />
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">{currentUser.name || currentUser.email}</p>
+                      <p className="text-xs text-gray-500">我 (员工)</p>
+                    </div>
+                  </label>
+                )}
                 {agents
-                  .filter(a => a.id !== formData.hostId)
+                  .filter(a => formData.hostId ? a.id !== formData.hostId.split('|')[0] : true)
                   .map((agent) => (
                     <label key={agent.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.participantIds?.some(p => p.id === agent.id)}
+                        checked={formData.participantIds?.some(p => p.id === agent.id) || false}
                         onChange={(e) => {
+                          const currentParticipants = formData.participantIds || [];
                           if (e.target.checked) {
                             setFormData({
                               ...formData,
-                              participantIds: [...(formData.participantIds || []), { id: agent.id!, type: 'agent' as const }],
+                              participantIds: [...currentParticipants, { id: agent.id, type: 'agent' as const }],
                             });
                           } else {
                             setFormData({
                               ...formData,
-                              participantIds: formData.participantIds?.filter(p => p.id !== agent.id) || [],
+                              participantIds: currentParticipants.filter(p => p.id !== agent.id),
                             });
                           }
                         }}
@@ -655,7 +845,7 @@ const CreateMeetingModal: React.FC<{
                       </div>
                     </label>
                   ))}
-                {agents.filter(a => a.id !== formData.hostId).length === 0 && (
+                {(agents.length === 0 || agents.filter(a => formData.hostId ? a.id !== formData.hostId.split('|')[0] : true).length === 0) && (
                   <p className="text-sm text-gray-500 text-center py-4">没有其他可用的Agent</p>
                 )}
               </div>

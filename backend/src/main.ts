@@ -3,8 +3,11 @@ import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ModelService } from './modules/models/model.service';
 import { OrganizationService } from './modules/organization/organization.service';
+import { initializeNetworkProxy } from './shared/utils/proxy.util';
 
 async function bootstrap() {
+  await initializeNetworkProxy();
+
   const app = await NestFactory.create(AppModule);
 
   // 启用CORS

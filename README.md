@@ -408,6 +408,9 @@ OPENAI_API_KEY=your_openai_key_here
 ANTHROPIC_API_KEY=your_claude_key_here
 GOOGLE_AI_API_KEY=your_gemini_key_here
 
+# 可选：当本机无法直连模型服务时使用代理
+AI_PROXY_URL=http://127.0.0.1:7890
+
 # JWT配置
 JWT_SECRET=your_development_jwt_secret_here
 JWT_EXPIRES_IN=7d
@@ -471,3 +474,6 @@ MIT License
 ---
 
 **🚀 开始你的AI创业之旅！**
+
+
+$ lsof -ti :3001 | xargs kill -9 2>/dev/null

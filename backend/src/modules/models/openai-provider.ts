@@ -1,15 +1,31 @@
 import OpenAI from 'openai';
+import { fetch as undiciFetch } from 'undici';
 import { BaseAIProvider } from './base-provider';
 import { AIModel, ChatMessage } from '../../shared/types';
+import { getProxyDispatcher } from '../../shared/utils/proxy.util';
 
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
 
   constructor(model: AIModel, apiKey?: string) {
     super(model, apiKey);
-    this.client = new OpenAI({
+    const dispatcher = getProxyDispatcher();
+
+    const clientOptions: any = {
       apiKey: apiKey || process.env.OPENAI_API_KEY,
-    });
+      timeout: 15000,
+      maxRetries: 0,
+    };
+
+    if (dispatcher) {
+      clientOptions.fetch = (url: any, init: any) =>
+        undiciFetch(url, {
+          ...init,
+          dispatcher,
+        });
+    }
+
+    this.client = new OpenAI(clientOptions);
   }
 
   async chat(messages: ChatMessage[], options?: any): Promise<string> {

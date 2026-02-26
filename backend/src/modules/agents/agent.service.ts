@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
@@ -25,23 +25,58 @@ export class AgentService {
   ) {}
 
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
-    // 自动注册Agent使用的模型
-    if (agentData.model) {
-      const modelConfig: AIModel = {
-        id: agentData.model.id,
-        name: agentData.model.name,
-        provider: agentData.model.provider as AIModel['provider'],
-        model: agentData.model.model,
+    if (!agentData.name?.trim()) {
+      throw new BadRequestException('Agent name is required');
+    }
+    if (!agentData.type?.trim()) {
+      throw new BadRequestException('Agent type is required');
+    }
+    if (!agentData.model?.id || !agentData.model?.name || !agentData.model?.provider || !agentData.model?.model) {
+      throw new BadRequestException('Valid model configuration is required');
+    }
+
+    const normalizedData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
+      ...agentData,
+      description: agentData.description?.trim() || `${agentData.name} Agent`,
+      systemPrompt: agentData.systemPrompt?.trim() || `You are ${agentData.name}, a helpful AI assistant.`,
+      model: {
+        ...agentData.model,
         maxTokens: agentData.model.maxTokens || 4096,
-        temperature: agentData.model.temperature || 0.7,
-        topP: agentData.model.topP
+        temperature: agentData.model.temperature ?? 0.7,
+      },
+      capabilities: agentData.capabilities || [],
+      tools: agentData.tools || [],
+      permissions: agentData.permissions || [],
+      personality: agentData.personality || {
+        workEthic: 80,
+        creativity: 75,
+        leadership: 70,
+        teamwork: 80,
+      },
+      learningAbility: agentData.learningAbility ?? 80,
+      isActive: agentData.isActive ?? true,
+    };
+
+    try {
+      const modelConfig: AIModel = {
+        id: normalizedData.model.id,
+        name: normalizedData.model.name,
+        provider: normalizedData.model.provider as AIModel['provider'],
+        model: normalizedData.model.model,
+        maxTokens: normalizedData.model.maxTokens || 4096,
+        temperature: normalizedData.model.temperature ?? 0.7,
+        topP: normalizedData.model.topP,
       };
       this.modelService.ensureProvider(modelConfig);
-      this.logger.log(`Agent ${agentData.name} using model: ${modelConfig.name} (${modelConfig.id})`);
+      this.logger.log(`Agent ${normalizedData.name} using model: ${modelConfig.name} (${modelConfig.id})`);
+
+      const newAgent = new this.agentModel(normalizedData);
+      return await newAgent.save();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create agent';
+      this.logger.error(`Create agent failed: ${message}`);
+      throw new BadRequestException(message);
     }
-    
-    const newAgent = new this.agentModel(agentData);
-    return newAgent.save();
   }
 
   async getAgent(agentId: string): Promise<Agent | null> {
@@ -71,6 +106,159 @@ export class AgentService {
   async deleteAgent(agentId: string): Promise<boolean> {
     const result = await this.agentModel.findByIdAndDelete(agentId).exec();
     return !!result;
+  }
+
+  async testAgentConnection(
+    agentId: string,
+    options?: { model?: AIModel; apiKeyId?: string },
+  ): Promise<{
+    success: boolean;
+    agent?: string;
+    model?: string;
+    response?: string;
+    responseLength?: number;
+    duration?: string;
+    error?: string;
+    note?: string;
+    keySource?: 'custom' | 'system';
+    timestamp: string;
+  }> {
+    const agent = await this.getAgent(agentId);
+    if (!agent) {
+      return {
+        success: false,
+        error: 'Agent not found',
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    const modelConfig: AIModel = {
+      id: options?.model?.id || agent.model.id,
+      name: options?.model?.name || agent.model.name,
+      provider: (options?.model?.provider || agent.model.provider) as AIModel['provider'],
+      model: options?.model?.model || agent.model.model,
+      maxTokens: options?.model?.maxTokens || agent.model.maxTokens || 4096,
+      temperature: options?.model?.temperature ?? agent.model.temperature ?? 0.7,
+      topP: options?.model?.topP ?? agent.model.topP,
+    };
+
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: agent.systemPrompt || 'You are a helpful AI assistant.',
+        timestamp: new Date(),
+      },
+      {
+        role: 'user',
+        content: '请回复: Agent Connected to AI Model Successfully',
+        timestamp: new Date(),
+      },
+    ];
+
+    const runModelTest = async (customApiKey?: string) => {
+      this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+      const startTime = Date.now();
+      const response = await Promise.race([
+        this.modelService.chat(modelConfig.id, messages, {
+          temperature: 0.2,
+          maxTokens: 128,
+        }),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('模型测试超时（20s）')), 20000),
+        ),
+      ]);
+      return {
+        response,
+        duration: `${Date.now() - startTime}ms`,
+      };
+    };
+
+    // By default, model test uses system env key (e.g. OPENAI_API_KEY).
+    // Only use custom key when apiKeyId is explicitly provided.
+    const keyId = options?.apiKeyId?.trim() || undefined;
+
+    try {
+      if (keyId) {
+        const customApiKey = await this.apiKeyService.getDecryptedKey(keyId);
+        if (!customApiKey) {
+          return {
+            success: false,
+            agent: agent.name,
+            model: modelConfig.name,
+            error: 'Agent绑定的API Key无效或已失效，请重新选择API Key',
+            keySource: 'custom',
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        try {
+          const result = await runModelTest(customApiKey);
+          await this.apiKeyService.recordUsage(keyId);
+          return {
+            success: true,
+            agent: agent.name,
+            model: modelConfig.name,
+            response: result.response,
+            responseLength: result.response.length,
+            duration: result.duration,
+            keySource: 'custom',
+            timestamp: new Date().toISOString(),
+          };
+        } catch (customError) {
+          const customMessage = customError instanceof Error ? customError.message : 'Unknown error';
+          this.logger.error(`Agent ${agent.name} model test failed with custom key: ${customMessage}`);
+
+          try {
+            const fallbackResult = await runModelTest(undefined);
+            return {
+              success: true,
+              agent: agent.name,
+              model: modelConfig.name,
+              response: fallbackResult.response,
+              responseLength: fallbackResult.response.length,
+              duration: fallbackResult.duration,
+              keySource: 'system',
+              note: `自定义API Key测试失败，已使用系统默认Key回退成功：${customMessage}`,
+              timestamp: new Date().toISOString(),
+            };
+          } catch (fallbackError) {
+            const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : 'Unknown error';
+            this.logger.error(`Agent ${agent.name} model fallback test failed: ${fallbackMessage}`);
+            return {
+              success: false,
+              agent: agent.name,
+              model: modelConfig.name,
+              error: `自定义API Key失败: ${customMessage}; 系统默认Key失败: ${fallbackMessage}`,
+              keySource: 'custom',
+              timestamp: new Date().toISOString(),
+            };
+          }
+        }
+      }
+
+      const result = await runModelTest(undefined);
+      return {
+        success: true,
+        agent: agent.name,
+        model: modelConfig.name,
+        response: result.response,
+        responseLength: result.response.length,
+        duration: result.duration,
+        keySource: 'system',
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Agent ${agent.name} model test failed: ${message}`);
+      return {
+        success: false,
+        agent: agent.name,
+        model: modelConfig.name,
+        error: message,
+        keySource: keyId ? 'custom' : 'system',
+        timestamp: new Date().toISOString(),
+      };
+    }
   }
 
   async executeTask(agentId: string, task: Task, context?: Partial<AgentContext>): Promise<string> {

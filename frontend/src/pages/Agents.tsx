@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { agentService } from '../services/agentService';
+import type { AgentTestResult } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
 import { Agent, AIModel } from '../types';
@@ -13,7 +14,9 @@ import {
   CpuChipIcon,
   BuildingOfficeIcon,
   CheckCircleIcon,
-  LockClosedIcon
+  LockClosedIcon,
+  BeakerIcon,
+  XCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const Agents: React.FC = () => {
@@ -21,6 +24,11 @@ const Agents: React.FC = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModelModalOpen, setIsEditModelModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
+  const getAgentId = (agent: Agent | null): string => {
+    const withMongoId = agent as (Agent & { _id?: string }) | null;
+    return withMongoId?.id || withMongoId?._id || '';
+  };
 
   const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
   const { data: availableModels } = useQuery('models', modelService.getAvailableModels);
@@ -53,14 +61,29 @@ const Agents: React.FC = () => {
     }
   );
 
-  const handleDelete = (id: string) => {
+  const testAgentModelMutation = useMutation(
+    ({ id, model }: { id: string; model: AIModel }) =>
+      agentService.testAgent(id, { model }),
+  );
+
+  const handleDelete = (agent: Agent) => {
+    const id = getAgentId(agent);
+    if (!id) {
+      alert('Agent ID 无效，无法删除');
+      return;
+    }
     if (window.confirm('确定要删除这个Agent吗？')) {
       deleteAgentMutation.mutate(id);
     }
   };
 
   const handleToggleActive = (agent: Agent) => {
-    toggleAgentMutation.mutate({ id: agent.id!, isActive: !agent.isActive });
+    const id = getAgentId(agent);
+    if (!id) {
+      alert('Agent ID 无效，无法更新状态');
+      return;
+    }
+    toggleAgentMutation.mutate({ id, isActive: !agent.isActive });
   };
 
   const handleEditModel = (agent: Agent) => {
@@ -111,7 +134,7 @@ const Agents: React.FC = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {agents?.filter(isFounder).map((agent) => (
-            <div key={agent.id} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+            <div key={getAgentId(agent) || agent.name} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center">
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
@@ -148,7 +171,7 @@ const Agents: React.FC = () => {
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <ul className="divide-y divide-gray-200">
           {agents?.map((agent) => (
-            <li key={agent.id}>
+            <li key={getAgentId(agent) || agent.name}>
               <div className="px-4 py-4 flex items-center sm:px-6">
                 <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between">
                   <div>
@@ -204,7 +227,7 @@ const Agents: React.FC = () => {
                         <PencilIcon className="h-5 w-5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(agent.id!)}
+                        onClick={() => handleDelete(agent)}
                         className="p-2 rounded-md text-red-400 hover:text-red-600 hover:bg-red-50"
                         title="删除"
                       >
@@ -258,9 +281,26 @@ const Agents: React.FC = () => {
             setEditingAgent(null);
           }}
           onSave={(model) => {
-            updateAgentModelMutation.mutate({ id: editingAgent.id!, model });
+            const id = getAgentId(editingAgent);
+            if (!id) {
+              alert('Agent ID 无效，无法保存模型');
+              return;
+            }
+            updateAgentModelMutation.mutate({ id, model });
+          }}
+          onTest={async (model) => {
+            const id = getAgentId(editingAgent);
+            if (!id) {
+              return {
+                success: false,
+                error: 'Agent ID 无效，无法测试',
+                timestamp: new Date().toISOString(),
+              };
+            }
+            return testAgentModelMutation.mutateAsync({ id, model });
           }}
           isLoading={updateAgentModelMutation.isLoading}
+          isTesting={testAgentModelMutation.isLoading}
         />
       )}
     </div>
@@ -286,9 +326,10 @@ const CreateAgentModal: React.FC<{
 
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
   const selectedModel = availableModels.find(m => m.id === formData.modelId);
-  const filteredApiKeys = apiKeys?.filter(key => 
-    key.provider.toLowerCase() === selectedModel?.provider.toLowerCase() && key.isActive
-  ) || [];
+  const filteredApiKeys = (apiKeys || []).filter((key) => {
+    if (!selectedModel?.provider || !key?.provider) return false;
+    return key.provider.toLowerCase() === selectedModel.provider.toLowerCase() && key.isActive;
+  });
 
   const createAgentMutation = useMutation(agentService.createAgent, {
     onSuccess: () => {
@@ -381,11 +422,15 @@ const CreateAgentModal: React.FC<{
                   className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 >
                   <option value="">使用系统默认密钥</option>
-                  {filteredApiKeys.map((key) => (
-                    <option key={key._id} value={key._id}>
-                      {key.key.substring(0, 8)}...{key.key.slice(-4)} ({key.provider})
-                    </option>
-                  ))}
+                  {filteredApiKeys.map((key) => {
+                    const keyId = key.id || key._id;
+                    const masked = key.keyMasked || '****';
+                    return (
+                      <option key={keyId} value={keyId}>
+                        {masked} ({key.provider})
+                      </option>
+                    );
+                  })}
                 </select>
                 {filteredApiKeys.length === 0 && selectedModel && (
                   <p className="mt-2 text-sm text-amber-600">
@@ -495,15 +540,36 @@ const EditModelModal: React.FC<{
   availableModels: AIModel[];
   onClose: () => void;
   onSave: (model: AIModel) => void;
+  onTest: (model: AIModel) => Promise<AgentTestResult>;
   isLoading: boolean;
-}> = ({ agent, availableModels, onClose, onSave, isLoading }) => {
+  isTesting: boolean;
+}> = ({ agent, availableModels, onClose, onSave, onTest, isLoading, isTesting }) => {
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
+  const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
+  const [testedModelId, setTestedModelId] = useState<string | null>(null);
   
   const selectedModel = availableModels.find(m => m.id === selectedModelId);
 
   const handleSave = () => {
     if (selectedModel) {
       onSave(selectedModel);
+    }
+  };
+
+  const handleTest = async () => {
+    if (!selectedModel) return;
+    try {
+      const result = await onTest(selectedModel);
+      setTestedModelId(selectedModel.id);
+      setTestResult(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '模型测试超时或失败';
+      setTestedModelId(selectedModel.id);
+      setTestResult({
+        success: false,
+        error: message,
+        timestamp: new Date().toISOString(),
+      });
     }
   };
 
@@ -556,7 +622,11 @@ const EditModelModal: React.FC<{
             </label>
             <select
               value={selectedModelId}
-              onChange={(e) => setSelectedModelId(e.target.value)}
+              onChange={(e) => {
+                setSelectedModelId(e.target.value);
+                setTestResult(null);
+                setTestedModelId(null);
+              }}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
               <option value="">请选择模型...</option>
@@ -600,6 +670,49 @@ const EditModelModal: React.FC<{
               </div>
             </div>
           )}
+
+          {/* 模型测试 */}
+          <div className="mb-6">
+            <button
+              onClick={handleTest}
+              disabled={isTesting || !selectedModel}
+              className="inline-flex items-center px-4 py-2 border border-indigo-300 text-sm font-medium rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
+            >
+              <BeakerIcon className="h-4 w-4 mr-1" />
+              {isTesting ? '测试中...' : '测试模型连接'}
+            </button>
+            <p className="mt-2 text-xs text-gray-500">会用当前Agent设定向所选模型发送一条测试消息。</p>
+
+            {testResult && testedModelId === selectedModelId && (
+              <div className={`mt-3 p-3 rounded-md border ${testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className="flex items-center mb-1">
+                  {testResult.success ? (
+                    <CheckCircleIcon className="h-4 w-4 text-green-600 mr-1" />
+                  ) : (
+                    <XCircleIcon className="h-4 w-4 text-red-600 mr-1" />
+                  )}
+                  <span className={`text-sm font-medium ${testResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                    {testResult.success ? '模型连接成功' : '模型连接失败'}
+                  </span>
+                </div>
+                <div className={`text-xs ${testResult.success ? 'text-green-700' : 'text-red-700'}`}>
+                  {testResult.success ? (
+                    <>
+                      <p>耗时: {testResult.duration || '-'}</p>
+                      <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
+                      {testResult.note && <p className="mt-1 break-words">说明: {testResult.note}</p>}
+                      <p className="mt-1 break-words">响应: {testResult.response || '-'}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
+                      <p className="break-words">错误: {testResult.error || '未知错误'}</p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 按钮 */}
           <div className="flex justify-end space-x-3">

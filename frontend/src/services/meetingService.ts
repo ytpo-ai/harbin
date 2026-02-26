@@ -16,6 +16,7 @@ export enum MeetingStatus {
   ACTIVE = 'active',
   PAUSED = 'paused',
   ENDED = 'ended',
+  ARCHIVED = 'archived',
 }
 
 export enum ParticipantRole {
@@ -175,6 +176,23 @@ class MeetingService {
     invitedBy: ParticipantIdentity
   ): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/invite`, { participant, invitedBy });
+    return response.data.data;
+  }
+
+  async archiveMeeting(id: string): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/archive`);
+    return response.data.data;
+  }
+
+  async deleteMeeting(id: string): Promise<void> {
+    await api.delete(`/meetings/${id}`);
+  }
+
+  async inviteAgent(id: string, agentId: string, invitedBy: string): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/invite`, { 
+      participant: { id: agentId, type: 'agent', name: 'Agent', isHuman: false },
+      invitedBy: { id: invitedBy, type: 'employee', name: 'Host', isHuman: true }
+    });
     return response.data.data;
   }
 }

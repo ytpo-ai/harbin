@@ -132,6 +132,25 @@ export class MeetingController {
     };
   }
 
+  @Post(':id/archive')
+  async archiveMeeting(@Param('id') id: string) {
+    const meeting = await this.meetingService.archiveMeeting(id);
+    return {
+      success: true,
+      data: meeting,
+      message: '会议已归档',
+    };
+  }
+
+  @Delete(':id')
+  async deleteMeeting(@Param('id') id: string) {
+    await this.meetingService.deleteMeeting(id);
+    return {
+      success: true,
+      message: '会议已删除',
+    };
+  }
+
   @Post(':id/invite')
   async inviteParticipant(
     @Param('id') id: string,

@@ -1,24 +1,36 @@
 import { Controller, Get, Post, Body, Param, Delete, Put } from '@nestjs/common';
 import { AgentService } from './agent.service';
-import { Agent, Task, ChatMessage } from '../../shared/types';
+import { Agent, Task, AIModel } from '../../shared/types';
 
 @Controller('agents')
 export class AgentController {
   constructor(private readonly agentService: AgentService) {}
 
+  private normalizeAgent(agent: any) {
+    const plain = agent?.toObject ? agent.toObject() : agent;
+    const normalizedId = plain?.id || plain?._id?.toString?.() || plain?._id;
+    return {
+      ...plain,
+      id: normalizedId,
+    };
+  }
+
   @Post()
   async createAgent(@Body() agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>) {
-    return this.agentService.createAgent(agentData);
+    const agent = await this.agentService.createAgent(agentData);
+    return this.normalizeAgent(agent);
   }
 
   @Get()
-  getAllAgents() {
-    return this.agentService.getAllAgents();
+  async getAllAgents() {
+    const agents = await this.agentService.getAllAgents();
+    return agents.map((agent) => this.normalizeAgent(agent));
   }
 
   @Get('active')
-  getActiveAgents() {
-    return this.agentService.getActiveAgents();
+  async getActiveAgents() {
+    const agents = await this.agentService.getActiveAgents();
+    return agents.map((agent) => this.normalizeAgent(agent));
   }
 
   @Get('debug/status')
@@ -40,13 +52,15 @@ export class AgentController {
   }
 
   @Get(':id')
-  getAgent(@Param('id') id: string) {
-    return this.agentService.getAgent(id);
+  async getAgent(@Param('id') id: string) {
+    const agent = await this.agentService.getAgent(id);
+    return agent ? this.normalizeAgent(agent) : null;
   }
 
   @Put(':id')
-  updateAgent(@Param('id') id: string, @Body() updates: Partial<Agent>) {
-    return this.agentService.updateAgent(id, updates);
+  async updateAgent(@Param('id') id: string, @Body() updates: Partial<Agent>) {
+    const agent = await this.agentService.updateAgent(id, updates);
+    return agent ? this.normalizeAgent(agent) : null;
   }
 
   @Delete(':id')
@@ -61,54 +75,11 @@ export class AgentController {
   }
 
   @Post(':id/test')
-  async testAgent(@Param('id') id: string) {
-    const agent = await this.agentService.getAgent(id);
-    if (!agent) {
-      return { success: false, error: 'Agent not found' };
-    }
-
-    const testTask: Task = {
-      title: 'Test Task',
-      description: 'Please respond with "Agent Connected to AI Model Successfully"',
-      type: 'test',
-      priority: 'low',
-      status: 'pending',
-      assignedAgents: [id],
-      teamId: 'test',
-      messages: [
-        {
-          role: 'user',
-          content: 'Please respond with exactly: "Agent Connected to AI Model Successfully"',
-          timestamp: new Date()
-        }
-      ],
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    try {
-      const startTime = Date.now();
-      const response = await this.agentService.executeTask(id, testTask);
-      const duration = Date.now() - startTime;
-
-      return {
-        success: true,
-        agent: agent.name,
-        model: agent.model?.name,
-        response,
-        responseLength: response.length,
-        duration: `${duration}ms`,
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      return {
-        success: false,
-        agent: agent.name,
-        model: agent.model?.name,
-        error: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
+  async testAgent(
+    @Param('id') id: string,
+    @Body() body?: { model?: AIModel; apiKeyId?: string },
+  ) {
+    return this.agentService.testAgentConnection(id, body);
   }
 
   @Get(':id/capabilities')

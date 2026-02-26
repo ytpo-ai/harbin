@@ -1,6 +1,19 @@
 import api from './api';
 import { Agent, AIModel } from '../types';
 
+export interface AgentTestResult {
+  success: boolean;
+  agent?: string;
+  model?: string;
+  response?: string;
+  responseLength?: number;
+  duration?: string;
+  error?: string;
+  note?: string;
+  keySource?: 'custom' | 'system';
+  timestamp: string;
+}
+
 export const agentService = {
   // 获取所有agent
   async getAgents(): Promise<Agent[]> {
@@ -47,6 +60,12 @@ export const agentService = {
   // 执行任务
   async executeTask(id: string, task: any, context?: any): Promise<{ response: string }> {
     const response = await api.post(`/agents/${id}/execute`, { task, context });
+    return response.data;
+  },
+
+  // 测试Agent模型连接
+  async testAgent(id: string, payload?: { model?: AIModel; apiKeyId?: string }): Promise<AgentTestResult> {
+    const response = await api.post(`/agents/${id}/test`, payload || {});
     return response.data;
   }
 };

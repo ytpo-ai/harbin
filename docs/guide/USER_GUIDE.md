@@ -51,6 +51,9 @@ OPENAI_API_KEY=sk-your-openai-key
 ANTHROPIC_API_KEY=sk-your-claude-key
 GOOGLE_AI_API_KEY=your-gemini-key
 
+# 可选：网络受限时配置代理
+AI_PROXY_URL=http://127.0.0.1:7890
+
 # 可选的其他API密钥
 DEEPSEEK_API_KEY=your-deepseek-key
 MISTRAL_API_KEY=your-mistral-key
