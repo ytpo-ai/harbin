@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OrganizationService } from '../organization/organization.service';
-import { ToolService } from '../tools/tool.service';
+import { ToolClientService } from '../tools/tool-client.service';
 import { TaskService } from '../tasks/task.service';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class HRService {
 
   constructor(
     private readonly organizationService: OrganizationService,
-    private readonly toolService: ToolService,
+    private readonly toolClientService: ToolClientService,
     private readonly taskService: TaskService
   ) {}
 
@@ -32,7 +32,7 @@ export class HRService {
     const taskCompletionRate = agentTasks.length > 0 ? (completedTasks.length / agentTasks.length) * 100 : 0;
 
     // 获取工具使用统计
-    const toolExecutions = await this.toolService.getToolExecutions(agentId);
+    const toolExecutions = await this.toolClientService.getToolExecutions(agentId);
     const totalTokenConsumption = toolExecutions.reduce((sum, exec) => sum + exec.tokenCost, 0);
     const totalExecutionCost = toolExecutions.length * 50; // 假设每个执行平均成本50
 

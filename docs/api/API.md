@@ -43,11 +43,17 @@ GET /agents
 POST /agents
 ```
 
+**说明**:
+- `type` 建议从前端配置 `frontend/src/config/agentType.json` 选择。
+- 类型规范与默认 role/prompt 说明见 `docs/agent_type.md`。
+- 现行类型包括：`ai-executive`、`ai-management-assistant`、`ai-technical-expert`、`ai-fullstack-engineer`、`ai-devops-engineer`、`ai-data-analyst`、`ai-product-manager`、`ai-hr`、`ai-admin-assistant`、`ai-marketing-expert`、`ai-system-builtin`。
+
 **请求体**:
 ```json
 {
   "name": "New Agent",
   "type": "ai-developer",
+  "role": "backend-developer",
   "description": "A new AI developer",
   "model": {
     "id": "gpt-4-turbo",
@@ -62,7 +68,28 @@ POST /agents
 }
 ```
 
-### 1.3 执行Agent任务
+### 1.3 更新Agent
+```http
+PUT /agents/:id
+```
+
+**请求体（示例）**:
+```json
+{
+  "name": "Alex Chen",
+  "type": "ai-executive",
+  "role": "chief-executive-officer",
+  "description": "更新后的描述",
+  "capabilities": ["战略思维", "组织管理"]
+}
+```
+
+**说明**:
+- `type` 与 `role` 均可在更新时修改。
+- `role` 为单个 agent 级别字段，MCP 输出会优先使用该值。
+- 前端编辑页的类型选项来自 `frontend/src/config/agentType.json`。
+
+### 1.4 执行Agent任务
 ```http
 POST /agents/:id/execute
 ```
@@ -93,7 +120,7 @@ POST /agents/:id/execute
 }
 ```
 
-### 1.4 测试Agent连接
+### 1.5 测试Agent连接
 ```http
 POST /agents/:id/test
 ```
@@ -109,9 +136,92 @@ POST /agents/:id/test
 }
 ```
 
+### 1.6 获取 Agents MCP Map
+```http
+GET /agents/mcp/map
+```
+
+**说明**:
+- 返回数据库中 `agent_profiles` 的映射（按 `agentType`）。
+- 字段包含 `role`、`tools`、`capabilities`、`exposed` 等。
+
+### 1.5.1 获取 MCP Profiles 列表
+```http
+GET /agents/mcp/profiles
+```
+
+### 1.5.2 获取单个 MCP Profile
+```http
+GET /agents/mcp/profiles/:agentType
+```
+
+### 1.5.3 创建或更新 MCP Profile
+```http
+PUT /agents/mcp/profiles/:agentType
+```
+
+**请求体**:
+```json
+{
+  "role": "executive-strategist",
+  "tools": ["websearch", "agents_mcp_list"],
+  "capabilities": ["strategy_planning", "decision_making"],
+  "exposed": true,
+  "description": "管理层agent能力配置"
+}
+```
+
+### 1.6 获取可见 MCP Agent 列表
+```http
+GET /agents/mcp
+```
+
+**Query 参数**:
+- `includeHidden` (可选): `true/false`，默认为 `false`。
+
+**响应示例**:
+```json
+{
+  "total": 2,
+  "visible": 1,
+  "agents": [
+    {
+      "id": "65d123...",
+      "name": "Alex Chen",
+      "type": "ai-executive",
+      "description": "具有丰富战略思维和领导力的AI首席执行官",
+      "role": "executive-strategist",
+      "capabilitySet": ["战略思维", "领导力", "strategy_planning"],
+      "toolSet": [
+        {
+          "id": "websearch",
+          "name": "Web Search",
+          "description": "Search web information via Composio SERPAPI",
+          "type": "web_search",
+          "category": "Information Retrieval"
+        }
+      ],
+      "exposed": true,
+      "mapKey": "ai-executive"
+    }
+  ]
+}
+```
+
+### 1.7 获取单个 MCP Agent 详情
+```http
+GET /agents/mcp/:id
+```
+
+**说明**:
+- 默认仅允许读取 `exposed=true` 的 agent。
+- 若需读取隐藏 agent，可传 `?includeHidden=true`。
+- CEO/CTO 对话场景可通过内置工具 `agents_mcp_list` 获取同源列表数据。
+- profile 配置来源为数据库 `agent_profiles`，非代码硬编码。
+
 ---
 
-## 1.5 会议 API（Meetings）
+## 1.8 会议 API（Meetings）
 
 ### 获取会议列表
 ```http
@@ -403,6 +513,111 @@ GET /tools/executions/stats
 
 ---
 
+## 5.5 Skills 管理 API
+
+### 获取技能库
+```http
+GET /skills
+```
+
+**Query 参数**:
+- `status` (可选): `active | experimental | deprecated | disabled`
+- `category` (可选): 技能分类
+
+### 创建技能
+```http
+POST /skills
+```
+
+**请求体示例**:
+```json
+{
+  "name": "security-audit-skill",
+  "description": "Static security checks for code review tasks",
+  "category": "engineering",
+  "tags": ["security", "code-review"],
+  "sourceType": "manual",
+  "provider": "internal",
+  "status": "active",
+  "confidenceScore": 80
+}
+```
+
+### 为 Agent 绑定技能
+```http
+POST /skills/assign
+```
+
+**请求体示例**:
+```json
+{
+  "agentId": "65d...",
+  "skillId": "f6d...",
+  "proficiencyLevel": "intermediate",
+  "assignedBy": "AgentSkillManager"
+}
+```
+
+### 获取 Agent 的技能清单
+```http
+GET /skills/agents/:agentId
+```
+
+### AgentSkillManager 互联网检索技能
+```http
+POST /skills/manager/discover
+```
+
+**请求体示例**:
+```json
+{
+  "query": "code review automation",
+  "maxResults": 5,
+  "sourceType": "github"
+}
+```
+
+### AgentSkillManager 生成技能建议
+```http
+POST /skills/manager/suggest/:agentId
+```
+
+**请求体示例**:
+```json
+{
+  "contextTags": ["security", "typescript", "review"],
+  "topK": 5,
+  "persist": true
+}
+```
+
+### 查询建议记录
+```http
+GET /skills/suggestions/agents/:agentId
+```
+
+### 审核建议记录
+```http
+PUT /skills/suggestions/:id
+```
+
+**请求体示例**:
+```json
+{
+  "status": "accepted",
+  "note": "Will schedule this upgrade in next sprint"
+}
+```
+
+### 重建 skills 文档
+```http
+POST /skills/docs/rebuild
+```
+
+说明：skills 在数据库和 `docs/skills` 目录双轨维护，该接口用于从 DB 全量重建 Markdown 文档。
+
+---
+
 ## 6. 人力资源 API
 
 ### 6.1 生成绩效报告
@@ -522,6 +737,139 @@ POST /discussions/:id/messages
 ### 8.3 结束讨论
 ```http
 POST /discussions/:id/conclude
+```
+
+---
+
+## 9. 任务编排与 Session API
+
+### 9.1 通过提示词创建计划
+```http
+POST /orchestration/plans/from-prompt
+```
+
+**请求体**:
+```json
+{
+  "prompt": "实现客服机器人 MVP，并分配给合适的执行者",
+  "title": "客服机器人 MVP",
+  "plannerAgentId": "65f...",
+  "mode": "hybrid",
+  "autoRun": false
+}
+```
+
+### 9.2 执行计划
+```http
+POST /orchestration/plans/:id/run
+```
+
+**请求体**:
+```json
+{
+  "continueOnFailure": true
+}
+```
+
+**响应示例（异步触发）**:
+```json
+{
+  "accepted": true,
+  "planId": "69a2d149a397bd1d7458f63f",
+  "status": "accepted",
+  "alreadyRunning": false
+}
+```
+
+说明：该接口仅负责触发执行并立即返回，前端应通过 `GET /orchestration/plans/:id` 轮询计划状态。
+
+### 9.2.1 删除计划
+```http
+DELETE /orchestration/plans/:id
+```
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "deletedTasks": 4
+}
+```
+
+### 9.3 任务改派
+```http
+POST /orchestration/tasks/:id/reassign
+```
+
+**请求体**:
+```json
+{
+  "executorType": "agent",
+  "executorId": "65f...",
+  "reason": "具备更匹配的能力标签"
+}
+```
+
+`executorType` 可选值:
+- `agent`
+- `employee`
+- `unassigned`
+
+### 9.4 人工任务完成回填
+```http
+POST /orchestration/tasks/:id/complete-human
+```
+
+**请求体**:
+```json
+{
+  "summary": "需求评审与原型已完成",
+  "output": "文档链接或结果摘要"
+}
+```
+
+说明：对于“发送邮件”等外部动作任务，系统会校验执行输出是否包含可验证凭证（如 `recipient/provider/messageId`）。若凭证缺失，任务会进入 `waiting_human`，需人工确认回填。
+
+### 9.4.1 失败任务重试
+```http
+POST /orchestration/tasks/:id/retry
+```
+
+**响应示例**:
+```json
+{
+  "task": {
+    "_id": "69a...",
+    "status": "assigned"
+  },
+  "run": {
+    "accepted": true,
+    "planId": "69a...",
+    "status": "accepted"
+  }
+}
+```
+
+说明：重试会重置失败任务状态并自动触发所属计划异步续跑。
+
+补充：研究类任务失败时，错误信息会包含结构化缺失项（如 `missing=json-top10-items,population-values`），可据此修正输出后重试。
+
+补充：研究类任务需包含联网执行证明块：
+`RESEARCH_EXECUTION_PROOF: {"toolCalls":["websearch","webfetch"],"fetchedUrls":["https://..."]}`。
+系统会按任务类型动态校验输出结构（如城市人口类校验 `cities[]`，通用研究类校验 `findings[]`）。
+
+补充：研究任务识别已扩展为阶段语义识别（如 identify/collect/analyze）。
+Review/Finalize 类任务需输出“修订后完整正文（Subject+称呼+正文+结尾）”，仅建议列表将判定失败。
+
+### 9.5 Session 管理
+```http
+POST /orchestration/sessions
+GET /orchestration/sessions
+GET /orchestration/sessions/:id
+POST /orchestration/sessions/:id/messages
+POST /orchestration/sessions/:id/messages/batch
+POST /orchestration/sessions/:id/archive
+POST /orchestration/sessions/:id/resume
 ```
 
 ---

@@ -19,6 +19,7 @@ export interface Agent {
   id: string;
   name: string;
   type: string;
+  role?: string;
   description: string;
   model: AIModel;
   capabilities: string[];
@@ -112,6 +113,54 @@ export interface Permission {
   name: string;
   description: string;
   level: 'basic' | 'intermediate' | 'advanced' | 'admin';
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  slug: string;
+  description: string;
+  category: string;
+  tags: string[];
+  sourceType: 'manual' | 'github' | 'web' | 'internal';
+  sourceUrl?: string;
+  provider: string;
+  version: string;
+  status: 'active' | 'experimental' | 'deprecated' | 'disabled';
+  confidenceScore: number;
+  usageCount?: number;
+  discoveredBy?: string;
+  metadata?: Record<string, any>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AgentSkill {
+  id: string;
+  agentId: string;
+  skillId: string;
+  proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
+  enabled: boolean;
+  assignedBy?: string;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SkillSuggestion {
+  id: string;
+  agentId: string;
+  skillId: string;
+  reason: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'pending' | 'accepted' | 'rejected' | 'applied';
+  score: number;
+  suggestedBy?: string;
+  context?: Record<string, any>;
+  reviewedAt?: string;
+  appliedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface AgentRole {

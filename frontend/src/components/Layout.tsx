@@ -11,6 +11,9 @@ import {
   CpuChipIcon,
   KeyIcon,
   ArrowRightOnRectangleIcon,
+  CodeBracketIcon,
+  SparklesIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
 
@@ -35,6 +38,9 @@ const Layout: React.FC = () => {
     { name: '组织管理', href: '/organization', icon: BuildingOfficeIcon },
     { name: 'Agent管理', href: '/agents', icon: UserGroupIcon },
     { name: '任务管理', href: '/tasks', icon: ClipboardDocumentListIcon },
+    { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
+    { name: '任务编排', href: '/orchestration', icon: SparklesIcon },
+    { name: 'Skills管理', href: '/skills', icon: BoltIcon },
     { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
     { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
     { name: '人力资源', href: '/hr', icon: UserGroupIcon },

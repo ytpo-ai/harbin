@@ -12,6 +12,9 @@ import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
 import Governance from './pages/Governance';
 import Meetings from './pages/Meetings';
+import RdManagement from './pages/RdManagement';
+import Orchestration from './pages/Orchestration';
+import Skills from './pages/Skills';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -59,6 +62,9 @@ function App() {
             <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />
             <Route path="/governance" element={<ProtectedRoute><Governance /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
+            <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />
+            <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
+            <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

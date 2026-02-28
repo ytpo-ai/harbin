@@ -18,8 +18,9 @@ export class ModelService {
 
   registerProvider(model: AIModel, apiKey?: string): void {
     let provider: BaseAIProvider;
+    const normalizedProvider = (model.provider || '').toLowerCase().trim();
 
-    switch (model.provider) {
+    switch (normalizedProvider) {
       case 'openai':
         provider = new OpenAIProvider(model, apiKey);
         break;
@@ -30,6 +31,7 @@ export class ModelService {
         provider = new GoogleAIProvider(model, apiKey);
         break;
       case 'moonshot':
+      case 'kimi':
         provider = new MoonshotProvider(model, apiKey);
         break;
       default:
@@ -57,7 +59,10 @@ export class ModelService {
     // 创建一个通用的provider，使用axios直接调用API
     return new (class extends BaseAIProvider {
       async chat(messages: ChatMessage[], options?: any): Promise<string> {
-        return `[${model.provider} - ${model.name}] API调用暂未实现。请确保已配置 ${model.provider.toUpperCase()}_API_KEY 环境变量`;
+        const envKey = model.provider.toLowerCase() === 'moonshot'
+          ? 'MOONSHOT_API_KEY (or KIMI_API_KEY)'
+          : `${model.provider.toUpperCase()}_API_KEY`;
+        return `[${model.provider} - ${model.name}] API调用暂未实现。请确保已配置 ${envKey} 环境变量`;
       }
       async streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void> {
         onToken(`[${model.provider} - ${model.name}] 流式响应暂未实现`);

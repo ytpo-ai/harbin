@@ -1,6 +1,12 @@
 # AI Agent Team Platform
 
-一个创新的AI Agent创业公司模拟平台，支持多模型接入的Agent团队协作管理，模拟真实公司的组织架构、股权分配、人力资源和决策治理。
+一个创新的AI Agent创业公司模拟平台，支持多模型接入的Agent团队协作管理，模拟真实公司的组织架构、成本核算、人力资源和决策治理。
+
+## 终极目标
+- 系统将由自己进化成更高效率，更低成本的多agent协作团队，系统将有agent在日常工作中迭代完善，而不是完全由人来设计；
+- 系统区别于当前火爆的只满足单个人类Agent平台，系统支持多个人类员工跟agent一起合作；
+- 系统支持多模型接入，根据不同任务需求选择最合适的模型；
+- 系统通过长期运行，最终会进化出一批在各种任务中表现优异的agent；
 
 ## 🌟 核心特色
 
@@ -12,6 +18,8 @@
 - 🛠️ **工具生态** - 代码执行、网络搜索、数据分析等多种工具
 - 📈 **动态扩张** - 智能招聘建议、组织结构调整
 - 🎥 **会议室系统** - 支持7种会议类型，AI Agent真实参与讨论
+- 🧭 **任务编排与会话中台** - 一句话生成执行计划，支持 Agent/Human 分派与统一 Session 管理
+- 🧠 **Skill 管理中台** - AgentSkillManager 自动检索技能、给 Agent 提供能力增强建议，并同步 DB+Markdown
 
 ## 🚀 快速开始
 
@@ -130,6 +138,9 @@ mongod
 #### 工具类型
 | 工具类型 | 功能描述 | Token成本 | 权限要求 |
 |----------|----------|------------|----------|
+| WebSearch | 互联网信息检索 | 10 | Basic |
+| Slack | 团队频道消息发送 | 15 | Intermediate |
+| Gmail | 邮件草稿/发送 | 20 | Intermediate |
 | 代码执行 | 执行代码片段 | 50 | Intermediate |
 | 网络搜索 | 互联网信息检索 | 10 | Basic |
 | 文件操作 | 文件读写管理 | 5 | Basic/Intermediate |
@@ -149,6 +160,49 @@ mongod
 - Token消耗成本统计
 - 成功率和效率分析
 - 使用历史记录
+
+#### Agent工具调用
+- 可在 Agent 创建/编辑时分配工具白名单（`tools` 字段）
+- Agent 在聊天与任务执行中，仅可调用已分配工具
+- 支持工具调用编排：模型输出 `tool_call` 指令 -> 系统执行工具 -> 返回结果继续回答
+
+#### Composio 集成
+系统已集成 [Composio](https://www.composio.dev) 平台，提供 1000+ 工具的统一接入：
+
+**优势：**
+- 一次配置，访问所有工具（Slack、Gmail、GitHub、Notion 等）
+- 自动处理 OAuth 认证流程
+- 无需单独管理各平台的 API Key
+- 免费额度：1000 次/月
+
+**配置步骤：**
+1. 注册 Composio 账号：https://www.composio.dev
+2. 获取 API Key：https://platform.composio.dev/settings
+3. 在 Composio Dashboard 中连接需要的工具（Slack、Gmail 等）
+4. 设置环境变量 `COMPOSIO_API_KEY`
+
+**工具调用链：**
+```
+Agent 请求 -> ToolService -> ComposioService(@composio/core SDK) -> Composio API -> 真实服务
+```
+
+**技术实现：**
+- 使用 `@composio/core` SDK 调用 Composio API
+- SDK 自动处理会话管理和工具执行
+- 代码示例：
+```typescript
+const composio = new Composio({ apiKey: process.env.COMPOSIO_API_KEY });
+const session = await composio.create({ userId: 'agent_123' });
+const result = await session.executeAction({
+  action: 'SERPER_DEV_SEARCH',
+  params: { query: 'AI news' }
+});
+```
+
+**降级策略：**
+- 优先使用 Composio SDK（如果配置了 `COMPOSIO_API_KEY`）
+- 备用方案：直接使用各平台 API（需单独配置）
+- 最终备用：模拟结果（开发和测试环境）
 
 ### 4. 💼 人力资源系统
 
@@ -261,6 +315,30 @@ mongod
 - `PUT /:id` - 更新Agent信息
 - `DELETE /:id` - 删除Agent
 - `POST /:id/execute` - 执行Agent任务
+- `GET /mcp/map` - 获取agents map（角色/工具集/能力集/暴露配置）
+- `GET /mcp` - 获取MCP可见agent列表（支持 `includeHidden=true`）
+- `GET /mcp/:id` - 获取单个agent的MCP能力详情
+- `GET /mcp/profiles` - 获取数据库中的MCP profile列表
+- `GET /mcp/profiles/:agentType` - 获取指定类型profile
+- `PUT /mcp/profiles/:agentType` - 创建或更新profile（数据库驱动）
+
+> 说明：MCP 能力配置已改为数据库驱动（`agent_profiles`）。CEO/CTO 在被询问“系统有哪些agents”时，会优先通过内置工具 `agents_mcp_list` 获取实时列表后回答。
+>
+> Agent 类型规范见 `docs/agent_type.md`，前端类型选择来源于 `frontend/src/config/agentType.json`。
+> 当前系统支持：高管/高管助理/技术专家/全栈工程师/运维工程师/数据分析师/产品经理/HR/行政助理/营销专家/系统内置。
+
+#### Skill 管理 (`/api/skills`)
+- `GET /` - 获取技能库（支持按 `status`、`category` 过滤）
+- `POST /` - 创建技能
+- `PUT /:id` - 更新技能
+- `DELETE /:id` - 删除技能
+- `POST /assign` - 为指定 Agent 绑定技能
+- `GET /agents/:agentId` - 查询 Agent 已绑定技能
+- `POST /manager/discover` - AgentSkillManager 互联网检索并入库
+- `POST /manager/suggest/:agentId` - AgentSkillManager 生成技能增强建议
+- `GET /suggestions/agents/:agentId` - 查询某 Agent 的建议记录
+- `PUT /suggestions/:id` - 审核建议（accepted/rejected/applied）
+- `POST /docs/rebuild` - 从数据库重建 `docs/skills` 文档
 
 #### 工具管理 (`/api/tools`)
 - `GET /` - 获取所有工具
@@ -290,6 +368,32 @@ mongod
 - `POST /:id/invite` - 邀请Agent
 - `GET /` - 获取会议列表
 - `GET /stats` - 获取统计信息
+
+#### 研发管理 (`/api/rd-management`)
+- `GET /opencode/current` - 获取当前 OpenCode session 和 project 上下文
+- `GET /opencode/projects` - 获取 OpenCode 已有项目列表
+- `POST /opencode/projects/import` - 导入 OpenCode 项目（含 sessions/events 快照）到研发管理
+- `GET /opencode/sessions` - 获取 OpenCode 已有 session 列表
+- `GET /opencode/sessions/:id` - 获取 session 详情
+- `GET /opencode/sessions/:id/messages` - 获取 session 消息时间线
+- `POST /opencode/sessions` - 创建新的 OpenCode session
+- `POST /opencode/sessions/:id/prompt` - 向指定 session 发送消息
+- `GET /opencode/events?token=<JWT>` - 订阅 OpenCode 实时事件（SSE）
+- `POST /tasks/:id/opencode/sync-current` - 同步当前 OpenCode session/project 到任务
+- `POST /projects/:id/opencode/sync-current` - 同步当前 OpenCode project/session 到项目
+
+#### 任务编排与 Session 管理 (`/api/orchestration`)
+- `POST /plans/from-prompt` - 通过一句提示词生成可执行计划与任务拆解
+- `GET /plans` - 获取编排计划列表
+- `GET /plans/:id` - 获取计划详情（含任务）
+- `POST /plans/:id/run` - 执行计划（支持串行/并行）
+- `POST /tasks/:id/reassign` - 任务改派（Agent/员工/未分配）
+- `POST /tasks/:id/complete-human` - 人工任务完成回填
+- `POST /sessions` - 创建会话
+- `GET /sessions` - 查询会话（可按 ownerType/status 过滤）
+- `POST /sessions/:id/messages` - 向会话追加消息
+- `POST /sessions/:id/archive` - 归档会话
+- `POST /sessions/:id/resume` - 恢复会话
 
 ## 📊 数据模型
 
@@ -431,6 +535,9 @@ JWT_EXPIRES_IN=7d
 
 # 前端地址
 FRONTEND_URL=http://localhost:3000
+
+# OpenCode SDK Server
+OPENCODE_SERVER_URL=http://localhost:4096
 ```
 
 #### 微服务启动（平滑迁移）
@@ -510,3 +617,6 @@ MIT License
 
 
 $ lsof -ti :3001 | xargs kill -9 2>/dev/null
+
+
+$ (lsof -ti :3001; lsof -ti :3002; lsof -ti :3003; lsof -ti :3100) 2>/dev/null | sort -u | xargs -r kill; sleep 2; nohup npm run start:dev > /tmp/legacy-app.log 2>&1 & nohup npm run start:agents:dev > /tmp/agents-app.log 2>&1 & nohup npm run start:gateway:dev > /tmp/gateway-app.log 2>&1 & nohup npm run start:ws:dev > /tmp/ws-app.log 2>&1 & sleep 8; lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 | grep LISTEN

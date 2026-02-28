@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "module": "NodeNext",
     "outDir": "../../dist/apps/legacy",
     "rootDir": "../../",
     "declaration": false

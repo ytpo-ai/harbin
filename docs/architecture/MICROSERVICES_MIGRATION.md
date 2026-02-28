@@ -13,7 +13,7 @@
    - 路由分发
    - 用户上下文签名透传
 2. `apps/agents` 已上线
-   - 承载 `/api/agents`、`/api/tasks`、`/api/meetings`、`/api/discussions`
+   - 承载 `/api/agents`、`/api/tools`
    - 校验 `x-user-context` + `x-user-signature`
    - 提供 `/api/agents/:id/test-stream`
 3. `apps/ws` 已上线
@@ -30,9 +30,7 @@
 ## Gateway 路由策略
 
 - `/api/agents/**` -> `AGENTS_SERVICE_URL`
-- `/api/tasks/**` -> `AGENTS_SERVICE_URL`
-- `/api/meetings/**` -> `AGENTS_SERVICE_URL`
-- `/api/discussions/**` -> `AGENTS_SERVICE_URL`
+- `/api/tools/**` -> `AGENTS_SERVICE_URL`
 - 其余 `/api/**` -> `LEGACY_SERVICE_URL`
 
 ## 内部安全模型
@@ -43,6 +41,12 @@ Gateway 从 JWT 中提取用户上下文，并向下游附加：
 - `x-user-signature`: `HMAC_SHA256(x-user-context, INTERNAL_CONTEXT_SECRET)`
 
 Agents 服务对签名验签，拒绝未签名/伪造请求。
+
+## Legacy 调用 Agents（防腐层）
+
+- Legacy 侧新增 `AgentClientService`、`ToolClientService`
+- 通过内部签名头调用 `agents`（而非直接依赖 `AgentService` / `ToolService`）
+- 第一批替换：`organization`、`employees`、`hr`
 
 ## 流式交互模型（Agent Test）
 
@@ -67,7 +71,7 @@ Agents 服务对签名验签，拒绝未签名/伪造请求。
 
 - Agent 模型测试已切换为 `test-stream` + WS 流式显示
 - Meetings 页面已订阅 `meeting:<meetingId>`，实时接收消息/状态/总结事件
-- Discussions 页面已接入 `/api/discussions`（经 Gateway 转发）并订阅 `discussion:<discussionId>` 实时事件
+- Discussions 页面已接入 `/api/discussions`（经 Gateway 转发到 legacy）并订阅 `discussion:<discussionId>` 实时事件
 - WS 服务现在会在转发消息中附带 `channel` 字段，前端可在单连接上按 channel 多路复用
 - Meetings 支持「自由讨论 / 有序发言」模式切换，并新增「暂停/恢复会议」控制
 - Meetings 消息展示改为 WS 事件驱动，不再依赖定时轮询刷新

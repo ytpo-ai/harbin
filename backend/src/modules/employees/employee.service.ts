@@ -1,9 +1,9 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus, EmployeeRole } from '../../shared/schemas/employee.schema';
 import { Organization, OrganizationDocument } from '../../shared/schemas/organization.schema';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents/agent-client.service';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreateEmployeeDto {
@@ -65,7 +65,7 @@ export class EmployeeService {
   constructor(
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
     @InjectModel(Organization.name) private organizationModel: Model<OrganizationDocument>,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
   ) {}
 
   /**
@@ -156,7 +156,7 @@ export class EmployeeService {
 
     // 如果是Agent员工，获取Agent信息填充能力
     if (dto.type === EmployeeType.AGENT && dto.agentId) {
-      const agent = await this.agentService.getAgent(dto.agentId);
+      const agent = await this.agentClientService.getAgent(dto.agentId);
       if (agent) {
         saved.capabilities = agent.capabilities || [];
         saved.name = agent.name;
@@ -326,7 +326,7 @@ export class EmployeeService {
     if (employee.type === EmployeeType.HUMAN) {
       // 如果允许AI代理且设置了代理Agent，使用Agent ID
       if (employee.allowAIProxy && employee.aiProxyAgentId) {
-        const agent = await this.agentService.getAgent(employee.aiProxyAgentId);
+          const agent = await this.agentClientService.getAgent(employee.aiProxyAgentId);
         return {
           type: EmployeeType.AGENT,
           id: employee.aiProxyAgentId,
@@ -341,7 +341,7 @@ export class EmployeeService {
       };
     } else {
       // Agent员工直接使用Agent ID
-      const agent = await this.agentService.getAgent(employee.agentId!);
+      const agent = await this.agentClientService.getAgent(employee.agentId!);
       return {
         type: EmployeeType.AGENT,
         id: employee.agentId!,

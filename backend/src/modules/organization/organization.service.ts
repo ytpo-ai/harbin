@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Organization, OrganizationDocument } from '../../shared/schemas/organization.schema';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents/agent-client.service';
 import { ModelManagementService } from '../models/model-management.service';
 import { Agent, AIModel } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -13,7 +13,7 @@ export class OrganizationService {
 
   constructor(
     @InjectModel(Organization.name) private organizationModel: Model<OrganizationDocument>,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
     private readonly modelManagementService: ModelManagementService
   ) {}
 
@@ -300,6 +300,7 @@ export class OrganizationService {
     const ceoAgent: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
       name: 'Alex Chen',
       type: 'ai-executive',
+      role: 'chief-executive-officer',
       description: '具有丰富战略思维和领导力的AI首席执行官',
       model: defaultCeoModel,
       capabilities: ['战略思维', '领导力', '决策能力', '沟通协调', '商业洞察'],
@@ -313,10 +314,11 @@ export class OrganizationService {
 
 你的性格特点：有远见、决断力强、善于沟通、责任感重。
 你拥有7.5%的公司股份，与另一位联合创始人共享15%的创始股份。
+当用户询问系统中有哪些Agent时，请优先调用 agents_mcp_list 工具获取实时名单后再回答。
 
 当前使用的AI模型：${defaultCeoModel.name} (${defaultCeoModel.provider})`,
       isActive: true,
-      tools: ['web_search', 'data_analysis'],
+      tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list'],
       permissions: ['basic_web', 'data_access'],
       personality: {
         workEthic: 95,
@@ -333,6 +335,7 @@ export class OrganizationService {
     const ctoAgent: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
       name: 'Sarah Kim',
       type: 'ai-technical',
+      role: 'chief-technology-officer',
       description: '技术专家和系统架构师，AI首席技术官',
       model: defaultCtoModel,
       capabilities: ['技术架构', '系统设计', '团队管理', '代码审查', '创新思维'],
@@ -346,10 +349,11 @@ export class OrganizationService {
 
 你的性格特点：技术导向、逻辑思维强、注重细节、有创新精神。
 你拥有7.5%的公司股份，与另一位联合创始人共享15%的创始股份。
+当用户询问系统中有哪些Agent时，请优先调用 agents_mcp_list 工具获取实时名单后再回答。
 
 当前使用的AI模型：${defaultCtoModel.name} (${defaultCtoModel.provider})`,
       isActive: true,
-      tools: ['code_execution', 'web_search', 'data_analysis', 'file_read', 'file_write'],
+      tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list'],
       permissions: ['code_exec', 'basic_web', 'data_access', 'file_read', 'file_write'],
       personality: {
         workEthic: 92,
@@ -362,8 +366,8 @@ export class OrganizationService {
       performanceScore: 90
     };
 
-    await this.agentService.createAgent(ceoAgent);
-    await this.agentService.createAgent(ctoAgent);
+    await this.agentClientService.createAgent(ceoAgent);
+    await this.agentClientService.createAgent(ctoAgent);
 
     this.logger.log('创始Agent创建完成');
     if (ceoModel) {
@@ -402,7 +406,7 @@ export class OrganizationService {
       throw new Error(`Role ${roleId} is already at maximum capacity`);
     }
 
-    const agent = await this.agentService.getAgent(agentId);
+    const agent = await this.agentClientService.getAgent(agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }

@@ -1,10 +1,15 @@
-import { Controller, Get, Post, Body, Param, Delete, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Put, Query } from '@nestjs/common';
 import { AgentService } from './agent.service';
 import { Agent, Task, AIModel } from '../../shared/types';
 
 @Controller('agents')
 export class AgentController {
   constructor(private readonly agentService: AgentService) {}
+
+  private toBooleanFlag(value?: string): boolean {
+    if (!value) return false;
+    return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
+  }
 
   private normalizeAgent(agent: any) {
     const plain = agent?.toObject ? agent.toObject() : agent;
@@ -49,6 +54,39 @@ export class AgentController {
       })),
       timestamp: new Date().toISOString()
     };
+  }
+
+  @Get('mcp/map')
+  async getAgentsMcpMap() {
+    return this.agentService.getAgentsMcpMap();
+  }
+
+  @Get('mcp/profiles')
+  async getMcpProfiles() {
+    return this.agentService.getMcpProfiles();
+  }
+
+  @Get('mcp/profiles/:agentType')
+  async getMcpProfile(@Param('agentType') agentType: string) {
+    return this.agentService.getMcpProfile(agentType);
+  }
+
+  @Put('mcp/profiles/:agentType')
+  async upsertMcpProfile(
+    @Param('agentType') agentType: string,
+    @Body() body: { role?: string; tools?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
+  ) {
+    return this.agentService.upsertMcpProfile(agentType, body);
+  }
+
+  @Get('mcp')
+  async getMcpAgents(@Query('includeHidden') includeHidden?: string) {
+    return this.agentService.getMcpAgents({ includeHidden: this.toBooleanFlag(includeHidden) });
+  }
+
+  @Get('mcp/:id')
+  async getMcpAgent(@Param('id') id: string, @Query('includeHidden') includeHidden?: string) {
+    return this.agentService.getMcpAgent(id, { includeHidden: this.toBooleanFlag(includeHidden) });
   }
 
   @Get(':id')

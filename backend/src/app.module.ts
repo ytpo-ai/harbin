@@ -14,6 +14,9 @@ import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
 import { InvitationModule } from './modules/invitations/invitation.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { RdManagementModule } from './modules/rd-management/rd-management.module';
+import { OrchestrationModule } from './modules/orchestration/orchestration.module';
+import { SkillModule } from './modules/skills/skill.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -52,6 +55,9 @@ import jwtConfig from './config/jwt.config';
     EmployeeModule,
     InvitationModule,
     AuthModule,
+    RdManagementModule,
+    OrchestrationModule,
+    SkillModule,
   ],
 })
 export class AppModule {}

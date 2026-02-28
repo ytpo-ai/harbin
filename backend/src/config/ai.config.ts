@@ -57,9 +57,9 @@ export default registerAs('ai', () => ({
     models: {
       'kimi-k2-5': {
         name: 'Kimi K2.5',
-        model: 'kimi-latest',
+        model: 'kimi-k2.5',
         maxTokens: 32768,
-        temperature: 0.7,
+        temperature: 1,
       },
     },
   },

@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Proposal, ProposalDocument } from '../../shared/schemas/proposal.schema';
 import { OrganizationService } from '../organization/organization.service';
-import { AgentService } from '../agents/agent.service';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -13,7 +12,6 @@ export class GovernanceService {
   constructor(
     @InjectModel(Proposal.name) private proposalModel: Model<ProposalDocument>,
     private readonly organizationService: OrganizationService,
-    private readonly agentService: AgentService
   ) {}
 
   async createProposal(

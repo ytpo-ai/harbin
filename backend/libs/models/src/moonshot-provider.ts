@@ -10,7 +10,7 @@ export class MoonshotProvider extends BaseAIProvider {
   private client: OpenAI;
 
   constructor(model: AIModel, apiKey?: string) {
-    const resolvedApiKey = apiKey || process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY;
+    const resolvedApiKey = (apiKey || process.env.MOONSHOT_API_KEY || process.env.KIMI_API_KEY || '').trim();
     super(model, resolvedApiKey);
 
     const dispatcher = getProxyDispatcher();
@@ -71,7 +71,7 @@ export class MoonshotProvider extends BaseAIProvider {
   }
 
   private ensureApiKey(): void {
-    if (!this.apiKey) {
+    if (!this.apiKey || !this.apiKey.trim()) {
       throw new Error('Missing MOONSHOT_API_KEY (or KIMI_API_KEY)');
     }
   }

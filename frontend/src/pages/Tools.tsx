@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
 import { toolService } from '../services/toolService';
+import { agentService } from '../services/agentService';
 import { 
   WrenchScrewdriverIcon, 
   PlayIcon, 
@@ -18,6 +19,7 @@ const Tools: React.FC = () => {
   const { data: tools, isLoading } = useQuery('tools', toolService.getTools);
   const { data: executions } = useQuery('tool-executions', () => toolService.getToolExecutions());
   const { data: stats } = useQuery('tool-stats', toolService.getToolExecutionStats);
+  const { data: agents } = useQuery('agents', agentService.getAgents);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -301,6 +303,7 @@ const Tools: React.FC = () => {
       {executionModalOpen && selectedTool && (
         <ToolExecutionModal
           tool={selectedTool}
+          agents={agents || []}
           onClose={() => {
             setExecutionModalOpen(false);
             setSelectedTool(null);
@@ -314,8 +317,9 @@ const Tools: React.FC = () => {
 // 工具执行模态框
 const ToolExecutionModal: React.FC<{
   tool: any;
+  agents: any[];
   onClose: () => void;
-}> = ({ tool, onClose }) => {
+}> = ({ tool, agents, onClose }) => {
   const [parameters, setParameters] = useState<any>({});
   const [agentId, setAgentId] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
@@ -324,24 +328,17 @@ const ToolExecutionModal: React.FC<{
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      // 这里应该调用实际的工具执行API
-      console.log('Executing tool:', tool.id, 'with parameters:', parameters);
-      
-      // 模拟执行结果
-      setTimeout(() => {
-        setResult({
-          success: true,
-          output: `工具 ${tool.name} 执行成功`,
-          executionTime: Math.random() * 1000,
-          tokenCost: tool.tokenCost || 0
-        });
-        setIsExecuting(false);
-      }, 2000);
+      const executionResult = await toolService.executeTool(tool.id, agentId, parameters);
+      setResult({
+        ...executionResult,
+        success: executionResult.status === 'completed',
+      });
     } catch (error) {
       setResult({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       });
+    } finally {
       setIsExecuting(false);
     }
   };
@@ -400,9 +397,11 @@ const ToolExecutionModal: React.FC<{
                 className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">选择Agent...</option>
-                {/* 这里应该加载实际的Agent列表 */}
-                <option value="agent-1">Agent 1</option>
-                <option value="agent-2">Agent 2</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -412,12 +411,12 @@ const ToolExecutionModal: React.FC<{
             {/* 执行结果 */}
             {result && (
               <div className={`p-3 rounded ${
-                result.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                (result.success ?? result.status === 'completed') ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
               }`}>
-                <h4 className={`font-medium ${result.success ? 'text-green-800' : 'text-red-800'}`}>
-                  {result.success ? '执行成功' : '执行失败'}
+                <h4 className={`font-medium ${(result.success ?? result.status === 'completed') ? 'text-green-800' : 'text-red-800'}`}>
+                  {(result.success ?? result.status === 'completed') ? '执行成功' : '执行失败'}
                 </h4>
-                <pre className={`mt-2 text-sm ${result.success ? 'text-green-700' : 'text-red-700'}`}>
+                <pre className={`mt-2 text-sm ${(result.success ?? result.status === 'completed') ? 'text-green-700' : 'text-red-700'}`}>
                   {JSON.stringify(result, null, 2)}
                 </pre>
               </div>

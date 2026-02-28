@@ -328,8 +328,8 @@ export const AVAILABLE_MODELS: AIModel[] = [
     provider: 'moonshot',
     model: 'moonshot-v1-8k',
     maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
   {
     id: 'moonshot-v1-32k',
@@ -337,8 +337,8 @@ export const AVAILABLE_MODELS: AIModel[] = [
     provider: 'moonshot',
     model: 'moonshot-v1-32k',
     maxTokens: 32768,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
   {
     id: 'moonshot-v1-128k',
@@ -346,8 +346,8 @@ export const AVAILABLE_MODELS: AIModel[] = [
     provider: 'moonshot',
     model: 'moonshot-v1-128k',
     maxTokens: 128000,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
 
   // Baichuan Models
@@ -453,28 +453,28 @@ export const AVAILABLE_MODELS: AIModel[] = [
     id: 'kimi-latest',
     name: 'Kimi Latest',
     provider: 'moonshot',
-    model: 'kimi-latest',
+    model: 'moonshot-v1-auto',
     maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
   {
     id: 'kimi-k1',
-    name: 'Kimi K1',
+    name: 'Kimi K2',
     provider: 'moonshot',
-    model: 'kimi-k1',
+    model: 'kimi-k2',
     maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
   {
     id: 'kimi-k2-5',
     name: 'Kimi K2.5',
     provider: 'moonshot',
-    model: 'kimi-latest',
+    model: 'kimi-k2.5',
     maxTokens: 32768,
-    temperature: 0.7,
-    topP: 1
+    temperature: 1,
+    topP: 0.95
   },
 
   // Microsoft Models

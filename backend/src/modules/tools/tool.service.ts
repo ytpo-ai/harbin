@@ -1,116 +1,128 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { v4 as uuidv4 } from 'uuid';
 import { Tool, ToolDocument } from '../../shared/schemas/tool.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../shared/schemas/toolExecution.schema';
-import { v4 as uuidv4 } from 'uuid';
+import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
+import { AgentProfile, AgentProfileDocument } from '../../shared/schemas/agent-profile.schema';
+import { ComposioService } from './composio.service';
+import axios from 'axios';
+
+const DEFAULT_PROFILE = {
+  role: 'general-assistant',
+  tools: [],
+  capabilities: [],
+  exposed: false,
+};
 
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
-  private toolImplementations = new Map<string, any>();
 
   constructor(
     @InjectModel(Tool.name) private toolModel: Model<ToolDocument>,
-    @InjectModel(ToolExecution.name) private executionModel: Model<ToolExecutionDocument>
+    @InjectModel(ToolExecution.name) private executionModel: Model<ToolExecutionDocument>,
+    @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
+    @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
+    private composioService: ComposioService,
   ) {
-    this.initializeBuiltinTools();
+    void this.initializeBuiltinTools();
   }
 
   private async initializeBuiltinTools() {
     const builtinTools = [
       {
-        id: 'web_search',
-        name: '网络搜索',
-        description: '在互联网上搜索信息',
+        id: 'websearch',
+        name: 'Web Search',
+        description: 'Search web information via Composio SERPAPI',
         type: 'web_search' as const,
-        category: '信息检索',
-        requiredPermissions: [{ id: 'basic_web', name: '基础网络访问', level: 'basic' }],
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
         tokenCost: 10,
         implementation: {
           type: 'built_in' as const,
-          parameters: { query: 'string', maxResults: 'number' }
-        }
+          parameters: { query: 'string', maxResults: 'number' },
+        },
       },
       {
-        id: 'code_execution',
-        name: '代码执行',
-        description: '执行代码片段并返回结果',
-        type: 'code_execution' as const,
-        category: '开发工具',
-        requiredPermissions: [{ id: 'code_exec', name: '代码执行权限', level: 'intermediate' }],
-        tokenCost: 50,
+        id: 'webfetch',
+        name: 'Web Fetch',
+        description: 'Fetch and parse webpage content by URL',
+        type: 'web_search' as const,
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
+        tokenCost: 8,
         implementation: {
           type: 'built_in' as const,
-          parameters: { language: 'string', code: 'string' }
-        }
+          parameters: { url: 'string', timeoutMs: 'number' },
+        },
       },
       {
-        id: 'file_read',
-        name: '文件读取',
-        description: '读取文件内容',
-        type: 'file_operation' as const,
-        category: '文件操作',
-        requiredPermissions: [{ id: 'file_read', name: '文件读取权限', level: 'basic' }],
-        tokenCost: 5,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: { filePath: 'string' }
-        }
-      },
-      {
-        id: 'file_write',
-        name: '文件写入',
-        description: '写入文件内容',
-        type: 'file_operation' as const,
-        category: '文件操作',
-        requiredPermissions: [{ id: 'file_write', name: '文件写入权限', level: 'intermediate' }],
-        tokenCost: 5,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: { filePath: 'string', content: 'string' }
-        }
-      },
-      {
-        id: 'data_analysis',
-        name: '数据分析',
-        description: '分析数据和生成报告',
+        id: 'content_extract',
+        name: 'Content Extract',
+        description: 'Extract clean text, key bullets and numeric rows from raw HTML/text',
         type: 'data_analysis' as const,
-        category: '分析工具',
-        requiredPermissions: [{ id: 'data_access', name: '数据访问权限', level: 'intermediate' }],
-        tokenCost: 30,
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
+        tokenCost: 6,
         implementation: {
           type: 'built_in' as const,
-          parameters: { data: 'array', analysisType: 'string' }
-        }
+          parameters: { html: 'string', text: 'string', maxChars: 'number' },
+        },
       },
       {
-        id: 'video_editing',
-        name: '视频剪辑',
-        description: '基础视频剪辑操作',
-        type: 'video_editing' as const,
-        category: '媒体处理',
-        requiredPermissions: [{ id: 'media_edit', name: '媒体编辑权限', level: 'advanced' }],
-        tokenCost: 100,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: { inputFile: 'string', operations: 'array' }
-        }
-      },
-      {
-        id: 'api_call',
-        name: 'API调用',
-        description: '调用外部API',
+        id: 'slack',
+        name: 'Slack',
+        description: 'Send Slack messages via Composio',
         type: 'api_call' as const,
-        category: '集成工具',
-        requiredPermissions: [{ id: 'api_access', name: 'API访问权限', level: 'advanced' }],
+        category: 'Communication',
+        requiredPermissions: [{ id: 'slack_send', name: 'Slack Message Permission', level: 'intermediate' }],
+        tokenCost: 15,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: { channel: 'string', text: 'string' },
+        },
+      },
+      {
+        id: 'gmail',
+        name: 'Gmail',
+        description: 'Send or draft email via Composio',
+        type: 'api_call' as const,
+        category: 'Communication',
+        requiredPermissions: [{ id: 'gmail_send', name: 'Gmail Permission', level: 'intermediate' }],
         tokenCost: 20,
         implementation: {
           type: 'built_in' as const,
-          parameters: { url: 'string', method: 'string', headers: 'object', body: 'object' }
-        }
-      }
+          parameters: { to: 'string', subject: 'string', body: 'string', action: 'string' },
+        },
+      },
+      {
+        id: 'agents_mcp_list',
+        name: 'Agents MCP List',
+        description: 'List current agents, roles, and capability summaries from MCP visibility rules',
+        type: 'data_analysis' as const,
+        category: 'System Intelligence',
+        requiredPermissions: [{ id: 'data_access', name: 'Agent Registry Read', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: { includeHidden: 'boolean', limit: 'number' },
+        },
+      },
     ];
+
+    const virtualToolIds = [
+      'web_search',
+      'code_execution',
+      'file_read',
+      'file_write',
+      'data_analysis',
+      'video_editing',
+      'api_call',
+    ];
+
+    await this.toolModel.deleteMany({ id: { $in: virtualToolIds } }).exec();
 
     for (const toolData of builtinTools) {
       const existingTool = await this.toolModel.findOne({ id: toolData.id }).exec();
@@ -130,6 +142,11 @@ export class ToolService {
     return this.toolModel.findOne({ id: toolId }).exec();
   }
 
+  async getToolsByIds(toolIds: string[]): Promise<Tool[]> {
+    if (!toolIds.length) return [];
+    return this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
+  }
+
   async createTool(toolData: Omit<Tool, 'id' | 'createdAt' | 'updatedAt'>): Promise<Tool> {
     const newTool = new this.toolModel({
       ...toolData,
@@ -139,11 +156,9 @@ export class ToolService {
   }
 
   async updateTool(toolId: string, updates: Partial<Tool>): Promise<Tool | null> {
-    return this.toolModel.findOneAndUpdate(
-      { id: toolId },
-      { ...updates, updatedAt: new Date() },
-      { new: true }
-    ).exec();
+    return this.toolModel
+      .findOneAndUpdate({ id: toolId }, { ...updates, updatedAt: new Date() }, { new: true })
+      .exec();
   }
 
   async deleteTool(toolId: string): Promise<boolean> {
@@ -151,17 +166,11 @@ export class ToolService {
     return !!result;
   }
 
-  async executeTool(
-    toolId: string,
-    agentId: string,
-    parameters: any,
-    taskId?: string
-  ): Promise<ToolExecution> {
+  async executeTool(toolId: string, agentId: string, parameters: any, taskId?: string): Promise<ToolExecution> {
     const tool = await this.getTool(toolId);
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`);
     }
-
     if (!tool.enabled) {
       throw new Error(`Tool is disabled: ${toolId}`);
     }
@@ -175,134 +184,232 @@ export class ToolService {
       status: 'executing',
       tokenCost: tool.tokenCost || 0,
     });
-
     await execution.save();
 
     try {
-      this.logger.log(`Executing tool ${toolId} for agent ${agentId}`);
-      const result = await this.executeToolImplementation(tool, parameters);
-      
+      const result = await this.executeToolImplementation(tool, parameters, agentId);
       execution.result = result;
       execution.status = 'completed';
       execution.executionTime = Date.now() - execution.timestamp.getTime();
-      
       await execution.save();
-      
-      this.logger.log(`Tool ${toolId} executed successfully`);
       return execution;
     } catch (error) {
       execution.status = 'failed';
       execution.error = error instanceof Error ? error.message : 'Unknown error';
       execution.executionTime = Date.now() - execution.timestamp.getTime();
-      
       await execution.save();
-      
-      this.logger.error(`Tool ${toolId} execution failed:`, error);
       throw error;
     }
   }
 
-  private async executeToolImplementation(tool: Tool, parameters: any): Promise<any> {
+  private async executeToolImplementation(tool: Tool, parameters: any, agentId?: string): Promise<any> {
     switch (tool.id) {
-      case 'web_search':
-        return this.performWebSearch(parameters);
-      case 'code_execution':
-        return this.executeCode(parameters);
-      case 'file_read':
-        return this.readFile(parameters);
-      case 'file_write':
-        return this.writeFile(parameters);
-      case 'data_analysis':
-        return this.analyzeData(parameters);
-      case 'video_editing':
-        return this.editVideo(parameters);
-      case 'api_call':
-        return this.makeApiCall(parameters);
+      case 'websearch':
+        return this.performWebSearch(parameters, agentId);
+      case 'webfetch':
+        return this.performWebFetch(parameters);
+      case 'content_extract':
+        return this.extractContent(parameters);
+      case 'slack':
+        return this.sendSlackMessage(parameters, agentId);
+      case 'gmail':
+        return this.sendGmail(parameters, agentId);
+      case 'agents_mcp_list':
+        return this.getAgentsMcpList(parameters);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
   }
 
-  private async performWebSearch(params: { query: string; maxResults?: number }): Promise<any> {
-    // 这里可以集成真实的搜索API，如Google Search API、Bing Search API等
-    // 现在返回模拟结果
+  private async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number }): Promise<any> {
+    const includeHidden = params?.includeHidden === true;
+    const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
+    const agents = await this.agentModel.find().exec();
+    const agentTypes = Array.from(new Set(agents.map((agent: any) => String(agent.type || '').trim()).filter(Boolean)));
+    const profiles = await this.agentProfileModel.find({ agentType: { $in: agentTypes } }).exec();
+    const profileMap = new Map<string, AgentProfile>();
+    for (const profile of profiles) {
+      profileMap.set(profile.agentType, profile);
+    }
+
+    const mapped = agents.map((agent) => {
+      const plain = agent?.toObject ? agent.toObject() : agent;
+      const type = (plain.type || '').trim();
+      const profile = profileMap.get(type) || DEFAULT_PROFILE;
+      return {
+        id: plain.id || plain._id?.toString?.() || plain._id,
+        name: plain.name,
+        type: plain.type,
+        role: plain.role || profile.role,
+        capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...(profile.capabilities || [])])).slice(0, 12),
+        exposed: profile.exposed === true,
+        isActive: plain.isActive === true,
+      };
+    });
+
+    const visibleAgents = mapped.filter((item) => includeHidden || item.exposed).slice(0, limit);
+
+    return {
+      total: mapped.length,
+      visible: visibleAgents.length,
+      includeHidden,
+      agents: visibleAgents,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async performWebSearch(params: { query: string; maxResults?: number }, userId?: string): Promise<any> {
+    if (!params?.query) {
+      throw new Error('websearch requires parameter: query');
+    }
+
+    const result = await this.composioService.webSearch(params.query, params.maxResults || 10, userId);
+    if (!result.successful) {
+      throw new Error(result.error || 'Composio websearch failed');
+    }
+
+    const raw = result.data || {};
+    const rows = raw?.organic || raw?.results?.organic_results || raw?.results || [];
+    const organicResults = Array.isArray(rows) ? rows : [];
+
     return {
       query: params.query,
-      results: [
-        { title: '搜索结果1', url: 'https://example.com/1', snippet: '这是搜索结果的摘要1' },
-        { title: '搜索结果2', url: 'https://example.com/2', snippet: '这是搜索结果的摘要2' },
-      ],
-      totalResults: Math.floor(Math.random() * 1000) + 100,
+      provider: 'composio/serpapi',
+      results: organicResults.map((item: any) => ({
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet,
+        date: item.date,
+      })),
+      totalResults: organicResults.length,
+      raw,
     };
   }
 
-  private async executeCode(params: { language: string; code: string }): Promise<any> {
-    // 这里可以集成安全的代码执行环境，如Docker容器
-    // 现在返回简单的执行结果模拟
-    try {
-      // 注意：实际生产环境中需要更安全的代码执行方案
-      const result = `代码执行成功 (语言: ${params.language})`;
-      return { 
-        success: true, 
-        output: result, 
-        executionTime: Math.random() * 1000 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Unknown error' 
-      };
+  private async sendSlackMessage(params: { channel: string; text: string }, userId?: string): Promise<any> {
+    if (!params?.channel || !params?.text) {
+      throw new Error('slack requires parameters: channel, text');
     }
-  }
 
-  private async readFile(params: { filePath: string }): Promise<any> {
-    // 这里实现文件读取逻辑
+    const result = await this.composioService.slackSendMessage(params.channel, params.text, userId);
+    if (!result.successful) {
+      throw new Error(result.error || 'Composio slack send failed');
+    }
+
     return {
-      filePath: params.filePath,
-      content: '文件内容示例...',
-      size: 1024,
-      lastModified: new Date(),
+      provider: 'composio/slack',
+      status: 'sent',
+      channel: params.channel,
+      text: params.text,
+      raw: result.data,
     };
   }
 
-  private async writeFile(params: { filePath: string; content: string }): Promise<any> {
-    // 这里实现文件写入逻辑
-    return {
-      filePath: params.filePath,
-      bytesWritten: params.content.length,
-      success: true,
-    };
-  }
+  private async performWebFetch(params: { url: string; timeoutMs?: number }): Promise<any> {
+    if (!params?.url) {
+      throw new Error('webfetch requires parameter: url');
+    }
 
-  private async analyzeData(params: { data: any[]; analysisType: string }): Promise<any> {
-    // 这里实现数据分析逻辑
-    return {
-      analysisType: params.analysisType,
-      dataPoints: params.data.length,
-      insights: ['洞察1', '洞察2', '洞察3'],
-      summary: '数据分析总结',
-    };
-  }
+    const timeout = Math.max(3000, Math.min(params.timeoutMs || 12000, 30000));
+    const response = await axios.get(params.url, {
+      timeout,
+      responseType: 'text',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; AI-Agent-Team/1.0)',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      maxContentLength: 1024 * 1024,
+    });
 
-  private async editVideo(params: { inputFile: string; operations: any[] }): Promise<any> {
-    // 这里实现视频编辑逻辑
-    return {
-      inputFile: params.inputFile,
-      operations: params.operations,
-      outputFile: 'output_video.mp4',
-      duration: '00:10:30',
-      size: '50MB',
-    };
-  }
+    const html = String(response.data || '');
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? this.decodeHtmlEntities(titleMatch[1]).trim() : '';
+    const cleanedText = this.stripHtmlToText(html).slice(0, 30000);
 
-  private async makeApiCall(params: { url: string; method?: string; headers?: any; body?: any }): Promise<any> {
-    // 这里实现API调用逻辑
     return {
       url: params.url,
-      method: params.method || 'GET',
-      status: 200,
-      response: { message: 'API调用成功', data: {} },
-      responseTime: Math.random() * 500,
+      status: response.status,
+      title,
+      text: cleanedText,
+      textLength: cleanedText.length,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async extractContent(params: { html?: string; text?: string; maxChars?: number }): Promise<any> {
+    const raw = params?.text || (params?.html ? this.stripHtmlToText(params.html) : '');
+    if (!raw) {
+      throw new Error('content_extract requires html or text');
+    }
+
+    const maxChars = Math.max(2000, Math.min(params.maxChars || 12000, 50000));
+    const normalized = raw.replace(/\r/g, '').replace(/\t/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    const clipped = normalized.slice(0, maxChars);
+
+    const lines = clipped
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const numericLines = lines.filter((line) => /\d{1,3}(,\d{3})+|\d+\s*(million|bn|billion|万|亿)/i.test(line)).slice(0, 30);
+    const topBullets = lines.slice(0, 20);
+
+    return {
+      summary: topBullets.join('\n').slice(0, 5000),
+      numericLines,
+      totalLines: lines.length,
+      extractedAt: new Date().toISOString(),
+    };
+  }
+
+  private stripHtmlToText(html: string): string {
+    return html
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private decodeHtmlEntities(input: string): string {
+    return input
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+  }
+
+  private async sendGmail(
+    params: { to: string; subject: string; body: string; action?: 'draft' | 'send' },
+    userId?: string,
+  ): Promise<any> {
+    if (!params?.to || !params?.subject || !params?.body) {
+      throw new Error('gmail requires parameters: to, subject, body');
+    }
+
+    const action = params.action || 'send';
+    const result = await this.composioService.gmailSendEmail(
+      params.to,
+      params.subject,
+      params.body,
+      action,
+      userId,
+    );
+
+    if (!result.successful) {
+      throw new Error(result.error || 'Composio gmail send failed');
+    }
+
+    return {
+      provider: 'composio/gmail',
+      status: action === 'draft' ? 'drafted' : 'sent',
+      to: params.to,
+      subject: params.subject,
+      action,
+      raw: result.data,
     };
   }
 
@@ -310,25 +417,22 @@ export class ToolService {
     const filter: any = {};
     if (agentId) filter.agentId = agentId;
     if (toolId) filter.toolId = toolId;
-    
     return this.executionModel.find(filter).sort({ timestamp: -1 }).exec();
   }
 
   async getToolExecutionStats(): Promise<any> {
-    const stats = await this.executionModel.aggregate([
-      {
-        $group: {
-          _id: '$toolId',
-          totalExecutions: { $sum: 1 },
-          totalCost: { $sum: '$tokenCost' },
-          avgExecutionTime: { $avg: '$executionTime' },
-          successRate: {
-            $avg: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
-          }
-        }
-      }
-    ]).exec();
-
-    return stats;
+    return this.executionModel
+      .aggregate([
+        {
+          $group: {
+            _id: '$toolId',
+            totalExecutions: { $sum: 1 },
+            totalCost: { $sum: '$tokenCost' },
+            avgExecutionTime: { $avg: '$executionTime' },
+            successRate: { $avg: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          },
+        },
+      ])
+      .exec();
   }
 }

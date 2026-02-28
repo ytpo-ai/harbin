@@ -4,7 +4,9 @@ import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
+import { toolService } from '../services/toolService';
 import { Agent, AIModel } from '../types';
+import agentTypeConfig from '../config/agentType.json';
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -17,6 +19,7 @@ import {
   LockClosedIcon,
   BeakerIcon,
   XCircleIcon,
+  WrenchScrewdriverIcon,
 } from '@heroicons/react/24/outline';
 
 const normalizeProvider = (provider?: string): string => {
@@ -35,10 +38,29 @@ const isProviderCompatible = (modelProvider?: string, keyProvider?: string): boo
   return normalizeProvider(modelProvider) === normalizeProvider(keyProvider);
 };
 
+interface AgentTypeOption {
+  value: string;
+  label: string;
+  defaultRole: string;
+  defaultPrompt: string;
+}
+
+const agentTypeOptions = (agentTypeConfig as AgentTypeOption[]) || [];
+
+const getAgentTypeMeta = (agentType?: string): AgentTypeOption | undefined => {
+  return agentTypeOptions.find((item) => item.value === (agentType || '').trim());
+};
+
+const shouldApplyNextDefault = (currentValue: string, previousDefault?: string): boolean => {
+  const normalized = (currentValue || '').trim();
+  if (!normalized) return true;
+  return !!previousDefault && normalized === previousDefault.trim();
+};
+
 const Agents: React.FC = () => {
   const queryClient = useQueryClient();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isEditModelModalOpen, setIsEditModelModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
 
   const getAgentId = (agent: Agent | null): string => {
@@ -48,6 +70,7 @@ const Agents: React.FC = () => {
 
   const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
   const { data: availableModels } = useQuery('models', modelService.getAvailableModels);
+  const { data: availableTools } = useQuery('tools', toolService.getTools);
 
   const deleteAgentMutation = useMutation(agentService.deleteAgent, {
     onSuccess: () => {
@@ -65,13 +88,13 @@ const Agents: React.FC = () => {
     }
   );
 
-  const updateAgentModelMutation = useMutation(
-    ({ id, model, apiKeyId }: { id: string; model: AIModel; apiKeyId: string }) =>
-      agentService.updateAgent(id, { model, apiKeyId }),
+  const updateAgentMutation = useMutation(
+    ({ id, updates }: { id: string; updates: Partial<Agent> }) =>
+      agentService.updateAgent(id, updates),
     {
       onSuccess: () => {
         queryClient.invalidateQueries('agents');
-        setIsEditModelModalOpen(false);
+        setIsEditModalOpen(false);
         setEditingAgent(null);
       },
     }
@@ -97,9 +120,9 @@ const Agents: React.FC = () => {
     toggleAgentMutation.mutate({ id, isActive: !agent.isActive });
   };
 
-  const handleEditModel = (agent: Agent) => {
+  const handleEditAgent = (agent: Agent) => {
     setEditingAgent(agent);
-    setIsEditModelModalOpen(true);
+    setIsEditModalOpen(true);
   };
 
   const isFounder = (agent: Agent) => {
@@ -159,11 +182,11 @@ const Agents: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => handleEditModel(agent)}
+                  onClick={() => handleEditAgent(agent)}
                   className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
                 >
-                  <CpuChipIcon className="h-3 w-3 mr-1" />
-                  更换模型
+                  <PencilIcon className="h-3 w-3 mr-1" />
+                  编辑配置
                 </button>
               </div>
               <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
@@ -213,6 +236,10 @@ const Agents: React.FC = () => {
                         {agent.model?.name}
                       </span>
                       <span>能力: {agent.capabilities?.slice(0, 3).join(', ')}{agent.capabilities?.length > 3 ? '...' : ''}</span>
+                      <span className="flex items-center">
+                        <WrenchScrewdriverIcon className="h-3 w-3 mr-1" />
+                        工具: {agent.tools?.length || 0}
+                      </span>
                     </div>
                   </div>
                   <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
@@ -225,13 +252,7 @@ const Agents: React.FC = () => {
                         <PowerIcon className="h-5 w-5" />
                       </button>
                       <button
-                        onClick={() => handleEditModel(agent)}
-                        className="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                        title="编辑模型"
-                      >
-                        <CpuChipIcon className="h-5 w-5" />
-                      </button>
-                      <button
+                        onClick={() => handleEditAgent(agent)}
                         className="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
                         title="编辑"
                       >
@@ -272,34 +293,35 @@ const Agents: React.FC = () => {
 
       {/* 创建Agent模态框 */}
       {isCreateModalOpen && (
-        <CreateAgentModal 
-          availableModels={availableModels || []}
-          onClose={() => setIsCreateModalOpen(false)}
-          onSuccess={() => {
-            setIsCreateModalOpen(false);
+            <CreateAgentModal 
+              availableModels={availableModels || []}
+              availableTools={availableTools || []}
+              onClose={() => setIsCreateModalOpen(false)}
+              onSuccess={() => {
+                setIsCreateModalOpen(false);
             queryClient.invalidateQueries('agents');
           }}
         />
       )}
 
-      {/* 编辑模型模态框 */}
-      {isEditModelModalOpen && editingAgent && (
-        <EditModelModal
+      {isEditModalOpen && editingAgent && (
+        <EditAgentModal
           agent={editingAgent}
           availableModels={availableModels || []}
+          availableTools={availableTools || []}
           onClose={() => {
-            setIsEditModelModalOpen(false);
+            setIsEditModalOpen(false);
             setEditingAgent(null);
           }}
-          onSave={({ model, apiKeyId }) => {
+          onSave={(updates) => {
             const id = getAgentId(editingAgent);
             if (!id) {
-              alert('Agent ID 无效，无法保存模型');
+              alert('Agent ID 无效，无法保存配置');
               return;
             }
-            updateAgentModelMutation.mutate({ id, model, apiKeyId });
+            updateAgentMutation.mutate({ id, updates });
           }}
-          isLoading={updateAgentModelMutation.isLoading}
+          isLoading={updateAgentMutation.isLoading}
         />
       )}
     </div>
@@ -309,18 +331,21 @@ const Agents: React.FC = () => {
 // 创建Agent模态框组件
 const CreateAgentModal: React.FC<{
   availableModels: AIModel[];
+  availableTools: Array<{ id: string; name: string; enabled?: boolean }>;
   onClose: () => void;
   onSuccess: () => void;
-}> = ({ availableModels, onClose, onSuccess }) => {
+}> = ({ availableModels, availableTools, onClose, onSuccess }) => {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
     type: '',
+    role: '',
     description: '',
     systemPrompt: '',
     capabilities: '',
     modelId: availableModels[0]?.id || '',
     apiKeyId: '',
+    selectedTools: [] as string[],
   });
 
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
@@ -337,6 +362,26 @@ const CreateAgentModal: React.FC<{
     },
   });
 
+  const handleCreateTypeChange = (nextType: string) => {
+    setFormData((prev) => {
+      const previousMeta = getAgentTypeMeta(prev.type);
+      const nextMeta = getAgentTypeMeta(nextType);
+      const nextRole = shouldApplyNextDefault(prev.role, previousMeta?.defaultRole)
+        ? (nextMeta?.defaultRole || prev.role)
+        : prev.role;
+      const nextPrompt = shouldApplyNextDefault(prev.systemPrompt, previousMeta?.defaultPrompt)
+        ? (nextMeta?.defaultPrompt || prev.systemPrompt)
+        : prev.systemPrompt;
+
+      return {
+        ...prev,
+        type: nextType,
+        role: nextRole,
+        systemPrompt: nextPrompt,
+      };
+    });
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -348,13 +393,14 @@ const CreateAgentModal: React.FC<{
     const agentData = {
       name: formData.name,
       type: formData.type,
+      role: formData.role || undefined,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
       capabilities: formData.capabilities.split(',').map(cap => cap.trim()).filter(Boolean),
       model: selectedModel,
       apiKeyId: formData.apiKeyId || undefined,
       isActive: true,
-      tools: [],
+      tools: formData.selectedTools,
       permissions: [],
       personality: {
         workEthic: 80,
@@ -462,18 +508,26 @@ const CreateAgentModal: React.FC<{
                 <select
                   required
                   value={formData.type}
-                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  onChange={(e) => handleCreateTypeChange(e.target.value)}
                   className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 >
                   <option value="">选择类型...</option>
-                  <option value="ai-executive">执行官</option>
-                  <option value="ai-technical">技术专家</option>
-                  <option value="ai-developer">开发工程师</option>
-                  <option value="ai-analyst">数据分析师</option>
-                  <option value="ai-creative">创意设计师</option>
-                  <option value="ai-support">客服支持</option>
+                  {agentTypeOptions.map((typeOption) => (
+                    <option key={typeOption.value} value={typeOption.value}>{typeOption.label}</option>
+                  ))}
                 </select>
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">角色（默认可自动填充）</label>
+              <input
+                type="text"
+                value={formData.role}
+                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: executive-assistant"
+              />
             </div>
             
             <div>
@@ -509,6 +563,37 @@ const CreateAgentModal: React.FC<{
                 placeholder="例如: 文本生成, 代码编写, 数据分析"
               />
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">可用工具</label>
+              <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
+                {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
+                  const checked = formData.selectedTools.includes(tool.id);
+                  return (
+                    <label key={tool.id} className="flex items-center justify-between text-sm text-gray-700">
+                      <span>{tool.name}</span>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setFormData((prev) => ({
+                            ...prev,
+                            selectedTools: e.target.checked
+                              ? [...prev.selectedTools, tool.id]
+                              : prev.selectedTools.filter((id) => id !== tool.id),
+                          }));
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                    </label>
+                  );
+                })}
+                {availableTools.length === 0 && (
+                  <p className="text-xs text-gray-500">暂无可用工具</p>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-gray-500">勾选后，该 Agent 才能在聊天/任务中调用对应工具。</p>
+            </div>
             
             <div className="flex justify-end space-x-3 pt-4 border-t">
               <button
@@ -533,30 +618,59 @@ const CreateAgentModal: React.FC<{
   );
 };
 
-// 编辑模型模态框
-const EditModelModal: React.FC<{
+const EditAgentModal: React.FC<{
   agent: Agent;
   availableModels: AIModel[];
+  availableTools: Array<{ id: string; name: string; description?: string; enabled?: boolean }>;
   onClose: () => void;
-  onSave: (payload: { model: AIModel; apiKeyId: string }) => void;
+  onSave: (updates: Partial<Agent>) => void;
   isLoading: boolean;
-}> = ({ agent, availableModels, onClose, onSave, isLoading }) => {
+}> = ({ agent, availableModels, availableTools, onClose, onSave, isLoading }) => {
+  const [activeTab, setActiveTab] = useState<'model' | 'tools' | 'basic'>('model');
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
+  const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
+  const [name, setName] = useState(agent.name || '');
+  const [agentType, setAgentType] = useState(agent.type || '');
+  const [role, setRole] = useState(agent.role || '');
+  const [description, setDescription] = useState(agent.description || '');
+  const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
+  const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
   const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
   const [testedModelId, setTestedModelId] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState('');
+
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
-  
-  const selectedModel = availableModels.find(m => m.id === selectedModelId);
+
+  const selectedModel = availableModels.find((m) => m.id === selectedModelId);
   const filteredApiKeys = (apiKeys || []).filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
     return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive;
   });
+
+  const parsedCapabilities = capabilitiesText
+    .split(',')
+    .map((cap) => cap.trim())
+    .filter(Boolean);
+
+  const arraysEqual = (a: string[] = [], b: string[] = []) => {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort();
+    const sortedB = [...b].sort();
+    return sortedA.every((value, index) => value === sortedB[index]);
+  };
+
   const hasChanges =
     selectedModelId !== (agent.model?.id || '') ||
-    selectedApiKeyId !== (agent.apiKeyId || '');
+    selectedApiKeyId !== (agent.apiKeyId || '') ||
+    !arraysEqual(selectedTools, agent.tools || []) ||
+    name.trim() !== (agent.name || '').trim() ||
+    agentType.trim() !== (agent.type || '').trim() ||
+    role.trim() !== (agent.role || '').trim() ||
+    description.trim() !== (agent.description || '').trim() ||
+    systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
+    !arraysEqual(parsedCapabilities, agent.capabilities || []);
 
   const anthropicModelMayBeDeprecated =
     selectedModel?.provider === 'anthropic' &&
@@ -571,9 +685,38 @@ const EditModelModal: React.FC<{
   }, [selectedApiKeyId, filteredApiKeys]);
 
   const handleSave = () => {
-    if (selectedModel) {
-      onSave({ model: selectedModel, apiKeyId: selectedApiKeyId });
+    if (!selectedModel) {
+      alert('请选择一个模型');
+      setActiveTab('model');
+      return;
     }
+    if (!name.trim()) {
+      alert('Agent 名称不能为空');
+      setActiveTab('basic');
+      return;
+    }
+    if (!agentType.trim()) {
+      alert('Agent 类型不能为空');
+      setActiveTab('basic');
+      return;
+    }
+    if (!systemPrompt.trim()) {
+      alert('Prompt 不能为空');
+      setActiveTab('basic');
+      return;
+    }
+
+    onSave({
+      model: selectedModel,
+      apiKeyId: selectedApiKeyId || undefined,
+      tools: selectedTools,
+      name: name.trim(),
+      type: agentType.trim(),
+      role: role.trim() || undefined,
+      description: description.trim(),
+      systemPrompt: systemPrompt.trim(),
+      capabilities: parsedCapabilities,
+    });
   };
 
   const handleTest = async () => {
@@ -620,221 +763,374 @@ const EditModelModal: React.FC<{
 
   const getProviderColor = (provider: string) => {
     const colors: Record<string, string> = {
-      'openai': '#10a37f',
-      'anthropic': '#d97757',
-      'google': '#4285f4',
-      'deepseek': '#4f46e5',
-      'mistral': '#ff7000',
-      'meta': '#0668e1',
-      'alibaba': '#ff6a00',
-      'moonshot': '#000000',
-      'baichuan': '#1a73e8',
-      'zhipu': '#3b82f6',
-      'xunfei': '#0ea5e9',
-      'minimax': '#f59e0b',
-      'microsoft': '#00a4ef'
+      openai: '#10a37f',
+      anthropic: '#d97757',
+      google: '#4285f4',
+      deepseek: '#4f46e5',
+      mistral: '#ff7000',
+      meta: '#0668e1',
+      alibaba: '#ff6a00',
+      moonshot: '#000000',
+      baichuan: '#1a73e8',
+      zhipu: '#3b82f6',
+      xunfei: '#0ea5e9',
+      minimax: '#f59e0b',
+      microsoft: '#00a4ef',
     };
     return colors[provider] || '#6b7280';
   };
 
+  const toggleTool = (toolId: string, checked: boolean) => {
+    setSelectedTools((prev) =>
+      checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)
+    );
+  };
+
+  const handleEditTypeChange = (nextType: string) => {
+    const previousMeta = getAgentTypeMeta(agentType);
+    const nextMeta = getAgentTypeMeta(nextType);
+    const canUpdateRole = shouldApplyNextDefault(role, previousMeta?.defaultRole);
+    const canUpdatePrompt = shouldApplyNextDefault(systemPrompt, previousMeta?.defaultPrompt);
+
+    setAgentType(nextType);
+    if (canUpdateRole) {
+      setRole(nextMeta?.defaultRole || '');
+    }
+    if (canUpdatePrompt) {
+      setSystemPrompt(nextMeta?.defaultPrompt || '');
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-6 border w-[500px] shadow-lg rounded-lg bg-white">
-        <div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">更换模型</h3>
-          <p className="text-sm text-gray-500 mb-6">
-            为 <span className="font-medium text-gray-900">{agent.name}</span> 选择一个新的AI模型
-          </p>
+      <div className="relative top-10 mx-auto p-6 border w-[680px] shadow-lg rounded-lg bg-white max-h-[90vh] overflow-y-auto">
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">编辑 Agent</h3>
+        <p className="text-sm text-gray-500 mb-5">
+          当前编辑对象：<span className="font-medium text-gray-900">{agent.name}</span>
+        </p>
 
-          {/* 当前模型 */}
-          <div className="mb-6 p-4 bg-gray-50 rounded-lg">
-            <p className="text-sm text-gray-600 mb-1">当前模型</p>
-            <div className="flex items-center">
-              <span className="font-medium text-gray-900">{agent.model?.name}</span>
-              <span 
-                className="ml-2 px-2 py-0.5 rounded text-xs text-white"
-                style={{ backgroundColor: getProviderColor(agent.model?.provider || '') }}
-              >
-                {agent.model?.provider}
-              </span>
-            </div>
-            <p className="mt-2 text-xs text-gray-600">
-              当前密钥: {agent.apiKeyId ? 'Agent 绑定密钥' : '系统默认密钥'}
-            </p>
-          </div>
-
-          {/* 模型选择 */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              选择新模型 <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={selectedModelId}
-              onChange={(e) => {
-                setSelectedModelId(e.target.value);
-                setTestResult(null);
-                setTestedModelId(null);
-                setStreamingResponse('');
-              }}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+        <div className="border-b border-gray-200 mb-5">
+          <nav className="-mb-px flex space-x-6">
+            <button
+              onClick={() => setActiveTab('model')}
+              className={`py-2 text-sm font-medium border-b-2 ${
+                activeTab === 'model'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
             >
-              <option value="">请选择模型...</option>
-              {availableModels.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name} ({model.provider})
-                </option>
-              ))}
-            </select>
-          </div>
+              模型
+            </button>
+            <button
+              onClick={() => setActiveTab('tools')}
+              className={`py-2 text-sm font-medium border-b-2 ${
+                activeTab === 'tools'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              工具管理
+            </button>
+            <button
+              onClick={() => setActiveTab('basic')}
+              className={`py-2 text-sm font-medium border-b-2 ${
+                activeTab === 'basic'
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              基础信息
+            </button>
+          </nav>
+        </div>
 
-          {/* API Key选择 */}
-          {selectedModel && (
-            <div className="mb-6">
+        {activeTab === 'model' && (
+          <div className="space-y-5">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <p className="text-sm text-gray-600 mb-1">当前模型</p>
+              <div className="flex items-center">
+                <span className="font-medium text-gray-900">{agent.model?.name}</span>
+                <span
+                  className="ml-2 px-2 py-0.5 rounded text-xs text-white"
+                  style={{ backgroundColor: getProviderColor(agent.model?.provider || '') }}
+                >
+                  {agent.model?.provider}
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-gray-600">
+                当前密钥: {agent.apiKeyId ? 'Agent 绑定密钥' : '系统默认密钥'}
+              </p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                <LockClosedIcon className="h-4 w-4 inline mr-1" />
-                选择API密钥
-                <span className="text-xs text-gray-500 ml-1">(可选，默认使用系统密钥)</span>
+                选择模型 <span className="text-red-500">*</span>
               </label>
               <select
-                value={selectedApiKeyId}
+                value={selectedModelId}
                 onChange={(e) => {
-                  setSelectedApiKeyId(e.target.value);
+                  setSelectedModelId(e.target.value);
                   setTestResult(null);
+                  setTestedModelId(null);
                   setStreamingResponse('');
                 }}
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
-                <option value="">使用系统默认密钥</option>
-                {filteredApiKeys.map((key) => {
-                  const keyId = key.id || key._id;
-                  const masked = key.keyMasked || '****';
-                  return (
-                    <option key={keyId} value={keyId}>
-                      {masked} ({key.provider})
-                    </option>
-                  );
-                })}
+                <option value="">请选择模型...</option>
+                {availableModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.provider})
+                  </option>
+                ))}
               </select>
-              {filteredApiKeys.length === 0 && (
-                <p className="mt-2 text-sm text-amber-600">
-                  未找到 {selectedModel.provider} 的可用密钥，将使用系统默认配置
-                </p>
+            </div>
+
+            {selectedModel && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <LockClosedIcon className="h-4 w-4 inline mr-1" />
+                  选择 API 密钥
+                  <span className="text-xs text-gray-500 ml-1">(可选，默认使用系统密钥)</span>
+                </label>
+                <select
+                  value={selectedApiKeyId}
+                  onChange={(e) => {
+                    setSelectedApiKeyId(e.target.value);
+                    setTestResult(null);
+                    setStreamingResponse('');
+                  }}
+                  className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">使用系统默认密钥</option>
+                  {filteredApiKeys.map((key) => {
+                    const keyId = key.id || key._id;
+                    const masked = key.keyMasked || '****';
+                    return (
+                      <option key={keyId} value={keyId}>
+                        {masked} ({key.provider})
+                      </option>
+                    );
+                  })}
+                </select>
+                {filteredApiKeys.length === 0 && (
+                  <p className="mt-2 text-sm text-amber-600">
+                    未找到 {selectedModel.provider} 的可用密钥，将使用系统默认配置
+                  </p>
+                )}
+              </div>
+            )}
+
+            {selectedModel && (
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center mb-3">
+                  <CheckCircleIcon className="h-5 w-5 text-blue-600 mr-2" />
+                  <span className="font-medium text-blue-900">模型信息</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">模型名称:</span>
+                    <span className="font-medium text-blue-900">{selectedModel.name}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">提供商:</span>
+                    <span
+                      className="px-2 py-0.5 rounded text-xs text-white"
+                      style={{ backgroundColor: getProviderColor(selectedModel.provider) }}
+                    >
+                      {selectedModel.provider}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">Max Tokens:</span>
+                    <span className="font-medium">{selectedModel.maxTokens.toLocaleString()}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-blue-700">Temperature:</span>
+                    <span className="font-medium">{selectedModel.temperature}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {anthropicModelMayBeDeprecated && (
+              <div className="p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-sm">
+                当前选择的 Anthropic 模型版本可能已下线。若测试失败，请切换到较新的 Claude 模型后重试。
+              </div>
+            )}
+
+            <div>
+              <button
+                onClick={handleTest}
+                disabled={isTesting || !selectedModel}
+                className="inline-flex items-center px-4 py-2 border border-indigo-300 text-sm font-medium rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
+              >
+                <BeakerIcon className="h-4 w-4 mr-1" />
+                {isTesting ? '测试中...' : '测试模型连接'}
+              </button>
+              <p className="mt-2 text-xs text-gray-500">会用当前Agent设定向所选模型发送一条测试消息。</p>
+
+              {(isTesting || streamingResponse) && (
+                <div className="mt-3 p-3 rounded-md border bg-indigo-50 border-indigo-200">
+                  <div className="flex items-center mb-1">
+                    <BeakerIcon className="h-4 w-4 text-indigo-600 mr-1" />
+                    <span className="text-sm font-medium text-indigo-800">
+                      {isTesting ? '流式返回中...' : '流式返回结果'}
+                    </span>
+                  </div>
+                  <pre className="text-xs text-indigo-800 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
+                    {streamingResponse || '等待模型返回...'}
+                  </pre>
+                </div>
+              )}
+
+              {testResult && testedModelId === selectedModelId && (
+                <div className={`mt-3 p-3 rounded-md border ${testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className="flex items-center mb-1">
+                    {testResult.success ? (
+                      <CheckCircleIcon className="h-4 w-4 text-green-600 mr-1" />
+                    ) : (
+                      <XCircleIcon className="h-4 w-4 text-red-600 mr-1" />
+                    )}
+                    <span className={`text-sm font-medium ${testResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                      {testResult.success ? '模型连接成功' : '模型连接失败'}
+                    </span>
+                  </div>
+                  <div className={`text-xs ${testResult.success ? 'text-green-700' : 'text-red-700'}`}>
+                    {testResult.success ? (
+                      <>
+                        <p>耗时: {testResult.duration || '-'}</p>
+                        <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
+                        {testResult.note && <p className="mt-1 break-words">说明: {testResult.note}</p>}
+                        <p className="mt-1 break-words">响应: {testResult.response || '-'}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
+                        <p className="break-words">错误: {testResult.error || '未知错误'}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          )}
+          </div>
+        )}
 
-          {/* 新模型信息 */}
-          {selectedModel && (
-            <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center mb-3">
-                <CheckCircleIcon className="h-5 w-5 text-blue-600 mr-2" />
-                <span className="font-medium text-blue-900">新模型信息</span>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-blue-700">模型名称:</span>
-                  <span className="font-medium text-blue-900">{selectedModel.name}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-blue-700">提供商:</span>
-                  <span 
-                    className="px-2 py-0.5 rounded text-xs text-white"
-                    style={{ backgroundColor: getProviderColor(selectedModel.provider) }}
-                  >
-                    {selectedModel.provider}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-blue-700">Max Tokens:</span>
-                  <span className="font-medium">{selectedModel.maxTokens.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-blue-700">Temperature:</span>
-                  <span className="font-medium">{selectedModel.temperature}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {anthropicModelMayBeDeprecated && (
-            <div className="mb-6 p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-sm">
-              当前选择的 Anthropic 模型版本可能已下线。若测试失败，请切换到较新的 Claude 模型后重试。
-            </div>
-          )}
-
-          {/* 模型测试 */}
-          <div className="mb-6">
-            <button
-              onClick={handleTest}
-              disabled={isTesting || !selectedModel}
-              className="inline-flex items-center px-4 py-2 border border-indigo-300 text-sm font-medium rounded-md text-indigo-700 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-50"
-            >
-              <BeakerIcon className="h-4 w-4 mr-1" />
-              {isTesting ? '测试中...' : '测试模型连接'}
-            </button>
-            <p className="mt-2 text-xs text-gray-500">会用当前Agent设定向所选模型发送一条测试消息。</p>
-
-            {(isTesting || streamingResponse) && (
-              <div className="mt-3 p-3 rounded-md border bg-indigo-50 border-indigo-200">
-                <div className="flex items-center mb-1">
-                  <BeakerIcon className="h-4 w-4 text-indigo-600 mr-1" />
-                  <span className="text-sm font-medium text-indigo-800">
-                    {isTesting ? '流式返回中...' : '流式返回结果'}
-                  </span>
-                </div>
-                <pre className="text-xs text-indigo-800 whitespace-pre-wrap break-words max-h-40 overflow-y-auto">
-                  {streamingResponse || '等待模型返回...'}
-                </pre>
-              </div>
-            )}
-
-            {testResult && testedModelId === selectedModelId && (
-              <div className={`mt-3 p-3 rounded-md border ${testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="flex items-center mb-1">
-                  {testResult.success ? (
-                    <CheckCircleIcon className="h-4 w-4 text-green-600 mr-1" />
-                  ) : (
-                    <XCircleIcon className="h-4 w-4 text-red-600 mr-1" />
-                  )}
-                  <span className={`text-sm font-medium ${testResult.success ? 'text-green-800' : 'text-red-800'}`}>
-                    {testResult.success ? '模型连接成功' : '模型连接失败'}
-                  </span>
-                </div>
-                <div className={`text-xs ${testResult.success ? 'text-green-700' : 'text-red-700'}`}>
-                  {testResult.success ? (
-                    <>
-                      <p>耗时: {testResult.duration || '-'}</p>
-                      <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
-                      {testResult.note && <p className="mt-1 break-words">说明: {testResult.note}</p>}
-                      <p className="mt-1 break-words">响应: {testResult.response || '-'}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p>密钥来源: {testResult.keySource === 'custom' ? 'Agent绑定密钥' : '系统默认密钥'}</p>
-                      <p className="break-words">错误: {testResult.error || '未知错误'}</p>
-                    </>
-                  )}
-                </div>
-              </div>
+        {activeTab === 'tools' && (
+          <div className="max-h-[58vh] overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
+            {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
+              const checked = selectedTools.includes(tool.id);
+              return (
+                <label key={tool.id} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                      {tool.description && <p className="text-xs text-gray-500 mt-0.5">{tool.description}</p>}
+                      <p className="text-xs text-gray-400 mt-0.5">ID: {tool.id}</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => toggleTool(tool.id, e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mt-1"
+                    />
+                  </div>
+                </label>
+              );
+            })}
+            {availableTools.length === 0 && (
+              <p className="text-xs text-gray-500">暂无可配置工具</p>
             )}
           </div>
+        )}
 
-          {/* 按钮 */}
-          <div className="flex justify-end space-x-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              取消
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={isLoading || !selectedModelId || !hasChanges}
-              className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
-            >
-              {isLoading ? '保存中...' : '确认更换'}
-            </button>
+        {activeTab === 'basic' && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Agent 名称 <span className="text-red-500">*</span></label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: 智能助手"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">类型 <span className="text-red-500">*</span></label>
+              <select
+                value={agentType}
+                onChange={(e) => handleEditTypeChange(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">选择类型...</option>
+                {agentTypeOptions.map((typeOption) => (
+                  <option key={typeOption.value} value={typeOption.value}>{typeOption.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">角色（单个Agent级别，可选）</label>
+              <input
+                type="text"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: chief-architect"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                rows={2}
+                placeholder="简要描述这个Agent的职责和能力..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prompt <span className="text-red-500">*</span></label>
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
+                rows={6}
+                placeholder="定义Agent的行为和角色..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">能力集 (逗号分隔)</label>
+              <input
+                type="text"
+                value={capabilitiesText}
+                onChange={(e) => setCapabilitiesText(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: 文本生成, 代码编写, 数据分析"
+              />
+            </div>
           </div>
+        )}
+
+        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={isLoading || !hasChanges}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+          >
+            {isLoading ? '保存中...' : '保存变更'}
+          </button>
         </div>
       </div>
     </div>

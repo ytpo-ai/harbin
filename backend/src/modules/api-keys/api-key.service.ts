@@ -50,10 +50,13 @@ export class ApiKeyService {
    * 创建新的API Key（自动加密）
    */
   async createApiKey(apiKeyData: CreateApiKeyDto): Promise<ApiKeyResponse> {
+    const normalizedProvider = (apiKeyData.provider || '').trim().toLowerCase();
+    const normalizedKey = (apiKeyData.key || '').trim();
+
     // 检查是否已存在相同提供商和名称的key
     const existingKey = await this.apiKeyModel.findOne({ 
       name: apiKeyData.name,
-      provider: apiKeyData.provider 
+      provider: normalizedProvider,
     }).exec();
     
     if (existingKey) {
@@ -61,12 +64,12 @@ export class ApiKeyService {
     }
 
     // 加密API Key
-    const encryptedKey = EncryptionUtil.encrypt(apiKeyData.key);
+    const encryptedKey = EncryptionUtil.encrypt(normalizedKey);
 
     const newApiKey = new this.apiKeyModel({
       id: uuidv4(),
       name: apiKeyData.name,
-      provider: apiKeyData.provider,
+      provider: normalizedProvider,
       keyEncrypted: encryptedKey,
       description: apiKeyData.description,
       isActive: apiKeyData.isActive ?? true,
@@ -113,9 +116,13 @@ export class ApiKeyService {
       updatedAt: new Date()
     };
 
+    if (typeof updates.provider === 'string') {
+      updateData.provider = updates.provider.trim().toLowerCase();
+    }
+
     // 如果提供了新的key，需要重新加密
     if (updates.key) {
-      updateData.keyEncrypted = EncryptionUtil.encrypt(updates.key);
+      updateData.keyEncrypted = EncryptionUtil.encrypt(updates.key.trim());
       delete updateData.key; // 删除明文key字段
     }
 
@@ -167,7 +174,7 @@ export class ApiKeyService {
     }
 
     try {
-      return EncryptionUtil.decrypt(apiKey.keyEncrypted);
+      return EncryptionUtil.decrypt(apiKey.keyEncrypted).trim();
     } catch (error) {
       this.logger.error(`Failed to decrypt API key ${id}: ${error.message}`);
       return null;

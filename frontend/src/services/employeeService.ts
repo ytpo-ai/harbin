@@ -135,6 +135,19 @@ export interface ParticipantIdentity {
 }
 
 class EmployeeService {
+  async getEmployees(): Promise<Employee[]> {
+    const currentUser = localStorage.getItem('current_user');
+    if (!currentUser) return [];
+
+    try {
+      const parsed = JSON.parse(currentUser) as { organizationId?: string };
+      if (!parsed.organizationId) return [];
+      return this.getEmployeesByOrganization(parsed.organizationId);
+    } catch {
+      return [];
+    }
+  }
+
   async createEmployee(data: CreateEmployeeDto): Promise<Employee> {
     const response = await api.post('/employees', data);
     return response.data.data;

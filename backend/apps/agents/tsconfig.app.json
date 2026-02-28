@@ -1,6 +1,8 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
     "outDir": "../../dist/apps/agents",
     "rootDir": "../../",
     "declaration": false
@@ -10,5 +12,5 @@
     "../../libs/**/*.ts",
     "../../src/**/*.ts"
   ],
-  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "**/*spec.ts"]
 }

@@ -1,13 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AgentModule } from '../../../src/modules/agents/agent.module';
-import { TaskModule } from '../../../src/modules/tasks/task.module';
+import { AgentModule } from './modules/agents/agent.module';
 import { ModelModule } from '../../../src/modules/models/model.module';
 import { ApiKeysModule } from '../../../src/modules/api-keys/api-keys.module';
-import { ChatModule } from '../../../src/modules/chat/chat.module';
-import { EmployeeModule } from '../../../src/modules/employees/employee.module';
-import { MeetingModule } from '../../../src/modules/meetings/meeting.module';
 import appConfig from '../../../src/config/app.config';
 import databaseConfig from '../../../src/config/database.config';
 import aiConfig from '../../../src/config/ai.config';
@@ -39,10 +35,6 @@ import { HealthController } from './controllers/health.controller';
     ModelModule,
     ApiKeysModule,
     AgentModule,
-    EmployeeModule,
-    ChatModule,
-    MeetingModule,
-    TaskModule,
   ],
   controllers: [HealthController, AgentStreamController],
 })

@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
+    "moduleResolution": "nodenext",
+    "module": "NodeNext",
     "declaration": true,
     "removeComments": true,
     "emitDecoratorMetadata": true,
@@ -40,6 +41,7 @@
     "node_modules",
     "dist",
     "test-encryption.ts",
+    "**/*.spec.ts",
     "**/*.js",
     "**/*.js.map",
     "**/*.d.ts"

@@ -2,6 +2,7 @@ import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common
 import axios, { AxiosRequestConfig } from 'axios';
 import { encodeUserContext, signEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class GatewayProxyService {
@@ -13,9 +14,7 @@ export class GatewayProxyService {
   resolveTarget(originalUrl: string): string {
     if (
       originalUrl.startsWith('/api/agents') ||
-      originalUrl.startsWith('/api/tasks') ||
-      originalUrl.startsWith('/api/meetings') ||
-      originalUrl.startsWith('/api/discussions')
+      originalUrl.startsWith('/api/tools')
     ) {
       return this.agentsBaseUrl;
     }
@@ -33,6 +32,8 @@ export class GatewayProxyService {
   }
 
   async forward(req: any, res: any): Promise<void> {
+    const start = Date.now();
+    const requestId = (req.headers['x-request-id'] as string) || randomUUID();
     const targetBase = this.resolveTarget(req.originalUrl || req.url);
     const targetUrl = `${targetBase}${req.originalUrl || req.url}`;
 
@@ -43,6 +44,7 @@ export class GatewayProxyService {
     if (req.headers.authorization) {
       headers.authorization = req.headers.authorization;
     }
+    headers['x-request-id'] = requestId;
 
     Object.assign(headers, this.buildSignedHeaders(req.userContext));
 
@@ -59,15 +61,23 @@ export class GatewayProxyService {
 
     try {
       const response = await axios.request(config);
+      const latency = Date.now() - start;
       Object.entries(response.headers || {}).forEach(([key, value]) => {
         if (value === undefined) return;
         if (key.toLowerCase() === 'transfer-encoding') return;
         res.setHeader(key, value as any);
       });
+      res.setHeader('x-request-id', requestId);
+      this.logger.log(
+        `requestId=${requestId} ${req.method} ${req.originalUrl || req.url} -> ${targetBase} status=${response.status} latency=${latency}ms`,
+      );
       res.status(response.status).send(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Gateway proxy error';
-      this.logger.error(`Proxy failed: ${message}`);
+      const latency = Date.now() - start;
+      this.logger.error(
+        `requestId=${requestId} ${req.method} ${req.originalUrl || req.url} -> ${targetBase} failed latency=${latency}ms: ${message}`,
+      );
       throw new InternalServerErrorException('Gateway proxy failed');
     }
   }

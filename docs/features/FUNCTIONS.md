@@ -86,7 +86,10 @@
 
 ### 4. 工具系统
 
-#### 工具类型 (7种)
+#### 工具类型 (10种)
+- [x] WebSearch (Web Search)
+- [x] Slack (Team Messaging)
+- [x] Gmail (Email)
 - [x] 代码执行 (Code Execution)
 - [x] 网络搜索 (Web Search)
 - [x] 文件操作 (File Operation)
@@ -109,6 +112,11 @@
 - [x] Token消耗统计
 - [x] 执行历史记录
 - [x] 成功率分析
+
+#### Agent 工具分配与调用
+- [x] Agent 级工具白名单分配（按 Agent 单独配置）
+- [x] 聊天与任务执行支持工具调用循环（调用 -> 返回结果 -> 继续回答）
+- [x] 未授权工具调用自动拒绝并提示模型改用授权工具
 
 ### 5. 人力资源系统
 

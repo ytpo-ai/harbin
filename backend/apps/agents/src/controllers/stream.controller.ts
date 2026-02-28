@@ -1,5 +1,5 @@
 import { Body, Controller, Param, Post } from '@nestjs/common';
-import { AgentService } from '../../../../src/modules/agents/agent.service';
+import { AgentService } from '../modules/agents/agent.service';
 import { RedisService } from '@libs/infra';
 import { StreamChunkEvent } from '@libs/contracts';
 import { AIModel } from '../../../../src/shared/types';
