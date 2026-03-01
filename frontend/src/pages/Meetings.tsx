@@ -1,14 +1,17 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useSearchParams, useParams } from 'react-router-dom';
 import { meetingService, Meeting, MeetingType, MeetingStatus, CreateMeetingDto, MeetingSpeakingMode, ParticipantRole } from '../services/meetingService';
 import { agentService } from '../services/agentService';
 import { authService } from '../services/authService';
+import { employeeService, Employee } from '../services/employeeService';
 import { wsService } from '../services/wsService';
 import { Agent } from '../types';
 import { 
   VideoCameraIcon,
   PlusIcon,
   PlayIcon,
+  PauseIcon,
   StopIcon,
   UserGroupIcon,
   ChatBubbleLeftRightIcon,
@@ -19,6 +22,9 @@ import {
   XMarkIcon,
   ArchiveBoxIcon,
   TrashIcon,
+  ArrowTopRightOnSquareIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 const MEETING_TYPES = [
@@ -38,29 +44,228 @@ interface MeetingRealtimeEvent {
   timestamp: string;
 }
 
+interface MentionCandidate {
+  id: string;
+  type: 'employee' | 'agent';
+  name: string;
+}
+
 const Meetings: React.FC = () => {
   const queryClient = useQueryClient();
+  const { meetingId: meetingIdFromPath } = useParams<{ meetingId?: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [newMessage, setNewMessage] = useState('');
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [isComposing, setIsComposing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [selectedCandidateKey, setSelectedCandidateKey] = useState('');
+  const [isOperationsCollapsed, setIsOperationsCollapsed] = useState(false);
+  const [pinnedMeetingId, setPinnedMeetingId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const isChatOnlyMode = Boolean(meetingIdFromPath);
 
   useEffect(() => {
     authService.getCurrentUser().then(setCurrentUser);
   }, []);
 
   const { data: meetings, isLoading: meetingsLoading } = useQuery('meetings', () => 
-    meetingService.getAllMeetings()
+    meetingService.getAllMeetings(),
+    {
+      refetchOnMount: 'always',
+    },
   );
   const { data: stats } = useQuery('meeting-stats', meetingService.getMeetingStats);
   const { data: agents } = useQuery('agents', agentService.getAgents);
+  const { data: employees } = useQuery('employees', () => employeeService.getEmployees());
+  const targetMeetingId = meetingIdFromPath || searchParams.get('meetingId');
+  const effectiveMeetingId = pinnedMeetingId || targetMeetingId;
+  const { data: targetMeeting } = useQuery(
+    ['meeting', effectiveMeetingId],
+    () => meetingService.getMeeting(effectiveMeetingId as string),
+    {
+      enabled: Boolean(effectiveMeetingId),
+      staleTime: 0,
+      retry: 1,
+    },
+  );
+
+  const participantDisplayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    (agents || []).forEach((agent) => {
+      if (agent.id) {
+        map.set(`agent:${agent.id}`, agent.name);
+      }
+    });
+    (employees || []).forEach((employee: Employee) => {
+      if (employee.id) {
+        map.set(`employee:${employee.id}`, employee.name || employee.email || employee.id);
+      }
+      if (employee.agentId) {
+        map.set(`agent:${employee.agentId}`, employee.name || employee.agentId);
+      }
+    });
+    if (currentUser?.id) {
+      map.set(`employee:${currentUser.id}`, currentUser.name || currentUser.email || currentUser.id);
+    }
+    return map;
+  }, [agents, currentUser, employees]);
+
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (!selectedMeeting) {
+      return [];
+    }
+
+    const unique = new Map<string, MentionCandidate>();
+    (selectedMeeting.participants || []).forEach((participant) => {
+      const key = `${participant.participantType}:${participant.participantId}`;
+      const name = participantDisplayMap.get(key) || participant.participantId;
+      unique.set(key, {
+        id: participant.participantId,
+        type: participant.participantType,
+        name,
+      });
+    });
+    return Array.from(unique.values());
+  }, [participantDisplayMap, selectedMeeting]);
+
+  const filteredMentionCandidates = useMemo(() => {
+    if (mentionStart === null) {
+      return [];
+    }
+
+    const normalizedQuery = mentionQuery.trim().toLowerCase();
+    return mentionCandidates.filter((candidate) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+      return candidate.name.toLowerCase().includes(normalizedQuery) || candidate.id.toLowerCase().includes(normalizedQuery);
+    });
+  }, [mentionCandidates, mentionQuery, mentionStart]);
+
+  const managementCandidates = useMemo(() => {
+    if (!selectedMeeting) {
+      return [];
+    }
+
+    const participantKeys = new Set(
+      (selectedMeeting.participants || []).map((participant) => `${participant.participantType}:${participant.participantId}`),
+    );
+
+    const candidates: Array<{ key: string; id: string; type: 'employee' | 'agent'; name: string }> = [];
+
+    (employees || []).forEach((employee: Employee) => {
+      if (!employee.id) {
+        return;
+      }
+      const key = `employee:${employee.id}`;
+      if (!participantKeys.has(key)) {
+        candidates.push({
+          key,
+          id: employee.id,
+          type: 'employee',
+          name: employee.name || employee.email || employee.id,
+        });
+      }
+    });
+
+    (agents || [])
+      .filter((agent) => agent.id && agent.isActive)
+      .forEach((agent) => {
+        const key = `agent:${agent.id}`;
+        if (!participantKeys.has(key)) {
+          candidates.push({
+            key,
+            id: agent.id!,
+            type: 'agent',
+            name: agent.name,
+          });
+        }
+      });
+
+    return candidates.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  }, [agents, employees, selectedMeeting]);
+
+  useEffect(() => {
+    if (!targetMeetingId) {
+      return;
+    }
+    setPinnedMeetingId(targetMeetingId);
+  }, [targetMeetingId]);
+
+  useEffect(() => {
+    const meetingId = effectiveMeetingId;
+    if (!meetingId || !meetings || meetings.length === 0) {
+      return;
+    }
+
+    if (selectedMeeting?.id === meetingId) {
+      return;
+    }
+
+    const matchedMeeting = meetings.find((meeting) => meeting.id === meetingId);
+    if (matchedMeeting) {
+      setSelectedMeeting(matchedMeeting);
+      return;
+    }
+    setSelectedMeeting(null);
+  }, [effectiveMeetingId, meetings, selectedMeeting?.id]);
+
+  useEffect(() => {
+    if (!effectiveMeetingId || !targetMeeting) {
+      return;
+    }
+
+    if (selectedMeeting?.id === targetMeeting.id) {
+      return;
+    }
+
+    setSelectedMeeting(targetMeeting);
+  }, [effectiveMeetingId, selectedMeeting?.id, targetMeeting]);
+
+  useEffect(() => {
+    setTitleDraft(selectedMeeting?.title || '');
+  }, [selectedMeeting?.id, selectedMeeting?.title]);
+
+  useEffect(() => {
+    if (!selectedCandidateKey && managementCandidates.length > 0) {
+      setSelectedCandidateKey(managementCandidates[0].key);
+      return;
+    }
+
+    if (selectedCandidateKey && !managementCandidates.some((candidate) => candidate.key === selectedCandidateKey)) {
+      setSelectedCandidateKey(managementCandidates[0]?.key || '');
+    }
+  }, [managementCandidates, selectedCandidateKey]);
+
+  useEffect(() => {
+    if (mentionStart === null) {
+      return;
+    }
+    if (filteredMentionCandidates.length === 0) {
+      setMentionActiveIndex(0);
+      return;
+    }
+    if (mentionActiveIndex >= filteredMentionCandidates.length) {
+      setMentionActiveIndex(0);
+    }
+  }, [filteredMentionCandidates.length, mentionActiveIndex, mentionStart]);
+
+  useEffect(() => {
+    setIsOperationsCollapsed(isChatOnlyMode);
+  }, [isChatOnlyMode]);
   
   const createMutation = useMutation(meetingService.createMeeting, {
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries('meetings');
       queryClient.invalidateQueries('meeting-stats');
       setIsCreateModalOpen(false);
+      setSelectedMeeting(data);
     },
   });
 
@@ -79,10 +284,10 @@ const Meetings: React.FC = () => {
   );
 
   const endMutation = useMutation(meetingService.endMeeting, {
-    onSuccess: () => {
+    onSuccess: (data) => {
+      setSelectedMeeting(data);
       queryClient.invalidateQueries('meetings');
       queryClient.invalidateQueries('meeting-stats');
-      setSelectedMeeting(null);
     },
   });
 
@@ -105,6 +310,46 @@ const Meetings: React.FC = () => {
   const speakingModeMutation = useMutation(
     ({ id, speakingOrder }: { id: string; speakingOrder: MeetingSpeakingMode }) =>
       meetingService.updateSpeakingMode(id, speakingOrder),
+    {
+      onSuccess: (data) => {
+        setSelectedMeeting(data);
+        queryClient.invalidateQueries('meetings');
+      },
+    },
+  );
+
+  const titleMutation = useMutation(
+    ({ id, title }: { id: string; title: string }) => meetingService.updateMeetingTitle(id, title),
+    {
+      onSuccess: (data) => {
+        setSelectedMeeting(data);
+        queryClient.invalidateQueries('meetings');
+      },
+    },
+  );
+
+  const addParticipantMutation = useMutation(
+    ({ id, candidateKey }: { id: string; candidateKey: string }) => {
+      const [type, participantId] = candidateKey.split(':') as ['employee' | 'agent', string];
+      const displayName = participantDisplayMap.get(candidateKey) || participantId;
+      return meetingService.addParticipant(id, {
+        id: participantId,
+        type,
+        name: displayName,
+        isHuman: type === 'employee',
+      });
+    },
+    {
+      onSuccess: (data) => {
+        setSelectedMeeting(data);
+        queryClient.invalidateQueries('meetings');
+      },
+    },
+  );
+
+  const removeParticipantMutation = useMutation(
+    ({ id, participantId, participantType }: { id: string; participantId: string; participantType: 'employee' | 'agent' }) =>
+      meetingService.removeParticipant(id, participantId, participantType),
     {
       onSuccess: (data) => {
         setSelectedMeeting(data);
@@ -256,6 +501,16 @@ const Meetings: React.FC = () => {
         });
       }
 
+      if (event.type === 'settings_changed' && event.data?.title) {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== meetingId) return current;
+          return {
+            ...current,
+            title: event.data.title,
+          };
+        });
+      }
+
       if ((event.type === 'participant_joined' || event.type === 'participant_left') && event.data?.id) {
         setSelectedMeeting((current) => {
           if (!current || current.id !== meetingId) return current;
@@ -305,6 +560,68 @@ const Meetings: React.FC = () => {
     return '自由讨论';
   };
 
+  const getParticipantDisplayName = (participantId: string, participantType: 'employee' | 'agent') => {
+    return participantDisplayMap.get(`${participantType}:${participantId}`) || participantId;
+  };
+
+  const resetMention = () => {
+    setMentionStart(null);
+    setMentionQuery('');
+    setMentionActiveIndex(0);
+  };
+
+  const updateMentionState = (value: string, caretPosition: number | null) => {
+    if (caretPosition === null || caretPosition < 0) {
+      resetMention();
+      return;
+    }
+
+    const textBeforeCaret = value.slice(0, caretPosition);
+    const atIndex = textBeforeCaret.lastIndexOf('@');
+    if (atIndex === -1) {
+      resetMention();
+      return;
+    }
+
+    const prefix = textBeforeCaret.slice(Math.max(0, atIndex - 1), atIndex);
+    if (prefix && !/\s|\(|\[|\{|\n/.test(prefix)) {
+      resetMention();
+      return;
+    }
+
+    const query = textBeforeCaret.slice(atIndex + 1);
+    if (/\s/.test(query)) {
+      resetMention();
+      return;
+    }
+
+    setMentionStart(atIndex);
+    setMentionQuery(query);
+    setMentionActiveIndex(0);
+  };
+
+  const applyMentionCandidate = (candidate: MentionCandidate) => {
+    if (!messageInputRef.current || mentionStart === null) {
+      return;
+    }
+
+    const input = messageInputRef.current;
+    const caretPosition = input.selectionStart ?? newMessage.length;
+    const before = newMessage.slice(0, mentionStart);
+    const after = newMessage.slice(caretPosition);
+    const mentionText = `@${candidate.name} `;
+    const nextMessage = `${before}${mentionText}${after}`;
+    const nextCaret = before.length + mentionText.length;
+
+    setNewMessage(nextMessage);
+    resetMention();
+
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
   const getStatusBadge = (status: MeetingStatus) => {
     const styles: Record<string, string> = {
       [MeetingStatus.PENDING]: 'bg-gray-100 text-gray-800',
@@ -336,8 +653,9 @@ const Meetings: React.FC = () => {
   }
 
   return (
-    <div className="h-[calc(100vh-6rem)] flex">
+    <div className={isChatOnlyMode ? 'h-screen flex bg-gray-50' : 'h-[calc(100vh-6rem)] flex'}>
       {/* 左侧会议列表 */}
+      {!isChatOnlyMode && (
       <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
           <div className="flex justify-between items-center mb-4">
@@ -381,7 +699,14 @@ const Meetings: React.FC = () => {
             return (
               <div
                 key={meeting.id}
-                onClick={() => setSelectedMeeting(meeting)}
+                onClick={() => {
+                  setPinnedMeetingId(meeting.id);
+                  setSelectedMeeting(meeting);
+
+                  if (!isChatOnlyMode && searchParams.get('meetingId')) {
+                    setSearchParams({}, { replace: true });
+                  }
+                }}
                 className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors ${
                   selectedMeeting?.id === meeting.id ? 'bg-primary-50 border-l-4 border-l-primary-600' : ''
                 }`}
@@ -423,9 +748,10 @@ const Meetings: React.FC = () => {
           )}
         </div>
       </div>
+      )}
 
       {/* 右侧会议详情/讨论区 */}
-      <div className="flex-1 bg-gray-50 flex flex-col">
+      <div className="flex-1 bg-gray-50 flex flex-col min-w-0">
         {selectedMeeting ? (
           <>
             {/* 会议头部 */}
@@ -468,37 +794,63 @@ const Meetings: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => window.open(`/meetings/${selectedMeeting.id}`, '_blank', 'noopener,noreferrer')}
+                    className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    title="在新页面打开此会议"
+                    aria-label="在新页面打开此会议"
+                  >
+                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                  </button>
                   {selectedMeeting.status === MeetingStatus.PENDING && (
-                    <button
-                      onClick={() => startMutation.mutate({ 
-                        id: selectedMeeting.id, 
-                        startedById: selectedMeeting.hostId,
-                        startedByType: selectedMeeting.hostType || 'employee',
-                        startedByName: currentUser?.name || '主持人'
-                      })}
-                      disabled={startMutation.isLoading}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                    >
-                      <PlayIcon className="h-4 w-4 mr-1" />
-                      开始会议
-                    </button>
+                    <>
+                      <button
+                        onClick={() => startMutation.mutate({
+                          id: selectedMeeting.id,
+                          startedById: selectedMeeting.hostId,
+                          startedByType: selectedMeeting.hostType || 'employee',
+                          startedByName: currentUser?.name || '主持人',
+                        })}
+                        disabled={startMutation.isLoading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                      >
+                        <PlayIcon className="h-4 w-4 mr-1" />
+                        开始会议
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm('确定要删除此未开始会议吗？此操作不可撤销。')) {
+                            deleteMutation.mutate(selectedMeeting.id);
+                          }
+                        }}
+                        disabled={deleteMutation.isLoading}
+                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        title={deleteMutation.isLoading ? '删除中' : '删除会议'}
+                        aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </button>
+                    </>
                   )}
                   {selectedMeeting.status === MeetingStatus.ACTIVE && (
                     <>
                       <button
                         onClick={() => pauseMutation.mutate(selectedMeeting.id)}
                         disabled={pauseMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        title={pauseMutation.isLoading ? '暂停中' : '暂停会议'}
+                        aria-label={pauseMutation.isLoading ? '暂停中' : '暂停会议'}
                       >
-                        {pauseMutation.isLoading ? '暂停中...' : '暂停会议'}
+                        <PauseIcon className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => endMutation.mutate(selectedMeeting.id)}
                         disabled={endMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        title={endMutation.isLoading ? '结束中' : '结束会议'}
+                        aria-label={endMutation.isLoading ? '结束中' : '结束会议'}
                       >
-                        <StopIcon className="h-4 w-4 mr-1" />
-                        结束会议
+                        <StopIcon className="h-4 w-4" />
                       </button>
                     </>
                   )}
@@ -515,10 +867,11 @@ const Meetings: React.FC = () => {
                       <button
                         onClick={() => endMutation.mutate(selectedMeeting.id)}
                         disabled={endMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        title={endMutation.isLoading ? '结束中' : '结束会议'}
+                        aria-label={endMutation.isLoading ? '结束中' : '结束会议'}
                       >
-                        <StopIcon className="h-4 w-4 mr-1" />
-                        结束会议
+                        <StopIcon className="h-4 w-4" />
                       </button>
                     </>
                   )}
@@ -527,10 +880,11 @@ const Meetings: React.FC = () => {
                       <button
                         onClick={() => archiveMutation.mutate(selectedMeeting.id)}
                         disabled={archiveMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        title={archiveMutation.isLoading ? '归档中' : '归档会议'}
+                        aria-label={archiveMutation.isLoading ? '归档中' : '归档会议'}
                       >
-                        <ArchiveBoxIcon className="h-4 w-4 mr-1" />
-                        {archiveMutation.isLoading ? '归档中...' : '归档'}
+                        <ArchiveBoxIcon className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => {
@@ -539,10 +893,11 @@ const Meetings: React.FC = () => {
                           }
                         }}
                         disabled={deleteMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                        title={deleteMutation.isLoading ? '删除中' : '删除会议'}
+                        aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
                       >
-                        <TrashIcon className="h-4 w-4 mr-1" />
-                        {deleteMutation.isLoading ? '删除中...' : '删除'}
+                        <TrashIcon className="h-4 w-4" />
                       </button>
                     </>
                   )}
@@ -554,10 +909,11 @@ const Meetings: React.FC = () => {
                         }
                       }}
                       disabled={deleteMutation.isLoading}
-                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                      title={deleteMutation.isLoading ? '删除中' : '删除会议'}
+                      aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
                     >
-                      <TrashIcon className="h-4 w-4 mr-1" />
-                      {deleteMutation.isLoading ? '删除中...' : '删除'}
+                      <TrashIcon className="h-4 w-4" />
                     </button>
                   )}
                 </div>
@@ -570,8 +926,7 @@ const Meetings: React.FC = () => {
                   {(selectedMeeting.participants || []).map((participant) => {
                     const legacyParticipant = participant as any;
                     const participantId = participant.participantId || legacyParticipant.agentId || 'unknown';
-                    const agent = agents?.find(a => a.id === participantId);
-                    const participantName = agent?.name || participantId || '未知';
+                    const participantName = getParticipantDisplayName(participantId, participant.participantType);
                     return (
                       <div
                         key={participantId}
@@ -641,174 +996,363 @@ const Meetings: React.FC = () => {
               </div>
             </div>
 
-            {/* 消息区域 */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {selectedMeeting.status === MeetingStatus.PENDING ? (
-                <div className="text-center py-12 text-gray-400">
-                  <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
-                  <p>会议尚未开始</p>
-                  <p className="text-sm">点击"开始会议"按钮开始讨论</p>
-                </div>
-              ) : (selectedMeeting.messages || []).length === 0 ? (
-                <div className="text-center py-12 text-gray-400">
-                  <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
-                  <p>等待第一条消息</p>
-                  <p className="text-sm">发送消息开始讨论，AI Agent会自动回复</p>
-                </div>
-              ) : (
-                selectedMeeting.messages.map((message, index) => {
-                  const legacyMessage = message as any;
-                  const senderId = message.senderId || legacyMessage.agentId || 'unknown';
-                  const agent = agents?.find(a => a.id === senderId);
-                  const senderName = agent?.name || senderId || '未知';
-                  const isSystem = message.senderType === 'system';
-                  const isUser = message.senderType === 'employee';
-                  
-                  return (
-                    <div
-                      key={message.id || index}
-                      className={`flex ${isSystem ? 'justify-center' : isUser ? 'justify-end' : 'justify-start'}`}
-                    >
-                      {isSystem ? (
-                        <div className="bg-gray-100 text-gray-600 text-sm px-4 py-2 rounded-full">
-                          {message.content}
-                        </div>
-                      ) : (
-                        <div className={`max-w-[70%] ${isUser ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200'} rounded-lg px-4 py-3 shadow-sm`}>
-                          {!isUser && (
-                            <div className="flex items-center gap-2 mb-1">
-                              <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
-                                {senderName.charAt(0).toUpperCase()}
-                              </div>
-                              <span className="text-xs font-medium text-gray-600">
-                                {senderName}
-                              </span>
-                              {message.type && message.type !== 'opinion' && (
-                                <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
-                                  {message.type === 'question' ? '提问' : 
-                                   message.type === 'agreement' ? '赞同' :
-                                   message.type === 'disagreement' ? '反对' :
-                                   message.type === 'suggestion' ? '建议' :
-                                   message.type === 'introduction' ? '入场' :
-                                   message.type === 'action_item' ? '行动项' : '观点'}
-                                </span>
+            <div className="flex-1 min-h-0 flex">
+              <div className="flex-1 min-h-0 flex flex-col">
+                {/* 消息区域 */}
+                <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                  {selectedMeeting.status === MeetingStatus.PENDING ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
+                      <p>会议尚未开始</p>
+                      <p className="text-sm">点击"开始会议"按钮开始讨论</p>
+                    </div>
+                  ) : (selectedMeeting.messages || []).length === 0 ? (
+                    <div className="text-center py-12 text-gray-400">
+                      <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
+                      <p>等待第一条消息</p>
+                      <p className="text-sm">发送消息开始讨论，AI Agent会自动回复</p>
+                    </div>
+                  ) : (
+                    selectedMeeting.messages.map((message, index) => {
+                      const legacyMessage = message as any;
+                      const senderId = message.senderId || legacyMessage.agentId || 'unknown';
+                      const senderName = getParticipantDisplayName(senderId, message.senderType === 'agent' ? 'agent' : 'employee');
+                      const isSystem = message.senderType === 'system';
+                      const isUser = message.senderType === 'employee';
+
+                      return (
+                        <div
+                          key={message.id || index}
+                          className={`flex ${isSystem ? 'justify-center' : isUser ? 'justify-end' : 'justify-start'}`}
+                        >
+                          {isSystem ? (
+                            <div className="bg-gray-100 text-gray-600 text-sm px-4 py-2 rounded-full">
+                              {message.content}
+                            </div>
+                          ) : (
+                            <div className={`max-w-[70%] ${isUser ? 'bg-primary-600 text-white' : 'bg-white border border-gray-200'} rounded-lg px-4 py-3 shadow-sm`}>
+                              {!isUser && (
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div className="w-6 h-6 rounded-full bg-gray-200 flex items-center justify-center text-xs font-medium">
+                                    {senderName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <span className="text-xs font-medium text-gray-600">
+                                    {senderName}
+                                  </span>
+                                  {message.type && message.type !== 'opinion' && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+                                      {message.type === 'question' ? '提问' :
+                                       message.type === 'agreement' ? '赞同' :
+                                       message.type === 'disagreement' ? '反对' :
+                                       message.type === 'suggestion' ? '建议' :
+                                       message.type === 'introduction' ? '入场' :
+                                       message.type === 'action_item' ? '行动项' : '观点'}
+                                    </span>
+                                  )}
+                                </div>
                               )}
+                              <p className={`text-sm ${isUser ? 'text-white' : 'text-gray-800'} whitespace-pre-wrap`}>
+                                {message.content}
+                              </p>
+                              <div className={`text-xs mt-1 ${isUser ? 'text-primary-200' : 'text-gray-400'}`}>
+                                {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </div>
                             </div>
                           )}
-                          <p className={`text-sm ${isUser ? 'text-white' : 'text-gray-800'} whitespace-pre-wrap`}>
-                            {message.content}
-                          </p>
-                          <div className={`text-xs mt-1 ${isUser ? 'text-primary-200' : 'text-gray-400'}`}>
-                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </div>
                         </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              <div ref={messagesEndRef} />
-            </div>
+                      );
+                    })
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
 
-            {/* 输入框 */}
-            {selectedMeeting.status === MeetingStatus.ACTIVE && (
-              <div className="bg-white border-t border-gray-200 px-6 py-4">
-                {(() => {
-                  const isParticipant = (selectedMeeting.participants || []).some(
-                    p => p.participantId === currentUser?.id && p.isPresent
-                  );
-                  const isHost = selectedMeeting.hostId === currentUser?.id;
+                {/* 输入框 */}
+                {selectedMeeting.status === MeetingStatus.ACTIVE && (
+                  <div className="bg-white border-t border-gray-200 px-6 py-4">
+                    {(() => {
+                      const isParticipant = (selectedMeeting.participants || []).some(
+                        p => p.participantId === currentUser?.id && p.isPresent,
+                      );
+                      const isHost = selectedMeeting.hostId === currentUser?.id;
 
-                  if (!isParticipant && !isHost) {
-                    return (
-                      <div className="text-center py-4">
-                        <button
-                          onClick={() => joinMutation.mutate({ 
-                            id: selectedMeeting.id, 
-                            agentId: currentUser?.id 
-                          })}
-                          disabled={joinMutation.isLoading}
-                          className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                        >
-                          {joinMutation.isLoading ? '加入中...' : '加入会议'}
-                        </button>
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newMessage}
-                        onChange={(e) => setNewMessage(e.target.value)}
-                        onKeyPress={(e) => {
-                          if (e.key === 'Enter' && newMessage.trim()) {
-                            sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
-                          }
-                        }}
-                        placeholder="输入消息（可用 @AgentName 点名发言）..."
-                        className="flex-1 border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                      />
-                      <button
-                        onClick={() => {
-                      if (newMessage.trim()) {
-                        sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
+                      if (!isParticipant && !isHost) {
+                        return (
+                          <div className="text-center py-4">
+                            <button
+                              onClick={() => joinMutation.mutate({
+                                id: selectedMeeting.id,
+                                agentId: currentUser?.id,
+                              })}
+                              disabled={joinMutation.isLoading}
+                              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+                            >
+                              {joinMutation.isLoading ? '加入中...' : '加入会议'}
+                            </button>
+                          </div>
+                        );
                       }
-                    }}
-                    disabled={sendMessageMutation.isLoading || !newMessage.trim()}
-                    className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <PaperAirplaneIcon className="h-5 w-5" />
-                  </button>
-                </div>
-                );
-                })()}
-              </div>
-            )}
 
-            {selectedMeeting.status === MeetingStatus.PAUSED && (
-              <div className="bg-white border-t border-gray-200 px-6 py-4 text-sm text-yellow-700">
-                会议已暂停，恢复后可继续发言。
-              </div>
-            )}
+                      return (
+                        <div className="relative">
+                          <div className="flex gap-2">
+                            <textarea
+                              ref={messageInputRef}
+                              value={newMessage}
+                              onChange={(event) => {
+                                setNewMessage(event.target.value);
+                                if (!isComposing) {
+                                  updateMentionState(event.target.value, event.target.selectionStart);
+                                }
+                              }}
+                              onClick={(event) => updateMentionState(newMessage, event.currentTarget.selectionStart)}
+                              onKeyUp={(event) => {
+                                if (!isComposing) {
+                                  updateMentionState(newMessage, event.currentTarget.selectionStart);
+                                }
+                              }}
+                              onCompositionStart={() => setIsComposing(true)}
+                              onCompositionEnd={(event) => {
+                                setIsComposing(false);
+                                updateMentionState(event.currentTarget.value, event.currentTarget.selectionStart);
+                              }}
+                              onKeyDown={(event) => {
+                                if (mentionStart !== null && filteredMentionCandidates.length > 0) {
+                                  if (event.key === 'ArrowDown') {
+                                    event.preventDefault();
+                                    setMentionActiveIndex((prev) => (prev + 1) % filteredMentionCandidates.length);
+                                    return;
+                                  }
+                                  if (event.key === 'ArrowUp') {
+                                    event.preventDefault();
+                                    setMentionActiveIndex((prev) => (prev - 1 + filteredMentionCandidates.length) % filteredMentionCandidates.length);
+                                    return;
+                                  }
+                                  if (event.key === 'Enter' || event.key === 'Tab') {
+                                    event.preventDefault();
+                                    applyMentionCandidate(filteredMentionCandidates[mentionActiveIndex]);
+                                    return;
+                                  }
+                                  if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    resetMention();
+                                    return;
+                                  }
+                                }
 
-            {/* 会议总结 */}
-            {selectedMeeting.summary && (
-              <div className="bg-blue-50 border-t border-blue-200 px-6 py-4">
-                <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
-                  <CheckCircleIcon className="h-4 w-4 mr-1" />
-                  会议总结
-                </h3>
-                <div className="text-sm text-blue-800 whitespace-pre-wrap">
-                  {selectedMeeting.summary.content}
-                </div>
-                {(selectedMeeting.summary?.actionItems || []).length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-xs font-medium text-blue-900">行动项：</p>
-                    <ul className="text-xs text-blue-800 list-disc list-inside mt-1">
-                      {(selectedMeeting.summary?.actionItems || []).map((item, i) => (
-                        <li key={i}>{item}</li>
-                      ))}
-                    </ul>
+                                if (event.key === 'Enter' && !event.shiftKey && newMessage.trim()) {
+                                  event.preventDefault();
+                                  sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
+                                  resetMention();
+                                }
+                              }}
+                              placeholder="输入消息（输入 @ 可快速点名参会成员）..."
+                              rows={2}
+                              className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                            />
+                            <button
+                              onClick={() => {
+                                if (newMessage.trim()) {
+                                  sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
+                                  resetMention();
+                                }
+                              }}
+                              disabled={sendMessageMutation.isLoading || !newMessage.trim()}
+                              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <PaperAirplaneIcon className="h-5 w-5" />
+                            </button>
+                          </div>
+
+                          {mentionStart !== null && filteredMentionCandidates.length > 0 && (
+                            <div className="absolute z-20 bottom-full mb-2 left-0 w-72 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                              {filteredMentionCandidates.map((candidate, index) => (
+                                <button
+                                  key={`${candidate.type}:${candidate.id}`}
+                                  onMouseDown={(event) => {
+                                    event.preventDefault();
+                                    applyMentionCandidate(candidate);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm flex items-center justify-between ${index === mentionActiveIndex ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                                >
+                                  <span className="truncate">{candidate.name}</span>
+                                  <span className="text-xs text-gray-400 ml-2">{candidate.type === 'agent' ? 'Agent' : '成员'}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {selectedMeeting.status === MeetingStatus.PAUSED && (
+                  <div className="bg-white border-t border-gray-200 px-6 py-4 text-sm text-yellow-700">
+                    会议已暂停，恢复后可继续发言。
+                  </div>
+                )}
+
+                {/* 会议总结 */}
+                {selectedMeeting.summary && (
+                  <div className="bg-blue-50 border-t border-blue-200 px-6 py-4">
+                    <h3 className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
+                      <CheckCircleIcon className="h-4 w-4 mr-1" />
+                      会议总结
+                    </h3>
+                    <div className="text-sm text-blue-800 whitespace-pre-wrap">
+                      {selectedMeeting.summary.content}
+                    </div>
+                    {(selectedMeeting.summary?.actionItems || []).length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-xs font-medium text-blue-900">行动项：</p>
+                        <ul className="text-xs text-blue-800 list-disc list-inside mt-1">
+                          {(selectedMeeting.summary?.actionItems || []).map((item, i) => (
+                            <li key={i}>{item}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+
+              <aside
+                className={`bg-white border-l border-gray-200 transition-all duration-200 ${isOperationsCollapsed ? 'w-12' : 'w-80'}`}
+              >
+                  <div className="h-full flex flex-col">
+                    <div className="h-12 border-b border-gray-200 flex items-center justify-between px-2">
+                      {!isOperationsCollapsed && <h3 className="text-sm font-semibold text-gray-900">会议操作区</h3>}
+                      <button
+                        onClick={() => setIsOperationsCollapsed((prev) => !prev)}
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-600 hover:bg-gray-100"
+                        title={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
+                        aria-label={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
+                      >
+                        {isOperationsCollapsed ? (
+                          <ChevronLeftIcon className="h-4 w-4" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+
+                    {!isOperationsCollapsed && (
+                      <div className="flex-1 overflow-y-auto p-4">
+                        <div className="mb-6">
+                          <p className="text-xs text-gray-500 mb-2">会议名称</p>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={titleDraft}
+                              onChange={(event) => setTitleDraft(event.target.value)}
+                              className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                            />
+                            <button
+                              onClick={() => {
+                                if (titleDraft.trim() && titleDraft.trim() !== selectedMeeting.title) {
+                                  titleMutation.mutate({ id: selectedMeeting.id, title: titleDraft.trim() });
+                                }
+                              }}
+                              disabled={titleMutation.isLoading || !titleDraft.trim() || titleDraft.trim() === selectedMeeting.title}
+                              className="px-3 py-2 rounded-md text-sm bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+                            >
+                              保存
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <p className="text-xs text-gray-500 mb-2">参会人员管理</p>
+                          <div className="space-y-2 mb-3 max-h-72 overflow-y-auto pr-1">
+                            {(selectedMeeting.participants || []).map((participant) => {
+                              const participantName = getParticipantDisplayName(participant.participantId, participant.participantType);
+                              const isHost = participant.participantId === selectedMeeting.hostId && participant.participantType === selectedMeeting.hostType;
+                              return (
+                                <div key={`${participant.participantType}:${participant.participantId}`} className="flex items-center justify-between text-sm border border-gray-200 rounded-md px-3 py-2">
+                                  <div>
+                                    <p className="font-medium text-gray-800">{participantName}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {participant.participantType === 'agent' ? 'Agent' : '成员'}
+                                      {isHost ? ' · 主持人' : ''}
+                                    </p>
+                                  </div>
+                                  {!isHost && (
+                                    <button
+                                      onClick={() => removeParticipantMutation.mutate({
+                                        id: selectedMeeting.id,
+                                        participantId: participant.participantId,
+                                        participantType: participant.participantType,
+                                      })}
+                                      disabled={removeParticipantMutation.isLoading}
+                                      className="text-xs px-2 py-1 rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                    >
+                                      移除
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="border border-dashed border-gray-300 rounded-md p-3">
+                            <p className="text-xs text-gray-500 mb-2">添加参会人员</p>
+                            <div className="flex gap-2">
+                              <select
+                                value={selectedCandidateKey}
+                                onChange={(event) => setSelectedCandidateKey(event.target.value)}
+                                className="flex-1 border border-gray-300 rounded-md px-2 py-2 text-sm"
+                              >
+                                {managementCandidates.length === 0 && (
+                                  <option value="">暂无可添加成员</option>
+                                )}
+                                {managementCandidates.map((candidate) => (
+                                  <option key={candidate.key} value={candidate.key}>
+                                    {candidate.name} ({candidate.type === 'agent' ? 'Agent' : '成员'})
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => {
+                                  if (selectedCandidateKey) {
+                                    addParticipantMutation.mutate({ id: selectedMeeting.id, candidateKey: selectedCandidateKey });
+                                  }
+                                }}
+                                disabled={addParticipantMutation.isLoading || !selectedCandidateKey || managementCandidates.length === 0}
+                                className="px-3 py-2 rounded-md text-sm bg-gray-900 text-white hover:bg-black disabled:opacity-50"
+                              >
+                                添加
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </aside>
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-400">
             <div className="text-center">
               <VideoCameraIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
-              <p className="text-lg">选择一个会议开始</p>
-              <p className="text-sm mt-1">或创建新会议</p>
+              {isChatOnlyMode ? (
+                <>
+                  <p className="text-lg">未找到该会议</p>
+                  <p className="text-sm mt-1">请检查链接是否正确</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg">选择一个会议开始</p>
+                  <p className="text-sm mt-1">或创建新会议</p>
+                </>
+              )}
             </div>
           </div>
         )}
       </div>
 
       {/* 创建会议模态框 */}
-      {isCreateModalOpen && (
+      {!isChatOnlyMode && isCreateModalOpen && (
         <CreateMeetingModal
           agents={agents?.filter(a => a.isActive) || []}
           currentUser={currentUser}

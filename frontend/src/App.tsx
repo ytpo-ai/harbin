@@ -4,13 +4,11 @@ import { QueryClient, QueryClientProvider } from 'react-query';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Models from './pages/Models';
-import Organization from './pages/Organization';
 import Agents from './pages/Agents';
 import Tasks from './pages/Tasks';
 import Tools from './pages/Tools';
 import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
-import Governance from './pages/Governance';
 import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import Orchestration from './pages/Orchestration';
@@ -49,18 +47,19 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/invite" element={<Register />} />
+          <Route path="/meetings/:meetingId" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
           
           {/* 受保护的路由 - 需要Layout */}
           <Route element={<Layout />}>
             <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/models" element={<ProtectedRoute><Models /></ProtectedRoute>} />
-            <Route path="/organization" element={<ProtectedRoute><Organization /></ProtectedRoute>} />
+            <Route path="/organization" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute><Tools /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
             <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />
-            <Route path="/governance" element={<ProtectedRoute><Governance /></ProtectedRoute>} />
+            <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />

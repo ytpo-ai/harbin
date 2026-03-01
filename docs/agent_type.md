@@ -23,6 +23,7 @@
 | `ai-hr` | HR | `human-resources-manager` | 负责招聘、绩效、组织协同与人才发展 |
 | `ai-admin-assistant` | 行政助理 | `administrative-assistant` | 负责行政事务、流程协调、会议保障 |
 | `ai-marketing-expert` | 营销专家 | `marketing-strategist` | 负责市场策略、活动策划、增长转化 |
+| `ai-human-exclusive-assistant` | 人类专属助理 | `human-exclusive-assistant` | 面向人类用户的个人事务协同与执行跟进 |
 | `ai-system-builtin` | 系统内置 | `system-builtin-agent` | 平台内置能力代理与系统流程协同 |
 
 ## 维护规则

@@ -5,9 +5,7 @@ import {
   UserGroupIcon,
   ClipboardDocumentListIcon,
   VideoCameraIcon,
-  BuildingOfficeIcon,
   WrenchScrewdriverIcon,
-  ScaleIcon,
   CpuChipIcon,
   KeyIcon,
   ArrowRightOnRectangleIcon,
@@ -35,7 +33,6 @@ const Layout: React.FC = () => {
   const navigation = [
     { name: '仪表盘', href: '/', icon: HomeIcon },
     { name: '模型管理', href: '/models', icon: CpuChipIcon },
-    { name: '组织管理', href: '/organization', icon: BuildingOfficeIcon },
     { name: 'Agent管理', href: '/agents', icon: UserGroupIcon },
     { name: '任务管理', href: '/tasks', icon: ClipboardDocumentListIcon },
     { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
@@ -44,7 +41,6 @@ const Layout: React.FC = () => {
     { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
     { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
     { name: '人力资源', href: '/hr', icon: UserGroupIcon },
-    { name: '公司治理', href: '/governance', icon: ScaleIcon },
     { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
   ];
 

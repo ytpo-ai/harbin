@@ -13,13 +13,13 @@
 - 🏢 **完整的公司架构模拟** - 股权分配、角色体系、部门结构
 - 🤖 **多AI模型集成** - 支持OpenAI、Claude、Gemini、Kimi等主流模型
 - 👥 **智能Agent管理** - 个性化配置、工具权限、绩效评估
-- 🗳️ **民主决策系统** - 基于股份的投票机制和提案管理
 - 💼 **HR管理系统** - 自动绩效评估、团队健康度分析、招聘建议
 - 🛠️ **工具生态** - 代码执行、网络搜索、数据分析等多种工具
-- 📈 **动态扩张** - 智能招聘建议、组织结构调整
-- 🎥 **会议室系统** - 支持7种会议类型，AI Agent真实参与讨论
+- 🎥 **会议室系统** - 支持7种会议类型、独立新会议页、@成员提示与右侧会议管理区
 - 🧭 **任务编排与会话中台** - 一句话生成执行计划，支持 Agent/Human 分派与统一 Session 管理
 - 🧠 **Skill 管理中台** - AgentSkillManager 自动检索技能、给 Agent 提供能力增强建议，并同步 DB+Markdown
+
+> 当前状态：`组织管理` 与 `公司治理` 模块前后端功能已下线，后续将按新方案重构。
 
 ## 🚀 快速开始
 
@@ -85,32 +85,9 @@ mongod
 
 ## 🎯 功能模块
 
-### 1. 🏢 组织管理
+### 1. 🏢 组织管理（已下线）
 
-#### 股权结构
-- **创始人股权**: 你(人类)占75%决定权
-- **联合创始人**: 2个创始Agent共享15%股份
-- **员工期权池**: 10%股份用于未来员工激励
-
-#### 角色体系
-| 角色 | 级别 | 部门 | 薪资范围 | 期权 |
-|------|------|------|----------|------|
-| CEO | 执行官 | 管理 | ¥10K-15K | 100K股 |
-| CTO | 执行官 | 技术 | ¥12K-18K | 80K股 |
-| 高级开发工程师 | 资深 | 技术 | ¥8K-12K | 20K股 |
-| 初级开发工程师 | 初级 | 技术 | ¥4K-6K | 5K股 |
-| 数据分析师 | 资深 | 数据 | ¥6K-9K | 15K股 |
-| 产品经理 | 资深 | 产品 | ¥7K-10K | 20K股 |
-| HR经理 | 管理 | 人力 | ¥5K-8K | 10K股 |
-| 视频编辑师 | 资深 | 创意 | ¥5K-8K | 10K股 |
-
-#### 部门设置
-- **管理部**: CEO负责，预算¥50K
-- **技术部**: CTO负责，预算¥200K
-- **数据部**: 数据分析，预算¥80K
-- **产品部**: 产品规划，预算¥60K
-- **人力部**: HR管理，预算¥40K
-- **创意部**: 内容创作，预算¥60K
+- 当前版本已移除组织管理相关前后端功能代码，待重构。
 
 ### 2. 🤖 Agent管理
 
@@ -132,6 +109,7 @@ mongod
 - 能力标签配置
 - 工具权限分配
 - 激活状态管理
+- Agent 卡片一键“开始聊天”（自动进入与该 Agent 的 1 对 1 会话）
 
 ### 3. 🛠️ 工具系统
 
@@ -141,6 +119,9 @@ mongod
 | WebSearch | 互联网信息检索 | 10 | Basic |
 | Slack | 团队频道消息发送 | 15 | Intermediate |
 | Gmail | 邮件草稿/发送 | 20 | Intermediate |
+| Model MCP List Models | 查询系统模型清单 | 3 | Basic |
+| Model MCP Search Latest | 互联网检索最新模型候选 | 8 | Basic |
+| Model MCP Add Model | 模型入库（含去重） | 5 | Admin |
 | 代码执行 | 执行代码片段 | 50 | Intermediate |
 | 网络搜索 | 互联网信息检索 | 10 | Basic |
 | 文件操作 | 文件读写管理 | 5 | Basic/Intermediate |
@@ -165,6 +146,7 @@ mongod
 - 可在 Agent 创建/编辑时分配工具白名单（`tools` 字段）
 - Agent 在聊天与任务执行中，仅可调用已分配工具
 - 支持工具调用编排：模型输出 `tool_call` 指令 -> 系统执行工具 -> 返回结果继续回答
+- 新增系统内置 `Model Management Agent`，默认可执行“联网搜索最新模型 -> 写入系统模型库”闭环
 
 #### Composio 集成
 系统已集成 [Composio](https://www.composio.dev) 平台，提供 1000+ 工具的统一接入：
@@ -233,27 +215,9 @@ const result = await session.executeAction({
 - 改进计划制定
 - 终止建议生成
 
-### 5. 🗳️ 公司治理系统
+### 5. 🗳️ 公司治理系统（已下线）
 
-#### 提案类型
-- **招聘提案**: 雇佣新Agent成员
-- **解雇提案**: 终止低绩效Agent
-- **工具权限**: 工具访问权限申请
-- **战略决策**: 公司发展方向决策
-- **预算调整**: 部门预算变更
-- **政策制定**: 公司规章制度
-
-#### 投票机制
-- **股份加权投票**: 基于股份比例的投票权重
-- **法定人数要求**: 需要至少51%股份参与
-- **通过门槛**: 需要60%同意票才能通过
-- **投票期限**: 24小时投票时间窗口
-
-#### 自动执行
-- 通过提案自动执行
-- 投票结果实时统计
-- 决策历史记录
-- 执行状态跟踪
+- 当前版本已移除公司治理相关前后端功能代码，待重构。
 
 ### 6. 📈 动态扩张机制
 
@@ -302,13 +266,6 @@ const result = await session.executeAction({
 
 ### 核心模块API
 
-#### 组织管理 (`/api/organization`)
-- `POST /initialize` - 初始化组织
-- `GET /` - 获取组织信息
-- `POST /hire` - 雇佣Agent
-- `POST /fire` - 解雇Agent
-- `GET /stats` - 组织统计数据
-
 #### Agent管理 (`/api/agents`)
 - `GET /` - 获取所有Agent
 - `POST /` - 创建新Agent
@@ -325,7 +282,7 @@ const result = await session.executeAction({
 > 说明：MCP 能力配置已改为数据库驱动（`agent_profiles`）。CEO/CTO 在被询问“系统有哪些agents”时，会优先通过内置工具 `agents_mcp_list` 获取实时列表后回答。
 >
 > Agent 类型规范见 `docs/agent_type.md`，前端类型选择来源于 `frontend/src/config/agentType.json`。
-> 当前系统支持：高管/高管助理/技术专家/全栈工程师/运维工程师/数据分析师/产品经理/HR/行政助理/营销专家/系统内置。
+> 当前系统支持：高管/高管助理/技术专家/全栈工程师/运维工程师/数据分析师/产品经理/HR/行政助理/营销专家/人类专属助理/系统内置。
 
 #### Skill 管理 (`/api/skills`)
 - `GET /` - 获取技能库（支持按 `status`、`category` 过滤）
@@ -346,17 +303,16 @@ const result = await session.executeAction({
 - `GET /executions/history` - 执行历史
 - `GET /executions/stats` - 执行统计
 
+模型管理 MCP 工具：
+- `POST /model_mcp_list_models/execute` - 查询系统当前模型列表
+- `POST /model_mcp_search_latest/execute` - 联网检索最新模型候选
+- `POST /model_mcp_add_model/execute` - 新增模型到系统（自动判重）
+
 #### 人力资源 (`/api/hr`)
 - `GET /performance/:agentId` - 绩效报告
 - `GET /low-performers` - 低绩效员工
 - `GET /hiring-recommendations` - 招聘建议
 - `GET /team-health` - 团队健康度
-
-#### 公司治理 (`/api/governance`)
-- `POST /proposals` - 创建提案
-- `GET /proposals` - 获取提案列表
-- `POST /proposals/:id/vote` - 投票
-- `GET /proposals/:id/summary` - 投票汇总
 
 #### 会议室系统 (`/api/meetings`)
 - `POST /` - 创建会议
@@ -366,8 +322,23 @@ const result = await session.executeAction({
 - `POST /:id/leave` - 离开会议
 - `POST /:id/messages` - 发送消息
 - `POST /:id/invite` - 邀请Agent
+- `PUT /:id/title` - 修改会议名称
+- `POST /:id/participants` - 添加参会人员
+- `DELETE /:id/participants/:participantType/:participantId` - 移除参会人员
+- `DELETE /:id` - 删除会议（支持未开始/已结束/已归档）
 - `GET /` - 获取会议列表
 - `GET /stats` - 获取统计信息
+
+会议特性补充：
+- Agent 管理页支持一键发起 1 对 1 聊天：优先复用已有会话，不存在时自动创建并直达。
+- 未开始会议支持直接删除。
+- 会议列表中的任意会议支持单独新开页面（`/meetings/:meetingId`，不显示全局菜单和会议列表，保留聊天区与会议操作区）。
+- 聊天输入支持 `@成员` 提示下拉，可键盘选择并插入 mention。
+- 会议详情新增右侧操作区，可修改会议名称与管理参会人员。
+- 当 1 对 1 会议新增非系统内置（非隐形）Agent 扩展为多人讨论时，会议名称会自动调整为多人讨论语义。
+- 在会议中输入“搜索最新openai模型”时，会优先触发 `Model Management Agent` 联网搜索。
+- 该 Agent 会先返回候选模型列表，并询问是否添加到系统；确认前不写入。
+- 在会议中询问“现在系统里有哪些模型”时，会优先触发 `Model Management Agent` 返回实时模型清单。
 
 #### 研发管理 (`/api/rd-management`)
 - `GET /opencode/current` - 获取当前 OpenCode session 和 project 上下文

@@ -3,9 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TaskModule } from './modules/tasks/task.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { OrganizationModule } from './modules/organization/organization.module';
 import { HRModule } from './modules/hr/hr.module';
-import { GovernanceModule } from './modules/governance/governance.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
@@ -46,9 +44,7 @@ import jwtConfig from './config/jwt.config';
     ToolClientModule,
     TaskModule,
     ChatModule,
-    OrganizationModule,
     HRModule,
-    GovernanceModule,
     ApiKeysModule,
     MeetingModule,
     EmployeeModule,

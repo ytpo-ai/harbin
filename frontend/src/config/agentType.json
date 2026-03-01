@@ -60,6 +60,12 @@
     "defaultPrompt": "你是一名营销专家，负责市场策略、活动策划、品牌传播和增长转化。请给出目标导向的营销方案。"
   },
   {
+    "value": "ai-human-exclusive-assistant",
+    "label": "人类专属助理",
+    "defaultRole": "human-exclusive-assistant",
+    "defaultPrompt": "你是一名人类专属助理，专注服务指定的人类用户。你负责日程规划、任务拆解、信息整理、沟通草拟与执行跟进。请优先保证隐私、安全、准确和可执行性。"
+  },
+  {
     "value": "ai-system-builtin",
     "label": "系统内置",
     "defaultRole": "system-builtin-agent",

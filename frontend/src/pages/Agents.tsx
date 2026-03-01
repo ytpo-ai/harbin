@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
 import { toolService } from '../services/toolService';
+import { authService } from '../services/authService';
+import { meetingService } from '../services/meetingService';
 import { Agent, AIModel } from '../types';
 import agentTypeConfig from '../config/agentType.json';
 import { 
@@ -20,6 +23,7 @@ import {
   BeakerIcon,
   XCircleIcon,
   WrenchScrewdriverIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 
 const normalizeProvider = (provider?: string): string => {
@@ -58,14 +62,21 @@ const shouldApplyNextDefault = (currentValue: string, previousDefault?: string):
 };
 
 const Agents: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [startingChatAgentId, setStartingChatAgentId] = useState<string>('');
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;
     return withMongoId?.id || withMongoId?._id || '';
+  };
+
+  const getAgentCandidateIds = (agent: Agent): string[] => {
+    const withMongoId = agent as Agent & { _id?: string };
+    return Array.from(new Set([withMongoId.id, withMongoId._id].filter(Boolean) as string[]));
   };
 
   const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
@@ -123,6 +134,42 @@ const Agents: React.FC = () => {
   const handleEditAgent = (agent: Agent) => {
     setEditingAgent(agent);
     setIsEditModalOpen(true);
+  };
+
+  const handleStartChat = async (agent: Agent) => {
+    const agentId = getAgentId(agent);
+    if (!agentId) {
+      alert('Agent ID 无效，无法开始聊天');
+      return;
+    }
+
+    if (!agent.isActive) {
+      alert('该 Agent 当前未激活，请先启用后再开始聊天');
+      return;
+    }
+
+    setStartingChatAgentId(agentId);
+    try {
+      const currentUser = await authService.getCurrentUser();
+      if (!currentUser?.id) {
+        throw new Error('未获取到当前用户信息，请重新登录后重试');
+      }
+
+      const meeting = await meetingService.getOrCreateOneToOneMeeting({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name || currentUser.email || '用户',
+        agentId,
+        agentName: agent.name,
+        agentCandidateIds: getAgentCandidateIds(agent),
+      });
+
+      navigate(`/meetings?meetingId=${encodeURIComponent(meeting.id)}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '创建一对一聊天失败';
+      alert(message);
+    } finally {
+      setStartingChatAgentId('');
+    }
   };
 
   const isFounder = (agent: Agent) => {
@@ -244,6 +291,15 @@ const Agents: React.FC = () => {
                   </div>
                   <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
                     <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleStartChat(agent)}
+                        disabled={startingChatAgentId === getAgentId(agent)}
+                        className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
+                        title="开始聊天"
+                      >
+                        <ChatBubbleLeftRightIcon className="h-3.5 w-3.5 mr-1" />
+                        {startingChatAgentId === getAgentId(agent) ? '进入中...' : '开始聊天'}
+                      </button>
                       <button
                         onClick={() => handleToggleActive(agent)}
                         className="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"

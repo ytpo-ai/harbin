@@ -46,7 +46,7 @@ POST /agents
 **说明**:
 - `type` 建议从前端配置 `frontend/src/config/agentType.json` 选择。
 - 类型规范与默认 role/prompt 说明见 `docs/agent_type.md`。
-- 现行类型包括：`ai-executive`、`ai-management-assistant`、`ai-technical-expert`、`ai-fullstack-engineer`、`ai-devops-engineer`、`ai-data-analyst`、`ai-product-manager`、`ai-hr`、`ai-admin-assistant`、`ai-marketing-expert`、`ai-system-builtin`。
+- 现行类型包括：`ai-executive`、`ai-management-assistant`、`ai-technical-expert`、`ai-fullstack-engineer`、`ai-devops-engineer`、`ai-data-analyst`、`ai-product-manager`、`ai-hr`、`ai-admin-assistant`、`ai-marketing-expert`、`ai-human-exclusive-assistant`、`ai-system-builtin`。
 
 **请求体**:
 ```json
@@ -223,6 +223,8 @@ GET /agents/mcp/:id
 
 ## 1.8 会议 API（Meetings）
 
+前端路由补充：会议列表页为 `/meetings`，可通过 `/meetings/:meetingId` 直接打开某个会议的独立页面（不包含全局菜单与会议列表，保留聊天区与会议操作区）。
+
 ### 获取会议列表
 ```http
 GET /meetings
@@ -235,6 +237,15 @@ POST /meetings/:id/messages
 
 当消息内容包含 `@AgentName` 时，仅被 @ 的在场 Agent 会响应；
 不包含 @ 时，默认所有在场 Agent 依次响应。
+
+会议中的模型检索特例：
+- 当人类消息命中“搜索最新openai模型 / search latest openai models”等意图时，系统会优先路由 `Model Management Agent` 响应。
+- 该 Agent 会先联网搜索并返回候选模型，再询问“是否需要添加到系统？”。
+- 在用户明确确认前，不会触发模型入库。
+
+会议中的模型列表特例：
+- 当人类消息命中“现在系统里有哪些模型 / list models”等意图时，系统会优先路由 `Model Management Agent`。
+- 该 Agent 会调用 `model_mcp_list_models` 返回实时模型清单。
 
 ### 暂停会议
 ```http
@@ -261,6 +272,49 @@ PUT /meetings/:id/speaking-mode
 `speakingOrder` 可选值:
 - `free`: 自由讨论
 - `ordered`: 有序发言（Agent发言后需等待人类下一次发言）
+
+### 修改会议名称
+```http
+PUT /meetings/:id/title
+```
+
+**请求体**:
+```json
+{
+  "title": "新会议名称"
+}
+```
+
+### 添加参会人员
+```http
+POST /meetings/:id/participants
+```
+
+当目标会议标题为“1对1聊天”语义，且新增参会者导致会议扩展为多人讨论（排除系统内置/隐形 Agent）时，后端会自动更新会议标题，并通过 `settings_changed` 事件下发新标题。
+
+**请求体**:
+```json
+{
+  "id": "employee-or-agent-id",
+  "type": "employee",
+  "name": "显示名称",
+  "isHuman": true
+}
+```
+
+### 移除参会人员
+```http
+DELETE /meetings/:id/participants/:participantType/:participantId
+```
+
+> 说明：主持人不可被移除。
+
+### 删除会议
+```http
+DELETE /meetings/:id
+```
+
+> 说明：支持删除 `pending`、`ended`、`archived` 状态会议。
 
 ### 实时会议事件（WebSocket）
 - WS 地址: `ws://localhost:3003/ws`
@@ -402,74 +456,30 @@ GET /model-management/founder-models
 }
 ```
 
+### 3.6 MCP 模型管理工具（通过 Tools 执行）
+
+系统新增三个内置工具，用于“查询模型清单 / 联网搜索最新模型 / 写入系统模型库”闭环：
+
+- `model_mcp_list_models`
+  - 入参：`provider?: string`、`limit?: number`
+  - 出参：系统当前模型列表（`id/name/provider/model/maxTokens/temperature/topP`）
+
+- `model_mcp_search_latest`
+  - 入参：`providers?: string[]`、`query?: string`、`maxResultsPerQuery?: number`、`limit?: number`
+  - 出参：结构化候选模型列表（含 `provider/model/name/sourceUrl/confidence`）
+
+- `model_mcp_add_model`
+  - 入参：`provider`、`model`、`name?`、`id?`、`maxTokens?`、`temperature?`、`topP?`
+  - 出参：`created`、`duplicateBy`、`model`、`message`
+  - 内置去重：按 `id` 与 `provider+model` 双重判重
+
+新增系统内置 Agent：`Model Management Agent`（`role=model-management-specialist`），默认具备以上三个工具。
+
 ---
 
-## 4. 组织管理 API
+## 4. 组织管理 API（已下线）
 
-### 4.1 初始化组织
-```http
-POST /organization/initialize
-```
-
-**响应**:
-```json
-{
-  "id": "org-uuid",
-  "name": "AI Agent Team Ltd.",
-  "shareDistribution": {
-    "founder": { "percentage": 75 },
-    "cofounders": [{ "percentage": 7.5 }],
-    "employeePool": { "percentage": 10 }
-  }
-}
-```
-
-### 4.2 获取组织信息
-```http
-GET /organization
-```
-
-### 4.3 雇佣Agent
-```http
-POST /organization/hire
-```
-
-**请求体**:
-```json
-{
-  "agentId": "agent-uuid",
-  "roleId": "senior-developer",
-  "proposerId": "human-founder"
-}
-```
-
-### 4.4 解雇Agent
-```http
-POST /organization/fire
-```
-
-**请求体**:
-```json
-{
-  "agentId": "agent-uuid",
-  "reason": "Performance issues"
-}
-```
-
-### 4.5 获取组织统计
-```http
-GET /organization/stats
-```
-
-**响应**:
-```json
-{
-  "totalEmployees": 10,
-  "activeEmployees": 8,
-  "monthlyPayroll": 85000,
-  "companyValuation": 1000000
-}
-```
+组织管理相关后端接口已移除，后续将以新设计重新实现。
 
 ---
 
@@ -496,6 +506,48 @@ POST /tools/:toolId/execute
   "taskId": "task-uuid"
 }
 ```
+
+**模型管理工具调用示例（查询系统模型列表）**:
+```json
+{
+  "agentId": "agent-uuid",
+  "parameters": {
+    "provider": "openai",
+    "limit": 50
+  }
+}
+```
+
+请求路径示例：`POST /tools/model_mcp_list_models/execute`
+
+**模型管理工具调用示例（搜索最新模型）**:
+```json
+{
+  "agentId": "agent-uuid",
+  "parameters": {
+    "providers": ["openai", "anthropic", "google"],
+    "limit": 10
+  }
+}
+```
+
+请求路径示例：`POST /tools/model_mcp_search_latest/execute`
+
+**模型管理工具调用示例（新增模型）**:
+```json
+{
+  "agentId": "agent-uuid",
+  "parameters": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "name": "GPT-4.1 Mini",
+    "maxTokens": 8192,
+    "temperature": 0.7
+  }
+}
+```
+
+请求路径示例：`POST /tools/model_mcp_add_model/execute`
 
 ### 5.3 获取工具执行历史
 ```http
@@ -672,49 +724,9 @@ GET /hr/team-health
 
 ---
 
-## 7. 公司治理 API
+## 7. 公司治理 API（已下线）
 
-### 7.1 创建提案
-```http
-POST /governance/proposals
-```
-
-**请求体**:
-```json
-{
-  "title": "Hire New Developer",
-  "description": "We need to hire a senior developer...",
-  "type": "hire",
-  "proposerId": "human-founder",
-  "metadata": {
-    "roleId": "senior-developer"
-  }
-}
-```
-
-### 7.2 获取提案列表
-```http
-GET /governance/proposals
-```
-
-### 7.3 投票
-```http
-POST /governance/proposals/:id/vote
-```
-
-**请求体**:
-```json
-{
-  "voterId": "human-founder",
-  "decision": "for",
-  "reason": "We really need more developers"
-}
-```
-
-### 7.4 获取投票汇总
-```http
-GET /governance/proposals/:id/summary
-```
+公司治理相关后端接口已移除，后续将以新设计重新实现。
 
 ---
 
@@ -911,11 +923,6 @@ POST /orchestration/sessions/:id/resume
 ### Agent调试状态
 ```http
 GET /agents/debug/status
-```
-
-### 组织调试状态
-```http
-GET /organization/debug/status
 ```
 
 ### 模型调试状态

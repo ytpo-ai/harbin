@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { OrganizationService } from './modules/organization/organization.service';
 import { initializeNetworkProxy } from '@libs/infra';
 
 async function bootstrap() {
@@ -22,10 +21,6 @@ async function bootstrap() {
     forbidNonWhitelisted: true,
   }));
 
-  // 初始化组织架构
-  const organizationService = app.get(OrganizationService);
-  await organizationService.createInitialOrganization();
-
   // API前缀
   app.setGlobalPrefix('api');
 
@@ -33,7 +28,6 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`🚀 AI Agent Team Platform Server running on http://localhost:${port}`);
   console.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
-  console.log(`🏢 AI Company initialized with founder agents!`);
   console.log(`🤖 Ready to manage your AI startup team!`);
 }
 

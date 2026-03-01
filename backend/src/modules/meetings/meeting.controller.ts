@@ -126,6 +126,19 @@ export class MeetingController {
     };
   }
 
+  @Put(':id/title')
+  async updateMeetingTitle(
+    @Param('id') id: string,
+    @Body('title') title: string,
+  ) {
+    const meeting = await this.meetingService.updateMeetingTitle(id, title);
+    return {
+      success: true,
+      data: meeting,
+      message: '会议名称已更新',
+    };
+  }
+
   @Post(':id/join')
   async joinMeeting(
     @Param('id') id: string,
@@ -195,6 +208,33 @@ export class MeetingController {
       success: true,
       data: meeting,
       message: '邀请已发送',
+    };
+  }
+
+  @Post(':id/participants')
+  async addParticipant(
+    @Param('id') id: string,
+    @Body() participant: ParticipantIdentity,
+  ) {
+    const meeting = await this.meetingService.addParticipant(id, participant);
+    return {
+      success: true,
+      data: meeting,
+      message: '参会人员已添加',
+    };
+  }
+
+  @Delete(':id/participants/:participantType/:participantId')
+  async removeParticipant(
+    @Param('id') id: string,
+    @Param('participantType') participantType: 'employee' | 'agent',
+    @Param('participantId') participantId: string,
+  ) {
+    const meeting = await this.meetingService.removeParticipant(id, participantId, participantType);
+    return {
+      success: true,
+      data: meeting,
+      message: '参会人员已移除',
     };
   }
 }

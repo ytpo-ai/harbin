@@ -7,6 +7,7 @@ import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { ComposioService } from './composio.service';
+import { ModelManagementService } from '../models/model-management.service';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -25,6 +26,7 @@ export class ToolService {
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
     private composioService: ComposioService,
+    private modelManagementService: ModelManagementService,
   ) {
     void this.initializeBuiltinTools();
   }
@@ -81,6 +83,61 @@ export class ToolService {
         implementation: {
           type: 'built_in' as const,
           parameters: { includeHidden: 'boolean', limit: 'number' },
+        },
+      },
+      {
+        id: 'model_mcp_list_models',
+        name: 'Model MCP List Models',
+        description: 'List models currently available in system registry',
+        type: 'data_analysis' as const,
+        category: 'Model Management',
+        requiredPermissions: [{ id: 'model_registry_read', name: 'Model Registry Read', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            provider: 'string',
+            limit: 'number',
+          },
+        },
+      },
+      {
+        id: 'model_mcp_search_latest',
+        name: 'Model MCP Search Latest',
+        description: 'Search latest model releases from internet and return normalized candidates',
+        type: 'web_search' as const,
+        category: 'Model Management',
+        requiredPermissions: [{ id: 'model_registry_read', name: 'Model Registry Read', level: 'basic' }],
+        tokenCost: 8,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            providers: 'string[]',
+            query: 'string',
+            maxResultsPerQuery: 'number',
+            limit: 'number',
+          },
+        },
+      },
+      {
+        id: 'model_mcp_add_model',
+        name: 'Model MCP Add Model',
+        description: 'Add a model into system model registry with deduplication',
+        type: 'data_analysis' as const,
+        category: 'Model Management',
+        requiredPermissions: [{ id: 'model_registry_write', name: 'Model Registry Write', level: 'admin' }],
+        tokenCost: 5,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            provider: 'string',
+            model: 'string',
+            name: 'string',
+            id: 'string',
+            maxTokens: 'number',
+            temperature: 'number',
+            topP: 'number',
+          },
         },
       },
     ];
@@ -185,9 +242,230 @@ export class ToolService {
         return this.sendGmail(parameters, agentId);
       case 'agents_mcp_list':
         return this.getAgentsMcpList(parameters);
+      case 'model_mcp_list_models':
+        return this.listSystemModels(parameters);
+      case 'model_mcp_search_latest':
+        return this.searchLatestModels(parameters, agentId);
+      case 'model_mcp_add_model':
+        return this.addModelToSystem(parameters);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
+  }
+
+  private normalizeProvider(provider?: string): string {
+    const value = String(provider || '').trim().toLowerCase();
+    if (value === 'kimi') return 'moonshot';
+    if (value === 'claude') return 'anthropic';
+    return value;
+  }
+
+  private inferProvider(text: string): string {
+    const value = text.toLowerCase();
+    if (value.includes('openai') || value.includes('gpt-') || /\bo1\b/.test(value)) return 'openai';
+    if (value.includes('anthropic') || value.includes('claude-')) return 'anthropic';
+    if (value.includes('google') || value.includes('gemini-')) return 'google';
+    if (value.includes('moonshot') || value.includes('kimi-')) return 'moonshot';
+    if (value.includes('deepseek')) return 'deepseek';
+    if (value.includes('mistral')) return 'mistral';
+    if (value.includes('meta') || value.includes('llama-')) return 'meta';
+    if (value.includes('alibaba') || value.includes('qwen')) return 'alibaba';
+    if (value.includes('xai') || value.includes('grok')) return 'xai';
+    return 'custom';
+  }
+
+  private extractCandidateModels(text: string): Array<{ model: string; provider: string }> {
+    const regex =
+      /(gpt-[a-z0-9.\-]+|o1[a-z0-9.\-]*|claude-[a-z0-9.\-]+|gemini-[a-z0-9.\-]+|deepseek-[a-z0-9.\-]+|qwen[a-z0-9.\-]*|llama-[a-z0-9.\-]+|kimi-[a-z0-9.\-]+|moonshot-[a-z0-9.\-]+|mistral-[a-z0-9.\-]+|grok-[a-z0-9.\-]+)/gi;
+    const matches = text.match(regex) || [];
+    const unique = Array.from(new Set(matches.map((item) => item.toLowerCase())));
+    return unique.map((model) => ({
+      model,
+      provider: this.inferProvider(model),
+    }));
+  }
+
+  private toModelDisplayName(model: string): string {
+    return model
+      .split('-')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+  }
+
+  private async searchLatestModels(
+    params: { providers?: string[]; query?: string; maxResultsPerQuery?: number; limit?: number },
+    userId?: string,
+  ): Promise<any> {
+    const maxResultsPerQuery = Math.max(3, Math.min(Number(params?.maxResultsPerQuery || 10), 20));
+    const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
+    const providers = (params?.providers || [])
+      .map((provider) => this.normalizeProvider(provider))
+      .filter(Boolean);
+    const defaultProviders = ['openai', 'anthropic', 'google', 'moonshot', 'deepseek', 'mistral', 'meta', 'alibaba'];
+    const providerTargets = providers.length ? providers : defaultProviders;
+
+    const queries = params?.query?.trim()
+      ? [params.query.trim()]
+      : providerTargets.map(
+          (provider) => `${provider} latest AI model release official announcement ${new Date().getFullYear()}`,
+        );
+
+    const settled = await Promise.allSettled(
+      queries.map((query) => this.composioService.webSearch(query, maxResultsPerQuery, userId)),
+    );
+
+    const candidates: Array<{
+      provider: string;
+      model: string;
+      name: string;
+      sourceTitle: string;
+      sourceUrl: string;
+      snippet?: string;
+      confidence: 'low' | 'medium' | 'high';
+    }> = [];
+    const failedQueries: Array<{ query: string; error: string }> = [];
+
+    settled.forEach((item, index) => {
+      const query = queries[index];
+      if (item.status !== 'fulfilled' || !item.value?.successful) {
+        failedQueries.push({
+          query,
+          error:
+            item.status === 'fulfilled'
+              ? item.value?.error || 'Search failed'
+              : item.reason instanceof Error
+                ? item.reason.message
+                : 'Search failed',
+        });
+        return;
+      }
+
+      const raw = item.value?.data || {};
+      const rows = raw?.organic || raw?.results?.organic_results || raw?.results || [];
+      const organicResults = Array.isArray(rows) ? rows : [];
+
+      for (const row of organicResults) {
+        const title = String(row?.title || '').trim();
+        const url = String(row?.link || row?.url || '').trim();
+        const snippet = String(row?.snippet || '').trim();
+        const joined = `${title} ${snippet}`.trim();
+        if (!joined) continue;
+
+        const extracted = this.extractCandidateModels(joined);
+        for (const candidate of extracted) {
+          const inferred = this.normalizeProvider(candidate.provider || this.inferProvider(`${joined} ${url}`));
+          const confidence =
+            url.includes('openai.com') ||
+            url.includes('anthropic.com') ||
+            url.includes('google.com') ||
+            url.includes('deepseek.com') ||
+            url.includes('moonshot.cn')
+              ? 'high'
+              : snippet.toLowerCase().includes('official')
+                ? 'medium'
+                : 'low';
+
+          candidates.push({
+            provider: inferred,
+            model: candidate.model,
+            name: this.toModelDisplayName(candidate.model),
+            sourceTitle: title,
+            sourceUrl: url,
+            snippet,
+            confidence,
+          });
+        }
+      }
+    });
+
+    const dedupMap = new Map<string, (typeof candidates)[number]>();
+    for (const candidate of candidates) {
+      const key = `${candidate.provider}:${candidate.model}`;
+      const existing = dedupMap.get(key);
+      if (!existing) {
+        dedupMap.set(key, candidate);
+        continue;
+      }
+      if (existing.confidence !== 'high' && candidate.confidence === 'high') {
+        dedupMap.set(key, candidate);
+      }
+    }
+
+    const normalized = Array.from(dedupMap.values()).slice(0, limit);
+
+    return {
+      searchedAt: new Date().toISOString(),
+      queryCount: queries.length,
+      failedQueries,
+      totalCandidates: normalized.length,
+      candidates: normalized,
+    };
+  }
+
+  private async addModelToSystem(params: {
+    provider: string;
+    model: string;
+    name?: string;
+    id?: string;
+    maxTokens?: number;
+    temperature?: number;
+    topP?: number;
+  }): Promise<any> {
+    if (!params?.provider || !params?.model) {
+      throw new Error('model_mcp_add_model requires parameters: provider, model');
+    }
+
+    const normalizedProvider = this.normalizeProvider(params.provider);
+    const normalizedModel = String(params.model).trim().toLowerCase();
+    const maxTokens = Number.isFinite(Number(params.maxTokens)) ? Number(params.maxTokens) : 8192;
+    const temperature = Number.isFinite(Number(params.temperature)) ? Number(params.temperature) : 0.7;
+    const topP = Number.isFinite(Number(params.topP)) ? Number(params.topP) : 1;
+
+    const result = this.modelManagementService.addModelToSystem({
+      id: params.id,
+      name: params.name?.trim() || this.toModelDisplayName(normalizedModel),
+      provider: normalizedProvider as any,
+      model: normalizedModel,
+      maxTokens,
+      temperature,
+      topP,
+    });
+
+    return {
+      created: result.created,
+      duplicateBy: result.duplicateBy || null,
+      message: result.message,
+      model: result.model,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  private async listSystemModels(params: { provider?: string; limit?: number }): Promise<any> {
+    const provider = this.normalizeProvider(params?.provider);
+    const limit = Math.max(1, Math.min(Number(params?.limit || 200), 500));
+
+    const sourceModels = provider
+      ? this.modelManagementService.getModelsByProvider(provider)
+      : this.modelManagementService.getAvailableModels();
+
+    const models = sourceModels.slice(0, limit).map((model) => ({
+      id: model.id,
+      name: model.name,
+      provider: this.normalizeProvider(model.provider),
+      model: model.model,
+      maxTokens: model.maxTokens,
+      temperature: model.temperature,
+      topP: model.topP,
+    }));
+
+    return {
+      total: sourceModels.length,
+      returned: models.length,
+      provider: provider || 'all',
+      models,
+      timestamp: new Date().toISOString(),
+    };
   }
 
   private async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number }): Promise<any> {

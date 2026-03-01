@@ -10,6 +10,7 @@ import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.servi
 import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
 import { ToolService } from '../tools/tool.service';
 import { v4 as uuidv4 } from 'uuid';
+import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 
 export interface AgentContext {
   task: Task;
@@ -61,6 +62,11 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
   exposed: false,
   description: 'No MCP profile found for this agent type',
 };
+
+const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
+const MODEL_MANAGEMENT_AGENT_TOOLS = ['model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'];
+const MODEL_MANAGEMENT_AGENT_PROMPT =
+  '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 model_mcp_list_models 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 model_mcp_search_latest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 model_mcp_add_model。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
 const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
@@ -144,9 +150,17 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责市场策略、活动策划与增长转化。',
   },
   {
+    agentType: 'ai-human-exclusive-assistant',
+    role: 'human-exclusive-assistant',
+    tools: ['websearch', 'webfetch', 'content_extract'],
+    capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
+    exposed: true,
+    description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
+  },
+  {
     agentType: 'ai-system-builtin',
     role: 'system-builtin-agent',
-    tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list'],
+    tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list', 'model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'],
     capabilities: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
     exposed: true,
     description: '系统内置类型，用于平台默认流程与系统任务协同。',
@@ -741,6 +755,24 @@ export class AgentService {
       });
     }
 
+    if (allowedToolIds.includes('model_mcp_list_models')) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户询问“系统里有哪些模型/当前有哪些模型/模型列表”时，请优先调用 model_mcp_list_models 获取实时模型清单，再回答。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (allowedToolIds.includes('model_mcp_search_latest') && allowedToolIds.includes('model_mcp_add_model')) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户要求“搜索最新模型并加入系统”时，请按顺序调用 model_mcp_search_latest 与 model_mcp_add_model；必须先返回候选并询问“是否需要添加到系统”，仅在用户明确确认后才允许入库。',
+        timestamp: new Date(),
+      });
+    }
+
     // 历史消息
     messages.push(...context.previousMessages);
 
@@ -846,30 +878,58 @@ export class AgentService {
     return '工具调用轮次已达上限，请精简调用后重试。';
   }
 
-  private extractToolCall(response: string): { tool: string; parameters: any } | null {
-    const match = response.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
-    if (!match) return null;
+  private parseToolCallPayload(payload: string): { tool: string; parameters: any } | null {
+    const cleaned = payload.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+    const candidates = [cleaned];
 
-    const rawPayload = match[1].trim();
-    const cleaned = rawPayload.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-
-    try {
-      const parsed = JSON.parse(cleaned);
-      if (!parsed?.tool || typeof parsed.tool !== 'string') {
-        return null;
-      }
-
-      return {
-        tool: parsed.tool,
-        parameters: parsed.parameters || {},
-      };
-    } catch {
-      return null;
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      candidates.push(cleaned.slice(firstBrace, lastBrace + 1).trim());
     }
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      try {
+        const parsed = JSON.parse(candidate);
+        if (!parsed || typeof parsed !== 'object' || typeof parsed.tool !== 'string') {
+          continue;
+        }
+
+        return {
+          tool: parsed.tool,
+          parameters: parsed.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : {},
+        };
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private extractToolCall(response: string): { tool: string; parameters: any } | null {
+    const closedTagMatch = response.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
+    if (closedTagMatch) {
+      return this.parseToolCallPayload(closedTagMatch[1]);
+    }
+
+    const openTagOnlyMatch = response.match(/<tool_call>\s*([\s\S]*)$/i);
+    if (openTagOnlyMatch) {
+      return this.parseToolCallPayload(openTagOnlyMatch[1]);
+    }
+
+    if (response.includes('"tool"') && response.includes('"parameters"')) {
+      return this.parseToolCallPayload(response);
+    }
+
+    return null;
   }
 
   private stripToolCallMarkup(content: string): string {
-    return content.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '').trim();
+    const withoutClosedBlocks = content.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
+    const withoutDanglingBlocks = withoutClosedBlocks.replace(/<tool_call>\s*[\s\S]*$/gi, '');
+    return withoutDanglingBlocks.trim();
   }
 
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
@@ -1113,6 +1173,80 @@ export class AgentService {
     }
   }
 
+  private pickDefaultModel(): AIModel {
+    const preferredIds = ['gpt-4o-mini', 'gpt-4o', 'claude-sonnet-4-6', 'gemini-1.5-flash'];
+    for (const modelId of preferredIds) {
+      const found = AVAILABLE_MODELS.find((model) => model.id === modelId);
+      if (found) return found;
+    }
+    return AVAILABLE_MODELS[0];
+  }
+
+  private async ensureModelManagementAgent(): Promise<void> {
+    try {
+      const existing = await this.agentModel.findOne({ name: MODEL_MANAGEMENT_AGENT_NAME }).exec();
+
+      if (existing) {
+        await this.agentModel
+          .updateOne(
+            { _id: existing._id },
+            {
+              $addToSet: {
+                tools: { $each: MODEL_MANAGEMENT_AGENT_TOOLS },
+                capabilities: {
+                  $each: ['model_discovery', 'model_registry_management', 'internet_research'],
+                },
+              },
+              $set: {
+                isActive: true,
+                role: 'model-management-specialist',
+                type: 'ai-system-builtin',
+                description: '系统内置模型管理Agent，可联网检索最新模型并添加到系统模型列表。',
+                systemPrompt: MODEL_MANAGEMENT_AGENT_PROMPT,
+              },
+            },
+          )
+          .exec();
+        return;
+      }
+
+      const model = this.pickDefaultModel();
+      const document = new this.agentModel({
+        name: MODEL_MANAGEMENT_AGENT_NAME,
+        type: 'ai-system-builtin',
+        role: 'model-management-specialist',
+        description: '系统内置模型管理Agent，可联网检索最新模型并添加到系统模型列表。',
+        model: {
+          id: model.id,
+          name: model.name,
+          provider: model.provider,
+          model: model.model,
+          maxTokens: model.maxTokens || 8192,
+          temperature: model.temperature ?? 0.2,
+          topP: model.topP,
+        },
+        capabilities: ['model_discovery', 'model_registry_management', 'internet_research'],
+        systemPrompt: MODEL_MANAGEMENT_AGENT_PROMPT,
+        isActive: true,
+        tools: ['websearch', ...MODEL_MANAGEMENT_AGENT_TOOLS],
+        permissions: ['model_registry_read', 'model_registry_write'],
+        personality: {
+          workEthic: 90,
+          creativity: 70,
+          leadership: 60,
+          teamwork: 85,
+        },
+        learningAbility: 88,
+      });
+
+      await document.save();
+      this.logger.log(`Bootstrapped system agent: ${MODEL_MANAGEMENT_AGENT_NAME}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to bootstrap model management agent';
+      this.logger.warn(`Model management agent bootstrap skipped: ${message}`);
+    }
+  }
+
   private async migrateAllAgentsToSystemBuiltin(): Promise<void> {
     try {
       await this.agentModel
@@ -1135,5 +1269,6 @@ export class AgentService {
   private async bootstrapMcpProfilesAndAgentTypes(): Promise<void> {
     await this.ensureMcpProfileSeeds();
     await this.migrateAllAgentsToSystemBuiltin();
+    await this.ensureModelManagementAgent();
   }
 }

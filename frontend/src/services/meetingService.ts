@@ -112,6 +112,13 @@ export interface MeetingMessageDto {
   metadata?: MeetingMessage['metadata'];
 }
 
+export interface ManageMeetingParticipantDto {
+  id: string;
+  type: 'employee' | 'agent';
+  name: string;
+  isHuman: boolean;
+}
+
 export interface MeetingStats {
   total: number;
   byType: Array<{ _id: string; count: number }>;
@@ -119,7 +126,71 @@ export interface MeetingStats {
   totalMessages: number;
 }
 
+interface OneToOneMeetingParams {
+  employeeId: string;
+  employeeName: string;
+  agentId: string;
+  agentName: string;
+  agentCandidateIds?: string[];
+}
+
 class MeetingService {
+  private isOneToOneMeeting(meeting: Meeting, employeeId: string, agentIds: string[]): boolean {
+    const participants = meeting.participants || [];
+    const uniqueParticipants = Array.from(
+      new Set(participants.map((participant) => `${participant.participantType}:${participant.participantId}`)),
+    );
+
+    if (uniqueParticipants.length !== 2) {
+      return false;
+    }
+
+    const hasEmployee = uniqueParticipants.includes(`employee:${employeeId}`);
+    const hasAgent = agentIds.some((agentId) => uniqueParticipants.includes(`agent:${agentId}`));
+
+    return (
+      hasEmployee &&
+      hasAgent
+    );
+  }
+
+  private async ensureMeetingReadyForChat(
+    meeting: Meeting,
+    employeeId: string,
+    employeeName: string,
+  ): Promise<Meeting> {
+    let latestMeeting = meeting;
+
+    if (latestMeeting.status === MeetingStatus.PENDING) {
+      latestMeeting = await this.startMeeting(latestMeeting.id, {
+        id: employeeId,
+        type: 'employee',
+        name: employeeName,
+        isHuman: true,
+      });
+    } else if (latestMeeting.status === MeetingStatus.PAUSED) {
+      latestMeeting = await this.resumeMeeting(latestMeeting.id);
+    }
+
+    const employeeParticipant = (latestMeeting.participants || []).find(
+      (participant) =>
+        participant.participantType === 'employee' &&
+        participant.participantId === employeeId &&
+        participant.isPresent,
+    );
+
+    if (!employeeParticipant && latestMeeting.status !== MeetingStatus.ENDED && latestMeeting.status !== MeetingStatus.ARCHIVED) {
+      latestMeeting = await this.joinMeeting(latestMeeting.id, {
+        id: employeeId,
+        type: 'employee',
+        name: employeeName,
+        isHuman: true,
+      });
+    }
+
+    return latestMeeting;
+  }
+
   async createMeeting(data: CreateMeetingDto): Promise<Meeting> {
     const response = await api.post('/meetings', data);
     return response.data.data;
@@ -174,6 +245,11 @@ class MeetingService {
     return response.data.data;
   }
 
+  async updateMeetingTitle(id: string, title: string): Promise<Meeting> {
+    const response = await api.put(`/meetings/${id}/title`, { title });
+    return response.data.data;
+  }
+
   async joinMeeting(id: string, participant: ParticipantIdentity): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/join`, participant);
     return response.data.data;
@@ -213,6 +289,56 @@ class MeetingService {
       invitedBy: { id: invitedBy, type: 'employee', name: 'Host', isHuman: true }
     });
     return response.data.data;
+  }
+
+  async addParticipant(id: string, participant: ManageMeetingParticipantDto): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/participants`, participant);
+    return response.data.data;
+  }
+
+  async removeParticipant(id: string, participantId: string, participantType: 'employee' | 'agent'): Promise<Meeting> {
+    const response = await api.delete(`/meetings/${id}/participants/${participantType}/${participantId}`);
+    return response.data.data;
+  }
+
+  async getOrCreateOneToOneMeeting(params: OneToOneMeetingParams): Promise<Meeting> {
+    const { employeeId, employeeName, agentId, agentName, agentCandidateIds = [] } = params;
+    const normalizedAgentIds = Array.from(new Set([agentId, ...agentCandidateIds].filter(Boolean)));
+    const participantMeetings = await this.getMeetingsByParticipant(employeeId, 'employee');
+
+    const reusableStatuses = new Set<MeetingStatus>([
+      MeetingStatus.ACTIVE,
+      MeetingStatus.PAUSED,
+      MeetingStatus.PENDING,
+    ]);
+
+    const existingMeeting = participantMeetings.find(
+      (meeting) =>
+        reusableStatuses.has(meeting.status) &&
+        this.isOneToOneMeeting(meeting, employeeId, normalizedAgentIds),
+    );
+
+    if (existingMeeting) {
+      return this.ensureMeetingReadyForChat(existingMeeting, employeeId, employeeName);
+    }
+
+    const createdMeeting = await this.createMeeting({
+      title: `与 ${agentName} 的1对1聊天`,
+      description: `与 Agent ${agentName} 的直接会话`,
+      type: MeetingType.DAILY,
+      hostId: employeeId,
+      hostType: 'employee',
+      participantIds: [{ id: agentId, type: 'agent' }],
+      settings: {
+        maxParticipants: 2,
+        speakingOrder: 'free',
+        allowAutoStart: true,
+        aiModeration: false,
+        recordTranscript: true,
+      },
+    });
+
+    return this.ensureMeetingReadyForChat(createdMeeting, employeeId, employeeName);
   }
 }
 

@@ -1,11 +1,11 @@
-import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Meeting, MeetingDocument, MeetingType, MeetingStatus, ParticipantRole, MeetingMessage } from '../../shared/schemas/meeting.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { EmployeeService } from '../employees/employee.service';
 import { EmployeeType } from '../../shared/schemas/employee.schema';
-import { ChatMessage } from '../../shared/types';
+import { Agent, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -52,6 +52,8 @@ export interface MeetingMessageDto {
 export class MeetingService {
   private readonly logger = new Logger(MeetingService.name);
   private eventListeners = new Map<string, ((event: MeetingEvent) => void)[]>();
+  private readonly modelManagementAgentName = 'model management agent';
+  private readonly modelManagementAgentRole = 'model-management-specialist';
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
@@ -143,6 +145,136 @@ export class MeetingService {
     }
 
     return Array.from(mentioned);
+  }
+
+  private isLatestModelSearchIntent(content: string): boolean {
+    const text = String(content || '').toLowerCase().trim();
+    if (!text) return false;
+
+    const hasSearch =
+      text.includes('搜索') ||
+      text.includes('查一下') ||
+      text.includes('查询') ||
+      text.includes('search') ||
+      text.includes('find');
+    const hasLatest = text.includes('最新') || text.includes('latest') || text.includes('newest');
+    const hasModel = text.includes('模型') || text.includes('model');
+    const hasOpenAI = text.includes('openai') || text.includes('gpt');
+
+    return hasSearch && hasLatest && hasModel && hasOpenAI;
+  }
+
+  private isModelListIntent(content: string): boolean {
+    const text = String(content || '').toLowerCase().trim();
+    if (!text) return false;
+
+    const hasModel = text.includes('模型') || text.includes('model');
+    const asksList =
+      text.includes('有哪些') ||
+      text.includes('列表') ||
+      text.includes('清单') ||
+      text.includes('当前') ||
+      text.includes('现在') ||
+      text.includes('what models') ||
+      text.includes('which models') ||
+      text.includes('list models') ||
+      text.includes('available models');
+
+    return hasModel && asksList;
+  }
+
+  private isModelManagementIntent(content: string): boolean {
+    return this.isLatestModelSearchIntent(content) || this.isModelListIntent(content);
+  }
+
+  private isHiddenAgentForMeeting(agent: Agent | null): boolean {
+    if (!agent) {
+      return false;
+    }
+
+    const normalizedName = String(agent.name || '').toLowerCase().trim();
+    const normalizedType = String(agent.type || '').toLowerCase().trim();
+    const normalizedRole = String(agent.role || '').toLowerCase().trim();
+
+    if (normalizedName === this.modelManagementAgentName || normalizedRole === this.modelManagementAgentRole) {
+      return true;
+    }
+
+    return (
+      normalizedType === 'ai-system-builtin' &&
+      normalizedName === this.modelManagementAgentName
+    );
+  }
+
+  private getExpandedMeetingTitle(originalTitle: string): string {
+    const normalized = String(originalTitle || '').trim();
+    const replaced = normalized
+      .replace(' 的1对1聊天', ' 等的讨论')
+      .replace('的1对1聊天', '等的讨论')
+      .replace('1对1聊天', '多人讨论');
+    return replaced || '多人讨论';
+  }
+
+  private async maybeRenameExpandedOneToOneMeeting(
+    meeting: MeetingDocument,
+    addedParticipant: ParticipantIdentity,
+  ): Promise<boolean> {
+    const currentTitle = String(meeting.title || '').trim();
+    if (!currentTitle.includes('1对1聊天')) {
+      return false;
+    }
+
+    if (!addedParticipant || addedParticipant.type !== 'agent') {
+      return false;
+    }
+
+    const addedAgent = await this.agentClientService.getAgent(addedParticipant.id);
+    if (this.isHiddenAgentForMeeting(addedAgent)) {
+      return false;
+    }
+
+    const participantCount = new Set(
+      (meeting.participants || []).map((participant) => `${participant.participantType}:${participant.participantId}`),
+    ).size;
+    if (participantCount <= 2) {
+      return false;
+    }
+
+    const nextTitle = this.getExpandedMeetingTitle(currentTitle);
+    if (!nextTitle || nextTitle === currentTitle) {
+      return false;
+    }
+
+    meeting.title = nextTitle;
+    await meeting.save();
+
+    this.emitEvent(meeting.id, {
+      type: 'settings_changed',
+      meetingId: meeting.id,
+      data: { title: nextTitle },
+      timestamp: new Date(),
+    });
+
+    this.logger.log(`Meeting ${meeting.id} title updated after participant expansion: ${nextTitle}`);
+    return true;
+  }
+
+  private async pickModelManagementResponder(
+    presentAgents: MeetingDocument['participants'],
+  ): Promise<string | null> {
+    for (const participant of presentAgents) {
+      const agent = await this.agentClientService.getAgent(participant.participantId);
+      if (!agent) continue;
+
+      const normalizedName = String(agent.name || '').toLowerCase().trim();
+      const normalizedRole = String(agent.role || '').toLowerCase().trim();
+
+      if (normalizedName === this.modelManagementAgentName || normalizedRole === this.modelManagementAgentRole) {
+        return participant.participantId;
+      }
+    }
+
+    return null;
   }
 
   private ensureMeetingCompatibility(meeting: MeetingDocument): void {
@@ -391,6 +523,34 @@ export class MeetingService {
     return meeting;
   }
 
+  async updateMeetingTitle(meetingId: string, title: string): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    const nextTitle = String(title || '').trim();
+    if (!nextTitle) {
+      throw new BadRequestException('Meeting title is required');
+    }
+
+    if (meeting.title === nextTitle) {
+      return meeting;
+    }
+
+    meeting.title = nextTitle;
+    await meeting.save();
+
+    this.emitEvent(meetingId, {
+      type: 'settings_changed',
+      meetingId,
+      data: { title: nextTitle },
+      timestamp: new Date(),
+    });
+
+    return meeting;
+  }
+
   /**
    * 归档会议
    */
@@ -422,8 +582,12 @@ export class MeetingService {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);
     }
 
-    if (meeting.status !== MeetingStatus.ENDED && meeting.status !== MeetingStatus.ARCHIVED) {
-      throw new ConflictException('Only ended or archived meetings can be deleted');
+    if (
+      meeting.status !== MeetingStatus.PENDING &&
+      meeting.status !== MeetingStatus.ENDED &&
+      meeting.status !== MeetingStatus.ARCHIVED
+    ) {
+      throw new ConflictException('Only pending, ended, or archived meetings can be deleted');
     }
 
     await this.meetingModel.deleteOne({ id: meetingId }).exec();
@@ -619,6 +783,7 @@ export class MeetingService {
         joinedAt: new Date(),
       });
       await meeting.save();
+      await this.maybeRenameExpandedOneToOneMeeting(meeting, participant);
       await this.addSystemMessage(meetingId, `${invitedBy.name} 邀请了 ${participant.name}。`);
       
       // Trigger catch-up for the newly joined agent
@@ -645,6 +810,89 @@ export class MeetingService {
     await this.addSystemMessage(meetingId, `${invitedBy.name} 邀请了 ${participant.name}。`);
 
     this.logger.log(`${participant.name} invited to meeting ${meetingId} by ${invitedBy.name}`);
+    return meeting;
+  }
+
+  async addParticipant(meetingId: string, participant: ParticipantIdentity): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (!participant?.id || !participant?.type) {
+      throw new BadRequestException('Participant identity is required');
+    }
+
+    const existingParticipant = meeting.participants.find(
+      (p) => p.participantId === participant.id && p.participantType === participant.type,
+    );
+
+    if (existingParticipant) {
+      throw new ConflictException('Already a participant');
+    }
+
+    const isAgent = participant.type === 'agent';
+    const isPresent = isAgent && meeting.status === MeetingStatus.ACTIVE;
+
+    meeting.participants.push({
+      participantId: participant.id,
+      participantType: participant.type,
+      role: ParticipantRole.PARTICIPANT,
+      isPresent,
+      hasSpoken: false,
+      messageCount: 0,
+      joinedAt: isPresent ? new Date() : undefined,
+    });
+
+    meeting.invitedParticipants = (meeting.invitedParticipants || []).filter(
+      (p) => !(p.participantId === participant.id && p.participantType === participant.type),
+    );
+
+    await meeting.save();
+    await this.addSystemMessage(meetingId, `${participant.name || participant.id} 被添加为参会人。`);
+    await this.maybeRenameExpandedOneToOneMeeting(meeting, participant);
+
+    if (isAgent && isPresent) {
+      setTimeout(() => this.catchUpAgent(meetingId, participant), 1000);
+    }
+
+    return meeting;
+  }
+
+  async removeParticipant(
+    meetingId: string,
+    participantId: string,
+    participantType: 'employee' | 'agent',
+  ): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.hostId === participantId && meeting.hostType === participantType) {
+      throw new ConflictException('Cannot remove host from participants');
+    }
+
+    const beforeCount = meeting.participants.length;
+    meeting.participants = meeting.participants.filter(
+      (p) => !(p.participantId === participantId && p.participantType === participantType),
+    );
+
+    meeting.invitedParticipants = (meeting.invitedParticipants || []).filter(
+      (p) => !(p.participantId === participantId && p.participantType === participantType),
+    );
+
+    if (beforeCount === meeting.participants.length) {
+      throw new NotFoundException('Participant not found in this meeting');
+    }
+
+    await meeting.save();
+    await this.addSystemMessage(meetingId, `${participantId} 已从参会人员中移除。`);
+
     return meeting;
   }
 
@@ -728,6 +976,14 @@ export class MeetingService {
     }
 
     if (presentAgents.length === 0) return;
+
+    const routeToModelManagementAgent = this.isModelManagementIntent(triggerMessage.content || '');
+    if (routeToModelManagementAgent) {
+      const modelAgentId = await this.pickModelManagementResponder(presentAgents);
+      if (modelAgentId) {
+        presentAgents = presentAgents.filter((participant) => participant.participantId === modelAgentId);
+      }
+    }
 
     const mentionTokens = this.extractMentionTokens(triggerMessage.content || '');
     if (mentionTokens.length > 0) {
@@ -853,6 +1109,27 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       content: `[新消息] ${triggerMessage.senderId}: ${triggerMessage.content}\n\n请对此做出回应。`,
       timestamp: new Date(),
     });
+
+    const isLatestSearch = this.isLatestModelSearchIntent(triggerMessage.content || '');
+    const isModelList = this.isModelListIntent(triggerMessage.content || '');
+
+    if (isLatestSearch) {
+      messages.push({
+        role: 'system',
+        content:
+          '当前用户意图是“搜索最新 OpenAI 模型”。请优先联网搜索并返回候选模型与来源，并在结尾明确询问“是否需要添加到系统？”；未收到明确确认前不要执行模型入库。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (isModelList) {
+      messages.push({
+        role: 'system',
+        content:
+          '当前用户意图是“查询系统模型列表”。请先调用模型列表工具获取实时数据，再按 name/provider/model/maxTokens 结构回答，不要返回 Agent 列表。',
+        timestamp: new Date(),
+      });
+    }
 
     return messages;
   }
