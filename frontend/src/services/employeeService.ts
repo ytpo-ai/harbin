@@ -2,7 +2,6 @@ import api from '../lib/axios';
 
 export enum EmployeeType {
   HUMAN = 'human',
-  AGENT = 'agent',
 }
 
 export enum EmployeeStatus {
@@ -67,6 +66,8 @@ export interface Employee {
   toolAccess: string[];
   allowAIProxy?: boolean;
   aiProxyAgentId?: string;
+  exclusiveAssistantAgentId?: string;
+  exclusiveAssistantName?: string;
   meetingPreferences?: {
     autoJoin: boolean;
     notifications: boolean;
@@ -83,7 +84,6 @@ export interface CreateEmployeeDto {
   name?: string;
   email?: string;
   avatar?: string;
-  agentId?: string;
   role: EmployeeRole;
   departmentId?: string;
   title?: string;
@@ -94,6 +94,7 @@ export interface CreateEmployeeDto {
   capabilities?: string[];
   allowAIProxy?: boolean;
   aiProxyAgentId?: string;
+  exclusiveAssistantAgentId?: string;
 }
 
 export interface UpdateEmployeeDto {
@@ -113,6 +114,7 @@ export interface UpdateEmployeeDto {
   toolAccess?: string[];
   allowAIProxy?: boolean;
   aiProxyAgentId?: string;
+  exclusiveAssistantAgentId?: string;
   meetingPreferences?: Employee['meetingPreferences'];
 }
 
@@ -200,6 +202,21 @@ class EmployeeService {
     return response.data.data;
   }
 
+  async setExclusiveAssistant(id: string, agentId: string): Promise<Employee> {
+    const response = await api.post(`/employees/${id}/exclusive-assistant`, { agentId });
+    return response.data.data;
+  }
+
+  async getExclusiveAssistant(id: string): Promise<{ employeeId: string; agentId: string | null }> {
+    const response = await api.get(`/employees/${id}/exclusive-assistant`);
+    return response.data.data;
+  }
+
+  async createAndBindExclusiveAssistant(id: string): Promise<Employee> {
+    const response = await api.post(`/employees/${id}/exclusive-assistant/auto-create`);
+    return response.data.data;
+  }
+
   // 获取当前用户的员工信息
   async getCurrentEmployee(organizationId: string, userId: string): Promise<Employee | null> {
     const employees = await this.getEmployeesByOrganization(organizationId);
@@ -208,37 +225,26 @@ class EmployeeService {
 
   // 转换为会议参与者身份
   toParticipantIdentity(employee: Employee): ParticipantIdentity {
-    if (employee.type === EmployeeType.HUMAN) {
-      // 如果允许AI代理且设置了代理Agent，使用Agent ID
-      if (employee.allowAIProxy && employee.aiProxyAgentId) {
-        return {
-          id: employee.aiProxyAgentId,
-          type: 'agent',
-          name: employee.name || 'AI Proxy',
-          isHuman: false,
-          employeeId: employee.id,
-          agentId: employee.aiProxyAgentId,
-        };
-      }
-      // 否则使用员工ID
+    // 如果允许AI代理且设置了代理Agent，使用Agent ID
+    if (employee.allowAIProxy && employee.aiProxyAgentId) {
       return {
-        id: employee.id,
-        type: 'employee',
-        name: employee.name || 'Unknown',
-        isHuman: true,
-        employeeId: employee.id,
-      };
-    } else {
-      // Agent员工
-      return {
-        id: employee.agentId!,
+        id: employee.aiProxyAgentId,
         type: 'agent',
-        name: employee.name || 'Unknown',
+        name: employee.name || 'AI Proxy',
         isHuman: false,
         employeeId: employee.id,
-        agentId: employee.agentId,
+        agentId: employee.aiProxyAgentId,
       };
     }
+
+    // 否则使用员工ID
+    return {
+      id: employee.id,
+      type: 'employee',
+      name: employee.name || 'Unknown',
+      isHuman: true,
+      employeeId: employee.id,
+    };
   }
 }
 

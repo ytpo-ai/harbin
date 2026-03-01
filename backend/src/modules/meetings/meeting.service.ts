@@ -8,6 +8,7 @@ import { EmployeeType } from '../../shared/schemas/employee.schema';
 import { Agent, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
+import { MessagesService } from '../messages/messages.service';
 
 export interface MeetingEvent {
   type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed';
@@ -26,6 +27,18 @@ export interface ParticipantIdentity {
   isHuman: boolean;
   employeeId?: string;
   agentId?: string;
+}
+
+type MeetingParticipantRecord = MeetingDocument['participants'][number];
+
+interface ParticipantContextProfile {
+  id: string;
+  type: 'employee' | 'agent';
+  name: string;
+  role: ParticipantRole;
+  isPresent: boolean;
+  isExclusiveAssistant?: boolean;
+  assistantForEmployeeId?: string;
 }
 
 export interface CreateMeetingDto {
@@ -60,6 +73,7 @@ export class MeetingService {
     private readonly agentClientService: AgentClientService,
     private readonly employeeService: EmployeeService,
     private readonly redisService: RedisService,
+    private readonly messagesService: MessagesService,
   ) {}
 
   private normalizeSpeakingMode(mode?: string): MeetingSpeakingMode {
@@ -67,6 +81,63 @@ export class MeetingService {
       return 'ordered';
     }
     return 'free';
+  }
+
+  private async getEmployeeOrThrow(employeeId: string) {
+    const employee = await this.employeeService.getEmployee(employeeId);
+    if (!employee) {
+      throw new NotFoundException(`Employee not found: ${employeeId}`);
+    }
+    return employee;
+  }
+
+  private async getRequiredExclusiveAssistantAgentId(employeeId: string): Promise<string> {
+    const employee = await this.getEmployeeOrThrow(employeeId);
+
+    if (employee.type !== EmployeeType.HUMAN) {
+      throw new ConflictException('Only human accounts can initiate or join meetings in employee mode');
+    }
+
+    const assistantAgentId = employee.exclusiveAssistantAgentId || employee.aiProxyAgentId;
+    if (!assistantAgentId) {
+      throw new ConflictException('Human account must bind an exclusive assistant before initiating or joining meetings');
+    }
+
+    return assistantAgentId;
+  }
+
+  private upsertExclusiveAssistantParticipant(
+    meeting: MeetingDocument,
+    ownerEmployeeId: string,
+    assistantAgentId: string,
+    isPresent: boolean,
+  ): void {
+    const now = new Date();
+    const existing = meeting.participants.find(
+      (p) => p.participantId === assistantAgentId && p.participantType === 'agent',
+    ) as MeetingParticipantRecord | undefined;
+
+    if (existing) {
+      existing.isExclusiveAssistant = true;
+      existing.assistantForEmployeeId = ownerEmployeeId;
+      if (isPresent) {
+        existing.isPresent = true;
+        existing.joinedAt = existing.joinedAt || now;
+      }
+      return;
+    }
+
+    meeting.participants.push({
+      participantId: assistantAgentId,
+      participantType: 'agent',
+      role: ParticipantRole.PARTICIPANT,
+      isPresent,
+      hasSpoken: false,
+      messageCount: 0,
+      joinedAt: isPresent ? now : undefined,
+      isExclusiveAssistant: true,
+      assistantForEmployeeId: ownerEmployeeId,
+    });
   }
 
   private extractMentionTokens(content: string): string[] {
@@ -113,26 +184,150 @@ export class MeetingService {
     return aliases;
   }
 
+  private async buildParticipantContextProfiles(meeting: Meeting): Promise<ParticipantContextProfile[]> {
+    const participants = (meeting.participants || []) as MeetingParticipantRecord[];
+
+    const employeeIds = Array.from(
+      new Set(
+        participants
+          .filter((p) => p.participantType === 'employee' && p.participantId)
+          .map((p) => p.participantId),
+      ),
+    );
+    const agentIds = Array.from(
+      new Set(
+        participants
+          .filter((p) => p.participantType === 'agent' && p.participantId)
+          .map((p) => p.participantId),
+      ),
+    );
+    const assistantOwnerIds = Array.from(
+      new Set(
+        participants
+          .map((p) => (p as MeetingParticipantRecord).assistantForEmployeeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+
+    const employeeLookup = new Map<string, string>();
+    const agentLookup = new Map<string, string>();
+
+    await Promise.all(
+      Array.from(new Set([...employeeIds, ...assistantOwnerIds])).map(async (employeeId) => {
+        try {
+          const employee = await this.employeeService.getEmployee(employeeId);
+          const displayName = employee?.name || employee?.email || employeeId;
+          employeeLookup.set(employeeId, displayName);
+        } catch {
+          employeeLookup.set(employeeId, employeeId);
+        }
+      }),
+    );
+
+    await Promise.all(
+      agentIds.map(async (agentId) => {
+        try {
+          const agent = await this.agentClientService.getAgent(agentId);
+          agentLookup.set(agentId, agent?.name || agentId);
+        } catch {
+          agentLookup.set(agentId, agentId);
+        }
+      }),
+    );
+
+    const uniqueProfiles = new Map<string, ParticipantContextProfile>();
+    for (const participant of participants) {
+      if (!participant?.participantId || !participant?.participantType) {
+        continue;
+      }
+
+      const key = `${participant.participantType}:${participant.participantId}`;
+      if (uniqueProfiles.has(key)) {
+        continue;
+      }
+
+      const record = participant as MeetingParticipantRecord;
+      const baseName =
+        participant.participantType === 'employee'
+          ? employeeLookup.get(participant.participantId) || participant.participantId
+          : agentLookup.get(participant.participantId) || participant.participantId;
+
+      let displayName = baseName;
+      if (record.isExclusiveAssistant && record.assistantForEmployeeId) {
+        const ownerName = employeeLookup.get(record.assistantForEmployeeId) || record.assistantForEmployeeId;
+        displayName = `${ownerName}的专属助理(${baseName})`;
+      }
+
+      uniqueProfiles.set(key, {
+        id: participant.participantId,
+        type: participant.participantType,
+        name: displayName,
+        role: participant.role,
+        isPresent: Boolean(participant.isPresent),
+        isExclusiveAssistant: Boolean(record.isExclusiveAssistant),
+        assistantForEmployeeId: record.assistantForEmployeeId,
+      });
+    }
+
+    return Array.from(uniqueProfiles.values());
+  }
+
+  private formatParticipantContextSummary(profiles: ParticipantContextProfile[]): string {
+    if (profiles.length === 0) {
+      return '暂无参会人。';
+    }
+
+    return profiles
+      .map((profile) => {
+        const roleLabel = profile.role === ParticipantRole.HOST ? '主持人' : '参与者';
+        const presenceLabel = profile.isPresent ? '在场' : '未在场';
+        return `${profile.name}(${profile.type}:${profile.id}，${roleLabel}，${presenceLabel})`;
+      })
+      .join('；');
+  }
+
+  private async appendParticipantContextSystemMessage(
+    meeting: MeetingDocument,
+    action: 'initialized' | 'updated',
+  ): Promise<void> {
+    const profiles = await this.buildParticipantContextProfiles(meeting);
+    const summary = this.formatParticipantContextSummary(profiles);
+    const actionText = action === 'initialized' ? '已初始化' : '已更新';
+    await this.addSystemMessage(meeting.id, `参会人上下文${actionText}：${summary}`);
+  }
+
   private async resolveMentionedAgentIds(meeting: MeetingDocument, content: string): Promise<string[]> {
     const tokens = this.extractMentionTokens(content);
     if (tokens.length === 0) {
       return [];
     }
 
-    const presentAgentIds = meeting.participants
-      .filter((p) => p.isPresent && p.participantType === 'agent')
-      .map((p) => p.participantId);
+    const presentAgentParticipants = meeting.participants.filter(
+      (p) => p.isPresent && p.participantType === 'agent',
+    ) as MeetingParticipantRecord[];
 
-    if (presentAgentIds.length === 0) {
+    if (presentAgentParticipants.length === 0) {
       return [];
     }
 
     const mentioned = new Set<string>();
-    const uniqueAgentIds = Array.from(new Set(presentAgentIds));
+    const uniqueAgentIds = Array.from(new Set(presentAgentParticipants.map((p) => p.participantId)));
 
     for (const agentId of uniqueAgentIds) {
       const agent = await this.agentClientService.getAgent(agentId);
       const aliases = this.buildMentionAliases(agentId, agent?.name);
+
+      const assistantParticipant = presentAgentParticipants.find(
+        (participant) => participant.participantId === agentId && participant.isExclusiveAssistant,
+      );
+
+      if (assistantParticipant?.assistantForEmployeeId) {
+        const ownerEmployee = await this.employeeService.getEmployee(assistantParticipant.assistantForEmployeeId);
+        const ownerName = ownerEmployee?.name || ownerEmployee?.email || assistantParticipant.assistantForEmployeeId;
+        const assistantAlias = `${ownerName}的专属助理`.toLowerCase();
+        aliases.add(assistantAlias);
+        aliases.add(assistantAlias.replace(/\s+/g, ''));
+      }
 
       for (const token of tokens) {
         if (
@@ -185,6 +380,80 @@ export class MeetingService {
 
   private isModelManagementIntent(content: string): boolean {
     return this.isLatestModelSearchIntent(content) || this.isModelListIntent(content);
+  }
+
+  private isOperationLogIntent(content: string): boolean {
+    const text = String(content || '').toLowerCase().trim();
+    if (!text) return false;
+
+    const hasLogKeyword =
+      text.includes('操作日志') ||
+      text.includes('系统日志') ||
+      text.includes('audit log') ||
+      text.includes('operation log') ||
+      text.includes('日志');
+    const hasActionKeyword =
+      text.includes('我做了什么') ||
+      text.includes('做了哪些操作') ||
+      text.includes('我的操作') ||
+      text.includes('what did i do') ||
+      text.includes('my actions');
+
+    return hasLogKeyword || hasActionKeyword;
+  }
+
+  private formatOperationLogResponse(result: any): string {
+    const total = Number(result?.total || 0);
+    const logs = Array.isArray(result?.logs) ? result.logs : [];
+
+    if (total === 0 || logs.length === 0) {
+      return '目前在系统的操作日志中没有记录。请问您需要查看特定时间段的日志吗？';
+    }
+
+    const latest = logs[0];
+    const latestTime = latest?.timestamp ? new Date(latest.timestamp).toLocaleString('zh-CN') : '未知时间';
+    const latestAction = latest?.action || latest?.resource || '未知操作';
+
+    return [
+      `我知道，当前共检索到 ${total} 条与你相关的系统操作日志。`,
+      `最近一条是 ${latestTime}，操作为 ${latestAction}。`,
+      '如果你需要，我可以继续按时间段或操作类型帮你筛选。',
+    ].join('\n');
+  }
+
+  private async respondWithOperationLogSummary(
+    meetingId: string,
+    assistantAgentId: string,
+    triggerMessage: MeetingMessage,
+  ): Promise<boolean> {
+    try {
+      const execution = await this.agentClientService.executeTool(
+        'human_operation_log_mcp_list',
+        assistantAgentId,
+        {
+          page: 1,
+          pageSize: 20,
+        },
+      );
+
+      const result = execution?.result || execution?.data?.result;
+      const content = this.formatOperationLogResponse(result || {});
+
+      await this.sendMessage(meetingId, {
+        senderId: assistantAgentId,
+        senderType: 'agent',
+        content,
+        type: 'conclusion',
+        metadata: {
+          relatedMessageId: triggerMessage.id,
+        },
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown operation log query error';
+      this.logger.warn(`Operation log routing failed in meeting ${meetingId}: ${message}`);
+      return false;
+    }
   }
 
   private isHiddenAgentForMeeting(agent: Agent | null): boolean {
@@ -298,11 +567,37 @@ export class MeetingService {
    * 创建新会议
    */
   async createMeeting(dto: CreateMeetingDto): Promise<Meeting> {
-    const participants = dto.participantIds || [];
+    let effectiveHostId = dto.hostId;
+    let effectiveHostType: 'employee' | 'agent' = dto.hostType;
+    const participants = [...(dto.participantIds || [])];
+
+    if (dto.hostType === 'employee') {
+      const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(dto.hostId);
+      effectiveHostId = assistantAgentId;
+      effectiveHostType = 'agent';
+    }
+
+    const dedupedParticipants = Array.from(
+      new Map(
+        participants.map((participant) => [`${participant.type}:${participant.id}`, participant] as const),
+      ).values(),
+    );
+
+    const uniqueHumanParticipantIds = Array.from(
+      new Set(
+        dedupedParticipants
+          .filter((p) => p.type === 'employee')
+          .map((p) => p.id),
+      ),
+    );
+
+    for (const employeeId of uniqueHumanParticipantIds) {
+      await this.getRequiredExclusiveAssistantAgentId(employeeId);
+    }
     
     // 过滤掉主持人自己
-    const filteredParticipants = participants.filter(
-      p => !(p.id === dto.hostId && p.type === dto.hostType)
+    const filteredParticipants = dedupedParticipants.filter(
+      (p) => !(p.id === effectiveHostId && p.type === effectiveHostType),
     );
 
     const meeting = new this.meetingModel({
@@ -311,12 +606,12 @@ export class MeetingService {
       description: dto.description,
       type: dto.type,
       status: MeetingStatus.PENDING,
-      hostId: dto.hostId,
-      hostType: dto.hostType,
+      hostId: effectiveHostId,
+      hostType: effectiveHostType,
       participants: [
         {
-          participantId: dto.hostId,
-          participantType: dto.hostType,
+          participantId: effectiveHostId,
+          participantType: effectiveHostType,
           role: ParticipantRole.HOST,
           isPresent: false,
           hasSpoken: false,
@@ -347,6 +642,22 @@ export class MeetingService {
       messageCount: 0,
     });
 
+    const employeeIdsRequiringAssistant = new Set<string>();
+    if (dto.hostType === 'employee') {
+      employeeIdsRequiringAssistant.add(dto.hostId);
+    }
+
+    for (const participant of filteredParticipants) {
+      if (participant.type === 'employee') {
+        employeeIdsRequiringAssistant.add(participant.id);
+      }
+    }
+
+    for (const employeeId of employeeIdsRequiringAssistant) {
+      const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(employeeId);
+      this.upsertExclusiveAssistantParticipant(meeting, employeeId, assistantAgentId, false);
+    }
+
     const saved = await meeting.save();
     this.logger.log(`Created ${dto.type} meeting: ${saved.title} (${saved.id})`);
     
@@ -370,6 +681,10 @@ export class MeetingService {
 
     if (meeting.status === MeetingStatus.ENDED || meeting.status === MeetingStatus.ARCHIVED) {
       throw new ConflictException('Meeting has already ended');
+    }
+
+    if (meeting.hostType === 'employee') {
+      await this.getRequiredExclusiveAssistantAgentId(meeting.hostId);
     }
 
     meeting.status = MeetingStatus.ACTIVE;
@@ -396,6 +711,7 @@ export class MeetingService {
     await meeting.save();
 
     await this.addSystemMessage(meetingId, `会议 "${meeting.title}" 已开始。`);
+    await this.appendParticipantContextSystemMessage(meeting, 'initialized');
 
     this.emitEvent(meetingId, {
       type: 'status_changed',
@@ -609,6 +925,11 @@ export class MeetingService {
       throw new ConflictException('Meeting has already ended');
     }
 
+    let participantAssistantId: string | null = null;
+    if (participant.type === 'employee') {
+      participantAssistantId = await this.getRequiredExclusiveAssistantAgentId(participant.id);
+    }
+
     let existingParticipant = meeting.participants.find(
       p => p.participantId === participant.id && p.participantType === participant.type
     );
@@ -632,6 +953,10 @@ export class MeetingService {
     meeting.invitedParticipants = meeting.invitedParticipants.filter(
       ip => !(ip.participantId === participant.id && ip.participantType === participant.type)
     );
+
+    if (participant.type === 'employee' && participantAssistantId) {
+      this.upsertExclusiveAssistantParticipant(meeting, participant.id, participantAssistantId, true);
+    }
 
     await meeting.save();
     await this.addSystemMessage(meetingId, `${participant.name} 加入了会议。`);
@@ -701,13 +1026,28 @@ export class MeetingService {
       throw new ConflictException('Meeting is not active');
     }
 
+    const isHumanProxyMessage = dto.senderType === 'employee';
+    let effectiveSenderId = dto.senderId;
+    let effectiveSenderType: 'employee' | 'agent' = dto.senderType;
+
+    if (isHumanProxyMessage) {
+      const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(dto.senderId);
+      effectiveSenderId = assistantAgentId;
+      effectiveSenderType = 'agent';
+    }
+
     // Check if sender is host
-    const isHost = meeting.hostId === dto.senderId;
+    const isHost = meeting.hostId === effectiveSenderId && meeting.hostType === effectiveSenderType;
     
     // Find participant in the meeting
-    const participant = meeting.participants.find(
-      p => p.participantId === dto.senderId && p.isPresent
+    let participant = meeting.participants.find(
+      p => p.participantId === effectiveSenderId && p.participantType === effectiveSenderType,
     );
+
+    if (participant && !participant.isPresent) {
+      participant.isPresent = true;
+      participant.joinedAt = participant.joinedAt || new Date();
+    }
     
     if (!participant && !isHost) {
       throw new ConflictException('Participant is not in the meeting or not present');
@@ -715,12 +1055,18 @@ export class MeetingService {
 
     const message: MeetingMessage = {
       id: uuidv4(),
-      senderId: dto.senderId,
-      senderType: dto.senderType,
+      senderId: effectiveSenderId,
+      senderType: effectiveSenderType,
       content: dto.content,
       type: dto.type || 'opinion',
       timestamp: new Date(),
-      metadata: dto.metadata,
+      metadata: {
+        ...(dto.metadata || {}),
+        ...(isHumanProxyMessage ? {
+          isAIProxy: true,
+          proxyForEmployeeId: dto.senderId,
+        } : {}),
+      },
     };
 
     meeting.messages.push(message);
@@ -734,6 +1080,21 @@ export class MeetingService {
     
     await meeting.save();
 
+    await this.messagesService.appendMessage({
+      sceneType: 'meeting',
+      sceneId: meetingId,
+      senderType: message.senderType,
+      senderId: message.senderId,
+      content: message.content,
+      messageType: message.type,
+      metadata: {
+        ...(message.metadata || {}),
+        meetingId,
+      },
+      occurredAt: message.timestamp,
+      traceId: message.id,
+    });
+
     this.emitEvent(meetingId, {
       type: 'message',
       meetingId,
@@ -742,7 +1103,7 @@ export class MeetingService {
     });
 
     // 触发Agent响应（仅在人类发言后触发，避免Agent之间无限互相触发）
-    if (dto.senderType === 'employee') {
+    if (isHumanProxyMessage) {
       await this.triggerAgentResponses(meetingId, message);
     }
 
@@ -769,6 +1130,10 @@ export class MeetingService {
     );
     if (isAlreadyParticipant) {
       throw new ConflictException('Already a participant');
+    }
+
+    if (participant.type === 'employee') {
+      await this.getRequiredExclusiveAssistantAgentId(participant.id);
     }
 
     // Add agent directly to participants (for AI agents)
@@ -836,6 +1201,11 @@ export class MeetingService {
     const isAgent = participant.type === 'agent';
     const isPresent = isAgent && meeting.status === MeetingStatus.ACTIVE;
 
+    let participantAssistantId: string | null = null;
+    if (!isAgent) {
+      participantAssistantId = await this.getRequiredExclusiveAssistantAgentId(participant.id);
+    }
+
     meeting.participants.push({
       participantId: participant.id,
       participantType: participant.type,
@@ -850,8 +1220,13 @@ export class MeetingService {
       (p) => !(p.participantId === participant.id && p.participantType === participant.type),
     );
 
+    if (!isAgent && participantAssistantId) {
+      this.upsertExclusiveAssistantParticipant(meeting, participant.id, participantAssistantId, false);
+    }
+
     await meeting.save();
     await this.addSystemMessage(meetingId, `${participant.name || participant.id} 被添加为参会人。`);
+    await this.appendParticipantContextSystemMessage(meeting, 'updated');
     await this.maybeRenameExpandedOneToOneMeeting(meeting, participant);
 
     if (isAgent && isPresent) {
@@ -882,6 +1257,12 @@ export class MeetingService {
       (p) => !(p.participantId === participantId && p.participantType === participantType),
     );
 
+    if (participantType === 'employee') {
+      meeting.participants = meeting.participants.filter(
+        (p) => !((p as MeetingParticipantRecord).isExclusiveAssistant && (p as MeetingParticipantRecord).assistantForEmployeeId === participantId),
+      );
+    }
+
     meeting.invitedParticipants = (meeting.invitedParticipants || []).filter(
       (p) => !(p.participantId === participantId && p.participantType === participantType),
     );
@@ -892,6 +1273,7 @@ export class MeetingService {
 
     await meeting.save();
     await this.addSystemMessage(meetingId, `${participantId} 已从参会人员中移除。`);
+    await this.appendParticipantContextSystemMessage(meeting, 'updated');
 
     return meeting;
   }
@@ -954,14 +1336,13 @@ export class MeetingService {
     // 获取在场的Agent参与者
     let presentAgents = meeting.participants.filter(
       p => p.isPresent && 
-           p.participantType === 'agent' && 
-           p.participantId !== triggerMessage.senderId
+           p.participantType === 'agent'
     );
 
     // Backward compatibility: auto-join configured agent participants in old active meetings
     if (presentAgents.length === 0) {
       const standbyAgents = meeting.participants.filter(
-        p => !p.isPresent && p.participantType === 'agent' && p.participantId !== triggerMessage.senderId,
+        p => !p.isPresent && p.participantType === 'agent',
       );
 
       if (standbyAgents.length > 0) {
@@ -977,15 +1358,29 @@ export class MeetingService {
 
     if (presentAgents.length === 0) return;
 
+    const exclusiveAssistantParticipants = presentAgents.filter(
+      (participant) => Boolean((participant as MeetingParticipantRecord).isExclusiveAssistant),
+    );
+    const regularAgentParticipants = presentAgents.filter(
+      (participant) =>
+        !Boolean((participant as MeetingParticipantRecord).isExclusiveAssistant) &&
+        participant.participantId !== triggerMessage.senderId,
+    );
+
     const routeToModelManagementAgent = this.isModelManagementIntent(triggerMessage.content || '');
     if (routeToModelManagementAgent) {
-      const modelAgentId = await this.pickModelManagementResponder(presentAgents);
+      const modelAgentId = await this.pickModelManagementResponder(regularAgentParticipants);
       if (modelAgentId) {
-        presentAgents = presentAgents.filter((participant) => participant.participantId === modelAgentId);
+        presentAgents = regularAgentParticipants.filter((participant) => participant.participantId === modelAgentId);
+      } else {
+        presentAgents = regularAgentParticipants;
       }
+    } else {
+      presentAgents = regularAgentParticipants;
     }
 
     const mentionTokens = this.extractMentionTokens(triggerMessage.content || '');
+    const mentionSet = new Set<string>();
     if (mentionTokens.length > 0) {
       const mentionedAgentIds = await this.resolveMentionedAgentIds(meeting, triggerMessage.content || '');
 
@@ -994,14 +1389,52 @@ export class MeetingService {
         return;
       }
 
+      mentionedAgentIds.forEach((id) => mentionSet.add(id));
+
       presentAgents = presentAgents.filter((p) => mentionedAgentIds.includes(p.participantId));
-      if (presentAgents.length === 0) {
+    }
+
+    const proxyForEmployeeId =
+      typeof triggerMessage.metadata?.proxyForEmployeeId === 'string'
+        ? triggerMessage.metadata.proxyForEmployeeId
+        : undefined;
+    const triggerOwnerEmployeeId =
+      triggerMessage.senderType === 'employee' ? triggerMessage.senderId : proxyForEmployeeId;
+
+    let exclusiveAssistantResponders: MeetingDocument['participants'] = [];
+    if (mentionSet.size > 0 && triggerOwnerEmployeeId) {
+      exclusiveAssistantResponders = exclusiveAssistantParticipants.filter((participant) => {
+        const ownerEmployeeId = (participant as MeetingParticipantRecord).assistantForEmployeeId;
+        if (!ownerEmployeeId || ownerEmployeeId !== triggerOwnerEmployeeId) {
+          return false;
+        }
+
+        return mentionSet.has(participant.participantId);
+      });
+    }
+
+    if (this.isOperationLogIntent(triggerMessage.content || '') && exclusiveAssistantResponders.length > 0) {
+      const exclusiveAssistant = exclusiveAssistantResponders[0];
+      const handled = await this.respondWithOperationLogSummary(
+        meetingId,
+        exclusiveAssistant.participantId,
+        triggerMessage,
+      );
+      if (handled) {
         return;
       }
     }
 
-    // 每次人类发言后，所有在场Agent都响应
-    const responders = [...presentAgents].sort(() => 0.5 - Math.random());
+    const finalResponders = [...presentAgents, ...exclusiveAssistantResponders];
+    if (finalResponders.length === 0) {
+      if (mentionSet.size > 0 && exclusiveAssistantParticipants.length > 0) {
+        await this.addSystemMessage(meetingId, '仅可 @ 自己的专属助理，或 @ 其他在场 Agent。');
+      }
+      return;
+    }
+
+    // 每次人类发言后，常规Agent按原策略响应；专属助理仅在主人明确 @ 时响应。
+    const responders = [...finalResponders].sort(() => 0.5 - Math.random());
 
     for (let i = 0; i < responders.length; i += 1) {
       const p = responders[i];
@@ -1029,7 +1462,9 @@ export class MeetingService {
 
       this.logger.log(`Generating response for agent ${agent.name} in meeting ${meetingId}`);
 
-      const contextMessages = this.buildDiscussionContext(meeting, agentId, triggerMessage);
+      const contextMessages = await this.buildDiscussionContext(meeting, agentId, triggerMessage);
+
+      const participantProfiles = await this.buildParticipantContextProfiles(meeting);
       
       const task = {
         title: `参与会议讨论: ${meeting.title}`,
@@ -1050,6 +1485,7 @@ export class MeetingService {
           meetingTitle: meeting.title,
           agenda: meeting.agenda,
           participants: meeting.participants.map(p => p.participantId),
+          participantProfiles,
         },
       });
 
@@ -1074,21 +1510,24 @@ export class MeetingService {
   /**
    * 构建讨论上下文
    */
-  private buildDiscussionContext(
+  private async buildDiscussionContext(
     meeting: Meeting, 
     agentId: string, 
     triggerMessage: MeetingMessage
-  ): ChatMessage[] {
+  ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
     const agentParticipant = meeting.participants.find(
       p => p.participantId === agentId && p.participantType === 'agent'
     );
+    const participantProfiles = await this.buildParticipantContextProfiles(meeting);
+    const participantSummary = this.formatParticipantContextSummary(participantProfiles);
 
     messages.push({
       role: 'system',
       content: `你正在参加一个会议，会议标题是"${meeting.title}"。
 ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 参与者：${meeting.participants.filter(p => p.isPresent).length}人在场
+参会人详情：${participantSummary}
 你的角色：${agentParticipant?.role === ParticipantRole.HOST ? '主持人' : '参与者'}
 
 请根据会议上下文自然地参与讨论。保持专业、建设性的态度，发言要简洁明了。`,
@@ -1202,6 +1641,21 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     meeting.messages.push(message);
     meeting.messageCount += 1;
     await meeting.save();
+
+    await this.messagesService.appendMessage({
+      sceneType: 'meeting',
+      sceneId: meetingId,
+      senderType: 'system',
+      senderId: 'system',
+      senderRole: 'system',
+      content,
+      messageType: 'conclusion',
+      metadata: {
+        meetingId,
+      },
+      occurredAt: message.timestamp,
+      traceId: message.id,
+    });
 
     this.emitEvent(meetingId, {
       type: 'message',

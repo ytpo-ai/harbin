@@ -68,6 +68,20 @@ export class AgentClientService {
     return response.data;
   }
 
+  async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
+    try {
+      const response = await axios.put<Agent>(`${this.baseUrl}/api/agents/${agentId}`, updates, {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: this.timeout,
+      });
+      return response.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.error(`Failed to update agent ${agentId}: ${message}`);
+      return null;
+    }
+  }
+
   async executeTask(agentId: string, task: Task, context?: any): Promise<string> {
     const response = await axios.post<{ response: string }>(
       `${this.baseUrl}/api/agents/${agentId}/execute`,
@@ -78,6 +92,18 @@ export class AgentClientService {
       },
     );
     return response.data?.response || '';
+  }
+
+  async executeTool(toolId: string, agentId: string, parameters: any, taskId?: string): Promise<any> {
+    const response = await axios.post<any>(
+      `${this.baseUrl}/api/tools/${toolId}/execute`,
+      { agentId, parameters, taskId },
+      {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      },
+    );
+    return response.data;
   }
 
   async testAgentConnection(

@@ -83,6 +83,22 @@ const Meetings: React.FC = () => {
   const { data: stats } = useQuery('meeting-stats', meetingService.getMeetingStats);
   const { data: agents } = useQuery('agents', agentService.getAgents);
   const { data: employees } = useQuery('employees', () => employeeService.getEmployees());
+  const currentEmployee = useMemo(() => {
+    if (!currentUser?.id || !employees) {
+      return null;
+    }
+    return (employees as Employee[]).find((employee) => employee.id === currentUser.id) || null;
+  }, [currentUser?.id, employees]);
+  const hasExclusiveAssistant = Boolean(currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
+  const currentExclusiveAssistantName = useMemo(() => {
+    const assistantAgentId = currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId;
+    if (!assistantAgentId) {
+      return '';
+    }
+
+    const assistant = (agents || []).find((agent) => agent.id === assistantAgentId);
+    return assistant?.name || '专属助理';
+  }, [agents, currentEmployee?.aiProxyAgentId, currentEmployee?.exclusiveAssistantAgentId]);
   const targetMeetingId = meetingIdFromPath || searchParams.get('meetingId');
   const effectiveMeetingId = pinnedMeetingId || targetMeetingId;
   const { data: targetMeeting } = useQuery(
@@ -124,7 +140,16 @@ const Meetings: React.FC = () => {
     const unique = new Map<string, MentionCandidate>();
     (selectedMeeting.participants || []).forEach((participant) => {
       const key = `${participant.participantType}:${participant.participantId}`;
-      const name = participantDisplayMap.get(key) || participant.participantId;
+      let name = participantDisplayMap.get(key) || participant.participantId;
+      if (participant.isExclusiveAssistant) {
+        const assistantName = participantDisplayMap.get(`agent:${participant.participantId}`);
+        if (assistantName) {
+          name = assistantName;
+        } else if (participant.assistantForEmployeeId) {
+          const ownerName = participantDisplayMap.get(`employee:${participant.assistantForEmployeeId}`) || participant.assistantForEmployeeId;
+          name = `${ownerName}的专属助理`;
+        }
+      }
       unique.set(key, {
         id: participant.participantId,
         type: participant.participantType,
@@ -374,19 +399,6 @@ const Meetings: React.FC = () => {
     },
   });
 
-  const joinMutation = useMutation(
-    ({ id, agentId }: { id: string; agentId: string }) => 
-      meetingService.joinMeeting(id, { id: agentId, type: 'employee', name: currentUser?.name || 'User', isHuman: true }),
-    {
-      onSuccess: (data) => {
-        queryClient.invalidateQueries('meetings');
-        if (selectedMeeting?.id === data.id) {
-          setSelectedMeeting(data);
-        }
-      },
-    }
-  );
-
   const sendMessageMutation = useMutation(
     ({ id, content }: { id: string; content: string }) => 
       meetingService.sendMessage(id, {
@@ -560,7 +572,27 @@ const Meetings: React.FC = () => {
     return '自由讨论';
   };
 
-  const getParticipantDisplayName = (participantId: string, participantType: 'employee' | 'agent') => {
+  const getParticipantDisplayName = (
+    participantId: string,
+    participantType: 'employee' | 'agent',
+    participant?: Meeting['participants'][number],
+  ) => {
+    const resolvedParticipant = participant || selectedMeeting?.participants?.find(
+      (p) => p.participantId === participantId && p.participantType === participantType,
+    );
+
+    if (resolvedParticipant?.isExclusiveAssistant) {
+      const assistantName = participantDisplayMap.get(`agent:${participantId}`);
+      if (assistantName) {
+        return assistantName;
+      }
+
+      if (resolvedParticipant.assistantForEmployeeId) {
+        const ownerName = participantDisplayMap.get(`employee:${resolvedParticipant.assistantForEmployeeId}`) || resolvedParticipant.assistantForEmployeeId;
+        return `${ownerName}的专属助理`;
+      }
+    }
+
     return participantDisplayMap.get(`${participantType}:${participantId}`) || participantId;
   };
 
@@ -662,6 +694,7 @@ const Meetings: React.FC = () => {
             <h1 className="text-xl font-semibold text-gray-900">会议室</h1>
             <button
               onClick={() => setIsCreateModalOpen(true)}
+              disabled={!hasExclusiveAssistant}
               className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
             >
               <PlusIcon className="h-4 w-4 mr-1" />
@@ -686,6 +719,12 @@ const Meetings: React.FC = () => {
                 <div className="text-lg font-semibold text-blue-600">{stats.totalMessages}</div>
                 <div className="text-xs text-gray-500">总消息</div>
               </div>
+            </div>
+          )}
+
+          {!hasExclusiveAssistant && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              您还未绑定专属助理，当前账号不可发起或参与会议。
             </div>
           )}
         </div>
@@ -814,8 +853,7 @@ const Meetings: React.FC = () => {
                         disabled={startMutation.isLoading}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
                       >
-                        <PlayIcon className="h-4 w-4 mr-1" />
-                        开始会议
+                        <PlayIcon className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => {
@@ -926,7 +964,7 @@ const Meetings: React.FC = () => {
                   {(selectedMeeting.participants || []).map((participant) => {
                     const legacyParticipant = participant as any;
                     const participantId = participant.participantId || legacyParticipant.agentId || 'unknown';
-                    const participantName = getParticipantDisplayName(participantId, participant.participantType);
+                    const participantName = getParticipantDisplayName(participantId, participant.participantType, participant);
                     return (
                       <div
                         key={participantId}
@@ -1010,7 +1048,7 @@ const Meetings: React.FC = () => {
                     <div className="text-center py-12 text-gray-400">
                       <ChatBubbleLeftRightIcon className="h-16 w-16 mx-auto mb-4 text-gray-200" />
                       <p>等待第一条消息</p>
-                      <p className="text-sm">发送消息开始讨论，AI Agent会自动回复</p>
+                      <p className="text-sm">发送消息开始讨论；专属助理仅在您主动 @ 时响应</p>
                     </div>
                   ) : (
                     selectedMeeting.messages.map((message, index) => {
@@ -1018,7 +1056,10 @@ const Meetings: React.FC = () => {
                       const senderId = message.senderId || legacyMessage.agentId || 'unknown';
                       const senderName = getParticipantDisplayName(senderId, message.senderType === 'agent' ? 'agent' : 'employee');
                       const isSystem = message.senderType === 'system';
-                      const isUser = message.senderType === 'employee';
+                      const isCurrentUsersAssistantMessage =
+                        message.senderType === 'agent' &&
+                        senderId === (currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
+                      const isUser = message.senderType === 'employee' || isCurrentUsersAssistantMessage;
 
                       return (
                         <div
@@ -1070,30 +1111,31 @@ const Meetings: React.FC = () => {
                 {selectedMeeting.status === MeetingStatus.ACTIVE && (
                   <div className="bg-white border-t border-gray-200 px-6 py-4">
                     {(() => {
-                      const isParticipant = (selectedMeeting.participants || []).some(
-                        p => p.participantId === currentUser?.id && p.isPresent,
+                      const assistantAgentId = currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId;
+                      const isAssistantInMeeting = Boolean(
+                        assistantAgentId &&
+                        (selectedMeeting.participants || []).some(
+                          (participant) => participant.participantType === 'agent' && participant.participantId === assistantAgentId,
+                        ),
                       );
-                      const isHost = selectedMeeting.hostId === currentUser?.id;
+                      const canSendAsAssistant = hasExclusiveAssistant && isAssistantInMeeting;
 
-                      if (!isParticipant && !isHost) {
+                      if (!canSendAsAssistant) {
                         return (
                           <div className="text-center py-4">
-                            <button
-                              onClick={() => joinMutation.mutate({
-                                id: selectedMeeting.id,
-                                agentId: currentUser?.id,
-                              })}
-                              disabled={joinMutation.isLoading}
-                              className="px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
-                            >
-                              {joinMutation.isLoading ? '加入中...' : '加入会议'}
-                            </button>
+                            {!hasExclusiveAssistant && (
+                              <p className="mb-2 text-sm text-amber-700">未绑定专属助理，无法发言。</p>
+                            )}
+                            {hasExclusiveAssistant && !isAssistantInMeeting && (
+                              <p className="text-sm text-amber-700">你的专属助理不在当前会议中，暂不可发言。</p>
+                            )}
                           </div>
                         );
                       }
 
                       return (
                         <div className="relative">
+                          <p className="mb-2 text-xs text-gray-500">你发送的消息将以专属助理身份发言。</p>
                           <div className="flex gap-2">
                             <textarea
                               ref={messageInputRef}
@@ -1147,6 +1189,7 @@ const Meetings: React.FC = () => {
                               }}
                               placeholder="输入消息（输入 @ 可快速点名参会成员）..."
                               rows={2}
+                              disabled={!hasExclusiveAssistant}
                               className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                             />
                             <button
@@ -1156,7 +1199,7 @@ const Meetings: React.FC = () => {
                                   resetMention();
                                 }
                               }}
-                              disabled={sendMessageMutation.isLoading || !newMessage.trim()}
+                              disabled={sendMessageMutation.isLoading || !newMessage.trim() || !hasExclusiveAssistant}
                               className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <PaperAirplaneIcon className="h-5 w-5" />
@@ -1265,7 +1308,7 @@ const Meetings: React.FC = () => {
                           <p className="text-xs text-gray-500 mb-2">参会人员管理</p>
                           <div className="space-y-2 mb-3 max-h-72 overflow-y-auto pr-1">
                             {(selectedMeeting.participants || []).map((participant) => {
-                              const participantName = getParticipantDisplayName(participant.participantId, participant.participantType);
+                              const participantName = getParticipantDisplayName(participant.participantId, participant.participantType, participant);
                               const isHost = participant.participantId === selectedMeeting.hostId && participant.participantType === selectedMeeting.hostType;
                               return (
                                 <div key={`${participant.participantType}:${participant.participantId}`} className="flex items-center justify-between text-sm border border-gray-200 rounded-md px-3 py-2">
@@ -1356,6 +1399,8 @@ const Meetings: React.FC = () => {
         <CreateMeetingModal
           agents={agents?.filter(a => a.isActive) || []}
           currentUser={currentUser}
+          hasExclusiveAssistant={hasExclusiveAssistant}
+          exclusiveAssistantName={currentExclusiveAssistantName}
           onClose={() => setIsCreateModalOpen(false)}
           onCreate={(data) => createMutation.mutate(data)}
           isLoading={createMutation.isLoading}
@@ -1369,15 +1414,17 @@ const Meetings: React.FC = () => {
 const CreateMeetingModal: React.FC<{
   agents: Agent[];
   currentUser: any;
+  hasExclusiveAssistant: boolean;
+  exclusiveAssistantName: string;
   onClose: () => void;
   onCreate: (data: CreateMeetingDto) => void;
   isLoading: boolean;
-}> = ({ agents, currentUser, onClose, onCreate, isLoading }) => {
+}> = ({ agents, currentUser, hasExclusiveAssistant, exclusiveAssistantName, onClose, onCreate, isLoading }) => {
   const [formData, setFormData] = useState<Partial<CreateMeetingDto>>({
     title: '',
     description: '',
     type: MeetingType.DAILY,
-    hostId: currentUser ? `${currentUser.id}|employee` : '',
+    hostId: currentUser?.id || '',
     hostType: 'employee',
     participantIds: [],
     agenda: '',
@@ -1389,7 +1436,7 @@ const CreateMeetingModal: React.FC<{
         title: '',
         description: '',
         type: MeetingType.DAILY,
-        hostId: `${currentUser.id}|employee`,
+        hostId: currentUser.id,
         hostType: 'employee',
         participantIds: [],
         agenda: '',
@@ -1399,12 +1446,14 @@ const CreateMeetingModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!hasExclusiveAssistant) {
+      return;
+    }
     if (formData.title && formData.hostId) {
-      const [hostId, hostType] = formData.hostId.split('|');
       onCreate({
         ...formData,
-        hostId,
-        hostType: hostType as 'employee' | 'agent',
+        hostId: formData.hostId,
+        hostType: 'employee',
       } as CreateMeetingDto);
     }
   };
@@ -1421,6 +1470,12 @@ const CreateMeetingModal: React.FC<{
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {!hasExclusiveAssistant && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                当前账号未绑定专属助理，暂不可发起会议。
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 会议标题 <span className="text-red-500">*</span>
@@ -1480,37 +1535,17 @@ const CreateMeetingModal: React.FC<{
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                主持人 <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={formData.hostId}
-                onChange={(e) => {
-                  const [id, type] = e.target.value.split('|');
-                  setFormData({ ...formData, hostId: id, hostType: type as 'employee' | 'agent' });
-                }}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500"
-              >
-                <option value="">选择主持人</option>
-                {currentUser && (
-                  <option value={`${currentUser.id}|employee`}>
-                    {currentUser.name || currentUser.email} (我)
-                  </option>
-                )}
-                {agents.map((agent) => (
-                  <option key={agent.id} value={`${agent.id}|agent`}>
-                    {agent.name} (Agent)
-                  </option>
-                ))}
-              </select>
+            <div className="rounded-md border border-primary-200 bg-primary-50 px-3 py-2">
+              <p className="text-sm font-medium text-primary-900">主持人将自动设置为你的专属助理</p>
+              <p className="mt-1 text-xs text-primary-700">
+                当前主持人：{exclusiveAssistantName || '专属助理'}
+              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">参与者 (可多选)</label>
               <div className="border border-gray-200 rounded-lg p-3 max-h-48 overflow-y-auto">
-                {currentUser && currentUser.id !== formData.hostId?.split('|')[0] && (
+                {currentUser && currentUser.id !== formData.hostId && (
                   <label className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer border-b mb-2">
                     <input
                       type="checkbox"
@@ -1537,7 +1572,7 @@ const CreateMeetingModal: React.FC<{
                   </label>
                 )}
                 {agents
-                  .filter(a => formData.hostId ? a.id !== formData.hostId.split('|')[0] : true)
+                  .filter(a => formData.hostId ? a.id !== formData.hostId : true)
                   .map((agent) => (
                     <label key={agent.id} className="flex items-center p-2 hover:bg-gray-50 rounded cursor-pointer">
                       <input
@@ -1565,7 +1600,7 @@ const CreateMeetingModal: React.FC<{
                       </div>
                     </label>
                   ))}
-                {(agents.length === 0 || agents.filter(a => formData.hostId ? a.id !== formData.hostId.split('|')[0] : true).length === 0) && (
+                {(agents.length === 0 || agents.filter(a => formData.hostId ? a.id !== formData.hostId : true).length === 0) && (
                   <p className="text-sm text-gray-500 text-center py-4">没有其他可用的Agent</p>
                 )}
               </div>
@@ -1581,7 +1616,7 @@ const CreateMeetingModal: React.FC<{
               </button>
               <button
                 type="submit"
-                disabled={isLoading || !formData.title || !formData.hostId}
+                disabled={isLoading || !formData.title || !currentUser?.id || !hasExclusiveAssistant}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
               >
                 {isLoading ? '创建中...' : '创建会议'}

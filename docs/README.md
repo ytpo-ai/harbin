@@ -42,6 +42,15 @@
 - 扩展架构指南
 - 安全和性能优化
 
+**专题架构（新增）**:
+- [自我进化系统架构总览](./architecture/self-evolution/README.md)
+- [分层 1：范围与原则](./architecture/self-evolution/01-scope-and-principles.md)
+- [分层 2：能力感知层](./architecture/self-evolution/02-capability-sensing-layer.md)
+- [分层 3：目标与提案层](./architecture/self-evolution/03-goal-and-proposal-layer.md)
+- [分层 4：实验层](./architecture/self-evolution/04-experimentation-layer.md)
+- [分层 5：评估与治理层](./architecture/self-evolution/05-evaluation-and-governance-layer.md)
+- [分层 6：实施路线图](./architecture/self-evolution/06-implementation-roadmap.md)
+
 ---
 
 ### 🔌 [API文档](./api/API.md)

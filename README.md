@@ -17,6 +17,7 @@
 - 🛠️ **工具生态** - 代码执行、网络搜索、数据分析等多种工具
 - 🎥 **会议室系统** - 支持7种会议类型、独立新会议页、@成员提示与右侧会议管理区
 - 🧭 **任务编排与会话中台** - 一句话生成执行计划，支持 Agent/Human 分派与统一 Session 管理
+- 📨 **统一消息中台** - 会议/讨论/编排会话消息统一沉淀到 `messages`，便于模型评测与Agent绩效分析
 - 🧠 **Skill 管理中台** - AgentSkillManager 自动检索技能、给 Agent 提供能力增强建议，并同步 DB+Markdown
 
 > 当前状态：`组织管理` 与 `公司治理` 模块前后端功能已下线，后续将按新方案重构。
@@ -122,6 +123,7 @@ mongod
 | Model MCP List Models | 查询系统模型清单 | 3 | Basic |
 | Model MCP Search Latest | 互联网检索最新模型候选 | 8 | Basic |
 | Model MCP Add Model | 模型入库（含去重） | 5 | Admin |
+| Human Operation Log MCP List | 查询绑定人类操作日志 | 4 | Basic |
 | 代码执行 | 执行代码片段 | 50 | Intermediate |
 | 网络搜索 | 互联网信息检索 | 10 | Basic |
 | 文件操作 | 文件读写管理 | 5 | Basic/Intermediate |
@@ -141,6 +143,11 @@ mongod
 - Token消耗成本统计
 - 成功率和效率分析
 - 使用历史记录
+
+#### 人类操作审计日志
+- Gateway 会将已认证人类用户的 API 操作落库（含动作、资源、状态码、耗时、请求上下文脱敏摘要）
+- 专属助理可通过 `human_operation_log_mcp_list` 查询绑定人类日志，且默认禁止跨人类访问
+- 前端新增“日志查询”页面，支持人类用户检索全员操作日志（保持脱敏）
 
 #### Agent工具调用
 - 可在 Agent 创建/编辑时分配工具白名单（`tools` 字段）
@@ -308,11 +315,17 @@ const result = await session.executeAction({
 - `POST /model_mcp_search_latest/execute` - 联网检索最新模型候选
 - `POST /model_mcp_add_model/execute` - 新增模型到系统（自动判重）
 
+审计日志 MCP 工具：
+- `POST /human_operation_log_mcp_list/execute` - 查询绑定人类操作日志（仅专属助理）
+
 #### 人力资源 (`/api/hr`)
 - `GET /performance/:agentId` - 绩效报告
 - `GET /low-performers` - 低绩效员工
 - `GET /hiring-recommendations` - 招聘建议
 - `GET /team-health` - 团队健康度
+
+#### 系统操作日志 (`/api/operation-logs`)
+- `GET /` - 人类用户查询全员系统操作日志（支持时间范围/动作/资源/状态筛选与分页）
 
 #### 会议室系统 (`/api/meetings`)
 - `POST /` - 创建会议
@@ -331,6 +344,10 @@ const result = await session.executeAction({
 
 会议特性补充：
 - Agent 管理页支持一键发起 1 对 1 聊天：优先复用已有会话，不存在时自动创建并直达。
+- 人类员工/高管需先绑定专属助理 Agent，未绑定账号不可发起或参与会议。
+- 人类发起会议时，主持人会自动切换为其专属助理（人类本人不加入会议参与者）。
+- 人类在会议输入消息时，系统会自动以其专属助理身份发送。
+- 人类登录后若未绑定专属助理，会收到阻断式引导；点击“创建专属助理”可一键创建并绑定。
 - 未开始会议支持直接删除。
 - 会议列表中的任意会议支持单独新开页面（`/meetings/:meetingId`，不显示全局菜单和会议列表，保留聊天区与会议操作区）。
 - 聊天输入支持 `@成员` 提示下拉，可键盘选择并插入 mention。
@@ -339,6 +356,7 @@ const result = await session.executeAction({
 - 在会议中输入“搜索最新openai模型”时，会优先触发 `Model Management Agent` 联网搜索。
 - 该 Agent 会先返回候选模型列表，并询问是否添加到系统；确认前不写入。
 - 在会议中询问“现在系统里有哪些模型”时，会优先触发 `Model Management Agent` 返回实时模型清单。
+- 专属助理不会主动发言，仅在其对应人类显式 `@` 助理时响应。
 
 #### 研发管理 (`/api/rd-management`)
 - `GET /opencode/current` - 获取当前 OpenCode session 和 project 上下文
@@ -365,6 +383,9 @@ const result = await session.executeAction({
 - `POST /sessions/:id/messages` - 向会话追加消息
 - `POST /sessions/:id/archive` - 归档会话
 - `POST /sessions/:id/resume` - 恢复会话
+
+#### 统一消息 (`/api/messages`)
+- `GET /` - 按 `sceneType + sceneId` 分页查询消息（支持 `limit`、`before`）
 
 ## 📊 数据模型
 
@@ -393,8 +414,12 @@ Task (任务)
 
 Meeting (会议)
 ├── Participant[] (参与者)
-├── Message[] (消息记录)
 └── Summary (会议总结)
+
+Messages (统一消息)
+├── sceneType + sceneId (场景定位)
+├── senderType + senderId (发送者定位)
+└── metadata/model/tokens/latency/cost (评测与分析字段)
 ```
 
 ### 关键数据字段

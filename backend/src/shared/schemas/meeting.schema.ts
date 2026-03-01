@@ -53,6 +53,12 @@ export class MeetingParticipant {
 
   @Prop()
   leftAt?: Date;
+
+  @Prop({ default: false })
+  isExclusiveAssistant?: boolean;
+
+  @Prop()
+  assistantForEmployeeId?: string;
 }
 
 @Schema()
@@ -112,7 +118,7 @@ export class Meeting {
   @Prop({ enum: ['employee', 'agent'], required: true })
   hostType: 'employee' | 'agent';  // 主持人类型
 
-  @Prop({ type: [{ participantId: String, participantType: String, role: String, isPresent: Boolean, hasSpoken: Boolean, messageCount: Number, joinedAt: Date, leftAt: Date }], default: [] })
+  @Prop({ type: [{ participantId: String, participantType: String, role: String, isPresent: Boolean, hasSpoken: Boolean, messageCount: Number, joinedAt: Date, leftAt: Date, isExclusiveAssistant: Boolean, assistantForEmployeeId: String }], default: [] })
   participants: Array<{
     participantId: string;
     participantType: 'employee' | 'agent';
@@ -122,6 +128,8 @@ export class Meeting {
     messageCount: number;
     joinedAt?: Date;
     leftAt?: Date;
+    isExclusiveAssistant?: boolean;
+    assistantForEmployeeId?: string;
   }>;
 
   @Prop({ type: [Object], default: [] })

@@ -236,7 +236,18 @@ POST /meetings/:id/messages
 ```
 
 当消息内容包含 `@AgentName` 时，仅被 @ 的在场 Agent 会响应；
-不包含 @ 时，默认所有在场 Agent 依次响应。
+不包含 @ 时，默认所有在场常规 Agent 依次响应（专属助理除外）。
+
+会议参会人上下文同步规则：
+- 会议开始时，系统会写入一条“参会人上下文已初始化”系统消息，包含当前参会人结构化信息（`id/type/name/role/isPresent`）。
+- 通过“添加参会人员 / 移除参会人员”接口变更成员后，系统会写入“参会人上下文已更新”系统消息。
+- Agent 执行任务时，`teamContext` 除保留 `participants`（ID 列表）外，新增 `participantProfiles`（结构化参会人信息）。
+
+专属助理规则：
+- 人类员工/高管账号必须先绑定专属助理，否则不可发起会议或参与会议。
+- 人类发起会议时，会议主持人会自动切换为其专属助理（host 为 agent），人类本人不加入会议参与者列表。
+- 人类在会议中发送消息时，后端会自动映射为其专属助理身份发言。
+- 专属助理不会主动发言，仅在其对应人类显式 `@` 时响应。
 
 会议中的模型检索特例：
 - 当人类消息命中“搜索最新openai模型 / search latest openai models”等意图时，系统会优先路由 `Model Management Agent` 响应。
@@ -315,6 +326,24 @@ DELETE /meetings/:id
 ```
 
 > 说明：支持删除 `pending`、`ended`、`archived` 状态会议。
+
+### 绑定/查询专属助理
+```http
+POST /employees/:id/exclusive-assistant
+GET /employees/:id/exclusive-assistant
+POST /employees/:id/exclusive-assistant/auto-create
+```
+
+`POST` 请求体示例：
+```json
+{
+  "agentId": "agent-xxx"
+}
+```
+
+`POST /employees/:id/exclusive-assistant/auto-create` 说明：
+- 用于“登录后未绑定专属助理”的一键引导场景。
+- 后端会自动创建一个 `ai-human-exclusive-assistant` 类型 Agent，并立即绑定到该员工账号。
 
 ### 实时会议事件（WebSocket）
 - WS 地址: `ws://localhost:3003/ws`
@@ -473,6 +502,11 @@ GET /model-management/founder-models
   - 出参：`created`、`duplicateBy`、`model`、`message`
   - 内置去重：按 `id` 与 `provider+model` 双重判重
 
+- `human_operation_log_mcp_list`
+  - 入参：`from?`、`to?`、`action?`、`resourceKeyword?`、`success?`、`statusCode?`、`page?`、`pageSize?`
+  - 出参：绑定人类的操作日志分页列表（含 `action/resource/statusCode/success/timestamp` 等）
+  - 权限：仅允许“人类专属助理”查询其绑定人类日志，禁止跨人类访问
+
 新增系统内置 Agent：`Model Management Agent`（`role=model-management-specialist`），默认具备以上三个工具。
 
 ---
@@ -549,6 +583,22 @@ POST /tools/:toolId/execute
 
 请求路径示例：`POST /tools/model_mcp_add_model/execute`
 
+**人类操作日志 MCP 工具调用示例（仅专属助理可用）**:
+```json
+{
+  "agentId": "exclusive-assistant-agent-id",
+  "parameters": {
+    "from": "2026-03-01T00:00:00.000Z",
+    "to": "2026-03-01T23:59:59.000Z",
+    "action": "POST /api/meetings",
+    "page": 1,
+    "pageSize": 20
+  }
+}
+```
+
+请求路径示例：`POST /tools/human_operation_log_mcp_list/execute`
+
 ### 5.3 获取工具执行历史
 ```http
 GET /tools/executions/history
@@ -561,6 +611,56 @@ GET /tools/executions/history
 ### 5.4 获取工具统计
 ```http
 GET /tools/executions/stats
+```
+
+---
+
+## 5.4A 系统操作日志查询 API
+
+### 获取系统操作日志（人类用户全员可见）
+```http
+GET /operation-logs
+```
+
+**权限**:
+- 任意已登录人类用户均可访问。
+- 返回全员系统操作日志（已脱敏字段）。
+
+**查询参数**:
+- `from` / `to` (可选): ISO 时间范围
+- `action` (可选): 动作关键词
+- `resourceKeyword` (可选): 资源路径关键词
+- `humanEmployeeId` (可选): 指定人类员工ID
+- `assistantAgentId` (可选): 指定专属助理Agent ID
+- `success` (可选): `true | false`
+- `statusCode` (可选): HTTP 状态码
+- `page` (可选): 页码，默认 1
+- `pageSize` (可选): 每页条数，默认 20，最大 100
+
+**响应示例**:
+```json
+{
+  "success": true,
+  "data": {
+    "total": 120,
+    "page": 1,
+    "pageSize": 20,
+    "totalPages": 6,
+    "logs": [
+      {
+        "id": "log-id",
+        "humanEmployeeId": "emp-1",
+        "humanName": "Alice",
+        "action": "POST /api/meetings",
+        "resource": "/api/meetings",
+        "statusCode": 201,
+        "success": true,
+        "timestamp": "2026-03-01T12:00:00.000Z"
+      }
+    ],
+    "fetchedAt": "2026-03-01T12:01:00.000Z"
+  }
+}
 ```
 
 ---
@@ -897,6 +997,19 @@ POST /orchestration/sessions/:id/messages/batch
 POST /orchestration/sessions/:id/archive
 POST /orchestration/sessions/:id/resume
 ```
+
+### 9.6 统一消息查询
+```http
+GET /messages
+```
+
+**Query 参数**:
+- `sceneType` (必填): `meeting | discussion | orchestration_session | task`
+- `sceneId` (必填): 场景ID（例如 meetingId/discussionId/sessionId）
+- `limit` (可选): 返回条数，默认 50，最大 500
+- `before` (可选): 按 `occurredAt` 游标向前分页（ISO 时间）
+
+说明：该接口用于聚合查看统一消息库 `messages`，支持后续模型评测与 Agent 绩效统计。
 
 ---
 

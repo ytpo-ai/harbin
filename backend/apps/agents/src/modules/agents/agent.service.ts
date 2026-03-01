@@ -152,7 +152,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-human-exclusive-assistant',
     role: 'human-exclusive-assistant',
-    tools: ['websearch', 'webfetch', 'content_extract'],
+    tools: ['websearch', 'webfetch', 'content_extract', 'human_operation_log_mcp_list'],
     capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
     exposed: true,
     description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
@@ -1165,6 +1165,17 @@ export class AgentService {
           )
           .exec();
       }
+
+      await this.agentProfileModel
+        .updateOne(
+          { agentType: 'ai-human-exclusive-assistant' },
+          {
+            $addToSet: {
+              tools: 'human_operation_log_mcp_list',
+            },
+          },
+        )
+        .exec();
 
       await this.agentProfileModel.deleteMany({ agentType: { $nin: activeTypes } }).exec();
     } catch (error) {

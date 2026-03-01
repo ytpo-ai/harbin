@@ -435,5 +435,19 @@ Nginx (Reverse Proxy + SSL)
 
 ---
 
+## 自我进化专题架构
+
+为支持系统“能力感知 -> 目标对齐 -> 提案生成 -> 实验验证 -> 治理决策”的闭环进化，新增专题文档：
+
+- `docs/architecture/self-evolution/README.md`
+- `docs/architecture/self-evolution/01-scope-and-principles.md`
+- `docs/architecture/self-evolution/02-capability-sensing-layer.md`
+- `docs/architecture/self-evolution/03-goal-and-proposal-layer.md`
+- `docs/architecture/self-evolution/04-experimentation-layer.md`
+- `docs/architecture/self-evolution/05-evaluation-and-governance-layer.md`
+- `docs/architecture/self-evolution/06-implementation-roadmap.md`
+
+---
+
 **架构版本**: v1.0
 **最后更新**: 2026-02-25

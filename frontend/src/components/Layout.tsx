@@ -12,17 +12,72 @@ import {
   CodeBracketIcon,
   SparklesIcon,
   BoltIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
+import { employeeService, EmployeeType } from '../services/employeeService';
 
 const Layout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentEmployee, setCurrentEmployee] = useState<any>(null);
+  const [checkingAssistant, setCheckingAssistant] = useState(false);
+  const [creatingAssistant, setCreatingAssistant] = useState(false);
+  const [assistantError, setAssistantError] = useState('');
 
   useEffect(() => {
-    authService.getCurrentUser().then(setCurrentUser);
+    const loadCurrentUserAndEmployee = async () => {
+      const user = await authService.getCurrentUser();
+      setCurrentUser(user);
+
+      if (!user?.id) {
+        setCurrentEmployee(null);
+        return;
+      }
+
+      setCheckingAssistant(true);
+      try {
+        const employee = await employeeService.getEmployee(user.id);
+        setCurrentEmployee(employee || null);
+      } catch {
+        setCurrentEmployee(null);
+      } finally {
+        setCheckingAssistant(false);
+      }
+    };
+
+    void loadCurrentUserAndEmployee();
   }, []);
+
+  const requiresAssistantBinding =
+    !!currentUser &&
+    currentEmployee?.type === EmployeeType.HUMAN &&
+    !currentEmployee?.exclusiveAssistantAgentId &&
+    !currentEmployee?.aiProxyAgentId;
+
+  const handleCreateAssistant = async () => {
+    if (!currentUser?.id || creatingAssistant) {
+      return;
+    }
+
+    setAssistantError('');
+    setCreatingAssistant(true);
+
+    try {
+      const employee = await employeeService.createAndBindExclusiveAssistant(currentUser.id);
+      setCurrentEmployee(employee);
+    } catch (error: any) {
+      const backendMessage = error?.response?.data?.message;
+      setAssistantError(
+        typeof backendMessage === 'string' && backendMessage
+          ? backendMessage
+          : '创建专属助理失败，请稍后重试。',
+      );
+    } finally {
+      setCreatingAssistant(false);
+    }
+  };
 
   const handleLogout = () => {
     authService.logout();
@@ -38,6 +93,7 @@ const Layout: React.FC = () => {
     { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
     { name: '任务编排', href: '/orchestration', icon: SparklesIcon },
     { name: 'Skills管理', href: '/skills', icon: BoltIcon },
+    { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
     { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
     { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
     { name: '人力资源', href: '/hr', icon: UserGroupIcon },
@@ -129,6 +185,39 @@ const Layout: React.FC = () => {
           </div>
         </main>
       </div>
+
+      {requiresAssistantBinding && (
+        <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold text-gray-900">创建专属助理后才能继续</h2>
+            <p className="mt-2 text-sm text-gray-600">
+              检测到您尚未绑定专属助理。根据系统规则，人类员工和高管必须先创建并绑定专属助理，才可发起或参与会议。
+            </p>
+
+            {assistantError && (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {assistantError}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                退出登录
+              </button>
+              <button
+                onClick={handleCreateAssistant}
+                disabled={creatingAssistant || checkingAssistant}
+                className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+              >
+                {creatingAssistant ? '创建中...' : '创建专属助理'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -124,4 +124,37 @@ export class EmployeeController {
       message: agentId ? 'AI代理已设置' : 'AI代理已取消',
     };
   }
+
+  @Post(':id/exclusive-assistant')
+  async setExclusiveAssistant(
+    @Param('id') id: string,
+    @Body('agentId') agentId: string,
+  ) {
+    const employee = await this.employeeService.setExclusiveAssistant(id, agentId);
+    return {
+      success: !!employee,
+      data: employee,
+      message: employee ? '专属助理绑定成功' : '员工不存在',
+    };
+  }
+
+  @Get(':id/exclusive-assistant')
+  async getExclusiveAssistant(@Param('id') id: string) {
+    const binding = await this.employeeService.getExclusiveAssistant(id);
+    return {
+      success: !!binding,
+      data: binding,
+      message: binding ? '查询成功' : '员工不存在',
+    };
+  }
+
+  @Post(':id/exclusive-assistant/auto-create')
+  async createAndBindExclusiveAssistant(@Param('id') id: string) {
+    const employee = await this.employeeService.createAndBindExclusiveAssistant(id);
+    return {
+      success: !!employee,
+      data: employee,
+      message: employee ? '专属助理创建并绑定成功' : '员工不存在',
+    };
+  }
 }

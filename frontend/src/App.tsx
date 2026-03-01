@@ -13,6 +13,7 @@ import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import Orchestration from './pages/Orchestration';
 import Skills from './pages/Skills';
+import OperationLogs from './pages/OperationLogs';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -64,6 +65,7 @@ function App() {
             <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
+            <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

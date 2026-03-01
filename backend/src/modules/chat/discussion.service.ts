@@ -6,6 +6,7 @@ import { AgentClientService } from '../agents-client/agent-client.service';
 import { DiscussionMessage, Task, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
+import { MessagesService } from '../messages/messages.service';
 
 export interface DiscussionEvent {
   type: 'message' | 'agent_joined' | 'agent_left' | 'conclusion' | 'pause';
@@ -22,6 +23,7 @@ export class DiscussionService {
     @InjectModel(Discussion.name) private discussionModel: Model<DiscussionDocument>,
     private readonly agentClientService: AgentClientService,
     private readonly redisService: RedisService,
+    private readonly messagesService: MessagesService,
   ) {}
 
   async createDiscussion(
@@ -81,6 +83,23 @@ export class DiscussionService {
     discussion.messages.push(message);
     discussion.updatedAt = new Date();
     await discussion.save();
+
+    await this.messagesService.appendMessage({
+      sceneType: 'discussion',
+      sceneId: discussionId,
+      threadId: discussion.taskId,
+      senderType: agentId === 'system' ? 'system' : 'agent',
+      senderId: agentId,
+      senderRole: agentId === 'system' ? 'system' : 'assistant',
+      content,
+      messageType: type,
+      metadata: {
+        discussionId,
+        taskId: discussion.taskId,
+      },
+      occurredAt: message.timestamp,
+      traceId: message.id,
+    });
 
     // 发送消息事件
     this.emitEvent(discussionId, {

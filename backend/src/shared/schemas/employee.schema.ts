@@ -132,6 +132,9 @@ export class Employee {
   @Prop()
   aiProxyAgentId?: string;   // 代理AI的Agent ID
 
+  @Prop()
+  exclusiveAssistantAgentId?: string; // 人类专属助理 Agent ID
+
   // 会议室相关设置
   @Prop({ type: Object })
   meetingPreferences?: {

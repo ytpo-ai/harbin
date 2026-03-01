@@ -3,11 +3,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentSession, AgentSessionDocument } from '../../shared/schemas/agent-session.schema';
 import { CreateSessionDto, SessionQueryDto } from './dto';
+import { MessagesService } from '../messages/messages.service';
 
 @Injectable()
 export class SessionManagerService {
   constructor(
     @InjectModel(AgentSession.name) private readonly agentSessionModel: Model<AgentSessionDocument>,
+    private readonly messagesService: MessagesService,
   ) {}
 
   async createSession(organizationId: string, dto: CreateSessionDto): Promise<AgentSession> {
@@ -73,6 +75,25 @@ export class SessionManagerService {
     if (!updated) {
       throw new NotFoundException('Session not found');
     }
+
+    await this.messagesService.appendMessage({
+      sceneType: 'orchestration_session',
+      sceneId: sessionId,
+      threadId: updated.linkedPlanId,
+      senderType: message.role === 'assistant' ? 'agent' : message.role === 'system' ? 'system' : 'employee',
+      senderId: message.role === 'assistant' ? updated.ownerId : message.role === 'system' ? 'system' : 'user',
+      senderRole: message.role,
+      content: message.content,
+      messageType: message.role === 'system' ? 'system' : 'session_message',
+      metadata: {
+        ...(message.metadata || {}),
+        organizationId,
+        sessionId,
+        linkedPlanId: updated.linkedPlanId,
+        linkedTaskId: updated.linkedTaskId,
+      },
+    });
+
     return updated;
   }
 
@@ -104,6 +125,28 @@ export class SessionManagerService {
     if (!updated) {
       throw new NotFoundException('Session not found');
     }
+
+    await this.messagesService.appendMessages(
+      payload.map((message) => ({
+        sceneType: 'orchestration_session' as const,
+        sceneId: sessionId,
+        threadId: updated.linkedPlanId,
+        senderType: message.role === 'assistant' ? 'agent' : message.role === 'system' ? 'system' : 'employee',
+        senderId: message.role === 'assistant' ? updated.ownerId : message.role === 'system' ? 'system' : 'user',
+        senderRole: message.role,
+        content: message.content,
+        messageType: message.role === 'system' ? 'system' : 'session_message',
+        metadata: {
+          ...(message.metadata || {}),
+          organizationId,
+          sessionId,
+          linkedPlanId: updated.linkedPlanId,
+          linkedTaskId: updated.linkedTaskId,
+        },
+        occurredAt: message.timestamp,
+      })),
+    );
+
     return updated;
   }
 

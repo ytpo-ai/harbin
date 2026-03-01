@@ -18,11 +18,13 @@ import { OrchestrationController } from './orchestration.controller';
 import { OrchestrationService } from './orchestration.service';
 import { PlannerService } from './planner.service';
 import { SessionManagerService } from './session-manager.service';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
+    MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },

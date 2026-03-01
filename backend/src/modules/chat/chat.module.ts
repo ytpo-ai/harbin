@@ -4,11 +4,13 @@ import { Discussion, DiscussionSchema } from '../../shared/schemas/discussion.sc
 import { DiscussionService } from './discussion.service';
 import { DiscussionController } from './discussion.controller';
 import { AgentClientModule } from '../agents-client/agent-client.module';
+import { MessagesModule } from '../messages/messages.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Discussion.name, schema: DiscussionSchema }]),
-    AgentClientModule
+    AgentClientModule,
+    MessagesModule,
   ],
   controllers: [DiscussionController],
   providers: [DiscussionService],

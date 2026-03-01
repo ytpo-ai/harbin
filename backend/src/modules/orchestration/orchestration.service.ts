@@ -991,17 +991,6 @@ export class OrchestrationService {
       };
     }
 
-    if (bestEmployee.type === EmployeeType.AGENT && bestEmployee.id) {
-      const mappedEmployee = employees.find((item) => item.id === bestEmployee.id);
-      if (mappedEmployee?.agentId) {
-        return {
-          executorType: 'agent',
-          executorId: mappedEmployee.agentId,
-          reason: `Mapped from agent employee score=${bestEmployee.score}`,
-        };
-      }
-    }
-
     return {
       executorType: 'employee',
       executorId: bestEmployee.id,

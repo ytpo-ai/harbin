@@ -37,6 +37,8 @@ export interface MeetingParticipant {
   messageCount: number;
   joinedAt?: string;
   leftAt?: string;
+  isExclusiveAssistant?: boolean;
+  assistantForEmployeeId?: string;
 }
 
 export interface MeetingMessage {

@@ -1,9 +1,11 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus, EmployeeRole } from '../../shared/schemas/employee.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { v4 as uuidv4 } from 'uuid';
+import { AVAILABLE_MODELS } from '../../config/models';
+import type { AIModel, Agent } from '../../shared/types';
 
 export interface CreateEmployeeDto {
   type: EmployeeType;
@@ -13,8 +15,6 @@ export interface CreateEmployeeDto {
   name?: string;
   email?: string;
   avatar?: string;
-  // Agent员工字段
-  agentId?: string;
   // 共同字段
   role: EmployeeRole;
   departmentId?: string;
@@ -26,6 +26,7 @@ export interface CreateEmployeeDto {
   capabilities?: string[];
   allowAIProxy?: boolean;
   aiProxyAgentId?: string;
+  exclusiveAssistantAgentId?: string;
 }
 
 export interface UpdateEmployeeDto {
@@ -45,6 +46,7 @@ export interface UpdateEmployeeDto {
   toolAccess?: string[];
   allowAIProxy?: boolean;
   aiProxyAgentId?: string;
+  exclusiveAssistantAgentId?: string;
   meetingPreferences?: Employee['meetingPreferences'];
 }
 
@@ -58,7 +60,7 @@ export interface EmployeeStats {
 }
 
 @Injectable()
-export class EmployeeService {
+export class EmployeeService implements OnModuleInit {
   private readonly logger = new Logger(EmployeeService.name);
 
   constructor(
@@ -66,36 +68,128 @@ export class EmployeeService {
     private readonly agentClientService: AgentClientService,
   ) {}
 
+  async onModuleInit(): Promise<void> {
+    const purgeResult = await this.employeeModel.deleteMany({ type: EmployeeType.AGENT }).exec();
+    if (purgeResult.deletedCount) {
+      this.logger.warn(`Purged legacy AI agent employees: ${purgeResult.deletedCount}`);
+    }
+  }
+
+  private pickDefaultAssistantModel(): AIModel {
+    const preferredIds = ['gpt-4o-mini', 'gpt-4o', 'claude-sonnet-4-6', 'gemini-1.5-flash'];
+    for (const modelId of preferredIds) {
+      const found = AVAILABLE_MODELS.find((model) => model.id === modelId);
+      if (found) {
+        return found;
+      }
+    }
+
+    return AVAILABLE_MODELS[0];
+  }
+
+  private async buildAssistantName(baseName: string): Promise<string> {
+    const allAgents = await this.agentClientService.getAllAgents();
+    const taken = new Set(
+      (allAgents || [])
+        .map((agent) => String(agent.name || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+
+    const normalizedBase = baseName.trim() || '专属助理';
+    if (!taken.has(normalizedBase.toLowerCase())) {
+      return normalizedBase;
+    }
+
+    for (let idx = 2; idx <= 999; idx += 1) {
+      const candidate = `${normalizedBase} ${idx}`;
+      if (!taken.has(candidate.toLowerCase())) {
+        return candidate;
+      }
+    }
+
+    return `${normalizedBase} ${Date.now()}`;
+  }
+
+  private buildAssistantDisplayName(ownerName: string): string {
+    const normalized = ownerName.trim();
+    if (!normalized) {
+      return '专属助理';
+    }
+    return `${normalized} 的专属助理`;
+  }
+
+  private async attachAssistantNames(employees: EmployeeDocument[]): Promise<Array<Employee & { exclusiveAssistantName?: string }>> {
+    const assistantIds = Array.from(
+      new Set(
+        employees
+          .map((employee) => employee.exclusiveAssistantAgentId || employee.aiProxyAgentId)
+          .filter((id): id is string => !!id),
+      ),
+    );
+
+    if (assistantIds.length === 0) {
+      return employees.map((employee) => employee.toObject());
+    }
+
+    const allAgents = await this.agentClientService.getAllAgents();
+    const nameById = new Map<string, string>();
+    for (const agent of allAgents || []) {
+      const id = String((agent as Agent).id || '').trim();
+      if (!id) {
+        continue;
+      }
+      nameById.set(id, String(agent.name || '').trim());
+    }
+
+    return employees.map((employee) => {
+      const assistantId = employee.exclusiveAssistantAgentId || employee.aiProxyAgentId;
+      const assistantName = assistantId ? nameById.get(assistantId) : undefined;
+      return {
+        ...employee.toObject(),
+        exclusiveAssistantName: assistantName || undefined,
+      };
+    });
+  }
+
   /**
    * 创建员工（人类或Agent）
    */
   async createEmployee(dto: CreateEmployeeDto): Promise<Employee> {
-    // 验证必填字段
-    if (dto.type === EmployeeType.HUMAN && !dto.name) {
-      throw new ConflictException('Human employee must have a name');
+    if (dto.type !== EmployeeType.HUMAN) {
+      throw new ConflictException('AI Agent employee identity has been removed; only human employees are supported');
     }
-    if (dto.type === EmployeeType.AGENT && !dto.agentId) {
-      throw new ConflictException('Agent employee must have an agentId');
+
+    // 验证必填字段
+    if (!dto.name) {
+      throw new ConflictException('Human employee must have a name');
     }
 
     // 检查是否已存在
-    if (dto.type === EmployeeType.AGENT && dto.agentId) {
-      const existing = await this.employeeModel.findOne({
-        organizationId: dto.organizationId,
-        agentId: dto.agentId,
-      }).exec();
-      if (existing) {
-        throw new ConflictException('Agent is already an employee in this organization');
-      }
-    }
-
-    if (dto.type === EmployeeType.HUMAN && dto.userId) {
+    if (dto.userId) {
       const existing = await this.employeeModel.findOne({
         organizationId: dto.organizationId,
         userId: dto.userId,
       }).exec();
       if (existing) {
         throw new ConflictException('User is already an employee in this organization');
+      }
+    }
+
+    if (dto.exclusiveAssistantAgentId) {
+      const assistantAgent = await this.agentClientService.getAgent(dto.exclusiveAssistantAgentId);
+      if (!assistantAgent) {
+        throw new ConflictException('Exclusive assistant agent does not exist or is unavailable');
+      }
+
+      const duplicateAssistant = await this.employeeModel.findOne({
+        type: EmployeeType.HUMAN,
+        $or: [
+          { exclusiveAssistantAgentId: dto.exclusiveAssistantAgentId },
+          { aiProxyAgentId: dto.exclusiveAssistantAgentId },
+        ],
+      }).exec();
+      if (duplicateAssistant) {
+        throw new ConflictException('This agent is already bound as another human account assistant');
       }
     }
 
@@ -107,7 +201,6 @@ export class EmployeeService {
       name: dto.name,
       email: dto.email,
       avatar: dto.avatar,
-      agentId: dto.agentId,
       role: dto.role,
       departmentId: dto.departmentId,
       title: dto.title || this.getDefaultTitle(dto.role),
@@ -125,6 +218,7 @@ export class EmployeeService {
       capabilities: dto.capabilities || [],
       allowAIProxy: dto.allowAIProxy || false,
       aiProxyAgentId: dto.aiProxyAgentId,
+      exclusiveAssistantAgentId: dto.exclusiveAssistantAgentId || dto.aiProxyAgentId,
       meetingPreferences: {
         autoJoin: true,
         notifications: true,
@@ -150,17 +244,7 @@ export class EmployeeService {
     });
 
     const saved = await employee.save();
-    this.logger.log(`Created ${dto.type} employee: ${saved.name || saved.agentId} in org ${dto.organizationId}`);
-
-    // 如果是Agent员工，获取Agent信息填充能力
-    if (dto.type === EmployeeType.AGENT && dto.agentId) {
-      const agent = await this.agentClientService.getAgent(dto.agentId);
-      if (agent) {
-        saved.capabilities = agent.capabilities || [];
-        saved.name = agent.name;
-        await saved.save();
-      }
-    }
+    this.logger.log(`Created ${dto.type} employee: ${saved.name || saved.id} in org ${dto.organizationId}`);
 
     return saved;
   }
@@ -171,13 +255,17 @@ export class EmployeeService {
   async getEmployeesByOrganization(
     organizationId: string,
     filters?: { type?: EmployeeType; status?: EmployeeStatus; departmentId?: string }
-  ): Promise<Employee[]> {
-    const query: any = { organizationId };
-    if (filters?.type) query.type = filters.type;
+  ): Promise<Array<Employee & { exclusiveAssistantName?: string }>> {
+    if (filters?.type && filters.type !== EmployeeType.HUMAN) {
+      return [];
+    }
+
+    const query: any = { organizationId, type: EmployeeType.HUMAN };
     if (filters?.status) query.status = filters.status;
     if (filters?.departmentId) query.departmentId = filters.departmentId;
 
-    return this.employeeModel.find(query).sort({ createdAt: -1 }).exec();
+    const employees = await this.employeeModel.find(query).sort({ createdAt: -1 }).exec();
+    return this.attachAssistantNames(employees);
   }
 
   /**
@@ -205,11 +293,50 @@ export class EmployeeService {
    * 更新员工信息
    */
   async updateEmployee(employeeId: string, dto: UpdateEmployeeDto): Promise<Employee | null> {
+    const existing = await this.employeeModel.findOne({ id: employeeId }).exec();
+    if (!existing) {
+      return null;
+    }
+
+    const normalizedUpdate: UpdateEmployeeDto = { ...dto };
+    if (dto.exclusiveAssistantAgentId !== undefined) {
+      if (dto.exclusiveAssistantAgentId) {
+        const assistantAgent = await this.agentClientService.getAgent(dto.exclusiveAssistantAgentId);
+        if (!assistantAgent) {
+          throw new ConflictException('Exclusive assistant agent does not exist or is unavailable');
+        }
+
+        const duplicateAssistant = await this.employeeModel.findOne({
+          id: { $ne: employeeId },
+          type: EmployeeType.HUMAN,
+          $or: [
+            { exclusiveAssistantAgentId: dto.exclusiveAssistantAgentId },
+            { aiProxyAgentId: dto.exclusiveAssistantAgentId },
+          ],
+        }).exec();
+        if (duplicateAssistant) {
+          throw new ConflictException('This agent is already bound as another human account assistant');
+        }
+      }
+
+      normalizedUpdate.aiProxyAgentId = dto.exclusiveAssistantAgentId || undefined;
+      normalizedUpdate.allowAIProxy = !!dto.exclusiveAssistantAgentId;
+    }
+
     const updated = await this.employeeModel.findOneAndUpdate(
       { id: employeeId },
-      { ...dto, updatedAt: new Date() },
+      { ...normalizedUpdate, updatedAt: new Date() },
       { new: true }
     ).exec();
+
+    const nextName = String(dto.name || '').trim();
+    const prevName = String(existing.name || '').trim();
+    const assistantAgentId = updated?.exclusiveAssistantAgentId || updated?.aiProxyAgentId;
+    const shouldSyncAssistantName = !!updated && !!assistantAgentId && !!nextName && nextName !== prevName;
+    if (shouldSyncAssistantName && assistantAgentId) {
+      const targetAssistantName = this.buildAssistantDisplayName(nextName);
+      await this.agentClientService.updateAgent(assistantAgentId, { name: targetAssistantName });
+    }
 
     if (updated) {
       this.logger.log(`Updated employee: ${employeeId}`);
@@ -263,25 +390,25 @@ export class EmployeeService {
    * 获取员工统计
    */
   async getEmployeeStats(organizationId: string): Promise<EmployeeStats> {
-    const total = await this.employeeModel.countDocuments({ organizationId });
+    const total = await this.employeeModel.countDocuments({ organizationId, type: EmployeeType.HUMAN });
     
     const byType = await this.employeeModel.aggregate([
-      { $match: { organizationId } },
+      { $match: { organizationId, type: EmployeeType.HUMAN } },
       { $group: { _id: '$type', count: { $sum: 1 } } },
     ]);
 
     const byStatus = await this.employeeModel.aggregate([
-      { $match: { organizationId } },
+      { $match: { organizationId, type: EmployeeType.HUMAN } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
     const byDepartment = await this.employeeModel.aggregate([
-      { $match: { organizationId } },
+      { $match: { organizationId, type: EmployeeType.HUMAN } },
       { $group: { _id: '$departmentId', count: { $sum: 1 } } },
     ]);
 
     const humans = byType.find(t => t._id === EmployeeType.HUMAN)?.count || 0;
-    const agents = byType.find(t => t._id === EmployeeType.AGENT)?.count || 0;
+    const agents = 0;
 
     return {
       total,
@@ -304,13 +431,162 @@ export class EmployeeService {
       throw new ConflictException('Only human employees can set AI proxy');
     }
 
+    if (agentId) {
+      const assistantAgent = await this.agentClientService.getAgent(agentId);
+      if (!assistantAgent) {
+        throw new ConflictException('Exclusive assistant agent does not exist or is unavailable');
+      }
+
+      const duplicateAssistant = await this.employeeModel.findOne({
+        id: { $ne: employeeId },
+        type: EmployeeType.HUMAN,
+        $or: [
+          { exclusiveAssistantAgentId: agentId },
+          { aiProxyAgentId: agentId },
+        ],
+      }).exec();
+      if (duplicateAssistant) {
+        throw new ConflictException('This agent is already bound as another human account assistant');
+      }
+    }
+
     employee.allowAIProxy = !!agentId;
     employee.aiProxyAgentId = agentId || undefined;
+    employee.exclusiveAssistantAgentId = agentId || undefined;
     employee.updatedAt = new Date();
 
     await employee.save();
     this.logger.log(`Set AI proxy for employee ${employeeId}: ${agentId}`);
 
+    return employee;
+  }
+
+  async setExclusiveAssistant(employeeId: string, agentId: string): Promise<Employee | null> {
+    const employee = await this.employeeModel.findOne({ id: employeeId }).exec();
+    if (!employee) return null;
+
+    if (employee.type !== EmployeeType.HUMAN) {
+      throw new ConflictException('Only human employees can bind exclusive assistant');
+    }
+
+    const agent = await this.agentClientService.getAgent(agentId);
+    if (!agent) {
+      throw new ConflictException('Exclusive assistant agent does not exist or is unavailable');
+    }
+
+    const conflictBinding = await this.employeeModel.findOne({
+      id: { $ne: employeeId },
+      type: EmployeeType.HUMAN,
+      $or: [
+        { exclusiveAssistantAgentId: agentId },
+        { aiProxyAgentId: agentId },
+      ],
+    }).exec();
+    if (conflictBinding) {
+      throw new ConflictException('This agent is already bound as another human account assistant');
+    }
+
+    employee.exclusiveAssistantAgentId = agentId;
+    employee.allowAIProxy = true;
+    employee.aiProxyAgentId = agentId;
+    employee.updatedAt = new Date();
+    await employee.save();
+
+    this.logger.log(`Set exclusive assistant for employee ${employeeId}: ${agentId}`);
+    return employee;
+  }
+
+  async getExclusiveAssistant(employeeId: string): Promise<{ employeeId: string; agentId: string | null } | null> {
+    const employee = await this.employeeModel.findOne({ id: employeeId }).exec();
+    if (!employee) return null;
+
+    return {
+      employeeId,
+      agentId: employee.exclusiveAssistantAgentId || employee.aiProxyAgentId || null,
+    };
+  }
+
+  async createAndBindExclusiveAssistant(employeeId: string): Promise<Employee | null> {
+    const employee = await this.employeeModel.findOne({ id: employeeId }).exec();
+    if (!employee) return null;
+
+    if (employee.type !== EmployeeType.HUMAN) {
+      throw new ConflictException('Only human employees can create exclusive assistant');
+    }
+
+    const existingAssistantId = employee.exclusiveAssistantAgentId || employee.aiProxyAgentId;
+    if (existingAssistantId) {
+      const existingAssistant = await this.agentClientService.getAgent(existingAssistantId);
+      if (existingAssistant) {
+        employee.exclusiveAssistantAgentId = existingAssistantId;
+        employee.aiProxyAgentId = existingAssistantId;
+        employee.allowAIProxy = true;
+        employee.updatedAt = new Date();
+        await employee.save();
+        return employee;
+      }
+    }
+
+    const duplicateAssistant = await this.employeeModel.findOne({
+      id: { $ne: employeeId },
+      type: EmployeeType.HUMAN,
+      $or: [
+        { exclusiveAssistantAgentId: existingAssistantId },
+        { aiProxyAgentId: existingAssistantId },
+      ],
+    }).exec();
+    if (existingAssistantId && duplicateAssistant) {
+      throw new ConflictException('This agent is already bound as another human account assistant');
+    }
+
+    const ownerDisplayName = employee.name || employee.email || employee.id;
+    const assistantName = await this.buildAssistantName(this.buildAssistantDisplayName(ownerDisplayName));
+    const model = this.pickDefaultAssistantModel();
+
+    const createdAssistant = await this.agentClientService.createAgent({
+      name: assistantName,
+      type: 'ai-human-exclusive-assistant',
+      role: 'human-exclusive-assistant',
+      description: `人类成员 ${ownerDisplayName} 的专属助理`,
+      model,
+      capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
+      systemPrompt: `你是 ${ownerDisplayName} 的专属助理。你在会议中默认保持被动，仅在该人类明确 @ 你时响应。请保持简洁、专业，并优先执行个人事务协调与行动跟进。`,
+      isActive: true,
+      tools: ['websearch', 'webfetch', 'content_extract'],
+      permissions: [],
+      personality: {
+        workEthic: 90,
+        creativity: 70,
+        leadership: 55,
+        teamwork: 92,
+      },
+      learningAbility: 85,
+    });
+
+    const newAssistantId = String(createdAssistant.id || '');
+    if (!newAssistantId) {
+      throw new ConflictException('Failed to create exclusive assistant agent');
+    }
+
+    const sharedAgentConflict = await this.employeeModel.findOne({
+      id: { $ne: employeeId },
+      type: EmployeeType.HUMAN,
+      $or: [
+        { exclusiveAssistantAgentId: newAssistantId },
+        { aiProxyAgentId: newAssistantId },
+      ],
+    }).exec();
+    if (sharedAgentConflict) {
+      throw new ConflictException('Generated assistant is already bound to another human account, please retry');
+    }
+
+    employee.exclusiveAssistantAgentId = newAssistantId;
+    employee.aiProxyAgentId = newAssistantId;
+    employee.allowAIProxy = true;
+    employee.updatedAt = new Date();
+    await employee.save();
+
+    this.logger.log(`Auto created and bound exclusive assistant for employee ${employeeId}: ${newAssistantId}`);
     return employee;
   }
 
@@ -321,31 +597,26 @@ export class EmployeeService {
     const employee = await this.employeeModel.findOne({ id: employeeId }).exec();
     if (!employee) return null;
 
-    if (employee.type === EmployeeType.HUMAN) {
-      // 如果允许AI代理且设置了代理Agent，使用Agent ID
-      if (employee.allowAIProxy && employee.aiProxyAgentId) {
-          const agent = await this.agentClientService.getAgent(employee.aiProxyAgentId);
-        return {
-          type: EmployeeType.AGENT,
-          id: employee.aiProxyAgentId,
-          name: agent?.name || employee.name || 'AI Proxy',
-        };
-      }
-      // 否则使用人类员工ID
-      return {
-        type: EmployeeType.HUMAN,
-        id: employeeId,
-        name: employee.name || 'Unknown',
-      };
-    } else {
-      // Agent员工直接使用Agent ID
-      const agent = await this.agentClientService.getAgent(employee.agentId!);
+    if (employee.type !== EmployeeType.HUMAN) {
+      return null;
+    }
+
+    // 如果允许AI代理且设置了代理Agent，使用Agent ID
+    if (employee.allowAIProxy && employee.aiProxyAgentId) {
+      const agent = await this.agentClientService.getAgent(employee.aiProxyAgentId);
       return {
         type: EmployeeType.AGENT,
-        id: employee.agentId!,
-        name: agent?.name || 'Unknown',
+        id: employee.aiProxyAgentId,
+        name: agent?.name || employee.name || 'AI Proxy',
       };
     }
+
+    // 否则使用人类员工ID
+    return {
+      type: EmployeeType.HUMAN,
+      id: employeeId,
+      name: employee.name || 'Unknown',
+    };
   }
 
   /**

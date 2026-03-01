@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { employeeService, Employee, EmployeeType, EmployeeStatus, EmployeeRole, CreateEmployeeDto } from '../services/employeeService';
+import {
+  employeeService,
+  Employee,
+  EmployeeType,
+  EmployeeStatus,
+  EmployeeRole,
+  CreateEmployeeDto,
+  UpdateEmployeeDto,
+} from '../services/employeeService';
 import { invitationService, Invitation, InvitationRole, CreateInvitationDto } from '../services/invitationService';
 import { authService } from '../services/authService';
 import { 
@@ -12,6 +20,7 @@ import {
   TrashIcon,
   ClipboardIcon,
   ArrowRightOnRectangleIcon,
+  PencilSquareIcon,
 } from '@heroicons/react/24/outline';
 
 const EMPLOYEE_ROLES = [
@@ -29,39 +38,77 @@ const EmployeeManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'employees' | 'invitations' | 'login'>('employees');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [organizationId, setOrganizationId] = useState<string>(() => {
+    const currentUserRaw = localStorage.getItem('current_user');
+    if (!currentUserRaw) {
+      return 'default-org';
+    }
+
+    try {
+      const parsed = JSON.parse(currentUserRaw) as { organizationId?: string };
+      return parsed.organizationId || 'default-org';
+    } catch {
+      return 'default-org';
+    }
+  });
 
   useEffect(() => {
-    authService.getCurrentUser().then(setCurrentUser);
+    authService.getCurrentUser().then((user) => {
+      setCurrentUser(user);
+      if (user?.organizationId) {
+        setOrganizationId(user.organizationId);
+      }
+    });
   }, []);
-
-  const organizationId = 'default-org';
 
   const { data: employees } = useQuery(
     ['employees', organizationId],
-    () => employeeService.getEmployeesByOrganization(organizationId)
+    () => employeeService.getEmployeesByOrganization(organizationId),
+    {
+      enabled: !!organizationId,
+    }
   );
 
   const { data: stats } = useQuery(
     ['employee-stats', organizationId],
-    () => employeeService.getEmployeeStats(organizationId)
+    () => employeeService.getEmployeeStats(organizationId),
+    {
+      enabled: !!organizationId,
+    }
   );
 
   const { data: invitations } = useQuery(
     ['invitations', organizationId],
-    () => invitationService.getByOrganization(organizationId)
+    () => invitationService.getByOrganization(organizationId),
+    {
+      enabled: !!organizationId,
+    }
   );
 
   const { data: invitationStats } = useQuery(
     ['invitation-stats', organizationId],
-    () => invitationService.getStats(organizationId)
+    () => invitationService.getStats(organizationId),
+    {
+      enabled: !!organizationId,
+    }
   );
 
   const createEmployeeMutation = useMutation(
     (data: CreateEmployeeDto) => employeeService.createEmployee(data),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['employees']);
-        queryClient.invalidateQueries(['employee-stats']);
+        queryClient.invalidateQueries(['employees', organizationId]);
+        queryClient.invalidateQueries(['employee-stats', organizationId]);
+      },
+    }
+  );
+
+  const updateEmployeeMutation = useMutation(
+    ({ id, data }: { id: string; data: UpdateEmployeeDto }) => employeeService.updateEmployee(id, data),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries(['employees', organizationId]);
+        queryClient.invalidateQueries(['employee-stats', organizationId]);
       },
     }
   );
@@ -96,7 +143,7 @@ const EmployeeManagement: React.FC = () => {
   );
 
   const humanEmployees = employees?.filter(e => e.type === EmployeeType.HUMAN) || [];
-  const agentEmployees = employees?.filter(e => e.type === EmployeeType.AGENT) || [];
+  const boundAssistantCount = humanEmployees.filter((employee) => !!employee.exclusiveAssistantAgentId).length;
 
   return (
     <div className="space-y-6">
@@ -104,7 +151,7 @@ const EmployeeManagement: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">员工管理</h1>
-          <p className="mt-1 text-sm text-gray-500">管理组织员工（人类和AI Agent）</p>
+          <p className="mt-1 text-sm text-gray-500">管理组织人类员工与专属助理绑定</p>
         </div>
         <div className="flex items-center gap-4">
           {currentUser ? (
@@ -188,8 +235,8 @@ const EmployeeManagement: React.FC = () => {
         <div className="bg-white rounded-lg shadow p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-500">AI Agent</p>
-              <p className="text-2xl font-semibold text-purple-600">{stats?.agents || 0}</p>
+              <p className="text-sm text-gray-500">已绑定专属助理</p>
+              <p className="text-2xl font-semibold text-purple-600">{boundAssistantCount}</p>
             </div>
             <UserGroupIcon className="h-8 w-8 text-purple-400" />
           </div>
@@ -216,10 +263,12 @@ const EmployeeManagement: React.FC = () => {
       ) : activeTab === 'employees' ? (
         <EmployeeList
           humanEmployees={humanEmployees}
-          agentEmployees={agentEmployees}
           organizationId={organizationId}
           onAdd={(data) => createEmployeeMutation.mutate(data)}
+          onUpdate={(id, data) => updateEmployeeMutation.mutate({ id, data })}
           isAdding={createEmployeeMutation.isLoading}
+          isUpdating={updateEmployeeMutation.isLoading}
+          updatingEmployeeId={updateEmployeeMutation.variables?.id}
         />
       ) : (
         <InvitationManagement
@@ -304,13 +353,22 @@ const LoginForm: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
 // 员工列表
 const EmployeeList: React.FC<{
   humanEmployees: Employee[];
-  agentEmployees: Employee[];
   organizationId: string;
   onAdd: (data: CreateEmployeeDto) => void;
+  onUpdate: (id: string, data: UpdateEmployeeDto) => void;
   isAdding: boolean;
-}> = ({ humanEmployees, agentEmployees, organizationId, onAdd, isAdding }) => {
+  isUpdating: boolean;
+  updatingEmployeeId?: string;
+}> = ({
+  humanEmployees,
+  organizationId,
+  onAdd,
+  onUpdate,
+  isAdding,
+  isUpdating,
+  updatingEmployeeId,
+}) => {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addType, setAddType] = useState<EmployeeType>(EmployeeType.HUMAN);
   const [formData, setFormData] = useState<Partial<CreateEmployeeDto>>({
     type: EmployeeType.HUMAN,
     organizationId,
@@ -334,7 +392,7 @@ const EmployeeList: React.FC<{
             人类员工 ({humanEmployees.length})
           </h3>
           <button
-            onClick={() => { setAddType(EmployeeType.HUMAN); setShowAddModal(true); }}
+            onClick={() => setShowAddModal(true)}
             className="inline-flex items-center px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
             <UserPlusIcon className="h-4 w-4 mr-1" />
@@ -346,33 +404,12 @@ const EmployeeList: React.FC<{
             <div className="p-8 text-center text-gray-500">暂无人类员工</div>
           ) : (
             humanEmployees.map((employee) => (
-              <EmployeeRow key={employee.id} employee={employee} />
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* AI Agent员工 */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
-          <h3 className="text-lg font-medium text-gray-900 flex items-center gap-2">
-            <span className="text-xl">🤖</span>
-            AI Agent员工 ({agentEmployees.length})
-          </h3>
-          <button
-            onClick={() => { setAddType(EmployeeType.AGENT); setShowAddModal(true); }}
-            className="inline-flex items-center px-3 py-1.5 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
-          >
-            <UserPlusIcon className="h-4 w-4 mr-1" />
-            添加Agent
-          </button>
-        </div>
-        <div className="divide-y divide-gray-200">
-          {agentEmployees.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">暂无Agent员工</div>
-          ) : (
-            agentEmployees.map((employee) => (
-              <EmployeeRow key={employee.id} employee={employee} />
+              <EmployeeRow
+                key={employee.id}
+                employee={employee}
+                onUpdate={onUpdate}
+                isUpdating={isUpdating && updatingEmployeeId === employee.id}
+              />
             ))
           )}
         </div>
@@ -382,48 +419,30 @@ const EmployeeList: React.FC<{
       {showAddModal && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-xl w-[450px] p-6">
-            <h3 className="text-lg font-semibold mb-4">
-              添加{addType === EmployeeType.HUMAN ? '人类员工' : 'AI Agent'}
-            </h3>
+            <h3 className="text-lg font-semibold mb-4">添加人类员工</h3>
             <form onSubmit={handleSubmit} className="space-y-4">
-              {addType === EmployeeType.HUMAN ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">姓名 *</label>
-                    <input
-                      type="text"
-                      required
-                      value={formData.name || ''}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
-                      placeholder="员工姓名"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">邮箱 *</label>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email || ''}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      className="w-full border border-gray-300 rounded-md px-3 py-2"
-                      placeholder="employee@company.com"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Agent ID *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.agentId || ''}
-                    onChange={(e) => setFormData({ ...formData, agentId: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                    placeholder="关联的Agent ID"
-                  />
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">姓名 *</label>
+                <input
+                  type="text"
+                  required
+                  value={formData.name || ''}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="员工姓名"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">邮箱 *</label>
+                <input
+                  type="email"
+                  required
+                  value={formData.email || ''}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  placeholder="employee@company.com"
+                />
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">角色 *</label>
@@ -464,7 +483,54 @@ const EmployeeList: React.FC<{
 };
 
 // 员工行
-const EmployeeRow: React.FC<{ employee: Employee }> = ({ employee }) => {
+const EmployeeRow: React.FC<{
+  employee: Employee;
+  onUpdate: (id: string, data: UpdateEmployeeDto) => void;
+  isUpdating: boolean;
+}> = ({ employee, onUpdate, isUpdating }) => {
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [formData, setFormData] = useState<UpdateEmployeeDto>({});
+
+  const hasKnownRole = EMPLOYEE_ROLES.some((item) => item.id === employee.role);
+
+  const openEditModal = () => {
+    setFormData({
+      name: employee.name || '',
+      email: employee.email || '',
+      role: hasKnownRole ? employee.role : undefined,
+      departmentId: employee.departmentId || '',
+      title: employee.title || '',
+      status: employee.status,
+      salary: employee.salary,
+      shares: employee.shares,
+      stockOptions: employee.stockOptions,
+      description: employee.description || '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const trimmedName = (formData.name || '').trim();
+    const trimmedEmail = (formData.email || '').trim();
+    const trimmedDepartmentId = (formData.departmentId || '').trim();
+    const trimmedTitle = (formData.title || '').trim();
+    const trimmedDescription = (formData.description || '').trim();
+    const canUpdateRole = !!formData.role && EMPLOYEE_ROLES.some((item) => item.id === formData.role);
+
+    onUpdate(employee.id, {
+      ...formData,
+      role: canUpdateRole ? formData.role : undefined,
+      name: trimmedName || undefined,
+      email: trimmedEmail || undefined,
+      departmentId: trimmedDepartmentId || undefined,
+      title: trimmedTitle || undefined,
+      description: trimmedDescription || undefined,
+    });
+    setShowEditModal(false);
+  };
+
   const getStatusBadge = (status: EmployeeStatus) => {
     const styles = {
       [EmployeeStatus.ACTIVE]: 'bg-green-100 text-green-800',
@@ -490,20 +556,20 @@ const EmployeeRow: React.FC<{ employee: Employee }> = ({ employee }) => {
   return (
     <div className="p-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-medium ${
-          employee.type === EmployeeType.HUMAN ? 'bg-blue-500' : 'bg-purple-500'
-        }`}>
-          {(employee.name || employee.agentId || '?').substring(0, 1).toUpperCase()}
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-medium bg-blue-500">
+          {(employee.name || '?').substring(0, 1).toUpperCase()}
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <p className="font-medium text-gray-900">{employee.name || employee.agentId}</p>
-            {employee.type === EmployeeType.HUMAN && <span className="text-xs">👤</span>}
-            {employee.type === EmployeeType.AGENT && <span className="text-xs">🤖</span>}
+            <p className="font-medium text-gray-900">{employee.name || '-'}</p>
+            <span className="text-xs">👤</span>
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>{EMPLOYEE_ROLES.find(r => r.id === employee.role)?.name || employee.role}</span>
             {employee.email && <span>• {employee.email}</span>}
+          </div>
+          <div className="text-sm text-gray-500">
+            专属助理: {employee.exclusiveAssistantAgentId ? (employee.exclusiveAssistantName || '已绑定（名称待同步）') : '未绑定'}
           </div>
         </div>
       </div>
@@ -512,7 +578,156 @@ const EmployeeRow: React.FC<{ employee: Employee }> = ({ employee }) => {
         <span className="text-sm text-gray-500">
           加入于 {new Date(employee.joinDate).toLocaleDateString()}
         </span>
+        <button
+          onClick={openEditModal}
+          className="inline-flex items-center px-2 py-1 text-sm text-blue-600 hover:text-blue-800"
+          title="编辑员工"
+        >
+          <PencilSquareIcon className="h-4 w-4 mr-1" />
+          编辑
+        </button>
       </div>
+
+      {showEditModal && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-[520px] p-6">
+            <h3 className="text-lg font-semibold mb-4">编辑账号</h3>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                  <input
+                    type="text"
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
+                  <input
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">角色</label>
+                  <select
+                    value={formData.role || ''}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value as EmployeeRole })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    {!hasKnownRole && <option value="">保持原角色（{employee.role}）</option>}
+                    {EMPLOYEE_ROLES.map((role) => (
+                      <option key={role.id} value={role.id}>{role.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                  <select
+                    value={formData.status || EmployeeStatus.ACTIVE}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as EmployeeStatus })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value={EmployeeStatus.ACTIVE}>活跃</option>
+                    <option value={EmployeeStatus.PROBATION}>试用期</option>
+                    <option value={EmployeeStatus.ON_LEAVE}>休假</option>
+                    <option value={EmployeeStatus.SUSPENDED}>已暂停</option>
+                    <option value={EmployeeStatus.TERMINATED}>已离职</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                  <input
+                    type="text"
+                    value={formData.departmentId || ''}
+                    onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">职位</label>
+                  <input
+                    type="text"
+                    value={formData.title || ''}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">薪资</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.salary ?? 0}
+                    onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) || 0 })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">股份</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.shares ?? 0}
+                    onChange={(e) => setFormData({ ...formData, shares: Number(e.target.value) || 0 })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">期权</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={formData.stockOptions ?? 0}
+                    onChange={(e) => setFormData({ ...formData, stockOptions: Number(e.target.value) || 0 })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                <textarea
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {isUpdating ? '保存中...' : '保存修改'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

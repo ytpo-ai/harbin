@@ -14,6 +14,8 @@ import { OrchestrationModule } from './modules/orchestration/orchestration.modul
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { ToolClientModule } from './modules/tools-client/tool-client.module';
 import { ModelClientModule } from './modules/models-client/model-client.module';
+import { OperationLogModule } from './modules/operation-logs/operation-log.module';
+import { MessagesModule } from './modules/messages/messages.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -40,6 +42,8 @@ import jwtConfig from './config/jwt.config';
       inject: [ConfigService],
     }),
     ModelClientModule,
+    OperationLogModule,
+    MessagesModule,
     AgentClientModule,
     ToolClientModule,
     TaskModule,
