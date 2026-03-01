@@ -1,7 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { ModelService } from './modules/models/model.service';
 import { OrganizationService } from './modules/organization/organization.service';
 import { initializeNetworkProxy } from '@libs/infra';
 
@@ -22,10 +21,6 @@ async function bootstrap() {
     whitelist: true,
     forbidNonWhitelisted: true,
   }));
-
-  // 获取ModelService并初始化默认模型
-  const modelService = app.get(ModelService);
-  modelService.initializeDefaultModels();
 
   // 初始化组织架构
   const organizationService = app.get(OrganizationService);

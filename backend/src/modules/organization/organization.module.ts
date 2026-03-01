@@ -4,13 +4,13 @@ import { Organization, OrganizationSchema } from '../../shared/schemas/organizat
 import { OrganizationService } from './organization.service';
 import { OrganizationController } from './organization.controller';
 import { AgentClientModule } from '../agents-client/agent-client.module';
-import { ModelModule } from '../models/model.module';
+import { ModelClientModule } from '../models-client/model-client.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Organization.name, schema: OrganizationSchema }]),
     AgentClientModule,
-    ModelModule
+    ModelClientModule
   ],
   controllers: [OrganizationController],
   providers: [OrganizationService],

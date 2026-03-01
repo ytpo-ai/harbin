@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Organization, OrganizationDocument } from '../../shared/schemas/organization.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
-import { ModelManagementService } from '../models/model-management.service';
+import { ModelClientService } from '../models-client/model-client.service';
 import { Agent, AIModel } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -14,7 +14,7 @@ export class OrganizationService {
   constructor(
     @InjectModel(Organization.name) private organizationModel: Model<OrganizationDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly modelManagementService: ModelManagementService
+    private readonly modelClientService: ModelClientService
   ) {}
 
   async createInitialOrganization(): Promise<Organization> {
@@ -24,7 +24,7 @@ export class OrganizationService {
     }
 
     // 获取已选择的创始人模型
-    const founderModels = this.modelManagementService.getFounderModels();
+    const founderModels = await this.modelClientService.getFounderModels();
 
     // 创建初始组织架构
     const organization: Organization = {

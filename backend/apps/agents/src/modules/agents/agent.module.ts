@@ -6,7 +6,7 @@ import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
 import { Skill, SkillSchema } from '../../schemas/skill.schema';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
-import { ModelModule } from '../../../../../src/modules/models/model.module';
+import { ModelModule } from '../models/model.module';
 import { ApiKeysModule } from '../../../../../src/modules/api-keys/api-keys.module';
 import { ToolModule } from '../tools/tool.module';
 

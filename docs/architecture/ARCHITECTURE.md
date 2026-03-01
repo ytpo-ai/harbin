@@ -65,7 +65,7 @@ backend/
 1. 前端 HTTP -> `gateway`（`/api/*`）
 2. `gateway` 进行 JWT 鉴权，生成并签名 `x-user-context`
 3. `gateway` 按路由分发：
-   - `/api/agents`、`/api/tools` -> `agents`
+   - `/api/agents`、`/api/tools`、`/api/models`、`/api/model-management` -> `agents`
    - 其他 -> `legacy`
 4. `agents` 校验 `x-user-context` 签名后执行业务
 5. 流式场景：`agents` 发布 Redis 事件，`ws` 订阅并推送前端

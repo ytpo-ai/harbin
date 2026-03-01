@@ -5,7 +5,7 @@ import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.sc
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
-import { ModelService } from '../../../../../src/modules/models/model.service';
+import { ModelService } from '../models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
 import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
 import { ToolService } from '../tools/tool.service';

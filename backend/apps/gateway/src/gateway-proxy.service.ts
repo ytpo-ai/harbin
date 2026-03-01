@@ -15,7 +15,9 @@ export class GatewayProxyService {
     if (
       originalUrl.startsWith('/api/agents') ||
       originalUrl.startsWith('/api/tools') ||
-      originalUrl.startsWith('/api/skills')
+      originalUrl.startsWith('/api/skills') ||
+      originalUrl.startsWith('/api/models') ||
+      originalUrl.startsWith('/api/model-management')
     ) {
       return this.agentsBaseUrl;
     }

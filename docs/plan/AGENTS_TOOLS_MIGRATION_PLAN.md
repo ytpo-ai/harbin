@@ -69,3 +69,19 @@
 - [x] 从 `backend/src/app.module.ts` 移除 `AgentModule`、`ToolModule`（legacy 不再直接承载该能力）
 - [x] 删除 `backend/src/modules/agents/` 与 `backend/src/modules/tools/` 的 legacy 实现
 - [x] 补充并通过去遗留化后的回归验证（构建 + 关键 API 冒烟）
+
+## 下一阶段计划（Models 迁移）
+
+1. 迁移 `backend/src/modules/models/*` 到 `backend/apps/agents/src/modules/models/*`，并让 agents app 本地引用 models 模块。
+2. 调整 Gateway 路由：`/api/models/**` 与 `/api/model-management/**` 分流到 `AGENTS_SERVICE_URL`。
+3. 在 legacy 引入 `ModelClientService`，替代直接注入 `ModelService` 的调用点。
+4. 从 legacy `AppModule` 移除 `ModelModule`，删除 `backend/src/modules/models/` legacy 实现。
+5. 构建与回归验证（`build:agents`、`build:gateway`、`build` + 关键接口冒烟）。
+
+## TODO（Models 迁移）
+
+- [x] 完成 `models` 模块迁移到 `apps/agents`
+- [x] 完成 gateway 对 `/api/models` 和 `/api/model-management` 的路由切换
+- [x] 完成 legacy `ModelClientService` 接入与调用点替换
+- [x] 从 legacy 移除 `ModelModule` 并删除 `backend/src/modules/models/`
+- [x] 完成 models 迁移后的构建与冒烟验证

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { ModelModule } from './modules/models/model.module';
 import { TaskModule } from './modules/tasks/task.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { OrganizationModule } from './modules/organization/organization.module';
@@ -16,6 +15,7 @@ import { RdManagementModule } from './modules/rd-management/rd-management.module
 import { OrchestrationModule } from './modules/orchestration/orchestration.module';
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { ToolClientModule } from './modules/tools-client/tool-client.module';
+import { ModelClientModule } from './modules/models-client/model-client.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -41,7 +41,7 @@ import jwtConfig from './config/jwt.config';
       },
       inject: [ConfigService],
     }),
-    ModelModule,
+    ModelClientModule,
     AgentClientModule,
     ToolClientModule,
     TaskModule,

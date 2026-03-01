@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AgentsAppModule } from './app.module';
 import { initializeNetworkProxy } from '@libs/infra';
-import { ModelService } from '../../../src/modules/models/model.service';
+import { ModelService } from './modules/models/model.service';
 
 async function bootstrap() {
   await initializeNetworkProxy();

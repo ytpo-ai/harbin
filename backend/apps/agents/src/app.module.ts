@@ -2,7 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AgentModule } from './modules/agents/agent.module';
-import { ModelModule } from '../../../src/modules/models/model.module';
+import { ModelModule } from './modules/models/model.module';
 import { ApiKeysModule } from '../../../src/modules/api-keys/api-keys.module';
 import appConfig from '../../../src/config/app.config';
 import databaseConfig from '../../../src/config/database.config';

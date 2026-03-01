@@ -13,7 +13,7 @@
    - 路由分发
    - 用户上下文签名透传
 2. `apps/agents` 已上线
-   - 承载 `/api/agents`、`/api/tools`
+   - 承载 `/api/agents`、`/api/tools`、`/api/models`、`/api/model-management`
    - 校验 `x-user-context` + `x-user-signature`
    - 提供 `/api/agents/:id/test-stream`
 3. `apps/ws` 已上线
@@ -31,6 +31,8 @@
 
 - `/api/agents/**` -> `AGENTS_SERVICE_URL`
 - `/api/tools/**` -> `AGENTS_SERVICE_URL`
+- `/api/models/**` -> `AGENTS_SERVICE_URL`
+- `/api/model-management/**` -> `AGENTS_SERVICE_URL`
 - 其余 `/api/**` -> `LEGACY_SERVICE_URL`
 
 ## 内部安全模型
@@ -44,7 +46,7 @@ Agents 服务对签名验签，拒绝未签名/伪造请求。
 
 ## Legacy 调用 Agents（防腐层）
 
-- Legacy 侧新增 `AgentClientService`、`ToolClientService`
+- Legacy 侧新增 `AgentClientService`、`ToolClientService`、`ModelClientService`
 - 通过内部签名头调用 `agents`（而非直接依赖 `AgentService` / `ToolService`）
 - 第一批替换：`organization`、`employees`、`hr`
 
