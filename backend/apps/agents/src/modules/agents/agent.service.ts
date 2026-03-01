@@ -3,6 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
+import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { ModelService } from '../../../../../src/modules/models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
 import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
@@ -42,6 +44,14 @@ export interface AgentMcpMapProfile {
   capabilities: string[];
   exposed: boolean;
   description?: string;
+}
+
+interface EnabledAgentSkillContext {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }
 
 const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
@@ -150,6 +160,8 @@ export class AgentService {
   constructor(
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
+    @InjectModel(AgentSkill.name) private agentSkillModel: Model<AgentSkillDocument>,
+    @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
     private readonly apiKeyService: ApiKeyService,
     private readonly toolService: ToolService,
@@ -520,7 +532,8 @@ export class AgentService {
       ...context,
     };
 
-    const messages = await this.buildMessages(agent, task, agentContext);
+    const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
+    const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
 
     try {
       // 确保模型已注册 - 类型转换
@@ -557,7 +570,17 @@ export class AgentService {
         role: 'assistant',
         content: response,
         timestamp: new Date(),
-        metadata: { agentId: agent.id, agentName: agent.name },
+        metadata: {
+          agentId: agent.id,
+          agentName: agent.name,
+          usedSkillIds: enabledSkills.map((item) => item.id),
+          usedSkillNames: enabledSkills.map((item) => item.name),
+          usedSkills: enabledSkills.map((item) => ({
+            id: item.id,
+            name: item.name,
+            proficiencyLevel: item.proficiencyLevel,
+          })),
+        },
       });
 
       return response;
@@ -586,7 +609,8 @@ export class AgentService {
       ...context,
     };
 
-    const messages = await this.buildMessages(agent, task, agentContext);
+    const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
+    const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
 
     // 获取自定义API Key（如果配置了）
     let customApiKey: string | undefined;
@@ -629,11 +653,26 @@ export class AgentService {
       role: 'assistant',
       content: fullResponse,
       timestamp: new Date(),
-      metadata: { agentId: agent.id },
+      metadata: {
+        agentId: agent.id,
+        agentName: agent.name,
+        usedSkillIds: enabledSkills.map((item) => item.id),
+        usedSkillNames: enabledSkills.map((item) => item.name),
+        usedSkills: enabledSkills.map((item) => ({
+          id: item.id,
+          name: item.name,
+          proficiencyLevel: item.proficiencyLevel,
+        })),
+      },
     });
   }
 
-  private async buildMessages(agent: Agent, task: Task, context: AgentContext): Promise<ChatMessage[]> {
+  private async buildMessages(
+    agent: Agent,
+    task: Task,
+    context: AgentContext,
+    enabledSkills: EnabledAgentSkillContext[],
+  ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
 
     // 系统提示
@@ -655,6 +694,23 @@ export class AgentService {
       messages.push({
         role: 'system',
         content: `团队上下文: ${JSON.stringify(context.teamContext)}`,
+        timestamp: new Date(),
+      });
+    }
+
+    if (enabledSkills.length > 0) {
+      const skillLines = enabledSkills
+        .map(
+          (skill) =>
+            `- ${skill.name} (id=${skill.id}, proficiency=${skill.proficiencyLevel}) | description=${skill.description} | tags=${(skill.tags || []).join(', ') || 'N/A'}`,
+        )
+        .join('\n');
+
+      messages.push({
+        role: 'system',
+        content:
+          `Enabled Skills for this agent:\n${skillLines}\n\n` +
+          '请优先基于以上已启用技能的能力边界来拆解与执行任务，并在输出中体现对应技能的方法论。',
         timestamp: new Date(),
       });
     }
@@ -689,6 +745,43 @@ export class AgentService {
     messages.push(...context.previousMessages);
 
     return messages;
+  }
+
+  private async getEnabledSkillsForAgent(agent: Agent, agentId: string): Promise<EnabledAgentSkillContext[]> {
+    const candidateAgentIds = this.uniqueStrings([agentId, agent.id || '']);
+    if (!candidateAgentIds.length) {
+      return [];
+    }
+
+    const assignments = await this.agentSkillModel
+      .find({ agentId: { $in: candidateAgentIds }, enabled: true })
+      .exec();
+    if (!assignments.length) {
+      return [];
+    }
+
+    const skillIds = this.uniqueStrings(assignments.map((item) => item.skillId));
+    const skills = await this.skillModel
+      .find({ id: { $in: skillIds }, status: { $in: ['active', 'experimental'] } })
+      .exec();
+    const skillMap = new Map<string, Skill>();
+    for (const skill of skills) {
+      skillMap.set(skill.id, skill as unknown as Skill);
+    }
+
+    const contexts: EnabledAgentSkillContext[] = [];
+    for (const assignment of assignments) {
+      const skill = skillMap.get(assignment.skillId);
+      if (!skill) continue;
+      contexts.push({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+        tags: skill.tags || [],
+        proficiencyLevel: assignment.proficiencyLevel,
+      });
+    }
+    return contexts;
   }
 
   private async executeWithToolCalling(

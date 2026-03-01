@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OrganizationService } from '../organization/organization.service';
-import { ToolClientService } from '../tools/tool-client.service';
+import { ToolClientService } from '../tools-client/tool-client.service';
 import { TaskService } from '../tasks/task.service';
 
 @Injectable()

@@ -65,7 +65,7 @@
 
 ## TODO（去遗留化）
 
-- [ ] 完成剩余模块从本地 `AgentService`/`ToolService` 到 `AgentClientService`/`ToolClientService` 的切换
-- [ ] 从 `backend/src/app.module.ts` 移除 `AgentModule`、`ToolModule`（legacy 不再直接承载该能力）
-- [ ] 删除 `backend/src/modules/agents/` 与 `backend/src/modules/tools/` 的 legacy 实现
-- [ ] 补充并通过去遗留化后的回归验证（构建 + 关键 API 冒烟）
+- [x] 完成剩余模块从本地 `AgentService`/`ToolService` 到 `AgentClientService`/`ToolClientService` 的切换
+- [x] 从 `backend/src/app.module.ts` 移除 `AgentModule`、`ToolModule`（legacy 不再直接承载该能力）
+- [x] 删除 `backend/src/modules/agents/` 与 `backend/src/modules/tools/` 的 legacy 实现
+- [x] 补充并通过去遗留化后的回归验证（构建 + 关键 API 冒烟）

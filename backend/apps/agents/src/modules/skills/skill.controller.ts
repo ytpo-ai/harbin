@@ -1,15 +1,35 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { SkillService } from './skill.service';
-import { SkillSourceType, SkillStatus } from '../../shared/schemas/skill.schema';
-import { SkillSuggestionStatus } from '../../shared/schemas/skill-suggestion.schema';
+import { SkillSourceType, SkillStatus } from '../../schemas/skill.schema';
+import { SkillSuggestionStatus } from '../../schemas/skill-suggestion.schema';
 
 @Controller('skills')
 export class SkillController {
   constructor(private readonly skillService: SkillService) {}
 
   @Get()
-  async getSkills(@Query('status') status?: SkillStatus, @Query('category') category?: string) {
-    return this.skillService.getAllSkills({ status, category });
+  async getSkills(
+    @Query('status') status?: SkillStatus,
+    @Query('category') category?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const numericPage = page ? Number(page) : undefined;
+    const numericPageSize = pageSize ? Number(pageSize) : undefined;
+    const shouldUsePaged = Boolean(search?.trim()) || Number.isFinite(numericPage) || Number.isFinite(numericPageSize);
+
+    if (shouldUsePaged) {
+      return this.skillService.getSkillsPaged({
+        status,
+        category,
+        search,
+        page: numericPage,
+        pageSize: numericPageSize,
+      });
+    }
+
+    return this.skillService.getAllSkills({ status, category, search });
   }
 
   @Post()

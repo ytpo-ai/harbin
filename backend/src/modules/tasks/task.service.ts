@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument } from '../../shared/schemas/task.schema';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { DiscussionService } from '../chat/discussion.service';
 import { Agent, TeamSettings, ChatMessage } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
@@ -18,7 +18,7 @@ export interface CollaborationResult {
 export class TaskService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
     private readonly discussionService: DiscussionService
   ) {}
 
@@ -98,7 +98,7 @@ export class TaskService {
         ).then(() => {
           // 选择一个agent来总结和完成任务
           const primaryAgent = agents[0];
-          this.agentService.executeTask(primaryAgent.id, task, {
+          this.agentClientService.executeTask(primaryAgent.id, task, {
             teamContext: { discussionId: discussion.id, mode: 'discussion' }
           }).then(result => {
             this.updateTask(task.id, {
@@ -145,7 +145,7 @@ export class TaskService {
 
       const updatedTask = { ...task, messages: contextMessages };
       
-      const result = await this.agentService.executeTask(agent.id, updatedTask, {
+      const result = await this.agentClientService.executeTask(agent.id, updatedTask, {
         teamContext: { 
           mode: 'pipeline',
           step: i + 1,
@@ -172,7 +172,7 @@ export class TaskService {
 
   private async executeParallelMode(task: Task, agents: Agent[]): Promise<CollaborationResult> {
     const promises = agents.map(async (agent, index) => {
-      return this.agentService.executeTask(agent.id, task, {
+      return this.agentClientService.executeTask(agent.id, task, {
         teamContext: { 
           mode: 'parallel',
           agentIndex: index,
@@ -214,7 +214,7 @@ export class TaskService {
     const workers = agents.slice(1);
 
     // 主管制定计划
-    const plan = await this.agentService.executeTask(supervisor.id, task, {
+    const plan = await this.agentClientService.executeTask(supervisor.id, task, {
       teamContext: { 
         mode: 'hierarchical',
         role: 'supervisor',
@@ -231,7 +231,7 @@ export class TaskService {
         description: `根据主管计划执行: ${plan}`,
       };
 
-      return this.agentService.executeTask(worker.id, subTask, {
+      return this.agentClientService.executeTask(worker.id, subTask, {
         teamContext: { 
           mode: 'hierarchical',
           role: 'worker',
@@ -256,7 +256,7 @@ export class TaskService {
       }
     ];
 
-    const finalResult = await this.agentService.executeTask(supervisor.id, {
+    const finalResult = await this.agentClientService.executeTask(supervisor.id, {
       ...task,
       messages: summaryContext
     }, {

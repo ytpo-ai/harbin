@@ -2,10 +2,8 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ModelModule } from './modules/models/model.module';
-import { AgentModule } from './modules/agents/agent.module';
 import { TaskModule } from './modules/tasks/task.module';
 import { ChatModule } from './modules/chat/chat.module';
-import { ToolModule } from './modules/tools/tool.module';
 import { OrganizationModule } from './modules/organization/organization.module';
 import { HRModule } from './modules/hr/hr.module';
 import { GovernanceModule } from './modules/governance/governance.module';
@@ -16,7 +14,8 @@ import { InvitationModule } from './modules/invitations/invitation.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { RdManagementModule } from './modules/rd-management/rd-management.module';
 import { OrchestrationModule } from './modules/orchestration/orchestration.module';
-import { SkillModule } from './modules/skills/skill.module';
+import { AgentClientModule } from './modules/agents-client/agent-client.module';
+import { ToolClientModule } from './modules/tools-client/tool-client.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -43,10 +42,10 @@ import jwtConfig from './config/jwt.config';
       inject: [ConfigService],
     }),
     ModelModule,
-    AgentModule,
+    AgentClientModule,
+    ToolClientModule,
     TaskModule,
     ChatModule,
-    ToolModule,
     OrganizationModule,
     HRModule,
     GovernanceModule,
@@ -57,7 +56,6 @@ import jwtConfig from './config/jwt.config';
     AuthModule,
     RdManagementModule,
     OrchestrationModule,
-    SkillModule,
   ],
 })
 export class AppModule {}

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
-import { AgentModule } from '../agents/agent.module';
+import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
 import {
@@ -22,7 +22,7 @@ import { SessionManagerService } from './session-manager.service';
 @Module({
   imports: [
     AuthModule,
-    AgentModule,
+    AgentClientModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },

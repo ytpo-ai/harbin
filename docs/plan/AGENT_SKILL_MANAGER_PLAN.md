@@ -83,3 +83,22 @@
 - [x] 路由与导航接入
 - [x] 文档重建入口接入
 - [x] 前端构建验证通过
+
+### 前端优化进度（2026-03）
+
+- [x] AgentSkillManager 检索改为侧边抽屉
+- [x] 新增 Skill 改为弹窗
+- [x] 新增编辑 Skill 弹窗
+- [x] 创建测试技能数据（4 条）
+- [x] Skills 列表增加关键字搜索（250ms 防抖）
+- [x] Skills 列表增加分页（10/20/50）与首页/末页导航
+- [x] URL query 持久化（search/status/category/page/pageSize）
+- [x] 建议列表显示 skill 名称并支持一键定位到技能库
+- [x] Skills 列表切换为后端分页与搜索（服务端分页）
+- [x] Skill 后端模块迁移到 `apps/agents`
+- [x] Gateway 将 `/api/skills` 转发到 agents service
+- [x] Legacy 移除 SkillModule 注册
+- [x] Skill 相关 schema 收拢到 `apps/agents/src/schemas`
+- [x] shared schema 保留 re-export 兼容层
+- [x] Agent 执行链路接入已绑定 skill 上下文注入
+- [x] 任务消息 metadata 增加 usedSkillIds/usedSkillNames 便于验证

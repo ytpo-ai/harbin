@@ -523,6 +523,20 @@ GET /skills
 **Query 参数**:
 - `status` (可选): `active | experimental | deprecated | disabled`
 - `category` (可选): 技能分类
+- `search` (可选): 关键字搜索（name/description/tags/category/provider/version）
+- `page` (可选): 页码（传入后返回分页结构）
+- `pageSize` (可选): 每页条数（默认 10，最大 100）
+
+**分页响应示例**（当传入 `page`/`pageSize`/`search` 时）:
+```json
+{
+  "items": [],
+  "total": 42,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 5
+}
+```
 
 ### 创建技能
 ```http

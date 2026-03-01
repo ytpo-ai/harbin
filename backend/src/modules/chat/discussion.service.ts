@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Discussion, DiscussionDocument } from '../../shared/schemas/discussion.schema';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { DiscussionMessage, Task, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,7 +20,7 @@ export class DiscussionService {
 
   constructor(
     @InjectModel(Discussion.name) private discussionModel: Model<DiscussionDocument>,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -123,7 +123,7 @@ export class DiscussionService {
     const discussion = await this.discussionModel.findById(discussionId).exec();
     if (!discussion) return;
 
-    const agent = await this.agentService.getAgent(agentId);
+    const agent = await this.agentClientService.getAgent(agentId);
     if (!agent || !agent.isActive) {
       this.logger.warn(`Agent ${agentId} not found or inactive`);
       return;
@@ -153,7 +153,7 @@ export class DiscussionService {
       // 生成响应 - 这里会调用AI模型
       this.logger.log(`Calling AI model for agent ${agent.name}, model: ${agent.model.id}`);
       
-      const response = await this.agentService.executeTask(agentId, responseTask, {
+      const response = await this.agentClientService.executeTask(agentId, responseTask, {
         teamContext: {
           discussionId,
           participants: discussion.participants,
@@ -346,7 +346,7 @@ export class DiscussionService {
       updatedAt: new Date(),
     };
 
-    await this.agentService.executeTask(agentId, responseTask, {
+    await this.agentClientService.executeTask(agentId, responseTask, {
       teamContext: {
         discussionId,
         participants: discussion.participants,

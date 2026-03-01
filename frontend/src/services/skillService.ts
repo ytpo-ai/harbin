@@ -1,8 +1,27 @@
 import api from './api';
 import { AgentSkill, Skill, SkillSuggestion } from '../types';
 
+export interface SkillPagedResponse {
+  items: Skill[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export const skillService = {
-  async getSkills(filters?: { status?: string; category?: string }): Promise<Skill[]> {
+  async getSkills(filters?: { status?: string; category?: string; search?: string }): Promise<Skill[]> {
+    const response = await api.get('/skills', { params: filters });
+    return response.data;
+  },
+
+  async getSkillsPaged(filters?: {
+    status?: string;
+    category?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<SkillPagedResponse> {
     const response = await api.get('/skills', { params: filters });
     return response.data;
   },

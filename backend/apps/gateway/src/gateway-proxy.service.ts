@@ -14,7 +14,8 @@ export class GatewayProxyService {
   resolveTarget(originalUrl: string): string {
     if (
       originalUrl.startsWith('/api/agents') ||
-      originalUrl.startsWith('/api/tools')
+      originalUrl.startsWith('/api/tools') ||
+      originalUrl.startsWith('/api/skills')
     ) {
       return this.agentsBaseUrl;
     }

@@ -3,20 +3,20 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
-import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
-import { AgentSkill, AgentSkillDocument, SkillProficiency } from '../../shared/schemas/agent-skill.schema';
+import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { AgentSkill, AgentSkillDocument, SkillProficiency } from '../../schemas/agent-skill.schema';
 import {
   Skill,
   SkillDocument,
   SkillSourceType,
   SkillStatus,
-} from '../../shared/schemas/skill.schema';
+} from '../../schemas/skill.schema';
 import {
   SkillSuggestion,
   SkillSuggestionDocument,
   SkillSuggestionPriority,
   SkillSuggestionStatus,
-} from '../../shared/schemas/skill-suggestion.schema';
+} from '../../schemas/skill-suggestion.schema';
 import { SkillDocSyncService } from './skill-doc-sync.service';
 
 interface CreateSkillInput {
@@ -40,6 +40,20 @@ interface AssignSkillInput {
   assignedBy?: string;
   enabled?: boolean;
   note?: string;
+}
+
+interface SkillListFilters {
+  status?: SkillStatus;
+  category?: string;
+  search?: string;
+}
+
+interface SkillPagedResult {
+  items: Skill[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 @Injectable()
@@ -86,11 +100,29 @@ export class SkillService {
     return skill;
   }
 
-  async getAllSkills(filters?: { status?: SkillStatus; category?: string }): Promise<Skill[]> {
-    const query: Record<string, any> = {};
-    if (filters?.status) query.status = filters.status;
-    if (filters?.category?.trim()) query.category = filters.category.trim();
+  async getAllSkills(filters?: SkillListFilters): Promise<Skill[]> {
+    const query = this.buildSkillsQuery(filters);
     return this.skillModel.find(query).sort({ updatedAt: -1 }).exec();
+  }
+
+  async getSkillsPaged(filters?: SkillListFilters & { page?: number; pageSize?: number }): Promise<SkillPagedResult> {
+    const query = this.buildSkillsQuery(filters);
+    const page = Math.max(1, Number(filters?.page || 1));
+    const pageSize = Math.max(1, Math.min(100, Number(filters?.pageSize || 10)));
+    const skip = (page - 1) * pageSize;
+
+    const [items, total] = await Promise.all([
+      this.skillModel.find(query).sort({ updatedAt: -1 }).skip(skip).limit(pageSize).exec(),
+      this.skillModel.countDocuments(query).exec(),
+    ]);
+
+    return {
+      items: items as unknown as Skill[],
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
   }
 
   async getSkillById(skillId: string): Promise<Skill> {
@@ -492,6 +524,29 @@ export class SkillService {
   private uniqueStrings(items: string[]): string[] {
     const normalized = items.map((item) => String(item || '').trim()).filter(Boolean);
     return Array.from(new Set(normalized));
+  }
+
+  private buildSkillsQuery(filters?: SkillListFilters): Record<string, any> {
+    const query: Record<string, any> = {};
+    if (filters?.status) query.status = filters.status;
+    if (filters?.category?.trim()) query.category = filters.category.trim();
+    if (filters?.search?.trim()) {
+      const escaped = this.escapeRegex(filters.search.trim());
+      const regex = new RegExp(escaped, 'i');
+      query.$or = [
+        { name: regex },
+        { description: regex },
+        { category: regex },
+        { provider: regex },
+        { version: regex },
+        { tags: regex },
+      ];
+    }
+    return query;
+  }
+
+  private escapeRegex(input: string): string {
+    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   private async findAgent(agentId: string): Promise<Agent | null> {

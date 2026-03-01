@@ -3,10 +3,10 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { SkillController } from './skill.controller';
 import { SkillService } from './skill.service';
 import { SkillDocSyncService } from './skill-doc-sync.service';
-import { Skill, SkillSchema } from '../../shared/schemas/skill.schema';
-import { AgentSkill, AgentSkillSchema } from '../../shared/schemas/agent-skill.schema';
-import { SkillSuggestion, SkillSuggestionSchema } from '../../shared/schemas/skill-suggestion.schema';
-import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
+import { Skill, SkillSchema } from '../../schemas/skill.schema';
+import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
+import { SkillSuggestion, SkillSuggestionSchema } from '../../schemas/skill-suggestion.schema';
+import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 
 @Module({
   imports: [

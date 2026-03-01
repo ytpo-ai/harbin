@@ -3,12 +3,12 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Discussion, DiscussionSchema } from '../../shared/schemas/discussion.schema';
 import { DiscussionService } from './discussion.service';
 import { DiscussionController } from './discussion.controller';
-import { AgentModule } from '../agents/agent.module';
+import { AgentClientModule } from '../agents-client/agent-client.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Discussion.name, schema: DiscussionSchema }]),
-    AgentModule
+    AgentClientModule
   ],
   controllers: [DiscussionController],
   providers: [DiscussionService],

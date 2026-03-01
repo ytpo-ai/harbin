@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus, EmployeeRole } from '../../shared/schemas/employee.schema';
 import { Organization, OrganizationDocument } from '../../shared/schemas/organization.schema';
-import { AgentClientService } from '../agents/agent-client.service';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CreateEmployeeDto {

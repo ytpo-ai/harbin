@@ -4,7 +4,7 @@ import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 import { Organization, OrganizationSchema } from '../../shared/schemas/organization.schema';
 import { EmployeeService } from './employee.service';
 import { EmployeeController } from './employee.controller';
-import { AgentModule } from '../agents/agent.module';
+import { AgentClientModule } from '../agents-client/agent-client.module';
 
 @Module({
   imports: [
@@ -12,7 +12,7 @@ import { AgentModule } from '../agents/agent.module';
       { name: Employee.name, schema: EmployeeSchema },
       { name: Organization.name, schema: OrganizationSchema },
     ]),
-    AgentModule,
+    AgentClientModule,
   ],
   controllers: [EmployeeController],
   providers: [EmployeeService],

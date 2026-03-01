@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, ConflictException } from '@nestj
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Meeting, MeetingDocument, MeetingType, MeetingStatus, ParticipantRole, MeetingMessage } from '../../shared/schemas/meeting.schema';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { EmployeeService } from '../employees/employee.service';
 import { EmployeeType } from '../../shared/schemas/employee.schema';
 import { ChatMessage } from '../../shared/types';
@@ -55,7 +55,7 @@ export class MeetingService {
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
     private readonly employeeService: EmployeeService,
     private readonly redisService: RedisService,
   ) {}
@@ -129,7 +129,7 @@ export class MeetingService {
     const uniqueAgentIds = Array.from(new Set(presentAgentIds));
 
     for (const agentId of uniqueAgentIds) {
-      const agent = await this.agentService.getAgent(agentId);
+      const agent = await this.agentClientService.getAgent(agentId);
       const aliases = this.buildMentionAliases(agentId, agent?.name);
 
       for (const token of tokens) {
@@ -768,7 +768,7 @@ export class MeetingService {
       const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
       if (!meeting || meeting.status !== MeetingStatus.ACTIVE) return;
 
-      const agent = await this.agentService.getAgent(agentId);
+      const agent = await this.agentClientService.getAgent(agentId);
       if (!agent) return;
 
       this.logger.log(`Generating response for agent ${agent.name} in meeting ${meetingId}`);
@@ -788,7 +788,7 @@ export class MeetingService {
         updatedAt: new Date(),
       };
 
-      const response = await this.agentService.executeTask(agentId, task as any, {
+      const response = await this.agentClientService.executeTask(agentId, task as any, {
         teamContext: {
           meetingType: meeting.type,
           meetingTitle: meeting.title,
@@ -864,7 +864,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) return;
 
-    const agent = await this.agentService.getAgent(participant.id);
+    const agent = await this.agentClientService.getAgent(participant.id);
     if (!agent) return;
 
     const recentMessages = meeting.messages.slice(-5);
@@ -892,7 +892,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     };
 
     try {
-      const response = await this.agentService.executeTask(participant.id, task as any);
+      const response = await this.agentClientService.executeTask(participant.id, task as any);
       await this.sendMessage(meetingId, {
         senderId: participant.id,
         senderType: 'agent',
@@ -975,7 +975,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
           createdAt: new Date(),
           updatedAt: new Date(),
         };
-        summary = await this.agentService.executeTask(meeting.hostId, task as any);
+        summary = await this.agentClientService.executeTask(meeting.hostId, task as any);
       } else {
         // 如果是人类主持人，可以提供一个默认总结模板
         summary = `会议 "${meeting.title}" 已结束。\n\n讨论内容涉及多个议题，参与者积极交流。具体行动项和决策请参考会议记录。`;

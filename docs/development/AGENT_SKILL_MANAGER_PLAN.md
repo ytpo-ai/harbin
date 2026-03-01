@@ -109,3 +109,103 @@
 验证结果：
 
 - `frontend` 执行 `npm run build` 通过
+
+## 前端交互优化（2026-03）
+
+本次对 Skills 页面交互做了三项增强：
+
+1. 将 AgentSkillManager 检索入口改为右侧抽屉（减少主页面表单占用）
+2. 将“新增 Skill”改为弹窗提交
+3. 新增“编辑 Skill”弹窗，支持核心字段修改
+
+对应文件：`frontend/src/pages/Skills.tsx`
+
+## 测试数据初始化
+
+已通过后端 API 创建 4 条测试 skills（存在则跳过）：
+
+- `security-audit-skill`
+- `research-synthesis-skill`
+- `incident-triage-skill`
+- `product-spec-critic-skill`
+
+执行方式：调用 `POST /api/skills`（脚本化批量创建）。
+
+## 列表体验增强（分页 + 搜索）
+
+已在 Skills 列表实现前端本地搜索与分页：
+
+1. 关键字搜索：匹配 `name/description/tags/category/provider/version`
+2. 搜索防抖：250ms
+3. 分页：每页 10/20/50 可切换
+4. 分页导航：首页 / 上一页 / 下一页 / 末页
+5. 结果统计：显示筛选后总数与当前页展示区间
+
+实现文件：`frontend/src/pages/Skills.tsx`
+
+## URL 状态持久化与服务端分页
+
+进一步完成了以下增强：
+
+1. Skills 页面筛选状态与分页状态写入 URL query：`search/status/category/page/pageSize`
+2. 刷新页面后可恢复当前列表视图
+3. Skills 列表从前端本地分页切换为后端服务端分页（`GET /api/skills`）
+4. 后端新增 `search/page/pageSize` 查询参数，并在传入分页参数时返回 `{items,total,page,pageSize,totalPages}`
+
+## 架构迁移：Skill 后端迁移至 Agents App
+
+根据最新架构建议，skills 相关后端能力已迁移至 `apps/agents`：
+
+1. 模块迁移到：`backend/apps/agents/src/modules/skills/`
+2. `AgentsAppModule` 已注册 `SkillModule`
+3. Gateway 已将 `/api/skills` 路由转发到 agents service
+4. Legacy app 已移除 `SkillModule` 注册，避免双入口重复
+
+验证结果：
+
+- `npm run build:agents` 通过
+- `npm run build:gateway` 通过
+- `npm run build`（legacy）通过
+
+## Schema 收拢（Agents 领域）
+
+为进一步统一领域边界，已将 skills 相关 schema 收拢到 agents app：
+
+- `backend/apps/agents/src/schemas/skill.schema.ts`
+- `backend/apps/agents/src/schemas/agent-skill.schema.ts`
+- `backend/apps/agents/src/schemas/skill-suggestion.schema.ts`
+
+同时为兼容历史引用，保留 shared 路径的 re-export：
+
+- `backend/src/shared/schemas/skill.schema.ts`
+- `backend/src/shared/schemas/agent-skill.schema.ts`
+- `backend/src/shared/schemas/skill-suggestion.schema.ts`
+
+当前策略为“领域内实现 + 兼容层过渡”，后续可在确认无外部引用后移除兼容层。
+
+## 可验证执行：Agent 使用已绑定 Skill
+
+已将“已绑定 skill”接入 Agent 实际执行链路（`apps/agents`）：
+
+1. 在 `executeTask` / `executeTaskWithStreaming` 执行前读取当前 Agent 的已启用技能（`AgentSkill.enabled=true`）
+2. 将技能信息注入到 system prompt（含 name/description/tags/proficiency）
+3. 在任务消息 metadata 中记录：
+   - `usedSkillIds`
+   - `usedSkillNames`
+   - `usedSkills`（含 proficiency）
+
+关键文件：
+
+- `backend/apps/agents/src/modules/agents/agent.module.ts`
+- `backend/apps/agents/src/modules/agents/agent.service.ts`
+
+验证方式：
+
+1. 先通过 `/api/skills/assign` 给 agent 绑定 skill
+2. 执行该 agent 的任务
+3. 在任务消息 metadata 中检查 `usedSkillIds` 是否包含已绑定 skill
+
+## 建议列表可读性增强
+
+1. 建议列表由 `skillId` 改为优先显示 `skill 名称`
+2. 支持点击建议中的 skill 名称，一键定位到技能库并触发高亮

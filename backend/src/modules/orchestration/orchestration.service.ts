@@ -20,7 +20,7 @@ import {
   EmployeeType,
 } from '../../shared/schemas/employee.schema';
 import { Task } from '../../shared/types';
-import { AgentService } from '../agents/agent.service';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { PlannerService } from './planner.service';
 import { SessionManagerService } from './session-manager.service';
 import { CompleteHumanTaskDto, CreatePlanFromPromptDto, ReassignTaskDto, RunPlanDto } from './dto';
@@ -41,7 +41,7 @@ export class OrchestrationService {
     @InjectModel(Employee.name)
     private readonly employeeModel: Model<EmployeeDocument>,
     private readonly plannerService: PlannerService,
-    private readonly agentService: AgentService,
+    private readonly agentClientService: AgentClientService,
     private readonly sessionManagerService: SessionManagerService,
   ) {}
 
@@ -555,7 +555,7 @@ export class OrchestrationService {
     };
 
     try {
-      const output = await this.agentService.executeTask(assignment.executorId, taskPayload, {
+      const output = await this.agentClientService.executeTask(assignment.executorId, taskPayload, {
         teamContext: {
           planId,
           orchestrationTaskId: taskId,

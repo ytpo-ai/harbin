@@ -12,6 +12,7 @@ import { InfraModule } from '@libs/infra';
 import { InternalContextMiddleware } from './security/internal-context.middleware';
 import { AgentStreamController } from './controllers/stream.controller';
 import { HealthController } from './controllers/health.controller';
+import { SkillModule } from './modules/skills/skill.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { HealthController } from './controllers/health.controller';
     ModelModule,
     ApiKeysModule,
     AgentModule,
+    SkillModule,
   ],
   controllers: [HealthController, AgentStreamController],
 })
