@@ -9,6 +9,7 @@ import { AgentController } from './agent.controller';
 import { ModelModule } from '../models/model.module';
 import { ApiKeysModule } from '../../../../../src/modules/api-keys/api-keys.module';
 import { ToolModule } from '../tools/tool.module';
+import { MemoModule } from '../memos/memo.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ToolModule } from '../tools/tool.module';
     ModelModule,
     ApiKeysModule,
     ToolModule,
+    MemoModule,
   ],
   controllers: [AgentController],
   providers: [AgentService],

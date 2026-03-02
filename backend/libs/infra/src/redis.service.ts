@@ -112,6 +112,27 @@ export class RedisService implements OnModuleDestroy {
     return this.publisher.keys(pattern);
   }
 
+  async expire(key: string, ttlSeconds: number): Promise<number> {
+    if (!this.ready) return 0;
+    if (!ttlSeconds || ttlSeconds <= 0) return 0;
+    return this.publisher.expire(key, ttlSeconds);
+  }
+
+  async lpush(key: string, value: string): Promise<number> {
+    if (!this.ready) return 0;
+    return this.publisher.lpush(key, value);
+  }
+
+  async lrange(key: string, start: number, stop: number): Promise<string[]> {
+    if (!this.ready) return [];
+    return this.publisher.lrange(key, start, stop);
+  }
+
+  async ltrim(key: string, start: number, stop: number): Promise<'OK' | null> {
+    if (!this.ready) return null;
+    return this.publisher.ltrim(key, start, stop);
+  }
+
   async subscribe(channel: string, listener: MessageListener): Promise<void> {
     if (!this.ready) return;
     const existing = this.listeners.get(channel) || new Set<MessageListener>();

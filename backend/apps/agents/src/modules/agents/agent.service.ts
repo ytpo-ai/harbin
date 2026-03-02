@@ -11,6 +11,7 @@ import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
 import { ToolService } from '../tools/tool.service';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS } from '../../../../../src/config/models';
+import { MemoService } from '../memos/memo.service';
 
 export interface AgentContext {
   task: Task;
@@ -67,6 +68,8 @@ const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_AGENT_TOOLS = ['model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'];
 const CODE_DOCS_MCP_TOOL_ID = 'code-docs-mcp';
 const CODE_UPDATES_MCP_TOOL_ID = 'code-updates-mcp';
+const MEMO_MCP_SEARCH_TOOL_ID = 'memo_mcp_search';
+const MEMO_MCP_APPEND_TOOL_ID = 'memo_mcp_append';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 model_mcp_list_models 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 model_mcp_search_latest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 model_mcp_add_model。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -181,6 +184,7 @@ export class AgentService {
     private readonly modelService: ModelService,
     private readonly apiKeyService: ApiKeyService,
     private readonly toolService: ToolService,
+    private readonly memoService: MemoService,
   ) {
     void this.bootstrapMcpProfilesAndAgentTypes();
   }
@@ -538,7 +542,34 @@ export class AgentService {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
 
-    this.logger.log(`Agent ${agent.name} executing task: ${task.title}`);
+    const taskStartAt = Date.now();
+    const taskId = this.ensureTaskRuntime(task);
+    const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || agentId;
+    this.logger.log(
+      `[task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${this.compactLogText(task.title)}" type=${task.type} priority=${task.priority} modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'} hasCustomApiKey=${Boolean(agent.apiKeyId)}`,
+    );
+
+    await this.runMemoOperation('task_start_upsert_todo', taskId, async () => {
+      await this.memoService.upsertTaskTodo(agent.id || agentId, {
+        id: taskId,
+        title: task.title,
+        description: task.description,
+      });
+    });
+    await this.runMemoOperation('task_start_record_behavior', taskId, async () => {
+      await this.memoService.recordBehavior({
+        agentId: agent.id || agentId,
+        event: 'task_start',
+        taskId,
+        title: `Task start: ${task.title}`,
+        details: `taskType=${task.type}, priority=${task.priority}, description=${task.description}`,
+        tags: [task.type, task.priority, 'task_start'],
+      });
+    });
+
+    this.logger.log(
+      `[task_context] taskId=${taskId} previousMessages=${task.messages?.length || 0} hasTeamContext=${Boolean(context?.teamContext)}`,
+    );
 
     const agentContext: AgentContext = {
       task,
@@ -549,7 +580,11 @@ export class AgentService {
     };
 
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
+    this.logger.log(
+      `[task_skills] taskId=${taskId} enabledSkills=${enabledSkills.length} skillNames=${enabledSkills.map((item) => item.name).join('|') || 'none'}`,
+    );
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
+    this.logger.log(`[task_messages] taskId=${taskId} compiledMessages=${messages.length}`);
 
     try {
       // 确保模型已注册 - 类型转换
@@ -568,9 +603,11 @@ export class AgentService {
       if (agent.apiKeyId) {
         customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
         if (customApiKey) {
-          this.logger.log(`Using custom API key for agent ${agent.name}`);
+          this.logger.log(`[task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
           // 记录API Key使用情况
           await this.apiKeyService.recordUsage(agent.apiKeyId);
+        } else {
+          this.logger.warn(`[task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
         }
       }
 
@@ -579,7 +616,23 @@ export class AgentService {
 
       const response = await this.executeWithToolCalling(agent, task, messages, modelConfig);
 
-      this.logger.log(`Agent ${agent.name} completed task, response length: ${response.length}`);
+      this.logger.log(
+        `[task_success] agent=${agent.name} taskId=${taskId} responseLength=${response.length} durationMs=${Date.now() - taskStartAt}`,
+      );
+
+      await this.runMemoOperation('task_complete_record_behavior', taskId, async () => {
+        await this.memoService.recordBehavior({
+          agentId: agent.id || agentId,
+          event: 'task_complete',
+          taskId,
+          title: `Task complete: ${task.title}`,
+          details: this.buildTaskResultMemo(response),
+          tags: [task.type, 'task_complete'],
+        });
+      });
+      await this.runMemoOperation('task_complete_todo', taskId, async () => {
+        await this.memoService.completeTaskTodo(agent.id || agentId, taskId, 'Task finished by agent runtime');
+      });
 
       // 更新任务消息历史
       task.messages.push({
@@ -601,7 +654,21 @@ export class AgentService {
 
       return response;
     } catch (error) {
-      this.logger.error(`Agent ${agent.name} failed to execute task: ${error.message}`);
+      const logError = this.toLogError(error);
+      this.logger.error(
+        `[task_failed] agent=${agent.name} taskId=${taskId} durationMs=${Date.now() - taskStartAt} error=${logError.message}`,
+        logError.stack,
+      );
+      await this.runMemoOperation('task_failed_record_behavior', taskId, async () => {
+        await this.memoService.recordBehavior({
+          agentId: agent.id || agentId,
+          event: 'task_failed',
+          taskId,
+          title: `Task failed: ${task.title}`,
+          details: error instanceof Error ? error.message : String(error || 'Unknown error'),
+          tags: [task.type, 'task_failed'],
+        });
+      });
       throw error;
     }
   }
@@ -616,6 +683,13 @@ export class AgentService {
     if (!agent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
+
+    const taskStartAt = Date.now();
+    const taskId = this.ensureTaskRuntime(task);
+    const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || agentId;
+    this.logger.log(
+      `[stream_task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${this.compactLogText(task.title)}" modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'}`,
+    );
 
     const agentContext: AgentContext = {
       task,
@@ -633,8 +707,10 @@ export class AgentService {
     if (agent.apiKeyId) {
       customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
       if (customApiKey) {
-        this.logger.log(`Using custom API key for agent ${agent.name} (streaming)`);
+        this.logger.log(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
         await this.apiKeyService.recordUsage(agent.apiKeyId);
+      } else {
+        this.logger.warn(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
       }
     }
 
@@ -651,17 +727,32 @@ export class AgentService {
     this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
 
     let fullResponse = '';
-    await this.modelService.streamingChat(
-      agent.model.id,
-      messages,
-      (token) => {
-        fullResponse += token;
-        onToken(token);
-      },
-      {
-        temperature: agent.model.temperature,
-        maxTokens: agent.model.maxTokens,
-      }
+    let tokenChunks = 0;
+    try {
+      await this.modelService.streamingChat(
+        agent.model.id,
+        messages,
+        (token) => {
+          fullResponse += token;
+          tokenChunks += 1;
+          onToken(token);
+        },
+        {
+          temperature: agent.model.temperature,
+          maxTokens: agent.model.maxTokens,
+        }
+      );
+    } catch (error) {
+      const logError = this.toLogError(error);
+      this.logger.error(
+        `[stream_task_failed] agent=${agent.name} taskId=${taskId} durationMs=${Date.now() - taskStartAt} tokenChunks=${tokenChunks} error=${logError.message}`,
+        logError.stack,
+      );
+      throw error;
+    }
+
+    this.logger.log(
+      `[stream_task_success] agent=${agent.name} taskId=${taskId} durationMs=${Date.now() - taskStartAt} tokenChunks=${tokenChunks} responseLength=${fullResponse.length}`,
     );
 
     // 更新任务消息历史
@@ -793,6 +884,29 @@ export class AgentService {
       });
     }
 
+    const memoryContext = await this.memoService.getTaskMemoryContext(
+      agent.id || '',
+      `${task.title}\n${task.description}\n${task.messages?.slice(-1)[0]?.content || ''}`,
+    );
+    if (memoryContext) {
+      messages.push({
+        role: 'system',
+        content:
+          `以下是从备忘录中按需检索到的相关记忆（渐进加载摘要）:\n${memoryContext}\n\n` +
+          '请优先参考这些记忆，并在必要时调用 memo_mcp_search 获取更完整上下文；若有新结论可调用 memo_mcp_append 追加沉淀。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (allowedToolIds.includes(MEMO_MCP_SEARCH_TOOL_ID) && allowedToolIds.includes(MEMO_MCP_APPEND_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '在处理任务时，优先调用 memo_mcp_search 检索相关历史备忘录；当形成关键结论或后续动作时，调用 memo_mcp_append 将知识、行为或TODO追加到备忘录。',
+        timestamp: new Date(),
+      });
+    }
+
     // 历史消息
     messages.push(...context.previousMessages);
 
@@ -846,6 +960,18 @@ export class AgentService {
     const messages = [...initialMessages];
     const assignedToolIds = new Set(await this.getAllowedToolIds(agent));
     const agentRuntimeId = agent.id || (agent as any)._id?.toString?.() || '';
+    const executedToolIds = new Set<string>();
+
+    const deterministicModelManagementResult = await this.tryHandleModelManagementDeterministically(
+      agent,
+      task,
+      messages,
+      assignedToolIds,
+      agentRuntimeId,
+    );
+    if (deterministicModelManagementResult) {
+      return deterministicModelManagementResult;
+    }
 
     const forcedDocsQuery = this.extractForcedCodeDocsQuery(task, messages);
     if (forcedDocsQuery && assignedToolIds.has(CODE_DOCS_MCP_TOOL_ID)) {
@@ -895,14 +1021,23 @@ export class AgentService {
 
     for (let round = 0; round <= maxToolRounds; round++) {
       let response: string;
+      const roundStartAt = Date.now();
+      this.logger.log(
+        `[tool_round_start] agent=${agent.name} taskId=${task.id} round=${round + 1}/${maxToolRounds + 1} messageCount=${messages.length} modelId=${modelConfig.id}`,
+      );
       try {
         response = await this.modelService.chat(modelConfig.id, messages, {
           temperature: modelConfig.temperature,
           maxTokens: modelConfig.maxTokens,
         });
+        this.logger.log(
+          `[tool_round_response] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt} responseLength=${response.length}`,
+        );
       } catch (error) {
         if (this.isModelTimeoutError(error)) {
-          this.logger.warn(`Agent ${agent.name} model request timed out on round ${round + 1}`);
+          this.logger.warn(
+            `[tool_round_timeout] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt}`,
+          );
           return '当前模型请求超时（上游响应过慢）。请稍后重试，或将问题拆小后再试。';
         }
         throw error;
@@ -910,6 +1045,15 @@ export class AgentService {
 
       const toolCall = this.extractToolCall(response);
       if (!toolCall) {
+        if (this.shouldForceModelManagementGrounding(agent, task, messages, response, executedToolIds)) {
+          messages.push({
+            role: 'system',
+            content:
+              '你正在处理模型管理请求。禁止在未调用并拿到工具结果时声称“已添加成功/已完成添加”。请立即调用 model_mcp_add_model 执行写入，并调用 model_mcp_list_models 验证后再回答。若工具失败，请明确说明失败原因。',
+            timestamp: new Date(),
+          });
+          continue;
+        }
         return this.stripToolCallMarkup(response);
       }
 
@@ -920,6 +1064,9 @@ export class AgentService {
       });
 
       if (!assignedToolIds.has(toolCall.tool)) {
+        this.logger.warn(
+          `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool}`,
+        );
         messages.push({
           role: 'system',
           content: `工具调用被拒绝: agent 未分配工具 ${toolCall.tool}。请在已授权工具内重新尝试，或直接给出不依赖该工具的回答。`,
@@ -929,11 +1076,18 @@ export class AgentService {
       }
 
       try {
+        this.logger.log(
+          `[tool_execute_start] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} parameters=${this.compactLogText(JSON.stringify(toolCall.parameters || {}), 240)}`,
+        );
         const execution = await this.toolService.executeTool(
           toolCall.tool,
           agentRuntimeId,
           toolCall.parameters,
           task.id,
+        );
+        executedToolIds.add(toolCall.tool);
+        this.logger.log(
+          `[tool_execute_success] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} resultKeys=${Object.keys(execution.result || {}).join('|') || 'none'}`,
         );
 
         messages.push({
@@ -942,7 +1096,12 @@ export class AgentService {
           timestamp: new Date(),
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown tool execution error';
+        const logError = this.toLogError(error);
+        this.logger.error(
+          `[tool_execute_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} error=${logError.message}`,
+          logError.stack,
+        );
+        const message = logError.message;
         messages.push({
           role: 'system',
           content: `工具 ${toolCall.tool} 调用失败: ${message}。请根据现有信息继续回答。`,
@@ -1017,6 +1176,310 @@ export class AgentService {
       lower.includes('etimedout') ||
       lower.includes('abort')
     );
+  }
+
+  private toLogError(error: unknown): { message: string; stack?: string } {
+    if (error instanceof Error) {
+      return {
+        message: this.compactLogText(error.message, 500),
+        stack: error.stack,
+      };
+    }
+
+    return {
+      message: this.compactLogText(String(error || 'Unknown error'), 500),
+    };
+  }
+
+  private ensureTaskRuntime(task: Task): string {
+    const existingTaskId = typeof task?.id === 'string' ? task.id.trim() : '';
+    if (existingTaskId) {
+      if (!Array.isArray(task.messages)) {
+        task.messages = [];
+      }
+      return existingTaskId;
+    }
+
+    const generatedTaskId = `task-${uuidv4()}`;
+    task.id = generatedTaskId;
+    if (!Array.isArray(task.messages)) {
+      task.messages = [];
+    }
+    this.logger.warn(`[task_id_missing] generatedTaskId=${generatedTaskId} title="${this.compactLogText(task.title)}"`);
+    return generatedTaskId;
+  }
+
+  private async runMemoOperation(label: string, taskId: string, operation: () => Promise<void>): Promise<void> {
+    const startedAt = Date.now();
+    try {
+      await Promise.race([
+        operation(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error(`memo operation timeout: ${label}`)), 5000),
+        ),
+      ]);
+      this.logger.log(`[memo_op_success] taskId=${taskId} label=${label} durationMs=${Date.now() - startedAt}`);
+    } catch (error) {
+      const logError = this.toLogError(error);
+      this.logger.warn(
+        `[memo_op_failed] taskId=${taskId} label=${label} durationMs=${Date.now() - startedAt} error=${logError.message}`,
+      );
+    }
+  }
+
+  private compactLogText(input: string | undefined, maxLength = 120): string {
+    const normalized = String(input || '')
+      .replace(/\s+/g, ' ')
+      .replace(/[\r\n\t]+/g, ' ')
+      .trim();
+    if (!normalized) {
+      return 'N/A';
+    }
+    if (normalized.length <= maxLength) {
+      return normalized;
+    }
+    return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+  }
+
+  private shouldForceModelManagementGrounding(
+    agent: Agent,
+    task: Task,
+    messages: ChatMessage[],
+    response: string,
+    executedToolIds: Set<string>,
+  ): boolean {
+    if (agent.name !== MODEL_MANAGEMENT_AGENT_NAME) {
+      return false;
+    }
+
+    const latestUserContent = [...(task.messages || []), ...messages]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content || '';
+
+    const userText = latestUserContent.toLowerCase();
+    const modelResponse = (response || '').toLowerCase();
+
+    const claimsAddSuccess =
+      modelResponse.includes('已添加') ||
+      modelResponse.includes('添加完成') ||
+      modelResponse.includes('发起了添加') ||
+      modelResponse.includes('开始添加') ||
+      modelResponse.includes('已经完成') ||
+      modelResponse.includes('successfully added') ||
+      modelResponse.includes('already added');
+
+    const asksAddStatus =
+      userText.includes('添加好了吗') ||
+      userText.includes('加好了吗') ||
+      userText.includes('添加成功') ||
+      userText.includes('added') ||
+      userText.includes('add done');
+
+    const confirmsAddAction =
+      userText === '是的' ||
+      userText === '好的' ||
+      userText === '确认' ||
+      userText === '确认添加' ||
+      userText.includes('需要添加') ||
+      userText.includes('请添加') ||
+      userText.includes('开始添加') ||
+      userText.includes('添加到系统') ||
+      userText.includes('add to system') ||
+      userText.includes('yes, add') ||
+      userText.includes('yes add');
+
+    const searchingAndAdding =
+      userText.includes('搜索并添加') ||
+      userText.includes('search and add');
+
+    const addExecuted = executedToolIds.has('model_mcp_add_model');
+    const listExecuted = executedToolIds.has('model_mcp_list_models');
+    const searchExecuted = executedToolIds.has('model_mcp_search_latest');
+
+    if (claimsAddSuccess && (!addExecuted || !listExecuted)) {
+      return true;
+    }
+
+    if (confirmsAddAction && !addExecuted) {
+      return true;
+    }
+
+    if (searchingAndAdding && !searchExecuted) {
+      return true;
+    }
+
+    if (asksAddStatus && !listExecuted) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private async tryHandleModelManagementDeterministically(
+    agent: Agent,
+    task: Task,
+    messages: ChatMessage[],
+    assignedToolIds: Set<string>,
+    agentRuntimeId: string,
+  ): Promise<string | null> {
+    if (agent.name !== MODEL_MANAGEMENT_AGENT_NAME) {
+      return null;
+    }
+
+    const latestUser = [...(task.messages || []), ...messages]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+    const latestUserText = String(latestUser || '').trim().toLowerCase();
+    if (!latestUserText) {
+      return null;
+    }
+
+    const isConfirmAdd =
+      ['是的', '好的', '确认', '确认添加'].includes(latestUserText) ||
+      latestUserText.includes('需要添加') ||
+      latestUserText.includes('请添加') ||
+      latestUserText.includes('添加到系统') ||
+      latestUserText.includes('yes add') ||
+      latestUserText.includes('yes, add');
+
+    const asksAddStatus = latestUserText.includes('添加好了吗') || latestUserText.includes('加好了吗');
+
+    if (!isConfirmAdd && !asksAddStatus) {
+      return null;
+    }
+
+    const targets = this.extractRequestedModelsFromConversation(task, messages);
+    if (!targets.length) {
+      return '我已收到添加请求，但没有识别到明确的模型 ID（例如 gpt-5.3-codex）。请提供要添加的模型 ID，我将立即执行并回传结果。';
+    }
+
+    if (asksAddStatus && assignedToolIds.has('model_mcp_list_models')) {
+      try {
+        const listExecution = await this.toolService.executeTool(
+          'model_mcp_list_models',
+          agentRuntimeId,
+          { limit: 500 },
+          task.id,
+        );
+        const list = Array.isArray(listExecution?.result?.models) ? listExecution.result.models : [];
+        const existingIds = new Set(
+          list
+            .map((item: any) => String(item?.id || item?.model || '').trim().toLowerCase())
+            .filter(Boolean),
+        );
+        const exists = targets.filter((item) => existingIds.has(item));
+        const missing = targets.filter((item) => !existingIds.has(item));
+        if (!missing.length) {
+          return `已确认：目标模型已在系统中。
+已存在：${exists.join('、')}`;
+        }
+        return `核验结果：部分模型尚未添加完成。
+已存在：${exists.join('、') || '无'}
+缺失：${missing.join('、')}`;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        return `我尝试核验模型状态，但查询失败：${message}`;
+      }
+    }
+
+    if (!isConfirmAdd || !assignedToolIds.has('model_mcp_add_model')) {
+      return null;
+    }
+
+    const addResults: Array<{ model: string; created: boolean; message: string }> = [];
+    for (const model of targets) {
+      const provider = this.inferProviderFromModelId(model);
+      try {
+        const addExecution = await this.toolService.executeTool(
+          'model_mcp_add_model',
+          agentRuntimeId,
+          {
+            provider,
+            model,
+            name: this.toModelDisplayName(model),
+          },
+          task.id,
+        );
+
+        addResults.push({
+          model,
+          created: Boolean(addExecution?.result?.created),
+          message: String(addExecution?.result?.message || ''),
+        });
+      } catch (error) {
+        addResults.push({
+          model,
+          created: false,
+          message: error instanceof Error ? error.message : 'unknown error',
+        });
+      }
+    }
+
+    if (!assignedToolIds.has('model_mcp_list_models')) {
+      const lines = addResults.map((item) => `- ${item.model}: ${item.created ? '已添加' : `失败（${item.message}）`}`);
+      return `已执行模型添加请求，结果如下：\n${lines.join('\n')}`;
+    }
+
+    try {
+      const listExecution = await this.toolService.executeTool(
+        'model_mcp_list_models',
+        agentRuntimeId,
+        { limit: 500 },
+        task.id,
+      );
+      const list = Array.isArray(listExecution?.result?.models) ? listExecution.result.models : [];
+      const existingIds = new Set(
+        list
+          .map((item: any) => String(item?.id || item?.model || '').trim().toLowerCase())
+          .filter(Boolean),
+      );
+      const verified = targets.filter((item) => existingIds.has(item));
+      const unverified = targets.filter((item) => !existingIds.has(item));
+      return `已执行添加并完成核验。
+添加结果：${addResults.map((item) => `${item.model}:${item.created ? 'created' : 'failed'}`).join('，')}
+核验存在：${verified.join('、') || '无'}
+核验缺失：${unverified.join('、') || '无'}`;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      return `已执行模型添加，但列表核验失败：${message}`;
+    }
+  }
+
+  private extractRequestedModelsFromConversation(task: Task, messages: ChatMessage[]): string[] {
+    const collector = [
+      task.title || '',
+      task.description || '',
+      ...(task.messages || []).map((item) => item?.content || ''),
+      ...messages.map((item) => item?.content || ''),
+    ]
+      .map((item) => String(item || ''))
+      .join('\n');
+
+    const regex = /(gpt-[a-z0-9.\-]+|o1[a-z0-9.\-]*|claude-[a-z0-9.\-]+|gemini-[a-z0-9.\-]+|deepseek-[a-z0-9.\-]+|qwen[a-z0-9.\-]*|llama-[a-z0-9.\-]+|kimi-[a-z0-9.\-]+|moonshot-[a-z0-9.\-]+|mistral-[a-z0-9.\-]+|grok-[a-z0-9.\-]+)/gi;
+    const matches = collector.match(regex) || [];
+    return Array.from(new Set(matches.map((item) => item.trim().toLowerCase())));
+  }
+
+  private inferProviderFromModelId(modelId: string): string {
+    const value = String(modelId || '').toLowerCase();
+    if (value.startsWith('gpt-') || value.startsWith('o1')) return 'openai';
+    if (value.startsWith('claude-')) return 'anthropic';
+    if (value.startsWith('gemini-')) return 'google';
+    if (value.startsWith('deepseek-')) return 'deepseek';
+    if (value.startsWith('qwen')) return 'alibaba';
+    if (value.startsWith('llama-')) return 'meta';
+    if (value.startsWith('kimi-') || value.startsWith('moonshot-')) return 'moonshot';
+    if (value.startsWith('mistral-')) return 'mistral';
+    if (value.startsWith('grok-')) return 'xai';
+    return 'custom';
+  }
+
+  private toModelDisplayName(model: string): string {
+    return String(model || '')
+      .split('-')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
   }
 
   private extractForcedCodeDocsQuery(task: Task, messages: ChatMessage[]): string | null {
@@ -1154,11 +1617,17 @@ export class AgentService {
 
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
     const profile = await this.getMcpProfileByAgentType((agent.type || '').trim());
-    const merged = this.uniqueStrings(agent.tools || [], profile.tools || []);
+    const merged = this.uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID]);
     if (this.isCtoAgent(agent)) {
       return this.uniqueStrings(merged, [CODE_DOCS_MCP_TOOL_ID, CODE_UPDATES_MCP_TOOL_ID]);
     }
     return merged.filter((toolId) => toolId !== CODE_DOCS_MCP_TOOL_ID && toolId !== CODE_UPDATES_MCP_TOOL_ID);
+  }
+
+  private buildTaskResultMemo(response: string): string {
+    const normalized = String(response || '').replace(/\s+/g, ' ').trim();
+    if (normalized.length <= 800) return normalized;
+    return `${normalized.slice(0, 797)}...`;
   }
 
   private isCtoAgent(agent: Agent): boolean {

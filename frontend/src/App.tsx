@@ -15,6 +15,7 @@ import EngineeringIntelligence from './pages/EngineeringIntelligence';
 import Orchestration from './pages/Orchestration';
 import Skills from './pages/Skills';
 import OperationLogs from './pages/OperationLogs';
+import Memos from './pages/Memos';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -67,6 +68,7 @@ function App() {
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
+            <Route path="/memos" element={<ProtectedRoute><Memos /></ProtectedRoute>} />
             <Route path="/engineering-intelligence" element={<ProtectedRoute><EngineeringIntelligence /></ProtectedRoute>} />
           </Route>
         </Routes>

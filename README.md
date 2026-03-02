@@ -19,6 +19,7 @@
 - 🧭 **任务编排与会话中台** - 一句话生成执行计划，支持 Agent/Human 分派与统一 Session 管理
 - 📨 **统一消息中台** - 会议/讨论/编排会话消息统一沉淀到 `messages`，便于模型评测与Agent绩效分析
 - 🧠 **Skill 管理中台** - AgentSkillManager 自动检索技能、给 Agent 提供能力增强建议，并同步 DB+Markdown
+- 📝 **Memo 长期记忆** - Agent 通过 Memo MCP 记录行为与知识，支持 TODO 备忘录与渐进检索
 - 📚 **研发智能** - 在主前端内提供 docs 目录浏览、右侧抽屉阅读与文档历史追踪
 
 > 当前状态：`组织管理` 与 `公司治理` 模块前后端功能已下线，后续将按新方案重构。
@@ -126,6 +127,8 @@ mongod
 | Model MCP List Models | 查询系统模型清单 | 3 | Basic |
 | Model MCP Search Latest | 互联网检索最新模型候选 | 8 | Basic |
 | Model MCP Add Model | 模型入库（含去重） | 5 | Admin |
+| Memo MCP Search | 检索 Agent 备忘录（渐进摘要/详情） | 2 | Basic |
+| Memo MCP Append | 追加 Agent 备忘录（知识/行为/TODO） | 3 | Basic |
 | Human Operation Log MCP List | 查询绑定人类操作日志 | 4 | Basic |
 | 代码执行 | 执行代码片段 | 50 | Intermediate |
 | 网络搜索 | 互联网信息检索 | 10 | Basic |
@@ -146,6 +149,12 @@ mongod
 - Token消耗成本统计
 - 成功率和效率分析
 - 使用历史记录
+
+#### Agent Memo 长期记忆
+- 运行时行为事件先写入 Redis（`memo:event:{agentId}`），避免对话过程产生大量碎片文档
+- 后端定时聚合事件并更新长期主题文档（identity / todo / topic）
+- 每个 Agent 默认维护两份固定文档：`身份与职责`、`TODO List`
+- 专题知识（如系统状态、部门进度）聚合到 `topic-*.md` 文档，便于持续沉淀与检索
 
 #### 人类操作审计日志
 - Gateway 会将已认证人类用户的 API 操作落库（含动作、资源、状态码、耗时、请求上下文脱敏摘要）
@@ -385,4 +394,3 @@ MIT License
 ---
 
 **🚀 开始你的AI创业之旅！**
-

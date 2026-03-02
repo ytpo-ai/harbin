@@ -163,6 +163,27 @@ export interface SkillSuggestion {
   updatedAt?: string;
 }
 
+export interface AgentMemo {
+  id: string;
+  agentId: string;
+  category: string;
+  title: string;
+  slug: string;
+  content: string;
+  memoKind?: 'identity' | 'todo' | 'topic';
+  memoType: 'knowledge' | 'behavior' | 'todo';
+  topic?: string;
+  todoStatus?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  tags: string[];
+  contextKeywords: string[];
+  source?: string;
+  taskId?: string;
+  accessCount?: number;
+  lastAccessedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface AgentRole {
   id: string;
   title: string;

@@ -16,6 +16,7 @@ import { ComposioService } from './composio.service';
 import { ModelManagementService } from '../models/model-management.service';
 import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './code-docs-mcp.util';
 import { buildCodeUpdatesMcpSummary, CodeUpdatesMcpCommit } from './code-updates-mcp.util';
+import { MemoService } from '../memos/memo.service';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -39,6 +40,7 @@ export class ToolService {
     @InjectModel(OperationLog.name) private operationLogModel: Model<OperationLogDocument>,
     private composioService: ComposioService,
     private modelManagementService: ModelManagementService,
+    private memoService: MemoService,
   ) {
     void this.initializeBuiltinTools();
   }
@@ -189,6 +191,46 @@ export class ToolService {
         },
       },
       {
+        id: 'memo_mcp_search',
+        name: 'Memo MCP Search',
+        description: 'Search agent memo memory with progressive loading summaries',
+        type: 'data_analysis' as const,
+        category: 'Memory',
+        requiredPermissions: [{ id: 'memo_read', name: 'Agent Memo Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            query: 'string',
+            category: 'string',
+            memoType: 'string',
+            limit: 'number',
+            detail: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'memo_mcp_append',
+        name: 'Memo MCP Append',
+        description: 'Append or create memo entries for long-term memory',
+        type: 'data_analysis' as const,
+        category: 'Memory',
+        requiredPermissions: [{ id: 'memo_write', name: 'Agent Memo Write', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            title: 'string',
+            content: 'string',
+            category: 'string',
+            memoType: 'string',
+            memoId: 'string',
+            taskId: 'string',
+            tags: 'string[]',
+          },
+        },
+      },
+      {
         id: 'human_operation_log_mcp_list',
         name: 'Human Operation Log MCP List',
         description: 'List operation logs for the human bound to the requesting exclusive assistant',
@@ -324,9 +366,88 @@ export class ToolService {
         return this.addModelToSystem(parameters);
       case 'human_operation_log_mcp_list':
         return this.listHumanOperationLogs(parameters, agentId);
+      case 'memo_mcp_search':
+        return this.searchMemoMemory(parameters, agentId);
+      case 'memo_mcp_append':
+        return this.appendMemoMemory(parameters, agentId);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
+  }
+
+  private async searchMemoMemory(
+    params: { query?: string; category?: string; memoType?: 'knowledge' | 'behavior' | 'todo'; limit?: number; detail?: boolean },
+    agentId?: string,
+  ): Promise<any> {
+    if (!agentId) {
+      throw new Error('memo_mcp_search requires agentId');
+    }
+
+    const query = params?.query?.trim() || '';
+    const memories = await this.memoService.searchMemos(agentId, query, {
+      category: params?.category,
+      memoType: params?.memoType,
+      limit: params?.limit,
+      progressive: true,
+      detail: params?.detail === true,
+    });
+
+    return {
+      agentId,
+      query,
+      total: memories.length,
+      memories,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async appendMemoMemory(
+    params: {
+      memoId?: string;
+      title?: string;
+      content?: string;
+      category?: string;
+      memoType?: 'knowledge' | 'behavior' | 'todo';
+      taskId?: string;
+      tags?: string[];
+    },
+    agentId?: string,
+  ): Promise<any> {
+    if (!agentId) {
+      throw new Error('memo_mcp_append requires agentId');
+    }
+    if (!params?.content?.trim()) {
+      throw new Error('memo_mcp_append requires content');
+    }
+
+    if (params.memoId) {
+      const existing = await this.memoService.getMemoById(params.memoId);
+      const updated = await this.memoService.updateMemo(existing.id, {
+        content: `${existing.content}\n\n${params.content.trim()}`,
+        tags: Array.from(new Set([...(existing.tags || []), ...((params.tags || []).filter(Boolean))])),
+      });
+      return {
+        action: 'updated',
+        memo: updated,
+      };
+    }
+
+    const created = await this.memoService.createMemo({
+      agentId,
+      title: params.title?.trim() || 'Runtime memo',
+      content: params.content.trim(),
+      category: params.category?.trim() || 'runtime',
+      memoType: params.memoType || 'knowledge',
+      todoStatus: params.memoType === 'todo' ? 'pending' : undefined,
+      tags: params.tags || [],
+      taskId: params.taskId,
+      source: 'memo_mcp_append',
+    });
+
+    return {
+      action: 'created',
+      memo: created,
+    };
   }
 
   private normalizeProvider(provider?: string): string {
@@ -498,7 +619,7 @@ export class ToolService {
     const temperature = Number.isFinite(Number(params.temperature)) ? Number(params.temperature) : 0.7;
     const topP = Number.isFinite(Number(params.topP)) ? Number(params.topP) : 1;
 
-    const result = this.modelManagementService.addModelToSystem({
+    const result = await this.modelManagementService.addModelToSystem({
       id: params.id,
       name: params.name?.trim() || this.toModelDisplayName(normalizedModel),
       provider: normalizedProvider as any,
@@ -522,8 +643,8 @@ export class ToolService {
     const limit = Math.max(1, Math.min(Number(params?.limit || 200), 500));
 
     const sourceModels = provider
-      ? this.modelManagementService.getModelsByProvider(provider)
-      : this.modelManagementService.getAvailableModels();
+      ? await this.modelManagementService.getModelsByProvider(provider)
+      : await this.modelManagementService.getAvailableModels();
 
     const models = sourceModels.slice(0, limit).map((model) => ({
       id: model.id,

@@ -13,6 +13,7 @@ import {
   SparklesIcon,
   BoltIcon,
   DocumentTextIcon,
+  BookOpenIcon,
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
 import { employeeService, EmployeeType } from '../services/employeeService';
@@ -95,6 +96,7 @@ const Layout: React.FC = () => {
     { name: '任务编排', href: '/orchestration', icon: SparklesIcon },
     { name: 'Skills管理', href: '/skills', icon: BoltIcon },
     { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
+    { name: '备忘录', href: '/memos', icon: BookOpenIcon },
     { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
     { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
     { name: '人力资源', href: '/hr', icon: UserGroupIcon },

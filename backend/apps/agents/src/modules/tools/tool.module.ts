@@ -11,11 +11,13 @@ import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';
 import { ModelModule } from '../models/model.module';
+import { MemoModule } from '../memos/memo.module';
 
 @Module({
   imports: [
     ConfigModule,
     ModelModule,
+    MemoModule,
     MongooseModule.forFeature([
       { name: Tool.name, schema: ToolSchema },
       { name: ToolExecution.name, schema: ToolExecutionSchema },

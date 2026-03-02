@@ -13,6 +13,7 @@ import { InternalContextMiddleware } from './security/internal-context.middlewar
 import { AgentStreamController } from './controllers/stream.controller';
 import { HealthController } from './controllers/health.controller';
 import { SkillModule } from './modules/skills/skill.module';
+import { MemoModule } from './modules/memos/memo.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { SkillModule } from './modules/skills/skill.module';
     ApiKeysModule,
     AgentModule,
     SkillModule,
+    MemoModule,
   ],
   controllers: [HealthController, AgentStreamController],
 })
