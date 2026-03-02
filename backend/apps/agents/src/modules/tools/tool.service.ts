@@ -4,6 +4,8 @@ import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { access, readFile } from 'fs/promises';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
@@ -13,6 +15,7 @@ import { OperationLog, OperationLogDocument } from '../../../../../src/shared/sc
 import { ComposioService } from './composio.service';
 import { ModelManagementService } from '../models/model-management.service';
 import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './code-docs-mcp.util';
+import { buildCodeUpdatesMcpSummary, CodeUpdatesMcpCommit } from './code-updates-mcp.util';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -20,6 +23,8 @@ const DEFAULT_PROFILE = {
   capabilities: [],
   exposed: false,
 };
+
+const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class ToolService {
@@ -94,6 +99,24 @@ export class ToolService {
             focus: 'string',
             maxFeatures: 'number',
             maxEvidencePerFeature: 'number',
+          },
+        },
+      },
+      {
+        id: 'code-updates-mcp',
+        name: 'Code Updates MCP',
+        description: 'Summarize recent repository updates from git commits with evidence',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            hours: 'number',
+            limit: 'number',
+            includeFiles: 'boolean',
+            minSeverity: 'string',
           },
         },
       },
@@ -291,6 +314,8 @@ export class ToolService {
         return this.getAgentsMcpList(parameters);
       case 'code-docs-mcp':
         return this.getCodeDocsMcp(parameters);
+      case 'code-updates-mcp':
+        return this.getCodeUpdatesMcp(parameters);
       case 'model_mcp_list_models':
         return this.listSystemModels(parameters);
       case 'model_mcp_search_latest':
@@ -751,6 +776,65 @@ export class ToolService {
     };
   }
 
+  private async getCodeUpdatesMcp(params: {
+    hours?: number;
+    limit?: number;
+    includeFiles?: boolean;
+    minSeverity?: 'high' | 'medium' | 'low';
+  }): Promise<any> {
+    const hours = Math.max(1, Math.min(Number(params?.hours || 24), 168));
+    const limit = Math.max(1, Math.min(Number(params?.limit || 10), 30));
+    const includeFiles = params?.includeFiles !== false;
+    const minSeverity = ['high', 'medium', 'low'].includes(String(params?.minSeverity || '').toLowerCase())
+      ? (String(params?.minSeverity).toLowerCase() as 'high' | 'medium' | 'low')
+      : 'medium';
+
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const hasGit = await this.fileExists(path.join(workspaceRoot, '.git'));
+    if (!hasGit) {
+      return {
+        hours,
+        limit,
+        commits: [],
+        majorUpdates: [],
+        unknownBoundary: ['当前运行目录无 .git 信息，无法统计最近更新。'],
+        minSeverity,
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    const sinceArg = `${hours} hours ago`;
+    const logFormat = '%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1e';
+    const { stdout } = await execFileAsync(
+      'git',
+      ['log', `--since=${sinceArg}`, '--date=iso-strict', `--format=${logFormat}`, '-n', String(limit)],
+      { cwd: workspaceRoot },
+    );
+
+    const commits = this.parseCodeUpdatesCommits(stdout || '');
+    const commitsWithFiles: CodeUpdatesMcpCommit[] = [];
+
+    for (const commit of commits) {
+      if (includeFiles) {
+        const files = await this.getCommitFiles(workspaceRoot, commit.hash);
+        commitsWithFiles.push({ ...commit, files });
+      } else {
+        commitsWithFiles.push({ ...commit, files: [] });
+      }
+    }
+
+    const summary = buildCodeUpdatesMcpSummary.summarize(commitsWithFiles, { limit, minSeverity });
+    return {
+      hours,
+      limit,
+      minSeverity,
+      commits: commitsWithFiles,
+      majorUpdates: summary.majorUpdates,
+      unknownBoundary: summary.unknownBoundary,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
   private async resolveWorkspaceRoot(): Promise<string> {
     const candidates = [
       process.cwd(),
@@ -774,6 +858,43 @@ export class ToolService {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private parseCodeUpdatesCommits(raw: string): CodeUpdatesMcpCommit[] {
+    const rows = raw
+      .split('\x1e')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    const result: CodeUpdatesMcpCommit[] = [];
+    for (const row of rows) {
+      const [hash, shortHash, author, committedAt, subject] = row.split('\x1f');
+      if (!hash) continue;
+      result.push({
+        hash: (hash || '').trim(),
+        shortHash: (shortHash || '').trim(),
+        author: (author || '').trim(),
+        committedAt: (committedAt || '').trim(),
+        subject: (subject || '').trim(),
+        files: [],
+      });
+    }
+    return result;
+  }
+
+  private async getCommitFiles(workspaceRoot: string, hash: string): Promise<string[]> {
+    try {
+      const { stdout } = await execFileAsync('git', ['show', '--name-only', '--pretty=format:', hash], {
+        cwd: workspaceRoot,
+      });
+      return (stdout || '')
+        .split(/\r?\n/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .slice(0, 100);
+    } catch {
+      return [];
     }
   }
 

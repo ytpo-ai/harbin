@@ -66,6 +66,7 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_AGENT_TOOLS = ['model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'];
 const CODE_DOCS_MCP_TOOL_ID = 'code-docs-mcp';
+const CODE_UPDATES_MCP_TOOL_ID = 'code-updates-mcp';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 model_mcp_list_models 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 model_mcp_search_latest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 model_mcp_add_model。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -783,6 +784,15 @@ export class AgentService {
       });
     }
 
+    if (allowedToolIds.includes(CODE_UPDATES_MCP_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户询问“最近24小时/最近一天系统主要更新”时，请优先调用 code-updates-mcp 并基于提交证据回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
+        timestamp: new Date(),
+      });
+    }
+
     // 历史消息
     messages.push(...context.previousMessages);
 
@@ -857,6 +867,29 @@ export class AgentService {
         const message = error instanceof Error ? error.message : 'unknown error';
         this.logger.warn(`Forced tool call ${CODE_DOCS_MCP_TOOL_ID} failed: ${message}`);
         return `我尝试通过 ${CODE_DOCS_MCP_TOOL_ID} 读取 docs 进行核心功能盘点，但调用失败（${message}）。当前无法提供可靠清单，请稍后重试。`;
+      }
+    }
+
+    const forcedUpdatesHours = this.extractForcedCodeUpdatesWindowHours(task, messages);
+    if (forcedUpdatesHours && assignedToolIds.has(CODE_UPDATES_MCP_TOOL_ID)) {
+      this.logger.log(`Forced tool call triggered: ${CODE_UPDATES_MCP_TOOL_ID} (agent=${agent.name}, hours=${forcedUpdatesHours})`);
+      try {
+        const execution = await this.toolService.executeTool(
+          CODE_UPDATES_MCP_TOOL_ID,
+          agentRuntimeId,
+          {
+            hours: forcedUpdatesHours,
+            limit: 10,
+            includeFiles: true,
+            minSeverity: 'medium',
+          },
+          task.id,
+        );
+        return this.formatCodeUpdatesMcpAnswer(execution.result || {}, forcedUpdatesHours);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        this.logger.warn(`Forced tool call ${CODE_UPDATES_MCP_TOOL_ID} failed: ${message}`);
+        return `我尝试通过 ${CODE_UPDATES_MCP_TOOL_ID} 汇总最近更新，但调用失败（${message}）。当前无法提供可靠更新清单，请稍后重试。`;
       }
     }
 
@@ -1012,6 +1045,39 @@ export class AgentService {
     return latestUserMessage || task.title || '当前系统实现了哪些核心功能';
   }
 
+  private extractForcedCodeUpdatesWindowHours(task: Task, messages: ChatMessage[]): number | null {
+    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+
+    const querySource = `${task.title || ''}\n${task.description || ''}\n${latestUserMessage || ''}`.toLowerCase();
+    const patterns = [
+      '最近24小时',
+      '24小时',
+      '最近一天',
+      'today update',
+      'last 24 hours',
+      'recent updates',
+      '主要更新',
+      '更新总结',
+    ];
+
+    const matched = patterns.some((pattern) => querySource.includes(pattern.toLowerCase()));
+    if (!matched) {
+      return null;
+    }
+
+    const hourMatch = querySource.match(/(\d{1,3})\s*(小时|h|hours?)/i);
+    if (hourMatch) {
+      const parsed = Number(hourMatch[1]);
+      if (Number.isFinite(parsed)) {
+        return Math.max(1, Math.min(Math.floor(parsed), 168));
+      }
+    }
+
+    return 24;
+  }
+
   private formatCodeDocsMcpAnswer(result: any): string {
     const features = Array.isArray(result?.coreFeatures) ? result.coreFeatures : [];
     const unknownBoundary = Array.isArray(result?.unknownBoundary) ? result.unknownBoundary : [];
@@ -1044,13 +1110,55 @@ export class AgentService {
     return `基于仓库 docs 的盘点，当前系统已实现的核心功能如下：\n\n${featureLines.join('\n')}${boundaryBlock}`;
   }
 
+  private formatCodeUpdatesMcpAnswer(result: any, hours: number): string {
+    const updates = Array.isArray(result?.majorUpdates) ? result.majorUpdates : [];
+    const commits = Array.isArray(result?.commits) ? result.commits : [];
+    const unknownBoundary = Array.isArray(result?.unknownBoundary) ? result.unknownBoundary : [];
+
+    if (!updates.length) {
+      const boundary = unknownBoundary.length
+        ? unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')
+        : '1. 指定时间窗口内未检索到可确认的更新记录。';
+      return `基于最近 ${hours} 小时的仓库提交记录，当前没有检索到可确认的主要更新。\n\n已知/未知边界：\n${boundary}`;
+    }
+
+    const updateLines = updates.map((item: any, index: number) => {
+      const modules = Array.isArray(item?.impactedModules) ? item.impactedModules.join('、') : 'unknown';
+      const commitHashes = Array.isArray(item?.commits)
+        ? item.commits.map((hash: string) => String(hash).slice(0, 7)).join('，')
+        : 'unknown';
+      const whatChanged = Array.isArray(item?.whatChanged)
+        ? item.whatChanged.slice(0, 3).map((part: string) => `- ${part}`).join('；')
+        : '- 常规更新';
+      const whyItMatters = item?.whyItMatters || '提升系统稳定性与可维护性。';
+      const evidenceFiles = Array.isArray(item?.evidenceFiles) ? item.evidenceFiles.slice(0, 3).join('，') : '无';
+      return `${index + 1}. ${item?.title || '未命名更新'}\n   变更内容：${whatChanged}\n   业务价值：${whyItMatters}\n   影响模块：${modules}\n   证据提交：${commitHashes}\n   证据文件：${evidenceFiles}`;
+    });
+
+    const recentEvidence = commits
+      .slice(0, 5)
+      .map((commit: any, idx: number) => {
+        const short = commit?.shortHash || String(commit?.hash || '').slice(0, 7);
+        const at = commit?.committedAt || 'unknown-time';
+        const subject = commit?.subject || 'no-subject';
+        return `${idx + 1}. ${short} | ${at} | ${subject}`;
+      })
+      .join('\n');
+
+    const boundaryBlock = unknownBoundary.length
+      ? `\n\n已知/未知边界：\n${unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`
+      : '';
+
+    return `基于最近 ${hours} 小时的仓库提交记录，系统主要更新如下：\n\n${updateLines.join('\n')}\n\n提交证据：\n${recentEvidence}${boundaryBlock}`;
+  }
+
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
     const profile = await this.getMcpProfileByAgentType((agent.type || '').trim());
     const merged = this.uniqueStrings(agent.tools || [], profile.tools || []);
     if (this.isCtoAgent(agent)) {
-      return this.uniqueStrings(merged, [CODE_DOCS_MCP_TOOL_ID]);
+      return this.uniqueStrings(merged, [CODE_DOCS_MCP_TOOL_ID, CODE_UPDATES_MCP_TOOL_ID]);
     }
-    return merged.filter((toolId) => toolId !== CODE_DOCS_MCP_TOOL_ID);
+    return merged.filter((toolId) => toolId !== CODE_DOCS_MCP_TOOL_ID && toolId !== CODE_UPDATES_MCP_TOOL_ID);
   }
 
   private isCtoAgent(agent: Agent): boolean {

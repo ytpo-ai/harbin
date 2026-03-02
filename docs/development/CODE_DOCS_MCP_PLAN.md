@@ -31,6 +31,11 @@
      - `OPENAI_MAX_RETRIES`（默认 1）
    - Agent 执行链路识别超时并输出兜底文案，避免直接异常中断。
 
+6. `code-updates-mcp` 摘要质量提升
+   - 从“单提交直出”升级为“按主题聚合多提交”。
+   - 输出增加 `whatChanged/whyItMatters/evidenceFiles/severity`，减少泛化描述。
+   - 支持 `minSeverity` 过滤低价值变更，提升“主要更新”可读性。
+
 ## 影响文件
 
 - `backend/apps/agents/src/modules/tools/tool.service.ts`
