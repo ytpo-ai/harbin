@@ -327,6 +327,16 @@ settings: {
    curl http://localhost:3001/api/models/gpt-4-turbo/test
    ```
 3. 检查Agent使用的模型ID是否正确
+4. 若使用 GPT-5 系列模型，确认后端版本已支持 `max_completion_tokens` 参数映射（旧版本会报 `max_tokens` 不支持）
+
+### 问题1.1: 新增模型在重启后消失
+
+**症状**: 在模型管理中添加模型后，服务重启后模型列表丢失
+
+**解决步骤**:
+1. 确认服务版本已包含模型注册表持久化（`model_registry` 集合）
+2. 检查 MongoDB 连接是否正常，且 agents 服务有写入权限
+3. 通过 `GET /api/model-management/available` 验证模型是否已落库
 
 ### 问题2: 组织初始化失败
 

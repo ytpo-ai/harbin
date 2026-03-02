@@ -7,6 +7,24 @@ import { BaseAIProvider } from './base-provider';
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
 
+  private shouldUseMaxCompletionTokens(modelName?: string): boolean {
+    const normalized = String(modelName || '').trim().toLowerCase();
+    return normalized.startsWith('gpt-5');
+  }
+
+  private buildTokenLimitParams(options?: any): { max_tokens?: number; max_completion_tokens?: number } {
+    const tokenLimit = Number(options?.maxTokens || this.model.maxTokens);
+    if (!Number.isFinite(tokenLimit) || tokenLimit <= 0) {
+      return {};
+    }
+
+    if (this.shouldUseMaxCompletionTokens(this.model.model)) {
+      return { max_completion_tokens: tokenLimit };
+    }
+
+    return { max_tokens: tokenLimit };
+  }
+
   private parseEnvInt(name: string, fallback: number, min: number, max: number): number {
     const raw = process.env[name];
     const parsed = Number(raw);
@@ -41,7 +59,7 @@ export class OpenAIProvider extends BaseAIProvider {
     const response = await this.client.chat.completions.create({
       model: this.model.model,
       messages: this.formatMessages(messages),
-      max_tokens: options?.maxTokens || this.model.maxTokens,
+      ...this.buildTokenLimitParams(options),
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
     });
@@ -57,7 +75,7 @@ export class OpenAIProvider extends BaseAIProvider {
     const stream = await this.client.chat.completions.create({
       model: this.model.model,
       messages: this.formatMessages(messages),
-      max_tokens: options?.maxTokens || this.model.maxTokens,
+      ...this.buildTokenLimitParams(options),
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
       stream: true,

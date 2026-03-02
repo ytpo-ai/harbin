@@ -41,6 +41,11 @@ export class ModelManagementController {
     return this.modelManagementService.deleteModel(id);
   }
 
+  @Delete('models/:provider/:model')
+  deleteModelByProviderAndModel(@Param('provider') provider: string, @Param('model') model: string) {
+    return this.modelManagementService.deleteModelByProviderAndModel(provider, decodeURIComponent(model));
+  }
+
   @Get('settings')
   getModelSettings(): ModelSettings {
     return this.modelManagementService.getModelSettings();
