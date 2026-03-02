@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { access, readFile } from 'fs/promises';
+import * as path from 'path';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
@@ -10,6 +12,7 @@ import { Employee, EmployeeDocument, EmployeeType } from '../../../../../src/sha
 import { OperationLog, OperationLogDocument } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ComposioService } from './composio.service';
 import { ModelManagementService } from '../models/model-management.service';
+import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './code-docs-mcp.util';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -74,6 +77,24 @@ export class ToolService {
         implementation: {
           type: 'built_in' as const,
           parameters: { to: 'string', subject: 'string', body: 'string', action: 'string' },
+        },
+      },
+      {
+        id: 'code-docs-mcp',
+        name: 'Code Docs MCP',
+        description: 'Summarize implemented core features from repository docs with evidence paths',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            query: 'string',
+            focus: 'string',
+            maxFeatures: 'number',
+            maxEvidencePerFeature: 'number',
+          },
         },
       },
       {
@@ -268,6 +289,8 @@ export class ToolService {
         return this.sendGmail(parameters, agentId);
       case 'agents_mcp_list':
         return this.getAgentsMcpList(parameters);
+      case 'code-docs-mcp':
+        return this.getCodeDocsMcp(parameters);
       case 'model_mcp_list_models':
         return this.listSystemModels(parameters);
       case 'model_mcp_search_latest':
@@ -668,6 +691,90 @@ export class ToolService {
       agents: visibleAgents,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  private async getCodeDocsMcp(params: {
+    query?: string;
+    focus?: string;
+    maxFeatures?: number;
+    maxEvidencePerFeature?: number;
+  }): Promise<any> {
+    const maxFeatures = Math.max(1, Math.min(Number(params?.maxFeatures || 8), 20));
+    const maxEvidencePerFeature = Math.max(1, Math.min(Number(params?.maxEvidencePerFeature || 3), 6));
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const targetFiles = [
+      'README.md',
+      'FEATURES.md',
+      'docs/features/FUNCTIONS.md',
+      'docs/overview/README.md',
+      'docs/README.md',
+      'docs/guide/USER_GUIDE.md',
+    ];
+
+    const candidates: CodeDocsMcpFeatureCandidate[] = [];
+    const loadedFiles: string[] = [];
+
+    for (const relativePath of targetFiles) {
+      const absolutePath = path.join(workspaceRoot, relativePath);
+      const exists = await this.fileExists(absolutePath);
+      if (!exists) continue;
+
+      const content = await readFile(absolutePath, 'utf8');
+      loadedFiles.push(relativePath);
+      candidates.push(...buildCodeDocsMcpSummary.collectCandidatesFromMarkdown(content, relativePath));
+    }
+
+    if (!loadedFiles.length) {
+      return {
+        query: params?.query || '',
+        focus: params?.focus || 'core_features',
+        analyzedFiles: [],
+        coreFeatures: [],
+        unknownBoundary: ['仓库 docs 未找到可读取的目标文档，暂无法盘点核心功能。'],
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    const summary = buildCodeDocsMcpSummary.summarizeFeatures(candidates, {
+      query: params?.query,
+      maxFeatures,
+      maxEvidencePerFeature,
+    });
+
+    return {
+      query: params?.query || '',
+      focus: params?.focus || 'core_features',
+      analyzedFiles: loadedFiles,
+      coreFeatures: summary.features,
+      unknownBoundary: summary.unknownBoundary,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async resolveWorkspaceRoot(): Promise<string> {
+    const candidates = [
+      process.cwd(),
+      path.resolve(process.cwd(), '..'),
+      path.resolve(process.cwd(), '../..'),
+      path.resolve(__dirname, '../../../../../../'),
+    ];
+
+    for (const candidate of candidates) {
+      if ((await this.fileExists(path.join(candidate, 'README.md'))) && (await this.fileExists(path.join(candidate, 'docs')))) {
+        return candidate;
+      }
+    }
+
+    return process.cwd();
+  }
+
+  private async fileExists(target: string): Promise<boolean> {
+    try {
+      await access(target);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async performWebSearch(params: { query: string; maxResults?: number }, userId?: string): Promise<any> {

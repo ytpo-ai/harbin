@@ -7,14 +7,23 @@ import { BaseAIProvider } from './base-provider';
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
 
+  private parseEnvInt(name: string, fallback: number, min: number, max: number): number {
+    const raw = process.env[name];
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(Math.floor(parsed), max));
+  }
+
   constructor(model: AIModel, apiKey?: string) {
     super(model, apiKey);
     const dispatcher = getProxyDispatcher();
+    const timeoutMs = this.parseEnvInt('OPENAI_TIMEOUT_MS', 60000, 5000, 180000);
+    const maxRetries = this.parseEnvInt('OPENAI_MAX_RETRIES', 1, 0, 3);
 
     const clientOptions: any = {
       apiKey: apiKey || process.env.OPENAI_API_KEY,
-      timeout: 15000,
-      maxRetries: 0,
+      timeout: timeoutMs,
+      maxRetries,
     };
 
     if (dispatcher) {

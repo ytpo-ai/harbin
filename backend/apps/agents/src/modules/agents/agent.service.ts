@@ -65,6 +65,7 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
 
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_AGENT_TOOLS = ['model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'];
+const CODE_DOCS_MCP_TOOL_ID = 'code-docs-mcp';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 model_mcp_list_models 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 model_mcp_search_latest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 model_mcp_add_model。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -773,6 +774,15 @@ export class AgentService {
       });
     }
 
+    if (allowedToolIds.includes(CODE_DOCS_MCP_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户询问“当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么”时，请优先调用 code-docs-mcp 并基于其 evidence 路径回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
+        timestamp: new Date(),
+      });
+    }
+
     // 历史消息
     messages.push(...context.previousMessages);
 
@@ -825,12 +835,45 @@ export class AgentService {
     const maxToolRounds = 3;
     const messages = [...initialMessages];
     const assignedToolIds = new Set(await this.getAllowedToolIds(agent));
+    const agentRuntimeId = agent.id || (agent as any)._id?.toString?.() || '';
+
+    const forcedDocsQuery = this.extractForcedCodeDocsQuery(task, messages);
+    if (forcedDocsQuery && assignedToolIds.has(CODE_DOCS_MCP_TOOL_ID)) {
+      this.logger.log(`Forced tool call triggered: ${CODE_DOCS_MCP_TOOL_ID} (agent=${agent.name})`);
+      try {
+        const execution = await this.toolService.executeTool(
+          CODE_DOCS_MCP_TOOL_ID,
+          agentRuntimeId,
+          {
+            query: forcedDocsQuery,
+            focus: 'core_features',
+            maxFeatures: 8,
+            maxEvidencePerFeature: 3,
+          },
+          task.id,
+        );
+        return this.formatCodeDocsMcpAnswer(execution.result || {});
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        this.logger.warn(`Forced tool call ${CODE_DOCS_MCP_TOOL_ID} failed: ${message}`);
+        return `我尝试通过 ${CODE_DOCS_MCP_TOOL_ID} 读取 docs 进行核心功能盘点，但调用失败（${message}）。当前无法提供可靠清单，请稍后重试。`;
+      }
+    }
 
     for (let round = 0; round <= maxToolRounds; round++) {
-      const response = await this.modelService.chat(modelConfig.id, messages, {
-        temperature: modelConfig.temperature,
-        maxTokens: modelConfig.maxTokens,
-      });
+      let response: string;
+      try {
+        response = await this.modelService.chat(modelConfig.id, messages, {
+          temperature: modelConfig.temperature,
+          maxTokens: modelConfig.maxTokens,
+        });
+      } catch (error) {
+        if (this.isModelTimeoutError(error)) {
+          this.logger.warn(`Agent ${agent.name} model request timed out on round ${round + 1}`);
+          return '当前模型请求超时（上游响应过慢）。请稍后重试，或将问题拆小后再试。';
+        }
+        throw error;
+      }
 
       const toolCall = this.extractToolCall(response);
       if (!toolCall) {
@@ -855,7 +898,7 @@ export class AgentService {
       try {
         const execution = await this.toolService.executeTool(
           toolCall.tool,
-          agent.id || (agent as any)._id?.toString?.() || '',
+          agentRuntimeId,
           toolCall.parameters,
           task.id,
         );
@@ -932,9 +975,93 @@ export class AgentService {
     return withoutDanglingBlocks.trim();
   }
 
+  private isModelTimeoutError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const lower = message.toLowerCase();
+    return (
+      lower.includes('request timed out') ||
+      lower.includes('timeout') ||
+      lower.includes('etimedout') ||
+      lower.includes('abort')
+    );
+  }
+
+  private extractForcedCodeDocsQuery(task: Task, messages: ChatMessage[]): string | null {
+    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+
+    const querySource = `${task.title || ''}\n${task.description || ''}\n${latestUserMessage || ''}`.toLowerCase();
+    const patterns = [
+      '当前系统实现了哪些核心功能',
+      '系统实现了哪些核心功能',
+      '核心功能',
+      '系统能力清单',
+      'docs里实现了什么',
+      'docs 实现了什么',
+      'what core features',
+      'implemented core features',
+      'system capabilities',
+    ];
+
+    const matched = patterns.some((pattern) => querySource.includes(pattern.toLowerCase()));
+    if (!matched) {
+      return null;
+    }
+
+    return latestUserMessage || task.title || '当前系统实现了哪些核心功能';
+  }
+
+  private formatCodeDocsMcpAnswer(result: any): string {
+    const features = Array.isArray(result?.coreFeatures) ? result.coreFeatures : [];
+    const unknownBoundary = Array.isArray(result?.unknownBoundary) ? result.unknownBoundary : [];
+
+    if (!features.length) {
+      const boundary = unknownBoundary.length
+        ? unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')
+        : '1. 当前 docs 未检索到可确认的核心功能描述。';
+      return `基于仓库 docs 的盘点结果，目前没有检索到可确认的核心功能清单。\n\n已知/未知边界：\n${boundary}`;
+    }
+
+    const featureLines = features.map((feature: any, index: number) => {
+      const evidence = Array.isArray(feature?.evidence) ? feature.evidence : [];
+      const evidenceText = evidence.length
+        ? evidence
+            .map((item: any) => {
+              const p = item?.path || 'unknown';
+              const l = Number(item?.line || 0);
+              return l > 0 ? `${p}:${l}` : p;
+            })
+            .join('，')
+        : '无';
+      return `${index + 1}. ${feature?.name || '未命名功能'}：${feature?.summary || '暂无摘要'}（依据：${evidenceText}）`;
+    });
+
+    const boundaryBlock = unknownBoundary.length
+      ? `\n\n已知/未知边界：\n${unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`
+      : '';
+
+    return `基于仓库 docs 的盘点，当前系统已实现的核心功能如下：\n\n${featureLines.join('\n')}${boundaryBlock}`;
+  }
+
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
     const profile = await this.getMcpProfileByAgentType((agent.type || '').trim());
-    return this.uniqueStrings(agent.tools || [], profile.tools || []);
+    const merged = this.uniqueStrings(agent.tools || [], profile.tools || []);
+    if (this.isCtoAgent(agent)) {
+      return this.uniqueStrings(merged, [CODE_DOCS_MCP_TOOL_ID]);
+    }
+    return merged.filter((toolId) => toolId !== CODE_DOCS_MCP_TOOL_ID);
+  }
+
+  private isCtoAgent(agent: Agent): boolean {
+    const signal = `${agent.name || ''} ${agent.role || ''} ${agent.type || ''} ${agent.description || ''}`.toLowerCase();
+    return [
+      'cto',
+      'chief-technology-officer',
+      'technical-architect',
+      'sarah kim',
+      '首席技术官',
+    ].some((keyword) => signal.includes(keyword.toLowerCase()));
   }
 
   async getAgentCapabilities(agentId: string): Promise<string[]> {
