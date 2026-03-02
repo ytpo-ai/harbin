@@ -216,6 +216,37 @@ const Meetings: React.FC = () => {
     return candidates.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
   }, [agents, employees, selectedMeeting]);
 
+  const mergeMeetingMessages = (current: Meeting | null, next: Meeting): Meeting['messages'] => {
+    const merged = new Map<string, Meeting['messages'][number]>();
+    const currentMessages = current?.messages || [];
+    const nextMessages = next.messages || [];
+
+    currentMessages.forEach((message) => {
+      if (message?.id) {
+        merged.set(message.id, message);
+      }
+    });
+
+    nextMessages.forEach((message) => {
+      if (message?.id) {
+        merged.set(message.id, message);
+      }
+    });
+
+    const orderedCurrentIds = currentMessages.map((message) => message.id).filter(Boolean);
+    const orderedNextIds = nextMessages.map((message) => message.id).filter(Boolean);
+    const orderedIds = Array.from(new Set([...orderedCurrentIds, ...orderedNextIds]));
+    const orderedMessages = orderedIds
+      .map((id) => merged.get(id))
+      .filter((message): message is Meeting['messages'][number] => Boolean(message));
+
+    if (orderedMessages.length > 0) {
+      return orderedMessages;
+    }
+
+    return nextMessages;
+  };
+
   useEffect(() => {
     if (!targetMeetingId) {
       return;
@@ -366,7 +397,19 @@ const Meetings: React.FC = () => {
     },
     {
       onSuccess: (data) => {
-        setSelectedMeeting(data);
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== data.id) {
+            return data;
+          }
+
+          const messages = mergeMeetingMessages(current, data);
+          return {
+            ...current,
+            ...data,
+            messages,
+            messageCount: Math.max(current.messageCount || 0, data.messageCount || 0, messages.length),
+          };
+        });
         queryClient.invalidateQueries('meetings');
       },
     },
@@ -377,7 +420,19 @@ const Meetings: React.FC = () => {
       meetingService.removeParticipant(id, participantId, participantType),
     {
       onSuccess: (data) => {
-        setSelectedMeeting(data);
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== data.id) {
+            return data;
+          }
+
+          const messages = mergeMeetingMessages(current, data);
+          return {
+            ...current,
+            ...data,
+            messages,
+            messageCount: Math.max(current.messageCount || 0, data.messageCount || 0, messages.length),
+          };
+        });
         queryClient.invalidateQueries('meetings');
       },
     },

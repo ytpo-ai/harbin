@@ -48,7 +48,7 @@ Agents 服务对签名验签，拒绝未签名/伪造请求。
 
 - Legacy 侧新增 `AgentClientService`、`ToolClientService`、`ModelClientService`
 - 通过内部签名头调用 `agents`（而非直接依赖 `AgentService` / `ToolService`）
-- 第一批替换：`organization`、`employees`、`hr`
+- 第一批替换：`employees`、`hr`（`organization` 模块已下线，待重构）
 
 ## 流式交互模型（Agent Test）
 

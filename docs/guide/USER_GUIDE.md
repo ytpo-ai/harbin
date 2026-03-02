@@ -109,7 +109,7 @@ npm run dev
 1. **访问模型管理页面**
    - 点击左侧导航"模型管理"
 
-2. **为创始人选择模型**
+2. **为核心角色选择模型**
    - CEO推荐: Claude Opus 4.6, GPT-4 Turbo, GPT-4o
    - CTO推荐: Claude Sonnet 4.6, GPT-4 Turbo
 
@@ -139,7 +139,7 @@ npm run dev
    - 系统提示词
    - 个性特征
    - 在“更换模型”弹窗中可同时切换该Agent绑定的API Key
-   - 薪资和期权
+   - 薪资和职责范围
 
 ### 第四步: 分配任务
 
@@ -292,7 +292,7 @@ private async executeCustomTool(params: any): Promise<any> {
   department: '技术',
   level: 'senior',
   salaryRange: { min: 10000, max: 15000 },
-  stockOptions: 15000
+  responsibilities: ['architecture-review', 'tech-planning']
 }
 ```
 
@@ -335,7 +335,7 @@ settings: {
 **解决步骤**:
 1. 检查MongoDB是否运行
 2. 查看后端日志
-3. 确保已选择创始人模型
+3. 确保已选择核心角色模型
 
 ### 问题3: 前端无法连接后端
 

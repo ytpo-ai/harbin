@@ -249,8 +249,8 @@ export class MeetingService {
       const record = participant as MeetingParticipantRecord;
       const baseName =
         participant.participantType === 'employee'
-          ? employeeLookup.get(participant.participantId) || participant.participantId
-          : agentLookup.get(participant.participantId) || participant.participantId;
+          ? employeeLookup.get(participant.participantId) || '参会员工'
+          : agentLookup.get(participant.participantId) || '参会Agent';
 
       let displayName = baseName;
       if (record.isExclusiveAssistant && record.assistantForEmployeeId) {
@@ -281,9 +281,63 @@ export class MeetingService {
       .map((profile) => {
         const roleLabel = profile.role === ParticipantRole.HOST ? '主持人' : '参与者';
         const presenceLabel = profile.isPresent ? '在场' : '未在场';
-        return `${profile.name}(${profile.type}:${profile.id}，${roleLabel}，${presenceLabel})`;
+        return `${profile.name}（${roleLabel}，${presenceLabel}）`;
       })
       .join('；');
+  }
+
+  private buildParticipantDisplayNameMap(profiles: ParticipantContextProfile[]): Map<string, string> {
+    const lookup = new Map<string, string>();
+    for (const profile of profiles) {
+      lookup.set(`${profile.type}:${profile.id}`, profile.name);
+    }
+    return lookup;
+  }
+
+  private resolveMessageSenderDisplayName(
+    message: { senderId: string; senderType: string },
+    nameLookup: Map<string, string>,
+  ): string {
+    if (message.senderType === 'system') {
+      return '系统';
+    }
+
+    const key = `${message.senderType}:${message.senderId}`;
+    return nameLookup.get(key) || (message.senderType === 'agent' ? '参会Agent' : '参会成员');
+  }
+
+  private async resolveParticipantDisplayName(
+    participantId: string,
+    participantType: 'employee' | 'agent',
+    meeting?: MeetingDocument,
+  ): Promise<string> {
+    if (participantType === 'employee') {
+      try {
+        const employee = await this.employeeService.getEmployee(participantId);
+        return employee?.name || employee?.email || '参会员工';
+      } catch {
+        return '参会员工';
+      }
+    }
+
+    try {
+      const agent = await this.agentClientService.getAgent(participantId);
+      const agentName = agent?.name || '参会Agent';
+
+      const participant = meeting?.participants.find(
+        (p) => p.participantId === participantId && p.participantType === 'agent',
+      ) as MeetingParticipantRecord | undefined;
+
+      if (participant?.isExclusiveAssistant && participant.assistantForEmployeeId) {
+        const owner = await this.employeeService.getEmployee(participant.assistantForEmployeeId);
+        const ownerName = owner?.name || owner?.email || '绑定员工';
+        return `${ownerName}的专属助理(${agentName})`;
+      }
+
+      return agentName;
+    } catch {
+      return '参会Agent';
+    }
   }
 
   private async appendParticipantContextSystemMessage(
@@ -291,6 +345,13 @@ export class MeetingService {
     action: 'initialized' | 'updated',
   ): Promise<void> {
     const profiles = await this.buildParticipantContextProfiles(meeting);
+
+    if (action === 'updated') {
+      const presentCount = profiles.filter((profile) => profile.isPresent).length;
+      await this.addSystemMessage(meeting.id, `参会人上下文已更新：当前参会${presentCount}人`);
+      return;
+    }
+
     const summary = this.formatParticipantContextSummary(profiles);
     const actionText = action === 'initialized' ? '已初始化' : '已更新';
     await this.addSystemMessage(meeting.id, `参会人上下文${actionText}：${summary}`);
@@ -1225,7 +1286,8 @@ export class MeetingService {
     }
 
     await meeting.save();
-    await this.addSystemMessage(meetingId, `${participant.name || participant.id} 被添加为参会人。`);
+    const addedParticipantName = await this.resolveParticipantDisplayName(participant.id, participant.type, meeting);
+    await this.addSystemMessage(meetingId, `${addedParticipantName} 被添加为参会人。`);
     await this.appendParticipantContextSystemMessage(meeting, 'updated');
     await this.maybeRenameExpandedOneToOneMeeting(meeting, participant);
 
@@ -1252,6 +1314,15 @@ export class MeetingService {
       throw new ConflictException('Cannot remove host from participants');
     }
 
+    const participantToRemove = meeting.participants.find(
+      (p) => p.participantId === participantId && p.participantType === participantType,
+    );
+    const removedParticipantName = participantToRemove
+      ? await this.resolveParticipantDisplayName(participantId, participantType, meeting)
+      : participantType === 'agent'
+        ? '参会Agent'
+        : '参会成员';
+
     const beforeCount = meeting.participants.length;
     meeting.participants = meeting.participants.filter(
       (p) => !(p.participantId === participantId && p.participantType === participantType),
@@ -1272,7 +1343,7 @@ export class MeetingService {
     }
 
     await meeting.save();
-    await this.addSystemMessage(meetingId, `${participantId} 已从参会人员中移除。`);
+    await this.addSystemMessage(meetingId, `${removedParticipantName} 已从参会人员中移除。`);
     await this.appendParticipantContextSystemMessage(meeting, 'updated');
 
     return meeting;
@@ -1520,6 +1591,7 @@ export class MeetingService {
       p => p.participantId === agentId && p.participantType === 'agent'
     );
     const participantProfiles = await this.buildParticipantContextProfiles(meeting);
+    const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
     const participantSummary = this.formatParticipantContextSummary(participantProfiles);
 
     messages.push({
@@ -1536,16 +1608,19 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const recentMessages = meeting.messages.slice(-10);
     for (const msg of recentMessages) {
+      const senderDisplayName = this.resolveMessageSenderDisplayName(msg, participantNameLookup);
       messages.push({
         role: msg.senderType === 'agent' ? 'assistant' : 'user',
-        content: `${msg.senderId}: ${msg.content}`,
+        content: `${senderDisplayName}: ${msg.content}`,
         timestamp: msg.timestamp,
       });
     }
 
+    const triggerSenderName = this.resolveMessageSenderDisplayName(triggerMessage, participantNameLookup);
+
     messages.push({
       role: 'user',
-      content: `[新消息] ${triggerMessage.senderId}: ${triggerMessage.content}\n\n请对此做出回应。`,
+      content: `[新消息] ${triggerSenderName}: ${triggerMessage.content}\n\n请对此做出回应。`,
       timestamp: new Date(),
     });
 
@@ -1586,7 +1661,11 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     const recentMessages = meeting.messages.slice(-5);
     if (recentMessages.length === 0) return;
 
-    const summary = recentMessages.map(m => `${m.senderId}: ${m.content}`).join('\n');
+    const participantProfiles = await this.buildParticipantContextProfiles(meeting);
+    const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
+    const summary = recentMessages
+      .map((m) => `${this.resolveMessageSenderDisplayName(m, participantNameLookup)}: ${m.content}`)
+      .join('\n');
 
     const prompt = `你刚加入会议。会议目前的讨论如下：\n\n${summary}\n\n请发表一个简短的入场发言（1-2句话）。`;
 

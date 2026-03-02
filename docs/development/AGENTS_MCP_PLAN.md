@@ -108,7 +108,7 @@
      - `backend/src/modules/agents/agent.service.ts`
      - `backend/apps/agents/src/modules/agents/agent.service.ts`
 
-5. 创始人初始化配置更新
+5. 核心角色初始化配置更新
    - CEO/CTO 默认工具集改为内置真实 tool id，并包含 `agents_mcp_list`：
      - `backend/src/modules/organization/organization.service.ts`
 
@@ -182,7 +182,7 @@
    - 编辑 Agent 弹窗新增 `type` 下拉与 `role` 输入。
    - 保存时提交 `type/role`。
 
-5. 初始化创始人补充实例级 role
+5. 初始化核心角色补充实例级 role
    - CEO: `chief-executive-officer`
    - CTO: `chief-technology-officer`
 

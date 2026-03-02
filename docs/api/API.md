@@ -217,6 +217,8 @@ GET /agents/mcp/:id
 - 默认仅允许读取 `exposed=true` 的 agent。
 - 若需读取隐藏 agent，可传 `?includeHidden=true`。
 - CEO/CTO 对话场景可通过内置工具 `agents_mcp_list` 获取同源列表数据。
+- CTO 在“系统核心功能盘点”问答中会由后端强制触发 `code-docs-mcp`，返回功能清单与 docs 证据路径。
+- CTO 在“最近24小时主要更新”问答中会由后端强制触发 `code-updates-mcp`，返回提交证据与更新摘要。
 - profile 配置来源为数据库 `agent_profiles`，非代码硬编码。
 
 ---
@@ -240,7 +242,7 @@ POST /meetings/:id/messages
 
 会议参会人上下文同步规则：
 - 会议开始时，系统会写入一条“参会人上下文已初始化”系统消息，包含当前参会人结构化信息（`id/type/name/role/isPresent`）。
-- 通过“添加参会人员 / 移除参会人员”接口变更成员后，系统会写入“参会人上下文已更新”系统消息。
+- 通过“添加参会人员 / 移除参会人员”接口变更成员后，系统会写入“参会人上下文已更新：当前参会X人”系统消息。
 - Agent 执行任务时，`teamContext` 除保留 `participants`（ID 列表）外，新增 `participantProfiles`（结构化参会人信息）。
 
 专属助理规则：
@@ -439,7 +441,7 @@ GET /model-management/by-provider/:provider
 
 **示例**: `/model-management/by-provider/openai`
 
-### 3.4 为创始人选择模型
+### 3.4 为核心角色选择模型
 ```http
 POST /model-management/select-for-founder/:founderType
 ```
@@ -466,7 +468,7 @@ POST /model-management/select-for-founder/:founderType
 }
 ```
 
-### 3.5 获取当前创始人模型
+### 3.5 获取当前核心角色模型
 ```http
 GET /model-management/founder-models
 ```
@@ -487,7 +489,7 @@ GET /model-management/founder-models
 
 ### 3.6 MCP 模型管理工具（通过 Tools 执行）
 
-系统新增三个内置工具，用于“查询模型清单 / 联网搜索最新模型 / 写入系统模型库”闭环：
+系统新增内置 MCP 工具，用于模型管理、审计日志与研发文档功能盘点：
 
 - `model_mcp_list_models`
   - 入参：`provider?: string`、`limit?: number`
@@ -507,7 +509,17 @@ GET /model-management/founder-models
   - 出参：绑定人类的操作日志分页列表（含 `action/resource/statusCode/success/timestamp` 等）
   - 权限：仅允许“人类专属助理”查询其绑定人类日志，禁止跨人类访问
 
-新增系统内置 Agent：`Model Management Agent`（`role=model-management-specialist`），默认具备以上三个工具。
+- `code-docs-mcp`
+  - 入参：`query?: string`、`focus?: string`、`maxFeatures?: number`、`maxEvidencePerFeature?: number`
+  - 出参：核心功能列表（`name/summary/confidence/evidence[]`）与 `unknownBoundary`
+  - 权限：默认仅 CTO 可用，用于“当前系统实现了哪些核心功能”类问答
+
+- `code-updates-mcp`
+  - 入参：`hours?: number`、`limit?: number`、`includeFiles?: boolean`、`minSeverity?: 'high'|'medium'|'low'`
+  - 出参：时间窗口内提交记录（`commits[]`）与按主题聚合的主要更新摘要（`majorUpdates[]`）
+  - 权限：默认仅 CTO 可用，用于“最近24小时主要更新”类问答
+
+新增系统内置 Agent：`Model Management Agent`（`role=model-management-specialist`），默认具备以上三个模型管理工具。
 
 ---
 
@@ -598,6 +610,36 @@ POST /tools/:toolId/execute
 ```
 
 请求路径示例：`POST /tools/human_operation_log_mcp_list/execute`
+
+**研发文档 MCP 工具调用示例（核心功能盘点）**:
+```json
+{
+  "agentId": "cto-agent-id",
+  "parameters": {
+    "query": "当前系统实现了哪些核心功能",
+    "focus": "core_features",
+    "maxFeatures": 8,
+    "maxEvidencePerFeature": 3
+  }
+}
+```
+
+请求路径示例：`POST /tools/code-docs-mcp/execute`
+
+**研发更新 MCP 工具调用示例（最近24小时主要更新）**:
+```json
+{
+  "agentId": "cto-agent-id",
+  "parameters": {
+    "hours": 24,
+    "limit": 10,
+    "includeFiles": true,
+    "minSeverity": "medium"
+  }
+}
+```
+
+请求路径示例：`POST /tools/code-updates-mcp/execute`
 
 ### 5.3 获取工具执行历史
 ```http
@@ -1010,6 +1052,78 @@ GET /messages
 - `before` (可选): 按 `occurredAt` 游标向前分页（ISO 时间）
 
 说明：该接口用于聚合查看统一消息库 `messages`，支持后续模型评测与 Agent 绩效统计。
+
+---
+
+## 10. 研发智能 API
+
+用于配置研发可访问 GitHub 仓库，并对仓库文档执行阅读摘要与技术状态感知。
+
+### 10.1 获取仓库配置列表
+```http
+GET /engineering-intelligence/repositories
+```
+
+### 10.2 新增仓库配置
+```http
+POST /engineering-intelligence/repositories
+```
+
+**请求体示例**:
+```json
+{
+  "repositoryUrl": "https://github.com/owner/repo",
+  "branch": "main"
+}
+```
+
+### 10.3 更新仓库配置
+```http
+PUT /engineering-intelligence/repositories/:id
+```
+
+### 10.4 删除仓库配置
+```http
+DELETE /engineering-intelligence/repositories/:id
+```
+
+### 10.5 触发文档摘要
+```http
+POST /engineering-intelligence/repositories/:id/summarize
+```
+
+**响应说明**:
+- 返回仓库级摘要（overview/keyPoints/stackSignals/confidence）
+- 返回分文档摘要（path/title/summary/evidence）
+
+### 10.6 获取 docs 目录树
+```http
+GET /engineering-intelligence/repositories/:id/docs/tree
+```
+
+**响应说明**:
+- 返回 `docs/` 目录下 markdown 文档树（`file/dir` 结构）
+
+### 10.7 获取文档内容
+```http
+GET /engineering-intelligence/repositories/:id/docs/content?path=docs/guide/README.md
+```
+
+**响应说明**:
+- 返回文档原文内容（Markdown）
+- 返回文件辅助信息（`size/sha/htmlUrl`）
+
+### 10.8 获取文档更新记录
+```http
+GET /engineering-intelligence/repositories/:id/docs/history?path=docs/guide/README.md&limit=20
+```
+
+**响应说明**:
+- 返回最近 commit 记录（sha/message/author/committedAt/htmlUrl）
+- 返回辅助统计（提交次数、贡献者数、最近更新时间）
+
+**说明**:
+- 仅支持 `engineering-intelligence` 路径。
 
 ---
 

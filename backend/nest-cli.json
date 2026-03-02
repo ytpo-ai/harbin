@@ -40,6 +40,15 @@
       "compilerOptions": {
         "tsConfigPath": "apps/ws/tsconfig.app.json"
       }
+    },
+    "engineering-intelligence": {
+      "type": "application",
+      "root": "apps/engineering-intelligence",
+      "entryFile": "main",
+      "sourceRoot": "apps/engineering-intelligence/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/engineering-intelligence/tsconfig.app.json"
+      }
     }
   }
 }

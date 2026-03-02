@@ -13,6 +13,8 @@ export class GatewayProxyService {
   private readonly logger = new Logger(GatewayProxyService.name);
   private readonly agentsBaseUrl = process.env.AGENTS_SERVICE_URL || 'http://localhost:3002';
   private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001';
+  private readonly engineeringIntelligenceBaseUrl =
+    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3201';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly sensitiveKeyPattern = /password|passwd|secret|token|authorization|cookie|api[-_]?key/i;
 
@@ -22,6 +24,10 @@ export class GatewayProxyService {
   ) {}
 
   resolveTarget(originalUrl: string): string {
+    if (originalUrl.startsWith('/api/engineering-intelligence')) {
+      return this.engineeringIntelligenceBaseUrl;
+    }
+
     if (
       originalUrl.startsWith('/api/agents') ||
       originalUrl.startsWith('/api/tools') ||

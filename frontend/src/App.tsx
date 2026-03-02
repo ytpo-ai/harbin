@@ -11,6 +11,7 @@ import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
 import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
+import EngineeringIntelligence from './pages/EngineeringIntelligence';
 import Orchestration from './pages/Orchestration';
 import Skills from './pages/Skills';
 import OperationLogs from './pages/OperationLogs';
@@ -66,6 +67,7 @@ function App() {
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence" element={<ProtectedRoute><EngineeringIntelligence /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

@@ -142,6 +142,13 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
 ## 项目特定协议
 
+### 研发智能边界红线（经验教训）
+
+- 当需求为“研发智能独立”时，默认仅拆分 **backend**（`apps/engineering-intelligence`）。
+- **frontend 必须保留在主应用 `frontend/` 内**，通过页面与路由承载研发智能功能。
+- 未经用户明确要求，不得新增独立前端工程或将研发智能前端代码迁出主前端。
+- 若需要独立部署，仅允许后端服务独立部署，前端继续复用主站。
+
 ### 本项目技术栈
 - **后端**: Nest.js + TypeScript + MongoDB
 - **前端**: React + TypeScript + Tailwind CSS

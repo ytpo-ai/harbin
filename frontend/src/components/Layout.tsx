@@ -91,6 +91,7 @@ const Layout: React.FC = () => {
     { name: 'Agent管理', href: '/agents', icon: UserGroupIcon },
     { name: '任务管理', href: '/tasks', icon: ClipboardDocumentListIcon },
     { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
+    { name: '研发智能', href: '/engineering-intelligence', icon: SparklesIcon },
     { name: '任务编排', href: '/orchestration', icon: SparklesIcon },
     { name: 'Skills管理', href: '/skills', icon: BoltIcon },
     { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
@@ -114,22 +115,20 @@ const Layout: React.FC = () => {
           <nav className="flex-1 px-2 py-4 space-y-1">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href;
+
+              const className = `group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
+                isActive
+                  ? 'bg-primary-100 text-primary-700'
+                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`;
+
+              const iconClass = `mr-3 h-5 w-5 ${
+                isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+              }`;
+
               return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                    isActive
-                      ? 'bg-primary-100 text-primary-700'
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <item.icon
-                    className={`mr-3 h-5 w-5 ${
-                      isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                    }`}
-                    aria-hidden="true"
-                  />
+                <Link key={item.name} to={item.href} className={className}>
+                  <item.icon className={iconClass} aria-hidden="true" />
                   {item.name}
                 </Link>
               );

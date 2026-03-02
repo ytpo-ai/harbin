@@ -114,20 +114,10 @@ backend/src/
 │   │   ├── tool.service.ts
 │   │   └── tool.module.ts
 │   │
-│   ├── organization/          # 组织管理模块
-│   │   ├── organization.controller.ts
-│   │   ├── organization.service.ts
-│   │   └── organization.module.ts
-│   │
 │   ├── hr/                    # 人力资源模块
 │   │   ├── hr.controller.ts
 │   │   ├── hr.service.ts
 │   │   └── hr.module.ts
-│   │
-│   ├── governance/            # 公司治理模块
-│   │   ├── governance.controller.ts
-│   │   ├── governance.service.ts
-│   │   └── governance.module.ts
 │   │
 │   ├── tasks/                 # 任务管理模块
 │   │   ├── task.controller.ts
@@ -145,7 +135,6 @@ backend/src/
 │   │   ├── task.schema.ts
 │   │   ├── tool.schema.ts
 │   │   ├── organization.schema.ts
-│   │   ├── proposal.schema.ts
 │   │   └── toolExecution.schema.ts
 │   └──
 │
@@ -218,12 +207,10 @@ frontend/src/
 ├── pages/                   # 页面组件
 │   ├── Dashboard.tsx
 │   ├── Models.tsx
-│   ├── Organization.tsx
 │   ├── Agents.tsx
 │   ├── Tasks.tsx
 │   ├── Tools.tsx
-│   ├── HRManagement.tsx
-│   ├── Governance.tsx
+│   ├── EmployeeManagement.tsx
 │   └── Discussions.tsx
 │
 ├── services/                # API服务
@@ -231,15 +218,13 @@ frontend/src/
 │   ├── agentService.ts
 │   ├── modelService.ts
 │   ├── toolService.ts
-│   ├── organizationService.ts
 │   ├── hrService.ts
-│   ├── governanceService.ts
 │   └── taskService.ts
 │
 ├── stores/                  # 状态管理
 │   ├── agentStore.ts
 │   ├── taskStore.ts
-│   └── organizationStore.ts
+│   └── ...
 │
 ├── types/                   # 类型定义
 │   └── index.ts
@@ -278,20 +263,13 @@ export const useAgentStore = create<AgentStore>((set) => ({
 1. **agents** - Agent信息
 2. **tasks** - 任务数据
 3. **discussions** - 讨论记录
-4. **organizations** - 组织架构
+4. **organizations** - 组织数据（历史兼容，当前组织管理模块已下线）
 5. **tools** - 工具配置
-6. **proposals** - 提案数据
-7. **toolExecutions** - 工具执行记录
+6. **toolExecutions** - 工具执行记录
 
 ### 数据关系
 
 ```
-Organization
-├── ShareDistribution
-├── AgentRole[]
-├── AgentEmployee[] (引用 Agent)
-└── Department[]
-
 Agent
 ├── AIModel (嵌入)
 ├── Tool[] (引用)
@@ -300,9 +278,6 @@ Agent
 Task
 ├── Discussion (可选)
 └── ToolExecution[] (引用)
-
-Proposal
-└── Vote[] (嵌入)
 ```
 
 ## 🔌 API架构
@@ -328,15 +303,8 @@ Proposal
 ├── GET    /available           - 可用模型列表
 ├── GET    /recommended         - 推荐模型
 ├── GET    /by-provider/:provider - 按提供商筛选
-├── POST   /select-for-founder/:type - 选择创始人模型
-└── GET    /founder-models      - 获取创始人模型
-
-/api/organization
-├── POST   /initialize          - 初始化组织
-├── GET    /                    - 获取组织信息
-├── POST   /hire                - 雇佣Agent
-├── POST   /fire                - 解雇Agent
-└── GET    /stats               - 组织统计
+├── POST   /select-for-founder/:type - 选择核心角色模型
+└── GET    /founder-models      - 获取核心角色模型
 
 /api/tools
 ├── GET    /                    - 获取所有工具
@@ -347,12 +315,9 @@ Proposal
 ├── GET    /performance/:id     - 绩效报告
 ├── GET    /low-performers      - 低绩效员工
 └── GET    /hiring-recommendations - 招聘建议
-
-/api/governance
-├── POST   /proposals           - 创建提案
-├── GET    /proposals           - 获取提案列表
-└── POST   /proposals/:id/vote  - 投票
 ```
+
+> 注：`/api/organization` 与 `/api/governance` 已在当前版本下线，待重构后再恢复。
 
 ## 🔧 扩展架构
 
@@ -450,4 +415,4 @@ Nginx (Reverse Proxy + SSL)
 ---
 
 **架构版本**: v1.0
-**最后更新**: 2026-02-25
+**最后更新**: 2026-03-02

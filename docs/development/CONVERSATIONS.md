@@ -52,14 +52,14 @@
 **用户**: 要在已有的工作之上添加一些有趣的功能：
 1. 每个agent 可以设置 模型，添加工具，设置权限
 2. agent分为多个角色，每个角色可以有不同员工，类似人类公司
-3. 创始团队：人类(75%) + 两个创始agent(15%) + 员工池(10%)
-4. 创始人团队逐渐根据需求讨论加入新的员工
+3. 核心角色团队：人类 + 多个关键Agent协同
+4. 团队逐渐根据需求讨论加入新的员工
 5. 最终成为能处理软件开发、数据分析、视频剪辑等复杂任务的超级团队
 6. HR agent对所有agent的工作、token消耗进行量化，淘汰能力低的agent
 
 ### 需求分析
 **AI助手**: 理解用户想要一个完整的AI公司模拟系统：
-- 真实的股权结构和公司治理
+- 真实的组织规则与公司治理
 - 多角色组织架构
 - 完整的HR管理体系
 - 工具权限管理
@@ -67,9 +67,9 @@
 
 ### 实现规划
 **AI助手**: 新增7个任务：
-8. 设计并实现组织架构和股权系统
+8. 设计并实现组织架构与角色体系
 9. 创建Agent工具系统和权限管理
-10. 实现创始团队配置和股份分配
+10. 实现核心角色配置与团队分工
 11. 开发HR管理系统和绩效评估
 12. 构建决策投票系统
 13. 设计动态扩张和招聘流程
@@ -77,15 +77,15 @@
 
 ### 技术决策
 
-#### 1. 股权系统设计
+#### 1. 团队结构设计
 ```typescript
-shareDistribution: {
-  founder: { userId: 'human-founder', shares: 750000, percentage: 75 },
-  cofounders: [
-    { agentId: 'cofounder-1', shares: 75000, percentage: 7.5 },
-    { agentId: 'cofounder-2', shares: 75000, percentage: 7.5 }
+teamComposition: {
+  owner: { userId: 'human-owner', role: 'product-lead' },
+  coreAgents: [
+    { agentId: 'core-agent-1', role: 'ceo' },
+    { agentId: 'core-agent-2', role: 'cto' }
   ],
-  employeePool: { totalShares: 100000, percentage: 10 }
+  growthPolicy: { source: 'hiring-plan', cadence: 'monthly' }
 }
 ```
 
@@ -110,7 +110,7 @@ shareDistribution: {
 - 低绩效识别
 
 #### 5. 治理系统设计
-- 股份加权投票
+- 规则化投票
 - 6种提案类型
 - 自动执行机制
 
@@ -255,7 +255,7 @@ export class ModelManagementService {
 #### 3. 模型管理页面
 ```typescript
 // frontend/src/pages/Models.tsx
-- 创始人模型配置区域
+- 核心角色模型配置区域
 - 推荐模型展示
 - 全部模型列表(50个)
 - 按提供商筛选
@@ -267,7 +267,7 @@ export class ModelManagementService {
 #### UI结构
 ```
 模型管理页面
-├── 🏢 创始人团队模型配置 (渐变背景高亮)
+├── 🏢 核心角色模型配置 (渐变背景高亮)
 │   ├── CEO卡片 (蓝色主题)
 │   ├── CTO卡片 (紫色主题)
 │   └── 保存按钮
@@ -495,7 +495,7 @@ docs/
 1. **多模型Provider架构** - 统一接口支持50个模型
 2. **自动模型注册** - 确保Agent能连接AI模型
 3. **智能HR算法** - 自动评估Agent绩效
-4. **股份加权投票** - 真实的公司治理模拟
+4. **规则化投票** - 真实的公司治理模拟
 5. **模块化设计** - 易于扩展和维护
 
 ### 经验教训

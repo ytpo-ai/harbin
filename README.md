@@ -10,7 +10,7 @@
 
 ## 🌟 核心特色
 
-- 🏢 **完整的公司架构模拟** - 股权分配、角色体系、部门结构
+- 🏢 **完整的公司架构模拟** - 角色体系、部门结构、协作流程
 - 🤖 **多AI模型集成** - 支持OpenAI、Claude、Gemini、Kimi等主流模型
 - 👥 **智能Agent管理** - 个性化配置、工具权限、绩效评估
 - 💼 **HR管理系统** - 自动绩效评估、团队健康度分析、招聘建议
@@ -19,6 +19,7 @@
 - 🧭 **任务编排与会话中台** - 一句话生成执行计划，支持 Agent/Human 分派与统一 Session 管理
 - 📨 **统一消息中台** - 会议/讨论/编排会话消息统一沉淀到 `messages`，便于模型评测与Agent绩效分析
 - 🧠 **Skill 管理中台** - AgentSkillManager 自动检索技能、给 Agent 提供能力增强建议，并同步 DB+Markdown
+- 📚 **研发智能** - 在主前端内提供 docs 目录浏览、右侧抽屉阅读与文档历史追踪
 
 > 当前状态：`组织管理` 与 `公司治理` 模块前后端功能已下线，后续将按新方案重构。
 
@@ -100,7 +101,7 @@ mongod
 - **团队协作**: 沟通和合作能力
 - **学习能力**: 知识获取和技能提升速度
 
-#### 创始团队
+#### 预置核心角色
 - **Alex Chen (CEO)**: 战略思维专家，95分领导力
 - **Sarah Kim (CTO)**: 技术架构师，95分学习能力
 
@@ -120,6 +121,8 @@ mongod
 | WebSearch | 互联网信息检索 | 10 | Basic |
 | Slack | 团队频道消息发送 | 15 | Intermediate |
 | Gmail | 邮件草稿/发送 | 20 | Intermediate |
+| Code Docs MCP | 基于仓库 docs 盘点核心功能并附证据路径 | 4 | Basic（仅CTO默认可用） |
+| Code Updates MCP | 基于最近提交汇总时间窗口内主要更新 | 4 | Basic（仅CTO默认可用） |
 | Model MCP List Models | 查询系统模型清单 | 3 | Basic |
 | Model MCP Search Latest | 互联网检索最新模型候选 | 8 | Basic |
 | Model MCP Add Model | 模型入库（含去重） | 5 | Admin |
@@ -287,6 +290,8 @@ const result = await session.executeAction({
 - `PUT /mcp/profiles/:agentType` - 创建或更新profile（数据库驱动）
 
 > 说明：MCP 能力配置已改为数据库驱动（`agent_profiles`）。CEO/CTO 在被询问“系统有哪些agents”时，会优先通过内置工具 `agents_mcp_list` 获取实时列表后回答。
+> CTO 在被询问“当前系统实现了哪些核心功能”时，会由后端强制触发 `code-docs-mcp`，基于仓库 docs 生成带证据路径的功能盘点。
+> CTO 在被询问“最近24小时主要更新”时，会由后端强制触发 `code-updates-mcp`，基于 git 提交证据生成更新总结。
 >
 > Agent 类型规范见 `docs/agent_type.md`，前端类型选择来源于 `frontend/src/config/agentType.json`。
 > 当前系统支持：高管/高管助理/技术专家/全栈工程师/运维工程师/数据分析师/产品经理/HR/行政助理/营销专家/人类专属助理/系统内置。
@@ -317,6 +322,12 @@ const result = await session.executeAction({
 
 审计日志 MCP 工具：
 - `POST /human_operation_log_mcp_list/execute` - 查询绑定人类操作日志（仅专属助理）
+
+研发文档 MCP 工具：
+- `POST /code-docs-mcp/execute` - 从仓库 docs 盘点核心功能并返回证据路径（默认仅 CTO）
+- `POST /code-updates-mcp/execute` - 汇总最近时间窗口主要更新并返回提交证据（默认仅 CTO）
+  - 入参支持：`hours`、`limit`、`includeFiles`、`minSeverity(high|medium|low)`
+  - 输出特性：按主题聚合多条提交，生成“变更内容/业务价值/证据文件”摘要
 
 #### 人力资源 (`/api/hr`)
 - `GET /performance/:agentId` - 绩效报告
@@ -371,6 +382,31 @@ const result = await session.executeAction({
 - `POST /tasks/:id/opencode/sync-current` - 同步当前 OpenCode session/project 到任务
 - `POST /projects/:id/opencode/sync-current` - 同步当前 OpenCode project/session 到项目
 
+#### 研发智能 (`/api/engineering-intelligence`)
+- `GET /repositories` - 获取已配置仓库列表
+- `POST /repositories` - 新增可访问仓库 URL（支持 branch）
+- `PUT /repositories/:id` - 更新仓库配置（如 branch）
+- `DELETE /repositories/:id` - 删除仓库配置
+- `POST /repositories/:id/summarize` - 触发文档读取与摘要
+- `GET /repositories/:id/docs/tree` - 获取仓库 docs 目录树
+- `GET /repositories/:id/docs/content?path=docs/...` - 获取文档正文与元信息
+- `GET /repositories/:id/docs/history?path=docs/...&limit=20` - 获取文档更新记录与贡献者统计
+
+说明：`/api/cto-docs/*` 兼容路径已移除，仅保留 `engineering-intelligence` 路径。
+
+### 研发智能运行方式
+
+```bash
+# 启动主系统（含前端）
+npm run dev
+
+# 单独启动研发智能后端
+npm run dev:engineering-intelligence
+```
+
+- 前端入口（主系统内）: `http://localhost:3000/engineering-intelligence`
+- 研发智能后端: `http://localhost:3201/api`
+
 #### 任务编排与 Session 管理 (`/api/orchestration`)
 - `POST /plans/from-prompt` - 通过一句提示词生成可执行计划与任务拆解
 - `GET /plans` - 获取编排计划列表
@@ -393,7 +429,6 @@ const result = await session.executeAction({
 
 ```
 Organization (组织)
-├── ShareDistribution (股权分配)
 ├── AgentRole[] (角色定义)
 ├── AgentEmployee[] (员工记录)
 └── Department[] (部门)
@@ -522,6 +557,10 @@ ANTHROPIC_API_KEY=your_claude_key_here
 GOOGLE_AI_API_KEY=your_gemini_key_here
 MOONSHOT_API_KEY=your_kimi_key_here
 
+# OpenAI 请求稳定性（可选）
+OPENAI_TIMEOUT_MS=60000
+OPENAI_MAX_RETRIES=1
+
 # 可选：当本机无法直连模型服务时使用代理
 AI_PROXY_URL=http://127.0.0.1:7890
 
@@ -534,6 +573,9 @@ FRONTEND_URL=http://localhost:3000
 
 # OpenCode SDK Server
 OPENCODE_SERVER_URL=http://localhost:4096
+
+# Engineering Intelligence
+GITHUB_TOKEN=your_github_token_here
 ```
 
 #### 微服务启动（平滑迁移）
@@ -565,7 +607,7 @@ npm run start:ws:dev
 
 ### 自定义Agent角色
 1. 修改`OrganizationService`中的角色定义
-2. 设置薪资范围和期权分配
+2. 设置薪资范围和职责范围
 3. 配置所需工具和能力
 4. 更新前端角色管理界面
 
