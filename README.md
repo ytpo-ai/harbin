@@ -274,243 +274,22 @@ const result = await session.executeAction({
 
 ## 🌐 API接口
 
-### 核心模块API
+API 已按微服务拆分，详细接口请查看：
 
-#### Agent管理 (`/api/agents`)
-- `GET /` - 获取所有Agent
-- `POST /` - 创建新Agent
-- `PUT /:id` - 更新Agent信息
-- `DELETE /:id` - 删除Agent
-- `POST /:id/execute` - 执行Agent任务
-- `GET /mcp/map` - 获取agents map（角色/工具集/能力集/暴露配置）
-- `GET /mcp` - 获取MCP可见agent列表（支持 `includeHidden=true`）
-- `GET /mcp/:id` - 获取单个agent的MCP能力详情
-- `GET /mcp/profiles` - 获取数据库中的MCP profile列表
-- `GET /mcp/profiles/:agentType` - 获取指定类型profile
-- `PUT /mcp/profiles/:agentType` - 创建或更新profile（数据库驱动）
+- `docs/api/API.md`（API 总览索引）
+- `docs/api/gateway-api.md`
+- `docs/api/agents-api.md`
+- `docs/api/legacy-api.md`
+- `docs/api/engineering-intelligence-api.md`
+- `docs/api/ws-api.md`
 
-> 说明：MCP 能力配置已改为数据库驱动（`agent_profiles`）。CEO/CTO 在被询问“系统有哪些agents”时，会优先通过内置工具 `agents_mcp_list` 获取实时列表后回答。
-> CTO 在被询问“当前系统实现了哪些核心功能”时，会由后端强制触发 `code-docs-mcp`，基于仓库 docs 生成带证据路径的功能盘点。
-> CTO 在被询问“最近24小时主要更新”时，会由后端强制触发 `code-updates-mcp`，基于 git 提交证据生成更新总结。
->
-> Agent 类型规范见 `docs/agent_type.md`，前端类型选择来源于 `frontend/src/config/agentType.json`。
-> 当前系统支持：高管/高管助理/技术专家/全栈工程师/运维工程师/数据分析师/产品经理/HR/行政助理/营销专家/人类专属助理/系统内置。
-
-#### Skill 管理 (`/api/skills`)
-- `GET /` - 获取技能库（支持按 `status`、`category` 过滤）
-- `POST /` - 创建技能
-- `PUT /:id` - 更新技能
-- `DELETE /:id` - 删除技能
-- `POST /assign` - 为指定 Agent 绑定技能
-- `GET /agents/:agentId` - 查询 Agent 已绑定技能
-- `POST /manager/discover` - AgentSkillManager 互联网检索并入库
-- `POST /manager/suggest/:agentId` - AgentSkillManager 生成技能增强建议
-- `GET /suggestions/agents/:agentId` - 查询某 Agent 的建议记录
-- `PUT /suggestions/:id` - 审核建议（accepted/rejected/applied）
-- `POST /docs/rebuild` - 从数据库重建 `docs/skills` 文档
-
-#### 工具管理 (`/api/tools`)
-- `GET /` - 获取所有工具
-- `POST /:id/execute` - 执行工具
-- `GET /executions/history` - 执行历史
-- `GET /executions/stats` - 执行统计
-
-模型管理 MCP 工具：
-- `POST /model_mcp_list_models/execute` - 查询系统当前模型列表
-- `POST /model_mcp_search_latest/execute` - 联网检索最新模型候选
-- `POST /model_mcp_add_model/execute` - 新增模型到系统（自动判重）
-
-审计日志 MCP 工具：
-- `POST /human_operation_log_mcp_list/execute` - 查询绑定人类操作日志（仅专属助理）
-
-研发文档 MCP 工具：
-- `POST /code-docs-mcp/execute` - 从仓库 docs 盘点核心功能并返回证据路径（默认仅 CTO）
-- `POST /code-updates-mcp/execute` - 汇总最近时间窗口主要更新并返回提交证据（默认仅 CTO）
-  - 入参支持：`hours`、`limit`、`includeFiles`、`minSeverity(high|medium|low)`
-  - 输出特性：按主题聚合多条提交，生成“变更内容/业务价值/证据文件”摘要
-
-#### 人力资源 (`/api/hr`)
-- `GET /performance/:agentId` - 绩效报告
-- `GET /low-performers` - 低绩效员工
-- `GET /hiring-recommendations` - 招聘建议
-- `GET /team-health` - 团队健康度
-
-#### 系统操作日志 (`/api/operation-logs`)
-- `GET /` - 人类用户查询全员系统操作日志（支持时间范围/动作/资源/状态筛选与分页）
-
-#### 会议室系统 (`/api/meetings`)
-- `POST /` - 创建会议
-- `POST /:id/start` - 开始会议
-- `POST /:id/end` - 结束会议
-- `POST /:id/join` - 加入会议
-- `POST /:id/leave` - 离开会议
-- `POST /:id/messages` - 发送消息
-- `POST /:id/invite` - 邀请Agent
-- `PUT /:id/title` - 修改会议名称
-- `POST /:id/participants` - 添加参会人员
-- `DELETE /:id/participants/:participantType/:participantId` - 移除参会人员
-- `DELETE /:id` - 删除会议（支持未开始/已结束/已归档）
-- `GET /` - 获取会议列表
-- `GET /stats` - 获取统计信息
-
-会议特性补充：
-- Agent 管理页支持一键发起 1 对 1 聊天：优先复用已有会话，不存在时自动创建并直达。
-- 人类员工/高管需先绑定专属助理 Agent，未绑定账号不可发起或参与会议。
-- 人类发起会议时，主持人会自动切换为其专属助理（人类本人不加入会议参与者）。
-- 人类在会议输入消息时，系统会自动以其专属助理身份发送。
-- 人类登录后若未绑定专属助理，会收到阻断式引导；点击“创建专属助理”可一键创建并绑定。
-- 未开始会议支持直接删除。
-- 会议列表中的任意会议支持单独新开页面（`/meetings/:meetingId`，不显示全局菜单和会议列表，保留聊天区与会议操作区）。
-- 聊天输入支持 `@成员` 提示下拉，可键盘选择并插入 mention。
-- 会议详情新增右侧操作区，可修改会议名称与管理参会人员。
-- 当 1 对 1 会议新增非系统内置（非隐形）Agent 扩展为多人讨论时，会议名称会自动调整为多人讨论语义。
-- 在会议中输入“搜索最新openai模型”时，会优先触发 `Model Management Agent` 联网搜索。
-- 该 Agent 会先返回候选模型列表，并询问是否添加到系统；确认前不写入。
-- 在会议中询问“现在系统里有哪些模型”时，会优先触发 `Model Management Agent` 返回实时模型清单。
-- 专属助理不会主动发言，仅在其对应人类显式 `@` 助理时响应。
-
-#### 研发管理 (`/api/rd-management`)
-- `GET /opencode/current` - 获取当前 OpenCode session 和 project 上下文
-- `GET /opencode/projects` - 获取 OpenCode 已有项目列表
-- `POST /opencode/projects/import` - 导入 OpenCode 项目（含 sessions/events 快照）到研发管理
-- `GET /opencode/sessions` - 获取 OpenCode 已有 session 列表
-- `GET /opencode/sessions/:id` - 获取 session 详情
-- `GET /opencode/sessions/:id/messages` - 获取 session 消息时间线
-- `POST /opencode/sessions` - 创建新的 OpenCode session
-- `POST /opencode/sessions/:id/prompt` - 向指定 session 发送消息
-- `GET /opencode/events?token=<JWT>` - 订阅 OpenCode 实时事件（SSE）
-- `POST /tasks/:id/opencode/sync-current` - 同步当前 OpenCode session/project 到任务
-- `POST /projects/:id/opencode/sync-current` - 同步当前 OpenCode project/session 到项目
-
-#### 研发智能 (`/api/engineering-intelligence`)
-- `GET /repositories` - 获取已配置仓库列表
-- `POST /repositories` - 新增可访问仓库 URL（支持 branch）
-- `PUT /repositories/:id` - 更新仓库配置（如 branch）
-- `DELETE /repositories/:id` - 删除仓库配置
-- `POST /repositories/:id/summarize` - 触发文档读取与摘要
-- `GET /repositories/:id/docs/tree` - 获取仓库 docs 目录树
-- `GET /repositories/:id/docs/content?path=docs/...` - 获取文档正文与元信息
-- `GET /repositories/:id/docs/history?path=docs/...&limit=20` - 获取文档更新记录与贡献者统计
-
-说明：`/api/cto-docs/*` 兼容路径已移除，仅保留 `engineering-intelligence` 路径。
-
-### 研发智能运行方式
-
-```bash
-# 启动主系统（含前端）
-npm run dev
-
-# 单独启动研发智能后端
-npm run dev:engineering-intelligence
-```
-
-- 前端入口（主系统内）: `http://localhost:3000/engineering-intelligence`
-- 研发智能后端: `http://localhost:3201/api`
-
-#### 任务编排与 Session 管理 (`/api/orchestration`)
-- `POST /plans/from-prompt` - 通过一句提示词生成可执行计划与任务拆解
-- `GET /plans` - 获取编排计划列表
-- `GET /plans/:id` - 获取计划详情（含任务）
-- `POST /plans/:id/run` - 执行计划（支持串行/并行）
-- `POST /tasks/:id/reassign` - 任务改派（Agent/员工/未分配）
-- `POST /tasks/:id/complete-human` - 人工任务完成回填
-- `POST /sessions` - 创建会话
-- `GET /sessions` - 查询会话（可按 ownerType/status 过滤）
-- `POST /sessions/:id/messages` - 向会话追加消息
-- `POST /sessions/:id/archive` - 归档会话
-- `POST /sessions/:id/resume` - 恢复会话
-
-#### 统一消息 (`/api/messages`)
-- `GET /` - 按 `sceneType + sceneId` 分页查询消息（支持 `limit`、`before`）
-
-## 📊 数据模型
-
-### 核心实体关系
-
-```
-Organization (组织)
-├── AgentRole[] (角色定义)
-├── AgentEmployee[] (员工记录)
-└── Department[] (部门)
-
-Agent (AI代理)
-├── AIModel (模型配置)
-├── Tool[] (工具权限)
-├── Permission[] (权限)
-└── Personality (个性特征)
-
-Proposal (提案)
-├── Vote[] (投票记录)
-└── ExecutionHistory (执行历史)
-
-Task (任务)
-├── Discussion (任务讨论)
-└── ToolExecution[] (工具执行)
-
-Meeting (会议)
-├── Participant[] (参与者)
-└── Summary (会议总结)
-
-Messages (统一消息)
-├── sceneType + sceneId (场景定位)
-├── senderType + senderId (发送者定位)
-└── metadata/model/tokens/latency/cost (评测与分析字段)
-```
-
-### 关键数据字段
-
-#### Agent个性特征
-```typescript
-interface Personality {
-  workEthic: number;      // 工作伦理 0-100
-  creativity: number;     // 创造力 0-100
-  leadership: number;     // 领导力 0-100
-  teamwork: number;       // 团队协作 0-100
-}
-```
-
-#### 绩效KPI
-```typescript
-interface KPIs {
-  taskCompletionRate: number;  // 任务完成率
-  codeQuality: number;        // 代码质量
-  collaboration: number;      // 团队协作
-  innovation: number;         // 创新能力
-  efficiency: number;         // 工作效率
-}
-```
 
 ## 🛠️ 开发指南
 
-### 项目结构
-```
-ai-agent-team-platform/
-├── backend/                 # Nest.js 后端服务
-│   ├── src/
-│   │   ├── modules/        # 业务模块
-│   │   │   ├── agents/     # Agent管理
-│   │   │   ├── tools/      # 工具系统
-│   │   │   ├── organization/ # 组织管理
-│   │   │   ├── hr/         # 人力资源
-│   │   │   ├── governance/ # 公司治理
-│   │   │   ├── tasks/      # 任务管理
-│   │   │   └── chat/       # 讨论协作
-│   │   ├── shared/         # 共享组件
-│   │   │   └── schemas/   # 数据模型
-│   │   └── config/         # 配置文件
-│   └── package.json
-├── frontend/               # React 前端应用
-│   ├── src/
-│   │   ├── components/     # UI组件
-│   │   ├── pages/         # 页面组件
-│   │   ├── services/      # API服务
-│   │   ├── stores/        # 状态管理
-│   │   ├── types/         # 类型定义
-│   │   └── utils/         # 工具函数
-│   └── package.json
-├── shared/                # 共享类型
-└── docs/                 # 项目文档
-```
+### 项目架构
+
+- 架构总览与当前微服务边界请参考：`docs/architecture/ARCHITECTURE.md`
+- 微服务迁移细节与路由分流请参考：`docs/architecture/MICROSERVICES_MIGRATION.md`
 
 ### 开发命令
 ```bash
@@ -531,52 +310,6 @@ npm run test
 ```
 
 ### 环境变量配置
-
-#### 后端配置 (.env.development)
-```env
-NODE_ENV=development
-PORT=3001
-MONGODB_URI=mongodb://localhost:27017/ai-agent-team
-
-# 微服务端口
-GATEWAY_PORT=3100
-AGENTS_PORT=3002
-WS_PORT=3003
-
-# 服务路由
-AGENTS_SERVICE_URL=http://localhost:3002
-LEGACY_SERVICE_URL=http://localhost:3001
-INTERNAL_CONTEXT_SECRET=replace_with_strong_internal_secret
-
-# Redis
-REDIS_URL=redis://127.0.0.1:6379
-
-# AI模型API密钥
-OPENAI_API_KEY=your_openai_key_here
-ANTHROPIC_API_KEY=your_claude_key_here
-GOOGLE_AI_API_KEY=your_gemini_key_here
-MOONSHOT_API_KEY=your_kimi_key_here
-
-# OpenAI 请求稳定性（可选）
-OPENAI_TIMEOUT_MS=60000
-OPENAI_MAX_RETRIES=1
-
-# 可选：当本机无法直连模型服务时使用代理
-AI_PROXY_URL=http://127.0.0.1:7890
-
-# JWT配置
-JWT_SECRET=your_development_jwt_secret_here
-JWT_EXPIRES_IN=7d
-
-# 前端地址
-FRONTEND_URL=http://localhost:3000
-
-# OpenCode SDK Server
-OPENCODE_SERVER_URL=http://localhost:4096
-
-# Engineering Intelligence
-GITHUB_TOKEN=your_github_token_here
-```
 
 #### 微服务启动（平滑迁移）
 
@@ -653,8 +386,3 @@ MIT License
 
 **🚀 开始你的AI创业之旅！**
 
-
-$ lsof -ti :3001 | xargs kill -9 2>/dev/null
-
-
-$ (lsof -ti :3001; lsof -ti :3002; lsof -ti :3003; lsof -ti :3100) 2>/dev/null | sort -u | xargs -r kill; sleep 2; nohup npm run start:dev > /tmp/legacy-app.log 2>&1 & nohup npm run start:agents:dev > /tmp/agents-app.log 2>&1 & nohup npm run start:gateway:dev > /tmp/gateway-app.log 2>&1 & nohup npm run start:ws:dev > /tmp/ws-app.log 2>&1 & sleep 8; lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 | grep LISTEN
