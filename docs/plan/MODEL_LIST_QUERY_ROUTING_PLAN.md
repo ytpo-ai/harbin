@@ -1,5 +1,7 @@
 # 会议模型列表查询修复计划
 
+> 状态：已并入统一主计划 `docs/plan/MEETING_CAPABILITY_MASTER_PLAN.md`，本文件保留历史细节。
+
 ## 需求理解
 
 - 在会议中询问“现在系统里有哪些模型”时，`Model Management Agent` 当前错误返回了 Agent 列表。

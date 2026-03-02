@@ -4,6 +4,7 @@
   "description": "AI Agent Team Platform Backend",
   "main": "dist/main.js",
   "scripts": {
+    "reload": "(lsof -ti :3001; lsof -ti :3002; lsof -ti :3003; lsof -ti :3100) 2>/dev/null | sort -u | xargs -r kill; sleep 2; nohup npm run start:dev > /tmp/legacy-app.log 2>&1 & nohup npm run start:agents:dev > /tmp/agents-app.log 2>&1 & nohup npm run start:gateway:dev > /tmp/gateway-app.log 2>&1 & nohup npm run start:ws:dev > /tmp/ws-app.log 2>&1 & sleep 8; lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 | grep LISTEN",
     "build": "nest build legacy",
     "build:gateway": "nest build gateway",
     "build:agents": "nest build agents",

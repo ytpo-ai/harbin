@@ -1,5 +1,7 @@
 # 会议场景触发模型管理 Agent 计划
 
+> 状态：已并入统一主计划 `docs/plan/MEETING_CAPABILITY_MASTER_PLAN.md`，本文件保留历史细节。
+
 ## 需求理解
 
 - 在会议中，当用户输入“搜索最新openai模型”等指令时，`Model Management Agent` 需要联网搜索并返回结果。

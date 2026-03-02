@@ -1,5 +1,7 @@
 # 会议参会人上下文同步开发总结
 
+> 状态：已并入统一主总结 `docs/development/MEETING_CAPABILITY_MASTER_PLAN.md`，本文件保留历史细节。
+
 ## 目标
 
 在会议场景中实现参会人信息与模型上下文的自动同步：

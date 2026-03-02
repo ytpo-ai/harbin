@@ -1,5 +1,7 @@
 # 会议/聊天升级优化开发总结
 
+> 状态：已并入统一主总结 `docs/development/MEETING_CAPABILITY_MASTER_PLAN.md`，本文件保留历史细节。
+
 ## 背景与目标
 
 本次开发围绕会议/聊天体验进行了连续迭代，目标包括：

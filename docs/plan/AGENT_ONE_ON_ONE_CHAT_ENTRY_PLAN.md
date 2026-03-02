@@ -1,5 +1,7 @@
 # Agent 一对一聊天入口计划
 
+> 状态：已并入统一主计划 `docs/plan/MEETING_CAPABILITY_MASTER_PLAN.md`（会议相关部分），本文件保留历史细节。
+
 ## 需求目标
 
 支持会议兼容 `1 对 1` 模式，并在 Agent 入口增加“开始聊天”按钮，点击后直接进入与该 Agent 的聊天会话。

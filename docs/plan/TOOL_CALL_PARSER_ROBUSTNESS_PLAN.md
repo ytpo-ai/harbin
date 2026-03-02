@@ -1,5 +1,7 @@
 # 工具调用解析鲁棒性修复计划
 
+> 状态：已并入统一主计划 `docs/plan/MEETING_CAPABILITY_MASTER_PLAN.md`（会议相关部分），本文件保留历史细节。
+
 ## 需求理解
 
 - 当前会议场景中，`Model Management Agent` 可能输出不完整的工具调用标记（仅 `<tool_call>` 无 `</tool_call>`）。
