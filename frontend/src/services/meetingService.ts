@@ -128,6 +128,13 @@ export interface MeetingStats {
   totalMessages: number;
 }
 
+export interface MeetingAgentState {
+  agentId: string;
+  state: 'thinking' | 'idle';
+  updatedAt: string;
+  reason?: string;
+}
+
 interface OneToOneMeetingParams {
   employeeId: string;
   employeeName: string;
@@ -209,6 +216,11 @@ class MeetingService {
 
   async getMeeting(id: string): Promise<Meeting> {
     const response = await api.get(`/meetings/${id}`);
+    return response.data.data;
+  }
+
+  async getMeetingAgentStates(id: string): Promise<MeetingAgentState[]> {
+    const response = await api.get(`/meetings/${id}/agent-states`);
     return response.data.data;
   }
 

@@ -11,10 +11,20 @@ import { v4 as uuidv4 } from 'uuid';
 import { MessagesService } from '../messages/messages.service';
 
 export interface MeetingEvent {
-  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed';
+  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed' | 'agent_state_changed';
   meetingId: string;
   data: any;
   timestamp: Date;
+}
+
+type MeetingAgentState = 'thinking' | 'idle';
+
+interface MeetingAgentStatePayload {
+  agentId: string;
+  state: MeetingAgentState;
+  updatedAt: string;
+  reason?: string;
+  token?: string;
 }
 
 export type MeetingSpeakingMode = 'free' | 'ordered';
@@ -67,6 +77,8 @@ export class MeetingService {
   private eventListeners = new Map<string, ((event: MeetingEvent) => void)[]>();
   private readonly modelManagementAgentName = 'model management agent';
   private readonly modelManagementAgentRole = 'model-management-specialist';
+  private readonly meetingAgentStateKeyPrefix = 'meeting:agent-state';
+  private readonly meetingAgentStateTtlSeconds = 90;
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
@@ -81,6 +93,72 @@ export class MeetingService {
       return 'ordered';
     }
     return 'free';
+  }
+
+  private buildMeetingAgentStateKey(meetingId: string, agentId: string): string {
+    return `${this.meetingAgentStateKeyPrefix}:${meetingId}:${agentId}`;
+  }
+
+  private buildMeetingAgentStatePattern(meetingId: string): string {
+    return `${this.meetingAgentStateKeyPrefix}:${meetingId}:*`;
+  }
+
+  private async setAgentState(
+    meetingId: string,
+    agentId: string,
+    state: MeetingAgentState,
+    options?: { reason?: string; token?: string },
+  ): Promise<void> {
+    const updatedAt = new Date().toISOString();
+    const payload: MeetingAgentStatePayload = {
+      agentId,
+      state,
+      updatedAt,
+      reason: options?.reason,
+      token: options?.token,
+    };
+    const key = this.buildMeetingAgentStateKey(meetingId, agentId);
+
+    if (state === 'thinking') {
+      await this.redisService.set(key, JSON.stringify(payload), this.meetingAgentStateTtlSeconds);
+    } else {
+      await this.redisService.del(key);
+    }
+
+    this.emitEvent(meetingId, {
+      type: 'agent_state_changed',
+      meetingId,
+      data: payload,
+      timestamp: new Date(),
+    });
+  }
+
+  private async clearAgentThinking(
+    meetingId: string,
+    agentId: string,
+    options?: { reason?: string; token?: string },
+  ): Promise<void> {
+    const key = this.buildMeetingAgentStateKey(meetingId, agentId);
+    if (options?.token) {
+      const raw = await this.redisService.get(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw) as MeetingAgentStatePayload;
+          if (parsed.token && parsed.token !== options.token) {
+            return;
+          }
+        } catch {
+          // ignore parse failures and continue clearing stale key
+        }
+      }
+    }
+
+    await this.setAgentState(meetingId, agentId, 'idle', { reason: options?.reason });
+  }
+
+  private async clearAllMeetingAgentThinking(meetingId: string, reason: string): Promise<void> {
+    const states = await this.getMeetingAgentStates(meetingId);
+    await Promise.all(states.map((item) => this.setAgentState(meetingId, item.agentId, 'idle', { reason })));
   }
 
   private async getEmployeeOrThrow(employeeId: string) {
@@ -808,6 +886,7 @@ export class MeetingService {
     });
 
     await meeting.save();
+    await this.clearAllMeetingAgentThinking(meetingId, 'meeting_ended');
     await this.addSystemMessage(meetingId, `会议 "${meeting.title}" 已结束。`);
     await this.generateMeetingSummary(meetingId);
 
@@ -836,6 +915,7 @@ export class MeetingService {
 
     meeting.status = MeetingStatus.PAUSED;
     await meeting.save();
+    await this.clearAllMeetingAgentThinking(meetingId, 'meeting_paused');
 
     this.emitEvent(meetingId, {
       type: 'status_changed',
@@ -945,6 +1025,7 @@ export class MeetingService {
 
     meeting.status = MeetingStatus.ARCHIVED;
     await meeting.save();
+    await this.clearAllMeetingAgentThinking(meetingId, 'meeting_archived');
 
     this.logger.log(`Meeting ${meetingId} archived`);
     return meeting;
@@ -967,6 +1048,7 @@ export class MeetingService {
       throw new ConflictException('Only pending, ended, or archived meetings can be deleted');
     }
 
+    await this.clearAllMeetingAgentThinking(meetingId, 'meeting_deleted');
     await this.meetingModel.deleteOne({ id: meetingId }).exec();
     this.logger.log(`Meeting ${meetingId} deleted`);
   }
@@ -1356,6 +1438,36 @@ export class MeetingService {
     return this.meetingModel.findOne({ id: meetingId }).exec();
   }
 
+  async getMeetingAgentStates(meetingId: string): Promise<MeetingAgentStatePayload[]> {
+    const meeting = await this.getMeeting(meetingId);
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    const keys = await this.redisService.keys(this.buildMeetingAgentStatePattern(meetingId));
+    if (keys.length === 0) {
+      return [];
+    }
+
+    const states = await Promise.all(
+      keys.map(async (key) => {
+        const raw = await this.redisService.get(key);
+        if (!raw) {
+          return null;
+        }
+        try {
+          return JSON.parse(raw) as MeetingAgentStatePayload;
+        } catch {
+          return null;
+        }
+      }),
+    );
+
+    return states
+      .filter((item): item is MeetingAgentStatePayload => Boolean(item && item.agentId && item.state === 'thinking'))
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
+  }
+
   /**
    * 获取所有会议
    */
@@ -1506,12 +1618,25 @@ export class MeetingService {
 
     // 每次人类发言后，常规Agent按原策略响应；专属助理仅在主人明确 @ 时响应。
     const responders = [...finalResponders].sort(() => 0.5 - Math.random());
+    const responderTasks = responders.map((participant) => ({
+      participant,
+      token: uuidv4(),
+    }));
 
-    for (let i = 0; i < responders.length; i += 1) {
-      const p = responders[i];
+    await Promise.all(
+      responderTasks.map(({ participant, token }) =>
+        this.setAgentState(meetingId, participant.participantId, 'thinking', {
+          reason: 'awaiting_response',
+          token,
+        }),
+      ),
+    );
+
+    for (let i = 0; i < responderTasks.length; i += 1) {
+      const current = responderTasks[i];
       const delay = 800 + i * 700 + Math.random() * 500;
       setTimeout(async () => {
-        await this.generateAgentResponse(meetingId, p.participantId, triggerMessage);
+        await this.generateAgentResponse(meetingId, current.participant.participantId, triggerMessage, current.token);
       }, delay);
     }
   }
@@ -1522,7 +1647,8 @@ export class MeetingService {
   private async generateAgentResponse(
     meetingId: string, 
     agentId: string, 
-    triggerMessage: MeetingMessage
+    triggerMessage: MeetingMessage,
+    stateToken: string,
   ): Promise<void> {
     try {
       const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
@@ -1575,6 +1701,8 @@ export class MeetingService {
 
     } catch (error) {
       this.logger.error(`Failed to generate response for agent ${agentId}: ${error.message}`);
+    } finally {
+      await this.clearAgentThinking(meetingId, agentId, { reason: 'response_finished', token: stateToken });
     }
   }
 

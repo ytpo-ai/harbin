@@ -55,6 +55,15 @@ export class MeetingController {
     };
   }
 
+  @Get(':id/agent-states')
+  async getMeetingAgentStates(@Param('id') id: string) {
+    const states = await this.meetingService.getMeetingAgentStates(id);
+    return {
+      success: true,
+      data: states,
+    };
+  }
+
   @Get(':id')
   async getMeeting(@Param('id') id: string) {
     const meeting = await this.meetingService.getMeeting(id);

@@ -38,7 +38,7 @@ const MEETING_TYPES = [
 ];
 
 interface MeetingRealtimeEvent {
-  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed';
+  type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed' | 'agent_state_changed';
   meetingId: string;
   data: any;
   timestamp: string;
@@ -63,7 +63,10 @@ const Meetings: React.FC = () => {
   const [isComposing, setIsComposing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [selectedCandidateKey, setSelectedCandidateKey] = useState('');
-  const [isOperationsCollapsed, setIsOperationsCollapsed] = useState(false);
+  const [isOperationsCollapsed, setIsOperationsCollapsed] = useState(true);
+  const [messageHistoryIndex, setMessageHistoryIndex] = useState<number | null>(null);
+  const [messageHistoryDraft, setMessageHistoryDraft] = useState('');
+  const [thinkingAgentIds, setThinkingAgentIds] = useState<string[]>([]);
   const [pinnedMeetingId, setPinnedMeetingId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -108,6 +111,14 @@ const Meetings: React.FC = () => {
       enabled: Boolean(effectiveMeetingId),
       staleTime: 0,
       retry: 1,
+    },
+  );
+  const { data: meetingAgentStates } = useQuery(
+    ['meeting-agent-states', selectedMeeting?.id],
+    () => meetingService.getMeetingAgentStates(selectedMeeting!.id),
+    {
+      enabled: Boolean(selectedMeeting?.id && selectedMeeting.status === MeetingStatus.ACTIVE),
+      refetchInterval: 5000,
     },
   );
 
@@ -172,6 +183,24 @@ const Meetings: React.FC = () => {
       return candidate.name.toLowerCase().includes(normalizedQuery) || candidate.id.toLowerCase().includes(normalizedQuery);
     });
   }, [mentionCandidates, mentionQuery, mentionStart]);
+
+  const sentMessageHistory = useMemo(() => {
+    if (!selectedMeeting || !currentUser?.id) {
+      return [];
+    }
+
+    return (selectedMeeting.messages || [])
+      .filter((message) => {
+        if (message.senderType === 'employee' && message.senderId === currentUser.id) {
+          return true;
+        }
+
+        const metadata = (message as any).metadata;
+        return message.senderType === 'agent' && metadata?.proxyForEmployeeId === currentUser.id;
+      })
+      .map((message) => message.content?.trim() || '')
+      .filter((content) => Boolean(content));
+  }, [currentUser?.id, selectedMeeting]);
 
   const managementCandidates = useMemo(() => {
     if (!selectedMeeting) {
@@ -312,10 +341,6 @@ const Meetings: React.FC = () => {
     }
   }, [filteredMentionCandidates.length, mentionActiveIndex, mentionStart]);
 
-  useEffect(() => {
-    setIsOperationsCollapsed(isChatOnlyMode);
-  }, [isChatOnlyMode]);
-  
   const createMutation = useMutation(meetingService.createMeeting, {
     onSuccess: (data) => {
       queryClient.invalidateQueries('meetings');
@@ -465,6 +490,8 @@ const Meetings: React.FC = () => {
     {
       onSuccess: (message) => {
         setNewMessage('');
+        setMessageHistoryIndex(null);
+        setMessageHistoryDraft('');
         // Update selectedMeeting with the new message
         if (selectedMeeting) {
           setSelectedMeeting({
@@ -500,6 +527,30 @@ const Meetings: React.FC = () => {
     }
   }, [selectedMeeting?.messages]);
 
+  useEffect(() => {
+    setMessageHistoryIndex(null);
+    setMessageHistoryDraft('');
+    setThinkingAgentIds([]);
+  }, [selectedMeeting?.id]);
+
+  useEffect(() => {
+    if (selectedMeeting?.status !== MeetingStatus.ACTIVE) {
+      setThinkingAgentIds([]);
+    }
+  }, [selectedMeeting?.status]);
+
+  useEffect(() => {
+    if (!meetingAgentStates) {
+      return;
+    }
+
+    setThinkingAgentIds(
+      meetingAgentStates
+        .filter((item) => item.state === 'thinking')
+        .map((item) => item.agentId),
+    );
+  }, [meetingAgentStates]);
+
   // WS实时事件驱动更新
   useEffect(() => {
     if (!selectedMeeting?.id) return;
@@ -528,6 +579,19 @@ const Meetings: React.FC = () => {
             messages: [...existing, event.data],
             messageCount: (current.messageCount || 0) + 1,
           };
+        });
+        return;
+      }
+
+      if (event.type === 'agent_state_changed' && event.data?.agentId) {
+        setThinkingAgentIds((current) => {
+          const next = new Set(current);
+          if (event.data.state === 'thinking') {
+            next.add(event.data.agentId);
+          } else {
+            next.delete(event.data.agentId);
+          }
+          return Array.from(next);
         });
         return;
       }
@@ -1020,6 +1084,10 @@ const Meetings: React.FC = () => {
                     const legacyParticipant = participant as any;
                     const participantId = participant.participantId || legacyParticipant.agentId || 'unknown';
                     const participantName = getParticipantDisplayName(participantId, participant.participantType, participant);
+                    const isAgentThinking =
+                      participant.participantType === 'agent' &&
+                      participant.isPresent &&
+                      thinkingAgentIds.includes(participantId);
                     return (
                       <div
                         key={participantId}
@@ -1027,10 +1095,16 @@ const Meetings: React.FC = () => {
                           participant.isPresent 
                             ? 'bg-green-500 text-white border-green-500' 
                             : 'bg-gray-200 text-gray-600 border-gray-300'
-                        }`}
-                        title={`${participantName} ${participant.isPresent ? '(在线)' : '(离线)'}`}
+                        } ${isAgentThinking ? 'ring-2 ring-amber-300 shadow-sm shadow-amber-100 animate-pulse relative' : ''}`}
+                        title={`${participantName} ${participant.isPresent ? '(在线)' : '(离线)'}${isAgentThinking ? ' (思考中)' : ''}`}
                       >
                         {participantName.charAt(0).toUpperCase()}
+                        {isAgentThinking && (
+                          <>
+                            <span className="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-amber-400 animate-ping"></span>
+                            <span className="absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-amber-500 border border-white"></span>
+                          </>
+                        )}
                       </div>
                     );
                   })}
@@ -1196,6 +1270,10 @@ const Meetings: React.FC = () => {
                               ref={messageInputRef}
                               value={newMessage}
                               onChange={(event) => {
+                                if (messageHistoryIndex !== null) {
+                                  setMessageHistoryIndex(null);
+                                  setMessageHistoryDraft('');
+                                }
                                 setNewMessage(event.target.value);
                                 if (!isComposing) {
                                   updateMentionState(event.target.value, event.target.selectionStart);
@@ -1234,6 +1312,63 @@ const Meetings: React.FC = () => {
                                     resetMention();
                                     return;
                                   }
+                                }
+
+                                if (event.key === 'ArrowUp' && sentMessageHistory.length > 0) {
+                                  event.preventDefault();
+                                  const nextIndex = messageHistoryIndex === null
+                                    ? sentMessageHistory.length - 1
+                                    : Math.max(messageHistoryIndex - 1, 0);
+                                  if (messageHistoryIndex === null) {
+                                    setMessageHistoryDraft(newMessage);
+                                  }
+                                  setMessageHistoryIndex(nextIndex);
+                                  const nextContent = sentMessageHistory[nextIndex] || '';
+                                  setNewMessage(nextContent);
+                                  resetMention();
+                                  requestAnimationFrame(() => {
+                                    const input = messageInputRef.current;
+                                    if (!input) {
+                                      return;
+                                    }
+                                    input.focus();
+                                    input.setSelectionRange(nextContent.length, nextContent.length);
+                                  });
+                                  return;
+                                }
+
+                                if (event.key === 'ArrowDown' && messageHistoryIndex !== null) {
+                                  event.preventDefault();
+                                  if (messageHistoryIndex < sentMessageHistory.length - 1) {
+                                    const nextIndex = messageHistoryIndex + 1;
+                                    const nextContent = sentMessageHistory[nextIndex] || '';
+                                    setMessageHistoryIndex(nextIndex);
+                                    setNewMessage(nextContent);
+                                    resetMention();
+                                    requestAnimationFrame(() => {
+                                      const input = messageInputRef.current;
+                                      if (!input) {
+                                        return;
+                                      }
+                                      input.focus();
+                                      input.setSelectionRange(nextContent.length, nextContent.length);
+                                    });
+                                    return;
+                                  }
+
+                                  setMessageHistoryIndex(null);
+                                  setNewMessage(messageHistoryDraft);
+                                  setMessageHistoryDraft('');
+                                  resetMention();
+                                  requestAnimationFrame(() => {
+                                    const input = messageInputRef.current;
+                                    if (!input) {
+                                      return;
+                                    }
+                                    input.focus();
+                                    input.setSelectionRange(messageHistoryDraft.length, messageHistoryDraft.length);
+                                  });
+                                  return;
                                 }
 
                                 if (event.key === 'Enter' && !event.shiftKey && newMessage.trim()) {
