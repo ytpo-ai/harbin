@@ -189,6 +189,13 @@ export class RuntimeOrchestratorService {
   }
 
   async pauseRun(runId: string, reason?: string): Promise<void> {
+    await this.pauseRunWithActor(runId, { reason });
+  }
+
+  async pauseRunWithActor(
+    runId: string,
+    actor?: { actorId?: string; actorType?: 'employee' | 'system' | 'agent'; reason?: string },
+  ): Promise<void> {
     const run = await this.persistence.getRun(runId);
     if (!run) {
       throw new Error(`Runtime run not found: ${runId}`);
@@ -210,12 +217,21 @@ export class RuntimeOrchestratorService {
       sequence,
       traceId: `trace-${uuidv4()}`,
       payload: {
-        reason: reason || 'paused_by_api',
+        reason: actor?.reason || 'paused_by_api',
+        actorId: actor?.actorId || 'system',
+        actorType: actor?.actorType || 'system',
       },
     });
   }
 
   async resumeRun(runId: string, reason?: string): Promise<void> {
+    await this.resumeRunWithActor(runId, { reason });
+  }
+
+  async resumeRunWithActor(
+    runId: string,
+    actor?: { actorId?: string; actorType?: 'employee' | 'system' | 'agent'; reason?: string },
+  ): Promise<void> {
     const run = await this.persistence.getRun(runId);
     if (!run) {
       throw new Error(`Runtime run not found: ${runId}`);
@@ -237,12 +253,21 @@ export class RuntimeOrchestratorService {
       sequence,
       traceId: `trace-${uuidv4()}`,
       payload: {
-        reason: reason || 'resumed_by_api',
+        reason: actor?.reason || 'resumed_by_api',
+        actorId: actor?.actorId || 'system',
+        actorType: actor?.actorType || 'system',
       },
     });
   }
 
   async cancelRun(runId: string, reason?: string): Promise<void> {
+    await this.cancelRunWithActor(runId, { reason });
+  }
+
+  async cancelRunWithActor(
+    runId: string,
+    actor?: { actorId?: string; actorType?: 'employee' | 'system' | 'agent'; reason?: string },
+  ): Promise<void> {
     const run = await this.persistence.getRun(runId);
     if (!run) {
       throw new Error(`Runtime run not found: ${runId}`);
@@ -254,7 +279,7 @@ export class RuntimeOrchestratorService {
     await this.persistence.updateRun(runId, {
       status: 'cancelled',
       finishedAt: new Date(),
-      error: reason || 'cancelled_by_api',
+      error: actor?.reason || 'cancelled_by_api',
     });
 
     const sequence = await this.persistence.incrementRunStep(runId);
@@ -268,13 +293,29 @@ export class RuntimeOrchestratorService {
       sequence,
       traceId: `trace-${uuidv4()}`,
       payload: {
-        reason: reason || 'cancelled_by_api',
+        reason: actor?.reason || 'cancelled_by_api',
+        actorId: actor?.actorId || 'system',
+        actorType: actor?.actorType || 'system',
       },
     });
   }
 
-  async replayRun(runId: string): Promise<number> {
-    const records = await this.persistence.findEventsByRun(runId, 500);
+  async replayRun(
+    runId: string,
+    options?: {
+      eventTypes?: string[];
+      fromSequence?: number;
+      toSequence?: number;
+      channel?: string;
+      limit?: number;
+    },
+  ): Promise<number> {
+    const records = await this.persistence.findEventsByRun(runId, {
+      limit: options?.limit || 500,
+      eventTypes: options?.eventTypes,
+      fromSequence: options?.fromSequence,
+      toSequence: options?.toSequence,
+    });
     let dispatched = 0;
     for (const record of records) {
       const event: RuntimeEvent = {
@@ -293,7 +334,10 @@ export class RuntimeOrchestratorService {
         traceId: (record.payload?.traceId as string) || `trace-replay-${record.eventId}`,
         payload: record.payload || {},
       };
-      await this.hookDispatcher.dispatch(event);
+      await this.hookDispatcher.dispatch(event, {
+        channel: options?.channel,
+        updateOutboxStatus: false,
+      });
       dispatched += 1;
     }
     return dispatched;

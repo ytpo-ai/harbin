@@ -27,18 +27,23 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async dispatch(event: RuntimeEvent): Promise<void> {
-    const channel = this.getChannel(event);
+  async dispatch(event: RuntimeEvent, options?: { channel?: string; updateOutboxStatus?: boolean }): Promise<void> {
+    const channel = options?.channel || this.getChannel(event);
+    const shouldUpdateOutboxStatus = options?.updateOutboxStatus !== false;
     try {
       if (!this.redisService.isReady()) {
         throw new Error('Redis pub/sub is not ready');
       }
       await this.redisService.publish(channel, event);
-      await this.persistence.markEventDispatched(event.eventId);
+      if (shouldUpdateOutboxStatus) {
+        await this.persistence.markEventDispatched(event.eventId);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown hook dispatch error';
       this.logger.warn(`Hook dispatch failed eventId=${event.eventId} type=${event.eventType}: ${message}`);
-      await this.persistence.markEventFailed(event.eventId, message);
+      if (shouldUpdateOutboxStatus) {
+        await this.persistence.markEventFailed(event.eventId, message);
+      }
     }
   }
 

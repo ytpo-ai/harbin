@@ -15,26 +15,63 @@ export class RuntimeController {
   }
 
   @Post('runs/:runId/pause')
-  async pauseRun(@Param('runId') runId: string, @Body() body?: { reason?: string }) {
-    await this.runtimeOrchestrator.pauseRun(runId, body?.reason);
+  async pauseRun(
+    @Param('runId') runId: string,
+    @Body() body?: { reason?: string; actorId?: string; actorType?: 'employee' | 'system' | 'agent' },
+  ) {
+    await this.runtimeOrchestrator.pauseRunWithActor(runId, {
+      reason: body?.reason,
+      actorId: body?.actorId,
+      actorType: body?.actorType,
+    });
     return { success: true, runId, action: 'paused' };
   }
 
   @Post('runs/:runId/resume')
-  async resumeRun(@Param('runId') runId: string, @Body() body?: { reason?: string }) {
-    await this.runtimeOrchestrator.resumeRun(runId, body?.reason);
+  async resumeRun(
+    @Param('runId') runId: string,
+    @Body() body?: { reason?: string; actorId?: string; actorType?: 'employee' | 'system' | 'agent' },
+  ) {
+    await this.runtimeOrchestrator.resumeRunWithActor(runId, {
+      reason: body?.reason,
+      actorId: body?.actorId,
+      actorType: body?.actorType,
+    });
     return { success: true, runId, action: 'resumed' };
   }
 
   @Post('runs/:runId/cancel')
-  async cancelRun(@Param('runId') runId: string, @Body() body?: { reason?: string }) {
-    await this.runtimeOrchestrator.cancelRun(runId, body?.reason);
+  async cancelRun(
+    @Param('runId') runId: string,
+    @Body() body?: { reason?: string; actorId?: string; actorType?: 'employee' | 'system' | 'agent' },
+  ) {
+    await this.runtimeOrchestrator.cancelRunWithActor(runId, {
+      reason: body?.reason,
+      actorId: body?.actorId,
+      actorType: body?.actorType,
+    });
     return { success: true, runId, action: 'cancelled' };
   }
 
   @Post('runs/:runId/replay')
-  async replayRun(@Param('runId') runId: string) {
-    const dispatched = await this.runtimeOrchestrator.replayRun(runId);
+  async replayRun(
+    @Param('runId') runId: string,
+    @Body()
+    body?: {
+      eventTypes?: string[];
+      fromSequence?: number;
+      toSequence?: number;
+      channel?: string;
+      limit?: number;
+    },
+  ) {
+    const dispatched = await this.runtimeOrchestrator.replayRun(runId, {
+      eventTypes: body?.eventTypes,
+      fromSequence: body?.fromSequence,
+      toSequence: body?.toSequence,
+      channel: body?.channel,
+      limit: body?.limit,
+    });
     return {
       success: true,
       runId,

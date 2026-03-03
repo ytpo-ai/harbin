@@ -197,9 +197,33 @@ export class RuntimePersistenceService {
       .exec();
   }
 
-  async findEventsByRun(runId: string, limit = 200): Promise<AgentEventOutbox[]> {
+  async findEventsByRun(
+    runId: string,
+    options?: {
+      limit?: number;
+      eventTypes?: string[];
+      fromSequence?: number;
+      toSequence?: number;
+    },
+  ): Promise<AgentEventOutbox[]> {
+    const limit = options?.limit || 200;
+    const filter: Record<string, unknown> = { runId };
+    if (options?.eventTypes?.length) {
+      filter.eventType = { $in: options.eventTypes };
+    }
+    if (typeof options?.fromSequence === 'number' || typeof options?.toSequence === 'number') {
+      const range: Record<string, number> = {};
+      if (typeof options?.fromSequence === 'number') {
+        range.$gte = options.fromSequence;
+      }
+      if (typeof options?.toSequence === 'number') {
+        range.$lte = options.toSequence;
+      }
+      filter.sequence = range;
+    }
+
     return this.outboxModel
-      .find({ runId })
+      .find(filter)
       .sort({ sequence: 1, createdAt: 1 })
       .limit(limit)
       .exec();

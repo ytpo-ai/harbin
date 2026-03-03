@@ -95,7 +95,7 @@
 ## Runtime Run Control（内部能力）
 
 - `GET /agents/runtime/runs/:runId`：查询 run 状态
-- `POST /agents/runtime/runs/:runId/pause`：暂停 run
-- `POST /agents/runtime/runs/:runId/resume`：恢复 run
-- `POST /agents/runtime/runs/:runId/cancel`：取消 run
-- `POST /agents/runtime/runs/:runId/replay`：重放 run 事件到 hook 通道
+- `POST /agents/runtime/runs/:runId/pause`：暂停 run（支持 body: `reason`、`actorId`、`actorType`）
+- `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）
+- `POST /agents/runtime/runs/:runId/cancel`：取消 run（支持 body: `reason`、`actorId`、`actorType`）
+- `POST /agents/runtime/runs/:runId/replay`：重放 run 事件到 hook 通道（支持 body: `eventTypes`、`fromSequence`、`toSequence`、`channel`、`limit`）
