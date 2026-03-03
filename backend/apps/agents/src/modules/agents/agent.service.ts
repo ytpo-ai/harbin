@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 import { MemoService } from '../memos/memo.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
+import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
 
 export interface AgentContext {
   task: Task;
@@ -187,6 +188,7 @@ export class AgentService {
     private readonly toolService: ToolService,
     private readonly memoService: MemoService,
     private readonly memoEventBus: MemoEventBusService,
+    private readonly runtimeOrchestrator: RuntimeOrchestratorService,
   ) {
     void this.bootstrapMcpProfilesAndAgentTypes();
   }
@@ -597,6 +599,20 @@ export class AgentService {
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
     this.logger.log(`[task_messages] taskId=${taskId} compiledMessages=${messages.length}`);
 
+    const runtimeContext = await this.runtimeOrchestrator.startRun({
+      agentId: runtimeAgentId,
+      agentName: agent.name,
+      taskId,
+      sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+      taskTitle: task.title,
+      taskDescription: task.description,
+      userContent: task.description,
+      metadata: {
+        taskType: task.type,
+        taskPriority: task.priority,
+      },
+    });
+
     try {
       // 确保模型已注册 - 类型转换
       const modelConfig: AIModel = {
@@ -625,7 +641,7 @@ export class AgentService {
       // 注册provider（使用自定义key或默认key）
       this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
 
-      const response = await this.executeWithToolCalling(agent, task, messages, modelConfig);
+      const response = await this.executeWithToolCalling(agent, task, messages, modelConfig, runtimeContext);
 
       this.logger.log(
         `[task_success] agent=${agent.name} taskId=${taskId} responseLength=${response.length} durationMs=${Date.now() - taskStartAt}`,
@@ -670,6 +686,15 @@ export class AgentService {
         },
       });
 
+      await this.runtimeOrchestrator.completeRun({
+        runId: runtimeContext.runId,
+        agentId: runtimeAgentId,
+        sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+        taskId,
+        assistantContent: response,
+        traceId: runtimeContext.traceId,
+      });
+
       return response;
     } catch (error) {
       const logError = this.toLogError(error);
@@ -687,7 +712,24 @@ export class AgentService {
           tags: [task.type, 'task_failed'],
         });
       });
+      const normalizedError = logError.message.toLowerCase();
+      const controlInterrupted =
+        normalizedError.includes('cancelled') ||
+        normalizedError.includes('paused') ||
+        normalizedError.includes('already completed');
+      if (!controlInterrupted) {
+        await this.runtimeOrchestrator.failRun({
+          runId: runtimeContext.runId,
+          agentId: runtimeAgentId,
+          sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+          taskId,
+          error: logError.message,
+          traceId: runtimeContext.traceId,
+        });
+      }
       throw error;
+    } finally {
+      await this.runtimeOrchestrator.releaseRun(runtimeContext);
     }
   }
 
@@ -720,6 +762,21 @@ export class AgentService {
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
 
+    const runtimeContext = await this.runtimeOrchestrator.startRun({
+      agentId: runtimeAgentId,
+      agentName: agent.name,
+      taskId,
+      sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+      taskTitle: task.title,
+      taskDescription: task.description,
+      userContent: task.description,
+      metadata: {
+        taskType: task.type,
+        taskPriority: task.priority,
+        mode: 'streaming',
+      },
+    });
+
     // 获取自定义API Key（如果配置了）
     let customApiKey: string | undefined;
     if (agent.apiKeyId) {
@@ -746,27 +803,79 @@ export class AgentService {
 
     let fullResponse = '';
     let tokenChunks = 0;
+    let streamSequence = 1;
+    let runtimeInterrupted = false;
     try {
+      await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       await this.modelService.streamingChat(
         agent.model.id,
         messages,
         (token) => {
+          if (runtimeInterrupted) {
+            throw new Error('Runtime run interrupted');
+          }
           fullResponse += token;
           tokenChunks += 1;
           onToken(token);
+          if (tokenChunks % 20 === 0) {
+            void this.runtimeOrchestrator.assertRunnable(runtimeContext.runId).catch(() => {
+              runtimeInterrupted = true;
+            });
+          }
+          void this.runtimeOrchestrator
+            .recordLlmDelta({
+              runId: runtimeContext.runId,
+              agentId: runtimeAgentId,
+              messageId: runtimeContext.userMessageId,
+              traceId: runtimeContext.traceId,
+              sequence: streamSequence++,
+              delta: token,
+              sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+              taskId,
+            })
+            .catch((eventError) => {
+              const eventMessage = eventError instanceof Error ? eventError.message : String(eventError || 'unknown');
+              this.logger.warn(`[stream_llm_delta_event_failed] taskId=${taskId} error=${eventMessage}`);
+            });
         },
         {
           temperature: agent.model.temperature,
           maxTokens: agent.model.maxTokens,
         }
       );
+
+      await this.runtimeOrchestrator.completeRun({
+        runId: runtimeContext.runId,
+        agentId: runtimeAgentId,
+        sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+        taskId,
+        assistantContent: fullResponse,
+        traceId: runtimeContext.traceId,
+      });
     } catch (error) {
       const logError = this.toLogError(error);
       this.logger.error(
         `[stream_task_failed] agent=${agent.name} taskId=${taskId} durationMs=${Date.now() - taskStartAt} tokenChunks=${tokenChunks} error=${logError.message}`,
         logError.stack,
       );
+      const normalizedError = logError.message.toLowerCase();
+      const controlInterrupted =
+        normalizedError.includes('cancelled') ||
+        normalizedError.includes('paused') ||
+        normalizedError.includes('already completed');
+      if (!controlInterrupted) {
+        await this.runtimeOrchestrator.failRun({
+          runId: runtimeContext.runId,
+          agentId: runtimeAgentId,
+          sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+          taskId,
+          error: logError.message,
+          traceId: runtimeContext.traceId,
+        });
+      }
       throw error;
+    } finally {
+      await this.runtimeOrchestrator.releaseRun(runtimeContext);
     }
 
     this.logger.log(
@@ -973,6 +1082,7 @@ export class AgentService {
     task: Task,
     initialMessages: ChatMessage[],
     modelConfig: AIModel,
+    runtimeContext?: RuntimeRunContext,
   ): Promise<string> {
     const maxToolRounds = 3;
     const messages = [...initialMessages];
@@ -1038,6 +1148,9 @@ export class AgentService {
     }
 
     for (let round = 0; round <= maxToolRounds; round++) {
+      if (runtimeContext) {
+        await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
+      }
       let response: string;
       const roundStartAt = Date.now();
       this.logger.log(
@@ -1093,7 +1206,34 @@ export class AgentService {
         continue;
       }
 
+      const toolCallId = `toolcall-${uuidv4()}`;
+      let runtimeToolPartId: string | undefined;
       try {
+        if (runtimeContext) {
+          runtimeToolPartId = await this.runtimeOrchestrator.recordToolPending({
+            runId: runtimeContext.runId,
+            agentId: agentRuntimeId,
+            taskId: task.id,
+            toolId: toolCall.tool,
+            toolCallId,
+            input: toolCall.parameters,
+            traceId: runtimeContext.traceId,
+            sequence: round + 1,
+            messageId: runtimeContext.userMessageId,
+          });
+          await this.runtimeOrchestrator.recordToolRunning({
+            runId: runtimeContext.runId,
+            agentId: agentRuntimeId,
+            taskId: task.id,
+            toolId: toolCall.tool,
+            toolCallId,
+            traceId: runtimeContext.traceId,
+            sequence: round + 1,
+            messageId: runtimeContext.userMessageId,
+            partId: runtimeToolPartId,
+          });
+        }
+
         this.logger.log(
           `[tool_execute_start] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} parameters=${this.compactLogText(JSON.stringify(toolCall.parameters || {}), 240)}`,
         );
@@ -1108,6 +1248,21 @@ export class AgentService {
           `[tool_execute_success] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} resultKeys=${Object.keys(execution.result || {}).join('|') || 'none'}`,
         );
 
+        if (runtimeContext) {
+          await this.runtimeOrchestrator.recordToolCompleted({
+            runId: runtimeContext.runId,
+            agentId: agentRuntimeId,
+            taskId: task.id,
+            toolId: toolCall.tool,
+            toolCallId,
+            output: execution.result,
+            traceId: runtimeContext.traceId,
+            sequence: round + 1,
+            messageId: runtimeContext.userMessageId,
+            partId: runtimeToolPartId,
+          });
+        }
+
         messages.push({
           role: 'system',
           content: `工具 ${toolCall.tool} 调用结果: ${JSON.stringify(execution.result || {})}`,
@@ -1119,6 +1274,22 @@ export class AgentService {
           `[tool_execute_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${toolCall.tool} error=${logError.message}`,
           logError.stack,
         );
+
+        if (runtimeContext) {
+          await this.runtimeOrchestrator.recordToolFailed({
+            runId: runtimeContext.runId,
+            agentId: agentRuntimeId,
+            taskId: task.id,
+            toolId: toolCall.tool,
+            toolCallId,
+            error: logError.message,
+            traceId: runtimeContext.traceId,
+            sequence: round + 1,
+            messageId: runtimeContext.userMessageId,
+            partId: runtimeToolPartId,
+          });
+        }
+
         const message = logError.message;
         messages.push({
           role: 'system',

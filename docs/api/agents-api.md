@@ -73,3 +73,29 @@
 
 - Agent 类型规范：`docs/agent_type.md`
 - 当前类型配置来源：`frontend/src/config/agentType.json`
+
+## Runtime Hooks（内部能力）
+
+- Agents Runtime 已引入结构化生命周期事件（Hook Contract），用于模块外部感知执行状态。
+- 事件类型包含：
+  - `run.started`
+  - `run.step.started`
+  - `llm.delta`
+  - `tool.pending`
+  - `tool.running`
+  - `tool.completed`
+  - `tool.failed`
+  - `run.completed`
+  - `run.failed`
+- 当前默认通过 Redis Pub/Sub 分发：
+  - 组织级：`agent-runtime:{organizationId}`
+  - Agent 级：`agent-runtime:{agentId}`
+- 事件持久化使用 outbox 设计，集合：`agent_events_outbox`（状态：`pending/dispatched/failed`）。
+
+## Runtime Run Control（内部能力）
+
+- `GET /agents/runtime/runs/:runId`：查询 run 状态
+- `POST /agents/runtime/runs/:runId/pause`：暂停 run
+- `POST /agents/runtime/runs/:runId/resume`：恢复 run
+- `POST /agents/runtime/runs/:runId/cancel`：取消 run
+- `POST /agents/runtime/runs/:runId/replay`：重放 run 事件到 hook 通道

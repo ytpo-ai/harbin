@@ -83,6 +83,9 @@ importers:
       ws:
         specifier: ^8.14.0
         version: 8.19.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@nestjs/cli':
         specifier: ^10.0.0
