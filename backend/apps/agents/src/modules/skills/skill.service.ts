@@ -18,6 +18,7 @@ import {
   SkillSuggestionStatus,
 } from '../../schemas/skill-suggestion.schema';
 import { SkillDocSyncService } from './skill-doc-sync.service';
+import { MemoEventBusService } from '../memos/memo-event-bus.service';
 
 interface CreateSkillInput {
   name: string;
@@ -66,6 +67,7 @@ export class SkillService {
     @InjectModel(SkillSuggestion.name) private readonly suggestionModel: Model<SkillSuggestionDocument>,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly skillDocSyncService: SkillDocSyncService,
+    private readonly memoEventBus: MemoEventBusService,
   ) {}
 
   async createSkill(payload: CreateSkillInput): Promise<Skill> {
@@ -204,6 +206,11 @@ export class SkillService {
         { status: 'applied', appliedAt: new Date(), reviewedAt: new Date() },
       )
       .exec();
+    this.memoEventBus.emit({
+      name: 'agent.skill_changed',
+      agentId,
+      memoKinds: ['identity', 'custom'],
+    });
     await this.rebuildIndexSafely();
     return assigned;
   }

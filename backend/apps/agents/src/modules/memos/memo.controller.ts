@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
-import { MemoKind, MemoTodoStatus, MemoType } from '../../schemas/agent-memo.schema';
+import { MemoKind, MemoType } from '../../schemas/agent-memo.schema';
 import { MemoService } from './memo.service';
+
+type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 @Controller('memos')
 export class MemoController {
@@ -9,22 +11,18 @@ export class MemoController {
   @Get()
   async listMemos(
     @Query('agentId') agentId?: string,
-    @Query('category') category?: string,
     @Query('memoType') memoType?: MemoType,
     @Query('memoKind') memoKind?: MemoKind,
     @Query('topic') topic?: string,
-    @Query('todoStatus') todoStatus?: MemoTodoStatus,
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
     return this.memoService.listMemos({
       agentId,
-      category,
       memoType,
       memoKind,
       topic,
-      todoStatus,
       search,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
@@ -37,7 +35,6 @@ export class MemoController {
     body: {
       agentId: string;
       query: string;
-      category?: string;
       memoType?: MemoType;
       memoKind?: MemoKind;
       topic?: string;
@@ -47,7 +44,6 @@ export class MemoController {
     },
   ) {
     return this.memoService.searchMemos(body.agentId, body.query, {
-      category: body.category,
       memoType: body.memoType,
       memoKind: body.memoKind,
       topic: body.topic,
@@ -62,17 +58,14 @@ export class MemoController {
     @Body()
     body: {
       agentId: string;
-      category?: string;
       title: string;
       content: string;
       memoType?: MemoType;
       memoKind?: MemoKind;
-      topic?: string;
-      todoStatus?: MemoTodoStatus;
+      payload?: Record<string, any>;
       tags?: string[];
       contextKeywords?: string[];
       source?: string;
-      taskId?: string;
     },
   ) {
     return this.memoService.createMemo(body);
@@ -99,14 +92,29 @@ export class MemoController {
     return this.memoService.flushEventQueue(body?.agentId);
   }
 
+  @Get('aggregation/status')
+  async getAggregationStatus(@Query('agentId') agentId?: string) {
+    return this.memoService.getAggregationStatus(agentId);
+  }
+
+  @Post('repair/core-docs')
+  async repairCoreDocs(@Body() body?: { agentId?: string }) {
+    return this.memoService.repairCoreDocuments(body?.agentId);
+  }
+
   @Post('todos/upsert')
   async upsertTodo(@Body() body: { agentId: string; task: { id?: string; title?: string; description?: string } }) {
     return this.memoService.upsertTaskTodo(body.agentId, body.task || {});
   }
 
   @Put('todos/:id/status')
-  async updateTodoStatus(@Param('id') id: string, @Body() body: { status: MemoTodoStatus; note?: string }) {
+  async updateTodoStatus(@Param('id') id: string, @Body() body: { status: TodoStatus; note?: string }) {
     return this.memoService.updateTodoStatus(id, body.status, body.note);
+  }
+
+  @Get(':id/versions')
+  async listMemoVersions(@Param('id') id: string) {
+    return this.memoService.listMemoVersions(id);
   }
 
   @Get('agents/:agentId/context')

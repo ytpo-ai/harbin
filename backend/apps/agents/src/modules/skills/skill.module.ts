@@ -7,6 +7,7 @@ import { Skill, SkillSchema } from '../../schemas/skill.schema';
 import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
 import { SkillSuggestion, SkillSuggestionSchema } from '../../schemas/skill-suggestion.schema';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
+import { MemoModule } from '../memos/memo.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.sche
       { name: SkillSuggestion.name, schema: SkillSuggestionSchema },
       { name: Agent.name, schema: AgentSchema },
     ]),
+    MemoModule,
   ],
   controllers: [SkillController],
   providers: [SkillService, SkillDocSyncService],

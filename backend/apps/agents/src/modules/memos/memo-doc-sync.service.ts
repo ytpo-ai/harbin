@@ -19,24 +19,24 @@ export class MemoDocSyncService {
     return cwd;
   }
 
-  private getMemoDirs(agentId?: string, category?: string) {
+  private getMemoDirs(agentId?: string, memoKind?: string) {
     const root = this.resolveWorkspaceRoot();
     const baseDir = path.join(root, 'docs', 'memos');
     const agentDir = agentId ? path.join(baseDir, this.normalizeSegment(agentId)) : baseDir;
-    const categoryDir = category ? path.join(agentDir, this.normalizeSegment(category)) : agentDir;
-    return { root, baseDir, agentDir, categoryDir };
+    const kindDir = memoKind ? path.join(agentDir, this.normalizeSegment(memoKind)) : agentDir;
+    return { root, baseDir, agentDir, kindDir };
   }
 
   async syncMemo(memo: AgentMemo): Promise<void> {
-    const { categoryDir } = this.getMemoDirs(memo.agentId, memo.category);
-    await fs.mkdir(categoryDir, { recursive: true });
-    const filePath = path.join(categoryDir, `${memo.slug}.md`);
+    const { kindDir } = this.getMemoDirs(memo.agentId, memo.memoKind);
+    await fs.mkdir(kindDir, { recursive: true });
+    const filePath = path.join(kindDir, `${memo.slug}.md`);
     await fs.writeFile(filePath, this.renderMemoMarkdown(memo), 'utf8');
   }
 
   async removeMemo(memo: AgentMemo): Promise<void> {
-    const { categoryDir } = this.getMemoDirs(memo.agentId, memo.category);
-    const filePath = path.join(categoryDir, `${memo.slug}.md`);
+    const { kindDir } = this.getMemoDirs(memo.agentId, memo.memoKind);
+    const filePath = path.join(kindDir, `${memo.slug}.md`);
     try {
       await fs.unlink(filePath);
     } catch {
@@ -51,6 +51,8 @@ export class MemoDocSyncService {
   }
 
   private renderMemoMarkdown(memo: AgentMemo): string {
+    const payload = memo.payload || {};
+    const payloadText = Object.keys(payload).length ? JSON.stringify(payload, null, 2) : 'N/A';
     const tags = (memo.tags || []).join(', ');
     const keywords = (memo.contextKeywords || []).join(', ');
     return [
@@ -58,17 +60,19 @@ export class MemoDocSyncService {
       '',
       `- id: \`${memo.id}\``,
       `- agentId: \`${memo.agentId}\``,
-      `- category: ${memo.category}`,
+      `- version: ${memo.version || 1}`,
       `- type: ${memo.memoType}`,
       `- kind: ${memo.memoKind || 'topic'}`,
-      `- topic: ${memo.topic || 'N/A'}`,
-      `- todoStatus: ${memo.todoStatus || 'N/A'}`,
-      `- taskId: ${memo.taskId || 'N/A'}`,
       `- source: ${memo.source || 'agent'}`,
       `- tags: ${tags || 'N/A'}`,
       `- contextKeywords: ${keywords || 'N/A'}`,
-      `- accessCount: ${memo.accessCount || 0}`,
       `- updatedAt: ${memo.updatedAt ? new Date(memo.updatedAt).toISOString() : new Date().toISOString()}`,
+      '',
+      '## Payload',
+      '',
+      '```json',
+      payloadText,
+      '```',
       '',
       '## Content',
       '',
@@ -96,7 +100,7 @@ export class MemoDocSyncService {
       lines.push(`## Agent: ${agentId}`, '');
       for (const memo of items.slice(0, 200)) {
         lines.push(
-          `- [${memo.title}](./${this.normalizeSegment(memo.agentId)}/${this.normalizeSegment(memo.category)}/${memo.slug}.md) - ${memo.memoKind || 'topic'} - ${memo.memoType} - ${memo.category} - ${memo.todoStatus || 'n/a'}`,
+          `- [${memo.title}](./${this.normalizeSegment(memo.agentId)}/${this.normalizeSegment(memo.memoKind || 'topic')}/${memo.slug}.md) - ${memo.memoKind || 'topic'} - ${memo.memoType} - v${memo.version || 1}`,
         );
       }
       lines.push('');

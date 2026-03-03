@@ -376,7 +376,7 @@ export class ToolService {
   }
 
   private async searchMemoMemory(
-    params: { query?: string; category?: string; memoType?: 'knowledge' | 'behavior' | 'todo'; limit?: number; detail?: boolean },
+    params: { query?: string; memoType?: 'knowledge' | 'standard'; limit?: number; detail?: boolean },
     agentId?: string,
   ): Promise<any> {
     if (!agentId) {
@@ -385,7 +385,6 @@ export class ToolService {
 
     const query = params?.query?.trim() || '';
     const memories = await this.memoService.searchMemos(agentId, query, {
-      category: params?.category,
       memoType: params?.memoType,
       limit: params?.limit,
       progressive: true,
@@ -406,9 +405,9 @@ export class ToolService {
       memoId?: string;
       title?: string;
       content?: string;
-      category?: string;
-      memoType?: 'knowledge' | 'behavior' | 'todo';
+      memoType?: 'knowledge' | 'standard';
       taskId?: string;
+      topic?: string;
       tags?: string[];
     },
     agentId?: string,
@@ -436,11 +435,12 @@ export class ToolService {
       agentId,
       title: params.title?.trim() || 'Runtime memo',
       content: params.content.trim(),
-      category: params.category?.trim() || 'runtime',
       memoType: params.memoType || 'knowledge',
-      todoStatus: params.memoType === 'todo' ? 'pending' : undefined,
+      payload: {
+        taskId: params.taskId,
+        topic: params.topic || 'runtime',
+      },
       tags: params.tags || [],
-      taskId: params.taskId,
       source: 'memo_mcp_append',
     });
 

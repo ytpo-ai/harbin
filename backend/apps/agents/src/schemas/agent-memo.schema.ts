@@ -3,9 +3,8 @@ import { Document } from 'mongoose';
 
 export type AgentMemoDocument = AgentMemo & Document;
 
-export type MemoType = 'knowledge' | 'behavior' | 'todo';
-export type MemoTodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
-export type MemoKind = 'identity' | 'todo' | 'topic';
+export type MemoType = 'knowledge' | 'standard';
+export type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom';
 
 @Schema({ timestamps: true })
 export class AgentMemo {
@@ -14,9 +13,6 @@ export class AgentMemo {
 
   @Prop({ required: true, index: true })
   agentId: string;
-
-  @Prop({ default: 'general', index: true })
-  category: string;
 
   @Prop({ required: true })
   title: string;
@@ -27,14 +23,17 @@ export class AgentMemo {
   @Prop({ required: true })
   content: string;
 
-  @Prop({ enum: ['identity', 'todo', 'topic'], default: 'topic', index: true })
+  @Prop({ required: true, default: 1 })
+  version: number;
+
+  @Prop({ enum: ['identity', 'todo', 'topic', 'history', 'draft', 'custom'], default: 'topic', index: true })
   memoKind: MemoKind;
 
-  @Prop({ enum: ['knowledge', 'behavior', 'todo'], default: 'knowledge', index: true })
+  @Prop({ enum: ['knowledge', 'standard'], default: 'knowledge', index: true })
   memoType: MemoType;
 
-  @Prop({ enum: ['pending', 'in_progress', 'completed', 'cancelled'] })
-  todoStatus?: MemoTodoStatus;
+  @Prop({ type: Object, default: {} })
+  payload?: Record<string, any>;
 
   @Prop({ type: [String], default: [] })
   tags: string[];
@@ -42,20 +41,8 @@ export class AgentMemo {
   @Prop({ type: [String], default: [] })
   contextKeywords: string[];
 
-  @Prop()
-  taskId?: string;
-
-  @Prop({ index: true })
-  topic?: string;
-
   @Prop({ default: 'agent' })
   source: string;
-
-  @Prop({ default: 0 })
-  accessCount: number;
-
-  @Prop()
-  lastAccessedAt?: Date;
 
   @Prop()
   createdAt?: Date;
@@ -66,10 +53,8 @@ export class AgentMemo {
 
 export const AgentMemoSchema = SchemaFactory.createForClass(AgentMemo);
 
-AgentMemoSchema.index({ agentId: 1, category: 1, updatedAt: -1 });
-AgentMemoSchema.index({ agentId: 1, memoType: 1, todoStatus: 1, updatedAt: -1 });
+AgentMemoSchema.index({ agentId: 1, memoType: 1, updatedAt: -1 });
 AgentMemoSchema.index({ agentId: 1, memoKind: 1, updatedAt: -1 });
-AgentMemoSchema.index({ agentId: 1, memoKind: 1, topic: 1 }, { unique: false });
-AgentMemoSchema.index({ agentId: 1, taskId: 1 });
 AgentMemoSchema.index({ agentId: 1, slug: 1 }, { unique: true });
-AgentMemoSchema.index({ title: 'text', content: 'text', tags: 'text', category: 'text' });
+AgentMemoSchema.index({ agentId: 1, 'payload.topic': 1, updatedAt: -1 });
+AgentMemoSchema.index({ title: 'text', content: 'text', tags: 'text', contextKeywords: 'text' });

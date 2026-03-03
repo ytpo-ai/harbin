@@ -3,36 +3,35 @@ import { InjectModel } from '@nestjs/mongoose';
 import { RedisService } from '@libs/infra';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { AgentMemo, AgentMemoDocument, MemoKind, MemoTodoStatus, MemoType } from '../../schemas/agent-memo.schema';
+import { AgentMemo, AgentMemoDocument, MemoKind, MemoType } from '../../schemas/agent-memo.schema';
+import { AgentMemoVersion, AgentMemoVersionDocument } from '../../schemas/agent-memo-version.schema';
 import { MemoDocSyncService } from './memo-doc-sync.service';
 
 const EVENT_KEY_PREFIX = 'memo:event:';
+const REFRESH_KEY_PREFIX = 'memo:refresh:queue';
 const EVENT_QUEUE_TTL_SECONDS = 7 * 24 * 3600;
 const EVENT_QUEUE_MAX = 1000;
 
+type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
 interface CreateMemoInput {
   agentId: string;
-  category?: string;
   title: string;
   content: string;
   memoType?: MemoType;
   memoKind?: MemoKind;
-  topic?: string;
+  payload?: Record<string, any>;
   slug?: string;
-  todoStatus?: MemoTodoStatus;
   tags?: string[];
   contextKeywords?: string[];
   source?: string;
-  taskId?: string;
 }
 
 interface ListMemoFilters {
   agentId?: string;
-  category?: string;
   memoType?: MemoType;
   memoKind?: MemoKind;
   topic?: string;
-  todoStatus?: MemoTodoStatus;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -56,50 +55,71 @@ export class MemoService {
 
   constructor(
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
+    @InjectModel(AgentMemoVersion.name) private readonly memoVersionModel: Model<AgentMemoVersionDocument>,
     private readonly memoDocSyncService: MemoDocSyncService,
     private readonly redisService: RedisService,
   ) {}
 
-  async createMemo(payload: CreateMemoInput): Promise<AgentMemo> {
+  async createMemo(payload: CreateMemoInput, options?: { skipEnsureCoreDocs?: boolean }): Promise<AgentMemo> {
     if (!payload?.agentId?.trim()) throw new BadRequestException('agentId is required');
     if (!payload?.title?.trim()) throw new BadRequestException('title is required');
     if (!payload?.content?.trim()) throw new BadRequestException('content is required');
 
     const agentId = payload.agentId.trim();
-    await this.ensureCoreDocuments(agentId);
+    if (!options?.skipEnsureCoreDocs) {
+      await this.ensureCoreDocuments(agentId);
+    }
 
-    const slug = payload.slug?.trim() || this.buildStableSlug(payload.memoKind || 'topic', payload.title, payload.topic);
+    const nextPayload = payload.payload || {};
+    const resolvedTopic = typeof nextPayload.topic === 'string' ? nextPayload.topic : undefined;
+    const slug = payload.slug?.trim() || this.buildStableSlug(payload.memoKind || 'topic', payload.title, resolvedTopic);
     const defaults = this.resolveMemoDefaults(payload.memoKind, payload.memoType);
     const nextTags = this.uniqueStrings(payload.tags || []);
     const nextKeywords = this.uniqueStrings(payload.contextKeywords || []);
 
+    const upsertFilter = this.buildUpsertFilter(agentId, defaults.memoKind, slug);
+    const existed = await this.memoModel.findOne(upsertFilter).exec();
+    if (existed) {
+      return this.updateMemo(existed.id, {
+        ...payload,
+        memoKind: defaults.memoKind,
+        memoType: defaults.memoType,
+        slug,
+      });
+    }
+
     const updated = await this.memoModel
       .findOneAndUpdate(
-        { agentId, slug },
+        upsertFilter,
         {
-          id: uuidv4(),
-          agentId,
-          category: payload.category?.trim() || this.defaultCategoryByKind(defaults.memoKind),
-          title: payload.title.trim(),
-          slug,
-          content: payload.content.trim(),
-          memoType: defaults.memoType,
-          memoKind: defaults.memoKind,
-          topic: payload.topic?.trim() || (defaults.memoKind === 'topic' ? this.normalizeTopic(payload.title) : undefined),
-          todoStatus: defaults.memoType === 'todo' ? payload.todoStatus || 'pending' : undefined,
-          tags: nextTags,
-          contextKeywords: nextKeywords,
-          source: payload.source || 'agent',
-          taskId: payload.taskId,
-          lastAccessedAt: new Date(),
-          updatedAt: new Date(),
-          $setOnInsert: { accessCount: 0 },
+          $set: {
+            agentId,
+            title: payload.title.trim(),
+            slug,
+            content: payload.content.trim(),
+            version: 1,
+            memoType: defaults.memoType,
+            memoKind: defaults.memoKind,
+            payload: this.toNormalizedPayload(defaults.memoKind, nextPayload, payload.title),
+            tags: nextTags,
+            contextKeywords: nextKeywords,
+            source: payload.source || 'agent',
+            updatedAt: new Date(),
+          },
+          $setOnInsert: {
+            id: uuidv4(),
+          },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
 
+    if (defaults.memoKind === 'identity' || defaults.memoKind === 'todo') {
+      await this.cleanupCoreDocDuplicates(agentId, defaults.memoKind, (updated as any)?.id);
+    }
+
     await this.syncMemoSafely(updated as unknown as AgentMemo);
+    await this.refreshMemoCacheByKind(agentId, defaults.memoKind);
     await this.rebuildIndexSafely();
     return updated as unknown as AgentMemo;
   }
@@ -133,7 +153,6 @@ export class MemoService {
   async getMemoById(id: string): Promise<AgentMemo> {
     const memo = await this.memoModel.findOne({ id }).exec();
     if (!memo) throw new NotFoundException(`Memo not found: ${id}`);
-    await this.touchMemoAccess(id);
     return memo as unknown as AgentMemo;
   }
 
@@ -144,37 +163,51 @@ export class MemoService {
     const memoKind = (updates.memoKind || existing.memoKind || 'topic') as MemoKind;
     const memoType = (updates.memoType || existing.memoType || 'knowledge') as MemoType;
     const nextTitle = updates.title?.trim() || existing.title;
-    const nextTopic = updates.topic?.trim() || existing.topic;
+    const mergedPayload = this.toNormalizedPayload(
+      memoKind,
+      {
+        ...((existing.payload as Record<string, any>) || {}),
+        ...((updates.payload as Record<string, any>) || {}),
+      },
+      nextTitle,
+    );
 
     const payload: Record<string, any> = {
       updatedAt: new Date(),
       title: nextTitle,
-      topic: nextTopic,
       memoKind,
       memoType,
-      category: updates.category?.trim() || existing.category,
+      payload: mergedPayload,
+      version: Math.max(1, Number(existing.version || 1)) + 1,
     };
 
     if (updates.content) payload.content = updates.content.trim();
-    if (updates.todoStatus) payload.todoStatus = updates.todoStatus;
     if (updates.tags) payload.tags = this.uniqueStrings(updates.tags);
     if (updates.contextKeywords) payload.contextKeywords = this.uniqueStrings(updates.contextKeywords);
     if (updates.source) payload.source = updates.source;
 
+    const nextTopic = typeof mergedPayload.topic === 'string' ? mergedPayload.topic : undefined;
     const nextSlug =
       updates.slug?.trim() ||
-      (updates.title || updates.topic || updates.memoKind
+      (updates.title || updates.payload || updates.memoKind
         ? this.buildStableSlug(memoKind, nextTitle, nextTopic)
         : existing.slug);
     payload.slug = nextSlug;
 
+    await this.createMemoVersionSnapshot(existing as unknown as AgentMemo, this.resolveChangeNote(updates));
+
     const updated = await this.memoModel.findOneAndUpdate({ id }, payload, { new: true }).exec();
     if (!updated) throw new NotFoundException(`Memo not found: ${id}`);
 
-    if (existing.slug !== updated.slug || existing.category !== updated.category || existing.agentId !== updated.agentId) {
+    if (memoKind === 'identity' || memoKind === 'todo') {
+      await this.cleanupCoreDocDuplicates(updated.agentId, memoKind, updated.id);
+    }
+
+    if (existing.slug !== updated.slug || existing.agentId !== updated.agentId) {
       await this.removeMemoSafely(existing as unknown as AgentMemo);
     }
     await this.syncMemoSafely(updated as unknown as AgentMemo);
+    await this.refreshMemoCacheByKind(updated.agentId, updated.memoKind as MemoKind);
     await this.rebuildIndexSafely();
     return updated as unknown as AgentMemo;
   }
@@ -184,6 +217,7 @@ export class MemoService {
     if (!existing) return false;
     await this.memoModel.deleteOne({ id }).exec();
     await this.removeMemoSafely(existing as unknown as AgentMemo);
+    await this.refreshMemoCacheByKind(existing.agentId, existing.memoKind as MemoKind);
     await this.rebuildIndexSafely();
     return true;
   }
@@ -192,7 +226,6 @@ export class MemoService {
     agentId: string,
     query: string,
     options?: {
-      category?: string;
       memoType?: MemoType;
       memoKind?: MemoKind;
       topic?: string;
@@ -206,30 +239,26 @@ export class MemoService {
     const limit = Math.max(1, Math.min(Number(options?.limit || 8), 30));
 
     const filter: Record<string, any> = { agentId: trimmedAgentId };
-    if (options?.category?.trim()) filter.category = options.category.trim();
     if (options?.memoType) filter.memoType = options.memoType;
     if (options?.memoKind) filter.memoKind = options.memoKind;
-    if (options?.topic?.trim()) filter.topic = options.topic.trim();
+    if (options?.topic?.trim()) filter['payload.topic'] = options.topic.trim();
 
     const keyword = String(query || '').trim();
     if (keyword) {
       const escaped = this.escapeRegex(keyword);
       const regex = new RegExp(escaped, 'i');
-      filter.$or = [{ title: regex }, { content: regex }, { category: regex }, { tags: regex }, { contextKeywords: regex }, { topic: regex }];
+      filter.$or = [{ title: regex }, { content: regex }, { tags: regex }, { contextKeywords: regex }, { 'payload.topic': regex }];
     }
 
-    const memos = await this.memoModel.find(filter).sort({ updatedAt: -1, lastAccessedAt: -1 }).limit(limit).exec();
-    await Promise.all(memos.map((memo) => this.touchMemoAccess(memo.id)));
+    const memos = await this.memoModel.find(filter).sort({ updatedAt: -1 }).limit(limit).exec();
 
     return memos.map((memo) => {
       const base = {
         id: memo.id,
         title: memo.title,
-        category: memo.category,
         memoType: memo.memoType,
         memoKind: memo.memoKind,
-        topic: memo.topic,
-        todoStatus: memo.todoStatus,
+        topic: (memo.payload as Record<string, any> | undefined)?.topic,
         tags: memo.tags || [],
         updatedAt: memo.updatedAt,
       };
@@ -239,7 +268,7 @@ export class MemoService {
           ...base,
           content: memo.content,
           source: memo.source,
-          taskId: memo.taskId,
+          payload: memo.payload || {},
         };
       }
 
@@ -301,23 +330,29 @@ export class MemoService {
 
     return this.updateMemo(todoDoc.id, {
       memoKind: 'todo',
-      memoType: 'todo',
+      memoType: 'standard',
       title: todoDoc.title,
       content: nextContent,
-      todoStatus: 'in_progress',
+      payload: {
+        ...((todoDoc.payload as Record<string, any>) || {}),
+        status: 'in_progress',
+      },
       tags: this.uniqueStrings([...(todoDoc.tags || []), 'task', 'todo']),
       contextKeywords: this.uniqueStrings([...(todoDoc.contextKeywords || []), ...this.extractKeywords(`${title} ${description}`)]),
     });
   }
 
-  async updateTodoStatus(id: string, status: MemoTodoStatus, note?: string): Promise<AgentMemo> {
+  async updateTodoStatus(id: string, status: TodoStatus, note?: string): Promise<AgentMemo> {
     const todoDoc = await this.memoModel.findOne({ id, memoKind: 'todo' }).exec();
     if (!todoDoc) throw new NotFoundException(`TODO memo not found: ${id}`);
     const nextContent = this.appendTodoStatusNote(todoDoc.content || '', status, note);
     return this.updateMemo(id, {
       memoKind: 'todo',
-      memoType: 'todo',
-      todoStatus: status,
+      memoType: 'standard',
+      payload: {
+        ...((todoDoc.payload as Record<string, any>) || {}),
+        status,
+      },
       content: nextContent,
     });
   }
@@ -340,8 +375,11 @@ export class MemoService {
 
     await this.updateMemo(todoDoc.id, {
       memoKind: 'todo',
-      memoType: 'todo',
-      todoStatus: 'completed',
+      memoType: 'standard',
+      payload: {
+        ...((todoDoc.payload as Record<string, any>) || {}),
+        status: 'completed',
+      },
       content: nextContent,
     });
   }
@@ -358,18 +396,103 @@ export class MemoService {
   async getTaskMemoryContext(agentId: string, taskText: string): Promise<string> {
     const query = String(taskText || '').trim();
     if (!query) return '';
-    const matched = await this.searchMemos(agentId, query, {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) return '';
+
+    const candidateKinds: MemoKind[] = ['identity', 'todo', 'history', 'topic', 'custom'];
+    const matched = await this.searchMemosFromCache(normalizedAgentId, query, candidateKinds, 4);
+    if (matched.length) {
+      return matched
+        .map(
+          (item, idx) =>
+            `${idx + 1}. [${item.memoKind}] ${item.title} | topic=${item.topic || 'N/A'} | summary=${item.summary || ''}`,
+        )
+        .join('\n');
+    }
+
+    const dbMatched = await this.searchMemos(agentId, query, {
       limit: 4,
       progressive: true,
       detail: false,
     });
-    if (!matched.length) return '';
-    return matched
+    if (!dbMatched.length) return '';
+    return dbMatched
       .map(
         (item, idx) =>
-          `${idx + 1}. [${item.memoKind}] ${item.title} | topic=${item.topic || 'N/A'} | category=${item.category} | summary=${item.summary || ''}`,
+          `${idx + 1}. [${item.memoKind}] ${item.title} | topic=${item.topic || 'N/A'} | summary=${item.summary || ''}`,
       )
       .join('\n');
+  }
+
+  async enqueueRefreshTask(payload: {
+    agentId: string;
+    memoKinds?: MemoKind[];
+    reason?: string;
+    taskId?: string;
+    summary?: string;
+  }): Promise<{ queued: boolean; key: string }> {
+    const agentId = String(payload.agentId || '').trim();
+    if (!agentId) return { queued: false, key: '' };
+    const key = `${REFRESH_KEY_PREFIX}:${agentId}`;
+    const memoKinds = this.uniqueMemoKinds(payload.memoKinds || ['identity']);
+    await this.redisService.lpush(
+      key,
+      JSON.stringify({
+        id: uuidv4(),
+        agentId,
+        memoKinds,
+        reason: payload.reason || 'manual',
+        taskId: payload.taskId,
+        summary: payload.summary,
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    await this.redisService.ltrim(key, 0, EVENT_QUEUE_MAX - 1);
+    await this.redisService.expire(key, EVENT_QUEUE_TTL_SECONDS);
+    return { queued: true, key };
+  }
+
+  async flushRefreshQueue(agentId?: string): Promise<{ jobs: number; agents: number; writes: number }> {
+    const normalizedAgentId = String(agentId || '').trim();
+    const keys = normalizedAgentId
+      ? [`${REFRESH_KEY_PREFIX}:${normalizedAgentId}`]
+      : await this.redisService.keys(`${REFRESH_KEY_PREFIX}:*`);
+    if (!keys.length) return { jobs: 0, agents: 0, writes: 0 };
+
+    let jobs = 0;
+    let writes = 0;
+    const agentSet = new Set<string>();
+    for (const key of keys) {
+      const rows = await this.redisService.lrange(key, 0, -1);
+      if (!rows.length) continue;
+
+      const grouped = new Map<string, Set<MemoKind>>();
+      for (const row of rows) {
+        try {
+          const item = JSON.parse(row);
+          const owner = String(item.agentId || '').trim();
+          if (!owner) continue;
+          agentSet.add(owner);
+          jobs += 1;
+          const current = grouped.get(owner) || new Set<MemoKind>();
+          this.uniqueMemoKinds(item.memoKinds || ['identity']).forEach((memoKind) => current.add(memoKind));
+          grouped.set(owner, current);
+        } catch {
+          continue;
+        }
+      }
+
+      for (const [owner, kinds] of grouped.entries()) {
+        for (const memoKind of kinds) {
+          await this.refreshMemoCacheByKind(owner, memoKind);
+          writes += 1;
+        }
+      }
+
+      await this.redisService.del(key);
+    }
+
+    return { jobs, agents: agentSet.size, writes };
   }
 
   async flushEventQueue(agentId?: string): Promise<{ agents: number; events: number; topics: number }> {
@@ -419,6 +542,77 @@ export class MemoService {
     };
   }
 
+  async getAggregationStatus(agentId?: string): Promise<{
+    redisReady: boolean;
+    queueKeys: number;
+    queuedEvents: number;
+    refreshQueueKeys: number;
+    refreshJobs: number;
+    latestMemoUpdatedAt?: string;
+    memoDocuments: number;
+    agentId?: string;
+  }> {
+    const normalizedAgentId = String(agentId || '').trim();
+    const keys = normalizedAgentId
+      ? [`${EVENT_KEY_PREFIX}${normalizedAgentId}`]
+      : await this.redisService.keys(`${EVENT_KEY_PREFIX}*`);
+
+    let queuedEvents = 0;
+    for (const key of keys) {
+      queuedEvents += await this.redisService.llen(key);
+    }
+
+    const refreshKeys = normalizedAgentId
+      ? [`${REFRESH_KEY_PREFIX}:${normalizedAgentId}`]
+      : await this.redisService.keys(`${REFRESH_KEY_PREFIX}:*`);
+    let refreshJobs = 0;
+    for (const key of refreshKeys) {
+      refreshJobs += await this.redisService.llen(key);
+    }
+
+    const memoFilter = normalizedAgentId ? { agentId: normalizedAgentId } : {};
+    const [latest, count] = await Promise.all([
+      this.memoModel.findOne(memoFilter).sort({ updatedAt: -1 }).exec(),
+      this.memoModel.countDocuments(memoFilter).exec(),
+    ]);
+
+    return {
+      redisReady: this.redisService.isReady(),
+      queueKeys: keys.length,
+      queuedEvents,
+      refreshQueueKeys: refreshKeys.length,
+      refreshJobs,
+      memoDocuments: count,
+      latestMemoUpdatedAt: latest?.updatedAt ? new Date(latest.updatedAt).toISOString() : undefined,
+      agentId: normalizedAgentId || undefined,
+    };
+  }
+
+  async repairCoreDocuments(agentId?: string): Promise<{ agents: number; fixedDocs: number }> {
+    const targetAgentId = String(agentId || '').trim();
+    const agentIds = targetAgentId ? [targetAgentId] : ((await this.memoModel.distinct('agentId').exec()) as string[]);
+    let fixedDocs = 0;
+
+    for (const id of agentIds) {
+      const normalizedId = String(id || '').trim();
+      if (!normalizedId) continue;
+      await this.ensureCoreDocuments(normalizedId);
+      const beforeIdentity = await this.memoModel.countDocuments({ agentId: normalizedId, memoKind: 'identity' }).exec();
+      const beforeTodo = await this.memoModel.countDocuments({ agentId: normalizedId, memoKind: 'todo' }).exec();
+      await this.cleanupCoreDocDuplicates(normalizedId, 'identity');
+      await this.cleanupCoreDocDuplicates(normalizedId, 'todo');
+      const afterIdentity = await this.memoModel.countDocuments({ agentId: normalizedId, memoKind: 'identity' }).exec();
+      const afterTodo = await this.memoModel.countDocuments({ agentId: normalizedId, memoKind: 'todo' }).exec();
+      fixedDocs += Math.max(0, beforeIdentity - afterIdentity) + Math.max(0, beforeTodo - afterTodo);
+    }
+
+    await this.rebuildIndexSafely();
+    return {
+      agents: agentIds.length,
+      fixedDocs,
+    };
+  }
+
   async ensureCoreDocuments(agentId: string): Promise<void> {
     const normalizedAgentId = String(agentId || '').trim();
     if (!normalizedAgentId) return;
@@ -427,7 +621,6 @@ export class MemoService {
       agentId: normalizedAgentId,
       memoKind: 'identity',
       memoType: 'knowledge',
-      category: 'profile',
       title: '身份与职责',
       slug: this.buildStableSlug('identity', '身份与职责'),
       content: [
@@ -444,6 +637,9 @@ export class MemoService {
         '- 决策偏好：待补充',
         '- 协作偏好：待补充',
       ].join('\n'),
+      payload: {
+        topic: 'identity',
+      },
       tags: ['identity', 'responsibility'],
       contextKeywords: ['identity', 'role', 'responsibility'],
       source: 'system-seed',
@@ -452,8 +648,7 @@ export class MemoService {
     await this.createIfMissing({
       agentId: normalizedAgentId,
       memoKind: 'todo',
-      memoType: 'todo',
-      category: 'tasks',
+      memoType: 'standard',
       title: 'TODO List',
       slug: this.buildStableSlug('todo', 'TODO List'),
       content: [
@@ -463,7 +658,10 @@ export class MemoService {
         '',
         '- No tasks yet.',
       ].join('\n'),
-      todoStatus: 'pending',
+      payload: {
+        topic: 'todo',
+        status: 'pending',
+      },
       tags: ['todo'],
       contextKeywords: ['todo', 'task'],
       source: 'system-seed',
@@ -471,9 +669,32 @@ export class MemoService {
   }
 
   private async createIfMissing(payload: CreateMemoInput): Promise<void> {
-    const exists = await this.memoModel.findOne({ agentId: payload.agentId, slug: payload.slug }).exec();
+    const defaults = this.resolveMemoDefaults(payload.memoKind, payload.memoType);
+    const topic = typeof payload.payload?.topic === 'string' ? payload.payload.topic : undefined;
+    const slug = payload.slug || this.buildStableSlug(defaults.memoKind, payload.title, topic);
+    const exists = await this.memoModel.findOne(this.buildUpsertFilter(payload.agentId, defaults.memoKind, slug)).exec();
     if (exists) return;
-    await this.createMemo(payload);
+    await this.createMemo(payload, { skipEnsureCoreDocs: true });
+  }
+
+  private buildUpsertFilter(agentId: string, memoKind: MemoKind, slug: string): Record<string, any> {
+    if (memoKind === 'identity' || memoKind === 'todo') {
+      return { agentId, memoKind };
+    }
+    return { agentId, slug };
+  }
+
+  private async cleanupCoreDocDuplicates(agentId: string, memoKind: MemoKind, keepId?: string): Promise<void> {
+    if (memoKind !== 'identity' && memoKind !== 'todo') return;
+    const docs = await this.memoModel.find({ agentId, memoKind }).sort({ updatedAt: -1, createdAt: -1 }).exec();
+    if (docs.length <= 1) return;
+
+    const keeper = keepId ? docs.find((doc) => doc.id === keepId) || docs[0] : docs[0];
+    const stale = docs.filter((doc) => doc.id !== keeper.id);
+    for (const doc of stale) {
+      await this.memoModel.deleteOne({ id: doc.id }).exec();
+      await this.removeMemoSafely(doc as unknown as AgentMemo);
+    }
   }
 
   private async mergeTopicEvents(agentId: string, topic: string, events: MemoryEvent[]): Promise<void> {
@@ -506,10 +727,12 @@ export class MemoService {
       agentId,
       memoKind: 'topic',
       memoType: 'knowledge',
-      category: 'topic',
       title,
       slug,
-      topic,
+      payload: {
+        ...((existing?.payload as Record<string, any>) || {}),
+        topic,
+      },
       content: nextContent,
       tags,
       contextKeywords: keywords,
@@ -555,12 +778,14 @@ export class MemoService {
     return this.createMemo({
       agentId,
       memoKind: 'todo',
-      memoType: 'todo',
-      category: 'tasks',
+      memoType: 'standard',
       title: 'TODO List',
       slug,
       content: '# TODO List\n\n## Tasks\n\n- No tasks yet.',
-      todoStatus: 'pending',
+      payload: {
+        topic: 'todo',
+        status: 'pending',
+      },
       tags: ['todo'],
       contextKeywords: ['task', 'todo'],
       source: 'system-seed',
@@ -569,7 +794,7 @@ export class MemoService {
 
   private mergeTodoItem(
     markdown: string,
-    payload: { taskId: string; title: string; description: string; status: MemoTodoStatus; note: string },
+    payload: { taskId: string; title: string; description: string; status: TodoStatus; note: string },
   ): string {
     const current = markdown || '# TODO List\n\n## Tasks\n';
     const lines = current.split('\n');
@@ -592,7 +817,7 @@ export class MemoService {
     return result.trim() + '\n';
   }
 
-  private appendTodoStatusNote(content: string, status: MemoTodoStatus, note?: string): string {
+  private appendTodoStatusNote(content: string, status: TodoStatus, note?: string): string {
     const marker = `- status-update: ${status} @ ${new Date().toISOString()}`;
     const detail = note?.trim() ? `${marker} | ${note.trim()}` : marker;
     return `${content.trim()}\n\n## Status Updates\n\n${detail}\n`;
@@ -633,36 +858,34 @@ export class MemoService {
   private buildQuery(filters?: ListMemoFilters): Record<string, any> {
     const query: Record<string, any> = {};
     if (filters?.agentId?.trim()) query.agentId = filters.agentId.trim();
-    if (filters?.category?.trim()) query.category = filters.category.trim();
     if (filters?.memoType) query.memoType = filters.memoType;
     if (filters?.memoKind) query.memoKind = filters.memoKind;
-    if (filters?.topic?.trim()) query.topic = filters.topic.trim();
-    if (filters?.todoStatus) query.todoStatus = filters.todoStatus;
+    if (filters?.topic?.trim()) query['payload.topic'] = filters.topic.trim();
     if (filters?.search?.trim()) {
       const regex = new RegExp(this.escapeRegex(filters.search.trim()), 'i');
-      query.$or = [{ title: regex }, { content: regex }, { category: regex }, { tags: regex }, { contextKeywords: regex }, { topic: regex }];
+      query.$or = [{ title: regex }, { content: regex }, { tags: regex }, { contextKeywords: regex }, { 'payload.topic': regex }];
     }
     return query;
   }
 
   private resolveMemoDefaults(memoKind?: MemoKind, memoType?: MemoType): { memoKind: MemoKind; memoType: MemoType } {
-    const resolvedKind = memoKind || (memoType === 'todo' ? 'todo' : 'topic');
-    if (resolvedKind === 'todo') return { memoKind: 'todo', memoType: 'todo' };
+    const resolvedKind = memoKind || 'topic';
+    if (resolvedKind === 'todo') return { memoKind: 'todo', memoType: 'standard' };
     if (resolvedKind === 'identity') return { memoKind: 'identity', memoType: 'knowledge' };
-    return { memoKind: 'topic', memoType: memoType || 'knowledge' };
+    return { memoKind: resolvedKind, memoType: memoType || 'knowledge' };
   }
 
   private buildStableSlug(kind: MemoKind, title: string, topic?: string): string {
     if (kind === 'identity') return 'identity-and-responsibilities';
     if (kind === 'todo') return 'todo-list';
-    const base = this.normalizeTopic(topic || title || 'general');
-    return `topic-${base}`;
-  }
-
-  private defaultCategoryByKind(kind: MemoKind): string {
-    if (kind === 'identity') return 'profile';
-    if (kind === 'todo') return 'tasks';
-    return 'topic';
+    if (kind === 'history') return 'history-log';
+    if (kind === 'draft') return 'draft-buffer';
+    if (kind === 'custom') {
+      const customBase = this.normalizeTopic(topic || title || 'custom');
+      return `custom-${customBase}`;
+    }
+    const base = this.normalizeTopic(topic || title || kind || 'general');
+    return `${kind}-${base}`;
   }
 
   private normalizeTopic(value: string): string {
@@ -704,10 +927,122 @@ export class MemoService {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private async touchMemoAccess(id: string): Promise<void> {
-    await this.memoModel
-      .findOneAndUpdate({ id }, { $inc: { accessCount: 1 }, $set: { lastAccessedAt: new Date() } }, { new: false })
-      .exec();
+  private toNormalizedPayload(memoKind: MemoKind, payload: Record<string, any>, title: string): Record<string, any> {
+    const next = { ...(payload || {}) };
+    if (typeof next.topic !== 'string' || !next.topic.trim()) {
+      if (memoKind === 'identity') next.topic = 'identity';
+      else if (memoKind === 'todo') next.topic = 'todo';
+      else next.topic = this.normalizeTopic(title);
+    } else {
+      next.topic = String(next.topic).trim();
+    }
+    return next;
+  }
+
+  private resolveChangeNote(updates: Partial<CreateMemoInput>): string {
+    if (updates.content) return 'content updated';
+    if (updates.payload) return 'payload updated';
+    if (updates.title) return 'title updated';
+    return 'memo updated';
+  }
+
+  private async createMemoVersionSnapshot(memo: AgentMemo, changeNote: string): Promise<void> {
+    const version = Math.max(1, Number(memo.version || 1));
+    const exists = await this.memoVersionModel.findOne({ memoId: memo.id, version }).exec();
+    if (exists) return;
+    await this.memoVersionModel.create({
+      id: uuidv4(),
+      memoId: memo.id,
+      version,
+      content: memo.content || '',
+      changeNote: changeNote || 'memo updated',
+    });
+  }
+
+  async listMemoVersions(memoId: string): Promise<AgentMemoVersion[]> {
+    return (await this.memoVersionModel.find({ memoId }).sort({ version: -1 }).exec()) as unknown as AgentMemoVersion[];
+  }
+
+  private memoCacheKey(agentId: string, memoKind: MemoKind): string {
+    return `memo:${agentId}:${memoKind}`;
+  }
+
+  private uniqueMemoKinds(kinds: MemoKind[]): MemoKind[] {
+    const allowed: MemoKind[] = ['identity', 'todo', 'topic', 'history', 'draft', 'custom'];
+    const normalized = Array.from(new Set((kinds || []).map((item) => String(item || '').trim() as MemoKind).filter(Boolean)));
+    return normalized.filter((item) => allowed.includes(item));
+  }
+
+  private async loadMemoKindCache(agentId: string, memoKind: MemoKind): Promise<Array<Record<string, any>>> {
+    const key = this.memoCacheKey(agentId, memoKind);
+    const cached = await this.redisService.get(key);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed?.items)) return parsed.items;
+      } catch {
+        // ignore cache parse error and rebuild
+      }
+    }
+
+    await this.refreshMemoCacheByKind(agentId, memoKind);
+    const rebuilt = await this.redisService.get(key);
+    if (!rebuilt) return [];
+    try {
+      const parsed = JSON.parse(rebuilt);
+      return Array.isArray(parsed?.items) ? parsed.items : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private async searchMemosFromCache(
+    agentId: string,
+    query: string,
+    kinds: MemoKind[],
+    limit: number,
+  ): Promise<Array<{ memoKind: MemoKind; title: string; topic?: string; summary: string }>> {
+    const keyword = String(query || '').trim().toLowerCase();
+    if (!keyword) return [];
+
+    const results: Array<{ memoKind: MemoKind; title: string; topic?: string; summary: string; updatedAt?: string }> = [];
+    const uniqueKinds = this.uniqueMemoKinds(kinds);
+    for (const memoKind of uniqueKinds) {
+      const rows = await this.loadMemoKindCache(agentId, memoKind);
+      for (const row of rows) {
+        const title = String(row.title || '');
+        const content = String(row.content || '');
+        const topic = row?.payload?.topic ? String(row.payload.topic) : undefined;
+        const tags = Array.isArray(row.tags) ? row.tags.join(' ') : '';
+        const haystack = `${title} ${content} ${topic || ''} ${tags}`.toLowerCase();
+        if (!haystack.includes(keyword)) continue;
+        results.push({
+          memoKind,
+          title,
+          topic,
+          summary: this.toSummary(content, 220),
+          updatedAt: row.updatedAt,
+        });
+      }
+    }
+
+    return results
+      .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+      .slice(0, Math.max(1, limit))
+      .map(({ memoKind, title, topic, summary }) => ({ memoKind, title, topic, summary }));
+  }
+
+  private async refreshMemoCacheByKind(agentId: string, memoKind: MemoKind): Promise<void> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) return;
+    const items = await this.memoModel.find({ agentId: normalizedAgentId, memoKind }).sort({ updatedAt: -1 }).limit(200).exec();
+    const payload = {
+      agentId: normalizedAgentId,
+      memoKind,
+      items,
+      updatedAt: new Date().toISOString(),
+    };
+    await this.redisService.set(this.memoCacheKey(normalizedAgentId, memoKind), JSON.stringify(payload));
   }
 
   private async syncMemoSafely(memo: AgentMemo): Promise<void> {

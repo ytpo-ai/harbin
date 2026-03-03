@@ -12,6 +12,7 @@ import { ToolService } from '../tools/tool.service';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 import { MemoService } from '../memos/memo.service';
+import { MemoEventBusService } from '../memos/memo-event-bus.service';
 
 export interface AgentContext {
   task: Task;
@@ -185,6 +186,7 @@ export class AgentService {
     private readonly apiKeyService: ApiKeyService,
     private readonly toolService: ToolService,
     private readonly memoService: MemoService,
+    private readonly memoEventBus: MemoEventBusService,
   ) {
     void this.bootstrapMcpProfilesAndAgentTypes();
   }
@@ -305,11 +307,20 @@ export class AgentService {
       }
     }
 
-    return this.agentModel.findByIdAndUpdate(
+    const updated = await this.agentModel.findByIdAndUpdate(
       agentId,
       normalizedUpdates,
       { new: true }
     ).exec();
+    if (updated) {
+      const runtimeAgentId = updated.id || (updated as any)._id?.toString?.() || agentId;
+      this.memoEventBus.emit({
+        name: 'agent.updated',
+        agentId: runtimeAgentId,
+        memoKinds: ['identity'],
+      });
+    }
+    return updated;
   }
 
   async deleteAgent(agentId: string): Promise<boolean> {
@@ -632,6 +643,13 @@ export class AgentService {
       });
       await this.runMemoOperation('task_complete_todo', taskId, async () => {
         await this.memoService.completeTaskTodo(agent.id || agentId, taskId, 'Task finished by agent runtime');
+      });
+      this.memoEventBus.emit({
+        name: 'task.completed',
+        agentId: agent.id || agentId,
+        memoKinds: ['history', 'todo', 'draft'],
+        taskId,
+        summary: this.compactLogText(response, 240),
       });
 
       // 更新任务消息历史
