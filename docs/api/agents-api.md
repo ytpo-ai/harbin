@@ -95,8 +95,10 @@
 ## Runtime Run Control（内部能力）
 
 - 所有 Runtime Run Control 接口要求内部上下文角色为：`system/admin/owner`
+- 组织隔离：非 `system` 角色仅可操作与其 `organizationId` 相同的 run
 - `GET /agents/runtime/runs/:runId`：查询 run 状态
 - `GET /agents/runtime/metrics`：查询 runtime hooks/outbox 指标（发布量、失败量、队列状态）
+- `GET /agents/runtime/outbox/dead-letter?limit=200`：导出失败事件（死信视图）
 - `POST /agents/runtime/runs/:runId/pause`：暂停 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/cancel`：取消 run（支持 body: `reason`、`actorId`、`actorType`）

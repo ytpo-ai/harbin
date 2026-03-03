@@ -149,6 +149,7 @@ export class RuntimeOrchestratorService {
     currentStep: number;
     taskId?: string;
     sessionId?: string;
+    organizationId?: string;
     agentId: string;
     startedAt: Date;
     finishedAt?: Date;
@@ -162,6 +163,7 @@ export class RuntimeOrchestratorService {
       currentStep: run.currentStep,
       taskId: run.taskId,
       sessionId: run.sessionId,
+      organizationId: run.organizationId,
       agentId: run.agentId,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,

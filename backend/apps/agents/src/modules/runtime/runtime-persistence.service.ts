@@ -237,4 +237,12 @@ export class RuntimePersistenceService {
       .limit(limit)
       .exec();
   }
+
+  async findDeadLetterEvents(limit = 200): Promise<AgentEventOutbox[]> {
+    return this.outboxModel
+      .find({ status: 'failed' })
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .exec();
+  }
 }

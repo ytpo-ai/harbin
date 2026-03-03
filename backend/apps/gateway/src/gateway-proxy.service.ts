@@ -32,6 +32,7 @@ export class GatewayProxyService {
       originalUrl.startsWith('/api/agents') ||
       originalUrl.startsWith('/api/tools') ||
       originalUrl.startsWith('/api/skills') ||
+      originalUrl.startsWith('/api/memos') ||
       originalUrl.startsWith('/api/models') ||
       originalUrl.startsWith('/api/model-management')
     ) {
@@ -144,6 +145,12 @@ export class GatewayProxyService {
     });
   }
 
+  private parseRuntimeControlPath(path: string): { action: string; runId: string } | null {
+    const match = path.match(/^\/api\/agents\/runtime\/runs\/([^/]+)\/(pause|resume|cancel|replay)$/);
+    if (!match) return null;
+    return { runId: match[1], action: match[2] };
+  }
+
   buildSignedHeaders(userContext?: GatewayUserContext): Record<string, string> {
     if (!userContext) return {};
     const encoded = encodeUserContext(userContext);
@@ -157,9 +164,12 @@ export class GatewayProxyService {
   async forward(req: any, res: any): Promise<void> {
     const start = Date.now();
     const requestId = (req.headers['x-request-id'] as string) || randomUUID();
-    const targetBase = this.resolveTarget(req.originalUrl || req.url);
-    const sourceService = this.getSourceService(req.originalUrl || req.url);
-    const targetUrl = `${targetBase}${req.originalUrl || req.url}`;
+    const originalUrl = req.originalUrl || req.url;
+    const targetBase = this.resolveTarget(originalUrl);
+    const sourceService = this.getSourceService(originalUrl);
+    const pathOnly = String(originalUrl || '').split('?')[0] || '/';
+    const runtimeControl = this.parseRuntimeControlPath(pathOnly);
+    const targetUrl = `${targetBase}${pathOnly}`;
 
     const headers: Record<string, string> = {};
     if (req.headers['content-type']) {
@@ -196,6 +206,15 @@ export class GatewayProxyService {
         `requestId=${requestId} ${req.method} ${req.originalUrl || req.url} -> ${targetBase} status=${response.status} latency=${latency}ms`,
       );
 
+      if (runtimeControl) {
+        const actorId = req.userContext?.employeeId || 'unknown';
+        const actorRole = req.userContext?.role || 'unknown';
+        const orgId = req.userContext?.organizationId || 'unknown';
+        this.logger.log(
+          `runtime_control_audit requestId=${requestId} action=${runtimeControl.action} runId=${runtimeControl.runId} actorId=${actorId} actorRole=${actorRole} organizationId=${orgId} status=${response.status}`,
+        );
+      }
+
       void this.recordOperationLog({
         req,
         userContext: req.userContext,
@@ -215,6 +234,15 @@ export class GatewayProxyService {
       this.logger.error(
         `requestId=${requestId} ${req.method} ${req.originalUrl || req.url} -> ${targetBase} failed latency=${latency}ms: ${message}`,
       );
+
+      if (runtimeControl) {
+        const actorId = req.userContext?.employeeId || 'unknown';
+        const actorRole = req.userContext?.role || 'unknown';
+        const orgId = req.userContext?.organizationId || 'unknown';
+        this.logger.warn(
+          `runtime_control_audit requestId=${requestId} action=${runtimeControl.action} runId=${runtimeControl.runId} actorId=${actorId} actorRole=${actorRole} organizationId=${orgId} status=failed error=${message}`,
+        );
+      }
 
       void this.recordOperationLog({
         req,
