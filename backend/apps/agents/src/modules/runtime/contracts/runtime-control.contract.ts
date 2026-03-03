@@ -29,6 +29,7 @@ export const RuntimeDeadLetterRequeueBodySchema = z.object({
   runId: z.string().min(1).max(120).optional(),
   eventType: z.string().min(1).max(120).optional(),
   limit: z.number().int().positive().max(1000).optional(),
+  dryRun: z.boolean().optional(),
 });
 
 export type RuntimeDeadLetterQuery = z.infer<typeof RuntimeDeadLetterQuerySchema>;

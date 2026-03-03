@@ -206,6 +206,19 @@ export class RuntimePersistenceService {
     return { pending, failed, dispatched };
   }
 
+  async getDeadLetterSummary(): Promise<{ totalFailed: number; oldestFailedAt?: Date }> {
+    const totalFailed = await this.outboxModel.countDocuments({ status: 'failed' }).exec();
+    const oldest = await this.outboxModel
+      .findOne({ status: 'failed' })
+      .sort({ createdAt: 1 })
+      .select({ createdAt: 1 })
+      .exec();
+    return {
+      totalFailed,
+      oldestFailedAt: (oldest as any)?.createdAt,
+    };
+  }
+
   async findEventsByRun(
     runId: string,
     options?: {

@@ -111,10 +111,14 @@ export class RuntimeController {
   async getRuntimeMetrics(@Req() req: Request & { userContext?: GatewayUserContext }) {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
-    const outbox = await this.persistence.countOutboxByStatus();
+    const [outbox, deadLetter] = await Promise.all([
+      this.persistence.countOutboxByStatus(),
+      this.persistence.getDeadLetterSummary(),
+    ]);
     return {
       hookDispatcher: this.hookDispatcher.getMetrics(),
       outbox,
+      deadLetter,
       timestamp: Date.now(),
     };
   }
@@ -232,6 +236,7 @@ export class RuntimeController {
     const scopedOrganizationId = this.resolveOrganizationScope(context, body.organizationId);
 
     let requeued = 0;
+    let matched = 0;
     if (body.eventIds?.length) {
       const rows = await this.persistence.findDeadLetterEvents({
         limit: body.limit || Math.max(200, body.eventIds.length),
@@ -239,18 +244,27 @@ export class RuntimeController {
       });
       const allowedEventIds = new Set(rows.map((row) => row.eventId));
       const eventIds = body.eventIds.filter((eventId) => allowedEventIds.has(eventId));
-      requeued = await this.persistence.requeueDeadLetterByEventIds(eventIds);
+      matched = eventIds.length;
+      if (!body.dryRun) {
+        requeued = await this.persistence.requeueDeadLetterByEventIds(eventIds);
+      }
     } else {
-      requeued = await this.persistence.requeueDeadLetterByFilter({
+      const rows = await this.persistence.findDeadLetterEvents({
         limit: body.limit || 200,
         organizationId: scopedOrganizationId,
         runId: body.runId,
         eventType: body.eventType,
       });
+      matched = rows.length;
+      if (!body.dryRun) {
+        requeued = await this.persistence.requeueDeadLetterByEventIds(rows.map((row) => row.eventId));
+      }
     }
 
     return {
       success: true,
+      dryRun: Boolean(body.dryRun),
+      matched,
       requeued,
       scope: {
         organizationId: scopedOrganizationId,
