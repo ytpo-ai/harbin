@@ -11,6 +11,8 @@ import {
   RuntimeDeadLetterQuerySchema,
   RuntimeDeadLetterRequeueBody,
   RuntimeDeadLetterRequeueBodySchema,
+  RuntimeMaintenanceAuditQuery,
+  RuntimeMaintenanceAuditQuerySchema,
   RuntimePurgeLegacyBody,
   RuntimePurgeLegacyBodySchema,
   RuntimeReplayBody,
@@ -251,6 +253,7 @@ export class RuntimeController {
     this.assertRuntimeControlPermission(context);
     const body = RuntimeDeadLetterRequeueBodySchema.parse(rawBody || {});
     const scopedOrganizationId = this.resolveOrganizationScope(context, body.organizationId);
+    const batchId = `requeue-${Date.now()}`;
 
     let requeued = 0;
     let matched = 0;
@@ -274,8 +277,28 @@ export class RuntimeController {
       }
     }
 
+    await this.persistence.createMaintenanceAudit({
+      action: 'dead_letter_requeue',
+      actorId: context.employeeId,
+      actorRole: context.role || 'unknown',
+      organizationId: scopedOrganizationId,
+      dryRun: Boolean(body.dryRun),
+      matched,
+      affected: requeued,
+      scope: {
+        runId: body.runId,
+        eventType: body.eventType,
+        eventIdsCount: body.eventIds?.length || 0,
+        batchId,
+      },
+      result: {
+        requeued,
+      },
+    });
+
     return {
       success: true,
+      batchId,
       dryRun: Boolean(body.dryRun),
       matched,
       requeued,
@@ -284,6 +307,40 @@ export class RuntimeController {
         runId: body.runId,
         eventType: body.eventType,
       },
+    };
+  }
+
+  @Get('maintenance/audits')
+  async getMaintenanceAudits(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Query() rawQuery?: RuntimeMaintenanceAuditQuery,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    const query = RuntimeMaintenanceAuditQuerySchema.parse(rawQuery || {});
+    const scopedOrganizationId = this.resolveOrganizationScope(context, query.organizationId);
+    const rows = await this.persistence.listMaintenanceAudits({
+      limit: query.limit || 50,
+      action: query.action,
+      organizationId: scopedOrganizationId,
+    });
+
+    return {
+      success: true,
+      total: rows.length,
+      audits: rows.map((row) => ({
+        id: row.id,
+        action: row.action,
+        actorId: row.actorId,
+        actorRole: row.actorRole,
+        organizationId: row.organizationId,
+        dryRun: row.dryRun,
+        matched: row.matched,
+        affected: row.affected,
+        scope: row.scope,
+        result: row.result,
+        createdAt: (row as any).createdAt,
+      })),
     };
   }
 
@@ -302,10 +359,30 @@ export class RuntimeController {
       'agent_sessions',
     ];
     const collections = body.collections?.length ? body.collections : defaultCollections;
-    const results = await this.persistence.purgeCollections(collections);
+    const results = body.dryRun
+      ? collections.map((collection) => ({ collection, deletedCount: 0 }))
+      : await this.persistence.purgeCollections(collections);
+
+    await this.persistence.createMaintenanceAudit({
+      action: 'purge_legacy',
+      actorId: context.employeeId,
+      actorRole: context.role || 'unknown',
+      organizationId: context.organizationId,
+      dryRun: Boolean(body.dryRun),
+      matched: collections.length,
+      affected: results.reduce((sum, item) => sum + item.deletedCount, 0),
+      scope: {
+        collections,
+      },
+      result: {
+        collections: results,
+      },
+    });
+
     return {
       success: true,
       purgedBy: context.employeeId,
+      dryRun: Boolean(body.dryRun),
       collections: results,
     };
   }

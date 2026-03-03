@@ -43,11 +43,19 @@ export const RuntimeDeadLetterRequeueBodySchema = z.object({
 export const RuntimePurgeLegacyBodySchema = z.object({
   confirm: z.literal('DELETE_LEGACY_RUNTIME_DATA'),
   collections: z.array(z.string().min(1).max(120)).max(20).optional(),
+  dryRun: z.boolean().optional(),
+});
+
+export const RuntimeMaintenanceAuditQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  action: z.enum(['dead_letter_requeue', 'purge_legacy']).optional(),
+  organizationId: z.string().min(1).max(120).optional(),
 });
 
 export type RuntimeDeadLetterQuery = z.infer<typeof RuntimeDeadLetterQuerySchema>;
 export type RuntimeDeadLetterRequeueBody = z.infer<typeof RuntimeDeadLetterRequeueBodySchema>;
 export type RuntimePurgeLegacyBody = z.infer<typeof RuntimePurgeLegacyBodySchema>;
+export type RuntimeMaintenanceAuditQuery = z.infer<typeof RuntimeMaintenanceAuditQuerySchema>;
 
 export type RuntimeControlBody = z.infer<typeof RuntimeControlBodySchema>;
 export type RuntimeReplayBody = z.infer<typeof RuntimeReplayBodySchema>;

@@ -155,6 +155,10 @@ export class GatewayProxyService {
       return { runId: 'outbox', action: 'dead_letter_requeue' };
     }
 
+    if (path === '/api/agents/runtime/maintenance/purge-legacy') {
+      return { runId: 'maintenance', action: 'purge_legacy' };
+    }
+
     return null;
   }
 

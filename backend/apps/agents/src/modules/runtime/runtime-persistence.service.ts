@@ -7,6 +7,10 @@ import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { AgentMessage, AgentMessageDocument } from '../../schemas/agent-message.schema';
 import { AgentPart, AgentPartDocument } from '../../schemas/agent-part.schema';
 import { AgentEventOutbox, AgentEventOutboxDocument } from '../../schemas/agent-event-outbox.schema';
+import {
+  AgentRuntimeMaintenanceAudit,
+  AgentRuntimeMaintenanceAuditDocument,
+} from '../../schemas/agent-runtime-maintenance-audit.schema';
 import { RuntimeEvent, RuntimeEventSchema } from './contracts/runtime-event.contract';
 
 @Injectable()
@@ -17,6 +21,8 @@ export class RuntimePersistenceService {
     @InjectModel(AgentMessage.name) private readonly messageModel: Model<AgentMessageDocument>,
     @InjectModel(AgentPart.name) private readonly partModel: Model<AgentPartDocument>,
     @InjectModel(AgentEventOutbox.name) private readonly outboxModel: Model<AgentEventOutboxDocument>,
+    @InjectModel(AgentRuntimeMaintenanceAudit.name)
+    private readonly maintenanceAuditModel: Model<AgentRuntimeMaintenanceAuditDocument>,
   ) {}
 
   async createRun(input: {
@@ -373,5 +379,40 @@ export class RuntimePersistenceService {
       });
     }
     return results;
+  }
+
+  async createMaintenanceAudit(input: {
+    action: 'dead_letter_requeue' | 'purge_legacy';
+    actorId: string;
+    actorRole: string;
+    organizationId?: string;
+    dryRun: boolean;
+    matched: number;
+    affected: number;
+    scope?: Record<string, unknown>;
+    result?: Record<string, unknown>;
+  }): Promise<AgentRuntimeMaintenanceAudit> {
+    const audit = new this.maintenanceAuditModel({
+      id: `maint-${uuidv4()}`,
+      ...input,
+    });
+    return audit.save();
+  }
+
+  async listMaintenanceAudits(options?: {
+    limit?: number;
+    organizationId?: string;
+    action?: 'dead_letter_requeue' | 'purge_legacy';
+  }): Promise<AgentRuntimeMaintenanceAudit[]> {
+    const limit = options?.limit || 50;
+    const filter: Record<string, unknown> = {};
+    if (options?.organizationId) {
+      filter.organizationId = options.organizationId;
+    }
+    if (options?.action) {
+      filter.action = options.action;
+    }
+
+    return this.maintenanceAuditModel.find(filter).sort({ createdAt: -1 }).limit(limit).exec();
   }
 }

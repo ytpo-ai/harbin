@@ -5,6 +5,10 @@ import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { AgentMessage, AgentMessageSchema } from '../../schemas/agent-message.schema';
 import { AgentPart, AgentPartSchema } from '../../schemas/agent-part.schema';
 import { AgentEventOutbox, AgentEventOutboxSchema } from '../../schemas/agent-event-outbox.schema';
+import {
+  AgentRuntimeMaintenanceAudit,
+  AgentRuntimeMaintenanceAuditSchema,
+} from '../../schemas/agent-runtime-maintenance-audit.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
@@ -18,6 +22,7 @@ import { RuntimeController } from './runtime.controller';
       { name: AgentMessage.name, schema: AgentMessageSchema },
       { name: AgentPart.name, schema: AgentPartSchema },
       { name: AgentEventOutbox.name, schema: AgentEventOutboxSchema },
+      { name: AgentRuntimeMaintenanceAudit.name, schema: AgentRuntimeMaintenanceAuditSchema },
     ]),
   ],
   controllers: [RuntimeController],

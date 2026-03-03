@@ -100,7 +100,8 @@
 - `GET /agents/runtime/metrics`：查询 runtime hooks/outbox 指标（发布量、失败量、队列状态、死信摘要）
 - `GET /agents/runtime/outbox/dead-letter?limit=200&organizationId=&runId=&eventType=`：导出失败事件（死信视图，支持筛选；返回 `total/returned/hasMore`）
 - `POST /agents/runtime/outbox/dead-letter/requeue`：批量重投死信（支持 `eventIds` 或筛选条件 + `limit`，可 `dryRun`）
-- `POST /agents/runtime/maintenance/purge-legacy`：清理 legacy runtime 数据（仅 `system` 角色，需 `confirm=DELETE_LEGACY_RUNTIME_DATA`）
+- `GET /agents/runtime/maintenance/audits?limit=&action=&organizationId=`：查询运行维护审计日志
+- `POST /agents/runtime/maintenance/purge-legacy`：清理 legacy runtime 数据（仅 `system` 角色，需 `confirm=DELETE_LEGACY_RUNTIME_DATA`，可 `dryRun`）
 - `POST /agents/runtime/runs/:runId/pause`：暂停 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/cancel`：取消 run（支持 body: `reason`、`actorId`、`actorType`）
