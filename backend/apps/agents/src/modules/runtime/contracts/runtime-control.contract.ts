@@ -14,6 +14,14 @@ export const RuntimeReplayBodySchema = z.object({
   toSequence: z.number().int().nonnegative().optional(),
   channel: z.string().min(1).max(200).optional(),
   limit: z.number().int().positive().max(1000).optional(),
+}).refine((value) => {
+  if (typeof value.fromSequence !== 'number' || typeof value.toSequence !== 'number') {
+    return true;
+  }
+  return value.fromSequence <= value.toSequence;
+}, {
+  message: 'fromSequence must be less than or equal to toSequence',
+  path: ['toSequence'],
 });
 
 export const RuntimeDeadLetterQuerySchema = z.object({

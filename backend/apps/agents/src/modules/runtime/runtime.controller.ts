@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, Param, Post, Query, Req } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
 import { GatewayUserContext } from '@libs/contracts';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
@@ -58,7 +58,7 @@ export class RuntimeController {
   private async getAuthorizedRun(runId: string, context: GatewayUserContext) {
     const run = await this.runtimeOrchestrator.getRun(runId);
     if (!run) {
-      return null;
+      throw new NotFoundException('Runtime run not found');
     }
     this.assertOrganizationAccess(run.organizationId, context);
     return run;
@@ -206,10 +206,17 @@ export class RuntimeController {
       runId: query.runId,
       eventType: query.eventType,
     });
+    const total = await this.persistence.countDeadLetterEvents({
+      organizationId: scopedOrganizationId,
+      runId: query.runId,
+      eventType: query.eventType,
+    });
 
     return {
       success: true,
-      total: rows.length,
+      total,
+      returned: rows.length,
+      hasMore: total > rows.length,
       events: rows.map((row) => ({
         eventId: row.eventId,
         eventType: row.eventType,
@@ -238,12 +245,8 @@ export class RuntimeController {
     let requeued = 0;
     let matched = 0;
     if (body.eventIds?.length) {
-      const rows = await this.persistence.findDeadLetterEvents({
-        limit: body.limit || Math.max(200, body.eventIds.length),
-        organizationId: scopedOrganizationId,
-      });
-      const allowedEventIds = new Set(rows.map((row) => row.eventId));
-      const eventIds = body.eventIds.filter((eventId) => allowedEventIds.has(eventId));
+      const rows = await this.persistence.findDeadLetterEventsByEventIds(body.eventIds, scopedOrganizationId);
+      const eventIds = rows.map((row) => row.eventId);
       matched = eventIds.length;
       if (!body.dryRun) {
         requeued = await this.persistence.requeueDeadLetterByEventIds(eventIds);

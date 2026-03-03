@@ -276,6 +276,36 @@ export class RuntimePersistenceService {
       .exec();
   }
 
+  async countDeadLetterEvents(options?: {
+    organizationId?: string;
+    runId?: string;
+    eventType?: string;
+  }): Promise<number> {
+    const filter: Record<string, unknown> = { status: 'failed' };
+    if (options?.organizationId) {
+      filter.organizationId = options.organizationId;
+    }
+    if (options?.runId) {
+      filter.runId = options.runId;
+    }
+    if (options?.eventType) {
+      filter.eventType = options.eventType;
+    }
+    return this.outboxModel.countDocuments(filter).exec();
+  }
+
+  async findDeadLetterEventsByEventIds(eventIds: string[], organizationId?: string): Promise<AgentEventOutbox[]> {
+    if (!eventIds.length) return [];
+    const filter: Record<string, unknown> = {
+      status: 'failed',
+      eventId: { $in: eventIds },
+    };
+    if (organizationId) {
+      filter.organizationId = organizationId;
+    }
+    return this.outboxModel.find(filter).exec();
+  }
+
   async requeueDeadLetterByEventIds(eventIds: string[]): Promise<number> {
     if (!eventIds.length) return 0;
     const result = await this.outboxModel
