@@ -488,13 +488,15 @@ export class RuntimeOrchestratorService {
 
   async recordToolRunning(rawInput: RuntimeToolEventInput & { traceId: string; sequence: number; messageId: string; partId: string }): Promise<void> {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
-    await this.persistence.updatePart(rawInput.partId, {
-      status: 'running',
+    const transitioned = await this.persistence.transitionPartStatus(rawInput.partId, 'pending', 'running', {
       startedAt: new Date(),
       metadata: {
         stateNote: `Tool ${input.toolId} is running`,
       },
     });
+    if (!transitioned) {
+      throw new Error(`Invalid tool part transition pending->running for partId=${rawInput.partId}`);
+    }
 
     await this.emitEvent({
       eventType: 'tool.running',
@@ -517,12 +519,14 @@ export class RuntimeOrchestratorService {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
     const partId = rawInput.partId;
     if (partId) {
-      await this.persistence.updatePart(partId, {
-        status: 'completed',
+      const transitioned = await this.persistence.transitionPartStatus(partId, 'running', 'completed', {
         output: input.output,
         endedAt: new Date(),
         metadata: input.metadata,
       });
+      if (!transitioned) {
+        throw new Error(`Invalid tool part transition running->completed for partId=${partId}`);
+      }
     }
 
     await this.emitEvent({
@@ -547,12 +551,19 @@ export class RuntimeOrchestratorService {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
     const partId = rawInput.partId;
     if (partId) {
-      await this.persistence.updatePart(partId, {
-        status: 'error',
-        error: input.error,
-        endedAt: new Date(),
-        metadata: input.metadata,
-      });
+      const fromStatuses: Array<'pending' | 'running'> = ['running', 'pending'];
+      let transitioned = false;
+      for (const fromStatus of fromStatuses) {
+        transitioned = await this.persistence.transitionPartStatus(partId, fromStatus, 'error', {
+          error: input.error,
+          endedAt: new Date(),
+          metadata: input.metadata,
+        });
+        if (transitioned) break;
+      }
+      if (!transitioned) {
+        throw new Error(`Invalid tool part transition to error for partId=${partId}`);
+      }
     }
 
     await this.emitEvent({

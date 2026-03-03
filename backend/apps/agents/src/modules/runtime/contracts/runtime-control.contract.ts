@@ -40,8 +40,14 @@ export const RuntimeDeadLetterRequeueBodySchema = z.object({
   dryRun: z.boolean().optional(),
 });
 
+export const RuntimePurgeLegacyBodySchema = z.object({
+  confirm: z.literal('DELETE_LEGACY_RUNTIME_DATA'),
+  collections: z.array(z.string().min(1).max(120)).max(20).optional(),
+});
+
 export type RuntimeDeadLetterQuery = z.infer<typeof RuntimeDeadLetterQuerySchema>;
 export type RuntimeDeadLetterRequeueBody = z.infer<typeof RuntimeDeadLetterRequeueBodySchema>;
+export type RuntimePurgeLegacyBody = z.infer<typeof RuntimePurgeLegacyBodySchema>;
 
 export type RuntimeControlBody = z.infer<typeof RuntimeControlBodySchema>;
 export type RuntimeReplayBody = z.infer<typeof RuntimeReplayBodySchema>;

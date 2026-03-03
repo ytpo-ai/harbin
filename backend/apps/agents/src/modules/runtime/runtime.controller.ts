@@ -11,6 +11,8 @@ import {
   RuntimeDeadLetterQuerySchema,
   RuntimeDeadLetterRequeueBody,
   RuntimeDeadLetterRequeueBodySchema,
+  RuntimePurgeLegacyBody,
+  RuntimePurgeLegacyBodySchema,
   RuntimeReplayBody,
   RuntimeReplayBodySchema,
 } from './contracts/runtime-control.contract';
@@ -37,6 +39,14 @@ export class RuntimeController {
       return;
     }
     throw new ForbiddenException('Runtime control requires system/admin role');
+  }
+
+  private assertSystemRole(context: GatewayUserContext): void {
+    const role = (context.role || '').toLowerCase();
+    if (role === 'system') {
+      return;
+    }
+    throw new ForbiddenException('This operation requires system role');
   }
 
   private assertOrganizationAccess(runOrganizationId: string | undefined, context: GatewayUserContext): void {
@@ -274,6 +284,29 @@ export class RuntimeController {
         runId: body.runId,
         eventType: body.eventType,
       },
+    };
+  }
+
+  @Post('maintenance/purge-legacy')
+  async purgeLegacyRuntimeData(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Body() rawBody: RuntimePurgeLegacyBody,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    this.assertSystemRole(context);
+    const body = RuntimePurgeLegacyBodySchema.parse(rawBody || {});
+
+    const defaultCollections = [
+      'agentsessions',
+      'agent_sessions',
+    ];
+    const collections = body.collections?.length ? body.collections : defaultCollections;
+    const results = await this.persistence.purgeCollections(collections);
+    return {
+      success: true,
+      purgedBy: context.employeeId,
+      collections: results,
     };
   }
 }

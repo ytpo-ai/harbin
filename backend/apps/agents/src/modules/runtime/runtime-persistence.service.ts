@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { InjectConnection } from '@nestjs/mongoose';
+import { Connection, Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { AgentMessage, AgentMessageDocument } from '../../schemas/agent-message.schema';
@@ -11,6 +12,7 @@ import { RuntimeEvent, RuntimeEventSchema } from './contracts/runtime-event.cont
 @Injectable()
 export class RuntimePersistenceService {
   constructor(
+    @InjectConnection() private readonly connection: Connection,
     @InjectModel(AgentRun.name) private readonly runModel: Model<AgentRunDocument>,
     @InjectModel(AgentMessage.name) private readonly messageModel: Model<AgentMessageDocument>,
     @InjectModel(AgentPart.name) private readonly partModel: Model<AgentPartDocument>,
@@ -117,6 +119,26 @@ export class RuntimePersistenceService {
 
   async updatePart(partId: string, updates: Partial<AgentPart>): Promise<void> {
     await this.partModel.updateOne({ id: partId }, { $set: updates }).exec();
+  }
+
+  async transitionPartStatus(
+    partId: string,
+    fromStatus: AgentPart['status'],
+    toStatus: AgentPart['status'],
+    updates?: Partial<AgentPart>,
+  ): Promise<boolean> {
+    const result = await this.partModel
+      .updateOne(
+        { id: partId, status: fromStatus },
+        {
+          $set: {
+            status: toStatus,
+            ...(updates || {}),
+          },
+        },
+      )
+      .exec();
+    return (result.modifiedCount || 0) > 0;
   }
 
   async getPart(partId: string): Promise<AgentPart | null> {
@@ -332,5 +354,24 @@ export class RuntimePersistenceService {
     const rows = await this.findDeadLetterEvents(options);
     const eventIds = rows.map((row) => row.eventId);
     return this.requeueDeadLetterByEventIds(eventIds);
+  }
+
+  async purgeCollections(collectionNames: string[]): Promise<Array<{ collection: string; deletedCount: number }>> {
+    const existing = await this.connection.db.listCollections({}, { nameOnly: true }).toArray();
+    const existingNames = new Set(existing.map((item) => item.name));
+    const results: Array<{ collection: string; deletedCount: number }> = [];
+
+    for (const name of collectionNames) {
+      if (!existingNames.has(name)) {
+        results.push({ collection: name, deletedCount: 0 });
+        continue;
+      }
+      const deleteResult = await this.connection.db.collection(name).deleteMany({});
+      results.push({
+        collection: name,
+        deletedCount: deleteResult.deletedCount || 0,
+      });
+    }
+    return results;
   }
 }
