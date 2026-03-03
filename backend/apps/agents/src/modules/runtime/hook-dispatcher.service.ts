@@ -8,6 +8,14 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(HookDispatcherService.name);
   private timer?: NodeJS.Timeout;
   private flushing = false;
+  private metrics = {
+    published: 0,
+    failed: 0,
+    replayPublished: 0,
+    replayFailed: 0,
+    flushRuns: 0,
+    lastFlushAt: 0,
+  };
 
   constructor(
     private readonly redisService: RedisService,
@@ -27,7 +35,7 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async dispatch(event: RuntimeEvent, options?: { channel?: string; updateOutboxStatus?: boolean }): Promise<void> {
+  async dispatch(event: RuntimeEvent, options?: { channel?: string; updateOutboxStatus?: boolean; replay?: boolean }): Promise<void> {
     const channel = options?.channel || this.getChannel(event);
     const shouldUpdateOutboxStatus = options?.updateOutboxStatus !== false;
     try {
@@ -35,11 +43,21 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Redis pub/sub is not ready');
       }
       await this.redisService.publish(channel, event);
+      if (options?.replay) {
+        this.metrics.replayPublished += 1;
+      } else {
+        this.metrics.published += 1;
+      }
       if (shouldUpdateOutboxStatus) {
         await this.persistence.markEventDispatched(event.eventId);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown hook dispatch error';
+      if (options?.replay) {
+        this.metrics.replayFailed += 1;
+      } else {
+        this.metrics.failed += 1;
+      }
       this.logger.warn(`Hook dispatch failed eventId=${event.eventId} type=${event.eventType}: ${message}`);
       if (shouldUpdateOutboxStatus) {
         await this.persistence.markEventFailed(event.eventId, message);
@@ -51,6 +69,8 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     if (this.flushing) return;
     this.flushing = true;
     try {
+      this.metrics.flushRuns += 1;
+      this.metrics.lastFlushAt = Date.now();
       const records = await this.persistence.findDispatchableEvents(100);
       for (const record of records) {
         const event: RuntimeEvent = {
@@ -74,6 +94,13 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.flushing = false;
     }
+  }
+
+  getMetrics() {
+    return {
+      ...this.metrics,
+      queueFlushing: this.flushing,
+    };
   }
 
   private getChannel(event: RuntimeEvent): string {

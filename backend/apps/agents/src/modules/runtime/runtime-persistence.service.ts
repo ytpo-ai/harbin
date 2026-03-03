@@ -197,6 +197,15 @@ export class RuntimePersistenceService {
       .exec();
   }
 
+  async countOutboxByStatus(): Promise<{ pending: number; failed: number; dispatched: number }> {
+    const [pending, failed, dispatched] = await Promise.all([
+      this.outboxModel.countDocuments({ status: 'pending' }).exec(),
+      this.outboxModel.countDocuments({ status: 'failed' }).exec(),
+      this.outboxModel.countDocuments({ status: 'dispatched' }).exec(),
+    ]);
+    return { pending, failed, dispatched };
+  }
+
   async findEventsByRun(
     runId: string,
     options?: {

@@ -337,6 +337,7 @@ export class RuntimeOrchestratorService {
       await this.hookDispatcher.dispatch(event, {
         channel: options?.channel,
         updateOutboxStatus: false,
+        replay: true,
       });
       dispatched += 1;
     }
