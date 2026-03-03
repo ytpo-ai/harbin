@@ -238,11 +238,56 @@ export class RuntimePersistenceService {
       .exec();
   }
 
-  async findDeadLetterEvents(limit = 200): Promise<AgentEventOutbox[]> {
+  async findDeadLetterEvents(options?: {
+    limit?: number;
+    organizationId?: string;
+    runId?: string;
+    eventType?: string;
+  }): Promise<AgentEventOutbox[]> {
+    const limit = options?.limit || 200;
+    const filter: Record<string, unknown> = { status: 'failed' };
+    if (options?.organizationId) {
+      filter.organizationId = options.organizationId;
+    }
+    if (options?.runId) {
+      filter.runId = options.runId;
+    }
+    if (options?.eventType) {
+      filter.eventType = options.eventType;
+    }
+
     return this.outboxModel
-      .find({ status: 'failed' })
+      .find(filter)
       .sort({ updatedAt: -1 })
       .limit(limit)
       .exec();
+  }
+
+  async requeueDeadLetterByEventIds(eventIds: string[]): Promise<number> {
+    if (!eventIds.length) return 0;
+    const result = await this.outboxModel
+      .updateMany(
+        { eventId: { $in: eventIds }, status: 'failed' },
+        {
+          $set: {
+            status: 'pending',
+            nextRetryAt: new Date(),
+            lastError: undefined,
+          },
+        },
+      )
+      .exec();
+    return result.modifiedCount || 0;
+  }
+
+  async requeueDeadLetterByFilter(options?: {
+    limit?: number;
+    organizationId?: string;
+    runId?: string;
+    eventType?: string;
+  }): Promise<number> {
+    const rows = await this.findDeadLetterEvents(options);
+    const eventIds = rows.map((row) => row.eventId);
+    return this.requeueDeadLetterByEventIds(eventIds);
   }
 }

@@ -29,6 +29,12 @@ function onRuntimeEvent(event) {
   - 先回放 `tool.*` 事件补齐工具状态
   - 再回放 `run.*` 事件对齐最终态
 
+## 2.1 死信重投建议
+
+- 查看死信：`GET /agents/runtime/outbox/dead-letter`
+- 按范围重投：`POST /agents/runtime/outbox/dead-letter/requeue`
+- 优先按 `runId` + `eventType` 小范围重投，避免全量重投导致消费峰值。
+
 ## 3. 可观测性指标
 
 通过 `GET /agents/runtime/metrics` 关注：

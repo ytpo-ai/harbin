@@ -4,7 +4,16 @@ import { GatewayUserContext } from '@libs/contracts';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimePersistenceService } from './runtime-persistence.service';
-import { RuntimeControlBody, RuntimeControlBodySchema, RuntimeReplayBody, RuntimeReplayBodySchema } from './contracts/runtime-control.contract';
+import {
+  RuntimeControlBody,
+  RuntimeControlBodySchema,
+  RuntimeDeadLetterQuery,
+  RuntimeDeadLetterQuerySchema,
+  RuntimeDeadLetterRequeueBody,
+  RuntimeDeadLetterRequeueBodySchema,
+  RuntimeReplayBody,
+  RuntimeReplayBodySchema,
+} from './contracts/runtime-control.contract';
 
 @Controller('agents/runtime')
 export class RuntimeController {
@@ -68,6 +77,23 @@ export class RuntimeController {
       actorType,
       reason: body?.reason,
     };
+  }
+
+  private resolveOrganizationScope(
+    context: GatewayUserContext,
+    organizationId?: string,
+  ): string | undefined {
+    const role = (context.role || '').toLowerCase();
+    if (role === 'system') {
+      return organizationId;
+    }
+    if (!context.organizationId) {
+      throw new ForbiddenException('Missing organization in user context');
+    }
+    if (organizationId && organizationId !== context.organizationId) {
+      throw new ForbiddenException('Cross-organization operation is forbidden');
+    }
+    return context.organizationId;
   }
 
   @Get('runs/:runId')
@@ -164,24 +190,23 @@ export class RuntimeController {
   @Get('outbox/dead-letter')
   async getDeadLetterEvents(
     @Req() req: Request & { userContext?: GatewayUserContext },
-    @Query('limit') limitQuery?: string,
+    @Query() rawQuery?: RuntimeDeadLetterQuery,
   ) {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
-    const role = (context.role || '').toLowerCase();
-    const parsedLimit = Number(limitQuery);
-    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.max(1, Math.min(1000, parsedLimit)) : 200;
-    const rows = await this.persistence.findDeadLetterEvents(limit);
-
-    const filtered =
-      role === 'system'
-        ? rows
-        : rows.filter((row) => row.organizationId && row.organizationId === context.organizationId);
+    const query = RuntimeDeadLetterQuerySchema.parse(rawQuery || {});
+    const scopedOrganizationId = this.resolveOrganizationScope(context, query.organizationId);
+    const rows = await this.persistence.findDeadLetterEvents({
+      limit: query.limit || 200,
+      organizationId: scopedOrganizationId,
+      runId: query.runId,
+      eventType: query.eventType,
+    });
 
     return {
       success: true,
-      total: filtered.length,
-      events: filtered.map((row) => ({
+      total: rows.length,
+      events: rows.map((row) => ({
         eventId: row.eventId,
         eventType: row.eventType,
         runId: row.runId,
@@ -193,6 +218,45 @@ export class RuntimeController {
         nextRetryAt: row.nextRetryAt,
         updatedAt: (row as any).updatedAt,
       })),
+    };
+  }
+
+  @Post('outbox/dead-letter/requeue')
+  async requeueDeadLetterEvents(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Body() rawBody?: RuntimeDeadLetterRequeueBody,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    const body = RuntimeDeadLetterRequeueBodySchema.parse(rawBody || {});
+    const scopedOrganizationId = this.resolveOrganizationScope(context, body.organizationId);
+
+    let requeued = 0;
+    if (body.eventIds?.length) {
+      const rows = await this.persistence.findDeadLetterEvents({
+        limit: body.limit || Math.max(200, body.eventIds.length),
+        organizationId: scopedOrganizationId,
+      });
+      const allowedEventIds = new Set(rows.map((row) => row.eventId));
+      const eventIds = body.eventIds.filter((eventId) => allowedEventIds.has(eventId));
+      requeued = await this.persistence.requeueDeadLetterByEventIds(eventIds);
+    } else {
+      requeued = await this.persistence.requeueDeadLetterByFilter({
+        limit: body.limit || 200,
+        organizationId: scopedOrganizationId,
+        runId: body.runId,
+        eventType: body.eventType,
+      });
+    }
+
+    return {
+      success: true,
+      requeued,
+      scope: {
+        organizationId: scopedOrganizationId,
+        runId: body.runId,
+        eventType: body.eventType,
+      },
     };
   }
 }

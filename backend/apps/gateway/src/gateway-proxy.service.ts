@@ -147,8 +147,15 @@ export class GatewayProxyService {
 
   private parseRuntimeControlPath(path: string): { action: string; runId: string } | null {
     const match = path.match(/^\/api\/agents\/runtime\/runs\/([^/]+)\/(pause|resume|cancel|replay)$/);
-    if (!match) return null;
-    return { runId: match[1], action: match[2] };
+    if (match) {
+      return { runId: match[1], action: match[2] };
+    }
+
+    if (path === '/api/agents/runtime/outbox/dead-letter/requeue') {
+      return { runId: 'outbox', action: 'dead_letter_requeue' };
+    }
+
+    return null;
   }
 
   buildSignedHeaders(userContext?: GatewayUserContext): Record<string, string> {
