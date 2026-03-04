@@ -40,8 +40,35 @@ export const memoService = {
     return true;
   },
 
+  async getAggregationStatus(agentId?: string): Promise<{
+    redisReady: boolean;
+    queueKeys: number;
+    queuedEvents: number;
+    latestMemoUpdatedAt?: string;
+    memoDocuments: number;
+    agentId?: string;
+  }> {
+    const response = await api.get('/memos/aggregation/status', { params: { agentId } });
+    return response.data;
+  },
+
+  async flushEvents(agentId?: string): Promise<{ agents: number; events: number; topics: number }> {
+    const response = await api.post('/memos/events/flush', { agentId });
+    return response.data;
+  },
+
   async rebuildDocs(): Promise<{ memos: number }> {
     const response = await api.post('/memos/docs/rebuild');
+    return response.data;
+  },
+
+  async aggregateIdentity(agentId: string): Promise<{ success: boolean; agentId: string; type: string }> {
+    const response = await api.post('/memos/identity/aggregate', { agentId });
+    return response.data;
+  },
+
+  async aggregateEvaluation(agentId: string): Promise<{ success: boolean; agentId: string; type: string }> {
+    const response = await api.post('/memos/evaluation/aggregate', { agentId });
     return response.data;
   },
 };
