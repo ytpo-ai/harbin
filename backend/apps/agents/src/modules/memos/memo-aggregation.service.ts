@@ -60,13 +60,16 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
       const agents = await this.agentModel.find({ isActive: true }).exec();
       for (const agent of agents) {
         try {
+          const runtimeAgentId = agent.id || (agent as any)._id?.toString();
+          if (!runtimeAgentId) continue;
           await Promise.all([
-            this.identityAggregationService.aggregateIdentity(agent.id),
-            this.evaluationAggregationService.aggregateEvaluation(agent.id),
+            this.identityAggregationService.aggregateIdentity(runtimeAgentId),
+            this.evaluationAggregationService.aggregateEvaluation(runtimeAgentId),
           ]);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
-          this.logger.error(`Failed to aggregate identity/evaluation for agent ${agent.id}: ${message}`);
+          const runtimeAgentId = agent.id || (agent as any)._id?.toString();
+          this.logger.error(`Failed to aggregate identity/evaluation for agent ${runtimeAgentId}: ${message}`);
         }
       }
       this.logger.log(`Scheduled full aggregation completed for ${agents.length} agents`);

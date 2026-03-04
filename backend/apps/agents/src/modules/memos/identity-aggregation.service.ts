@@ -111,7 +111,10 @@ export class IdentityAggregationService {
   }
 
   private async getAgentBasicInfo(agentId: string): Promise<AgentBasicInfo> {
-    const agent = await this.agentModel.findOne({ id: agentId }).exec();
+    let agent = await this.agentModel.findById(agentId).exec();
+    if (!agent) {
+      agent = await this.agentModel.findOne({ id: agentId }).exec();
+    }
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
