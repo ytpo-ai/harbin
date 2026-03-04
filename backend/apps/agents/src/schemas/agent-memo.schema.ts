@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 export type AgentMemoDocument = AgentMemo & Document;
 
 export type MemoType = 'knowledge' | 'standard';
-export type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom';
+export type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
 
 @Schema({ timestamps: true })
 export class AgentMemo {
@@ -26,7 +26,7 @@ export class AgentMemo {
   @Prop({ required: true, default: 1 })
   version: number;
 
-  @Prop({ enum: ['identity', 'todo', 'topic', 'history', 'draft', 'custom'], default: 'topic', index: true })
+  @Prop({ enum: ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation'], default: 'topic', index: true })
   memoKind: MemoKind;
 
   @Prop({ enum: ['knowledge', 'standard'], default: 'knowledge', index: true })

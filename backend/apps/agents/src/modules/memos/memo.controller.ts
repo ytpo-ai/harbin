@@ -1,12 +1,18 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { MemoKind, MemoType } from '../../schemas/agent-memo.schema';
 import { MemoService } from './memo.service';
+import { IdentityAggregationService } from './identity-aggregation.service';
+import { EvaluationAggregationService } from './evaluation-aggregation.service';
 
 type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
 
 @Controller('memos')
 export class MemoController {
-  constructor(private readonly memoService: MemoService) {}
+  constructor(
+    private readonly memoService: MemoService,
+    private readonly identityAggregationService: IdentityAggregationService,
+    private readonly evaluationAggregationService: EvaluationAggregationService,
+  ) {}
 
   @Get()
   async listMemos(
@@ -126,6 +132,18 @@ export class MemoController {
   @Post('docs/rebuild')
   async rebuildDocs() {
     return this.memoService.rebuildMemoDocs();
+  }
+
+  @Post('identity/aggregate')
+  async aggregateIdentity(@Body() body: { agentId: string }) {
+    await this.identityAggregationService.aggregateIdentity(body.agentId);
+    return { success: true, agentId: body.agentId, type: 'identity' };
+  }
+
+  @Post('evaluation/aggregate')
+  async aggregateEvaluation(@Body() body: { agentId: string }) {
+    await this.evaluationAggregationService.aggregateEvaluation(body.agentId);
+    return { success: true, agentId: body.agentId, type: 'evaluation' };
   }
 
   @Get(':id')

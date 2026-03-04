@@ -1,22 +1,43 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentMemo, AgentMemoSchema } from '../../schemas/agent-memo.schema';
 import { AgentMemoVersion, AgentMemoVersionSchema } from '../../schemas/agent-memo-version.schema';
+import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
+import { Skill, SkillSchema } from '../../schemas/skill.schema';
+import { OrchestrationTask, OrchestrationTaskSchema } from '../../../../../src/shared/schemas/orchestration-task.schema';
+import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
+import { AgentPart, AgentPartSchema } from '../../schemas/agent-part.schema';
 import { MemoAggregationService } from './memo-aggregation.service';
 import { MemoController } from './memo.controller';
 import { MemoDocSyncService } from './memo-doc-sync.service';
 import { MemoEventBusService } from './memo-event-bus.service';
 import { MemoService } from './memo.service';
+import { IdentityAggregationService } from './identity-aggregation.service';
+import { EvaluationAggregationService } from './evaluation-aggregation.service';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: AgentMemo.name, schema: AgentMemoSchema },
       { name: AgentMemoVersion.name, schema: AgentMemoVersionSchema },
+      { name: Agent.name, schema: AgentSchema },
+      { name: AgentSkill.name, schema: AgentSkillSchema },
+      { name: Skill.name, schema: SkillSchema },
+      { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
+      { name: AgentRun.name, schema: AgentRunSchema },
+      { name: AgentPart.name, schema: AgentPartSchema },
     ]),
   ],
   controllers: [MemoController],
-  providers: [MemoService, MemoDocSyncService, MemoAggregationService, MemoEventBusService],
-  exports: [MemoService, MemoEventBusService],
+  providers: [
+    MemoService,
+    MemoDocSyncService,
+    MemoAggregationService,
+    MemoEventBusService,
+    IdentityAggregationService,
+    EvaluationAggregationService,
+  ],
+  exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService],
 })
 export class MemoModule {}

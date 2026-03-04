@@ -170,8 +170,10 @@ export interface AgentMemo {
   title: string;
   slug: string;
   content: string;
-  memoKind?: 'identity' | 'todo' | 'topic';
-  memoType: 'knowledge' | 'behavior' | 'todo';
+  version?: number;
+  memoKind?: 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
+  memoType?: 'knowledge' | 'standard';
+  payload?: Record<string, any>;
   topic?: string;
   todoStatus?: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   tags: string[];

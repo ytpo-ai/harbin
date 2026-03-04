@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { MemoKind } from '../../schemas/agent-memo.schema';
 
-export type MemoDomainEventName = 'agent.updated' | 'agent.skill_changed' | 'task.completed';
+export type MemoDomainEventName =
+  | 'agent.updated'
+  | 'agent.skill_changed'
+  | 'task.completed'
+  | 'orchestration.task_completed'
+  | 'scheduled.full_aggregation';
 
 export interface MemoDomainEvent {
   name: MemoDomainEventName;
@@ -10,6 +15,14 @@ export interface MemoDomainEvent {
   memoKinds?: MemoKind[];
   taskId?: string;
   summary?: string;
+  task?: {
+    assignment?: {
+      executorId?: string;
+      executorType?: string;
+    };
+    title?: string;
+    status?: string;
+  };
 }
 
 @Injectable()
