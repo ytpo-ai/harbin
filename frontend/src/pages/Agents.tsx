@@ -24,6 +24,7 @@ import {
   XCircleIcon,
   WrenchScrewdriverIcon,
   ChatBubbleLeftRightIcon,
+  EyeIcon,
 } from '@heroicons/react/24/outline';
 
 const normalizeProvider = (provider?: string): string => {
@@ -172,6 +173,15 @@ const Agents: React.FC = () => {
     }
   };
 
+  const handleViewDetail = (agent: Agent) => {
+    const agentId = getAgentId(agent);
+    if (!agentId) {
+      alert('Agent ID 无效，无法查看详情');
+      return;
+    }
+    navigate(`/agents/${encodeURIComponent(agentId)}`);
+  };
+
   const isFounder = (agent: Agent) => {
     return agent.type === 'ai-executive' || agent.name === 'Alex Chen' || agent.name === 'Sarah Kim';
   };
@@ -292,6 +302,14 @@ const Agents: React.FC = () => {
                   <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
                     <div className="flex space-x-2">
                       <button
+                      <button
+                        onClick={() => handleViewDetail(agent)}
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded text-gray-700 bg-gray-50 hover:bg-gray-100"
+                        title="查看详情"
+                      >
+                        <EyeIcon className="h-3.5 w-3.5 mr-1" />
+                        详情
+                      </button>
                         onClick={() => handleStartChat(agent)}
                         disabled={startingChatAgentId === getAgentId(agent)}
                         className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
