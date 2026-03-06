@@ -75,23 +75,52 @@ describe('MemoService', () => {
     expect(result[0].content).toBeUndefined();
   });
 
-  it('updates todo status with note', async () => {
+  it('rejects todo upsert from meeting chat source', async () => {
+    const { service } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+
+    await expect(
+      service.upsertTaskTodo('agent-1', {
+        id: 'task-1',
+        title: 'Meeting note',
+        sourceType: 'meeting_chat',
+      }),
+    ).rejects.toThrow('todo only accepts sourceType=orchestration_task');
+  });
+
+  it('routes running task to history aggregation', async () => {
+    const { service } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+    const historySpy = jest
+      .spyOn(service, 'upsertTaskHistory')
+      .mockResolvedValue({ id: 'history-1', memoKind: 'history' });
+
+    const result = await service.upsertTaskTodo('agent-1', {
+      id: 'task-1',
+      title: 'Execute task',
+      status: 'running',
+      sourceType: 'orchestration_task',
+    });
+
+    expect(historySpy).toHaveBeenCalled();
+    expect(result.memoKind).toBe('history');
+  });
+
+  it('archives failed task into history on completion helper', async () => {
     const { service, memoModel } = createService();
-    memoModel.findOne.mockReturnValue(
-      queryResult({ id: 'todo-1', memoKind: 'todo', memoType: 'standard', content: 'Finish integration tests', payload: {} }),
-    );
-    memoModel.findOneAndUpdate.mockReturnValue(
-      queryResult({
-        id: 'todo-1',
-        memoType: 'standard',
-        memoKind: 'todo',
-        payload: { status: 'completed' },
-        content: 'Finish integration tests\n\n[status:completed] done',
+    memoModel.findOne.mockReturnValue(queryResult(null));
+    const historySpy = jest
+      .spyOn(service, 'upsertTaskHistory')
+      .mockResolvedValue({ id: 'history-1', memoKind: 'history' });
+
+    await service.completeTaskTodo('agent-1', 'task-1', 'runtime failed', 'failed');
+
+    expect(historySpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: 'agent-1',
+        taskId: 'task-1',
+        status: 'failed',
       }),
     );
-
-    const result = await service.updateTodoStatus('todo-1', 'completed', 'done');
-    expect(result.payload?.status).toBe('completed');
-    expect(result.content).toContain('[status:completed] done');
   });
 });

@@ -13,9 +13,11 @@ import {
 import { RuntimeEvent, RuntimeEventType } from './contracts/runtime-event.contract';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
+import { MemoService } from '../memos/memo.service';
 
 export interface RuntimeRunContext {
   runId: string;
+  sessionId?: string;
   userMessageId: string;
   traceId: string;
   lockKey: string;
@@ -27,27 +29,76 @@ export interface RuntimeRunContext {
 export class RuntimeOrchestratorService {
   private readonly logger = new Logger(RuntimeOrchestratorService.name);
   private readonly lockTails = new Map<string, Promise<void>>();
+  private readonly memoSnapshotRefreshMs = Number(process.env.AGENT_SESSION_MEMO_REFRESH_MS || 60_000);
 
   constructor(
     private readonly persistence: RuntimePersistenceService,
     private readonly hookDispatcher: HookDispatcherService,
+    private readonly memoService: MemoService,
   ) {}
 
   async startRun(rawInput: RuntimeStartRunInput): Promise<RuntimeRunContext> {
     const input = RuntimeStartRunInputSchema.parse(rawInput);
+
+    let ensuredSession;
+    const meetingContext = input.metadata?.meetingContext as
+      | { meetingId?: string; agendaId?: string; latestSummary?: string }
+      | undefined;
+
+    if (meetingContext?.meetingId) {
+      ensuredSession = await this.persistence.getOrCreateMeetingSession(
+        meetingContext.meetingId,
+        input.agentId,
+        input.taskTitle,
+        {
+          meetingId: meetingContext.meetingId,
+          agendaId: meetingContext.agendaId,
+          latestSummary: meetingContext.latestSummary,
+        },
+      );
+    } else if (input.taskId) {
+      ensuredSession = await this.persistence.getOrCreateTaskSession(
+        input.taskId,
+        input.agentId,
+        input.taskTitle,
+        {
+          linkedPlanId: typeof input.metadata?.planId === 'string' ? input.metadata.planId : undefined,
+          linkedTaskId: input.taskId,
+          latestTaskInput: input.taskDescription,
+        },
+      );
+    } else {
+      ensuredSession = await this.persistence.ensureSession({
+        sessionId: input.sessionId,
+        sessionType: 'task',
+        ownerType: 'agent',
+        ownerId: input.agentId,
+        title: input.taskTitle,
+        planContext: {
+          linkedPlanId: typeof input.metadata?.planId === 'string' ? input.metadata.planId : undefined,
+          linkedTaskId: input.taskId,
+          latestTaskInput: input.taskDescription,
+        },
+      });
+    }
+
+    const sessionId = ensuredSession.id;
+
+    await this.refreshSessionMemoSnapshot(ensuredSession, input.agentId);
+
     const traceId = `trace-${uuidv4()}`;
-    const lockKey = this.getLockKey(input.agentId, input.sessionId, input.taskId);
+    const lockKey = this.getLockKey(input.agentId, sessionId, input.taskId);
     const release = await this.acquireLock(lockKey);
 
     let resumed = false;
-    let run = await this.persistence.findLatestActiveRun(input.agentId, input.sessionId, input.taskId);
+    let run = await this.persistence.findLatestActiveRun(input.agentId, sessionId, input.taskId);
     if (!run) {
       run = await this.persistence.createRun({
         agentId: input.agentId,
         agentName: input.agentName,
-        sessionId: input.sessionId,
+        sessionId,
         taskId: input.taskId,
-        organizationId: input.organizationId,
+        
         taskTitle: input.taskTitle,
         taskDescription: input.taskDescription,
         metadata: input.metadata,
@@ -62,7 +113,7 @@ export class RuntimeOrchestratorService {
       userMessage = await this.persistence.createMessage({
         runId: run.id,
         agentId: input.agentId,
-        sessionId: input.sessionId,
+        sessionId,
         taskId: input.taskId,
         role: 'user',
         sequence: 1,
@@ -87,8 +138,8 @@ export class RuntimeOrchestratorService {
       await this.emitEvent({
         eventType: 'run.resumed',
         agentId: input.agentId,
-        organizationId: input.organizationId,
-        sessionId: input.sessionId,
+        
+        sessionId,
         runId: run.id,
         taskId: input.taskId,
         traceId,
@@ -102,8 +153,8 @@ export class RuntimeOrchestratorService {
       await this.emitEvent({
         eventType: 'run.started',
         agentId: input.agentId,
-        organizationId: input.organizationId,
-        sessionId: input.sessionId,
+        
+        sessionId,
         runId: run.id,
         taskId: input.taskId,
         traceId,
@@ -118,8 +169,8 @@ export class RuntimeOrchestratorService {
     await this.emitEvent({
       eventType: 'run.step.started',
       agentId: input.agentId,
-      organizationId: input.organizationId,
-      sessionId: input.sessionId,
+      
+      sessionId,
       runId: run.id,
       taskId: input.taskId,
       traceId,
@@ -129,8 +180,11 @@ export class RuntimeOrchestratorService {
       },
     });
 
+    await this.persistence.appendRunToSession(sessionId, run.id);
+
     return {
       runId: run.id,
+      sessionId,
       userMessageId: userMessage.id,
       traceId,
       lockKey,
@@ -149,7 +203,7 @@ export class RuntimeOrchestratorService {
     currentStep: number;
     taskId?: string;
     sessionId?: string;
-    organizationId?: string;
+    
     agentId: string;
     startedAt: Date;
     finishedAt?: Date;
@@ -163,7 +217,7 @@ export class RuntimeOrchestratorService {
       currentStep: run.currentStep,
       taskId: run.taskId,
       sessionId: run.sessionId,
-      organizationId: run.organizationId,
+      
       agentId: run.agentId,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
@@ -211,7 +265,7 @@ export class RuntimeOrchestratorService {
     const sequence = await this.persistence.incrementRunStep(runId);
     await this.emitEvent({
       eventType: 'run.paused',
-      organizationId: run.organizationId,
+      
       agentId: run.agentId,
       sessionId: run.sessionId,
       runId: run.id,
@@ -247,7 +301,7 @@ export class RuntimeOrchestratorService {
     const sequence = await this.persistence.incrementRunStep(runId);
     await this.emitEvent({
       eventType: 'run.resumed',
-      organizationId: run.organizationId,
+      
       agentId: run.agentId,
       sessionId: run.sessionId,
       runId: run.id,
@@ -287,7 +341,7 @@ export class RuntimeOrchestratorService {
     const sequence = await this.persistence.incrementRunStep(runId);
     await this.emitEvent({
       eventType: 'run.cancelled',
-      organizationId: run.organizationId,
+      
       agentId: run.agentId,
       sessionId: run.sessionId,
       runId: run.id,
@@ -323,7 +377,7 @@ export class RuntimeOrchestratorService {
       const event: RuntimeEvent = {
         eventId: record.eventId,
         eventType: record.eventType as RuntimeEvent['eventType'],
-        organizationId: record.organizationId,
+        
         agentId: record.agentId,
         sessionId: record.sessionId,
         runId: record.runId,
@@ -377,6 +431,10 @@ export class RuntimeOrchestratorService {
       finishedAt: new Date(),
     });
 
+    if (input.sessionId) {
+      await this.persistence.appendRunToSession(input.sessionId, input.runId, input.assistantContent);
+    }
+
     await this.emitEvent({
       eventType: 'run.completed',
       agentId: input.agentId,
@@ -400,6 +458,10 @@ export class RuntimeOrchestratorService {
       error: input.error,
       finishedAt: new Date(),
     });
+
+    if (input.sessionId) {
+      await this.persistence.appendRunToSession(input.sessionId, input.runId);
+    }
 
     await this.emitEvent({
       eventType: 'run.failed',
@@ -626,7 +688,7 @@ export class RuntimeOrchestratorService {
 
   private async emitEvent(input: {
     eventType: RuntimeEventType;
-    organizationId?: string;
+    
     agentId: string;
     sessionId?: string;
     runId: string;
@@ -645,7 +707,7 @@ export class RuntimeOrchestratorService {
     const event: RuntimeEvent = {
       eventId: `evt-${uuidv4()}`,
       eventType: input.eventType,
-      organizationId: input.organizationId,
+      
       agentId: input.agentId,
       sessionId: input.sessionId,
       runId: input.runId,
@@ -660,5 +722,73 @@ export class RuntimeOrchestratorService {
     };
     await this.persistence.enqueueEvent(event);
     await this.hookDispatcher.dispatch(event);
+  }
+
+  async appendSystemMessagesToSession(
+    sessionId: string,
+    messages: Array<{
+      role: 'system';
+      content: string;
+      metadata?: Record<string, unknown>;
+    }>,
+  ): Promise<void> {
+    await this.persistence.appendSystemMessagesToSession(sessionId, messages);
+  }
+
+  private async refreshSessionMemoSnapshot(
+    session: { id?: string; ownerId?: string; ownerType?: string },
+    agentId: string,
+  ): Promise<void> {
+    const ownerId = session.ownerId || agentId;
+    if (!ownerId || session.ownerType !== 'agent') return;
+
+    const existing = await this.persistence.getSessionMemoSnapshot(session.id || '');
+    const existingRefreshedAt = existing?.refreshedAt ? Date.parse(existing.refreshedAt) : 0;
+    if (Number.isFinite(existingRefreshedAt) && Date.now() - existingRefreshedAt <= this.memoSnapshotRefreshMs) {
+      return;
+    }
+
+    try {
+      const [identityResult, todoResult, topicResult] = await Promise.all([
+        this.memoService.getIdentityMemos(ownerId),
+        this.memoService.listMemos({ agentId: ownerId, memoKind: 'todo', page: 1, pageSize: 2 }),
+        this.memoService.listMemos({ agentId: ownerId, memoKind: 'topic', page: 1, pageSize: 5 }),
+      ]);
+
+      const snapshot = {
+        agentId: ownerId,
+        refreshedAt: new Date().toISOString(),
+        identity: identityResult.slice(0, 2).map((m) => ({
+          id: String(m.id || ''),
+          memoKind: 'identity' as const,
+          title: String(m.title || ''),
+          slug: m.slug ? String(m.slug) : undefined,
+          content: String(m.content || '').slice(0, 3000),
+          updatedAt: m.updatedAt ? new Date(m.updatedAt).toISOString() : undefined,
+        })),
+        todo: todoResult.items.slice(0, 2).map((m) => ({
+          id: String(m.id || ''),
+          memoKind: 'todo' as const,
+          title: String(m.title || ''),
+          slug: m.slug ? String(m.slug) : undefined,
+          content: String(m.content || '').slice(0, 3000),
+          updatedAt: m.updatedAt ? new Date(m.updatedAt).toISOString() : undefined,
+        })),
+        topic: topicResult.items.slice(0, 5).map((m) => ({
+          id: String(m.id || ''),
+          memoKind: 'topic' as const,
+          title: String(m.title || ''),
+          slug: m.slug ? String(m.slug) : undefined,
+          content: String(m.content || '').slice(0, 3000),
+          updatedAt: m.updatedAt ? new Date(m.updatedAt).toISOString() : undefined,
+        })),
+      };
+
+      await this.persistence.updateSessionMemoSnapshot(session.id || '', snapshot);
+      this.logger.log(`[memoSnapshot] session=${session.id} agent=${ownerId} refreshed`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`[memoSnapshot] session=${session.id} failed: ${message}`);
+    }
   }
 }

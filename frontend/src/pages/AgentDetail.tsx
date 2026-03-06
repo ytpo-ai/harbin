@@ -59,6 +59,16 @@ const memoKindOptions: Array<NonNullable<AgentMemo['memoKind']>> = [
   'custom',
   'evaluation',
 ];
+
+const standardMemoKinds: Array<NonNullable<AgentMemo['memoKind']>> = [
+  'identity',
+  'todo',
+  'history',
+  'draft',
+  'custom',
+  'evaluation',
+];
+
 const memoTypeOptions: Array<NonNullable<AgentMemo['memoType']>> = ['knowledge', 'standard'];
 const todoStatusOptions: Array<NonNullable<AgentMemo['todoStatus']>> = ['pending', 'in_progress', 'completed', 'cancelled'];
 
@@ -67,9 +77,8 @@ const AgentDetail: React.FC = () => {
   const { agentId = '' } = useParams<{ agentId: string }>();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'memo' | 'log' | 'session'>('memo');
+  const [memoCategory, setMemoCategory] = useState<'standard' | 'topic'>('standard');
   const [memoSearch, setMemoSearch] = useState('');
-  const [memoKind, setMemoKind] = useState('');
-  const [memoType, setMemoType] = useState('');
   const [memoPage, setMemoPage] = useState(1);
   const [selectedMemo, setSelectedMemo] = useState<AgentMemo | null>(null);
   const [editingMemo, setEditingMemo] = useState<AgentMemo | null>(null);
@@ -95,16 +104,19 @@ const AgentDetail: React.FC = () => {
   );
 
   const memoQuery = useQuery(
-    ['agent-memos', agentId, memoSearch, memoKind, memoType, memoPage],
-    () =>
-      memoService.getMemos({
+    ['agent-memos', agentId, memoSearch, memoPage, memoCategory],
+    () => {
+      const effectiveMemoKind = memoCategory === 'topic' ? 'topic' : undefined;
+      const effectiveMemoType = memoCategory === 'topic' ? 'knowledge' : 'standard';
+      return memoService.getMemos({
         agentId,
         search: memoSearch.trim() || undefined,
-        memoKind: (memoKind || undefined) as AgentMemo['memoKind'] | undefined,
-        memoType: (memoType || undefined) as AgentMemo['memoType'] | undefined,
+        memoKind: effectiveMemoKind,
+        memoType: effectiveMemoType as AgentMemo['memoType'],
         page: memoPage,
         pageSize: DEFAULT_MEMO_PAGE_SIZE,
-      }),
+      });
+    },
     { enabled: !!agentId, keepPreviousData: true },
   );
 
@@ -167,7 +179,11 @@ const AgentDetail: React.FC = () => {
   useEffect(() => {
     if (!memoEditorOpen) return;
     if (!editingMemo) {
-      setMemoDraft(emptyDraft);
+      setMemoDraft({
+        ...emptyDraft,
+        memoKind: memoCategory === 'topic' ? 'topic' : 'identity',
+        memoType: memoCategory === 'topic' ? 'knowledge' : 'standard',
+      });
       return;
     }
     setMemoDraft({
@@ -180,7 +196,7 @@ const AgentDetail: React.FC = () => {
       todoStatus: editingMemo.todoStatus || '',
       tags: (editingMemo.tags || []).join(', '),
     });
-  }, [editingMemo, memoEditorOpen]);
+  }, [editingMemo, memoEditorOpen, memoCategory]);
 
   const memos = memoQuery.data?.items || [];
   const totalMemoPages = memoQuery.data?.totalPages || 1;
@@ -198,14 +214,25 @@ const AgentDetail: React.FC = () => {
     setLogFilters((prev) => ({ ...prev, ...patch, page: 1 }));
   };
 
+  const displayedMemos = useMemo(() => {
+    if (memoCategory === 'topic') return memos;
+    const order = new Map(standardMemoKinds.map((kind, index) => [kind, index]));
+    return [...memos].sort((a, b) => {
+      const aOrder = order.get((a.memoKind || 'custom') as NonNullable<AgentMemo['memoKind']>) ?? 99;
+      const bOrder = order.get((b.memoKind || 'custom') as NonNullable<AgentMemo['memoKind']>) ?? 99;
+      if (aOrder !== bOrder) return aOrder - bOrder;
+      return new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime();
+    });
+  }, [memoCategory, memos]);
+
   const memoSummary = useMemo(() => {
     const byKind: Record<string, number> = {};
-    memos.forEach((memo) => {
+    displayedMemos.forEach((memo) => {
       const key = memo.memoKind || 'topic';
       byKind[key] = (byKind[key] || 0) + 1;
     });
     return byKind;
-  }, [memos]);
+  }, [displayedMemos]);
 
   const handleSaveMemo = () => {
     if (!agentId) return;
@@ -431,46 +458,42 @@ const AgentDetail: React.FC = () => {
       {activeTab === 'memo' && (
         <div className="space-y-4">
           <div className="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-2">
-              <input
-                value={memoSearch}
-                onChange={(e) => {
-                  setMemoSearch(e.target.value);
-                  setMemoPage(1);
-                }}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-                placeholder="搜索标题/内容/标签"
-              />
-              <select
-                value={memoKind}
-                onChange={(e) => {
-                  setMemoKind(e.target.value);
-                  setMemoPage(1);
-                }}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="">全部种类</option>
-                {memoKindOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={memoType}
-                onChange={(e) => {
-                  setMemoType(e.target.value);
-                  setMemoPage(1);
-                }}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="">全部类型</option>
-                {memoTypeOptions.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
+            <div className="space-y-2">
+              <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1">
+                <button
+                  onClick={() => {
+                    setMemoCategory('standard');
+                    setMemoPage(1);
+                  }}
+                  className={`rounded px-3 py-1 text-xs font-medium ${
+                    memoCategory === 'standard' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  标准
+                </button>
+                <button
+                  onClick={() => {
+                    setMemoCategory('topic');
+                    setMemoPage(1);
+                  }}
+                  className={`rounded px-3 py-1 text-xs font-medium ${
+                    memoCategory === 'topic' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  主题
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  value={memoSearch}
+                  onChange={(e) => {
+                    setMemoSearch(e.target.value);
+                    setMemoPage(1);
+                  }}
+                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  placeholder={memoCategory === 'topic' ? '搜索主题备忘录' : '搜索标准备忘录'}
+                />
+              </div>
             </div>
             <button
               onClick={() => {
@@ -496,11 +519,11 @@ const AgentDetail: React.FC = () => {
 
             {memoQuery.isLoading ? (
               <div className="py-6 text-sm text-gray-500">加载备忘录中...</div>
-            ) : memos.length === 0 ? (
+            ) : displayedMemos.length === 0 ? (
               <div className="py-6 text-sm text-gray-500">暂无备忘录</div>
             ) : (
               <div className="mt-4 space-y-3">
-                {memos.map((memo) => (
+                {displayedMemos.map((memo) => (
                   <div key={memo.id} className="rounded-md border border-gray-200 p-3">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div>

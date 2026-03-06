@@ -12,7 +12,6 @@ export interface AuthResponse {
     email: string;
     type: string;
     role: string;
-    organizationId: string;
   };
   token: string;
 }
@@ -23,7 +22,6 @@ export interface CurrentUser {
   email: string;
   type: string;
   role: string;
-  organizationId: string;
 }
 
 class AuthService {

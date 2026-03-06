@@ -83,20 +83,19 @@ export class GatewayProxyService {
     return req.ip || req.socket?.remoteAddress;
   }
 
-  private async findHumanSnapshot(employeeId: string): Promise<{ humanEmployeeId: string; organizationId: string; assistantAgentId?: string } | null> {
+  private async findHumanSnapshot(employeeId: string): Promise<{ humanEmployeeId: string; assistantAgentId?: string } | null> {
     const human = await this.employeeModel
       .findOne({ id: employeeId, type: EmployeeType.HUMAN })
-      .select({ id: 1, organizationId: 1, exclusiveAssistantAgentId: 1 })
+      .select({ id: 1, exclusiveAssistantAgentId: 1 })
       .lean()
       .exec();
 
-    if (!human?.id || !human.organizationId) {
+    if (!human?.id) {
       return null;
     }
 
     return {
       humanEmployeeId: human.id,
-      organizationId: human.organizationId,
       assistantAgentId: human.exclusiveAssistantAgentId,
     };
   }
@@ -125,7 +124,6 @@ export class GatewayProxyService {
     const query = this.sanitizeForLog(req.query) as Record<string, unknown>;
 
     await this.operationLogModel.create({
-      organizationId: snapshot.organizationId,
       humanEmployeeId: snapshot.humanEmployeeId,
       assistantAgentId: snapshot.assistantAgentId,
       action: `${req.method} ${path}`,
@@ -220,10 +218,6 @@ export class GatewayProxyService {
       if (runtimeControl) {
         const actorId = req.userContext?.employeeId || 'unknown';
         const actorRole = req.userContext?.role || 'unknown';
-        const orgId = req.userContext?.organizationId || 'unknown';
-        this.logger.log(
-          `runtime_control_audit requestId=${requestId} action=${runtimeControl.action} runId=${runtimeControl.runId} actorId=${actorId} actorRole=${actorRole} organizationId=${orgId} status=${response.status}`,
-        );
       }
 
       void this.recordOperationLog({

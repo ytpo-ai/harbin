@@ -15,7 +15,6 @@ export interface OperationLogQuery {
 
 export interface OperationLogItem {
   id: string;
-  organizationId: string;
   humanEmployeeId: string;
   humanName: string;
   humanEmail: string;

@@ -34,9 +34,8 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
     const userId = user.id;
-    return this.rdManagementService.createTask(createDto, organizationId, userId);
+    return this.rdManagementService.createTask(createDto, userId);
   }
 
   @Get('tasks')
@@ -45,8 +44,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.findAllTasks(organizationId, query);
+    return this.rdManagementService.findAllTasks(query);
   }
 
   @Get('tasks/:id')
@@ -55,8 +53,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.findTaskById(taskId, organizationId);
+    return this.rdManagementService.findTaskById(taskId);
   }
 
   @Put('tasks/:id')
@@ -66,8 +63,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.updateTask(taskId, updateDto, organizationId);
+    return this.rdManagementService.updateTask(taskId, updateDto);
   }
 
   @Delete('tasks/:id')
@@ -76,8 +72,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.deleteTask(taskId, organizationId);
+    return this.rdManagementService.deleteTask(taskId);
   }
 
   // ========== 项目管理 ==========
@@ -88,15 +83,13 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.createProject(createDto, organizationId);
+    return this.rdManagementService.createProject(createDto);
   }
 
   @Get('projects')
   async findAllProjects(@Headers('authorization') authHeader: string) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.findAllProjects(organizationId);
+    return this.rdManagementService.findAllProjects();
   }
 
   @Get('projects/:id')
@@ -105,8 +98,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.findProjectById(projectId, organizationId);
+    return this.rdManagementService.findProjectById(projectId);
   }
 
   @Put('projects/:id')
@@ -116,8 +108,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.updateProject(projectId, updateDto, organizationId);
+    return this.rdManagementService.updateProject(projectId, updateDto);
   }
 
   @Delete('projects/:id')
@@ -126,8 +117,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.deleteProject(projectId, organizationId);
+    return this.rdManagementService.deleteProject(projectId);
   }
 
   // ========== OpenCode 集成 ==========
@@ -139,8 +129,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.sendOpencodePrompt(taskId, promptDto, organizationId);
+    return this.rdManagementService.sendOpencodePrompt(taskId, promptDto);
   }
 
   @Post('tasks/:id/opencode/session')
@@ -150,8 +139,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.createOpencodeSession(taskId, projectPath, organizationId);
+    return this.rdManagementService.createOpencodeSession(taskId, projectPath);
   }
 
   @Get('tasks/:id/opencode/history')
@@ -160,8 +148,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.getOpencodeSessionHistory(taskId, organizationId);
+    return this.rdManagementService.getOpencodeSessionHistory(taskId);
   }
 
   @Get('opencode/current')
@@ -181,7 +168,7 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    return this.rdManagementService.importOpencodeProject(user.organizationId, dto);
+    return this.rdManagementService.importOpencodeProject(dto);
   }
 
   @Get('opencode/sessions')
@@ -284,8 +271,7 @@ export class RdManagementController {
     @Body() syncDto: SyncOpencodeContextDto,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.syncOpencodeToTask(taskId, organizationId, syncDto || {});
+    return this.rdManagementService.syncOpencodeToTask(taskId, syncDto || {});
   }
 
   @Post('projects/:id/opencode/sync-current')
@@ -295,8 +281,7 @@ export class RdManagementController {
     @Body() syncDto: SyncOpencodeContextDto,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.syncOpencodeToProject(projectId, organizationId, syncDto || {});
+    return this.rdManagementService.syncOpencodeToProject(projectId, syncDto || {});
   }
 
   @Post('tasks/:id/complete')
@@ -306,7 +291,6 @@ export class RdManagementController {
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    const organizationId = user.organizationId;
-    return this.rdManagementService.completeTask(taskId, result, organizationId);
+    return this.rdManagementService.completeTask(taskId, result);
   }
 }

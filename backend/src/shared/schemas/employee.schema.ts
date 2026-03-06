@@ -33,9 +33,6 @@ export class Employee {
   @Prop({ required: true, unique: true })
   id: string;
 
-  @Prop({ required: true })
-  organizationId: string;
-
   // 员工类型：人类或Agent
   @Prop({ enum: EmployeeType, required: true })
   type: EmployeeType;
@@ -153,7 +150,6 @@ export class Employee {
 export const EmployeeSchema = SchemaFactory.createForClass(Employee);
 
 // 索引
-EmployeeSchema.index({ organizationId: 1 });
 EmployeeSchema.index({ type: 1 });
 EmployeeSchema.index({ status: 1 });
 EmployeeSchema.index({ departmentId: 1 });

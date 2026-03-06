@@ -1,59 +1,57 @@
 # Agent Memos Registry
 
-- totalMemos: 47
-
-## Agent: 698a0bd7db9f7e6b8cca416f
-
-- [参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca416f/todo/cto-mm9geays.md) - todo - todo - completed
-- [Task complete: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca416f/behavior-log/task-complete-cto-mm9geern.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca416f/behavior-log/task-start-cto-mm9geaz0.md) - behavior - behavior-log - n/a
+- totalMemos: 36
 
 ## Agent: 698a0bd7db9f7e6b8cca4171
 
-- [参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/todo/cto-mm9gebml.md) - todo - todo - completed
-- [Task complete: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-complete-cto-mm9geenx.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-start-cto-mm9gebmy.md) - behavior - behavior-log - n/a
-- [参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/todo/cto-mm9gddfe.md) - todo - todo - completed
-- [Task complete: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-complete-cto-mm9gdh4q.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-start-cto-mm9gddfo.md) - behavior - behavior-log - n/a
-- [Task failed: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-failed-cto-mm9fhs6m.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/behavior-log/task-start-cto-mm9fhrj5.md) - behavior - behavior-log - n/a
-- [参与会议讨论: 测试CTO技术感知](./698a0bd7db9f7e6b8cca4171/todo/cto-mm9fhriy.md) - todo - todo - in_progress
+- [专题积累: task-complete](./698a0bd7db9f7e6b8cca4171/topic/topic-task-complete.md) - topic - knowledge - v3
+- [专题积累: task-start](./698a0bd7db9f7e6b8cca4171/topic/topic-task-start.md) - topic - knowledge - v5
+- [工作评估 2026-02](./698a0bd7db9f7e6b8cca4171/evaluation/evaluation-2026-02.md) - evaluation - standard - v4
+- [身份与职责](./698a0bd7db9f7e6b8cca4171/identity/identity-and-responsibilities.md) - identity - knowledge - v5
+- [TODO List](./698a0bd7db9f7e6b8cca4171/todo/todo-list.md) - todo - standard - v13
+- [专题积累: system-status](./698a0bd7db9f7e6b8cca4171/topic/topic-system-status.md) - topic - knowledge - v4
+
+## Agent: 699f40ad709a628508681e4d
+
+- [专题积累: task-complete](./699f40ad709a628508681e4d/topic/topic-task-complete.md) - topic - knowledge - v27
+- [专题积累: task-start](./699f40ad709a628508681e4d/topic/topic-task-start.md) - topic - knowledge - v42
+- [工作评估 2026-02](./699f40ad709a628508681e4d/evaluation/evaluation-2026-02.md) - evaluation - standard - v14
+- [身份与职责](./699f40ad709a628508681e4d/identity/identity-and-responsibilities.md) - identity - knowledge - v19
+- [TODO List](./699f40ad709a628508681e4d/todo/todo-list.md) - todo - standard - v102
+- [专题积累: system-status](./699f40ad709a628508681e4d/topic/topic-system-status.md) - topic - knowledge - v12
+- [专题积累: department-progress](./699f40ad709a628508681e4d/topic/topic-department-progress.md) - topic - knowledge - v6
+- [专题积累: task-failed](./699f40ad709a628508681e4d/topic/topic-task-failed.md) - topic - knowledge - v4
+
+## Agent: 69a419dc37b4cae7ede01f22
+
+- [专题积累: system-status](./69a419dc37b4cae7ede01f22/topic/topic-system-status.md) - topic - knowledge - v4
+- [工作评估 2026-02](./69a419dc37b4cae7ede01f22/evaluation/evaluation-2026-02.md) - evaluation - standard - v11
+- [身份与职责](./69a419dc37b4cae7ede01f22/identity/identity-and-responsibilities.md) - identity - knowledge - v12
+- [TODO List](./69a419dc37b4cae7ede01f22/todo/todo-list.md) - todo - standard - v31
+- [专题积累: task-complete](./69a419dc37b4cae7ede01f22/topic/topic-task-complete.md) - topic - knowledge - v7
+- [专题积累: task-start](./69a419dc37b4cae7ede01f22/topic/topic-task-start.md) - topic - knowledge - v6
+- [专题积累: department-progress](./69a419dc37b4cae7ede01f22/topic/topic-department-progress.md) - topic - knowledge - v3
 
 ## Agent: 69a3f57158d65c38bd0922fc
 
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9gbryl.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9gbrvi.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9fpt8g.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9fpt5r.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9fko4u.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9fko2i.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9fkarj.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9fkapt.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9fg07k.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9fg05o.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9feq6x.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9feq4o.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ex56s.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9ex54m.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9eude2.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9eqmv9.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9eqjxh.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9eko6j.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9ekhwf.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ek9ib.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9ek1be.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ejbhk.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9ej9c4.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ej24w.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9eiyb2.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ecd3t.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9eca16.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9ear49.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9eamfs.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9e9hh9.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9e90xe.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9e8lqo.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9e8id3.md) - behavior - behavior-log - n/a
-- [Task complete: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-complete-mm9e73m4.md) - behavior - behavior-log - n/a
-- [Task start: 参与会议讨论: 模型管理](./69a3f57158d65c38bd0922fc/behavior-log/task-start-mm9e70oz.md) - behavior - behavior-log - n/a
+- [专题积累: task-start](./69a3f57158d65c38bd0922fc/topic/topic-task-start.md) - topic - knowledge - v3
+- [专题积累: system-status](./69a3f57158d65c38bd0922fc/topic/topic-system-status.md) - topic - knowledge - v1
+- [工作评估 2026-02](./69a3f57158d65c38bd0922fc/evaluation/evaluation-2026-02.md) - evaluation - standard - v2
+- [身份与职责](./69a3f57158d65c38bd0922fc/identity/identity-and-responsibilities.md) - identity - knowledge - v3
+- [TODO List](./69a3f57158d65c38bd0922fc/todo/todo-list.md) - todo - standard - v7
+- [专题积累: task-complete](./69a3f57158d65c38bd0922fc/topic/topic-task-complete.md) - topic - knowledge - v1
+
+## Agent: 698a0bd7db9f7e6b8cca416f
+
+- [专题积累: system-status](./698a0bd7db9f7e6b8cca416f/topic/topic-system-status.md) - topic - knowledge - v1
+- [专题积累: task-start](./698a0bd7db9f7e6b8cca416f/topic/topic-task-start.md) - topic - knowledge - v5
+- [TODO List](./698a0bd7db9f7e6b8cca416f/todo/todo-list.md) - todo - standard - v17
+- [专题积累: task-complete](./698a0bd7db9f7e6b8cca416f/topic/topic-task-complete.md) - topic - knowledge - v4
+- [身份与职责](./698a0bd7db9f7e6b8cca416f/identity/identity-and-responsibilities.md) - identity - knowledge - v1
+
+## Agent: 699f4092709a628508681e4b
+
+- [专题积累: task-complete](./699f4092709a628508681e4b/topic/topic-task-complete.md) - topic - knowledge - v1
+- [专题积累: task-start](./699f4092709a628508681e4b/topic/topic-task-start.md) - topic - knowledge - v1
+- [TODO List](./699f4092709a628508681e4b/todo/todo-list.md) - todo - standard - v3
+- [身份与职责](./699f4092709a628508681e4b/identity/identity-and-responsibilities.md) - identity - knowledge - v1

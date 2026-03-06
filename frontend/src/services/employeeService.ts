@@ -26,7 +26,6 @@ export enum EmployeeRole {
 export interface Employee {
   _id: string;
   id: string;
-  organizationId: string;
   type: EmployeeType;
   userId?: string;
   name?: string;
@@ -79,7 +78,6 @@ export interface Employee {
 
 export interface CreateEmployeeDto {
   type: EmployeeType;
-  organizationId: string;
   userId?: string;
   name?: string;
   email?: string;
@@ -138,16 +136,8 @@ export interface ParticipantIdentity {
 
 class EmployeeService {
   async getEmployees(): Promise<Employee[]> {
-    const currentUser = localStorage.getItem('current_user');
-    if (!currentUser) return [];
-
-    try {
-      const parsed = JSON.parse(currentUser) as { organizationId?: string };
-      if (!parsed.organizationId) return [];
-      return this.getEmployeesByOrganization(parsed.organizationId);
-    } catch {
-      return [];
-    }
+    const response = await api.get('/employees/organization');
+    return response.data.data;
   }
 
   async createEmployee(data: CreateEmployeeDto): Promise<Employee> {
@@ -156,7 +146,6 @@ class EmployeeService {
   }
 
   async getEmployeesByOrganization(
-    organizationId: string,
     filters?: { type?: EmployeeType; status?: EmployeeStatus; departmentId?: string }
   ): Promise<Employee[]> {
     const params = new URLSearchParams();
@@ -164,7 +153,7 @@ class EmployeeService {
     if (filters?.status) params.append('status', filters.status);
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
     
-    const response = await api.get(`/employees/organization/${organizationId}?${params.toString()}`);
+    const response = await api.get(`/employees/organization?${params.toString()}`);
     return response.data.data;
   }
 
@@ -173,8 +162,8 @@ class EmployeeService {
     return response.data.data;
   }
 
-  async getEmployeeStats(organizationId: string): Promise<EmployeeStats> {
-    const response = await api.get(`/employees/stats/${organizationId}`);
+  async getEmployeeStats(): Promise<EmployeeStats> {
+    const response = await api.get('/employees/stats');
     return response.data.data;
   }
 
@@ -218,8 +207,8 @@ class EmployeeService {
   }
 
   // 获取当前用户的员工信息
-  async getCurrentEmployee(organizationId: string, userId: string): Promise<Employee | null> {
-    const employees = await this.getEmployeesByOrganization(organizationId);
+  async getCurrentEmployee(userId: string): Promise<Employee | null> {
+    const employees = await this.getEmployeesByOrganization();
     return employees.find(e => e.userId === userId) || null;
   }
 

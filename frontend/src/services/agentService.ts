@@ -1,6 +1,15 @@
 import api from './api';
 import { Agent, AIModel } from '../types';
 
+export interface AgentMcpProfile {
+  agentType: string;
+  role: string;
+  tools: string[];
+  capabilities: string[];
+  exposed: boolean;
+  description?: string;
+}
+
 export interface AgentTestResult {
   success: boolean;
   agent?: string;
@@ -26,6 +35,62 @@ export interface AgentStreamHandlers {
   onChunk?: (chunk: string, fullText: string) => void;
   onDone?: (fullText: string) => void;
   onError?: (message: string) => void;
+}
+
+export interface AgentRuntimeSessionMessage {
+  id?: string;
+  runId?: string;
+  taskId?: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  status?: 'pending' | 'streaming' | 'completed' | 'error';
+  metadata?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface AgentRuntimeSession {
+  _id?: string;
+  id: string;
+  sessionType: 'meeting' | 'task';
+  ownerType: 'agent' | 'employee' | 'system';
+  ownerId: string;
+  title: string;
+  status: 'active' | 'archived' | 'closed';
+  runIds?: string[];
+  messages: AgentRuntimeSessionMessage[];
+  planContext?: {
+    linkedPlanId?: string;
+    linkedTaskId?: string;
+    latestTaskInput?: string;
+    latestTaskOutput?: string;
+    lastRunId?: string;
+  };
+  meetingContext?: {
+    meetingId?: string;
+    agendaId?: string;
+    latestSummary?: string;
+  };
+  lastActiveAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AgentRuntimeSessionListQuery {
+  ownerType?: 'agent' | 'employee' | 'system';
+  ownerId?: string;
+  status?: 'active' | 'archived' | 'closed';
+  sessionType?: 'meeting' | 'task';
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AgentRuntimeSessionListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  sessions: AgentRuntimeSession[];
 }
 
 export const agentService = {
@@ -80,6 +145,40 @@ export const agentService = {
   // 测试Agent模型连接
   async testAgent(id: string, payload?: { model?: AIModel; apiKeyId?: string }): Promise<AgentTestResult> {
     const response = await api.post(`/agents/${id}/test`, payload || {});
+    return response.data;
+  },
+
+  async getMcpProfiles(): Promise<AgentMcpProfile[]> {
+    const response = await api.get('/agents/mcp/profiles');
+    return response.data;
+  },
+
+  async getMcpProfile(agentType: string): Promise<AgentMcpProfile> {
+    const response = await api.get(`/agents/mcp/profiles/${encodeURIComponent(agentType)}`);
+    return response.data;
+  },
+
+  async upsertMcpProfile(
+    agentType: string,
+    updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>,
+  ): Promise<AgentMcpProfile> {
+    const response = await api.put(`/agents/mcp/profiles/${encodeURIComponent(agentType)}`, updates);
+    return response.data;
+  },
+
+  async getAgentRuntimeSessions(query: AgentRuntimeSessionListQuery): Promise<AgentRuntimeSessionListResponse> {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      params.append(key, String(value));
+    });
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await api.get(`/agents/runtime/sessions${suffix}`);
+    return response.data;
+  },
+
+  async getAgentRuntimeSession(sessionId: string): Promise<AgentRuntimeSession> {
+    const response = await api.get(`/agents/runtime/sessions/${encodeURIComponent(sessionId)}`);
     return response.data;
   },
 

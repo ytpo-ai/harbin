@@ -108,8 +108,8 @@ export class AgentController {
 
   @Post(':id/execute')
   async executeTask(@Param('id') id: string, @Body() body: { task: Task, context?: any }) {
-    const response = await this.agentService.executeTask(id, body.task, body.context);
-    return { response };
+    const result = await this.agentService.executeTaskDetailed(id, body.task, body.context);
+    return result;
   }
 
   @Post(':id/test')

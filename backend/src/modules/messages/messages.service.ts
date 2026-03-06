@@ -122,4 +122,8 @@ export class MessagesService {
       limit,
     });
   }
+
+  async deleteMessagesByScene(sceneType: MessageSceneType, sceneId: string): Promise<void> {
+    await this.messageModel.deleteMany({ sceneType, sceneId }).exec();
+  }
 }

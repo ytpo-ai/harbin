@@ -2,10 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
 import { access, readFile } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { GatewayUserContext } from '@libs/contracts';
+import { encodeUserContext, signEncodedContext } from '@libs/auth';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
@@ -27,9 +30,18 @@ const DEFAULT_PROFILE = {
 
 const execFileAsync = promisify(execFile);
 
+interface ToolExecutionContext {
+  teamContext?: Record<string, any>;
+  taskType?: string;
+  teamId?: string;
+  taskId?: string;
+}
+
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
+  private readonly orchestrationBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
+  private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
 
   constructor(
     @InjectModel(Tool.name) private toolModel: Model<ToolDocument>,
@@ -58,6 +70,32 @@ export class ToolService {
         implementation: {
           type: 'built_in' as const,
           parameters: { query: 'string', maxResults: 'number' },
+        },
+      },
+      {
+        id: 'webfetch',
+        name: 'Web Fetch',
+        description: 'Fetch webpage content by URL and return clean text',
+        type: 'web_search' as const,
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
+        tokenCost: 8,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: { url: 'string', maxChars: 'number', timeoutMs: 'number' },
+        },
+      },
+      {
+        id: 'content_extract',
+        name: 'Content Extract',
+        description: 'Extract clean text, key bullets and numeric rows from raw html or text',
+        type: 'data_analysis' as const,
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
+        tokenCost: 6,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: { content: 'string', maxBullets: 'number', maxNumericRows: 'number' },
         },
       },
       {
@@ -252,6 +290,107 @@ export class ToolService {
           },
         },
       },
+      {
+        id: 'orchestration_create_plan',
+        name: 'Orchestration Create Plan',
+        description: 'Create orchestration plan from prompt in meeting workflow',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 6,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            prompt: 'string',
+            title: 'string',
+            mode: 'string',
+            plannerAgentId: 'string',
+            autoRun: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'orchestration_run_plan',
+        name: 'Orchestration Run Plan',
+        description: 'Run an orchestration plan in meeting workflow',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            planId: 'string',
+            continueOnFailure: 'boolean',
+            confirm: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'orchestration_get_plan',
+        name: 'Orchestration Get Plan',
+        description: 'Get orchestration plan details',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_read', name: 'Orchestration Read', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            planId: 'string',
+          },
+        },
+      },
+      {
+        id: 'orchestration_list_plans',
+        name: 'Orchestration List Plans',
+        description: 'List orchestration plans',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_read', name: 'Orchestration Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {},
+        },
+      },
+      {
+        id: 'orchestration_reassign_task',
+        name: 'Orchestration Reassign Task',
+        description: 'Reassign orchestration task executor',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            taskId: 'string',
+            executorType: 'string',
+            executorId: 'string',
+            reason: 'string',
+            confirm: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'orchestration_complete_human_task',
+        name: 'Orchestration Complete Human Task',
+        description: 'Mark waiting human task as completed',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            taskId: 'string',
+            summary: 'string',
+            output: 'string',
+            confirm: 'boolean',
+          },
+        },
+      },
     ];
 
     const virtualToolIds = [
@@ -273,6 +412,27 @@ export class ToolService {
         await tool.save();
         this.logger.log(`已注册内置工具: ${toolData.name}`);
       }
+    }
+
+    const implementedToolIds = new Set(this.getImplementedToolIds());
+    const missingImplementations = builtinTools
+      .map((tool) => tool.id)
+      .filter((toolId) => !implementedToolIds.has(toolId));
+    if (missingImplementations.length) {
+      this.logger.error(`Builtin tools missing implementation: ${missingImplementations.join(', ')}`);
+    }
+
+    const persistedBuiltIns = await this.toolModel
+      .find({ 'implementation.type': 'built_in' })
+      .select({ id: 1, _id: 0 })
+      .lean()
+      .exec();
+    const unresolvedPersisted = persistedBuiltIns
+      .map((tool) => String((tool as any).id || '').trim())
+      .filter(Boolean)
+      .filter((toolId) => !implementedToolIds.has(toolId));
+    if (unresolvedPersisted.length) {
+      this.logger.warn(`Persisted built-in tools without implementation: ${unresolvedPersisted.join(', ')}`);
     }
   }
 
@@ -308,7 +468,13 @@ export class ToolService {
     return !!result;
   }
 
-  async executeTool(toolId: string, agentId: string, parameters: any, taskId?: string): Promise<ToolExecution> {
+  async executeTool(
+    toolId: string,
+    agentId: string,
+    parameters: any,
+    taskId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<ToolExecution> {
     const tool = await this.getTool(toolId);
     if (!tool) {
       throw new Error(`Tool not found: ${toolId}`);
@@ -329,7 +495,10 @@ export class ToolService {
     await execution.save();
 
     try {
-      const result = await this.executeToolImplementation(tool, parameters, agentId);
+      const result = await this.executeToolImplementation(tool, parameters, agentId, {
+        ...(executionContext || {}),
+        taskId: taskId || executionContext?.taskId,
+      });
       execution.result = result;
       execution.status = 'completed';
       execution.executionTime = Date.now() - execution.timestamp.getTime();
@@ -344,10 +513,19 @@ export class ToolService {
     }
   }
 
-  private async executeToolImplementation(tool: Tool, parameters: any, agentId?: string): Promise<any> {
+  private async executeToolImplementation(
+    tool: Tool,
+    parameters: any,
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
     switch (tool.id) {
       case 'websearch':
         return this.performWebSearch(parameters, agentId);
+      case 'webfetch':
+        return this.performWebFetch(parameters);
+      case 'content_extract':
+        return this.performContentExtract(parameters);
       case 'slack':
         return this.sendSlackMessage(parameters, agentId);
       case 'gmail':
@@ -370,9 +548,46 @@ export class ToolService {
         return this.searchMemoMemory(parameters, agentId);
       case 'memo_mcp_append':
         return this.appendMemoMemory(parameters, agentId);
+      case 'orchestration_create_plan':
+        return this.createOrchestrationPlan(parameters, agentId, executionContext);
+      case 'orchestration_run_plan':
+        return this.runOrchestrationPlan(parameters, agentId, executionContext);
+      case 'orchestration_get_plan':
+        return this.getOrchestrationPlan(parameters, agentId, executionContext);
+      case 'orchestration_list_plans':
+        return this.listOrchestrationPlans(parameters, agentId, executionContext);
+      case 'orchestration_reassign_task':
+        return this.reassignOrchestrationTask(parameters, agentId, executionContext);
+      case 'orchestration_complete_human_task':
+        return this.completeOrchestrationHumanTask(parameters, agentId, executionContext);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
+  }
+
+  private getImplementedToolIds(): string[] {
+    return [
+      'websearch',
+      'webfetch',
+      'content_extract',
+      'slack',
+      'gmail',
+      'agents_mcp_list',
+      'code-docs-mcp',
+      'code-updates-mcp',
+      'model_mcp_list_models',
+      'model_mcp_search_latest',
+      'model_mcp_add_model',
+      'human_operation_log_mcp_list',
+      'memo_mcp_search',
+      'memo_mcp_append',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+      'orchestration_reassign_task',
+      'orchestration_complete_human_task',
+    ];
   }
 
   private async searchMemoMemory(
@@ -447,6 +662,339 @@ export class ToolService {
     return {
       action: 'created',
       memo: created,
+    };
+  }
+
+  private buildSignedHeaders(organizationId?: string): Record<string, string> {
+    const now = Date.now();
+    const context: GatewayUserContext = {
+      employeeId: 'agents-service',
+      role: 'system',
+      organizationId,
+      issuedAt: now,
+      expiresAt: now + 60 * 1000,
+    };
+    const encoded = encodeUserContext(context);
+    const signature = signEncodedContext(encoded, this.contextSecret);
+    return {
+      'x-user-context': encoded,
+      'x-user-signature': signature,
+      'content-type': 'application/json',
+    };
+  }
+
+  private resolveMeetingContext(executionContext?: ToolExecutionContext): {
+    meetingId?: string;
+    organizationId?: string;
+    initiatorId?: string;
+    taskType?: string;
+  } {
+    const teamContext = executionContext?.teamContext || {};
+    return {
+      meetingId:
+        (typeof teamContext.meetingId === 'string' && teamContext.meetingId) ||
+        (typeof executionContext?.teamId === 'string' && executionContext.teamId) ||
+        undefined,
+      organizationId:
+        (typeof teamContext.organizationId === 'string' && teamContext.organizationId) ||
+        undefined,
+      initiatorId:
+        (typeof teamContext.initiatorId === 'string' && teamContext.initiatorId) ||
+        (typeof teamContext.triggeredBy === 'string' && teamContext.triggeredBy) ||
+        undefined,
+      taskType:
+        executionContext?.taskType ||
+        (typeof teamContext.meetingType === 'string' ? 'discussion' : undefined),
+    };
+  }
+
+  private assertMeetingContext(executionContext?: ToolExecutionContext): {
+    meetingId: string;
+    organizationId?: string;
+    initiatorId?: string;
+  } {
+    const context = this.resolveMeetingContext(executionContext);
+    const meetingLike = context.taskType === 'discussion' || Boolean(context.meetingId);
+    if (!meetingLike) {
+      throw new Error('This orchestration MCP tool is only available in meeting context');
+    }
+    return {
+      meetingId: context.meetingId || 'unknown-meeting',
+      organizationId: context.organizationId,
+      initiatorId: context.initiatorId,
+    };
+  }
+
+  private async resolveOrganizationIdForAgent(
+    agentId?: string,
+    fallback?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<string | undefined> {
+    if (fallback) {
+      return fallback;
+    }
+    const meetingContext = this.resolveMeetingContext(executionContext);
+    if (meetingContext.initiatorId) {
+      const initiator = await this.employeeModel
+        .findOne({ id: meetingContext.initiatorId })
+        .select({ organizationId: 1 })
+        .lean()
+        .exec();
+      const initiatorOrg = (initiator as any)?.organizationId;
+      if (initiatorOrg) {
+        return initiatorOrg;
+      }
+    }
+    const participants = Array.isArray(executionContext?.teamContext?.participants)
+      ? (executionContext?.teamContext?.participants as unknown[])
+      : [];
+    for (const candidateId of participants) {
+      if (typeof candidateId !== 'string' || !candidateId.trim()) continue;
+      const employee = await this.employeeModel
+        .findOne({ id: candidateId.trim() })
+        .select({ organizationId: 1 })
+        .lean()
+        .exec();
+      const employeeOrg = (employee as any)?.organizationId;
+      if (employeeOrg) {
+        return employeeOrg;
+      }
+    }
+    if (!agentId) {
+      return undefined;
+    }
+    const owner = await this.employeeModel
+      .findOne({ agentId })
+      .select({ organizationId: 1 })
+      .lean()
+      .exec();
+    return (owner as any)?.organizationId;
+  }
+
+  private requireConfirm(params: any, action: string): void {
+    if (params?.confirm === true) {
+      return;
+    }
+    throw new Error(`${action} requires confirm=true`);
+  }
+
+  private async callOrchestrationApi(
+    method: 'GET' | 'POST',
+    endpoint: string,
+    body: any,
+    organizationId?: string,
+  ): Promise<any> {
+    const url = `${this.orchestrationBaseUrl}/orchestration${endpoint}`;
+    const headers = this.buildSignedHeaders(organizationId);
+    const response = await axios.request({
+      method,
+      url,
+      headers,
+      data: body,
+      timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+    });
+    return response.data;
+  }
+
+  private async createOrchestrationPlan(
+    params: {
+      prompt?: string;
+      title?: string;
+      mode?: 'sequential' | 'parallel' | 'hybrid';
+      plannerAgentId?: string;
+      autoRun?: boolean;
+      organizationId?: string;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    if (!params?.prompt?.trim()) {
+      throw new Error('orchestration_create_plan requires prompt');
+    }
+    const payload = {
+      prompt: params.prompt.trim(),
+      title: params.title?.trim(),
+      mode: params.mode,
+      plannerAgentId: params.plannerAgentId,
+      autoRun: params.autoRun === true,
+    };
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_create_plan');
+    }
+    const result = await this.callOrchestrationApi('POST', '/plans/from-prompt', payload, organizationId);
+    return {
+      action: 'create_plan',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async runOrchestrationPlan(
+    params: { planId?: string; continueOnFailure?: boolean; confirm?: boolean; organizationId?: string },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    if (!params?.planId?.trim()) {
+      throw new Error('orchestration_run_plan requires planId');
+    }
+    this.requireConfirm(params, 'orchestration_run_plan');
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_run_plan');
+    }
+    const result = await this.callOrchestrationApi(
+      'POST',
+      `/plans/${params.planId.trim()}/run`,
+      { continueOnFailure: params.continueOnFailure === true },
+      organizationId,
+    );
+    return {
+      action: 'run_plan',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async getOrchestrationPlan(
+    params: { planId?: string; organizationId?: string },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    if (!params?.planId?.trim()) {
+      throw new Error('orchestration_get_plan requires planId');
+    }
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_get_plan');
+    }
+    const result = await this.callOrchestrationApi('GET', `/plans/${params.planId.trim()}`, undefined, organizationId);
+    return {
+      action: 'get_plan',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async listOrchestrationPlans(
+    params: { organizationId?: string },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_list_plans');
+    }
+    const result = await this.callOrchestrationApi('GET', '/plans', undefined, organizationId);
+    return {
+      action: 'list_plans',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async reassignOrchestrationTask(
+    params: {
+      taskId?: string;
+      executorType?: 'agent' | 'employee' | 'unassigned';
+      executorId?: string;
+      reason?: string;
+      confirm?: boolean;
+      organizationId?: string;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    if (!params?.taskId?.trim()) {
+      throw new Error('orchestration_reassign_task requires taskId');
+    }
+    if (!params?.executorType) {
+      throw new Error('orchestration_reassign_task requires executorType');
+    }
+    this.requireConfirm(params, 'orchestration_reassign_task');
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_reassign_task');
+    }
+    const result = await this.callOrchestrationApi(
+      'POST',
+      `/tasks/${params.taskId.trim()}/reassign`,
+      {
+        executorType: params.executorType,
+        executorId: params.executorId,
+        reason: params.reason,
+      },
+      organizationId,
+    );
+    return {
+      action: 'reassign_task',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async completeOrchestrationHumanTask(
+    params: { taskId?: string; summary?: string; output?: string; confirm?: boolean; organizationId?: string },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    if (!params?.taskId?.trim()) {
+      throw new Error('orchestration_complete_human_task requires taskId');
+    }
+    this.requireConfirm(params, 'orchestration_complete_human_task');
+    const organizationId = await this.resolveOrganizationIdForAgent(
+      agentId,
+      params.organizationId || meeting.organizationId,
+      executionContext,
+    );
+    if (!organizationId) {
+      throw new Error('Missing organization context for orchestration_complete_human_task');
+    }
+    const result = await this.callOrchestrationApi(
+      'POST',
+      `/tasks/${params.taskId.trim()}/complete-human`,
+      {
+        summary: params.summary,
+        output: params.output,
+      },
+      organizationId,
+    );
+    return {
+      action: 'complete_human_task',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
     };
   }
 
@@ -678,7 +1226,7 @@ export class ToolService {
     return parsed;
   }
 
-  private async getBoundHumanByAssistant(agentId: string): Promise<{ id: string; name?: string; organizationId: string }> {
+  private async getBoundHumanByAssistant(agentId: string): Promise<{ id: string; name?: string }> {
     if (!agentId) {
       throw new Error('human_operation_log_mcp_list requires assistant agentId');
     }
@@ -688,7 +1236,7 @@ export class ToolService {
         type: EmployeeType.HUMAN,
         exclusiveAssistantAgentId: agentId,
       })
-      .select({ id: 1, name: 1, organizationId: 1 })
+      .select({ id: 1, name: 1 })
       .lean()
       .exec();
 
@@ -700,14 +1248,13 @@ export class ToolService {
     }
 
     const [human] = humanEmployees;
-    if (!human?.id || !human.organizationId) {
+    if (!human?.id) {
       throw new Error('Bound human employee data is incomplete');
     }
 
     return {
       id: human.id,
       name: human.name,
-      organizationId: human.organizationId,
     };
   }
 
@@ -738,7 +1285,6 @@ export class ToolService {
 
     const filter: any = {
       humanEmployeeId: boundHuman.id,
-      organizationId: boundHuman.organizationId,
     };
 
     if (params?.action?.trim()) {
@@ -1045,6 +1591,124 @@ export class ToolService {
       totalResults: organicResults.length,
       raw,
     };
+  }
+
+  private async performWebFetch(params: { url: string; maxChars?: number; timeoutMs?: number }): Promise<any> {
+    const url = String(params?.url || '').trim();
+    if (!url) {
+      throw new Error('webfetch requires parameter: url');
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      throw new Error('webfetch requires http/https url');
+    }
+
+    const timeoutMs = Math.min(Math.max(Number(params?.timeoutMs || 12000), 3000), 30000);
+    const maxChars = Math.min(Math.max(Number(params?.maxChars || 12000), 1000), 50000);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        signal: controller.signal,
+        headers: {
+          'user-agent': 'ai-agent-team-webfetch/1.0',
+          accept: 'text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`webfetch failed with status ${response.status}`);
+      }
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const raw = await response.text();
+      const cleanText = this.extractCleanText(raw);
+      const truncated = cleanText.length > maxChars;
+
+      return {
+        url,
+        status: response.status,
+        contentType,
+        title: this.extractHtmlTitle(raw),
+        content: truncated ? cleanText.slice(0, maxChars) : cleanText,
+        contentLength: cleanText.length,
+        truncated,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'webfetch unknown error';
+      throw new Error(`webfetch failed: ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async performContentExtract(params: {
+    content: string;
+    maxBullets?: number;
+    maxNumericRows?: number;
+  }): Promise<any> {
+    const rawContent = String(params?.content || '').trim();
+    if (!rawContent) {
+      throw new Error('content_extract requires parameter: content');
+    }
+
+    const text = this.extractCleanText(rawContent);
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const maxBullets = Math.min(Math.max(Number(params?.maxBullets || 8), 3), 20);
+    const maxNumericRows = Math.min(Math.max(Number(params?.maxNumericRows || 12), 3), 30);
+
+    const bullets = lines
+      .filter((line) => line.length >= 18)
+      .slice(0, maxBullets)
+      .map((line) => `- ${line}`);
+
+    const numericRows = lines
+      .filter((line) => /\d/.test(line) && /[,:|\-]/.test(line) && line.length >= 8)
+      .slice(0, maxNumericRows);
+
+    return {
+      text,
+      bullets,
+      numericRows,
+      stats: {
+        textLength: text.length,
+        lineCount: lines.length,
+        bulletCount: bullets.length,
+        numericRowCount: numericRows.length,
+      },
+    };
+  }
+
+  private extractHtmlTitle(raw: string): string | undefined {
+    const match = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    if (!match?.[1]) {
+      return undefined;
+    }
+    return match[1].replace(/\s+/g, ' ').trim();
+  }
+
+  private extractCleanText(raw: string): string {
+    return raw
+      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/\r/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
   }
 
   private async sendSlackMessage(params: { channel: string; text: string }, userId?: string): Promise<any> {

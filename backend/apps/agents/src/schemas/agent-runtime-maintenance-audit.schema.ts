@@ -12,13 +12,13 @@ export class AgentRuntimeMaintenanceAudit {
   action: 'dead_letter_requeue' | 'purge_legacy';
 
   @Prop({ required: true })
+  batchId: string;
+
+  @Prop({ required: true })
   actorId: string;
 
   @Prop({ required: true })
   actorRole: string;
-
-  @Prop()
-  organizationId?: string;
 
   @Prop({ required: true, default: false })
   dryRun: boolean;
@@ -34,10 +34,13 @@ export class AgentRuntimeMaintenanceAudit {
 
   @Prop({ type: Object })
   result?: Record<string, unknown>;
+
+  @Prop()
+  summary?: string;
 }
 
 export const AgentRuntimeMaintenanceAuditSchema = SchemaFactory.createForClass(AgentRuntimeMaintenanceAudit);
 
 AgentRuntimeMaintenanceAuditSchema.index({ createdAt: -1 });
-AgentRuntimeMaintenanceAuditSchema.index({ organizationId: 1, createdAt: -1 });
 AgentRuntimeMaintenanceAuditSchema.index({ action: 1, createdAt: -1 });
+AgentRuntimeMaintenanceAuditSchema.index({ batchId: 1, createdAt: -1 });

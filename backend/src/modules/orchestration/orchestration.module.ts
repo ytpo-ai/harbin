@@ -12,13 +12,13 @@ import {
   OrchestrationTask,
   OrchestrationTaskSchema,
 } from '../../shared/schemas/orchestration-task.schema';
-import { AgentSession, AgentSessionSchema } from '../../shared/schemas/agent-session.schema';
 import { Tool, ToolSchema } from '../../shared/schemas/tool.schema';
 import { OrchestrationController } from './orchestration.controller';
 import { OrchestrationService } from './orchestration.service';
 import { PlannerService } from './planner.service';
-import { SessionManagerService } from './session-manager.service';
 import { MessagesModule } from '../messages/messages.module';
+import { PlanSession, PlanSessionSchema } from '../../shared/schemas/plan-session.schema';
+import { SessionManagerService } from './session-manager.service';
 
 @Module({
   imports: [
@@ -28,7 +28,7 @@ import { MessagesModule } from '../messages/messages.module';
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
-      { name: AgentSession.name, schema: AgentSessionSchema },
+      { name: PlanSession.name, schema: PlanSessionSchema },
       { name: Agent.name, schema: AgentSchema },
       { name: Tool.name, schema: ToolSchema },
       { name: Employee.name, schema: EmployeeSchema },
@@ -36,6 +36,6 @@ import { MessagesModule } from '../messages/messages.module';
   ],
   controllers: [OrchestrationController],
   providers: [OrchestrationService, PlannerService, SessionManagerService],
-  exports: [OrchestrationService, SessionManagerService],
+  exports: [OrchestrationService],
 })
 export class OrchestrationModule {}

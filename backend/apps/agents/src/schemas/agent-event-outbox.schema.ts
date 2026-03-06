@@ -21,9 +21,6 @@ export class AgentEventOutbox {
   agentId: string;
 
   @Prop()
-  organizationId?: string;
-
-  @Prop()
   sessionId?: string;
 
   @Prop()

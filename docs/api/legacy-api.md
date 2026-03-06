@@ -50,11 +50,21 @@
 - `POST /orchestration/tasks/:id/reassign`：任务改派
 - `POST /orchestration/tasks/:id/complete-human`：人工任务完成回填
 - `POST /orchestration/tasks/:id/retry`：失败任务重试
+- `POST /orchestration/tasks/:id/draft`：更新任务草稿（标题/描述）
+- `POST /orchestration/tasks/:id/debug-run`：单步调试执行指定任务
 - `POST /orchestration/sessions`：创建会话
 - `GET /orchestration/sessions`：查询会话
+- `GET /orchestration/sessions/:id`：会话详情
 - `POST /orchestration/sessions/:id/messages`：追加会话消息
+- `POST /orchestration/sessions/:id/messages/batch`：批量追加会话消息
 - `POST /orchestration/sessions/:id/archive`：归档会话
 - `POST /orchestration/sessions/:id/resume`：恢复会话
+
+会话详情/列表返回中新增可选字段：
+
+- `memoSnapshot`：Agent 会话侧 memo 展示快照（包含 `identity` / `todo` / `topic` 的精简内容），可直接用于会话页渲染。
+
+> 注：`/orchestration/*` 支持内部签名上下文头（`x-user-context` + `x-user-signature`）用于服务间调用。
 
 ## Messages（`/messages`）
 

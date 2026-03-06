@@ -25,9 +25,6 @@ export class Invitation {
   @Prop({ required: true, unique: true })
   id: string;
 
-  @Prop({ required: true })
-  organizationId: string;
-
   // 邀请码（简短易读）
   @Prop({ required: true, unique: true })
   code: string;
@@ -91,7 +88,6 @@ export class Invitation {
 export const InvitationSchema = SchemaFactory.createForClass(Invitation);
 
 // 索引
-InvitationSchema.index({ organizationId: 1 });
 InvitationSchema.index({ code: 1 });
 InvitationSchema.index({ linkToken: 1 });
 InvitationSchema.index({ expiresAt: 1 });

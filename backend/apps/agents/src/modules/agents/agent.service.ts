@@ -22,6 +22,12 @@ export interface AgentContext {
   workingMemory: Map<string, any>;
 }
 
+export interface ExecuteTaskResult {
+  response: string;
+  runId: string;
+  sessionId?: string;
+}
+
 export interface AgentMcpToolSummary {
   id: string;
   name: string;
@@ -79,7 +85,18 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-executive',
     role: 'executive-lead',
-    tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list'],
+    tools: [
+      'websearch',
+      'webfetch',
+      'content_extract',
+      'agents_mcp_list',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+      'orchestration_reassign_task',
+      'orchestration_complete_human_task',
+    ],
     capabilities: ['strategy_planning', 'decision_making', 'stakeholder_communication', 'resource_governance'],
     exposed: true,
     description: '负责战略规划、关键决策与跨团队协同。',
@@ -87,7 +104,16 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-management-assistant',
     role: 'management-assistant',
-    tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list'],
+    tools: [
+      'websearch',
+      'webfetch',
+      'content_extract',
+      'agents_mcp_list',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+    ],
     capabilities: ['schedule_management', 'meeting_followup', 'information_synthesis'],
     exposed: true,
     description: '负责高管日程管理、会议纪要与事项跟进。',
@@ -127,7 +153,14 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-product-manager',
     role: 'product-manager',
-    tools: ['websearch', 'webfetch'],
+    tools: [
+      'websearch',
+      'webfetch',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+    ],
     capabilities: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
     exposed: true,
     description: '负责产品规划、优先级管理与跨团队推进。',
@@ -167,7 +200,21 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-system-builtin',
     role: 'system-builtin-agent',
-    tools: ['websearch', 'webfetch', 'content_extract', 'agents_mcp_list', 'model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'],
+    tools: [
+      'websearch',
+      'webfetch',
+      'content_extract',
+      'agents_mcp_list',
+      'model_mcp_list_models',
+      'model_mcp_search_latest',
+      'model_mcp_add_model',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+      'orchestration_reassign_task',
+      'orchestration_complete_human_task',
+    ],
     capabilities: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
     exposed: true,
     description: '系统内置类型，用于平台默认流程与系统任务协同。',
@@ -227,6 +274,12 @@ export class AgentService {
       isActive: agentData.isActive ?? true,
     };
 
+    normalizedData.tools = await this.ensureToolsWithinMcpProfileWhitelist(
+      normalizedData.type,
+      normalizedData.tools || [],
+      'create',
+    );
+
     try {
       const modelConfig: AIModel = {
         id: normalizedData.model.id,
@@ -266,6 +319,11 @@ export class AgentService {
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
+    const existingAgent = await this.agentModel.findById(agentId).exec();
+    if (!existingAgent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
+    }
+
     const normalizedUpdates: any = {
       ...updates,
       updatedAt: new Date(),
@@ -278,6 +336,26 @@ export class AgentService {
         throw new BadRequestException('Agent type cannot be empty');
       }
       normalizedUpdates.type = normalizedType;
+    }
+
+    const targetType = hasTypeField
+      ? normalizedUpdates.type
+      : (existingAgent.type || '').trim();
+
+    const hasToolsField = Object.prototype.hasOwnProperty.call(updates, 'tools');
+    if (hasToolsField || hasTypeField) {
+      const candidateTools = hasToolsField
+        ? Array.isArray(updates.tools)
+          ? updates.tools
+          : []
+        : Array.isArray(existingAgent.tools)
+          ? existingAgent.tools
+          : [];
+      normalizedUpdates.tools = await this.ensureToolsWithinMcpProfileWhitelist(
+        targetType,
+        candidateTools,
+        'update',
+      );
     }
 
     const hasRoleField = Object.prototype.hasOwnProperty.call(updates, 'role');
@@ -323,6 +401,31 @@ export class AgentService {
       });
     }
     return updated;
+  }
+
+  private async ensureToolsWithinMcpProfileWhitelist(
+    agentType: string,
+    tools: string[],
+    action: 'create' | 'update',
+  ): Promise<string[]> {
+    const normalizedType = (agentType || '').trim();
+    if (!normalizedType) {
+      throw new BadRequestException('Agent type is required before assigning tools');
+    }
+
+    const profile = await this.getMcpProfileByAgentType(normalizedType);
+    const whitelist = new Set((profile.tools || []).map((item) => (item || '').trim()).filter(Boolean));
+    const normalizedTools = this.uniqueStrings((tools || []).map((item) => String(item || '').trim()).filter(Boolean));
+    const invalid = normalizedTools.filter((toolId) => !whitelist.has(toolId));
+
+    if (invalid.length > 0) {
+      throw new BadRequestException(
+        `Invalid tools for agent type ${normalizedType} on ${action}: ${invalid.join(', ')}. ` +
+          'Agent.tools must be a subset of MCP Profile.tools.',
+      );
+    }
+
+    return normalizedTools;
   }
 
   async deleteAgent(agentId: string): Promise<boolean> {
@@ -550,6 +653,15 @@ export class AgentService {
   }
 
   async executeTask(agentId: string, task: Task, context?: Partial<AgentContext>): Promise<string> {
+    const detailed = await this.executeTaskDetailed(agentId, task, context);
+    return detailed.response;
+  }
+
+  async executeTaskDetailed(
+    agentId: string,
+    task: Task,
+    context?: Partial<AgentContext>,
+  ): Promise<ExecuteTaskResult> {
     const agent = await this.getAgent(agentId);
     if (!agent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
@@ -567,6 +679,8 @@ export class AgentService {
         id: taskId,
         title: task.title,
         description: task.description,
+        status: 'running',
+        sourceType: 'orchestration_task',
       });
     });
     await this.runMemoOperation('task_start_record_behavior', taskId, async () => {
@@ -606,12 +720,34 @@ export class AgentService {
       sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
       taskTitle: task.title,
       taskDescription: task.description,
-      userContent: task.description,
+      userContent: this.resolveLatestUserContent(task, messages),
       metadata: {
         taskType: task.type,
         taskPriority: task.priority,
+        ...(context?.teamContext?.meetingId
+          ? {
+              meetingContext: {
+                meetingId: context.teamContext.meetingId,
+                agendaId: context.teamContext.agendaId,
+                latestSummary: context.teamContext.latestSummary,
+              },
+            }
+          : {}),
       },
     });
+
+    if (runtimeContext.sessionId) {
+      const systemMessages = messages
+        .filter((msg) => msg.role === 'system')
+        .map((msg) => ({
+          role: 'system' as const,
+          content: msg.content,
+          metadata: { source: 'buildMessages', agentId: agent.id },
+        }));
+      if (systemMessages.length > 0) {
+        await this.runtimeOrchestrator.appendSystemMessagesToSession(runtimeContext.sessionId, systemMessages);
+      }
+    }
 
     try {
       // 确保模型已注册 - 类型转换
@@ -641,7 +777,18 @@ export class AgentService {
       // 注册provider（使用自定义key或默认key）
       this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
 
-      const response = await this.executeWithToolCalling(agent, task, messages, modelConfig, runtimeContext);
+      const response = await this.executeWithToolCalling(
+        agent,
+        task,
+        messages,
+        modelConfig,
+        runtimeContext,
+        {
+          teamContext: context?.teamContext,
+          taskType: task.type,
+          teamId: task.teamId,
+        },
+      );
 
       this.logger.log(
         `[task_success] agent=${agent.name} taskId=${taskId} responseLength=${response.length} durationMs=${Date.now() - taskStartAt}`,
@@ -658,7 +805,7 @@ export class AgentService {
         });
       });
       await this.runMemoOperation('task_complete_todo', taskId, async () => {
-        await this.memoService.completeTaskTodo(agent.id || agentId, taskId, 'Task finished by agent runtime');
+        await this.memoService.completeTaskTodo(agent.id || agentId, taskId, 'Task finished by agent runtime', 'success');
       });
       this.memoEventBus.emit({
         name: 'task.completed',
@@ -689,13 +836,17 @@ export class AgentService {
       await this.runtimeOrchestrator.completeRun({
         runId: runtimeContext.runId,
         agentId: runtimeAgentId,
-        sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+        sessionId: runtimeContext.sessionId,
         taskId,
         assistantContent: response,
         traceId: runtimeContext.traceId,
       });
 
-      return response;
+      return {
+        response,
+        runId: runtimeContext.runId,
+        sessionId: runtimeContext.sessionId,
+      };
     } catch (error) {
       const logError = this.toLogError(error);
       this.logger.error(
@@ -717,11 +868,19 @@ export class AgentService {
         normalizedError.includes('cancelled') ||
         normalizedError.includes('paused') ||
         normalizedError.includes('already completed');
+      await this.runMemoOperation('task_failed_todo', taskId, async () => {
+        await this.memoService.completeTaskTodo(
+          agent.id || agentId,
+          taskId,
+          controlInterrupted ? 'Task interrupted before completion' : logError.message,
+          controlInterrupted ? 'cancelled' : 'failed',
+        );
+      });
       if (!controlInterrupted) {
         await this.runtimeOrchestrator.failRun({
           runId: runtimeContext.runId,
           agentId: runtimeAgentId,
-          sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+          sessionId: runtimeContext.sessionId,
           taskId,
           error: logError.message,
           traceId: runtimeContext.traceId,
@@ -769,13 +928,26 @@ export class AgentService {
       sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
       taskTitle: task.title,
       taskDescription: task.description,
-      userContent: task.description,
+      userContent: this.resolveLatestUserContent(task, messages),
       metadata: {
         taskType: task.type,
         taskPriority: task.priority,
         mode: 'streaming',
       },
     });
+
+    if (runtimeContext.sessionId) {
+      const systemMessages = messages
+        .filter((msg) => msg.role === 'system')
+        .map((msg) => ({
+          role: 'system' as const,
+          content: msg.content,
+          metadata: { source: 'buildMessages', agentId: agent.id },
+        }));
+      if (systemMessages.length > 0) {
+        await this.runtimeOrchestrator.appendSystemMessagesToSession(runtimeContext.sessionId, systemMessages);
+      }
+    }
 
     // 获取自定义API Key（如果配置了）
     let customApiKey: string | undefined;
@@ -830,7 +1002,7 @@ export class AgentService {
               traceId: runtimeContext.traceId,
               sequence: streamSequence++,
               delta: token,
-              sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+              sessionId: runtimeContext.sessionId,
               taskId,
             })
             .catch((eventError) => {
@@ -847,7 +1019,7 @@ export class AgentService {
       await this.runtimeOrchestrator.completeRun({
         runId: runtimeContext.runId,
         agentId: runtimeAgentId,
-        sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+        sessionId: runtimeContext.sessionId,
         taskId,
         assistantContent: fullResponse,
         traceId: runtimeContext.traceId,
@@ -867,7 +1039,7 @@ export class AgentService {
         await this.runtimeOrchestrator.failRun({
           runId: runtimeContext.runId,
           agentId: runtimeAgentId,
-          sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
+          sessionId: runtimeContext.sessionId,
           taskId,
           error: logError.message,
           traceId: runtimeContext.traceId,
@@ -1025,6 +1197,22 @@ export class AgentService {
       });
     }
 
+    const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
+    if (identityMemos.length > 0) {
+      const identityContent = identityMemos
+        .map((memo) => {
+          const content = String(memo.content || '');
+          const topic = memo.payload?.topic ? String(memo.payload.topic) : '';
+          return `## ${memo.title}${topic ? ` (${topic})` : ''}\n\n${content}`;
+        })
+        .join('\n\n---\n\n');
+      messages.push({
+        role: 'system',
+        content: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
+        timestamp: new Date(),
+      });
+    }
+
     if (allowedToolIds.includes(MEMO_MCP_SEARCH_TOOL_ID) && allowedToolIds.includes(MEMO_MCP_APPEND_TOOL_ID)) {
       messages.push({
         role: 'system',
@@ -1083,6 +1271,7 @@ export class AgentService {
     initialMessages: ChatMessage[],
     modelConfig: AIModel,
     runtimeContext?: RuntimeRunContext,
+    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
   ): Promise<string> {
     const maxToolRounds = 3;
     const messages = [...initialMessages];
@@ -1115,6 +1304,7 @@ export class AgentService {
             maxEvidencePerFeature: 3,
           },
           task.id,
+          executionContext,
         );
         return this.formatCodeDocsMcpAnswer(execution.result || {});
       } catch (error) {
@@ -1138,12 +1328,56 @@ export class AgentService {
             minSeverity: 'medium',
           },
           task.id,
+          executionContext,
         );
         return this.formatCodeUpdatesMcpAnswer(execution.result || {}, forcedUpdatesHours);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'unknown error';
         this.logger.warn(`Forced tool call ${CODE_UPDATES_MCP_TOOL_ID} failed: ${message}`);
         return `我尝试通过 ${CODE_UPDATES_MCP_TOOL_ID} 汇总最近更新，但调用失败（${message}）。当前无法提供可靠更新清单，请稍后重试。`;
+      }
+    }
+
+    const forcedOrchestrationAction = this.extractForcedOrchestrationAction(
+      task,
+      messages,
+      assignedToolIds,
+      executionContext,
+    );
+    if (!forcedOrchestrationAction && this.hasMeetingOrchestrationIntent(task, messages, executionContext)) {
+      const hasAnyOrchestrationTool = [
+        'orchestration_create_plan',
+        'orchestration_run_plan',
+        'orchestration_get_plan',
+        'orchestration_list_plans',
+        'orchestration_reassign_task',
+        'orchestration_complete_human_task',
+      ].some((toolId) => assignedToolIds.has(toolId));
+      if (!hasAnyOrchestrationTool) {
+        return '我识别到你希望执行计划编排，但当前这个 Agent 未分配 orchestration_* 工具。请在 Agent 管理中为其绑定对应 MCP Profile 工具后重试。';
+      }
+    }
+    if (forcedOrchestrationAction) {
+      this.logger.log(
+        `Forced tool call triggered: ${forcedOrchestrationAction.tool} (agent=${agent.name}, reason=${forcedOrchestrationAction.reason})`,
+      );
+      try {
+        const execution = await this.toolService.executeTool(
+          forcedOrchestrationAction.tool,
+          agentRuntimeId,
+          forcedOrchestrationAction.parameters,
+          task.id,
+          executionContext,
+        );
+        return this.formatForcedOrchestrationAnswer(
+          forcedOrchestrationAction.tool,
+          execution?.result || {},
+          forcedOrchestrationAction.parameters,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'unknown error';
+        this.logger.warn(`Forced tool call ${forcedOrchestrationAction.tool} failed: ${message}`);
+        return `我已识别到你希望执行计划编排，并尝试调用 ${forcedOrchestrationAction.tool}，但执行失败（${message}）。请补充必要参数（如 planId/taskId）后重试。`;
       }
     }
 
@@ -1242,6 +1476,7 @@ export class AgentService {
           agentRuntimeId,
           toolCall.parameters,
           task.id,
+          executionContext,
         );
         executedToolIds.add(toolCall.tool);
         this.logger.log(
@@ -1428,6 +1663,14 @@ export class AgentService {
       return normalized;
     }
     return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+  }
+
+  private resolveLatestUserContent(task: Task, messages: ChatMessage[]): string {
+    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+
+    return latestUserMessage || task.description || task.title || '';
   }
 
   private shouldForceModelManagementGrounding(
@@ -1728,6 +1971,285 @@ export class AgentService {
     }
 
     return 24;
+  }
+
+  private extractForcedOrchestrationAction(
+    task: Task,
+    messages: ChatMessage[],
+    assignedToolIds: Set<string>,
+    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
+  ):
+    | {
+        tool:
+          | 'orchestration_create_plan'
+          | 'orchestration_run_plan'
+          | 'orchestration_get_plan'
+          | 'orchestration_list_plans'
+          | 'orchestration_reassign_task'
+          | 'orchestration_complete_human_task';
+        parameters: Record<string, any>;
+        reason: string;
+      }
+    | null {
+    const meetingLike =
+      task.type === 'discussion' ||
+      executionContext?.taskType === 'discussion' ||
+      Boolean(executionContext?.teamContext?.meetingId);
+    if (!meetingLike) {
+      return null;
+    }
+
+    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+    const latestUser = this.normalizeMeetingUserInstruction(latestUserMessage);
+    if (!latestUser) {
+      return null;
+    }
+    const lower = latestUser.toLowerCase();
+
+    const planId = this.extractEntityIdFromText(latestUser, 'plan');
+    const taskId = this.extractEntityIdFromText(latestUser, 'task');
+    const recoveredPlanId = this.extractRecentPlanIdFromConversation(task, messages);
+    const shortRunConfirmIntent = this.isShortRunConfirmIntent(lower);
+
+    const includesAny = (patterns: string[]) => patterns.some((item) => lower.includes(item.toLowerCase()));
+
+    if (
+      assignedToolIds.has('orchestration_create_plan') &&
+      includesAny(['创建计划', '生成计划', '拆解计划', '编排计划', 'create plan', 'orchestration_create_plan'])
+    ) {
+      return {
+        tool: 'orchestration_create_plan',
+        parameters: {
+          prompt: latestUser,
+          title: task.title || '会议编排计划',
+          mode: 'hybrid',
+          autoRun: false,
+        },
+        reason: 'meeting_orchestration_create',
+      };
+    }
+
+    if (
+      assignedToolIds.has('orchestration_run_plan') &&
+      (includesAny(['执行计划', '运行计划', '开始执行计划', 'run plan', 'orchestration_run_plan']) || shortRunConfirmIntent)
+    ) {
+      const selectedPlanId = planId || recoveredPlanId;
+      if (!selectedPlanId) {
+        if (!assignedToolIds.has('orchestration_list_plans')) {
+          return null;
+        }
+        return {
+          tool: 'orchestration_list_plans',
+          parameters: {},
+          reason: 'meeting_orchestration_run_missing_planid_fallback_list',
+        };
+      }
+      return {
+        tool: 'orchestration_run_plan',
+        parameters: {
+          planId: selectedPlanId,
+          continueOnFailure: true,
+          confirm: true,
+        },
+        reason: shortRunConfirmIntent && !planId ? 'meeting_orchestration_run_short_confirm' : 'meeting_orchestration_run',
+      };
+    }
+
+    if (
+      assignedToolIds.has('orchestration_get_plan') &&
+      includesAny(['查看计划', '计划详情', '查询计划', 'get plan', 'orchestration_get_plan'])
+    ) {
+      if (!planId) {
+        return null;
+      }
+      return {
+        tool: 'orchestration_get_plan',
+        parameters: {
+          planId,
+        },
+        reason: 'meeting_orchestration_get',
+      };
+    }
+
+    if (
+      assignedToolIds.has('orchestration_list_plans') &&
+      includesAny(['计划列表', '所有计划', 'list plans', 'orchestration_list_plans'])
+    ) {
+      return {
+        tool: 'orchestration_list_plans',
+        parameters: {},
+        reason: 'meeting_orchestration_list',
+      };
+    }
+
+    if (
+      assignedToolIds.has('orchestration_reassign_task') &&
+      includesAny(['改派任务', '重新分配任务', 'reassign task', 'orchestration_reassign_task'])
+    ) {
+      if (!taskId) {
+        return null;
+      }
+      return {
+        tool: 'orchestration_reassign_task',
+        parameters: {
+          taskId,
+          executorType: 'agent',
+          reason: '会议中触发改派',
+          confirm: true,
+        },
+        reason: 'meeting_orchestration_reassign',
+      };
+    }
+
+    if (
+      assignedToolIds.has('orchestration_complete_human_task') &&
+      includesAny(['人工完成任务', '完成人工任务', 'complete human task', 'orchestration_complete_human_task'])
+    ) {
+      if (!taskId) {
+        return null;
+      }
+      return {
+        tool: 'orchestration_complete_human_task',
+        parameters: {
+          taskId,
+          summary: '会议中确认人工任务完成',
+          output: latestUser,
+          confirm: true,
+        },
+        reason: 'meeting_orchestration_complete_human',
+      };
+    }
+
+    return null;
+  }
+
+  private hasMeetingOrchestrationIntent(
+    task: Task,
+    messages: ChatMessage[],
+    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
+  ): boolean {
+    const meetingLike =
+      task.type === 'discussion' ||
+      executionContext?.taskType === 'discussion' ||
+      Boolean(executionContext?.teamContext?.meetingId);
+    if (!meetingLike) {
+      return false;
+    }
+    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
+      .reverse()
+      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
+    const lower = this.normalizeMeetingUserInstruction(latestUserMessage).toLowerCase();
+    if (!lower) {
+      return false;
+    }
+    return [
+      '创建计划',
+      '生成计划',
+      '编排计划',
+      '执行计划',
+      '运行计划',
+      '计划详情',
+      '计划列表',
+      '改派任务',
+      '人工完成任务',
+      'create plan',
+      'run plan',
+      '执行',
+      '继续',
+      '开始',
+      'orchestration_',
+    ].some((item) => lower.includes(item));
+  }
+
+  private isShortRunConfirmIntent(latestUserLower: string): boolean {
+    const normalized = String(latestUserLower || '').trim();
+    return ['执行', '继续', '开始', 'run', 'go', 'ok执行', '确认执行'].includes(normalized);
+  }
+
+  private normalizeMeetingUserInstruction(content: unknown): string {
+    const raw = String(content || '').trim();
+    if (!raw) {
+      return '';
+    }
+
+    const wrapped = raw.match(/\[新消息\][^:：]*[:：]\s*([\s\S]*?)(?:\n\n请对此做出回应。?)?$/i);
+    if (wrapped?.[1]) {
+      return wrapped[1].trim();
+    }
+
+    return raw;
+  }
+
+  private extractRecentPlanIdFromConversation(task: Task, messages: ChatMessage[]): string | null {
+    const source = [
+      ...(task.messages || []),
+      ...(messages || []),
+    ]
+      .map((item) => String(item?.content || ''))
+      .reverse();
+
+    for (const text of source) {
+      const explicit = text.match(/planId\s*[:=]\s*([a-zA-Z0-9_-]{6,64})/i);
+      if (explicit?.[1]) {
+        return explicit[1];
+      }
+      const objectId = text.match(/\b[a-f0-9]{24}\b/i);
+      if (objectId?.[0] && /plan|计划/i.test(text)) {
+        return objectId[0];
+      }
+    }
+
+    return null;
+  }
+
+  private extractEntityIdFromText(input: string, entity: 'plan' | 'task'): string | null {
+    const text = String(input || '');
+    const explicit = text.match(new RegExp(`${entity}\\s*[_-]?id\\s*[:：]\\s*([a-zA-Z0-9_-]{6,64})`, 'i'));
+    if (explicit?.[1]) {
+      return explicit[1];
+    }
+    const objectId = text.match(/\b[a-f0-9]{24}\b/i);
+    if (objectId?.[0]) {
+      return objectId[0];
+    }
+    return null;
+  }
+
+  private formatForcedOrchestrationAnswer(
+    tool: string,
+    result: any,
+    parameters: Record<string, any>,
+  ): string {
+    const payload = result?.result || result || {};
+    if (tool === 'orchestration_create_plan') {
+      const planId = payload?.id || payload?._id || payload?.planId || 'unknown';
+      const taskCount = Array.isArray(payload?.tasks) ? payload.tasks.length : 0;
+      return `已触发计划创建，planId=${planId}，任务数=${taskCount}。如需继续执行，请回复“执行计划 planId:${planId}”。`;
+    }
+    if (tool === 'orchestration_run_plan') {
+      return `已触发计划执行（planId=${parameters.planId}，continueOnFailure=${parameters.continueOnFailure === true ? 'true' : 'false'}）。可继续让我查询执行进度。`;
+    }
+    if (tool === 'orchestration_get_plan') {
+      const status = payload?.status || 'unknown';
+      const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+      const completed = tasks.filter((item: any) => item?.status === 'completed').length;
+      const failed = tasks.filter((item: any) => item?.status === 'failed').length;
+      const waitingHuman = tasks.filter((item: any) => item?.status === 'waiting_human').length;
+      return `计划状态：${status}。任务统计：completed=${completed}，failed=${failed}，waiting_human=${waitingHuman}，total=${tasks.length}。`;
+    }
+    if (tool === 'orchestration_list_plans') {
+      const plans = Array.isArray(payload) ? payload : Array.isArray(payload?.plans) ? payload.plans : [];
+      return `已查询计划列表，当前可见计划数量=${plans.length}。如需执行请提供 planId（例如：执行计划 planId:xxx）。`;
+    }
+    if (tool === 'orchestration_reassign_task') {
+      return `已提交任务改派请求（taskId=${parameters.taskId}）。`;
+    }
+    if (tool === 'orchestration_complete_human_task') {
+      return `已提交人工任务完成回填（taskId=${parameters.taskId}）。`;
+    }
+    return `已执行编排工具 ${tool}。`;
   }
 
   private formatCodeDocsMcpAnswer(result: any): string {
@@ -2053,6 +2575,15 @@ export class AgentService {
                 exposed: seed.exposed,
                 description: seed.description || '',
               },
+              $set: {
+                role: seed.role,
+                exposed: seed.exposed,
+                description: seed.description || '',
+              },
+              $addToSet: {
+                tools: { $each: seed.tools || [] },
+                capabilities: { $each: seed.capabilities || [] },
+              },
             },
             { upsert: true },
           )
@@ -2069,8 +2600,8 @@ export class AgentService {
           },
         )
         .exec();
-
-      await this.agentProfileModel.deleteMany({ agentType: { $nin: activeTypes } }).exec();
+      // 移除删除操作：禁止后端重启时删除用户自定义的 agent profile
+      // await this.agentProfileModel.deleteMany({ agentType: { $nin: activeTypes } }).exec();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to seed MCP profiles';
       this.logger.warn(`MCP profile seed skipped: ${message}`);
@@ -2172,7 +2703,8 @@ export class AgentService {
 
   private async bootstrapMcpProfilesAndAgentTypes(): Promise<void> {
     await this.ensureMcpProfileSeeds();
-    await this.migrateAllAgentsToSystemBuiltin();
+    // 移除强制迁移：禁止后端重启时将用户自定义 agent 重置为系统内置
+    // await this.migrateAllAgentsToSystemBuiltin();
     await this.ensureModelManagementAgent();
   }
 }

@@ -38,67 +38,39 @@ const EmployeeManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'employees' | 'invitations' | 'login'>('employees');
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [organizationId, setOrganizationId] = useState<string>(() => {
-    const currentUserRaw = localStorage.getItem('current_user');
-    if (!currentUserRaw) {
-      return 'default-org';
-    }
-
-    try {
-      const parsed = JSON.parse(currentUserRaw) as { organizationId?: string };
-      return parsed.organizationId || 'default-org';
-    } catch {
-      return 'default-org';
-    }
-  });
 
   useEffect(() => {
     authService.getCurrentUser().then((user) => {
       setCurrentUser(user);
-      if (user?.organizationId) {
-        setOrganizationId(user.organizationId);
-      }
     });
   }, []);
 
   const { data: employees } = useQuery(
-    ['employees', organizationId],
-    () => employeeService.getEmployeesByOrganization(organizationId),
-    {
-      enabled: !!organizationId,
-    }
+    ['employees'],
+    () => employeeService.getEmployeesByOrganization()
   );
 
   const { data: stats } = useQuery(
-    ['employee-stats', organizationId],
-    () => employeeService.getEmployeeStats(organizationId),
-    {
-      enabled: !!organizationId,
-    }
+    ['employee-stats'],
+    () => employeeService.getEmployeeStats()
   );
 
   const { data: invitations } = useQuery(
-    ['invitations', organizationId],
-    () => invitationService.getByOrganization(organizationId),
-    {
-      enabled: !!organizationId,
-    }
+    ['invitations'],
+    () => invitationService.getByOrganization()
   );
 
   const { data: invitationStats } = useQuery(
-    ['invitation-stats', organizationId],
-    () => invitationService.getStats(organizationId),
-    {
-      enabled: !!organizationId,
-    }
+    ['invitation-stats'],
+    () => invitationService.getStats()
   );
 
   const createEmployeeMutation = useMutation(
     (data: CreateEmployeeDto) => employeeService.createEmployee(data),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['employees', organizationId]);
-        queryClient.invalidateQueries(['employee-stats', organizationId]);
+        queryClient.invalidateQueries(['employees']);
+        queryClient.invalidateQueries(['employee-stats']);
       },
     }
   );
@@ -107,8 +79,8 @@ const EmployeeManagement: React.FC = () => {
     ({ id, data }: { id: string; data: UpdateEmployeeDto }) => employeeService.updateEmployee(id, data),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries(['employees', organizationId]);
-        queryClient.invalidateQueries(['employee-stats', organizationId]);
+        queryClient.invalidateQueries(['employees']);
+        queryClient.invalidateQueries(['employee-stats']);
       },
     }
   );
@@ -263,7 +235,6 @@ const EmployeeManagement: React.FC = () => {
       ) : activeTab === 'employees' ? (
         <EmployeeList
           humanEmployees={humanEmployees}
-          organizationId={organizationId}
           onAdd={(data) => createEmployeeMutation.mutate(data)}
           onUpdate={(id, data) => updateEmployeeMutation.mutate({ id, data })}
           isAdding={createEmployeeMutation.isLoading}
@@ -272,7 +243,6 @@ const EmployeeManagement: React.FC = () => {
         />
       ) : (
         <InvitationManagement
-          organizationId={organizationId}
           invitations={invitations || []}
           stats={invitationStats}
           onCreate={(data) => createInvitationMutation.mutate(data)}
@@ -353,7 +323,6 @@ const LoginForm: React.FC<{ onLogin: (user: any) => void }> = ({ onLogin }) => {
 // 员工列表
 const EmployeeList: React.FC<{
   humanEmployees: Employee[];
-  organizationId: string;
   onAdd: (data: CreateEmployeeDto) => void;
   onUpdate: (id: string, data: UpdateEmployeeDto) => void;
   isAdding: boolean;
@@ -361,7 +330,6 @@ const EmployeeList: React.FC<{
   updatingEmployeeId?: string;
 }> = ({
   humanEmployees,
-  organizationId,
   onAdd,
   onUpdate,
   isAdding,
@@ -371,7 +339,6 @@ const EmployeeList: React.FC<{
   const [showAddModal, setShowAddModal] = useState(false);
   const [formData, setFormData] = useState<Partial<CreateEmployeeDto>>({
     type: EmployeeType.HUMAN,
-    organizationId,
     role: EmployeeRole.JUNIOR,
   });
 
@@ -379,7 +346,7 @@ const EmployeeList: React.FC<{
     e.preventDefault();
     onAdd(formData as CreateEmployeeDto);
     setShowAddModal(false);
-    setFormData({ type: EmployeeType.HUMAN, organizationId, role: EmployeeRole.JUNIOR });
+    setFormData({ type: EmployeeType.HUMAN, role: EmployeeRole.JUNIOR });
   };
 
   return (
@@ -734,17 +701,15 @@ const EmployeeRow: React.FC<{
 
 // 邀请管理
 const InvitationManagement: React.FC<{
-  organizationId: string;
   invitations: Invitation[];
   stats: any;
   onCreate: (data: CreateInvitationDto) => void;
   onCancel: (id: string) => void;
   onResend: (id: string) => void;
   isCreating: boolean;
-}> = ({ organizationId, invitations, stats, onCreate, onCancel, onResend, isCreating }) => {
+}> = ({ invitations, stats, onCreate, onCancel, onResend, isCreating }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<CreateInvitationDto>>({
-    organizationId,
     invitedByName: '',
     role: InvitationRole.JUNIOR,
     expiresInDays: 7,

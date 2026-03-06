@@ -1,192 +1,95 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { AgentSession, AgentSessionDocument } from '../../shared/schemas/agent-session.schema';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { CreateSessionDto, SessionQueryDto } from './dto';
-import { MessagesService } from '../messages/messages.service';
 
 @Injectable()
 export class SessionManagerService {
-  constructor(
-    @InjectModel(AgentSession.name) private readonly agentSessionModel: Model<AgentSessionDocument>,
-    private readonly messagesService: MessagesService,
-  ) {}
+  constructor(private readonly agentClientService: AgentClientService) {}
 
-  async createSession(organizationId: string, dto: CreateSessionDto): Promise<AgentSession> {
-    const session = new this.agentSessionModel({
-      ...dto,
-      organizationId,
-      status: 'active',
-      lastActiveAt: new Date(),
-      tags: dto.tags || [],
+  async createSession(organizationId: string, dto: CreateSessionDto): Promise<any> {
+    const session = await this.agentClientService.createSession({
+      sessionId: (dto as any).id,
+      ownerType: dto.ownerType,
+      ownerId: dto.ownerId,
+      title: dto.title,
+      planContext: (dto as any).planContext,
+      meetingContext: (dto as any).meetingContext,
+      metadata: { ...(dto as any).metadata, organizationId },
     });
-    return session.save();
+    if (!session) {
+      throw new NotFoundException('Failed to create session');
+    }
+    return session;
   }
 
-  async getSessionOrThrow(organizationId: string, sessionId: string): Promise<AgentSession> {
-    const session = await this.agentSessionModel.findOne({ _id: sessionId, organizationId }).exec();
+  async getSessionOrThrow(organizationId: string, sessionId: string): Promise<any> {
+    const normalized = String(sessionId || '').trim();
+    if (!normalized) {
+      throw new NotFoundException('Session not found');
+    }
+
+    const session = await this.agentClientService.getSession(normalized);
     if (!session) {
       throw new NotFoundException('Session not found');
     }
     return session;
   }
 
-  async listSessions(organizationId: string, query: SessionQueryDto): Promise<AgentSession[]> {
-    const filter: Record<string, any> = { organizationId };
-    if (query.ownerType) {
-      filter.ownerType = query.ownerType;
-    }
-    if (query.status) {
-      filter.status = query.status;
-    }
-    if (query.ownerId) {
-      filter.ownerId = query.ownerId;
-    }
-    if (query.linkedPlanId) {
-      filter.linkedPlanId = query.linkedPlanId;
-    }
-
-    return this.agentSessionModel.find(filter).sort({ lastActiveAt: -1 }).exec();
+  async listSessions(organizationId: string, query: SessionQueryDto): Promise<any[]> {
+    return [];
   }
 
   async appendMessage(
     organizationId: string,
     sessionId: string,
     message: { role: 'user' | 'assistant' | 'system'; content: string; metadata?: Record<string, any> },
-  ): Promise<AgentSession> {
-    const updated = await this.agentSessionModel
-      .findOneAndUpdate(
-        { _id: sessionId, organizationId },
-        {
-          $push: {
-            messages: {
-              ...message,
-              timestamp: new Date(),
-            },
-          },
-          $set: {
-            lastActiveAt: new Date(),
-            status: 'active',
-          },
-        },
-        { new: true },
-      )
-      .exec();
-    if (!updated) {
+  ): Promise<any> {
+    const session = await this.agentClientService.appendSessionMessage(sessionId, {
+      role: message.role,
+      content: message.content,
+      status: 'completed',
+      metadata: { ...message.metadata, organizationId },
+    });
+    if (!session) {
       throw new NotFoundException('Session not found');
     }
-
-    await this.messagesService.appendMessage({
-      sceneType: 'orchestration_session',
-      sceneId: sessionId,
-      threadId: updated.linkedPlanId,
-      senderType: message.role === 'assistant' ? 'agent' : message.role === 'system' ? 'system' : 'employee',
-      senderId: message.role === 'assistant' ? updated.ownerId : message.role === 'system' ? 'system' : 'user',
-      senderRole: message.role,
-      content: message.content,
-      messageType: message.role === 'system' ? 'system' : 'session_message',
-      metadata: {
-        ...(message.metadata || {}),
-        organizationId,
-        sessionId,
-        linkedPlanId: updated.linkedPlanId,
-        linkedTaskId: updated.linkedTaskId,
-      },
-    });
-
-    return updated;
+    return session;
   }
 
   async appendMessages(
     organizationId: string,
     sessionId: string,
     messages: { role: 'user' | 'assistant' | 'system'; content: string; metadata?: Record<string, any> }[],
-  ): Promise<AgentSession> {
-    const payload = messages.map((message) => ({
-      ...message,
-      timestamp: new Date(),
-    }));
-
-    const updated = await this.agentSessionModel
-      .findOneAndUpdate(
-        { _id: sessionId, organizationId },
-        {
-          $push: {
-            messages: { $each: payload },
-          },
-          $set: {
-            lastActiveAt: new Date(),
-            status: 'active',
-          },
-        },
-        { new: true },
-      )
-      .exec();
-    if (!updated) {
-      throw new NotFoundException('Session not found');
-    }
-
-    await this.messagesService.appendMessages(
-      payload.map((message) => ({
-        sceneType: 'orchestration_session' as const,
-        sceneId: sessionId,
-        threadId: updated.linkedPlanId,
-        senderType: message.role === 'assistant' ? 'agent' : message.role === 'system' ? 'system' : 'employee',
-        senderId: message.role === 'assistant' ? updated.ownerId : message.role === 'system' ? 'system' : 'user',
-        senderRole: message.role,
+  ): Promise<any> {
+    let result: any = null;
+    for (const message of messages) {
+      result = await this.agentClientService.appendSessionMessage(sessionId, {
+        role: message.role,
         content: message.content,
-        messageType: message.role === 'system' ? 'system' : 'session_message',
-        metadata: {
-          ...(message.metadata || {}),
-          organizationId,
-          sessionId,
-          linkedPlanId: updated.linkedPlanId,
-          linkedTaskId: updated.linkedTaskId,
-        },
-        occurredAt: message.timestamp,
-      })),
-    );
-
-    return updated;
-  }
-
-  async archiveSession(organizationId: string, sessionId: string, summary?: string): Promise<AgentSession> {
-    const updated = await this.agentSessionModel
-      .findOneAndUpdate(
-        { _id: sessionId, organizationId },
-        {
-          $set: {
-            status: 'archived',
-            contextSummary: summary,
-            lastActiveAt: new Date(),
-          },
-        },
-        { new: true },
-      )
-      .exec();
-    if (!updated) {
+        status: 'completed',
+        metadata: { ...message.metadata, organizationId },
+      });
+    }
+    if (!result) {
       throw new NotFoundException('Session not found');
     }
-    return updated;
+    return result;
   }
 
-  async resumeSession(organizationId: string, sessionId: string): Promise<AgentSession> {
-    const updated = await this.agentSessionModel
-      .findOneAndUpdate(
-        { _id: sessionId, organizationId },
-        {
-          $set: {
-            status: 'active',
-            lastActiveAt: new Date(),
-          },
-        },
-        { new: true },
-      )
-      .exec();
-    if (!updated) {
+  async archiveSession(organizationId: string, sessionId: string, summary?: string): Promise<any> {
+    const session = await this.agentClientService.archiveSession(sessionId, summary);
+    if (!session) {
       throw new NotFoundException('Session not found');
     }
-    return updated;
+    return session;
+  }
+
+  async resumeSession(organizationId: string, sessionId: string): Promise<any> {
+    const session = await this.agentClientService.resumeSession(sessionId);
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+    return session;
   }
 
   async getOrCreateAgentSession(
@@ -195,29 +98,14 @@ export class SessionManagerService {
     linkedPlanId: string,
     title: string,
     linkedTaskId?: string,
-  ): Promise<AgentSession> {
-    const existing = await this.agentSessionModel
-      .findOne({
-        organizationId,
-        ownerType: 'agent',
-        ownerId: agentId,
-        linkedPlanId,
-        status: 'active',
-      })
-      .sort({ createdAt: -1 })
-      .exec();
-
-    if (existing) {
-      return existing;
-    }
-
+  ): Promise<any> {
     return this.createSession(organizationId, {
       ownerType: 'agent',
       ownerId: agentId,
+      title,
       linkedPlanId,
       linkedTaskId,
-      title,
       tags: ['orchestration', 'agent-run'],
-    });
+    } as any);
   }
 }

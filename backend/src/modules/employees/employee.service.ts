@@ -9,7 +9,6 @@ import type { AIModel, Agent } from '../../shared/types';
 
 export interface CreateEmployeeDto {
   type: EmployeeType;
-  organizationId: string;
   // 人类员工字段
   userId?: string;
   name?: string;
@@ -167,11 +166,10 @@ export class EmployeeService implements OnModuleInit {
     // 检查是否已存在
     if (dto.userId) {
       const existing = await this.employeeModel.findOne({
-        organizationId: dto.organizationId,
         userId: dto.userId,
       }).exec();
       if (existing) {
-        throw new ConflictException('User is already an employee in this organization');
+        throw new ConflictException('User is already an employee');
       }
     }
 
@@ -195,7 +193,6 @@ export class EmployeeService implements OnModuleInit {
 
     const employee = new this.employeeModel({
       id: uuidv4(),
-      organizationId: dto.organizationId,
       type: dto.type,
       userId: dto.userId,
       name: dto.name,
@@ -244,7 +241,7 @@ export class EmployeeService implements OnModuleInit {
     });
 
     const saved = await employee.save();
-    this.logger.log(`Created ${dto.type} employee: ${saved.name || saved.id} in org ${dto.organizationId}`);
+    this.logger.log(`Created ${dto.type} employee: ${saved.name || saved.id}`);
 
     return saved;
   }
@@ -253,14 +250,13 @@ export class EmployeeService implements OnModuleInit {
    * 获取组织下的所有员工
    */
   async getEmployeesByOrganization(
-    organizationId: string,
     filters?: { type?: EmployeeType; status?: EmployeeStatus; departmentId?: string }
   ): Promise<Array<Employee & { exclusiveAssistantName?: string }>> {
     if (filters?.type && filters.type !== EmployeeType.HUMAN) {
       return [];
     }
 
-    const query: any = { organizationId, type: EmployeeType.HUMAN };
+    const query: any = { type: EmployeeType.HUMAN };
     if (filters?.status) query.status = filters.status;
     if (filters?.departmentId) query.departmentId = filters.departmentId;
 
@@ -278,15 +274,15 @@ export class EmployeeService implements OnModuleInit {
   /**
    * 通过Agent ID获取员工
    */
-  async getEmployeeByAgentId(organizationId: string, agentId: string): Promise<Employee | null> {
-    return this.employeeModel.findOne({ organizationId, agentId }).exec();
+  async getEmployeeByAgentId(agentId: string): Promise<Employee | null> {
+    return this.employeeModel.findOne({ agentId }).exec();
   }
 
   /**
    * 通过用户ID获取员工
    */
-  async getEmployeeByUserId(organizationId: string, userId: string): Promise<Employee | null> {
-    return this.employeeModel.findOne({ organizationId, userId }).exec();
+  async getEmployeeByUserId(userId: string): Promise<Employee | null> {
+    return this.employeeModel.findOne({ userId }).exec();
   }
 
   /**
@@ -389,21 +385,21 @@ export class EmployeeService implements OnModuleInit {
   /**
    * 获取员工统计
    */
-  async getEmployeeStats(organizationId: string): Promise<EmployeeStats> {
-    const total = await this.employeeModel.countDocuments({ organizationId, type: EmployeeType.HUMAN });
+  async getEmployeeStats(): Promise<EmployeeStats> {
+    const total = await this.employeeModel.countDocuments({ type: EmployeeType.HUMAN });
     
     const byType = await this.employeeModel.aggregate([
-      { $match: { organizationId, type: EmployeeType.HUMAN } },
+      { $match: { type: EmployeeType.HUMAN } },
       { $group: { _id: '$type', count: { $sum: 1 } } },
     ]);
 
     const byStatus = await this.employeeModel.aggregate([
-      { $match: { organizationId, type: EmployeeType.HUMAN } },
+      { $match: { type: EmployeeType.HUMAN } },
       { $group: { _id: '$status', count: { $sum: 1 } } },
     ]);
 
     const byDepartment = await this.employeeModel.aggregate([
-      { $match: { organizationId, type: EmployeeType.HUMAN } },
+      { $match: { type: EmployeeType.HUMAN } },
       { $group: { _id: '$departmentId', count: { $sum: 1 } } },
     ]);
 

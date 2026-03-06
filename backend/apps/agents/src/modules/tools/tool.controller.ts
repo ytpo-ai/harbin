@@ -37,10 +37,11 @@ export class ToolController {
     @Body() body: {
       agentId: string;
       parameters: any;
-      taskId?: string
+      taskId?: string;
+      executionContext?: any;
     }
   ) {
-    return this.toolService.executeTool(id, body.agentId, body.parameters, body.taskId);
+    return this.toolService.executeTool(id, body.agentId, body.parameters, body.taskId, body.executionContext);
   }
 
   @Get('executions/history')

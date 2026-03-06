@@ -5,7 +5,6 @@ import { basename } from 'path';
 import { RdTask, RdTaskDocument, RdTaskStatus } from '../../shared/schemas/rd-task.schema';
 import { RdProject, RdProjectDocument } from '../../shared/schemas/rd-project.schema';
 import { Employee, EmployeeDocument } from '../../shared/schemas/employee.schema';
-import { Organization, OrganizationDocument } from '../../shared/schemas/organization.schema';
 import { OpencodeService } from './opencode.service';
 import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, SyncOpencodeContextDto, ImportOpencodeProjectDto } from './dto';
 
@@ -17,22 +16,8 @@ export class RdManagementService {
     @InjectModel(RdTask.name) private rdTaskModel: Model<RdTaskDocument>,
     @InjectModel(RdProject.name) private rdProjectModel: Model<RdProjectDocument>,
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
-    @InjectModel(Organization.name) private organizationModel: Model<OrganizationDocument>,
     private opencodeService: OpencodeService,
   ) {}
-
-  private async resolveOrganizationObjectId(organizationId: string): Promise<Types.ObjectId> {
-    if (Types.ObjectId.isValid(organizationId)) {
-      return new Types.ObjectId(organizationId);
-    }
-
-    const org = await this.organizationModel.findOne({ id: organizationId }).select('_id').exec();
-    if (!org?._id) {
-      throw new Error('Organization not found');
-    }
-
-    return org._id as Types.ObjectId;
-  }
 
   private async resolveEmployeeObjectId(employeeId?: string): Promise<Types.ObjectId | undefined> {
     if (!employeeId) {
@@ -53,13 +38,11 @@ export class RdManagementService {
 
   // ========== 任务管理 ==========
 
-  async createTask(createDto: CreateRdTaskDto, organizationId: string, userId: string): Promise<RdTask> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
+  async createTask(createDto: CreateRdTaskDto, userId: string): Promise<RdTask> {
     const createdByObjectId = await this.resolveEmployeeObjectId(userId);
 
     const task = new this.rdTaskModel({
       ...createDto,
-      organization: organizationObjectId,
       ...(createdByObjectId && { createdBy: createdByObjectId }),
       status: RdTaskStatus.PENDING,
     });
@@ -76,9 +59,8 @@ export class RdManagementService {
     return task.save();
   }
 
-  async findAllTasks(organizationId: string, filters?: any): Promise<RdTask[]> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-    const query: any = { organization: organizationObjectId };
+  async findAllTasks(filters?: any): Promise<RdTask[]> {
+    const query: any = {};
     
     if (filters?.status) query.status = filters.status;
     if (filters?.assignee) {
@@ -97,22 +79,18 @@ export class RdManagementService {
       .exec();
   }
 
-  async findTaskById(taskId: string, organizationId: string): Promise<RdTask> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async findTaskById(taskId: string): Promise<RdTask> {
     return this.rdTaskModel
-      .findOne({ _id: new Types.ObjectId(taskId), organization: organizationObjectId })
+      .findOne({ _id: new Types.ObjectId(taskId) })
       .populate('assignee', 'name email')
       .populate('createdBy', 'name email')
       .exec();
   }
 
-  async updateTask(taskId: string, updateDto: UpdateRdTaskDto, organizationId: string): Promise<RdTask> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async updateTask(taskId: string, updateDto: UpdateRdTaskDto): Promise<RdTask> {
     return this.rdTaskModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(taskId), organization: organizationObjectId },
+        { _id: new Types.ObjectId(taskId) },
         { $set: updateDto },
         { new: true },
       )
@@ -120,55 +98,43 @@ export class RdManagementService {
       .exec();
   }
 
-  async deleteTask(taskId: string, organizationId: string): Promise<boolean> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async deleteTask(taskId: string): Promise<boolean> {
     const result = await this.rdTaskModel.deleteOne({
       _id: new Types.ObjectId(taskId),
-      organization: organizationObjectId,
     });
     return result.deletedCount > 0;
   }
 
   // ========== 项目管理 ==========
 
-  async createProject(createDto: CreateRdProjectDto, organizationId: string): Promise<RdProject> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async createProject(createDto: CreateRdProjectDto): Promise<RdProject> {
     const project = new this.rdProjectModel({
       ...createDto,
-      organization: organizationObjectId,
     });
     return project.save();
   }
 
-  async findAllProjects(organizationId: string): Promise<RdProject[]> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async findAllProjects(): Promise<RdProject[]> {
     return this.rdProjectModel
-      .find({ organization: organizationObjectId })
+      .find({})
       .populate('manager', 'name email')
       .populate('members', 'name email')
       .sort({ createdAt: -1 })
       .exec();
   }
 
-  async findProjectById(projectId: string, organizationId: string): Promise<RdProject> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async findProjectById(projectId: string): Promise<RdProject> {
     return this.rdProjectModel
-      .findOne({ _id: new Types.ObjectId(projectId), organization: organizationObjectId })
+      .findOne({ _id: new Types.ObjectId(projectId) })
       .populate('manager', 'name email')
       .populate('members', 'name email')
       .exec();
   }
 
-  async updateProject(projectId: string, updateDto: UpdateRdProjectDto, organizationId: string): Promise<RdProject> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async updateProject(projectId: string, updateDto: UpdateRdProjectDto): Promise<RdProject> {
     return this.rdProjectModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(projectId), organization: organizationObjectId },
+        { _id: new Types.ObjectId(projectId) },
         { $set: updateDto },
         { new: true },
       )
@@ -177,27 +143,24 @@ export class RdManagementService {
       .exec();
   }
 
-  async deleteProject(projectId: string, organizationId: string): Promise<boolean> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-
+  async deleteProject(projectId: string): Promise<boolean> {
     const result = await this.rdProjectModel.deleteOne({
       _id: new Types.ObjectId(projectId),
-      organization: organizationObjectId,
     });
     return result.deletedCount > 0;
   }
 
   // ========== OpenCode 集成 ==========
 
-  async sendOpencodePrompt(taskId: string, promptDto: SendOpencodePromptDto, organizationId: string): Promise<any> {
-    const task = await this.findTaskById(taskId, organizationId);
+  async sendOpencodePrompt(taskId: string, promptDto: SendOpencodePromptDto): Promise<any> {
+    const task = await this.findTaskById(taskId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
 
     // 更新任务状态为进行中
     if (task.status === RdTaskStatus.PENDING) {
-      await this.updateTask(taskId, { status: RdTaskStatus.IN_PROGRESS, startedAt: new Date() }, organizationId);
+      await this.updateTask(taskId, { status: RdTaskStatus.IN_PROGRESS, startedAt: new Date() });
     }
 
     try {
@@ -247,8 +210,8 @@ export class RdManagementService {
     }
   }
 
-  async createOpencodeSession(taskId: string, projectPath: string, organizationId: string): Promise<any> {
-    const task = await this.findTaskById(taskId, organizationId);
+  async createOpencodeSession(taskId: string, projectPath: string): Promise<any> {
+    const task = await this.findTaskById(taskId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
@@ -281,8 +244,8 @@ export class RdManagementService {
     }
   }
 
-  async getOpencodeSessionHistory(taskId: string, organizationId: string): Promise<any> {
-    const task = await this.findTaskById(taskId, organizationId);
+  async getOpencodeSessionHistory(taskId: string): Promise<any> {
+    const task = await this.findTaskById(taskId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
@@ -303,7 +266,7 @@ export class RdManagementService {
     }
   }
 
-  async completeTask(taskId: string, result: any, organizationId: string): Promise<RdTask> {
+  async completeTask(taskId: string, result: any): Promise<RdTask> {
     return this.updateTask(
       taskId,
       {
@@ -311,7 +274,6 @@ export class RdManagementService {
         completedAt: new Date(),
         result,
       },
-      organizationId,
     );
   }
 
@@ -355,8 +317,7 @@ export class RdManagementService {
     return this.opencodeService.promptSession(payload.sessionId, payload.prompt, payload.model);
   }
 
-  async importOpencodeProject(organizationId: string, payload: ImportOpencodeProjectDto): Promise<any> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
+  async importOpencodeProject(payload: ImportOpencodeProjectDto): Promise<any> {
     const projects = await this.opencodeService.listProjects();
 
     const matched = projects.find((project) => {
@@ -387,7 +348,7 @@ export class RdManagementService {
     const projectName = payload.name?.trim() || defaultName;
 
     const existing = await this.rdProjectModel
-      .findOne({ organization: organizationObjectId, opencodeProjectPath: resolvedPath })
+      .findOne({ opencodeProjectPath: resolvedPath })
       .exec();
 
     const updatePayload = {
@@ -409,14 +370,13 @@ export class RdManagementService {
     const project = existing
       ? await this.rdProjectModel
           .findOneAndUpdate(
-            { _id: existing._id, organization: organizationObjectId },
+            { _id: existing._id },
             { $set: updatePayload },
             { new: true },
           )
           .exec()
       : await new this.rdProjectModel({
           ...updatePayload,
-          organization: organizationObjectId,
         }).save();
 
     return {
@@ -434,13 +394,12 @@ export class RdManagementService {
     return this.opencodeService.subscribeEvents(handlers);
   }
 
-  async syncCurrentOpencodeToTask(taskId: string, organizationId: string): Promise<RdTask> {
-    return this.syncOpencodeToTask(taskId, organizationId, {});
+  async syncCurrentOpencodeToTask(taskId: string): Promise<RdTask> {
+    return this.syncOpencodeToTask(taskId, {});
   }
 
-  async syncOpencodeToTask(taskId: string, organizationId: string, syncDto: SyncOpencodeContextDto): Promise<RdTask> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-    const task = await this.findTaskById(taskId, organizationId);
+  async syncOpencodeToTask(taskId: string, syncDto: SyncOpencodeContextDto): Promise<RdTask> {
+    const task = await this.findTaskById(taskId);
     if (!task) {
       throw new NotFoundException('Task not found');
     }
@@ -469,7 +428,7 @@ export class RdManagementService {
 
     return this.rdTaskModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(taskId), organization: organizationObjectId },
+        { _id: new Types.ObjectId(taskId) },
         {
           $set: {
             opencodeSessionId: sessionId,
@@ -483,13 +442,12 @@ export class RdManagementService {
       .exec();
   }
 
-  async syncCurrentOpencodeToProject(projectId: string, organizationId: string): Promise<RdProject> {
-    return this.syncOpencodeToProject(projectId, organizationId, {});
+  async syncCurrentOpencodeToProject(projectId: string): Promise<RdProject> {
+    return this.syncOpencodeToProject(projectId, {});
   }
 
-  async syncOpencodeToProject(projectId: string, organizationId: string, syncDto: SyncOpencodeContextDto): Promise<RdProject> {
-    const organizationObjectId = await this.resolveOrganizationObjectId(organizationId);
-    const project = await this.findProjectById(projectId, organizationId);
+  async syncOpencodeToProject(projectId: string, syncDto: SyncOpencodeContextDto): Promise<RdProject> {
+    const project = await this.findProjectById(projectId);
     if (!project) {
       throw new NotFoundException('Project not found');
     }
@@ -515,7 +473,7 @@ export class RdManagementService {
 
     return this.rdProjectModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(projectId), organization: organizationObjectId },
+        { _id: new Types.ObjectId(projectId) },
         {
           $set: {
             opencodeProjectPath: projectPath,

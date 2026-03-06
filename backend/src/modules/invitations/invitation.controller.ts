@@ -60,7 +60,6 @@ export class InvitationController {
       error: result.error,
       data: result.invitation ? {
         id: result.invitation.id,
-        organizationId: result.invitation.organizationId,
         role: result.invitation.role,
         title: result.invitation.title,
         invitedByName: result.invitation.invitedByName,
@@ -83,7 +82,6 @@ export class InvitationController {
         name: employee.name,
         email: employee.email,
         role: employee.role,
-        organizationId: employee.organizationId,
       },
       message: '加入组织成功',
     };

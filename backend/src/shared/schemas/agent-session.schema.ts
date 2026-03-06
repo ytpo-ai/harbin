@@ -3,13 +3,27 @@ import { Document } from 'mongoose';
 
 export type AgentSessionDocument = AgentSession & Document;
 
+export interface AgentSessionMemoSnapshotItem {
+  id: string;
+  memoKind: 'identity' | 'todo' | 'topic';
+  title: string;
+  slug?: string;
+  content: string;
+  updatedAt?: string;
+}
+
+export interface AgentSessionMemoSnapshot {
+  agentId: string;
+  refreshedAt: string;
+  identity: AgentSessionMemoSnapshotItem[];
+  todo: AgentSessionMemoSnapshotItem[];
+  topic: AgentSessionMemoSnapshotItem[];
+}
+
 @Schema({ timestamps: true })
 export class AgentSession {
   @Prop()
   id?: string;
-
-  @Prop({ required: true })
-  organizationId: string;
 
   @Prop({ enum: ['agent', 'employee', 'system'], required: true })
   ownerType: 'agent' | 'employee' | 'system';
@@ -53,9 +67,12 @@ export class AgentSession {
 
   @Prop()
   expiresAt?: Date;
+
+  @Prop({ type: Object })
+  memoSnapshot?: AgentSessionMemoSnapshot;
 }
 
 export const AgentSessionSchema = SchemaFactory.createForClass(AgentSession);
 
-AgentSessionSchema.index({ organizationId: 1, ownerType: 1, ownerId: 1, createdAt: -1 });
+AgentSessionSchema.index({ ownerType: 1, ownerId: 1, createdAt: -1 });
 AgentSessionSchema.index({ status: 1, lastActiveAt: -1 });

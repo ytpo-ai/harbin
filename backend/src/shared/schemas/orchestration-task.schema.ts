@@ -19,9 +19,6 @@ export class OrchestrationTask {
   id?: string;
 
   @Prop({ required: true })
-  organizationId: string;
-
-  @Prop({ required: true })
   planId: string;
 
   @Prop({ required: true })
@@ -89,5 +86,5 @@ export class OrchestrationTask {
 
 export const OrchestrationTaskSchema = SchemaFactory.createForClass(OrchestrationTask);
 
-OrchestrationTaskSchema.index({ organizationId: 1, planId: 1, order: 1 });
+OrchestrationTaskSchema.index({ planId: 1, order: 1 });
 OrchestrationTaskSchema.index({ status: 1 });

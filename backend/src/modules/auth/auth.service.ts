@@ -42,7 +42,6 @@ export interface AuthResponse {
     email: string;
     type: string;
     role: string;
-    organizationId: string;
   };
   token: string;
 }
@@ -101,7 +100,6 @@ export class AuthService {
         email: employee.email || '',
         type: employee.type,
         role: employee.role,
-        organizationId: employee.organizationId,
       },
       token,
     };
@@ -130,9 +128,8 @@ export class AuthService {
     email: string;
     type: string;
     role: string;
-    organizationId: string;
   } | null> {
-    const decoded = verifyToken(token, this.jwtSecret) as { employeeId: string; email: string; organizationId: string } | null;
+    const decoded = verifyToken(token, this.jwtSecret) as { employeeId: string; email: string } | null;
     if (!decoded) return null;
 
     return {
@@ -141,7 +138,6 @@ export class AuthService {
       email: decoded.email,
       type: EmployeeType.HUMAN,
       role: '',
-      organizationId: decoded.organizationId,
     };
   }
 
@@ -220,7 +216,6 @@ export class AuthService {
       { 
         employeeId: employee.id,
         email: employee.email,
-        organizationId: employee.organizationId,
       },
       this.jwtSecret,
       this.jwtExpiresIn

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
+import type { AgentMcpProfile } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
 import { toolService } from '../services/toolService';
@@ -69,6 +70,8 @@ const Agents: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [startingChatAgentId, setStartingChatAgentId] = useState<string>('');
+  const [editingMcpProfile, setEditingMcpProfile] = useState<AgentMcpProfile | null>(null);
+  const [managementTab, setManagementTab] = useState<'agents' | 'mcpProfiles'>('agents');
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;
@@ -83,6 +86,7 @@ const Agents: React.FC = () => {
   const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
   const { data: availableModels } = useQuery('models', modelService.getAvailableModels);
   const { data: availableTools } = useQuery('tools', toolService.getTools);
+  const { data: mcpProfiles } = useQuery('agentMcpProfiles', agentService.getMcpProfiles);
 
   const deleteAgentMutation = useMutation(agentService.deleteAgent, {
     onSuccess: () => {
@@ -110,6 +114,17 @@ const Agents: React.FC = () => {
         setEditingAgent(null);
       },
     }
+  );
+
+  const upsertMcpProfileMutation = useMutation(
+    ({ agentType, updates }: { agentType: string; updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'> }) =>
+      agentService.upsertMcpProfile(agentType, updates),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('agentMcpProfiles');
+        setEditingMcpProfile(null);
+      },
+    },
   );
 
   const handleDelete = (agent: Agent) => {
@@ -217,6 +232,33 @@ const Agents: React.FC = () => {
         </button>
       </div>
 
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-6">
+          <button
+            onClick={() => setManagementTab('agents')}
+            className={`py-2 text-sm font-medium border-b-2 ${
+              managementTab === 'agents'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Agent 管理
+          </button>
+          <button
+            onClick={() => setManagementTab('mcpProfiles')}
+            className={`py-2 text-sm font-medium border-b-2 ${
+              managementTab === 'mcpProfiles'
+                ? 'border-primary-600 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            MCP Profile 管理
+          </button>
+        </nav>
+      </div>
+
+      {managementTab === 'agents' && (
+        <>
       {/* 创始人模型配置区域 */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
         <div className="flex items-center mb-4">
@@ -302,14 +344,6 @@ const Agents: React.FC = () => {
                   <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
                     <div className="flex space-x-2">
                       <button
-                      <button
-                        onClick={() => handleViewDetail(agent)}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded text-gray-700 bg-gray-50 hover:bg-gray-100"
-                        title="查看详情"
-                      >
-                        <EyeIcon className="h-3.5 w-3.5 mr-1" />
-                        详情
-                      </button>
                         onClick={() => handleStartChat(agent)}
                         disabled={startingChatAgentId === getAgentId(agent)}
                         className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
@@ -317,6 +351,14 @@ const Agents: React.FC = () => {
                       >
                         <ChatBubbleLeftRightIcon className="h-3.5 w-3.5 mr-1" />
                         {startingChatAgentId === getAgentId(agent) ? '进入中...' : '开始聊天'}
+                      </button>
+                      <button
+                        onClick={() => handleViewDetail(agent)}
+                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded text-gray-700 bg-gray-50 hover:bg-gray-100"
+                        title="查看详情"
+                      >
+                        <EyeIcon className="h-3.5 w-3.5 mr-1" />
+                        详情
                       </button>
                       <button
                         onClick={() => handleToggleActive(agent)}
@@ -364,12 +406,76 @@ const Agents: React.FC = () => {
           </div>
         )}
       </div>
+      </>
+      )}
+
+      {managementTab === 'mcpProfiles' && (
+      <div className="bg-white shadow overflow-hidden sm:rounded-md">
+        <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">MCP Profile 管理</h2>
+            <p className="mt-1 text-sm text-gray-500">按 Agent Type 管理 MCP 工具与能力映射</p>
+          </div>
+          <span className="text-xs text-gray-500">共 {mcpProfiles?.length || 0} 个 profile</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 text-sm">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Agent Type</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Exposed</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
+                <th className="px-4 py-3 text-right font-medium text-gray-600">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {(mcpProfiles || []).map((profile) => (
+                <tr key={profile.agentType}>
+                  <td className="px-4 py-3 font-medium text-gray-900">{profile.agentType}</td>
+                  <td className="px-4 py-3 text-gray-700">{profile.role || '-'}</td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        profile.exposed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {profile.exposed ? '是' : '否'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-gray-700">{profile.tools?.length || 0}</td>
+                  <td className="px-4 py-3 text-gray-700">{profile.capabilities?.length || 0}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button
+                      onClick={() => setEditingMcpProfile(profile)}
+                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      <PencilIcon className="h-3 w-3 mr-1" />
+                      编辑 Profile
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {(mcpProfiles || []).length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    暂无 MCP Profile
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      )}
 
       {/* 创建Agent模态框 */}
       {isCreateModalOpen && (
             <CreateAgentModal 
               availableModels={availableModels || []}
               availableTools={availableTools || []}
+              mcpProfiles={mcpProfiles || []}
               onClose={() => setIsCreateModalOpen(false)}
               onSuccess={() => {
                 setIsCreateModalOpen(false);
@@ -383,6 +489,7 @@ const Agents: React.FC = () => {
           agent={editingAgent}
           availableModels={availableModels || []}
           availableTools={availableTools || []}
+          mcpProfiles={mcpProfiles || []}
           onClose={() => {
             setIsEditModalOpen(false);
             setEditingAgent(null);
@@ -398,6 +505,21 @@ const Agents: React.FC = () => {
           isLoading={updateAgentMutation.isLoading}
         />
       )}
+
+      {editingMcpProfile && (
+        <EditMcpProfileModal
+          profile={editingMcpProfile}
+          availableTools={availableTools || []}
+          onClose={() => setEditingMcpProfile(null)}
+          onSave={(updates) => {
+            upsertMcpProfileMutation.mutate({
+              agentType: editingMcpProfile.agentType,
+              updates,
+            });
+          }}
+          isSaving={upsertMcpProfileMutation.isLoading}
+        />
+      )}
     </div>
   );
 };
@@ -406,9 +528,10 @@ const Agents: React.FC = () => {
 const CreateAgentModal: React.FC<{
   availableModels: AIModel[];
   availableTools: Array<{ id: string; name: string; enabled?: boolean }>;
+  mcpProfiles: AgentMcpProfile[];
   onClose: () => void;
   onSuccess: () => void;
-}> = ({ availableModels, availableTools, onClose, onSuccess }) => {
+}> = ({ availableModels, availableTools, mcpProfiles, onClose, onSuccess }) => {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -436,10 +559,20 @@ const CreateAgentModal: React.FC<{
     },
   });
 
+  const allowedToolIds = new Set(
+    (mcpProfiles.find((profile) => profile.agentType === formData.type)?.tools || []).filter(Boolean),
+  );
+  const allowedTools = availableTools.filter(
+    (tool) => tool.enabled !== false && allowedToolIds.has(tool.id),
+  );
+
   const handleCreateTypeChange = (nextType: string) => {
     setFormData((prev) => {
       const previousMeta = getAgentTypeMeta(prev.type);
       const nextMeta = getAgentTypeMeta(nextType);
+      const nextAllowedToolIds = new Set(
+        (mcpProfiles.find((profile) => profile.agentType === nextType)?.tools || []).filter(Boolean),
+      );
       const nextRole = shouldApplyNextDefault(prev.role, previousMeta?.defaultRole)
         ? (nextMeta?.defaultRole || prev.role)
         : prev.role;
@@ -452,6 +585,7 @@ const CreateAgentModal: React.FC<{
         type: nextType,
         role: nextRole,
         systemPrompt: nextPrompt,
+        selectedTools: prev.selectedTools.filter((toolId) => nextAllowedToolIds.has(toolId)),
       };
     });
   };
@@ -641,7 +775,7 @@ const CreateAgentModal: React.FC<{
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">可用工具</label>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-                {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
+                {allowedTools.map((tool) => {
                   const checked = formData.selectedTools.includes(tool.id);
                   return (
                     <label key={tool.id} className="flex items-center justify-between text-sm text-gray-700">
@@ -662,11 +796,11 @@ const CreateAgentModal: React.FC<{
                     </label>
                   );
                 })}
-                {availableTools.length === 0 && (
+                {allowedTools.length === 0 && (
                   <p className="text-xs text-gray-500">暂无可用工具</p>
                 )}
               </div>
-              <p className="mt-1 text-xs text-gray-500">勾选后，该 Agent 才能在聊天/任务中调用对应工具。</p>
+              <p className="mt-1 text-xs text-gray-500">白名单模式：仅可选择该 Agent Type 的 MCP Profile.tools 子集。</p>
             </div>
             
             <div className="flex justify-end space-x-3 pt-4 border-t">
@@ -696,10 +830,11 @@ const EditAgentModal: React.FC<{
   agent: Agent;
   availableModels: AIModel[];
   availableTools: Array<{ id: string; name: string; description?: string; enabled?: boolean }>;
+  mcpProfiles: AgentMcpProfile[];
   onClose: () => void;
   onSave: (updates: Partial<Agent>) => void;
   isLoading: boolean;
-}> = ({ agent, availableModels, availableTools, onClose, onSave, isLoading }) => {
+}> = ({ agent, availableModels, availableTools, mcpProfiles, onClose, onSave, isLoading }) => {
   const [activeTab, setActiveTab] = useState<'model' | 'tools' | 'basic'>('model');
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
@@ -728,6 +863,14 @@ const EditAgentModal: React.FC<{
     .map((cap) => cap.trim())
     .filter(Boolean);
 
+  const allowedToolIds = new Set(
+    (mcpProfiles.find((profile) => profile.agentType === agentType)?.tools || []).filter(Boolean),
+  );
+  const allowedTools = availableTools.filter(
+    (tool) => tool.enabled !== false && allowedToolIds.has(tool.id),
+  );
+  const invalidSelectedTools = selectedTools.filter((toolId) => !allowedToolIds.has(toolId));
+
   const arraysEqual = (a: string[] = [], b: string[] = []) => {
     if (a.length !== b.length) return false;
     const sortedA = [...a].sort();
@@ -745,6 +888,10 @@ const EditAgentModal: React.FC<{
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
     !arraysEqual(parsedCapabilities, agent.capabilities || []);
+
+  useEffect(() => {
+    setSelectedTools((prev) => prev.filter((toolId) => allowedToolIds.has(toolId)));
+  }, [agentType]);
 
   const anthropicModelMayBeDeprecated =
     selectedModel?.provider === 'anthropic' &&
@@ -783,7 +930,7 @@ const EditAgentModal: React.FC<{
     onSave({
       model: selectedModel,
       apiKeyId: selectedApiKeyId || undefined,
-      tools: selectedTools,
+      tools: selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
       name: name.trim(),
       type: agentType.trim(),
       role: role.trim() || undefined,
@@ -873,6 +1020,10 @@ const EditAgentModal: React.FC<{
     if (canUpdatePrompt) {
       setSystemPrompt(nextMeta?.defaultPrompt || '');
     }
+    const nextAllowedToolIds = new Set(
+      (mcpProfiles.find((profile) => profile.agentType === nextType)?.tools || []).filter(Boolean),
+    );
+    setSelectedTools((prev) => prev.filter((toolId) => nextAllowedToolIds.has(toolId)));
   };
 
   return (
@@ -1091,8 +1242,14 @@ const EditAgentModal: React.FC<{
         )}
 
         {activeTab === 'tools' && (
-          <div className="max-h-[58vh] overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-            {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
+          <div className="space-y-3">
+            {invalidSelectedTools.length > 0 && (
+              <div className="p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-xs">
+                发现 {invalidSelectedTools.length} 个历史工具不在当前 Agent Type 白名单中，保存时将自动移除。
+              </div>
+            )}
+            <div className="max-h-[58vh] overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
+            {allowedTools.map((tool) => {
               const checked = selectedTools.includes(tool.id);
               return (
                 <label key={tool.id} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
@@ -1112,9 +1269,11 @@ const EditAgentModal: React.FC<{
                 </label>
               );
             })}
-            {availableTools.length === 0 && (
+            {allowedTools.length === 0 && (
               <p className="text-xs text-gray-500">暂无可配置工具</p>
             )}
+            </div>
+            <p className="text-xs text-gray-500">白名单模式：仅可选择该 Agent Type 的 MCP Profile.tools 子集。</p>
           </div>
         )}
 
@@ -1204,6 +1363,132 @@ const EditAgentModal: React.FC<{
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
           >
             {isLoading ? '保存中...' : '保存变更'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const EditMcpProfileModal: React.FC<{
+  profile: AgentMcpProfile;
+  availableTools: Array<{ id: string; name: string; enabled?: boolean }>;
+  onClose: () => void;
+  onSave: (updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>) => void;
+  isSaving: boolean;
+}> = ({ profile, availableTools, onClose, onSave, isSaving }) => {
+  const [role, setRole] = useState(profile.role || '');
+  const [description, setDescription] = useState(profile.description || '');
+  const [tools, setTools] = useState<string[]>(profile.tools || []);
+  const [capabilitiesText, setCapabilitiesText] = useState((profile.capabilities || []).join(', '));
+  const [exposed, setExposed] = useState(profile.exposed === true);
+
+  const toggleTool = (toolId: string, checked: boolean) => {
+    setTools((prev) => (checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)));
+  };
+
+  const capabilities = capabilitiesText
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-10 mx-auto p-6 border w-[720px] shadow-lg rounded-lg bg-white max-h-[90vh] overflow-y-auto">
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">编辑 MCP Profile</h3>
+        <p className="text-sm text-gray-500 mb-5">
+          Agent Type: <span className="font-medium text-gray-900">{profile.agentType}</span>
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <input
+              type="text"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Capabilities（逗号分隔）</label>
+            <input
+              type="text"
+              value={capabilitiesText}
+              onChange={(e) => setCapabilitiesText(e.target.value)}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            />
+          </div>
+
+          <div className="flex items-center">
+            <input
+              id="mcp-exposed"
+              type="checkbox"
+              checked={exposed}
+              onChange={(e) => setExposed(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="mcp-exposed" className="ml-2 text-sm text-gray-700">
+              Exposed（在 MCP 可见列表中展示）
+            </label>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Tools</label>
+            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
+              {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
+                const checked = tools.includes(tool.id);
+                return (
+                  <label key={tool.id} className="flex items-center justify-between text-sm text-gray-700">
+                    <span>
+                      {tool.name}
+                      <span className="ml-2 text-xs text-gray-400">{tool.id}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => toggleTool(tool.id, e.target.checked)}
+                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+          >
+            取消
+          </button>
+          <button
+            onClick={() =>
+              onSave({
+                role: role.trim(),
+                tools,
+                capabilities,
+                exposed,
+                description: description.trim(),
+              })
+            }
+            disabled={isSaving}
+            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+          >
+            {isSaving ? '保存中...' : '保存 Profile'}
           </button>
         </div>
       </div>

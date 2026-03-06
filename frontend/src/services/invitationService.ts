@@ -18,7 +18,6 @@ export enum InvitationRole {
 
 export interface Invitation {
   id: string;
-  organizationId: string;
   code: string;
   invitedBy: string;
   invitedByName: string;
@@ -39,7 +38,6 @@ export interface Invitation {
 }
 
 export interface CreateInvitationDto {
-  organizationId: string;
   invitedBy: string;
   invitedByName: string;
   role: InvitationRole;
@@ -73,13 +71,13 @@ class InvitationService {
     return response.data.data;
   }
 
-  async getByOrganization(organizationId: string): Promise<Invitation[]> {
-    const response = await api.get(`/invitations/organization/${organizationId}`);
+  async getByOrganization(): Promise<Invitation[]> {
+    const response = await api.get('/invitations/organization');
     return response.data.data;
   }
 
-  async getStats(organizationId: string): Promise<InvitationStats> {
-    const response = await api.get(`/invitations/stats/${organizationId}`);
+  async getStats(): Promise<InvitationStats> {
+    const response = await api.get('/invitations/stats');
     return response.data.data;
   }
 
@@ -88,7 +86,6 @@ class InvitationService {
     error?: string;
     data?: {
       id: string;
-      organizationId: string;
       role: string;
       title: string;
       invitedByName: string;
@@ -115,8 +112,8 @@ class InvitationService {
     return response.data.data;
   }
 
-  async deleteExpired(organizationId: string): Promise<number> {
-    const response = await api.delete(`/invitations/cleanup/${organizationId}`);
+  async deleteExpired(): Promise<number> {
+    const response = await api.delete('/invitations/cleanup');
     return response.data.data.deletedCount;
   }
 

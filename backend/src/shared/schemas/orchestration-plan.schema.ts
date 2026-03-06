@@ -12,9 +12,6 @@ export class OrchestrationPlan {
   id?: string;
 
   @Prop({ required: true })
-  organizationId: string;
-
-  @Prop({ required: true })
   title: string;
 
   @Prop({ required: true })
@@ -57,5 +54,5 @@ export class OrchestrationPlan {
 
 export const OrchestrationPlanSchema = SchemaFactory.createForClass(OrchestrationPlan);
 
-OrchestrationPlanSchema.index({ organizationId: 1, createdAt: -1 });
+OrchestrationPlanSchema.index({ createdAt: -1 });
 OrchestrationPlanSchema.index({ status: 1 });

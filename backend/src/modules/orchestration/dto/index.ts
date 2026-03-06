@@ -61,6 +61,24 @@ export class CompleteHumanTaskDto {
   output?: string;
 }
 
+export class UpdateTaskDraftDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+}
+
+export class DebugTaskStepDto extends UpdateTaskDraftDto {
+  @IsOptional()
+  @IsBoolean()
+  resetResult?: boolean;
+}
+
 export class CreateSessionDto {
   @IsEnum(['agent', 'employee', 'system'])
   ownerType: 'agent' | 'employee' | 'system';

@@ -6,9 +6,6 @@ export type EngineeringRepositoryDocument = EngineeringRepository & Document;
 @Schema({ timestamps: true })
 export class EngineeringRepository {
   @Prop({ required: true })
-  organizationId: string;
-
-  @Prop({ required: true })
   repositoryUrl: string;
 
   @Prop({ required: true })
@@ -32,4 +29,4 @@ export class EngineeringRepository {
 
 export const EngineeringRepositorySchema = SchemaFactory.createForClass(EngineeringRepository);
 
-EngineeringRepositorySchema.index({ organizationId: 1, repositoryUrl: 1 }, { unique: true });
+EngineeringRepositorySchema.index({ repositoryUrl: 1 }, { unique: true });

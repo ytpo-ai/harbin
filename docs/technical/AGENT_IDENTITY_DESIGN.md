@@ -1,14 +1,14 @@
-# Agent Identity & Evaluation 技术设计文档
+# Agent Identity 技术设计文档
 
 ## 1. 概述
 
-本文档定义 Agent 简历备忘录（Identity）与工作评估文档（Evaluation）的技术设计方案，基于现有 Memo 架构进行扩展实现。
+本文档定义 Agent 简历备忘录（Identity）的技术设计方案，基于现有 Memo 架构进行扩展实现。
 
 ## 2. 目标
 
 - 将 Agent Identity 从静态占位模板升级为动态聚合的简历文档
-- 新增 Evaluation 文档类型，用于存储工作评估数据
 - 利用现有 Event Bus + 定时聚合架构，实现数据的自动更新
+- 支持 Agent 基础信息、技能绑定、任务履历的自动聚合
 
 ## 3. 现有架构回顾
 
@@ -58,41 +58,32 @@ class AgentMemoVersion {
 │ Agent Service   │──────────────▶│  MemoEventBusService │
 │ (agent.updated) │               │                      │
 └─────────────────┘               └──────────┬───────────┘
-                                             │ on('agent.updated')
-                                             ▼
+                                              │ on('agent.updated')
+                                              ▼
 ┌─────────────────┐               ┌──────────────────────────┐
 │ Skill Service   │──────────────▶│  MemoAggregationService │
 │(skill_changed)  │               │                          │
 └─────────────────┘               │ - flushRefreshQueue()    │
-                                 │ - rebuildCache()        │
-                                 └──────────────────────────┘
+                                  │ - rebuildCache()        │
+                                  └──────────────────────────┘
 ```
 
 **现状问题**：
 - 已有事件触发机制，但 `flushRefreshQueue` 仅做缓存刷新
 - Identity memo 的 content 从未真正从数据源聚合生成
-- 缺少 Evaluation 文档类型
+- 需要实现真正的 Identity 聚合逻辑
 
-## 4. 数据源设计
+## 4. Identity 数据源设计
 
-### 4.1 Identity 信息源
+### 4.1 信息源
 
 | 数据源 | Schema | 聚合字段 | 更新频率 |
 |--------|--------|---------|---------|
 | **Agent 基础信息** | `shared/schemas/agent.schema.ts` | name, type, role, description, systemPrompt, tools, capabilities, personality, learningAbility, isActive, createdAt | 变更时 + 定时 |
 | **技能绑定** | `agents/schemas/agent-skill.schema.ts` + `skill.schema.ts` | skillName, proficiencyLevel, assignedBy, createdAt | 变更时 + 定时 |
-| **任务履历** | `shared/schemas/orchestration-task.schema.ts` | taskTitle, status, priority, result.summary, startedAt, completedAt | 定时 |
+| **任务履历** | `shared/schemas/orchestration-task.schema.ts` | taskTitle, status, priority, startedAt, completedAt | 定时 |
 
-### 4.2 Evaluation 信息源
-
-| 数据源 | Schema | 聚合字段 | 更新频率 |
-|--------|--------|---------|---------|
-| **工具使用统计** | `agents/schemas/agent-part.schema.ts` | toolId, usageCount, successRate | 定时 |
-| **SLA 响应数据** | `agents/schemas/agent-run.schema.ts` | avgResponseTime, successRate | 定时 |
-
-## 5. 文档模板设计
-
-### 5.1 Identity 文档模板
+## 5. Identity 文档模板
 
 ```markdown
 # 身份与职责
@@ -112,12 +103,6 @@ class AgentMemoVersion {
 | TypeScript | expert | 2026-01-15 | AgentSkillManager |
 | NestJS | advanced | 2026-02-01 | manual |
 
-### 技能统计
-- 总技能数：5
-- 专家级：2
-- 高级：2
-- 中级：1
-
 ## 能力域
 - **主要领域**：<聚合 skill.category>
 - **工具集**：<Agent.tools>
@@ -136,52 +121,13 @@ class AgentMemoVersion {
 |-----|--------|---------|------|---------|
 | Search for cities | high | 2026-03-03 | completed | 找到10个中国人口最多城市 |
 
-### 任务统计
-- 总任务数：42
-- 完成率：95%
-- 平均完成时间：<计算>
-
 ## 元信息
 - version: 12
 - lastAggregatedAt: 2026-03-04T09:00:00Z
 - sources: [agent, agent_skills, orchestration_tasks]
 ```
 
-### 5.2 Evaluation 文档模板
-
-```markdown
-# 工作评估
-
-## 工具使用统计
-| 工具 | 使用次数 | 成功率 |
-|-----|---------|--------|
-| websearch | 28 | 92% |
-| webfetch | 15 | 87% |
-| gmail | 12 | 100% |
-
-## SLA 响应指标
-- 平均响应时间：<计算> 秒
-- 任务完成率：95%
-- 首次响应时间：<计算> 秒
-
-## 质量指标
-- 测试通过率：97%
-- Lint 通过率：99%
-- 回滚率：1%
-
-## 协作评估
-- 评审响应时间：<计算> 小时
-- 任务接受率：98%
-
-## 元信息
-- version: 5
-- lastAggregatedAt: 2026-03-04T09:00:00Z
-- period: 2026-03-01 ~ 2026-03-31
-```
-
-## 6. 服务设计
-
-### 6.1 IdentityAggregationService
+## 6. IdentityAggregationService 设计
 
 ```typescript
 // backend/apps/agents/src/modules/memos/identity-aggregation.service.ts
@@ -191,10 +137,9 @@ export class IdentityAggregationService implements OnModuleInit, OnModuleDestroy
   
   async aggregateIdentity(agentId: string, options?: { incremental?: boolean }): Promise<void> {
     // 1. 并行获取所有数据源
-    const [agentBasic, skills, taskStats, recentTasks] = await Promise.all([
+    const [agentBasic, skills, recentTasks] = await Promise.all([
       this.getAgentBasicInfo(agentId),
       this.getAgentSkills(agentId),
-      this.getTaskStatistics(agentId),
       this.getRecentTasks(agentId, 30) // 近30天
     ]);
 
@@ -202,7 +147,6 @@ export class IdentityAggregationService implements OnModuleInit, OnModuleDestroy
     const content = this.buildIdentityContent({
       agent: agentBasic,
       skills,
-      taskStats,
       recentTasks
     });
 
@@ -246,26 +190,6 @@ export class IdentityAggregationService implements OnModuleInit, OnModuleDestroy
     }));
   }
 
-  private async getTaskStatistics(agentId: string) {
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const result = await this.orchestrationTaskModel.aggregate([
-      {
-        $match: {
-          'assignment.executorId': agentId,
-          'assignment.executorType': 'agent',
-          createdAt: { $gte: thirtyDaysAgo }
-        }
-      },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-    // 计算完成率、平均时间等
-  }
-
   private async getRecentTasks(agentId: string, days: number) {
     const thirtyDaysAgo = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     return this.orchestrationTaskModel.find({
@@ -282,43 +206,7 @@ export class IdentityAggregationService implements OnModuleInit, OnModuleDestroy
 }
 ```
 
-### 6.2 EvaluationAggregationService
-
-```typescript
-// backend/apps/agents/src/modules/memos/evaluation-aggregation.service.ts
-
-@Injectable()
-export class EvaluationAggregationService {
-  
-  async aggregateEvaluation(agentId: string, period?: { start: Date; end: Date }): Promise<void> {
-    const [toolStats, slaStats, qualityMetrics] = await Promise.all([
-      this.getToolUsageStats(agentId, period),
-      this.getSlaMetrics(agentId, period),
-      this.getQualityMetrics(agentId, period)
-    ]);
-
-    const content = this.buildEvaluationContent({ toolStats, slaStats, qualityMetrics });
-    await this.updateEvaluationMemo(agentId, content, {
-      lastAggregatedAt: new Date().toISOString(),
-      period: period || this.getCurrentMonth()
-    });
-  }
-
-  private async getToolUsageStats(agentId: string, period?: { start: Date; end: Date }) {
-    // 从 AgentPart 表聚合 tool_call 类型
-  }
-
-  private async getSlaMetrics(agentId: string, period?: { start: Date; end: Date }) {
-    // 从 AgentRun 表聚合响应时间、完成任务数等
-  }
-
-  private async getQualityMetrics(agentId: string, period?: { start: Date; end: Date }) {
-    // 从测试结果、lint 结果等聚合
-  }
-}
-```
-
-### 6.3 事件触发对接
+## 7. 事件触发对接
 
 ```typescript
 // backend/apps/agents/src/modules/memos/memo-aggregation.service.ts
@@ -369,9 +257,9 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
 }
 ```
 
-## 7. Schema 扩展
+## 8. Schema 扩展
 
-### 7.1 扩展 MemoKind 枚举
+### 8.1 MemoKind 枚举
 
 ```typescript
 // backend/apps/agents/src/schemas/agent-memo.schema.ts
@@ -379,44 +267,33 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
 export type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
 ```
 
-### 7.2 Evaluation Payload 设计
+### 8.2 Identity Payload 设计
 
 ```typescript
-interface EvaluationPayload {
-  topic: 'evaluation';
-  period?: {
-    start: string;  // ISO date
-    end: string;
-  };
+interface IdentityPayload {
+  topic: 'identity';
   lastAggregatedAt?: string;
   sources?: string[];
 }
 ```
 
-## 8. API 设计
+## 9. API 设计
 
-### 8.1 新增 API 端点
+### 9.1 新增 API 端点
 
 ```typescript
 // POST /api/memos/identity/aggregate
 // 手动触发 identity 聚合
-
-// POST /api/memos/evaluation/aggregate
-// 手动触发 evaluation 聚合
-
-// GET /api/memos/:id/versions
-// 已有，复用
 ```
 
-### 8.2 现有 API 复用
+### 9.2 现有 API 复用
 
 - `GET /api/memos?agentId=xxx&memoKind=identity` - 获取 identity
-- `GET /api/memos?agentId=xxx&memoKind=evaluation` - 获取 evaluation
 - `GET /api/memos/:id/versions` - 获取版本历史
 
-## 9. 部署配置
+## 10. 部署配置
 
-### 9.1 环境变量
+### 10.1 环境变量
 
 ```bash
 # 聚合间隔（毫秒）
@@ -429,18 +306,17 @@ MEMO_FULL_AGGREGATION_CRON="0 2 * * *"
 MEMO_TASK_HISTORY_DAYS=30
 ```
 
-## 10. 文档落盘
+## 11. 文档落盘
 
 - **Identity**：`docs/memos/<agentId>/identity/identity-and-responsibilities.md`
-- **Evaluation**：`docs/memos/<agentId>/evaluation/evaluation-<period>.md`
 
-## 11. 风险与限制
+## 12. 风险与限制
 
 1. **OrchestrationTask 查询性能**：大量任务记录时需添加索引
 2. **Markdown 内容膨胀**：长期运行后 content 字段可能过大，需考虑归档策略
 3. **定时任务并发**：多 agent 同时触发时需控制并发数
 
-## 12. 后续迭代
+## 13. 后续迭代
 
 1. 增加版本回滚接口
 2. 支持手动编辑 identity 内容（优先级高于自动聚合）

@@ -50,6 +50,7 @@ export const RuntimeMaintenanceAuditQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   action: z.enum(['dead_letter_requeue', 'purge_legacy']).optional(),
   organizationId: z.string().min(1).max(120).optional(),
+  batchId: z.string().min(1).max(120).optional(),
 });
 
 export type RuntimeDeadLetterQuery = z.infer<typeof RuntimeDeadLetterQuerySchema>;

@@ -21,9 +21,6 @@ export class RdProject {
   @Prop({ type: String, enum: RdProjectStatus, default: RdProjectStatus.ACTIVE })
   status: RdProjectStatus;
 
-  @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
-  organization: Types.ObjectId;
-
   @Prop({ type: [{ type: Types.ObjectId, ref: 'Employee' }] })
   members: Types.ObjectId[];
 

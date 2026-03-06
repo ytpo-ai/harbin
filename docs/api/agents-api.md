@@ -12,8 +12,13 @@
 - `POST /agents`：创建 Agent
 - `PUT /agents/:id`：更新 Agent（支持 `type`、`role`）
 - `DELETE /agents/:id`：删除 Agent
-- `POST /agents/:id/execute`：执行 Agent 任务
+- `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
+
+工具白名单约束：
+
+- `Agent.tools` 必须满足：`Agent.tools ⊆ MCPProfile.tools(agent.type)`。
+- 若创建/更新时提交超出白名单的工具，后端返回 `400 Bad Request`。
 
 ## Agent MCP（`/agents/mcp`）
 
@@ -23,6 +28,14 @@
 - `GET /agents/mcp/profiles`：获取 MCP Profiles
 - `GET /agents/mcp/profiles/:agentType`：获取单个 Profile
 - `PUT /agents/mcp/profiles/:agentType`：创建/更新 Profile
+
+Profile 字段说明：
+
+- `role`: MCP 角色标识
+- `tools`: 允许调用的工具 ID 列表
+- `capabilities`: 能力标签列表
+- `exposed`: 是否在 MCP 可见列表中展示
+- `description`: 描述信息
 
 ## Skills（`/skills`）
 
@@ -53,6 +66,20 @@
 - `human_operation_log_mcp_list`
 - `code-docs-mcp`
 - `code-updates-mcp`
+- `orchestration_create_plan`
+- `orchestration_run_plan`
+- `orchestration_get_plan`
+- `orchestration_list_plans`
+- `orchestration_reassign_task`
+- `orchestration_complete_human_task`
+
+会议编排 MCP 说明：
+
+- 上述 `orchestration_*` 工具设计为会议场景调用（需存在 meeting 上下文）。
+- 高风险动作需显式确认参数：
+  - `orchestration_run_plan` 需要 `confirm: true`
+  - `orchestration_reassign_task` 需要 `confirm: true`
+  - `orchestration_complete_human_task` 需要 `confirm: true`
 
 ## Models（`/models`）
 
@@ -98,9 +125,11 @@
 - 组织隔离：非 `system` 角色仅可操作与其 `organizationId` 相同的 run
 - `GET /agents/runtime/runs/:runId`：查询 run 状态
 - `GET /agents/runtime/metrics`：查询 runtime hooks/outbox 指标（发布量、失败量、队列状态、死信摘要）
+- `GET /agents/runtime/sessions?ownerType=&ownerId=&status=&sessionType=&keyword=&page=&pageSize=`：分页查询 session（支持按 Agent 过滤）
+- `GET /agents/runtime/sessions/:id`：查询单个 session 详情（含消息轨迹）
 - `GET /agents/runtime/outbox/dead-letter?limit=200&organizationId=&runId=&eventType=`：导出失败事件（死信视图，支持筛选；返回 `total/returned/hasMore`）
 - `POST /agents/runtime/outbox/dead-letter/requeue`：批量重投死信（支持 `eventIds` 或筛选条件 + `limit`，可 `dryRun`）
-- `GET /agents/runtime/maintenance/audits?limit=&action=&organizationId=`：查询运行维护审计日志
+- `GET /agents/runtime/maintenance/audits?limit=&action=&organizationId=&batchId=`：查询运行维护审计日志
 - `POST /agents/runtime/maintenance/purge-legacy`：清理 legacy runtime 数据（仅 `system` 角色，需 `confirm=DELETE_LEGACY_RUNTIME_DATA`，可 `dryRun`）
 - `POST /agents/runtime/runs/:runId/pause`：暂停 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）

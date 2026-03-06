@@ -38,9 +38,6 @@ export class RdTask {
   @Prop({ type: Types.ObjectId, ref: 'Employee' })
   createdBy: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'Organization', required: true })
-  organization: Types.ObjectId;
-
   // OpenCode 相关字段
   @Prop()
   opencodeSessionId: string;

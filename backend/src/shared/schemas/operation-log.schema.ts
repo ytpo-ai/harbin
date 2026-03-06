@@ -10,9 +10,6 @@ export class OperationLog {
   id: string;
 
   @Prop({ required: true })
-  organizationId: string;
-
-  @Prop({ required: true })
   humanEmployeeId: string;
 
   @Prop()
@@ -71,5 +68,4 @@ export const OperationLogSchema = SchemaFactory.createForClass(OperationLog);
 
 OperationLogSchema.index({ humanEmployeeId: 1, timestamp: -1 });
 OperationLogSchema.index({ assistantAgentId: 1, timestamp: -1 });
-OperationLogSchema.index({ organizationId: 1, timestamp: -1 });
 OperationLogSchema.index({ action: 1, timestamp: -1 });

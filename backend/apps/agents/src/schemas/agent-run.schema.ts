@@ -20,9 +20,6 @@ export class AgentRun {
   @Prop()
   taskId?: string;
 
-  @Prop()
-  organizationId?: string;
-
   @Prop({ required: true })
   taskTitle: string;
 

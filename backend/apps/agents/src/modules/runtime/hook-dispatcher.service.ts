@@ -76,7 +76,6 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
         const event: RuntimeEvent = {
           eventId: record.eventId,
           eventType: record.eventType as RuntimeEvent['eventType'],
-          organizationId: record.organizationId,
           agentId: record.agentId,
           sessionId: record.sessionId,
           runId: record.runId,

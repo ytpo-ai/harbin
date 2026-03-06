@@ -1,21 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import {
+  BeakerIcon,
   ArrowPathIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  PencilSquareIcon,
   PlayIcon,
   SparklesIcon,
-  UserCircleIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { agentService } from '../services/agentService';
 import { employeeService } from '../services/employeeService';
 import {
-  AgentSession,
   orchestrationService,
   OrchestrationPlan,
   PlanMode,
 } from '../services/orchestrationService';
 
-type MainTab = 'plans' | 'sessions';
+type DrawerTab = 'debug' | 'session';
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
@@ -35,32 +38,35 @@ const STATUS_COLOR: Record<string, string> = {
 const TERMINAL_PLAN_STATUS = new Set(['completed', 'failed']);
 const ACTIVE_PLAN_STATUS = new Set(['running', 'paused']);
 
+const formatDateTime = (value?: string) => {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+};
+
 const Orchestration: React.FC = () => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<MainTab>('plans');
   const [selectedPlanId, setSelectedPlanId] = useState('');
-  const [selectedSessionId, setSelectedSessionId] = useState('');
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<PlanMode>('hybrid');
   const [autoRun, setAutoRun] = useState(true);
   const [plannerAgentId, setPlannerAgentId] = useState('');
 
-  const [sessionOwnerType, setSessionOwnerType] = useState<'agent' | 'employee' | 'system'>('system');
-  const [sessionOwnerId, setSessionOwnerId] = useState('orchestrator');
-  const [sessionTitle, setSessionTitle] = useState('');
-  const [sessionRole, setSessionRole] = useState<'user' | 'assistant' | 'system'>('user');
-  const [sessionMessage, setSessionMessage] = useState('');
-
-  const [sessionStatusFilter, setSessionStatusFilter] = useState<'active' | 'archived' | 'closed' | ''>('');
-  const [sessionOwnerTypeFilter, setSessionOwnerTypeFilter] = useState<'agent' | 'employee' | 'system' | ''>('');
+  const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
+  const [debugTaskId, setDebugTaskId] = useState('');
+  const [debugTitle, setDebugTitle] = useState('');
+  const [debugDescription, setDebugDescription] = useState('');
+  const [debugHint, setDebugHint] = useState('');
+  const [debugSessionId, setDebugSessionId] = useState('');
+  const [debugAgentId, setDebugAgentId] = useState('');
+  const [activeDrawerTab, setActiveDrawerTab] = useState<DrawerTab>('debug');
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<OrchestrationPlan[]>(
     'orchestration-plans',
     () => orchestrationService.getPlans(),
-    {
-      refetchInterval: activeTab === 'plans' ? 3000 : false,
-    },
+    { refetchInterval: 3000 },
   );
 
   const { data: planDetail, isFetching: planDetailLoading } = useQuery(
@@ -69,7 +75,7 @@ const Orchestration: React.FC = () => {
     {
       enabled: Boolean(selectedPlanId),
       refetchInterval: (data) => {
-        if (!selectedPlanId || activeTab !== 'plans') {
+        if (!selectedPlanId) {
           return false;
         }
         const status = (data as any)?.status as string | undefined;
@@ -87,23 +93,22 @@ const Orchestration: React.FC = () => {
     },
   );
 
+  const debugTask = useMemo(
+    () => planDetail?.tasks?.find((task) => task._id === debugTaskId),
+    [planDetail?.tasks, debugTaskId],
+  );
+
+  const { data: debugSessionDetail, isFetching: debugSessionLoading } = useQuery(
+    ['orchestration-debug-session', debugSessionId],
+    () => orchestrationService.getSessionById(debugSessionId),
+    {
+      enabled: debugDrawerOpen && Boolean(debugSessionId),
+      refetchInterval: debugDrawerOpen && debugSessionId ? 3000 : false,
+    },
+  );
+
   const { data: agents = [] } = useQuery('orchestration-agents', () => agentService.getAgents());
   const { data: employees = [] } = useQuery('orchestration-employees', () => employeeService.getEmployees());
-
-  const { data: sessions = [], isLoading: sessionsLoading } = useQuery<AgentSession[]>(
-    ['orchestration-sessions', sessionStatusFilter, sessionOwnerTypeFilter],
-    () =>
-      orchestrationService.getSessions({
-        status: sessionStatusFilter || undefined,
-        ownerType: sessionOwnerTypeFilter || undefined,
-      }),
-  );
-
-  const { data: sessionDetail, isFetching: sessionDetailLoading } = useQuery(
-    ['orchestration-session-detail', selectedSessionId],
-    () => orchestrationService.getSessionById(selectedSessionId),
-    { enabled: Boolean(selectedSessionId) },
-  );
 
   useEffect(() => {
     if (!selectedPlanId && plans.length > 0) {
@@ -112,16 +117,29 @@ const Orchestration: React.FC = () => {
   }, [plans, selectedPlanId]);
 
   useEffect(() => {
-    if (!selectedSessionId && sessions.length > 0) {
-      setSelectedSessionId(sessions[0]._id);
+    if (!debugTask) {
+      return;
     }
-  }, [sessions, selectedSessionId]);
+    setDebugTitle(debugTask.title || '');
+    setDebugDescription(debugTask.description || '');
+    setDebugSessionId(debugTask.sessionId || '');
+    const taskAgentId =
+      debugTask.assignment?.executorType === 'agent' && debugTask.assignment?.executorId
+        ? debugTask.assignment.executorId
+        : '';
+    setDebugAgentId(taskAgentId || agents[0]?.id || '');
+  }, [agents, debugTask]);
 
   useEffect(() => {
-    if (sessionOwnerType === 'system') {
-      setSessionOwnerId('orchestrator');
-    }
-  }, [sessionOwnerType]);
+    setDebugDrawerOpen(false);
+    setDebugTaskId('');
+    setDebugTitle('');
+    setDebugDescription('');
+    setDebugSessionId('');
+    setDebugAgentId('');
+    setActiveDrawerTab('debug');
+    setDebugHint('');
+  }, [selectedPlanId]);
 
   const createPlanMutation = useMutation(orchestrationService.createPlanFromPrompt, {
     onSuccess: async (created) => {
@@ -142,7 +160,6 @@ const Orchestration: React.FC = () => {
         await Promise.all([
           queryClient.invalidateQueries('orchestration-plans'),
           queryClient.invalidateQueries(['orchestration-plan', vars.planId]),
-          queryClient.invalidateQueries('orchestration-sessions'),
         ]);
       },
     },
@@ -153,10 +170,53 @@ const Orchestration: React.FC = () => {
       await Promise.all([
         queryClient.invalidateQueries('orchestration-plans'),
         queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]),
-        queryClient.invalidateQueries('orchestration-sessions'),
       ]);
     },
   });
+
+  const saveTaskDraftMutation = useMutation(
+    ({ taskId, title: nextTitle, description: nextDescription }: { taskId: string; title?: string; description?: string }) =>
+      orchestrationService.updateTaskDraft(taskId, { title: nextTitle, description: nextDescription }),
+    {
+      onSuccess: async () => {
+        setDebugHint('草稿已保存，可继续单步调试');
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]),
+        ]);
+      },
+    },
+  );
+
+  const debugStepMutation = useMutation(
+    ({
+      taskId,
+      title: nextTitle,
+      description: nextDescription,
+    }: {
+      taskId: string;
+      title?: string;
+      description?: string;
+    }) =>
+      orchestrationService.debugTaskStep(taskId, {
+        title: nextTitle,
+        description: nextDescription,
+        resetResult: true,
+      }),
+    {
+      onSuccess: async (result) => {
+        if (result.task?.sessionId) {
+          setDebugSessionId(result.task.sessionId);
+        }
+        setDebugHint(result.execution?.error ? `调试失败：${result.execution.error}` : '单步调试已完成，可继续编辑后重试');
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]),
+          queryClient.invalidateQueries(['orchestration-debug-session', result.task?.sessionId]),
+        ]);
+      },
+    },
+  );
 
   const deletePlanMutation = useMutation((planId: string) => orchestrationService.deletePlan(planId), {
     onSuccess: async (_, deletedPlanId) => {
@@ -205,75 +265,7 @@ const Orchestration: React.FC = () => {
     },
   );
 
-  const createSessionMutation = useMutation(
-    () =>
-      orchestrationService.createSession({
-        ownerType: sessionOwnerType,
-        ownerId: sessionOwnerId.trim(),
-        title: sessionTitle.trim(),
-        linkedPlanId: selectedPlanId || undefined,
-      }),
-    {
-      onSuccess: async (created) => {
-        setSessionTitle('');
-        await queryClient.invalidateQueries('orchestration-sessions');
-        if (created?._id) {
-          setSelectedSessionId(created._id);
-        }
-      },
-    },
-  );
-
-  const appendMessageMutation = useMutation(
-    () =>
-      orchestrationService.appendMessage(selectedSessionId, {
-        role: sessionRole,
-        content: sessionMessage.trim(),
-      }),
-    {
-      onSuccess: async () => {
-        setSessionMessage('');
-        await Promise.all([
-          queryClient.invalidateQueries('orchestration-sessions'),
-          queryClient.invalidateQueries(['orchestration-session-detail', selectedSessionId]),
-        ]);
-      },
-    },
-  );
-
-  const archiveSessionMutation = useMutation((sessionId: string) => orchestrationService.archiveSession(sessionId), {
-    onSuccess: async (_, sid) => {
-      await Promise.all([
-        queryClient.invalidateQueries('orchestration-sessions'),
-        queryClient.invalidateQueries(['orchestration-session-detail', sid]),
-      ]);
-    },
-  });
-
-  const resumeSessionMutation = useMutation((sessionId: string) => orchestrationService.resumeSession(sessionId), {
-    onSuccess: async (_, sid) => {
-      await Promise.all([
-        queryClient.invalidateQueries('orchestration-sessions'),
-        queryClient.invalidateQueries(['orchestration-session-detail', sid]),
-      ]);
-    },
-  });
-
-  const activeOwnerOptions = useMemo(() => {
-    if (sessionOwnerType === 'agent') {
-      return agents.map((agent) => ({ id: agent.id, label: `${agent.name} (${agent.type})` }));
-    }
-    if (sessionOwnerType === 'employee') {
-      return employees.map((employee) => ({
-        id: employee.id,
-        label: `${employee.name || employee.id} (${employee.type})`,
-      }));
-    }
-    return [{ id: 'orchestrator', label: 'System / Orchestrator' }];
-  }, [agents, employees, sessionOwnerType]);
-
   const copyPlanToForm = (plan: OrchestrationPlan) => {
-    setActiveTab('plans');
     setTitle(plan.title || '');
     setPrompt(plan.sourcePrompt || '');
     setMode(plan.strategy?.mode || 'hybrid');
@@ -282,17 +274,54 @@ const Orchestration: React.FC = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  const openDebugDrawer = (taskId: string, tab: DrawerTab = 'debug') => {
+    setDebugTaskId(taskId);
+    setActiveDrawerTab(tab);
+    setDebugDrawerOpen(true);
+    setDebugHint('');
+  };
+
+  const handleDebugRun = async () => {
+    if (!debugTask) {
+      return;
+    }
+    const targetAgentId = debugAgentId.trim();
+    if (!targetAgentId) {
+      setDebugHint('请先选择 Agent 再执行调试');
+      return;
+    }
+    try {
+      if (
+        debugTask.assignment?.executorType !== 'agent'
+        || debugTask.assignment?.executorId !== targetAgentId
+      ) {
+        await reassignMutation.mutateAsync({
+          taskId: debugTask._id,
+          executorType: 'agent',
+          executorId: targetAgentId,
+        });
+      }
+      await debugStepMutation.mutateAsync({
+        taskId: debugTask._id,
+        title: debugTitle.trim() || undefined,
+        description: debugDescription.trim() || undefined,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '调试执行失败，请稍后重试';
+      setDebugHint(message);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">任务编排中心</h1>
+          <h1 className="text-2xl font-semibold text-gray-900">计划编排中心</h1>
           <p className="text-sm text-gray-500">通过一句提示词拆解任务，并统一管理 Agent Session</p>
         </div>
         <button
           onClick={() => {
             queryClient.invalidateQueries('orchestration-plans');
-            queryClient.invalidateQueries('orchestration-sessions');
           }}
           className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md border border-gray-200 hover:bg-gray-50"
         >
@@ -300,23 +329,7 @@ const Orchestration: React.FC = () => {
         </button>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-2 inline-flex">
-        <button
-          onClick={() => setActiveTab('plans')}
-          className={`px-3 py-1.5 text-sm rounded-md ${activeTab === 'plans' ? 'bg-primary-100 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
-        >
-          计划编排
-        </button>
-        <button
-          onClick={() => setActiveTab('sessions')}
-          className={`px-3 py-1.5 text-sm rounded-md ${activeTab === 'sessions' ? 'bg-primary-100 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
-        >
-          Session 管理
-        </button>
-      </div>
-
-      {activeTab === 'plans' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[620px]">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[620px]">
           <aside className="lg:col-span-4 bg-white border border-gray-200 rounded-lg flex flex-col">
             <div className="p-3 border-b border-gray-200">
               <p className="text-sm font-semibold text-gray-900">新建编排计划</p>
@@ -482,15 +495,26 @@ const Orchestration: React.FC = () => {
                 <p className="text-sm text-gray-400">该计划暂无任务</p>
               ) : (
                 planDetail.tasks.map((task) => (
-                  <div key={task._id} className="border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div
+                    key={task._id}
+                    className={`border rounded-lg p-3 space-y-2 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-gray-200'}`}
+                  >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium text-gray-900">#{task.order + 1} {task.title}</p>
                         <p className="text-xs text-gray-600 mt-0.5">{task.description}</p>
                       </div>
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${STATUS_COLOR[task.status] || STATUS_COLOR.pending}`}>
-                        {task.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${STATUS_COLOR[task.status] || STATUS_COLOR.pending}`}>
+                          {task.status}
+                        </span>
+                        <button
+                          onClick={() => openDebugDrawer(task._id, 'debug')}
+                          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-primary-200 text-primary-700 hover:bg-primary-50"
+                        >
+                          <BeakerIcon className="h-3.5 w-3.5" /> 调试
+                        </button>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
@@ -573,6 +597,36 @@ const Orchestration: React.FC = () => {
                       </div>
                     </div>
 
+                    <div className="rounded border border-gray-200 bg-gray-50/70 p-2 space-y-2">
+                      <p className="text-[11px] font-semibold text-gray-700">任务上下文</p>
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">输入:</span> {task.description || '-'}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">输出:</span> {task.result?.output || task.result?.summary || '-'}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium text-gray-700">错误:</span> {task.result?.error || '-'}
+                      </p>
+                      <p className="text-xs text-gray-600 inline-flex items-center gap-1">
+                        <span className="font-medium text-gray-700">Session:</span>
+                        {task.sessionId ? (
+                          <button
+                            onClick={() => {
+                              openDebugDrawer(task._id, 'session');
+                              setDebugSessionId(task.sessionId || '');
+                            }}
+                            className="inline-flex items-center gap-1 text-primary-700 hover:underline"
+                          >
+                            {task.sessionId}
+                            <ChevronRightIcon className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </p>
+                    </div>
+
                     {task.result?.error && <p className="text-xs text-rose-600">错误: {task.result.error}</p>}
                     {task.result?.output && (
                       <p className="text-xs text-gray-600 line-clamp-2">输出: {task.result.output}</p>
@@ -582,187 +636,163 @@ const Orchestration: React.FC = () => {
               )}
             </div>
           </section>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[620px]">
-          <aside className="lg:col-span-4 bg-white border border-gray-200 rounded-lg flex flex-col">
-            <div className="p-3 border-b border-gray-200">
-              <p className="text-sm font-semibold text-gray-900">新建 Session</p>
-              <div className="mt-2 space-y-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={sessionOwnerType}
-                    onChange={(event) => setSessionOwnerType(event.target.value as 'agent' | 'employee' | 'system')}
-                    className="text-sm border border-gray-300 rounded px-2 py-1.5"
-                  >
-                    <option value="system">System</option>
-                    <option value="agent">Agent</option>
-                    <option value="employee">Employee</option>
-                  </select>
-                  <select
-                    value={sessionOwnerId}
-                    onChange={(event) => setSessionOwnerId(event.target.value)}
-                    className="text-sm border border-gray-300 rounded px-2 py-1.5"
-                  >
-                    <option value="">选择 owner</option>
-                    {activeOwnerOptions.map((owner) => (
-                      <option key={owner.id} value={owner.id}>
-                        {owner.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <input
-                  value={sessionTitle}
-                  onChange={(event) => setSessionTitle(event.target.value)}
-                  placeholder="session title"
-                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5"
-                />
-                <button
-                  onClick={() => createSessionMutation.mutate()}
-                  disabled={!sessionOwnerId.trim() || !sessionTitle.trim() || createSessionMutation.isLoading}
-                  className="w-full text-sm bg-primary-600 text-white rounded px-2 py-2 disabled:bg-gray-300"
-                >
-                  创建 Session
-                </button>
-              </div>
-            </div>
 
-            <div className="p-3 border-b border-gray-200 grid grid-cols-2 gap-2">
-              <select
-                value={sessionStatusFilter}
-                onChange={(event) => setSessionStatusFilter(event.target.value as 'active' | 'archived' | 'closed' | '')}
-                className="text-xs border border-gray-300 rounded px-2 py-1.5"
-              >
-                <option value="">全部状态</option>
-                <option value="active">active</option>
-                <option value="archived">archived</option>
-                <option value="closed">closed</option>
-              </select>
-              <select
-                value={sessionOwnerTypeFilter}
-                onChange={(event) =>
-                  setSessionOwnerTypeFilter(event.target.value as 'agent' | 'employee' | 'system' | '')
-                }
-                className="text-xs border border-gray-300 rounded px-2 py-1.5"
-              >
-                <option value="">全部 owner</option>
-                <option value="system">system</option>
-                <option value="agent">agent</option>
-                <option value="employee">employee</option>
-              </select>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              {sessionsLoading ? (
-                <p className="text-sm text-gray-400 px-2 py-3">加载中...</p>
-              ) : sessions.length === 0 ? (
-                <p className="text-sm text-gray-400 px-2 py-3">暂无 session</p>
-              ) : (
-                sessions.map((session) => (
-                  <button
-                    key={session._id}
-                    onClick={() => setSelectedSessionId(session._id)}
-                    className={`w-full text-left px-2 py-2 rounded border ${
-                      selectedSessionId === session._id
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-transparent hover:bg-gray-50'
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-gray-900 truncate">{session.title}</p>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${STATUS_COLOR[session.status] || STATUS_COLOR.pending}`}>
-                        {session.status}
-                      </span>
-                      <span className="text-xs text-gray-500 inline-flex items-center gap-1">
-                        <UserCircleIcon className="h-3 w-3" /> {session.ownerType}
-                      </span>
-                    </div>
-                  </button>
-                ))
-              )}
-            </div>
-          </aside>
-
-          <section className="lg:col-span-8 bg-white border border-gray-200 rounded-lg flex flex-col">
-            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{sessionDetail?.title || '未选择 Session'}</p>
-                <p className="text-xs text-gray-500">owner: {sessionDetail?.ownerType || '-'} / {sessionDetail?.ownerId || '-'}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {sessionDetail?.status === 'active' ? (
-                  <button
-                    onClick={() => selectedSessionId && archiveSessionMutation.mutate(selectedSessionId)}
-                    className="px-3 py-1.5 text-xs rounded border border-gray-200 hover:bg-gray-50"
-                  >
-                    归档
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => selectedSessionId && resumeSessionMutation.mutate(selectedSessionId)}
-                    className="px-3 py-1.5 text-xs rounded border border-gray-200 hover:bg-gray-50"
-                  >
-                    恢复
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {sessionDetailLoading ? (
-                <p className="text-sm text-gray-400">加载中...</p>
-              ) : !sessionDetail?.messages?.length ? (
-                <p className="text-sm text-gray-400">暂无消息</p>
-              ) : (
-                sessionDetail.messages.map((message, index) => (
-                  <div
-                    key={`${message.timestamp}-${index}`}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-[86%] rounded-lg px-3 py-2 ${
-                        message.role === 'user' ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-900'
-                      }`}
-                    >
-                      <p className="text-xs opacity-80">{message.role}</p>
-                      <pre className="text-sm whitespace-pre-wrap font-sans">{message.content}</pre>
-                    </div>
+          {debugDrawerOpen && (
+            <div className="fixed inset-0 z-[90]">
+              <div className="absolute inset-0 bg-black/25" onClick={() => setDebugDrawerOpen(false)} />
+              <aside className="absolute right-0 top-0 h-full w-full bg-white shadow-2xl sm:w-[92vw] lg:w-[56vw] border-l border-gray-200 flex flex-col">
+                <div className="px-4 py-3 border-b border-gray-200 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">单步调试抽屉</p>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {debugTask ? `Step #${debugTask.order + 1} · ${debugTask.status}` : '请选择任务后再调试'}
+                    </p>
                   </div>
-                ))
-              )}
-            </div>
+                  <button
+                    onClick={() => setDebugDrawerOpen(false)}
+                    className="p-1 rounded hover:bg-gray-100 text-gray-500"
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
+                </div>
 
-            <div className="p-3 border-t border-gray-200">
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-                <select
-                  value={sessionRole}
-                  onChange={(event) => setSessionRole(event.target.value as 'user' | 'assistant' | 'system')}
-                  className="md:col-span-1 text-sm border border-gray-300 rounded px-2 py-1.5"
-                >
-                  <option value="user">user</option>
-                  <option value="assistant">assistant</option>
-                  <option value="system">system</option>
-                </select>
-                <input
-                  value={sessionMessage}
-                  onChange={(event) => setSessionMessage(event.target.value)}
-                  placeholder="输入消息"
-                  className="md:col-span-3 text-sm border border-gray-300 rounded px-2 py-1.5"
-                />
-                <button
-                  onClick={() => appendMessageMutation.mutate()}
-                  disabled={!selectedSessionId || !sessionMessage.trim() || appendMessageMutation.isLoading}
-                  className="md:col-span-1 text-sm rounded bg-gray-900 text-white px-3 py-1.5 disabled:bg-gray-300"
-                >
-                  追加
-                </button>
-              </div>
+                <div className="px-4 py-2 border-b border-gray-200 inline-flex gap-2">
+                  <button
+                    onClick={() => setActiveDrawerTab('debug')}
+                    className={`px-3 py-1.5 text-xs rounded ${activeDrawerTab === 'debug' ? 'bg-primary-100 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    调试
+                  </button>
+                  <button
+                    onClick={() => setActiveDrawerTab('session')}
+                    className={`px-3 py-1.5 text-xs rounded ${activeDrawerTab === 'session' ? 'bg-primary-100 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                  >
+                    Session
+                  </button>
+                </div>
+
+                {!debugTask ? (
+                  <div className="flex-1 p-4 text-sm text-gray-500">当前计划中未找到该任务，请重新选择。</div>
+                ) : (
+                  <>
+                    {activeDrawerTab === 'debug' ? (
+                      <>
+                        <div className="p-4 border-b border-gray-200 space-y-3">
+                          <div className="grid grid-cols-1 gap-2">
+                            <label className="text-xs text-gray-600">执行 Agent</label>
+                            <select
+                              value={debugAgentId}
+                              onChange={(event) => setDebugAgentId(event.target.value)}
+                              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5"
+                            >
+                              <option value="">请选择 Agent</option>
+                              {agents.map((agent) => (
+                                <option key={agent.id} value={agent.id}>
+                                  {agent.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <label className="text-xs text-gray-600">任务标题</label>
+                            <input
+                              value={debugTitle}
+                              onChange={(event) => setDebugTitle(event.target.value)}
+                              className="w-full text-sm border border-gray-300 rounded px-2 py-1.5"
+                            />
+                          </div>
+                          <div className="grid grid-cols-1 gap-2">
+                            <label className="text-xs text-gray-600">任务描述（可编辑后反复调试）</label>
+                            <textarea
+                              value={debugDescription}
+                              onChange={(event) => setDebugDescription(event.target.value)}
+                              className="w-full min-h-[120px] text-sm border border-gray-300 rounded px-2 py-1.5"
+                            />
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              onClick={() =>
+                                saveTaskDraftMutation.mutate({
+                                  taskId: debugTask._id,
+                                  title: debugTitle.trim() || undefined,
+                                  description: debugDescription.trim() || undefined,
+                                })
+                              }
+                              disabled={saveTaskDraftMutation.isLoading}
+                              className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              <PencilSquareIcon className="h-4 w-4" /> 保存草稿
+                            </button>
+                            <button
+                              onClick={handleDebugRun}
+                              disabled={debugStepMutation.isLoading || reassignMutation.isLoading}
+                              className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-gray-900 text-white disabled:bg-gray-300"
+                            >
+                              <PlayIcon className="h-4 w-4" /> 执行当前 Step
+                            </button>
+                          </div>
+                          {debugHint && <p className="text-xs text-primary-700">{debugHint}</p>}
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                          <section className="space-y-2">
+                            <p className="text-xs font-semibold text-gray-700">运行日志</p>
+                            {!debugTask.runLogs?.length ? (
+                              <p className="text-xs text-gray-400">暂无日志</p>
+                            ) : (
+                              <div className="space-y-1">
+                                {debugTask.runLogs.slice(-10).reverse().map((log, index) => (
+                                  <div key={`${log.timestamp}-${index}`} className="rounded border border-gray-200 px-2 py-1.5">
+                                    <p className="text-[11px] text-gray-500 inline-flex items-center gap-1">
+                                      <ClockIcon className="h-3 w-3" /> {formatDateTime(log.timestamp)} · {log.level}
+                                    </p>
+                                    <p className="text-xs text-gray-700 mt-0.5">{log.message}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </section>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        <section className="space-y-2">
+                          <p className="text-xs font-semibold text-gray-700">Session 信息</p>
+                          {!debugSessionId ? (
+                            <p className="text-xs text-gray-400">该任务尚未产生 session</p>
+                          ) : debugSessionLoading ? (
+                            <p className="text-xs text-gray-400">加载 session 中...</p>
+                          ) : !debugSessionDetail ? (
+                            <p className="text-xs text-gray-400">未查询到 session 详情</p>
+                          ) : (
+                            <div className="rounded border border-gray-200 p-3 space-y-2">
+                              <p className="text-xs text-gray-600">ID: {debugSessionDetail._id}</p>
+                              <p className="text-xs text-gray-600">Owner: {debugSessionDetail.ownerType} / {debugSessionDetail.ownerId}</p>
+                              <p className="text-xs text-gray-600">状态: {debugSessionDetail.status}</p>
+                              <p className="text-xs text-gray-600">更新时间: {formatDateTime(debugSessionDetail.updatedAt)}</p>
+                              <div className="border-t border-gray-200 pt-2 space-y-1">
+                                <p className="text-xs font-medium text-gray-700">最近消息</p>
+                                {(debugSessionDetail.messages || []).slice(-5).reverse().map((message, index) => (
+                                  <div key={`${message.timestamp}-${index}`} className="bg-gray-50 rounded px-2 py-1.5">
+                                    <p className="text-[11px] text-gray-500">
+                                      {message.role} · {formatDateTime(message.timestamp)}
+                                    </p>
+                                    <p className="text-xs text-gray-700 whitespace-pre-wrap line-clamp-3">{message.content}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </section>
+                      </div>
+                    )}
+                  </>
+                )}
+              </aside>
             </div>
-          </section>
+          )}
         </div>
-      )}
-    </div>
+      </div>
   );
 };
 

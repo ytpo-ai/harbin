@@ -57,13 +57,7 @@ export class RuntimeController {
       return;
     }
     if (!runOrganizationId) {
-      throw new ForbiddenException('Run organization is missing; only system can operate this run');
-    }
-    if (!context.organizationId) {
-      throw new ForbiddenException('Missing organization in user context');
-    }
-    if (runOrganizationId !== context.organizationId) {
-      throw new ForbiddenException('Run belongs to a different organization');
+      return;
     }
   }
 
@@ -72,7 +66,6 @@ export class RuntimeController {
     if (!run) {
       throw new NotFoundException('Runtime run not found');
     }
-    this.assertOrganizationAccess(run.organizationId, context);
     return run;
   }
 
@@ -93,19 +86,9 @@ export class RuntimeController {
 
   private resolveOrganizationScope(
     context: GatewayUserContext,
-    organizationId?: string,
+    
   ): string | undefined {
-    const role = (context.role || '').toLowerCase();
-    if (role === 'system') {
-      return organizationId;
-    }
-    if (!context.organizationId) {
-      throw new ForbiddenException('Missing organization in user context');
-    }
-    if (organizationId && organizationId !== context.organizationId) {
-      throw new ForbiddenException('Cross-organization operation is forbidden');
-    }
-    return context.organizationId;
+    return undefined;
   }
 
   @Get('runs/:runId')
@@ -211,15 +194,15 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const query = RuntimeDeadLetterQuerySchema.parse(rawQuery || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context, query.organizationId);
+    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const rows = await this.persistence.findDeadLetterEvents({
       limit: query.limit || 200,
-      organizationId: scopedOrganizationId,
+      
       runId: query.runId,
       eventType: query.eventType,
     });
     const total = await this.persistence.countDeadLetterEvents({
-      organizationId: scopedOrganizationId,
+      
       runId: query.runId,
       eventType: query.eventType,
     });
@@ -233,7 +216,7 @@ export class RuntimeController {
         eventId: row.eventId,
         eventType: row.eventType,
         runId: row.runId,
-        organizationId: row.organizationId,
+        
         sessionId: row.sessionId,
         sequence: row.sequence,
         attempts: row.attempts,
@@ -252,7 +235,7 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const body = RuntimeDeadLetterRequeueBodySchema.parse(rawBody || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context, body.organizationId);
+    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const batchId = `requeue-${Date.now()}`;
 
     let requeued = 0;
@@ -267,7 +250,7 @@ export class RuntimeController {
     } else {
       const rows = await this.persistence.findDeadLetterEvents({
         limit: body.limit || 200,
-        organizationId: scopedOrganizationId,
+        
         runId: body.runId,
         eventType: body.eventType,
       });
@@ -279,17 +262,18 @@ export class RuntimeController {
 
     await this.persistence.createMaintenanceAudit({
       action: 'dead_letter_requeue',
+      batchId,
       actorId: context.employeeId,
       actorRole: context.role || 'unknown',
-      organizationId: scopedOrganizationId,
+      
       dryRun: Boolean(body.dryRun),
       matched,
       affected: requeued,
+      summary: `dead_letter_requeue matched=${matched} requeued=${requeued} dryRun=${Boolean(body.dryRun)}`,
       scope: {
         runId: body.runId,
         eventType: body.eventType,
         eventIdsCount: body.eventIds?.length || 0,
-        batchId,
       },
       result: {
         requeued,
@@ -303,7 +287,7 @@ export class RuntimeController {
       matched,
       requeued,
       scope: {
-        organizationId: scopedOrganizationId,
+        
         runId: body.runId,
         eventType: body.eventType,
       },
@@ -318,11 +302,12 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const query = RuntimeMaintenanceAuditQuerySchema.parse(rawQuery || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context, query.organizationId);
+    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const rows = await this.persistence.listMaintenanceAudits({
       limit: query.limit || 50,
       action: query.action,
-      organizationId: scopedOrganizationId,
+      
+      batchId: query.batchId,
     });
 
     return {
@@ -331,12 +316,14 @@ export class RuntimeController {
       audits: rows.map((row) => ({
         id: row.id,
         action: row.action,
+        batchId: row.batchId,
         actorId: row.actorId,
         actorRole: row.actorRole,
-        organizationId: row.organizationId,
+        
         dryRun: row.dryRun,
         matched: row.matched,
         affected: row.affected,
+        summary: row.summary,
         scope: row.scope,
         result: row.result,
         createdAt: (row as any).createdAt,
@@ -359,18 +346,21 @@ export class RuntimeController {
       'agent_sessions',
     ];
     const collections = body.collections?.length ? body.collections : defaultCollections;
+    const batchId = `purge-${Date.now()}`;
     const results = body.dryRun
       ? collections.map((collection) => ({ collection, deletedCount: 0 }))
       : await this.persistence.purgeCollections(collections);
 
     await this.persistence.createMaintenanceAudit({
       action: 'purge_legacy',
+      batchId,
       actorId: context.employeeId,
       actorRole: context.role || 'unknown',
-      organizationId: context.organizationId,
+      
       dryRun: Boolean(body.dryRun),
       matched: collections.length,
       affected: results.reduce((sum, item) => sum + item.deletedCount, 0),
+      summary: `purge_legacy collections=${collections.length} deleted=${results.reduce((sum, item) => sum + item.deletedCount, 0)} dryRun=${Boolean(body.dryRun)}`,
       scope: {
         collections,
       },
@@ -381,9 +371,182 @@ export class RuntimeController {
 
     return {
       success: true,
+      batchId,
       purgedBy: context.employeeId,
       dryRun: Boolean(body.dryRun),
       collections: results,
     };
+  }
+
+  @Get('sessions')
+  async listSessions(
+    @Query('ownerType') ownerType?: 'agent' | 'employee' | 'system',
+    @Query('ownerId') ownerId?: string,
+    @Query('status') status?: 'active' | 'archived' | 'closed',
+    @Query('sessionType') sessionType?: 'meeting' | 'task',
+    @Query('keyword') keyword?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const normalizedPage = Math.max(1, Number(page || 1));
+    const normalizedPageSize = Math.max(1, Math.min(100, Number(pageSize || 20)));
+    const [sessions, total] = await Promise.all([
+      this.persistence.listSessions({
+        ownerType,
+        ownerId: ownerId?.trim() || undefined,
+        status,
+        sessionType,
+        keyword: keyword?.trim() || undefined,
+        page: normalizedPage,
+        pageSize: normalizedPageSize,
+      }),
+      this.persistence.countSessions({
+        ownerType,
+        ownerId: ownerId?.trim() || undefined,
+        status,
+        sessionType,
+        keyword: keyword?.trim() || undefined,
+      }),
+    ]);
+
+    return {
+      total,
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalPages: Math.max(1, Math.ceil(total / normalizedPageSize)),
+      sessions,
+    };
+  }
+
+  @Get('sessions/:id')
+  async getSession(@Param('id') id: string) {
+    const session = await this.persistence.getSessionById(id);
+    if (!session) {
+      throw new NotFoundException('Session not found');
+    }
+    return session;
+  }
+
+  @Post('sessions')
+  async createSession(
+    @Body()
+    body: {
+      sessionId?: string;
+      sessionType?: 'meeting' | 'task';
+      ownerType?: 'agent' | 'employee' | 'system';
+      ownerId: string;
+      title: string;
+      planContext?: {
+        linkedPlanId?: string;
+        linkedTaskId?: string;
+        latestTaskInput?: string;
+        latestTaskOutput?: string;
+        lastRunId?: string;
+      };
+      meetingContext?: {
+        meetingId?: string;
+        agendaId?: string;
+        latestSummary?: string;
+      };
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    const session = await this.persistence.ensureSession({
+      sessionId: body.sessionId,
+      sessionType: body.sessionType || 'task',
+      ownerType: body.ownerType || 'agent',
+      ownerId: body.ownerId,
+      title: body.title,
+      planContext: body.planContext,
+      meetingContext: body.meetingContext,
+      metadata: body.metadata,
+    });
+    return session;
+  }
+
+  @Post('sessions/meeting')
+  async getOrCreateMeetingSession(
+    @Body()
+    body: {
+      meetingId: string;
+      agentId: string;
+      title: string;
+      meetingContext?: {
+        meetingId: string;
+        agendaId?: string;
+        latestSummary?: string;
+      };
+    },
+  ) {
+    const session = await this.persistence.getOrCreateMeetingSession(
+      body.meetingId,
+      body.agentId,
+      body.title,
+      body.meetingContext,
+    );
+    return session;
+  }
+
+  @Post('sessions/task')
+  async getOrCreateTaskSession(
+    @Body()
+    body: {
+      taskId: string;
+      agentId: string;
+      title: string;
+      planContext?: {
+        linkedPlanId?: string;
+        linkedTaskId?: string;
+        latestTaskInput?: string;
+        latestTaskOutput?: string;
+        lastRunId?: string;
+      };
+    },
+  ) {
+    const session = await this.persistence.getOrCreateTaskSession(
+      body.taskId,
+      body.agentId,
+      body.title,
+      body.planContext,
+    );
+    return session;
+  }
+
+  @Post('sessions/:id/messages')
+  async appendMessage(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      role: 'system' | 'user' | 'assistant' | 'tool';
+      content: string;
+      status?: 'pending' | 'streaming' | 'completed' | 'error';
+      metadata?: Record<string, unknown>;
+    },
+  ) {
+    await this.persistence.appendMessageToSession(id, {
+      role: body.role,
+      content: body.content,
+      status: body.status,
+      metadata: body.metadata,
+    });
+    const session = await this.persistence.getSessionById(id);
+    return session;
+  }
+
+  @Post('sessions/:id/archive')
+  async archiveSession(
+    @Param('id') id: string,
+    @Body() body?: { summary?: string },
+  ) {
+    await this.persistence.archiveSession(id, body?.summary);
+    const session = await this.persistence.getSessionById(id);
+    return session;
+  }
+
+  @Post('sessions/:id/resume')
+  async resumeSession(@Param('id') id: string) {
+    await this.persistence.resumeSession(id);
+    const session = await this.persistence.getSessionById(id);
+    return session;
   }
 }

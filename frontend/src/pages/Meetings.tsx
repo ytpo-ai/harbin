@@ -25,6 +25,7 @@ import {
   ArrowTopRightOnSquareIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  EllipsisVerticalIcon,
 } from '@heroicons/react/24/outline';
 
 const MEETING_TYPES = [
@@ -69,6 +70,7 @@ const Meetings: React.FC = () => {
   const [thinkingAgentIds, setThinkingAgentIds] = useState<string[]>([]);
   const [pinnedMeetingId, setPinnedMeetingId] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [showOperationMenu, setShowOperationMenu] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
   const isChatOnlyMode = Boolean(meetingIdFromPath);
@@ -76,6 +78,14 @@ const Meetings: React.FC = () => {
   useEffect(() => {
     authService.getCurrentUser().then(setCurrentUser);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setShowOperationMenu(null);
+    if (showOperationMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [showOperationMenu]);
 
   const { data: meetings, isLoading: meetingsLoading } = useQuery('meetings', () => 
     meetingService.getAllMeetings(),
@@ -478,6 +488,24 @@ const Meetings: React.FC = () => {
       setSelectedMeeting(null);
     },
   });
+
+  const handleStopAndDelete = async (meetingId: string) => {
+    if (!window.confirm('确定要停止并删除此会议吗？此操作不可撤销。')) {
+      return;
+    }
+
+    try {
+      await endMutation.mutateAsync(meetingId);
+      await deleteMutation.mutateAsync(meetingId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '停止并删除失败';
+      alert(message);
+    }
+  };
+
+  const handleOpenMeetingInNewTab = (meetingId: string) => {
+    window.open(`/meetings/${meetingId}`, '_blank', 'noopener,noreferrer');
+  };
 
   const sendMessageMutation = useMutation(
     ({ id, content }: { id: string; content: string }) => 
@@ -952,127 +980,302 @@ const Meetings: React.FC = () => {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => window.open(`/meetings/${selectedMeeting.id}`, '_blank', 'noopener,noreferrer')}
-                    className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
-                    title="在新页面打开此会议"
-                    aria-label="在新页面打开此会议"
-                  >
-                    <ArrowTopRightOnSquareIcon className="h-4 w-4" />
-                  </button>
                   {selectedMeeting.status === MeetingStatus.PENDING && (
                     <>
                       <button
-                        onClick={() => startMutation.mutate({
-                          id: selectedMeeting.id,
-                          startedById: selectedMeeting.hostId,
-                          startedByType: selectedMeeting.hostType || 'employee',
-                          startedByName: currentUser?.name || '主持人',
-                        })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startMutation.mutate({
+                            id: selectedMeeting.id,
+                            startedById: selectedMeeting.hostId,
+                            startedByType: selectedMeeting.hostType || 'employee',
+                            startedByName: currentUser?.name || '主持人',
+                          });
+                        }}
                         disabled={startMutation.isLoading}
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
                       >
                         <PlayIcon className="h-4 w-4" />
                       </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm('确定要删除此未开始会议吗？此操作不可撤销。')) {
-                            deleteMutation.mutate(selectedMeeting.id);
-                          }
-                        }}
-                        disabled={deleteMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                        title={deleteMutation.isLoading ? '删除中' : '删除会议'}
-                        aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setShowOperationMenu(showOperationMenu === 'pending' ? null : 'pending');
+                          }}
+                          className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                        >
+                          <EllipsisVerticalIcon className="h-4 w-4" />
+                        </button>
+                        {showOperationMenu === 'pending' && (
+                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenMeetingInNewTab(selectedMeeting.id);
+                                setShowOperationMenu(null);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                            >
+                              <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-2" />
+                              在新标签页打开
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm('确定要删除此未开始会议吗？此操作不可撤销。')) {
+                                  deleteMutation.mutate(selectedMeeting.id);
+                                }
+                                setShowOperationMenu(null);
+                              }}
+                              disabled={deleteMutation.isLoading}
+                              className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                            >
+                              <TrashIcon className="h-4 w-4 mr-2" />
+                              删除会议
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </>
                   )}
                   {selectedMeeting.status === MeetingStatus.ACTIVE && (
-                    <>
+                    <div className="relative">
                       <button
-                        onClick={() => pauseMutation.mutate(selectedMeeting.id)}
-                        disabled={pauseMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                        title={pauseMutation.isLoading ? '暂停中' : '暂停会议'}
-                        aria-label={pauseMutation.isLoading ? '暂停中' : '暂停会议'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOperationMenu(showOperationMenu === 'active' ? null : 'active');
+                        }}
+                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
                       >
-                        <PauseIcon className="h-4 w-4" />
+                        <EllipsisVerticalIcon className="h-4 w-4" />
                       </button>
-                      <button
-                        onClick={() => endMutation.mutate(selectedMeeting.id)}
-                        disabled={endMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                        title={endMutation.isLoading ? '结束中' : '结束会议'}
-                        aria-label={endMutation.isLoading ? '结束中' : '结束会议'}
-                      >
-                        <StopIcon className="h-4 w-4" />
-                      </button>
-                    </>
+                      {showOperationMenu === 'active' && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMeetingInNewTab(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-2" />
+                            在新标签页打开
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pauseMutation.mutate(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={pauseMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <PauseIcon className="h-4 w-4 mr-2" />
+                            暂停会议
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              endMutation.mutate(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={endMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <StopIcon className="h-4 w-4 mr-2" />
+                            结束会议
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setShowOperationMenu(null);
+                              await handleStopAndDelete(selectedMeeting.id);
+                            }}
+                            disabled={endMutation.isLoading || deleteMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            停止并删除
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {selectedMeeting.status === MeetingStatus.PAUSED && (
-                    <>
+                    <div className="relative">
                       <button
-                        onClick={() => resumeMutation.mutate(selectedMeeting.id)}
-                        disabled={resumeMutation.isLoading}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOperationMenu(showOperationMenu === 'paused' ? null : 'paused');
+                        }}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700"
                       >
                         <PlayIcon className="h-4 w-4 mr-1" />
-                        {resumeMutation.isLoading ? '恢复中...' : '恢复会议'}
+                        继续
                       </button>
-                      <button
-                        onClick={() => endMutation.mutate(selectedMeeting.id)}
-                        disabled={endMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                        title={endMutation.isLoading ? '结束中' : '结束会议'}
-                        aria-label={endMutation.isLoading ? '结束中' : '结束会议'}
-                      >
-                        <StopIcon className="h-4 w-4" />
-                      </button>
-                    </>
+                      {showOperationMenu === 'paused' && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMeetingInNewTab(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-2" />
+                            在新标签页打开
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              resumeMutation.mutate(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={resumeMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <PlayIcon className="h-4 w-4 mr-2" />
+                            恢复会议
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              endMutation.mutate(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={endMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <StopIcon className="h-4 w-4 mr-2" />
+                            结束会议
+                          </button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setShowOperationMenu(null);
+                              await handleStopAndDelete(selectedMeeting.id);
+                            }}
+                            disabled={endMutation.isLoading || deleteMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            停止并删除
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {selectedMeeting.status === MeetingStatus.ENDED && (
-                    <>
+                    <div className="relative">
                       <button
-                        onClick={() => archiveMutation.mutate(selectedMeeting.id)}
-                        disabled={archiveMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                        title={archiveMutation.isLoading ? '归档中' : '归档会议'}
-                        aria-label={archiveMutation.isLoading ? '归档中' : '归档会议'}
-                      >
-                        <ArchiveBoxIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm('确定要删除此会议吗？此操作不可撤销。')) {
-                            deleteMutation.mutate(selectedMeeting.id);
-                          }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOperationMenu(showOperationMenu === 'ended' ? null : 'ended');
                         }}
-                        disabled={deleteMutation.isLoading}
-                        className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                        title={deleteMutation.isLoading ? '删除中' : '删除会议'}
-                        aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
+                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
                       >
-                        <TrashIcon className="h-4 w-4" />
+                        <EllipsisVerticalIcon className="h-4 w-4" />
                       </button>
-                    </>
+                      {showOperationMenu === 'ended' && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMeetingInNewTab(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-2" />
+                            在新标签页打开
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              archiveMutation.mutate(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={archiveMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <ArchiveBoxIcon className="h-4 w-4 mr-2" />
+                            归档会议
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('确定要删除此会议吗？此操作不可撤销。')) {
+                                deleteMutation.mutate(selectedMeeting.id);
+                              }
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={deleteMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            删除会议
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {selectedMeeting.status === MeetingStatus.ARCHIVED && (
-                    <button
-                      onClick={() => {
-                        if (window.confirm('确定要删除此已归档会议吗？此操作不可撤销。')) {
-                          deleteMutation.mutate(selectedMeeting.id);
-                        }
-                      }}
-                      disabled={deleteMutation.isLoading}
-                      className="inline-flex items-center justify-center h-9 w-9 border border-transparent rounded-md text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
-                      title={deleteMutation.isLoading ? '删除中' : '删除会议'}
-                      aria-label={deleteMutation.isLoading ? '删除中' : '删除会议'}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowOperationMenu(showOperationMenu === 'archived' ? null : 'archived');
+                        }}
+                        className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                      >
+                        <EllipsisVerticalIcon className="h-4 w-4" />
+                      </button>
+                      {showOperationMenu === 'archived' && (
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMeetingInNewTab(selectedMeeting.id);
+                              setShowOperationMenu(null);
+                            }}
+                            className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                          >
+                            <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-2" />
+                            在新标签页打开
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm('确定要删除此已归档会议吗？此操作不可撤销。')) {
+                                deleteMutation.mutate(selectedMeeting.id);
+                              }
+                              setShowOperationMenu(null);
+                            }}
+                            disabled={deleteMutation.isLoading}
+                            className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-gray-100 disabled:opacity-50 flex items-center"
+                          >
+                            <TrashIcon className="h-4 w-4 mr-2" />
+                            删除会议
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
+                  <button
+                    onClick={() => setIsOperationsCollapsed((prev) => !prev)}
+                    className="inline-flex items-center justify-center h-9 w-9 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50"
+                    title={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
+                    aria-label={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
+                  >
+                    {isOperationsCollapsed ? (
+                      <ChevronLeftIcon className="h-4 w-4" />
+                    ) : (
+                      <ChevronRightIcon className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
 
@@ -1453,20 +1656,8 @@ const Meetings: React.FC = () => {
                 className={`bg-white border-l border-gray-200 transition-all duration-200 ${isOperationsCollapsed ? 'w-12' : 'w-80'}`}
               >
                   <div className="h-full flex flex-col">
-                    <div className="h-12 border-b border-gray-200 flex items-center justify-between px-2">
+                    <div className="h-12 border-b border-gray-200 flex items-center px-2">
                       {!isOperationsCollapsed && <h3 className="text-sm font-semibold text-gray-900">会议操作区</h3>}
-                      <button
-                        onClick={() => setIsOperationsCollapsed((prev) => !prev)}
-                        className="inline-flex items-center justify-center h-8 w-8 rounded-md text-gray-600 hover:bg-gray-100"
-                        title={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
-                        aria-label={isOperationsCollapsed ? '展开操作区' : '折叠操作区'}
-                      >
-                        {isOperationsCollapsed ? (
-                          <ChevronLeftIcon className="h-4 w-4" />
-                        ) : (
-                          <ChevronRightIcon className="h-4 w-4" />
-                        )}
-                      </button>
                     </div>
 
                     {!isOperationsCollapsed && (

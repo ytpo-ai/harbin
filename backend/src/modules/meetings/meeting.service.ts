@@ -79,6 +79,8 @@ export class MeetingService {
   private readonly modelManagementAgentRole = 'model-management-specialist';
   private readonly meetingAgentStateKeyPrefix = 'meeting:agent-state';
   private readonly meetingAgentStateTtlSeconds = 90;
+  private readonly responseDedupWindowMs = 15000;
+  private readonly recentResponseKeys = new Map<string, number>();
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
@@ -159,6 +161,82 @@ export class MeetingService {
   private async clearAllMeetingAgentThinking(meetingId: string, reason: string): Promise<void> {
     const states = await this.getMeetingAgentStates(meetingId);
     await Promise.all(states.map((item) => this.setAgentState(meetingId, item.agentId, 'idle', { reason })));
+  }
+
+  private buildResponseDedupKey(meetingId: string, agentId: string, triggerMessage: MeetingMessage): string {
+    const triggerId = String(triggerMessage.id || '').trim();
+    if (triggerId) {
+      return `${meetingId}:${agentId}:${triggerId}`;
+    }
+
+    const fallback = [triggerMessage.senderId || '', triggerMessage.timestamp?.toISOString?.() || '', triggerMessage.content || '']
+      .join('|')
+      .slice(0, 300);
+    return `${meetingId}:${agentId}:${fallback}`;
+  }
+
+  private shouldProcessResponse(dedupKey: string): boolean {
+    const now = Date.now();
+    for (const [key, timestamp] of this.recentResponseKeys.entries()) {
+      if (now - timestamp > this.responseDedupWindowMs) {
+        this.recentResponseKeys.delete(key);
+      }
+    }
+
+    const existing = this.recentResponseKeys.get(dedupKey);
+    if (existing && now - existing <= this.responseDedupWindowMs) {
+      return false;
+    }
+
+    this.recentResponseKeys.set(dedupKey, now);
+    return true;
+  }
+
+  private buildDiscussionTaskDescription(triggerMessage: MeetingMessage): string {
+    const latestMessage = String(triggerMessage.content || '').replace(/\s+/g, ' ').trim();
+    if (!latestMessage) {
+      return '请对会议中的发言做出回应';
+    }
+
+    const maxLen = 180;
+    const excerpt = latestMessage.length > maxLen ? `${latestMessage.slice(0, maxLen)}...` : latestMessage;
+    return `请对会议中的发言做出回应。最新发言：${excerpt}`;
+  }
+
+  private buildMeetingTeamContext(
+    meeting: MeetingDocument,
+    triggerMessage: MeetingMessage,
+    participantProfiles: ParticipantContextProfile[],
+    organizationId?: string,
+  ) {
+    return {
+      meetingId: meeting.id,
+      organizationId,
+      initiatorId: triggerMessage.senderId,
+      meetingType: meeting.type,
+      meetingTitle: meeting.title,
+      meetingDescription: meeting.description,
+      agenda: meeting.agenda,
+      participants: meeting.participants.map((p) => p.participantId),
+      participantProfiles,
+    };
+  }
+
+  private async buildMeetingContextSystemPrompt(meeting: Meeting, agentId: string): Promise<string> {
+    const participantProfiles = await this.buildParticipantContextProfiles(meeting);
+    const participantSummary = this.formatParticipantContextSummary(participantProfiles);
+    const agentParticipant = meeting.participants.find(
+      (p) => p.participantId === agentId && p.participantType === 'agent',
+    );
+
+    return `你正在参加一个会议，会议标题是"${meeting.title}"。
+${meeting.description ? `会议描述：${meeting.description}` : ''}
+${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
+参与者：${meeting.participants.filter((p) => p.isPresent).length}人在场
+参会人详情：${participantSummary}
+你的角色：${agentParticipant?.role === ParticipantRole.HOST ? '主持人' : '参与者'}
+
+请根据会议上下文自然地参与讨论。保持专业、建设性的态度，发言要简洁明了。`;
   }
 
   private async getEmployeeOrThrow(employeeId: string) {
@@ -1049,6 +1127,7 @@ export class MeetingService {
     }
 
     await this.clearAllMeetingAgentThinking(meetingId, 'meeting_deleted');
+    await this.messagesService.deleteMessagesByScene('meeting', meetingId);
     await this.meetingModel.deleteOne({ id: meetingId }).exec();
     this.logger.log(`Meeting ${meetingId} deleted`);
   }
@@ -1608,7 +1687,11 @@ export class MeetingService {
       }
     }
 
-    const finalResponders = [...presentAgents, ...exclusiveAssistantResponders];
+    const finalResponders = Array.from(
+      new Map(
+        [...presentAgents, ...exclusiveAssistantResponders].map((participant) => [participant.participantId, participant] as const),
+      ).values(),
+    );
     if (finalResponders.length === 0) {
       if (mentionSet.size > 0 && exclusiveAssistantParticipants.length > 0) {
         await this.addSystemMessage(meetingId, '仅可 @ 自己的专属助理，或 @ 其他在场 Agent。');
@@ -1662,10 +1745,11 @@ export class MeetingService {
       const contextMessages = await this.buildDiscussionContext(meeting, agentId, triggerMessage);
 
       const participantProfiles = await this.buildParticipantContextProfiles(meeting);
+      const organizationId = await this.resolveMeetingOrganizationId(meeting, triggerMessage);
       
       const task = {
         title: `参与会议讨论: ${meeting.title}`,
-        description: '请对会议中的发言做出回应',
+        description: this.buildDiscussionTaskDescription(triggerMessage),
         type: 'discussion',
         priority: 'medium',
         status: 'in_progress',
@@ -1676,14 +1760,16 @@ export class MeetingService {
         updatedAt: new Date(),
       };
 
+      const responseDedupKey = this.buildResponseDedupKey(meetingId, agentId, triggerMessage);
+      if (!this.shouldProcessResponse(responseDedupKey)) {
+        this.logger.log(
+          `Skip duplicate meeting response generation: meetingId=${meetingId} agentId=${agentId} triggerMessageId=${triggerMessage.id || 'N/A'}`,
+        );
+        return;
+      }
+
       const response = await this.agentClientService.executeTask(agentId, task as any, {
-        teamContext: {
-          meetingType: meeting.type,
-          meetingTitle: meeting.title,
-          agenda: meeting.agenda,
-          participants: meeting.participants.map(p => p.participantId),
-          participantProfiles,
-        },
+        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
       });
 
       const messageType = this.analyzeMessageType(response);
@@ -1706,6 +1792,13 @@ export class MeetingService {
     }
   }
 
+  private async resolveMeetingOrganizationId(
+    meeting: MeetingDocument,
+    triggerMessage: MeetingMessage,
+  ): Promise<string | undefined> {
+    return undefined;
+  }
+
   /**
    * 构建讨论上下文
    */
@@ -1715,22 +1808,14 @@ export class MeetingService {
     triggerMessage: MeetingMessage
   ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
-    const agentParticipant = meeting.participants.find(
-      p => p.participantId === agentId && p.participantType === 'agent'
-    );
+
     const participantProfiles = await this.buildParticipantContextProfiles(meeting);
     const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
-    const participantSummary = this.formatParticipantContextSummary(participantProfiles);
+    const meetingContextPrompt = await this.buildMeetingContextSystemPrompt(meeting, agentId);
 
     messages.push({
       role: 'system',
-      content: `你正在参加一个会议，会议标题是"${meeting.title}"。
-${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
-参与者：${meeting.participants.filter(p => p.isPresent).length}人在场
-参会人详情：${participantSummary}
-你的角色：${agentParticipant?.role === ParticipantRole.HOST ? '主持人' : '参与者'}
-
-请根据会议上下文自然地参与讨论。保持专业、建设性的态度，发言要简洁明了。`,
+      content: meetingContextPrompt,
       timestamp: new Date(),
     });
 
@@ -1791,6 +1876,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const participantProfiles = await this.buildParticipantContextProfiles(meeting);
     const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
+    const meetingContextPrompt = await this.buildMeetingContextSystemPrompt(meeting, participant.id);
     const summary = recentMessages
       .map((m) => `${this.resolveMessageSenderDisplayName(m, participantNameLookup)}: ${m.content}`)
       .join('\n');
@@ -1805,17 +1891,36 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       status: 'in_progress',
       assignedAgents: [participant.id],
       teamId: meetingId,
-      messages: [{
-        role: 'user',
-        content: prompt,
-        timestamp: new Date(),
-      }],
+      messages: [
+        {
+          role: 'system',
+          content: meetingContextPrompt,
+          timestamp: new Date(),
+        },
+        {
+          role: 'user',
+          content: prompt,
+          timestamp: new Date(),
+        },
+      ],
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
     try {
-      const response = await this.agentClientService.executeTask(participant.id, task as any);
+      const triggerMessage: MeetingMessage = {
+        id: uuidv4(),
+        senderId: 'system',
+        senderType: 'system',
+        content: prompt,
+        type: 'introduction',
+        timestamp: new Date(),
+      };
+
+      const organizationId = await this.resolveMeetingOrganizationId(meeting, triggerMessage);
+      const response = await this.agentClientService.executeTask(participant.id, task as any, {
+        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
+      });
       await this.sendMessage(meetingId, {
         senderId: participant.id,
         senderType: 'agent',

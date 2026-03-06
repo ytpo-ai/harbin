@@ -184,12 +184,11 @@ export class InvitationService {
 
     // 检查是否已经接受过
     const existingEmployee = await this.employeeModel.findOne({
-      organizationId: invitation.organizationId,
       email: dto.email.toLowerCase(),
     }).exec();
 
     if (existingEmployee) {
-      throw new ConflictException('该邮箱已是组织成员');
+      throw new ConflictException('该邮箱已是成员');
     }
 
     // 将邀请角色转换为员工角色
@@ -198,7 +197,6 @@ export class InvitationService {
     // 创建员工账户
     const employee = new this.employeeModel({
       id: uuidv4(),
-      organizationId: invitation.organizationId,
       type: EmployeeType.HUMAN,
       email: dto.email.toLowerCase(),
       name: dto.name,

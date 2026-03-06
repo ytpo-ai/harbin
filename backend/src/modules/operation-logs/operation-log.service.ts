@@ -120,7 +120,6 @@ export class OperationLogService {
         const human = humanMap.get(item.humanEmployeeId);
         return {
           id: item.id,
-          organizationId: item.organizationId,
           humanEmployeeId: item.humanEmployeeId,
           humanName: human?.name || '',
           humanEmail: human?.email || '',

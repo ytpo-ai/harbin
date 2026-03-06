@@ -146,16 +146,30 @@ interface OneToOneMeetingParams {
 class MeetingService {
   private isOneToOneMeeting(meeting: Meeting, employeeId: string, agentIds: string[]): boolean {
     const participants = meeting.participants || [];
-    const uniqueParticipants = Array.from(
-      new Set(participants.map((participant) => `${participant.participantType}:${participant.participantId}`)),
-    );
+    const normalizedKeys = participants.map((participant) => {
+      if (participant.participantType === 'employee') {
+        return `employee:${participant.participantId}`;
+      }
+
+      if (participant.isExclusiveAssistant && participant.assistantForEmployeeId) {
+        return `employee:${participant.assistantForEmployeeId}`;
+      }
+
+      return `agent:${participant.participantId}`;
+    });
+    const uniqueParticipants = Array.from(new Set(normalizedKeys));
 
     if (uniqueParticipants.length !== 2) {
       return false;
     }
 
     const hasEmployee = uniqueParticipants.includes(`employee:${employeeId}`);
-    const hasAgent = agentIds.some((agentId) => uniqueParticipants.includes(`agent:${agentId}`));
+    const hasAgent = participants.some(
+      (participant) =>
+        participant.participantType === 'agent' &&
+        agentIds.includes(participant.participantId) &&
+        !(participant.isExclusiveAssistant && participant.assistantForEmployeeId === employeeId),
+    );
 
     return (
       hasEmployee &&

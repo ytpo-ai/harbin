@@ -63,7 +63,6 @@
 
 - Dispatcher：`hook-dispatcher.service.ts`
 - 默认通道：
-  - 组织级：`agent-runtime:{organizationId}`
   - Agent 级：`agent-runtime:{agentId}`
 - 分发语义：at-least-once；消费者侧需按 `eventId` 去重，必要时结合 `(runId, sequence)` 做顺序校验。
 - outbox 流程：

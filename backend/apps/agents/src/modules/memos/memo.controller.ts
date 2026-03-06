@@ -4,7 +4,17 @@ import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
 import { EvaluationAggregationService } from './evaluation-aggregation.service';
 
-type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+type TaskSourceType = 'orchestration_task' | 'meeting_chat' | 'runtime_note';
+type TodoStatus =
+  | 'pending'
+  | 'queued'
+  | 'scheduled'
+  | 'running'
+  | 'success'
+  | 'failed'
+  | 'cancelled'
+  | 'in_progress'
+  | 'completed';
 
 @Controller('memos')
 export class MemoController {
@@ -109,13 +119,34 @@ export class MemoController {
   }
 
   @Post('todos/upsert')
-  async upsertTodo(@Body() body: { agentId: string; task: { id?: string; title?: string; description?: string } }) {
+  async upsertTodo(
+    @Body()
+    body: {
+      agentId: string;
+      task: {
+        id?: string;
+        title?: string;
+        description?: string;
+        status?: TodoStatus;
+        note?: string;
+        sourceType?: TaskSourceType;
+        orchestrationId?: string;
+        priority?: 'low' | 'medium' | 'high';
+      };
+    },
+  ) {
     return this.memoService.upsertTaskTodo(body.agentId, body.task || {});
   }
 
   @Put('todos/:id/status')
-  async updateTodoStatus(@Param('id') id: string, @Body() body: { status: TodoStatus; note?: string }) {
-    return this.memoService.updateTodoStatus(id, body.status, body.note);
+  async updateTodoStatus(
+    @Param('id') id: string,
+    @Body() body: { status: TodoStatus; note?: string; taskId?: string; sourceType?: TaskSourceType },
+  ) {
+    return this.memoService.updateTodoStatus(id, body.status, body.note, {
+      taskId: body.taskId,
+      sourceType: body.sourceType,
+    });
   }
 
   @Get(':id/versions')

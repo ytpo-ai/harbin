@@ -20,15 +20,13 @@ export class EmployeeController {
     };
   }
 
-  @Get('organization/:organizationId')
+  @Get('organization')
   async getEmployeesByOrganization(
-    @Param('organizationId') organizationId: string,
     @Query('type') type?: EmployeeType,
     @Query('status') status?: EmployeeStatus,
     @Query('departmentId') departmentId?: string,
   ) {
     const employees = await this.employeeService.getEmployeesByOrganization(
-      organizationId,
       { type, status, departmentId }
     );
     return {
@@ -37,9 +35,9 @@ export class EmployeeController {
     };
   }
 
-  @Get('stats/:organizationId')
-  async getEmployeeStats(@Param('organizationId') organizationId: string) {
-    const stats = await this.employeeService.getEmployeeStats(organizationId);
+  @Get('stats')
+  async getEmployeeStats() {
+    const stats = await this.employeeService.getEmployeeStats();
     return {
       success: true,
       data: stats,

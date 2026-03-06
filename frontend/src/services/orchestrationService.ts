@@ -32,6 +32,12 @@ export interface OrchestrationTask {
     error?: string;
   };
   sessionId?: string;
+  runLogs?: Array<{
+    timestamp: string;
+    level: 'info' | 'warn' | 'error';
+    message: string;
+    metadata?: Record<string, unknown>;
+  }>;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,6 +79,34 @@ export interface AgentSession {
     timestamp: string;
     metadata?: Record<string, unknown>;
   }>;
+  memoSnapshot?: {
+    agentId: string;
+    refreshedAt: string;
+    identity: Array<{
+      id: string;
+      memoKind: 'identity' | 'todo' | 'topic';
+      title: string;
+      slug?: string;
+      content: string;
+      updatedAt?: string;
+    }>;
+    todo: Array<{
+      id: string;
+      memoKind: 'identity' | 'todo' | 'topic';
+      title: string;
+      slug?: string;
+      content: string;
+      updatedAt?: string;
+    }>;
+    topic: Array<{
+      id: string;
+      memoKind: 'identity' | 'todo' | 'topic';
+      title: string;
+      slug?: string;
+      content: string;
+      updatedAt?: string;
+    }>;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -138,6 +172,25 @@ export const orchestrationService = {
     run: { accepted: boolean; planId: string; status: string; alreadyRunning?: boolean };
   }> {
     const response = await api.post(`/orchestration/tasks/${taskId}/retry`);
+    return response.data;
+  },
+
+  async updateTaskDraft(
+    taskId: string,
+    payload: { title?: string; description?: string },
+  ): Promise<OrchestrationTask> {
+    const response = await api.post(`/orchestration/tasks/${taskId}/draft`, payload);
+    return response.data;
+  },
+
+  async debugTaskStep(
+    taskId: string,
+    payload: { title?: string; description?: string; resetResult?: boolean },
+  ): Promise<{
+    task: OrchestrationTask;
+    execution: { status: TaskStatus; result?: string; error?: string };
+  }> {
+    const response = await api.post(`/orchestration/tasks/${taskId}/debug-run`, payload);
     return response.data;
   },
 

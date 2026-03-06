@@ -6,7 +6,6 @@ import Dashboard from './pages/Dashboard';
 import Models from './pages/Models';
 import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
-import Tasks from './pages/Tasks';
 import Tools from './pages/Tools';
 import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
@@ -60,7 +59,6 @@ function App() {
             <Route path="/organization" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
             <Route path="/agents/:agentId" element={<ProtectedRoute><AgentDetail /></ProtectedRoute>} />
-            <Route path="/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute><Tools /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
             <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />

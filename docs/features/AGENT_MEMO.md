@@ -1,27 +1,60 @@
 # Agent Memo（长期记忆）
 
-## 目标
+## 1. 功能设计
+
+### 1.1 目标
 
 - 为 agent 提供长期记忆能力，沉淀简历、TODO、历史任务、草稿与主题知识。
 - Memo 更新支持自动版本快照，主文档维护 `version` 递增。
 - 使用 Redis 聚合缓存 + MongoDB 持久化 + Markdown 文档三层协同。
 - 任务执行时按需优先读取 Redis（`memo:{agentId}:{memoKind}`），缓存缺失时回源 DB 并回填。
-- **新增**：自动聚合 Agent 简历（Identity）和工作评估（Evaluation）文档
+- 自动聚合 Agent 简历（Identity）和工作评估（Evaluation）文档
 
-## 数据结构
+### 1.2 数据结构
 
-- `memoKind`: `identity | todo | topic | history | draft | custom | evaluation`
-- `memoType`: `knowledge | standard`
-- `payload`: Object（专用扩展字段，如 `topic/taskId/status/toolCalls/period/sources`）
-- 核心字段：`agentId`, `slug`, `title`, `content`, `version`, `tags`, `contextKeywords`, `source`
+```typescript
+// Schema 定义: backend/apps/agents/src/schemas/agent-memo.schema.ts
+type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
+type MemoType = 'knowledge' | 'standard';
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `id` | string | 唯一标识 (UUID) |
+| `agentId` | string | 关联的 Agent ID |
+| `memoKind` | MemoKind | 备忘录类型 |
+| `memoType` | MemoType | 备忘录子类型 |
+| `title` | string | 标题 |
+| `slug` | string | 稳定 URL |
+| `content` | string | 内容 (Markdown) |
+| `version` | number | 版本号 |
+| `payload` | Object | 扩展字段 (topic/taskId/status/toolCalls/period/sources) |
+| `tags` | string[] | 标签 |
+| `contextKeywords` | string[] | 上下文关键词 |
+| `source` | string | 来源 |
+
 - 版本表：`AgentMemoVersion(memoId, version, content, changeNote, createdAt)`
 
-## 文档类型
+### 1.3 文档类型
 
-### Identity（简历）
+#### 标准备忘录 vs 主题备忘录
+
+| 分类 | memoKind | memoType | 说明 |
+|------|----------|----------|------|
+| **标准** | `identity` | standard | Agent 动态简历（角色、技能、任务履历） |
+| **标准** | `todo` | standard | 任务清单（状态追踪） |
+| **标准** | `history` | standard | 历史任务记录 |
+| **标准** | `draft` | standard | 草稿 |
+| **标准** | `evaluation` | standard | 工作绩效评估（工具使用、SLA指标） |
+| **标准** | `custom` | standard | 自定义 |
+| **主题** | `topic` | knowledge | 主题知识积累（按主题归类的运行时事件聚合） |
+
+> 注：`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation` 时，系统自动设置 `memoType = 'standard'`。
+
+#### Identity（简历）
 
 - **用途**：Agent 的动态简历，包含角色、技能、任务履历等
-- **数据源**：Agent 表、AgentSkill 表、OrchestrationTask 表
+- **数据源**：Agent 表、AgentSkill 表、Skill 表、OrchestrationTask 表
 - **更新触发**：`agent.updated`、`agent.skill_changed`、定时任务
 - **内容模板**：
   - Agent Profile（角色、类型、描述）
@@ -30,82 +63,175 @@
   - 工作风格（人格特质、学习能力）
   - 任务履历（近30天统计、最近完成任务）
 
-### Evaluation（工作评估）
+#### Evaluation（工作评估）
 
 - **用途**：Agent 的工作绩效评估，包含工具使用、SLA指标等
 - **数据源**：AgentRun 表、AgentPart 表
-- **更新触发**：`task.completed`、定时任务
+- **更新触发**：`task.completed`、定时任务、每月周期
 - **内容模板**：
   - 工具使用统计（使用次数、成功率）
   - SLA 响应指标（完成率、平均响应时间）
-  - 质量指标
 
-### TODO
+#### TODO
 
-- 任务清单管理
-- 状态追踪：pending / in_progress / completed / cancelled
+- 只记录任务编排（orchestration）中的未执行任务，不记录会议聊天内容。
+- 仅接收 `sourceType=orchestration_task` 的任务事件；`meeting_chat` 事件默认拒绝写入。
+- 视图口径：`pending` / `queued` / `scheduled`（尚未进入执行态）。
+- API: `POST /api/memos/todos/upsert`, `PUT /api/memos/todos/:id/status`
 
-### Topic（主题积累）
+#### History
+
+- 记录已执行的编排任务及状态轨迹（开始执行后到终态）。
+- 视图口径：`running` / `success` / `failed` / `cancelled`。
+- `todo` 中任务一旦进入执行态（如 `running`）即自动出队，并进入 `history` 聚合域。
+
+#### Topic（主题积累）
 
 - 按主题归类的运行时事件聚合
 - 自动从 Redis 事件流聚合
 
-## API（agents service）
+### 1.4 API（agents service）
 
-- `GET /api/memos`：分页查询
-- `POST /api/memos/search`：按 agent + query 检索（支持渐进摘要）
-- `GET /api/memos/:id/versions`：查看 memo 版本历史
-- `POST /api/memos/behavior`：写入 Redis 事件流（不直接落库）
-- `POST /api/memos/todos/upsert`：创建或更新任务 TODO
-- `PUT /api/memos/todos/:id/status`：更新 TODO 状态
-- `POST /api/memos/events/flush`：手动触发 Redis 聚合入库
-- `GET /api/memos/aggregation/status`：查看 Redis 队列与聚合可观测状态
-- `POST /api/memos/docs/rebuild`：重建 Markdown 索引
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/api/memos` | 分页查询备忘录 |
+| POST | `/api/memos/search` | 按 agent + query 检索（支持渐进摘要） |
+| POST | `/api/memos` | 创建备忘录 |
+| PUT | `/api/memos/:id` | 更新备忘录 |
+| DELETE | `/api/memos/:id` | 删除备忘录 |
+| GET | `/api/memos/:id/versions` | 查看版本历史 |
+| POST | `/api/memos/behavior` | 写入 Redis 事件流（不直接落库） |
+| POST | `/api/memos/todos/upsert` | 创建/更新 TODO |
+| PUT | `/api/memos/todos/:id/status` | 更新 TODO 状态 |
+| POST | `/api/memos/events/flush` | 触发 Redis 聚合入库 |
+| GET | `/api/memos/aggregation/status` | 查看聚合状态 |
+| POST | `/api/memos/identity/aggregate` | 手动触发 Identity 聚合 |
+| POST | `/api/memos/evaluation/aggregate` | 手动触发 Evaluation 聚合 |
+| POST | `/api/memos/docs/rebuild` | 重建 Markdown 索引 |
 
-## MCP 工具
+### 1.5 MCP 工具
 
 - `memo_mcp_search`：检索记忆（可返回摘要或全文）
 - `memo_mcp_append`：追加记忆条目（新建或追加到已有 memo）
 
-## 聚合机制
+### 1.6 聚合机制
 
-### 事件驱动
+#### 事件驱动
 
 - Redis key：`memo:event:{agentId}`
 - Redis 缓存 key：`memo:{agentId}:{memoKind}`
 - Redis 刷新队列 key：`memo:refresh:queue:{agentId}`
 - 定时器：`MemoAggregationService` 每 `MEMO_AGGREGATION_INTERVAL_MS`（默认 60s）聚合
 
-### 聚合服务
+#### TODO/History 聚合边界
 
-- **IdentityAggregationService**：聚合 Agent 简历
-  - 从 Agent 表获取基础信息
-  - 从 AgentSkill + Skill 表获取技能矩阵
-  - 从 OrchestrationTask 表获取任务履历
-- **EvaluationAggregationService**：聚合工作评估
-  - 从 AgentRun 表获取 SLA 指标
-  - 从 AgentPart 表获取工具使用统计
+- 聚合主键：`taskId`（必要时追加 `orchestrationId` 作为复合键）。
+- 幂等键：`taskId + eventSeq`（或 `taskId + updatedAt`）用于去重与乱序保护。
+- 路由规则：
+  - `todo`：仅保留未执行状态的最新快照。
+  - `history`：保存进入执行后的状态事件流与最终状态快照。
+- 内容过滤：聊天类事件不进入 `todo/history` 的任务聚合管道。
 
-### 触发事件
+#### 触发事件
 
 - `agent.updated` - Agent 基础信息变更
 - `agent.skill_changed` - 技能绑定变更
 - `task.completed` / `orchestration.task_completed` - 任务完成
 - 定时全量聚合（默认每天）
 
-### 聚合结果
+#### 聚合结果
 
 - Identity：`docs/memos/<agentId>/identity/identity-and-responsibilities.md`
 - Evaluation：`docs/memos/<agentId>/evaluation/evaluation-<period>.md`
 - Topic：按 `agent + topic` 归并到 `topic-*.md`
-- 核心固定文档：`identity-and-responsibilities.md`、`todo-list.md`
 
-## 文档落盘
+#### 文档落盘
 
 - 目录：`docs/memos/<agentId>/<memoKind>/<slug>.md`
 - 索引：`docs/memos/README.md`
 
-## 前端管理
+---
 
-- 备忘录管理页默认只读查询，不提供手工创建入口。
-- 页面内置"备忘录测试"右侧抽屉：可选择 agent 对话，并持续监测备忘录变化与聚合状态。
+## 2. 相关文档
+
+### 规划文档 (docs/plan/)
+
+| 文件 | 说明 |
+|------|------|
+| `AGENT_MEMO_REDESIGN_PLAN.md` | 备忘录重构计划（已合并到开发总结） |
+| `AGENT_MEMO_MCP_PLAN.md` | 备忘录 MCP 工具计划 |
+| `TODO_HISTORY_MEMO_AGGREGATION_OPTIMIZATION_PLAN.md` | TODO/History 内容与聚合优化计划 |
+| `AGENT_DETAIL_TABS_MEMO_LOG_PLAN.md` | Agent详情页备忘录/日志Tab计划 |
+| `AGENTSESSION_MEMO_SNAPSHOT_PLAN.md` | AgentSession memo快照计划 |
+| `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_PLAN.md` | Identity/Evaluation开发计划 |
+
+### 开发总结 (docs/development/)
+
+| 文件 | 说明 |
+|------|------|
+| `AGENT_MEMO_REDESIGN_PLAN.md` | 备忘录重构开发总结 |
+| `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_SUMMARY.md` | Identity/Evaluation开发总结 |
+| `TODO_HISTORY_MEMO_AGGREGATION_OPTIMIZATION_PLAN.md` | TODO/History 内容与聚合优化开发总结 |
+
+### 技术文档 (docs/technical/, docs/features/)
+
+| 文件 | 说明 |
+|------|------|
+| `features/AGENT_MEMO.md` | 备忘录功能设计文档 |
+| `technical/AGENT_IDENTITY_EVALUATION_DESIGN.md` | Identity/Evaluation技术设计 |
+| `technical/TODO_HISTORY_MEMO_AGGREGATION_DESIGN.md` | TODO/History 任务聚合技术设计 |
+
+---
+
+## 3. 相关代码文件
+
+### 后端 (backend/apps/agents/src/)
+
+#### Schema 定义
+
+| 文件 | 功能 |
+|------|------|
+| `schemas/agent-memo.schema.ts` | AgentMemo 数据模型定义，包含 memoKind, memoType, payload 等字段 |
+| `schemas/agent-memo-version.schema.ts` | AgentMemoVersion 版本快照模型 |
+
+#### 核心服务
+
+| 文件 | 功能 |
+|------|------|
+| `modules/memos/memo.module.ts` | Memo 模块依赖注入配置 |
+| `modules/memos/memo.controller.ts` | REST API 控制器，处理所有 memo 相关请求 |
+| `modules/memos/memo.service.ts` | 核心业务逻辑，CRUD、搜索、版本管理 |
+| `modules/memos/memo.service.spec.ts` | 单元测试 |
+
+#### 聚合服务
+
+| 文件 | 功能 |
+|------|------|
+| `modules/memos/memo-aggregation.service.ts` | 聚合调度服务，管理定时/事件触发聚合 |
+| `modules/memos/identity-aggregation.service.ts` | Identity 简历聚合，从 Agent/Skill/Task 表聚合 |
+| `modules/memos/evaluation-aggregation.service.ts` | Evaluation 工作评估聚合，从 AgentRun/AgentPart 表聚合 |
+
+#### 辅助服务
+
+| 文件 | 功能 |
+|------|------|
+| `modules/memos/memo-event-bus.service.ts` | 事件总线，监听 agent.updated 等事件触发聚合 |
+| `modules/memos/memo-doc-sync.service.ts` | Markdown 文档同步，将 memo 落盘到 docs/ 目录 |
+
+#### 集成使用
+
+| 文件 | 功能 |
+|------|------|
+| `modules/runtime/runtime-persistence.service.ts` | 会话持久化时写入 memoSnapshot |
+| `modules/runtime/runtime-orchestrator.service.ts` | 运行时编排，任务完成触发 memo 事件 |
+| `modules/agents/agent.service.ts` | Agent 服务，部分操作触发 memo 聚合 |
+
+### 前端 (frontend/src/)
+
+| 文件 | 功能 |
+|------|------|
+| `pages/Memos.tsx` | 备忘录管理页面 |
+| `pages/AgentDetail.tsx` | Agent详情页（包含备忘录标签页） |
+| `services/memoService.ts` | Memo API 调用服务 |
+| `services/orchestrationService.ts` | 包含 memoSnapshot 类型定义 |
+| `types/index.ts` | Memo 相关 TypeScript 类型定义 |

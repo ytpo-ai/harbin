@@ -12,7 +12,50 @@ const REFRESH_KEY_PREFIX = 'memo:refresh:queue';
 const EVENT_QUEUE_TTL_SECONDS = 7 * 24 * 3600;
 const EVENT_QUEUE_MAX = 1000;
 
-type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+type TaskSourceType = 'orchestration_task' | 'meeting_chat' | 'runtime_note';
+
+type TaskStatus =
+  | 'pending'
+  | 'queued'
+  | 'scheduled'
+  | 'running'
+  | 'success'
+  | 'failed'
+  | 'cancelled'
+  | 'in_progress'
+  | 'completed';
+
+type NormalizedTaskStatus = 'pending' | 'queued' | 'scheduled' | 'running' | 'success' | 'failed' | 'cancelled';
+
+interface TodoTaskItem {
+  taskId: string;
+  title: string;
+  description?: string;
+  status: 'pending' | 'queued' | 'scheduled';
+  orchestrationId?: string;
+  priority?: 'low' | 'medium' | 'high';
+  sourceType: 'orchestration_task';
+  updatedAt: string;
+  note?: string;
+}
+
+interface HistoryTaskItem {
+  taskId: string;
+  title: string;
+  description?: string;
+  orchestrationId?: string;
+  priority?: 'low' | 'medium' | 'high';
+  sourceType: 'orchestration_task';
+  startedAt?: string;
+  finishedAt?: string;
+  finalStatus?: 'success' | 'failed' | 'cancelled';
+  currentStatus: 'running' | 'success' | 'failed' | 'cancelled';
+  statusTimeline: Array<{ status: 'running' | 'success' | 'failed' | 'cancelled'; at: string; note?: string }>;
+  updatedAt: string;
+}
+
+const TODO_ACTIVE_STATUSES: ReadonlySet<NormalizedTaskStatus> = new Set(['pending', 'queued', 'scheduled']);
+const HISTORY_STATUSES: ReadonlySet<NormalizedTaskStatus> = new Set(['running', 'success', 'failed', 'cancelled']);
 
 interface CreateMemoInput {
   agentId: string;
@@ -311,7 +354,19 @@ export class MemoService {
     return { queued: true, key, eventId: event.id };
   }
 
-  async upsertTaskTodo(agentId: string, task: { id?: string; title?: string; description?: string }): Promise<AgentMemo> {
+  async upsertTaskTodo(
+    agentId: string,
+    task: {
+      id?: string;
+      title?: string;
+      description?: string;
+      status?: TaskStatus;
+      note?: string;
+      sourceType?: TaskSourceType;
+      orchestrationId?: string;
+      priority?: 'low' | 'medium' | 'high';
+    },
+  ): Promise<AgentMemo> {
     const normalizedAgentId = String(agentId || '').trim();
     if (!normalizedAgentId) throw new BadRequestException('agentId is required');
     await this.ensureCoreDocuments(normalizedAgentId);
@@ -319,68 +374,185 @@ export class MemoService {
     const taskId = String(task?.id || uuidv4()).trim();
     const title = String(task?.title || 'Untitled task').trim();
     const description = String(task?.description || '').trim();
+    const sourceType = this.normalizeTaskSourceType(task?.sourceType);
+    if (sourceType !== 'orchestration_task') {
+      throw new BadRequestException(`todo only accepts sourceType=orchestration_task, received ${sourceType}`);
+    }
+
+    const status = this.normalizeTaskStatus(task?.status);
+    const nowIso = new Date().toISOString();
+
+    if (HISTORY_STATUSES.has(status)) {
+      if (!this.isHistoryStatus(status)) {
+        throw new BadRequestException(`invalid history status: ${status}`);
+      }
+      return this.upsertTaskHistory({
+        agentId: normalizedAgentId,
+        taskId,
+        title,
+        description,
+        status,
+        note: task?.note,
+        sourceType,
+        orchestrationId: task?.orchestrationId,
+        priority: task?.priority,
+        at: nowIso,
+      });
+    }
+    if (!this.isTodoActiveStatus(status)) {
+      throw new BadRequestException(`invalid todo status: ${status}`);
+    }
+
     const todoDoc = await this.getOrCreateTodoDocument(normalizedAgentId);
-    const nextContent = this.mergeTodoItem(todoDoc.content || '', {
+    const todoItems = this.readTodoItems(todoDoc.payload);
+    const nextTodoItems = this.upsertTodoItem(todoItems, {
       taskId,
       title,
       description,
-      status: 'in_progress',
-      note: '',
+      status,
+      orchestrationId: task?.orchestrationId,
+      priority: task?.priority,
+      sourceType,
+      updatedAt: nowIso,
+      note: task?.note,
     });
 
     return this.updateMemo(todoDoc.id, {
       memoKind: 'todo',
       memoType: 'standard',
       title: todoDoc.title,
-      content: nextContent,
+      content: this.renderTodoContent(nextTodoItems),
       payload: {
         ...((todoDoc.payload as Record<string, any>) || {}),
-        status: 'in_progress',
+        status,
+        sourceType,
+        tasks: nextTodoItems,
       },
       tags: this.uniqueStrings([...(todoDoc.tags || []), 'task', 'todo']),
       contextKeywords: this.uniqueStrings([...(todoDoc.contextKeywords || []), ...this.extractKeywords(`${title} ${description}`)]),
     });
   }
 
-  async updateTodoStatus(id: string, status: TodoStatus, note?: string): Promise<AgentMemo> {
+  async updateTodoStatus(
+    id: string,
+    status: TaskStatus,
+    note?: string,
+    options?: { taskId?: string; sourceType?: TaskSourceType },
+  ): Promise<AgentMemo> {
     const todoDoc = await this.memoModel.findOne({ id, memoKind: 'todo' }).exec();
     if (!todoDoc) throw new NotFoundException(`TODO memo not found: ${id}`);
-    const nextContent = this.appendTodoStatusNote(todoDoc.content || '', status, note);
+
+    const sourceType = this.normalizeTaskSourceType(options?.sourceType);
+    if (sourceType !== 'orchestration_task') {
+      throw new BadRequestException(`todo status update only accepts sourceType=orchestration_task, received ${sourceType}`);
+    }
+
+    const normalizedStatus = this.normalizeTaskStatus(status);
+    const todoItems = this.readTodoItems(todoDoc.payload);
+    const targetTaskId = String(options?.taskId || '').trim() || todoItems[0]?.taskId;
+
+    if (!targetTaskId) {
+      throw new BadRequestException('taskId is required when updating todo status');
+    }
+
+    const targetTask = todoItems.find((item) => item.taskId === targetTaskId);
+    if (!targetTask) {
+      throw new NotFoundException(`TODO task not found in memo ${id}: ${targetTaskId}`);
+    }
+
+    if (HISTORY_STATUSES.has(normalizedStatus)) {
+      if (!this.isHistoryStatus(normalizedStatus)) {
+        throw new BadRequestException(`invalid history status: ${normalizedStatus}`);
+      }
+      await this.upsertTaskHistory({
+        agentId: todoDoc.agentId,
+        taskId: targetTask.taskId,
+        title: targetTask.title,
+        description: targetTask.description,
+        status: normalizedStatus,
+        note,
+        sourceType,
+        orchestrationId: targetTask.orchestrationId,
+        priority: targetTask.priority,
+      });
+
+      const nextTodoItems = todoItems.filter((item) => item.taskId !== targetTaskId);
+      return this.updateMemo(id, {
+        memoKind: 'todo',
+        memoType: 'standard',
+        payload: {
+          ...((todoDoc.payload as Record<string, any>) || {}),
+          status: nextTodoItems[0]?.status || 'pending',
+          sourceType,
+          tasks: nextTodoItems,
+        },
+        content: this.renderTodoContent(nextTodoItems),
+      });
+    }
+
+    if (!this.isTodoActiveStatus(normalizedStatus)) {
+      throw new BadRequestException(`invalid todo status: ${normalizedStatus}`);
+    }
+
+    const nextTodoItems = this.upsertTodoItem(todoItems, {
+      ...targetTask,
+      status: normalizedStatus,
+      updatedAt: new Date().toISOString(),
+      note,
+    });
+
     return this.updateMemo(id, {
       memoKind: 'todo',
       memoType: 'standard',
       payload: {
         ...((todoDoc.payload as Record<string, any>) || {}),
-        status,
+        status: normalizedStatus,
+        sourceType,
+        tasks: nextTodoItems,
       },
-      content: nextContent,
+      content: this.renderTodoContent(nextTodoItems),
     });
   }
 
-  async completeTaskTodo(agentId: string, taskId?: string, note?: string): Promise<void> {
+  async completeTaskTodo(
+    agentId: string,
+    taskId?: string,
+    note?: string,
+    status: 'success' | 'failed' | 'cancelled' = 'success',
+  ): Promise<void> {
     const normalizedAgentId = String(agentId || '').trim();
     const normalizedTaskId = String(taskId || '').trim();
     if (!normalizedAgentId || !normalizedTaskId) return;
 
     const todoDoc = await this.memoModel.findOne({ agentId: normalizedAgentId, memoKind: 'todo' }).exec();
-    if (!todoDoc) return;
+    const todoItems = todoDoc ? this.readTodoItems(todoDoc.payload) : [];
+    const existingTodoTask = todoItems.find((item) => item.taskId === normalizedTaskId);
 
-    const nextContent = this.mergeTodoItem(todoDoc.content || '', {
+    await this.upsertTaskHistory({
+      agentId: normalizedAgentId,
       taskId: normalizedTaskId,
-      title: '',
-      description: '',
-      status: 'completed',
-      note: note || '',
+      title: existingTodoTask?.title || `Task ${normalizedTaskId}`,
+      description: existingTodoTask?.description,
+      status,
+      note,
+      sourceType: 'orchestration_task',
+      orchestrationId: existingTodoTask?.orchestrationId,
+      priority: existingTodoTask?.priority,
     });
 
+    if (!todoDoc) return;
+
+    const nextTodoItems = todoItems.filter((item) => item.taskId !== normalizedTaskId);
     await this.updateMemo(todoDoc.id, {
       memoKind: 'todo',
       memoType: 'standard',
       payload: {
         ...((todoDoc.payload as Record<string, any>) || {}),
-        status: 'completed',
+        status: nextTodoItems[0]?.status || 'pending',
+        sourceType: 'orchestration_task',
+        tasks: nextTodoItems,
       },
-      content: nextContent,
+      content: this.renderTodoContent(nextTodoItems),
     });
   }
 
@@ -422,6 +594,16 @@ export class MemoService {
           `${idx + 1}. [${item.memoKind}] ${item.title} | topic=${item.topic || 'N/A'} | summary=${item.summary || ''}`,
       )
       .join('\n');
+  }
+
+  async getIdentityMemos(agentId: string): Promise<AgentMemo[]> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) return [];
+    return (await this.memoModel
+      .find({ agentId: normalizedAgentId, memoKind: 'identity' })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .exec()) as unknown as AgentMemo[];
   }
 
   async enqueueRefreshTask(payload: {
@@ -773,7 +955,7 @@ export class MemoService {
 
   private async getOrCreateTodoDocument(agentId: string): Promise<AgentMemo> {
     const slug = this.buildStableSlug('todo', 'TODO List');
-    const doc = await this.memoModel.findOne({ agentId, slug }).exec();
+    const doc = await this.memoModel.findOne({ agentId, memoKind: 'todo' }).exec();
     if (doc) return doc as unknown as AgentMemo;
     return this.createMemo({
       agentId,
@@ -785,6 +967,8 @@ export class MemoService {
       payload: {
         topic: 'todo',
         status: 'pending',
+        sourceType: 'orchestration_task',
+        tasks: [],
       },
       tags: ['todo'],
       contextKeywords: ['task', 'todo'],
@@ -792,35 +976,267 @@ export class MemoService {
     });
   }
 
-  private mergeTodoItem(
-    markdown: string,
-    payload: { taskId: string; title: string; description: string; status: TodoStatus; note: string },
-  ): string {
-    const current = markdown || '# TODO List\n\n## Tasks\n';
-    const lines = current.split('\n');
-    const withoutSameTask = lines.filter((line) => !line.includes(`(taskId:${payload.taskId})`));
-    const title = payload.title || `Task ${payload.taskId}`;
-    const statusBox = payload.status === 'completed' ? 'x' : ' ';
-    const detailParts = [`taskId:${payload.taskId}`, `status:${payload.status}`, `updated:${new Date().toISOString()}`];
-    if (payload.note) detailParts.push(`note:${this.compact(payload.note, 80)}`);
-    const desc = payload.description ? ` - ${this.compact(payload.description, 120)}` : '';
-    const entry = `- [${statusBox}] ${title}${desc} (${detailParts.join(' ')})`;
-
-    const insertIndex = withoutSameTask.findIndex((line) => line.trim().toLowerCase() === '## tasks');
-    if (insertIndex >= 0) {
-      withoutSameTask.splice(insertIndex + 1, 0, '', entry);
-    } else {
-      withoutSameTask.push('', '## Tasks', '', entry);
-    }
-
-    const result = withoutSameTask.join('\n').replace(/- No tasks yet\.\n?/g, '');
-    return result.trim() + '\n';
+  private async getOrCreateHistoryDocument(agentId: string): Promise<AgentMemo> {
+    const slug = this.buildStableSlug('history', 'History Log');
+    const doc = await this.memoModel.findOne({ agentId, memoKind: 'history' }).exec();
+    if (doc) return doc as unknown as AgentMemo;
+    return this.createMemo({
+      agentId,
+      memoKind: 'history',
+      memoType: 'standard',
+      title: 'History Log',
+      slug,
+      content: '# History Log\n\n## Executed Tasks\n\n- No executed tasks yet.',
+      payload: {
+        topic: 'history',
+        sourceType: 'orchestration_task',
+        tasks: [],
+      },
+      tags: ['history', 'task'],
+      contextKeywords: ['history', 'task', 'status'],
+      source: 'system-seed',
+    });
   }
 
-  private appendTodoStatusNote(content: string, status: TodoStatus, note?: string): string {
-    const marker = `- status-update: ${status} @ ${new Date().toISOString()}`;
-    const detail = note?.trim() ? `${marker} | ${note.trim()}` : marker;
-    return `${content.trim()}\n\n## Status Updates\n\n${detail}\n`;
+  private async upsertTaskHistory(payload: {
+    agentId: string;
+    taskId: string;
+    title: string;
+    description?: string;
+    status: 'running' | 'success' | 'failed' | 'cancelled';
+    note?: string;
+    sourceType: 'orchestration_task';
+    orchestrationId?: string;
+    priority?: 'low' | 'medium' | 'high';
+    at?: string;
+  }): Promise<AgentMemo> {
+    const historyDoc = await this.getOrCreateHistoryDocument(payload.agentId);
+    const historyItems = this.readHistoryItems(historyDoc.payload);
+    const at = payload.at || new Date().toISOString();
+    const existing = historyItems.find((item) => item.taskId === payload.taskId);
+
+    const timelineEntry = {
+      status: payload.status,
+      at,
+      note: payload.note ? this.compact(payload.note, 200) : undefined,
+    } as const;
+
+    const nextItem: HistoryTaskItem = {
+      taskId: payload.taskId,
+      title: payload.title,
+      description: payload.description,
+      orchestrationId: payload.orchestrationId,
+      priority: payload.priority,
+      sourceType: payload.sourceType,
+      startedAt: existing?.startedAt || (payload.status === 'running' ? at : undefined),
+      finishedAt:
+        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
+          ? at
+          : existing?.finishedAt,
+      finalStatus:
+        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
+          ? payload.status
+          : existing?.finalStatus,
+      currentStatus: payload.status,
+      statusTimeline: this.dedupeTimeline([...(existing?.statusTimeline || []), timelineEntry]),
+      updatedAt: at,
+    };
+
+    if (!nextItem.startedAt) {
+      const runningAt = nextItem.statusTimeline.find((item) => item.status === 'running')?.at;
+      nextItem.startedAt = runningAt || at;
+    }
+
+    const nextItems = [nextItem, ...historyItems.filter((item) => item.taskId !== payload.taskId)].slice(0, 500);
+
+    return this.updateMemo(historyDoc.id, {
+      memoKind: 'history',
+      memoType: 'standard',
+      title: historyDoc.title,
+      content: this.renderHistoryContent(nextItems),
+      payload: {
+        ...((historyDoc.payload as Record<string, any>) || {}),
+        topic: 'history',
+        sourceType: payload.sourceType,
+        status: payload.status,
+        tasks: nextItems,
+      },
+      tags: this.uniqueStrings([...(historyDoc.tags || []), 'history', 'task']),
+      contextKeywords: this.uniqueStrings([
+        ...(historyDoc.contextKeywords || []),
+        ...this.extractKeywords(`${payload.title} ${payload.description || ''} ${payload.status}`),
+      ]),
+    });
+  }
+
+  private readTodoItems(payload: Record<string, any> | undefined): TodoTaskItem[] {
+    const items = Array.isArray(payload?.tasks) ? payload.tasks : [];
+    const normalized: TodoTaskItem[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const taskId = String(item.taskId || '').trim();
+      if (!taskId) continue;
+      const status = this.normalizeTaskStatus(item.status);
+      if (!TODO_ACTIVE_STATUSES.has(status)) continue;
+      if (!this.isTodoActiveStatus(status)) continue;
+      normalized.push({
+        taskId,
+        title: String(item.title || `Task ${taskId}`).trim(),
+        description: item.description ? String(item.description) : undefined,
+        status,
+        orchestrationId: item.orchestrationId ? String(item.orchestrationId) : undefined,
+        priority: this.normalizePriority(item.priority),
+        sourceType: 'orchestration_task',
+        updatedAt: String(item.updatedAt || new Date(0).toISOString()),
+        note: item.note ? String(item.note) : undefined,
+      });
+    }
+    return normalized.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  private readHistoryItems(payload: Record<string, any> | undefined): HistoryTaskItem[] {
+    const items = Array.isArray(payload?.tasks) ? payload.tasks : [];
+    const normalized: HistoryTaskItem[] = [];
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+      const taskId = String(item.taskId || '').trim();
+      if (!taskId) continue;
+      const status = this.normalizeTaskStatus(item.currentStatus || item.finalStatus || item.status);
+      if (!HISTORY_STATUSES.has(status)) continue;
+      if (!this.isHistoryStatus(status)) continue;
+      const timeline = Array.isArray(item.statusTimeline)
+        ? item.statusTimeline
+            .map((entry) => ({
+              status: this.normalizeTaskStatus(entry?.status) as 'running' | 'success' | 'failed' | 'cancelled',
+              at: String(entry?.at || ''),
+              note: entry?.note ? String(entry.note) : undefined,
+            }))
+            .filter((entry) => HISTORY_STATUSES.has(entry.status) && entry.at)
+        : [];
+
+      const normalizedFinalStatus = this.normalizeTaskStatus(item.finalStatus);
+      normalized.push({
+        taskId,
+        title: String(item.title || `Task ${taskId}`).trim(),
+        description: item.description ? String(item.description) : undefined,
+        orchestrationId: item.orchestrationId ? String(item.orchestrationId) : undefined,
+        priority: this.normalizePriority(item.priority),
+        sourceType: 'orchestration_task',
+        startedAt: item.startedAt ? String(item.startedAt) : undefined,
+        finishedAt: item.finishedAt ? String(item.finishedAt) : undefined,
+        finalStatus:
+          normalizedFinalStatus === 'success' || normalizedFinalStatus === 'failed' || normalizedFinalStatus === 'cancelled'
+            ? normalizedFinalStatus
+            : undefined,
+        currentStatus: status,
+        statusTimeline: this.dedupeTimeline(timeline),
+        updatedAt: String(item.updatedAt || new Date(0).toISOString()),
+      });
+    }
+    return normalized.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  private upsertTodoItem(items: TodoTaskItem[], next: TodoTaskItem): TodoTaskItem[] {
+    const merged = [next, ...items.filter((item) => item.taskId !== next.taskId)].slice(0, 500);
+    return merged.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
+
+  private renderTodoContent(items: TodoTaskItem[]): string {
+    const lines = ['# TODO List', '', '## Pending Tasks', ''];
+    if (!items.length) {
+      lines.push('- No pending tasks.');
+      return `${lines.join('\n')}\n`;
+    }
+    for (const item of items) {
+      const suffix = [
+        `taskId:${item.taskId}`,
+        `status:${item.status}`,
+        item.priority ? `priority:${item.priority}` : '',
+        item.orchestrationId ? `orchestrationId:${item.orchestrationId}` : '',
+        `updated:${item.updatedAt}`,
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const desc = item.description ? ` - ${this.compact(item.description, 120)}` : '';
+      lines.push(`- ${item.title}${desc} (${suffix})`);
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
+  private renderHistoryContent(items: HistoryTaskItem[]): string {
+    const lines = ['# History Log', '', '## Executed Tasks', ''];
+    if (!items.length) {
+      lines.push('- No executed tasks yet.');
+      return `${lines.join('\n')}\n`;
+    }
+    for (const item of items) {
+      const suffix = [
+        `taskId:${item.taskId}`,
+        `status:${item.currentStatus}`,
+        item.finalStatus ? `final:${item.finalStatus}` : '',
+        item.priority ? `priority:${item.priority}` : '',
+        item.orchestrationId ? `orchestrationId:${item.orchestrationId}` : '',
+        item.startedAt ? `started:${item.startedAt}` : '',
+        item.finishedAt ? `finished:${item.finishedAt}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      const desc = item.description ? ` - ${this.compact(item.description, 120)}` : '';
+      lines.push(`- ${item.title}${desc} (${suffix})`);
+      if (item.statusTimeline.length) {
+        lines.push(
+          `  - timeline: ${item.statusTimeline
+            .map((timeline) => `${timeline.status}@${timeline.at}${timeline.note ? `(${this.compact(timeline.note, 80)})` : ''}`)
+            .join(' -> ')}`,
+        );
+      }
+    }
+    return `${lines.join('\n')}\n`;
+  }
+
+  private normalizeTaskStatus(status?: TaskStatus): NormalizedTaskStatus {
+    const normalized = String(status || 'pending').trim().toLowerCase();
+    if (normalized === 'in_progress') return 'running';
+    if (normalized === 'completed') return 'success';
+    if (normalized === 'pending' || normalized === 'queued' || normalized === 'scheduled') return normalized;
+    if (normalized === 'running' || normalized === 'success' || normalized === 'failed' || normalized === 'cancelled') {
+      return normalized;
+    }
+    return 'pending';
+  }
+
+  private isTodoActiveStatus(status: NormalizedTaskStatus): status is TodoTaskItem['status'] {
+    return status === 'pending' || status === 'queued' || status === 'scheduled';
+  }
+
+  private isHistoryStatus(status: NormalizedTaskStatus): status is HistoryTaskItem['currentStatus'] {
+    return status === 'running' || status === 'success' || status === 'failed' || status === 'cancelled';
+  }
+
+  private normalizeTaskSourceType(sourceType?: TaskSourceType): TaskSourceType {
+    const normalized = String(sourceType || 'orchestration_task').trim().toLowerCase();
+    if (normalized === 'meeting_chat' || normalized === 'runtime_note') return normalized;
+    return 'orchestration_task';
+  }
+
+  private normalizePriority(value?: string): 'low' | 'medium' | 'high' | undefined {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'low' || normalized === 'medium' || normalized === 'high') return normalized;
+    return undefined;
+  }
+
+  private dedupeTimeline(
+    timeline: Array<{ status: 'running' | 'success' | 'failed' | 'cancelled'; at: string; note?: string }>,
+  ): Array<{ status: 'running' | 'success' | 'failed' | 'cancelled'; at: string; note?: string }> {
+    const seen = new Set<string>();
+    const deduped: Array<{ status: 'running' | 'success' | 'failed' | 'cancelled'; at: string; note?: string }> = [];
+    for (const item of timeline) {
+      const key = `${item.status}:${item.at}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+    return deduped.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   }
 
   private parseEvent(raw: string): MemoryEvent | null {
@@ -870,8 +1286,10 @@ export class MemoService {
 
   private resolveMemoDefaults(memoKind?: MemoKind, memoType?: MemoType): { memoKind: MemoKind; memoType: MemoType } {
     const resolvedKind = memoKind || 'topic';
-    if (resolvedKind === 'todo') return { memoKind: 'todo', memoType: 'standard' };
-    if (resolvedKind === 'identity') return { memoKind: 'identity', memoType: 'knowledge' };
+    const standardMemoKinds: MemoKind[] = ['identity', 'todo', 'history', 'draft', 'custom', 'evaluation'];
+    if (standardMemoKinds.includes(resolvedKind)) {
+      return { memoKind: resolvedKind, memoType: 'standard' };
+    }
     return { memoKind: resolvedKind, memoType: memoType || 'knowledge' };
   }
 

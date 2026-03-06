@@ -128,6 +128,11 @@ export class RedisService implements OnModuleDestroy {
     return this.publisher.lrange(key, start, stop);
   }
 
+  async llen(key: string): Promise<number> {
+    if (!this.ready) return 0;
+    return this.publisher.llen(key);
+  }
+
   async ltrim(key: string, start: number, stop: number): Promise<'OK' | null> {
     if (!this.ready) return null;
     return this.publisher.ltrim(key, start, stop);
@@ -155,6 +160,10 @@ export class RedisService implements OnModuleDestroy {
 
     this.listeners.delete(channel);
     await this.subscriber.unsubscribe(channel);
+  }
+
+  isReady(): boolean {
+    return this.ready;
   }
 
   async onModuleDestroy(): Promise<void> {

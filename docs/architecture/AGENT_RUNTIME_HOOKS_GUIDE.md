@@ -34,6 +34,7 @@ function onRuntimeEvent(event) {
 - 查看死信：`GET /agents/runtime/outbox/dead-letter`
 - 按范围重投：`POST /agents/runtime/outbox/dead-letter/requeue`
 - 优先按 `runId` + `eventType` 小范围重投，避免全量重投导致消费峰值。
+- 每次重投会生成 `batchId`，可通过 `GET /agents/runtime/maintenance/audits?batchId=` 查询审计记录。
 
 ## 3. 可观测性指标
 

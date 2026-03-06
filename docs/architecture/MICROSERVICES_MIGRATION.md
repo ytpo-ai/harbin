@@ -25,6 +25,7 @@
 - `/api/skills/**` -> `AGENTS_SERVICE_URL`
 - `/api/models/**` -> `AGENTS_SERVICE_URL`
 - `/api/model-management/**` -> `AGENTS_SERVICE_URL`
+- `/api/agent-action-logs/**` -> `LEGACY_SERVICE_URL`
 - 其他 `/api/**` -> `LEGACY_SERVICE_URL`
 
 ## 服务间安全与上下文
