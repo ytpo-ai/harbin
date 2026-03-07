@@ -24,6 +24,13 @@
 4. 对 OpenAI reasoning 模型增加 providerOptions 映射（如 `reasoningEffort`、`textVerbosity`）。
 5. 更新 Agent 侧 `modelConfig` 组装逻辑，确保运行时能读取并应用模型的 `reasoning` 配置。
 
+## 本轮补充：V1 Provider 目录归档
+
+1. 新建 `backend/libs/models/src/v1/`，归档旧 Provider 实现。
+2. 将 `base-provider.ts`、`openai-provider.ts`、`anthropic-provider.ts`、`google-provider.ts`、`moonshot-provider.ts` 迁移到 `v1/`。
+3. 更新 `index.ts` 导出路径，保持 `@libs/models` 外部导入 API 不变。
+4. 执行 `build:agents` 验证目录重构不影响运行。
+
 ## 关键影响点
 
 - 后端：`backend/libs/models/src/aiv2-provider.ts`、`backend/apps/agents/src/modules/models/model.service.ts`

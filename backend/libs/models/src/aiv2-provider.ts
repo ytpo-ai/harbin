@@ -5,7 +5,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider } from './base-provider';
+import { BaseAIProvider } from './v1/base-provider';
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 

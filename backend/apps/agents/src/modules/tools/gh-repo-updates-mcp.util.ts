@@ -61,7 +61,10 @@ function inferHighlights(subject: string, files: string[]): string[] {
   if (files.some((file) => file.includes('backend/apps/agents/src/modules/tools/tool.service.ts'))) {
     highlights.push('扩展 MCP 工具注册与执行能力');
   }
-  if (files.some((file) => file.includes('backend/libs/models/src/openai-provider.ts'))) {
+  if (
+    files.some((file) => file.includes('backend/libs/models/src/openai-provider.ts')) ||
+    files.some((file) => file.includes('backend/libs/models/src/v1/openai-provider.ts'))
+  ) {
     highlights.push('增强模型调用稳定性（超时/重试策略）');
   }
   if (files.some((file) => file.startsWith('backend/apps/engineering-intelligence/'))) {

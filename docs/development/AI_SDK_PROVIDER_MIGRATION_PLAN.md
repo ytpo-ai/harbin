@@ -36,11 +36,27 @@
   - `verbosity` 下拉
 - 列表卡片中显示 reasoning 状态与配置值。
 
+### 2.4 V1 Provider 目录归档
+
+- 将旧 Provider 统一归档到 `backend/libs/models/src/v1/`：
+  - `base-provider.ts`
+  - `openai-provider.ts`
+  - `anthropic-provider.ts`
+  - `google-provider.ts`
+  - `moonshot-provider.ts`
+- `AIV2Provider` 改为从 `./v1/base-provider` 继承。
+- `index.ts` 改为导出 `v1/*` 路径，确保 `@libs/models` 对外 API 保持不变。
+
 ## 3. 关键文件变更
 
 - 后端迁移与路由：
   - `backend/libs/models/src/aiv2-provider.ts`
   - `backend/libs/models/src/index.ts`
+  - `backend/libs/models/src/v1/base-provider.ts`
+  - `backend/libs/models/src/v1/openai-provider.ts`
+  - `backend/libs/models/src/v1/anthropic-provider.ts`
+  - `backend/libs/models/src/v1/google-provider.ts`
+  - `backend/libs/models/src/v1/moonshot-provider.ts`
   - `backend/apps/agents/src/modules/models/model.service.ts`
   - `backend/.env.example`
 - 后端模型管理与数据结构：
