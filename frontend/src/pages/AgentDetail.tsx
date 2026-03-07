@@ -457,74 +457,73 @@ const AgentDetail: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <button
-            onClick={() => navigate('/agents')}
-            className="mb-2 inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
-          >
-            <ArrowLeftIcon className="mr-1 h-4 w-4" />
-            返回 Agent 列表
-          </button>
-          <h1 className="text-2xl font-semibold text-gray-900">{agent?.name || 'Agent 详情'}</h1>
-          <p className="mt-1 text-sm text-gray-500">{agent?.description || '查看 Agent 详细信息与运营数据'}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs text-gray-600">
-          <span className="rounded-full border border-gray-200 px-3 py-1">类型: {agent?.type || '-'}</span>
-          <span className="rounded-full border border-gray-200 px-3 py-1">模型: {agent?.model?.name || '-'}</span>
-          <span className={`rounded-full border px-3 py-1 ${agent?.isActive ? 'border-green-200 text-green-700' : 'border-gray-200 text-gray-500'}`}>
-            {agent?.isActive ? '活跃' : '非活跃'}
-          </span>
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 via-white to-blue-50/30 p-6 shadow-sm ring-1 ring-slate-200/50">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-100/40 via-transparent to-transparent" />
+        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <button
+              onClick={() => navigate('/agents')}
+              className="mb-3 inline-flex items-center text-sm text-slate-500 hover:text-slate-700 transition-colors"
+            >
+              <ArrowLeftIcon className="mr-1.5 h-4 w-4" />
+              返回 Agent 列表
+            </button>
+            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{agent?.name || 'Agent 详情'}</h1>
+            <p className="mt-1.5 text-sm text-slate-500">{agent?.description || '查看 Agent 详细信息与运营数据'}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">
+              {agent?.type || '-'}
+            </span>
+            <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">
+              {agent?.model?.name || '-'}
+            </span>
+            <span className={`rounded-full px-3.5 py-1.5 text-xs font-medium ring-1 ${
+              agent?.isActive 
+                ? 'bg-emerald-50/80 text-emerald-700 ring-emerald-200/60' 
+                : 'bg-slate-100/80 text-slate-500 ring-slate-200/60'
+            }`}>
+              {agent?.isActive ? '活跃' : '非活跃'}
+            </span>
+          </div>
         </div>
       </div>
 
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-6">
-          <button
-            onClick={() => setActiveTab('memo')}
-            className={`py-2 text-sm font-medium border-b-2 ${
-              activeTab === 'memo'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            备忘录
-          </button>
-          <button
-            onClick={() => setActiveTab('log')}
-            className={`py-2 text-sm font-medium border-b-2 ${
-              activeTab === 'log'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            日志
-          </button>
-          <button
-            onClick={() => setActiveTab('session')}
-            className={`py-2 text-sm font-medium border-b-2 ${
-              activeTab === 'session'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Session
-          </button>
+      <div className="relative">
+        <nav className="flex gap-1 border-b border-slate-200/60">
+          {(['memo', 'log', 'session'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`relative px-4 py-3 text-sm font-medium transition-all duration-200 ${
+                activeTab === tab
+                  ? 'text-primary-600'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              <span className="relative z-10">{tab === 'memo' ? '备忘录' : tab === 'log' ? '日志' : 'Session'}</span>
+              {activeTab === tab && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-primary-500 to-primary-600 rounded-full" />
+              )}
+            </button>
+          ))}
         </nav>
       </div>
 
       {activeTab === 'memo' && (
-        <div className="space-y-4">
-          <div className="flex flex-col gap-3 rounded-lg bg-white p-4 shadow sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-2">
-              <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-4 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-3">
+              <div className="inline-flex rounded-lg bg-slate-100/50 p-1 ring-1 ring-slate-200/30">
                 <button
                   onClick={() => {
                     setMemoCategory('standard');
                     setMemoPage(1);
                   }}
-                  className={`rounded px-3 py-1 text-xs font-medium ${
-                    memoCategory === 'standard' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium transition-all duration-200 ${
+                    memoCategory === 'standard' 
+                      ? 'bg-white text-primary-600 shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
                   标准
@@ -534,8 +533,10 @@ const AgentDetail: React.FC = () => {
                     setMemoCategory('topic');
                     setMemoPage(1);
                   }}
-                  className={`rounded px-3 py-1 text-xs font-medium ${
-                    memoCategory === 'topic' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  className={`rounded-md px-4 py-1.5 text-sm font-medium transition-all duration-200 ${
+                    memoCategory === 'topic' 
+                      ? 'bg-white text-primary-600 shadow-sm' 
+                      : 'text-slate-600 hover:text-slate-800'
                   }`}
                 >
                   主题
@@ -548,7 +549,7 @@ const AgentDetail: React.FC = () => {
                     setMemoSearch(e.target.value);
                     setMemoPage(1);
                   }}
-                  className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                  className="w-full sm:w-64 rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                   placeholder={memoCategory === 'topic' ? '搜索主题备忘录' : '搜索标准备忘录'}
                 />
               </div>
@@ -558,46 +559,68 @@ const AgentDetail: React.FC = () => {
                 setEditingMemo(null);
                 setMemoEditorOpen(true);
               }}
-              className="inline-flex items-center rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              className="inline-flex items-center rounded-lg bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-primary-500/20 transition-all hover:shadow-lg hover:shadow-primary-500/30 hover:-translate-y-0.5"
             >
-              <PlusIcon className="mr-1 h-4 w-4" />
+              <PlusIcon className="mr-1.5 h-4 w-4" />
               新建备忘录
             </button>
           </div>
 
-          <div className="rounded-lg bg-white p-4 shadow">
-            <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-              <span>共 {memoQuery.data?.total || 0} 条</span>
-              {Object.keys(memoSummary).map((key) => (
-                <span key={key} className="rounded-full border border-gray-200 px-2 py-0.5">
-                  {key}: {memoSummary[key]}
-                </span>
-              ))}
+          <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/50">
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-slate-600">共 {memoQuery.data?.total || 0} 条</span>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(memoSummary).map(([key, count]) => (
+                  <span key={key} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">
+                    {key}: {count}
+                  </span>
+                ))}
+              </div>
             </div>
 
             {memoQuery.isLoading ? (
-              <div className="py-6 text-sm text-gray-500">加载备忘录中...</div>
+              <div className="flex items-center justify-center py-12">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+              </div>
             ) : displayedMemos.length === 0 ? (
-              <div className="py-6 text-sm text-gray-500">暂无备忘录</div>
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <div className="mb-2 text-4xl">📝</div>
+                <p className="text-sm">暂无备忘录</p>
+              </div>
             ) : (
-              <div className="mt-4 space-y-3">
-                {displayedMemos.map((memo) => (
-                  <div key={memo.id} className="rounded-md border border-gray-200 p-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{memo.title}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {memo.memoKind || 'topic'} · {memo.memoType || '-'} · {memo.category || '-'} ·
-                          {memo.updatedAt ? ` 更新 ${new Date(memo.updatedAt).toLocaleString()}` : ''}
+              <div className="space-y-3">
+                {displayedMemos.map((memo, index) => (
+                  <div 
+                    key={memo.id} 
+                    className="group relative overflow-hidden rounded-xl border border-slate-200/60 bg-white p-4 transition-all duration-200 hover:border-slate-300 hover:shadow-md hover:shadow-slate-200/50"
+                    style={{ animationDelay: `${index * 30}ms` }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-r from-primary-50/0 via-primary-50/30 to-primary-50/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                    <div className="relative flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                            memo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200/60' :
+                            memo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600 ring-1 ring-amber-200/60' :
+                            memo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600 ring-1 ring-purple-200/60' :
+                            'bg-slate-50 text-slate-600 ring-1 ring-slate-200/60'
+                          }`}>
+                            {memo.memoKind || 'topic'}
+                          </span>
+                          <span className="text-xs text-slate-400">{memo.memoType || '-'}</span>
+                        </div>
+                        <p className="text-base font-semibold text-slate-900 truncate">{memo.title}</p>
+                        <p className="mt-1.5 text-xs text-slate-500 line-clamp-2">{memo.content}</p>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {memo.category || '-'} · {memo.updatedAt ? new Date(memo.updatedAt).toLocaleString() : ''}
                         </p>
-                        <p className="mt-2 max-h-12 overflow-hidden text-sm text-gray-600">{memo.content}</p>
                       </div>
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap gap-1.5 sm:flex-col">
                         <button
                           onClick={() => setSelectedMemo(memo)}
-                          className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                         >
-                          <EyeIcon className="mr-1 h-4 w-4" />
+                          <EyeIcon className="mr-1.5 h-3.5 w-3.5" />
                           查看
                         </button>
                         <button
@@ -605,9 +628,9 @@ const AgentDetail: React.FC = () => {
                             setEditingMemo(memo);
                             setMemoEditorOpen(true);
                           }}
-                          className="inline-flex items-center rounded-md border border-gray-300 px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                         >
-                          <PencilIcon className="mr-1 h-4 w-4" />
+                          <PencilIcon className="mr-1.5 h-3.5 w-3.5" />
                           编辑
                         </button>
                         <button
@@ -616,9 +639,9 @@ const AgentDetail: React.FC = () => {
                               deleteMemoMutation.mutate(memo.id);
                             }
                           }}
-                          className="inline-flex items-center rounded-md border border-red-200 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                          className="inline-flex items-center rounded-lg border border-red-200/60 bg-white px-3 py-1.5 text-xs font-medium text-red-500 transition-all hover:border-red-300 hover:bg-red-50/50"
                         >
-                          <TrashIcon className="mr-1 h-4 w-4" />
+                          <TrashIcon className="mr-1.5 h-3.5 w-3.5" />
                           删除
                         </button>
                       </div>
@@ -629,68 +652,73 @@ const AgentDetail: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setMemoPage((prev) => Math.max(1, prev - 1))}
-              disabled={memoPage <= 1}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              上一页
-            </button>
-            <button
-              onClick={() => setMemoPage((prev) => Math.min(totalMemoPages, prev + 1))}
-              disabled={memoPage >= totalMemoPages}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              下一页
-            </button>
-          </div>
+          {totalMemoPages > 1 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">第 {memoPage} / {totalMemoPages} 页</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMemoPage((prev) => Math.max(1, prev - 1))}
+                  disabled={memoPage <= 1}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  上一页
+                </button>
+                <button
+                  onClick={() => setMemoPage((prev) => Math.min(totalMemoPages, prev + 1))}
+                  disabled={memoPage >= totalMemoPages}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {activeTab === 'log' && (
-        <div className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Agent 日志</h2>
-              <p className="text-sm text-gray-500">查看该 Agent 在 Chat / Orchestration 场景中的行为日志</p>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Agent 日志</h2>
+              <p className="mt-1 text-sm text-slate-500">查看该 Agent 在 Chat / Orchestration 场景中的行为日志</p>
             </div>
             <button
               onClick={() => logQuery.refetch()}
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
             >
               <ArrowPathIcon className={`mr-2 h-4 w-4 ${logQuery.isFetching ? 'animate-spin' : ''}`} />
               刷新
             </button>
           </div>
 
-          <div className="rounded-lg bg-white p-4 shadow">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/50">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
               <input
                 type="datetime-local"
                 value={logFilters.from || ''}
                 onChange={(e) => updateLogFilter({ from: e.target.value || undefined })}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                 placeholder="开始时间"
               />
               <input
                 type="datetime-local"
                 value={logFilters.to || ''}
                 onChange={(e) => updateLogFilter({ to: e.target.value || undefined })}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                 placeholder="结束时间"
               />
               <input
                 type="text"
                 value={logFilters.action || ''}
                 onChange={(e) => updateLogFilter({ action: e.target.value || undefined })}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                 placeholder="动作关键词"
               />
               <select
                 value={logFilters.contextType || ''}
                 onChange={(e) => updateLogFilter({ contextType: e.target.value as AgentActionLogQuery['contextType'] })}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
               >
                 <option value="">全部上下文</option>
                 <option value="chat">Chat</option>
@@ -699,7 +727,7 @@ const AgentDetail: React.FC = () => {
               <select
                 value={logFilters.status || ''}
                 onChange={(e) => updateLogFilter({ status: e.target.value as AgentActionLogQuery['status'] })}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
               >
                 <option value="">全部状态</option>
                 <option value="started">进行中</option>
@@ -717,26 +745,32 @@ const AgentDetail: React.FC = () => {
               </select>
             </div>
 
-            <div className="mt-3 text-sm text-gray-500">
-              当前共 {logQuery.data?.total || 0} 条，页码 {logQuery.data?.page || 1}/{Math.max(1, logQuery.data?.totalPages || 1)}
+            <div className="mt-4 text-sm text-slate-500">
+              当前共 <span className="font-semibold text-slate-700">{logQuery.data?.total || 0}</span> 条，页码 <span className="font-semibold text-slate-700">{logQuery.data?.page || 1}</span>/{Math.max(1, logQuery.data?.totalPages || 1)}
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-lg bg-white shadow">
+          <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200/50">
             {logQuery.isLoading ? (
               <div className="space-y-3 p-4">
                 {Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="animate-pulse rounded-lg border border-gray-100 p-4">
-                    <div className="mb-3 h-4 w-32 rounded bg-gray-100" />
-                    <div className="mb-2 h-5 w-1/2 rounded bg-gray-200" />
-                    <div className="h-4 w-3/4 rounded bg-gray-100" />
+                  <div key={index} className="animate-pulse rounded-xl border border-slate-100 p-5">
+                    <div className="mb-4 h-4 w-32 rounded-lg bg-slate-100" />
+                    <div className="mb-3 h-6 w-1/2 rounded-lg bg-slate-200" />
+                    <div className="h-4 w-3/4 rounded-lg bg-slate-100" />
                   </div>
                 ))}
               </div>
             ) : logQuery.error ? (
-              <div className="p-6 text-sm text-red-600">日志查询失败，请检查权限或筛选条件。</div>
+              <div className="flex flex-col items-center justify-center p-12 text-red-500">
+                <div className="mb-2 text-4xl">⚠️</div>
+                <p className="text-sm">日志查询失败，请检查权限或筛选条件</p>
+              </div>
             ) : logs.length === 0 ? (
-              <div className="p-6 text-sm text-gray-500">暂无日志数据</div>
+              <div className="flex flex-col items-center justify-center p-12 text-slate-400">
+                <div className="mb-2 text-4xl">📋</div>
+                <p className="text-sm">暂无日志数据</p>
+              </div>
             ) : (
               <div className="space-y-3 p-4">
                 {logs.map((item) => {
@@ -751,62 +785,70 @@ const AgentDetail: React.FC = () => {
                   return (
                     <article
                       key={item.id}
-                      className="rounded-xl border border-gray-200 bg-gradient-to-r from-white via-white to-gray-50/80 p-4 transition hover:border-primary-200"
+                      className="group relative overflow-hidden rounded-xl border border-slate-200/60 bg-white p-5 transition-all duration-200 hover:border-slate-300 hover:shadow-md hover:shadow-slate-200/50"
                     >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-wider text-gray-500">{new Date(item.timestamp).toLocaleString()}</p>
-                          <h3 className="mt-1 text-sm font-semibold text-gray-900">{formatLogAction(item.action)}</h3>
-                          <p className="mt-1 text-sm text-gray-800">{primaryTitle}</p>
-                          <p className="mt-1 break-all font-mono text-xs text-gray-500">{item.action}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusMeta.badgeClass}`}>
-                            {statusMeta.label}
-                          </span>
-                          <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
-                            {getLogContextLabel(item.contextType)}
-                          </span>
-                          {typeof durationMs === 'number' ? (
-                            <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
-                              {durationMs} ms
+                      <div className="absolute inset-0 bg-gradient-to-r from-primary-50/0 via-primary-50/20 to-primary-50/0 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                      <div className="relative flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-xs font-medium text-slate-400">{new Date(item.timestamp).toLocaleString()}</span>
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ring-1 ${
+                              statusMeta.label === '成功' ? 'bg-emerald-50 text-emerald-600 ring-emerald-200/60' :
+                              statusMeta.label === '失败' ? 'bg-red-50 text-red-600 ring-red-200/60' :
+                              statusMeta.label === '进行中' || statusMeta.label === '运行中' ? 'bg-amber-50 text-amber-600 ring-amber-200/60' :
+                              statusMeta.label === '待授权' ? 'bg-fuchsia-50 text-fuchsia-600 ring-fuchsia-200/60' :
+                              'bg-slate-50 text-slate-600 ring-slate-200/60'
+                            }`}>
+                              {statusMeta.label}
                             </span>
-                          ) : null}
+                            <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200/60">
+                              {getLogContextLabel(item.contextType)}
+                            </span>
+                            {typeof durationMs === 'number' && (
+                              <span className="inline-flex rounded-full bg-slate-50 px-2.5 py-0.5 text-[10px] font-medium text-slate-500 ring-1 ring-slate-200/60">
+                                {durationMs}ms
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-base font-semibold text-slate-900">{formatLogAction(item.action)}</h3>
+                          <p className="mt-1.5 text-sm text-slate-600 truncate">{primaryTitle}</p>
+                          <p className="mt-1.5 break-all font-mono text-xs text-slate-400">{item.action}</p>
                         </div>
                       </div>
 
-                      <div className="mt-3 flex items-center justify-between">
-                        <p className="text-xs text-gray-500">{isOrchestration ? '任务标题' : '会议标题'} 已固定展示</p>
+                      <div className="relative mt-4 flex items-center justify-between">
+                        <p className="text-xs text-slate-400">{isOrchestration ? '任务标题' : '会议标题'} 已固定展示</p>
                         <button
                           onClick={() => toggleLogExpanded(item.id)}
-                          className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
                         >
                           {isExpanded ? '收起详情' : '展开详情'}
                         </button>
                       </div>
 
                       {isExpanded ? (
-                        <div className="mt-3 space-y-3">
-                          <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-100 bg-white/80 p-3 md:grid-cols-2">
+                        <div className="relative mt-4 space-y-3">
+                          <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-4 md:grid-cols-2">
                             <div>
-                              <p className="text-xs text-gray-500">{isOrchestration ? '任务' : '会议'}</p>
-                              <p className="mt-1 text-sm text-gray-800">{primaryTitle}</p>
+                              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{isOrchestration ? '任务' : '会议'}</p>
+                              <p className="mt-1.5 text-sm font-medium text-slate-800">{primaryTitle}</p>
                               {isOrchestration ? (
-                                <p className="mt-1 break-all text-xs text-gray-500">
-                                  ID: {item.details?.taskId || '-'} {item.details?.taskType ? `· 类型: ${item.details.taskType}` : ''}
+                                <p className="mt-1.5 break-all text-xs text-slate-500">
+                                  ID: <span className="font-mono">{item.details?.taskId || '-'}</span> 
+                                  {item.details?.taskType ? <span className="ml-2">· 类型: {item.details.taskType}</span> : ''}
                                 </p>
                               ) : null}
                             </div>
                             <div>
-                              <p className="text-xs text-gray-500">上下文</p>
-                              <p className="mt-1 break-all text-sm text-gray-800">{item.contextId || '-'}</p>
-                              <p className="mt-1 break-all text-xs text-gray-500">Run: {item.details?.runId || '-'}</p>
+                              <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">上下文</p>
+                              <p className="mt-1.5 break-all text-sm font-mono text-slate-600">{item.contextId || '-'}</p>
+                              <p className="mt-1.5 break-all text-xs text-slate-500">Run: <span className="font-mono">{item.details?.runId || '-'}</span></p>
                             </div>
                           </div>
 
                           {item.details?.error ? (
-                            <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                              错误信息：{String(item.details.error)}
+                            <div className="rounded-xl border border-red-200/60 bg-red-50/50 px-4 py-3 text-sm text-red-600">
+                              <span className="font-medium">错误信息：</span>{String(item.details.error)}
                             </div>
                           ) : null}
 
@@ -816,7 +858,7 @@ const AgentDetail: React.FC = () => {
                                 <span
                                   key={`${item.id}-${key}`}
                                   title={value}
-                                  className="max-w-full truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600"
+                                  className="max-w-full truncate rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-xs text-slate-600"
                                 >
                                   {key}: {value}
                                 </span>
@@ -834,9 +876,10 @@ const AgentDetail: React.FC = () => {
                             setSelectedSessionId(sessionId);
                             setIsSessionDrawerOpen(true);
                           }}
-                          className="mt-3 inline-flex items-center text-xs font-medium text-primary-600 hover:text-primary-700"
+                          className="relative mt-4 inline-flex items-center text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
                         >
-                          查看 Session: {sessionId}
+                          <span className="mr-1">查看 Session:</span>
+                          <span className="font-mono">{sessionId.slice(0, 12)}...</span>
                         </button>
                       ) : null}
                     </article>
@@ -846,31 +889,36 @@ const AgentDetail: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setLogFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page || 1) - 1) }))}
-              disabled={(logFilters.page || 1) <= 1}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              上一页
-            </button>
-            <button
-              onClick={() => setLogFilters((prev) => ({ ...prev, page: (prev.page || 1) + 1 }))}
-              disabled={!!logQuery.data && (logFilters.page || 1) >= (logQuery.data.totalPages || 1)}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              下一页
-            </button>
-          </div>
+          {logQuery.data && logQuery.data.totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">第 {logFilters.page || 1} / {logQuery.data.totalPages} 页</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setLogFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page || 1) - 1) }))}
+                  disabled={(logFilters.page || 1) <= 1}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  上一页
+                </button>
+                <button
+                  onClick={() => setLogFilters((prev) => ({ ...prev, page: (prev.page || 1) + 1 }))}
+                  disabled={!!logQuery.data && (logFilters.page || 1) >= (logQuery.data.totalPages || 1)}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {activeTab === 'session' && (
-        <div className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Session 查询</h2>
-              <p className="text-sm text-gray-500">查看该 Agent 的会话上下文、消息轨迹与运行关联信息</p>
+              <h2 className="text-lg font-bold text-slate-900 tracking-tight">Session 查询</h2>
+              <p className="mt-1 text-sm text-slate-500">查看该 Agent 的会话上下文、消息轨迹与运行关联信息</p>
             </div>
             <button
               onClick={() => {
@@ -879,14 +927,14 @@ const AgentDetail: React.FC = () => {
                   sessionDetailQuery.refetch();
                 }
               }}
-              className="inline-flex items-center rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
             >
               <ArrowPathIcon className={`mr-2 h-4 w-4 ${sessionListQuery.isFetching || sessionDetailQuery.isFetching ? 'animate-spin' : ''}`} />
               刷新
             </button>
           </div>
 
-          <div className="rounded-lg bg-white p-4 shadow">
+          <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/50">
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
               <input
                 value={sessionKeyword}
@@ -894,13 +942,13 @@ const AgentDetail: React.FC = () => {
                   setSessionKeyword(e.target.value);
                   setSessionPage(1);
                 }}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                 placeholder="关键词（标题/plan/task/meeting）"
               />
               <input
                 value={sessionIdInput}
                 onChange={(e) => setSessionIdInput(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-slate-200 bg-slate-50/50 px-4 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
                 placeholder="精确查询 Session ID"
               />
               <button
@@ -910,7 +958,7 @@ const AgentDetail: React.FC = () => {
                   setSelectedSessionId(sid);
                   setIsSessionDrawerOpen(true);
                 }}
-                className="rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm text-primary-700 hover:bg-primary-100"
+                className="inline-flex items-center justify-center rounded-lg border border-primary-200/60 bg-primary-50/50 px-4 py-2.5 text-sm font-medium text-primary-700 transition-all hover:border-primary-300 hover:bg-primary-100/50"
               >
                 按 Session ID 查询
               </button>
@@ -922,24 +970,32 @@ const AgentDetail: React.FC = () => {
                   setSelectedSessionId('');
                   setIsSessionDrawerOpen(false);
                 }}
-                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50"
               >
                 清空筛选
               </button>
             </div>
-            <div className="mt-3 text-sm text-gray-500">
-              当前共 {sessionListQuery.data?.total || 0} 条，页码 {sessionListQuery.data?.page || 1}/{Math.max(1, sessionListQuery.data?.totalPages || 1)}
+            <div className="mt-4 text-sm text-slate-500">
+              当前共 <span className="font-semibold text-slate-700">{sessionListQuery.data?.total || 0}</span> 条，页码 <span className="font-semibold text-slate-700">{sessionListQuery.data?.page || 1}</span>/{Math.max(1, sessionListQuery.data?.totalPages || 1)}
             </div>
           </div>
 
-          <div className="rounded-lg bg-white shadow">
-            <div className="border-b border-gray-100 px-4 py-3 text-sm font-medium text-gray-700">会话列表</div>
+          <div className="rounded-xl bg-white shadow-sm ring-1 ring-slate-200/50">
+            <div className="border-b border-slate-100 px-5 py-4 text-sm font-semibold text-slate-800">会话列表</div>
             {sessionListQuery.isLoading ? (
-              <div className="p-5 text-sm text-gray-500">加载 Session 中...</div>
+              <div className="flex items-center justify-center py-12">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+              </div>
             ) : sessionListQuery.error ? (
-              <div className="p-5 text-sm text-red-600">Session 列表加载失败，请稍后重试。</div>
+              <div className="flex flex-col items-center justify-center py-12 text-red-500">
+                <div className="mb-2 text-4xl">⚠️</div>
+                <p className="text-sm">Session 列表加载失败，请稍后重试</p>
+              </div>
             ) : sessions.length === 0 ? (
-              <div className="p-5 text-sm text-gray-500">暂无 Session 数据</div>
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <div className="mb-2 text-4xl">💬</div>
+                <p className="text-sm">暂无 Session 数据</p>
+              </div>
             ) : (
               <div className="max-h-[70vh] overflow-y-auto p-3 space-y-2">
                 {sessions.map((session) => {
@@ -953,22 +1009,26 @@ const AgentDetail: React.FC = () => {
                         setSelectedSessionId(sid);
                         setIsSessionDrawerOpen(true);
                       }}
-                      className={`w-full rounded-md border p-3 text-left transition ${
+                      className={`w-full rounded-xl border p-4 text-left transition-all duration-200 ${
                         isSelected
-                          ? 'border-primary-300 bg-primary-50'
-                          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                          ? 'border-primary-300 bg-primary-50/50 shadow-sm'
+                          : 'border-slate-200/60 bg-white hover:border-slate-300 hover:bg-slate-50/50 hover:shadow-sm'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-medium text-gray-900 truncate">{session.title || sid}</p>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] text-gray-700">{session.sessionType}</span>
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="flex-1 truncate text-sm font-semibold text-slate-900">{session.title || sid}</p>
+                        <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-slate-200/60">{session.sessionType}</span>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500 truncate">{sid}</p>
-                      <p className="mt-2 text-xs text-gray-600 line-clamp-2">
+                      <p className="mt-1.5 font-mono text-xs text-slate-400 truncate">{sid}</p>
+                      <p className="mt-3 text-xs text-slate-500 line-clamp-2 leading-relaxed">
                         {lastMessage?.content || '暂无消息内容'}
                       </p>
-                      <div className="mt-2 flex items-center justify-between text-[11px] text-gray-500">
-                        <span>{session.status}</span>
+                      <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                        <span className={`font-medium ${
+                          session.status === 'active' ? 'text-emerald-600' :
+                          String(session.status) === 'completed' ? 'text-blue-600' :
+                          'text-slate-500'
+                        }`}>{session.status}</span>
                         <span>{session.lastActiveAt ? new Date(session.lastActiveAt).toLocaleString() : '-'}</span>
                       </div>
                     </button>
@@ -978,128 +1038,160 @@ const AgentDetail: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2">
-            <button
-              onClick={() => setSessionPage((prev) => Math.max(1, prev - 1))}
-              disabled={sessionPage <= 1}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              上一页
-            </button>
-            <button
-              onClick={() => setSessionPage((prev) => Math.min(totalSessionPages, prev + 1))}
-              disabled={sessionPage >= totalSessionPages}
-              className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 disabled:opacity-50"
-            >
-              下一页
-            </button>
-          </div>
+          {totalSessionPages > 1 && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-slate-500">第 {sessionPage} / {totalSessionPages} 页</span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSessionPage((prev) => Math.max(1, prev - 1))}
+                  disabled={sessionPage <= 1}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  上一页
+                </button>
+                <button
+                  onClick={() => setSessionPage((prev) => Math.min(totalSessionPages, prev + 1))}
+                  disabled={sessionPage >= totalSessionPages}
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 transition-all hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {isSessionDrawerOpen ? (
         <div className="fixed inset-0 z-40">
           <button
-            className="absolute inset-0 bg-black/30"
+            className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
             onClick={() => setIsSessionDrawerOpen(false)}
             aria-label="关闭 Session 详情抽屉"
           />
-          <aside className="absolute right-0 top-0 h-full w-[96vw] max-w-3xl bg-white shadow-2xl">
+          <aside className="absolute right-0 top-0 h-full w-[96vw] max-w-3xl bg-white shadow-2xl ring-1 ring-slate-200/50">
             <div className="flex h-full flex-col">
-              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div className="flex items-center justify-between border-b border-slate-200/60 px-6 py-5">
                 <div>
-                  <p className="text-base font-semibold text-gray-900">Session 详情</p>
-                  <p className="text-xs text-gray-500">查看上下文与消息轨迹</p>
+                  <p className="text-lg font-semibold text-slate-900">Session 详情</p>
+                  <p className="text-xs text-slate-500 mt-1">查看上下文与消息轨迹</p>
                 </div>
                 <button
                   onClick={() => setIsSessionDrawerOpen(false)}
-                  className="rounded-md p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
                   aria-label="关闭抽屉"
                 >
                   <XMarkIcon className="h-5 w-5" />
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="flex-1 overflow-y-auto p-5">
                 {!selectedSessionId ? (
-                  <div className="text-sm text-gray-500">请从列表选择 Session，或输入 Session ID 查询。</div>
+                  <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                    <div className="mb-2 text-4xl">💬</div>
+                    <p className="text-sm">请从列表选择 Session，或输入 Session ID 查询</p>
+                  </div>
                 ) : sessionDetailQuery.isLoading ? (
-                  <div className="text-sm text-gray-500">加载 Session 详情中...</div>
+                  <div className="flex items-center justify-center py-12">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary-200 border-t-primary-600" />
+                  </div>
                 ) : sessionDetailQuery.error ? (
-                  <div className="text-sm text-red-600">未找到该 Session，或你暂无访问权限。</div>
+                  <div className="flex flex-col items-center justify-center py-12 text-red-500">
+                    <div className="mb-2 text-4xl">⚠️</div>
+                    <p className="text-sm">未找到该 Session，或你暂无访问权限</p>
+                  </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-800">基础信息</p>
-                      <div className="flex items-center gap-3">
+                      <p className="text-sm font-semibold text-slate-800">基础信息</p>
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={handleCopySessionContent}
-                          className="inline-flex items-center text-xs text-primary-600 hover:text-primary-700"
+                          className="inline-flex items-center rounded-lg bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-100"
                         >
-                          <ClipboardDocumentIcon className="mr-1 h-4 w-4" />
+                          <ClipboardDocumentIcon className="mr-1.5 h-3.5 w-3.5" />
                           复制会话
                         </button>
                         {sessionDetailQuery.data?.id ? (
                           <button
                             onClick={() => copyText(sessionDetailQuery.data?.id || '')}
-                            className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700"
+                            className="inline-flex items-center rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100"
                           >
-                            <ClipboardDocumentIcon className="mr-1 h-4 w-4" />
-                            复制 Session ID
+                            <ClipboardDocumentIcon className="mr-1.5 h-3.5 w-3.5" />
+                            复制 ID
                           </button>
                         ) : null}
                       </div>
                     </div>
-                    {sessionCopyNotice ? <p className="text-xs text-green-600">{sessionCopyNotice}</p> : null}
+                    {sessionCopyNotice ? <p className="text-xs text-emerald-600 font-medium">{sessionCopyNotice}</p> : null}
 
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                      <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                        <span className="text-gray-500">Session ID：</span>{sessionDetailQuery.data?.id}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Session ID</p>
+                        <p className="mt-1.5 font-mono text-xs text-slate-700 truncate">{sessionDetailQuery.data?.id}</p>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                        <span className="text-gray-500">状态：</span>{sessionDetailQuery.data?.status}
+                      <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">状态</p>
+                        <p className="mt-1.5 text-sm font-medium text-slate-700">{sessionDetailQuery.data?.status}</p>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                        <span className="text-gray-500">类型：</span>{sessionDetailQuery.data?.sessionType}
+                      <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">类型</p>
+                        <p className="mt-1.5 text-sm font-medium text-slate-700">{sessionDetailQuery.data?.sessionType}</p>
                       </div>
-                      <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
-                        <span className="text-gray-500">最近活跃：</span>
-                        {sessionDetailQuery.data?.lastActiveAt
-                          ? new Date(sessionDetailQuery.data.lastActiveAt).toLocaleString()
-                          : '-'}
+                      <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">最近活跃</p>
+                        <p className="mt-1.5 text-sm text-slate-600">
+                          {sessionDetailQuery.data?.lastActiveAt
+                            ? new Date(sessionDetailQuery.data.lastActiveAt).toLocaleString()
+                            : '-'}
+                        </p>
                       </div>
                     </div>
 
-                    <div className="rounded-md border border-gray-200 p-3">
-                      <p className="text-sm font-medium text-gray-800">上下文</p>
-                      <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-gray-600 md:grid-cols-2">
-                        <div>Plan: {sessionDetailQuery.data?.planContext?.linkedPlanId || '-'}</div>
-                        <div>Task: {sessionDetailQuery.data?.planContext?.linkedTaskId || '-'}</div>
-                        <div>Meeting: {sessionDetailQuery.data?.meetingContext?.meetingId || '-'}</div>
-                        <div>Agenda: {sessionDetailQuery.data?.meetingContext?.agendaId || '-'}</div>
+                    <div className="rounded-xl border border-slate-200/60 p-4">
+                      <p className="text-sm font-semibold text-slate-800">上下文</p>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-xs md:grid-cols-4">
+                        <div className="rounded-lg bg-slate-50 p-2.5">
+                          <p className="text-slate-400">Plan</p>
+                          <p className="mt-1 font-mono text-slate-600 truncate">{sessionDetailQuery.data?.planContext?.linkedPlanId || '-'}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2.5">
+                          <p className="text-slate-400">Task</p>
+                          <p className="mt-1 font-mono text-slate-600 truncate">{sessionDetailQuery.data?.planContext?.linkedTaskId || '-'}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2.5">
+                          <p className="text-slate-400">Meeting</p>
+                          <p className="mt-1 font-mono text-slate-600 truncate">{sessionDetailQuery.data?.meetingContext?.meetingId || '-'}</p>
+                        </div>
+                        <div className="rounded-lg bg-slate-50 p-2.5">
+                          <p className="text-slate-400">Agenda</p>
+                          <p className="mt-1 font-mono text-slate-600 truncate">{sessionDetailQuery.data?.meetingContext?.agendaId || '-'}</p>
+                        </div>
                       </div>
                     </div>
 
                     <div>
-                      <p className="text-sm font-medium text-gray-800">消息轨迹 ({sessionDetailQuery.data?.messages?.length || 0})</p>
+                      <p className="text-sm font-semibold text-slate-800 mb-3">消息轨迹 ({sessionDetailQuery.data?.messages?.length || 0})</p>
                       {!sessionDetailQuery.data?.messages?.length ? (
-                        <div className="mt-2 rounded-md border border-dashed border-gray-200 p-4 text-sm text-gray-500">该 Session 暂无消息记录</div>
+                        <div className="rounded-xl border-2 border-dashed border-slate-200 p-8 text-center">
+                          <p className="text-sm text-slate-400">该 Session 暂无消息记录</p>
+                        </div>
                       ) : (
-                        <div className="mt-2 space-y-3">
+                        <div className="space-y-3">
                           {sessionDetailQuery.data.messages.map((message, index) => (
-                            <div key={`${message.id || index}-${message.timestamp}`} className="rounded-md border border-gray-200 p-3">
-                              <div className="flex flex-wrap items-center gap-2">
+                            <div key={`${message.id || index}-${message.timestamp}`} className="rounded-xl border border-slate-200/60 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-sm">
+                              <div className="flex flex-wrap items-center gap-2 mb-3">
                                 {renderSessionRole(message)}
                                 {renderMessageStatus(message)}
-                                <span className="text-xs text-gray-500">
+                                <span className="text-xs text-slate-400 ml-auto">
                                   {message.timestamp ? new Date(message.timestamp).toLocaleString() : '-'}
                                 </span>
                               </div>
-                              <div className="mt-2 text-xs text-gray-500">
-                                {message.runId ? <span className="mr-3">run: {message.runId}</span> : null}
-                                {message.taskId ? <span>task: {message.taskId}</span> : null}
+                              <div className="text-xs text-slate-400 mb-3 space-x-3">
+                                {message.runId ? <span className="font-mono">run: {message.runId}</span> : null}
+                                {message.taskId ? <span className="font-mono">task: {message.taskId}</span> : null}
                               </div>
-                              <pre className="mt-2 whitespace-pre-wrap break-words rounded bg-gray-50 p-2 text-sm text-gray-700">
+                              <pre className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm text-slate-700 leading-relaxed">
                                 {message.content || '-'}
                               </pre>
                             </div>
@@ -1117,21 +1209,29 @@ const AgentDetail: React.FC = () => {
 
       {selectedMemo ? (
         <div className="fixed inset-0 z-50">
-          <button className="absolute inset-0 bg-black/40" onClick={() => setSelectedMemo(null)} aria-label="关闭弹窗" />
-          <div className="absolute left-1/2 top-1/2 w-[94vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+          <button className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setSelectedMemo(null)} aria-label="关闭弹窗" />
+          <div className="absolute left-1/2 top-1/2 w-[94vw] max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white shadow-2xl ring-1 ring-slate-200/50 overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-200/60 px-6 py-5 bg-slate-50/30">
               <div>
-                <p className="text-base font-semibold text-gray-900">{selectedMemo.title}</p>
-                <p className="text-xs text-gray-500">
-                  {selectedMemo.memoKind || 'topic'} · {selectedMemo.memoType || '-'} · {selectedMemo.category || '-'}
+                <p className="text-lg font-semibold text-slate-900">{selectedMemo.title}</p>
+                <p className="text-xs text-slate-500 mt-1.5">
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider mr-2 ${
+                    selectedMemo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600' :
+                    selectedMemo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600' :
+                    selectedMemo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600' :
+                    'bg-slate-100 text-slate-600'
+                  }`}>
+                    {selectedMemo.memoKind || 'topic'}
+                  </span>
+                  {selectedMemo.memoType || '-'} · {selectedMemo.category || '-'}
                 </p>
               </div>
-              <button onClick={() => setSelectedMemo(null)} className="text-sm text-gray-500">
-                关闭
+              <button onClick={() => setSelectedMemo(null)} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors">
+                <XMarkIcon className="h-5 w-5" />
               </button>
             </div>
-            <div className="max-h-[65vh] overflow-y-auto px-5 py-4">
-              <pre className="whitespace-pre-wrap text-sm text-gray-700">{selectedMemo.content}</pre>
+            <div className="max-h-[65vh] overflow-y-auto px-6 py-5">
+              <pre className="whitespace-pre-wrap text-sm text-slate-700 leading-relaxed font-sans">{selectedMemo.content}</pre>
             </div>
           </div>
         </div>
