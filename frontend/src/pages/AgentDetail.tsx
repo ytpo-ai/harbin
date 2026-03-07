@@ -28,6 +28,31 @@ const DEFAULT_MEMO_PAGE_SIZE = 30;
 const DEFAULT_LOG_PAGE_SIZE = 20;
 const DEFAULT_SESSION_PAGE_SIZE = 8;
 
+type LogStatus = NonNullable<NonNullable<AgentActionLogItem['details']>['status']>;
+
+const LOG_STATUS_META: Record<LogStatus | 'unknown', { label: string; badgeClass: string }> = {
+  completed: { label: '成功', badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  started: { label: '进行中', badgeClass: 'border-amber-200 bg-amber-50 text-amber-700' },
+  running: { label: '运行中', badgeClass: 'border-sky-200 bg-sky-50 text-sky-700' },
+  pending: { label: '待执行', badgeClass: 'border-slate-200 bg-slate-100 text-slate-700' },
+  failed: { label: '失败', badgeClass: 'border-rose-200 bg-rose-50 text-rose-700' },
+  paused: { label: '已暂停', badgeClass: 'border-orange-200 bg-orange-50 text-orange-700' },
+  resumed: { label: '已恢复', badgeClass: 'border-cyan-200 bg-cyan-50 text-cyan-700' },
+  cancelled: { label: '已取消', badgeClass: 'border-zinc-200 bg-zinc-100 text-zinc-700' },
+  asked: { label: '待授权', badgeClass: 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700' },
+  replied: { label: '已授权回复', badgeClass: 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700' },
+  denied: { label: '已拒绝', badgeClass: 'border-fuchsia-200 bg-fuchsia-50 text-fuchsia-700' },
+  step_started: { label: '步骤开始', badgeClass: 'border-indigo-200 bg-indigo-50 text-indigo-700' },
+  unknown: { label: '未知', badgeClass: 'border-gray-200 bg-gray-100 text-gray-700' },
+};
+
+const CONTEXT_TYPE_LABEL: Record<AgentActionLogItem['contextType'], string> = {
+  meeting: '会议',
+  plan: '计划',
+  task: '任务',
+  unknown: '未知',
+};
+
 type MemoDraft = {
   title: string;
   content: string;
@@ -262,18 +287,34 @@ const AgentDetail: React.FC = () => {
     createMemoMutation.mutate(payload);
   };
 
-  const renderLogStatus = (item: AgentActionLogItem) => {
+  const getLogStatusMeta = (item: AgentActionLogItem) => {
     const status = item.details?.status;
-    if (status === 'completed') {
-      return <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">成功</span>;
-    }
-    if (status === 'started') {
-      return <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">进行中</span>;
-    }
-    if (status === 'failed') {
-      return <span className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">失败</span>;
-    }
-    return <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">未知</span>;
+    if (!status) return LOG_STATUS_META.unknown;
+    return LOG_STATUS_META[status] || LOG_STATUS_META.unknown;
+  };
+
+  const formatLogAction = (action: string): string => {
+    const normalized = action.replace(/^runtime:/, '').replace(/[:_]+/g, ' ').trim();
+    if (!normalized) return action;
+    return normalized
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  const getLogContextLabel = (contextType: AgentActionLogItem['contextType']): string => {
+    return CONTEXT_TYPE_LABEL[contextType] || CONTEXT_TYPE_LABEL.unknown;
+  };
+
+  const getExtraDetailEntries = (item: AgentActionLogItem): Array<[string, string]> => {
+    const details = item.details;
+    if (!details) return [];
+    const hiddenKeys = new Set(['status', 'durationMs', 'taskTitle', 'taskId', 'taskType', 'runId', 'sessionId', 'error']);
+    return Object.entries(details)
+      .filter(([key, value]) => !hiddenKeys.has(key) && value !== undefined && value !== null && String(value).trim() !== '')
+      .slice(0, 4)
+      .map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)]);
   };
 
   const getLogSessionId = (item: AgentActionLogItem): string => {
@@ -647,8 +688,17 @@ const AgentDetail: React.FC = () => {
               >
                 <option value="">全部状态</option>
                 <option value="started">进行中</option>
+                <option value="running">运行中</option>
+                <option value="pending">待执行</option>
                 <option value="completed">成功</option>
                 <option value="failed">失败</option>
+                <option value="paused">已暂停</option>
+                <option value="resumed">已恢复</option>
+                <option value="cancelled">已取消</option>
+                <option value="asked">待授权</option>
+                <option value="replied">已授权回复</option>
+                <option value="denied">已拒绝</option>
+                <option value="step_started">步骤开始</option>
               </select>
             </div>
 
@@ -659,62 +709,103 @@ const AgentDetail: React.FC = () => {
 
           <div className="overflow-hidden rounded-lg bg-white shadow">
             {logQuery.isLoading ? (
-              <div className="flex h-48 items-center justify-center">
-                <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary-600" />
+              <div className="space-y-3 p-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div key={index} className="animate-pulse rounded-lg border border-gray-100 p-4">
+                    <div className="mb-3 h-4 w-32 rounded bg-gray-100" />
+                    <div className="mb-2 h-5 w-1/2 rounded bg-gray-200" />
+                    <div className="h-4 w-3/4 rounded bg-gray-100" />
+                  </div>
+                ))}
               </div>
             ) : logQuery.error ? (
               <div className="p-6 text-sm text-red-600">日志查询失败，请检查权限或筛选条件。</div>
             ) : logs.length === 0 ? (
               <div className="p-6 text-sm text-gray-500">暂无日志数据</div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">时间</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">动作</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">上下文</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">状态</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">详情</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">耗时</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {logs.map((item) => (
-                      <tr key={item.id}>
-                        <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600">
-                          {new Date(item.timestamp).toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{item.action}</td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {item.contextType}
-                          {item.contextId ? <div className="text-xs text-gray-500">{item.contextId}</div> : null}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          {renderLogStatus(item)}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">
-                          <div>{String(item.details?.taskTitle || '-')}</div>
-                          {getLogSessionId(item) ? (
-                            <button
-                              onClick={() => {
-                                const sid = getLogSessionId(item);
-                                setActiveTab('session');
-                                setSessionIdInput(sid);
-                                setSelectedSessionId(sid);
-                                setIsSessionDrawerOpen(true);
-                              }}
-                              className="mt-1 text-xs text-primary-600 hover:text-primary-700"
-                            >
-                              查看 Session: {getLogSessionId(item)}
-                            </button>
+              <div className="space-y-3 p-4">
+                {logs.map((item) => {
+                  const statusMeta = getLogStatusMeta(item);
+                  const sessionId = getLogSessionId(item);
+                  const durationMs = item.details?.durationMs;
+                  const extraEntries = getExtraDetailEntries(item);
+                  return (
+                    <article
+                      key={item.id}
+                      className="rounded-xl border border-gray-200 bg-gradient-to-r from-white via-white to-gray-50/80 p-4 transition hover:border-primary-200"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-wider text-gray-500">{new Date(item.timestamp).toLocaleString()}</p>
+                          <h3 className="mt-1 text-sm font-semibold text-gray-900">{formatLogAction(item.action)}</h3>
+                          <p className="mt-1 break-all font-mono text-xs text-gray-500">{item.action}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-medium ${statusMeta.badgeClass}`}>
+                            {statusMeta.label}
+                          </span>
+                          <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                            {getLogContextLabel(item.contextType)}
+                          </span>
+                          {typeof durationMs === 'number' ? (
+                            <span className="inline-flex rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600">
+                              {durationMs} ms
+                            </span>
                           ) : null}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-700">{item.details?.durationMs ?? 0} ms</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-gray-100 bg-white/80 p-3 md:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-gray-500">任务</p>
+                          <p className="mt-1 text-sm text-gray-800">{String(item.details?.taskTitle || '-')}</p>
+                          <p className="mt-1 break-all text-xs text-gray-500">
+                            ID: {item.details?.taskId || '-'} {item.details?.taskType ? `· 类型: ${item.details.taskType}` : ''}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-gray-500">上下文</p>
+                          <p className="mt-1 break-all text-sm text-gray-800">{item.contextId || '-'}</p>
+                          <p className="mt-1 break-all text-xs text-gray-500">Run: {item.details?.runId || '-'}</p>
+                        </div>
+                      </div>
+
+                      {item.details?.error ? (
+                        <div className="mt-3 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                          错误信息：{String(item.details.error)}
+                        </div>
+                      ) : null}
+
+                      {extraEntries.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {extraEntries.map(([key, value]) => (
+                            <span
+                              key={`${item.id}-${key}`}
+                              title={value}
+                              className="max-w-full truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600"
+                            >
+                              {key}: {value}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {sessionId ? (
+                        <button
+                          onClick={() => {
+                            setActiveTab('session');
+                            setSessionIdInput(sessionId);
+                            setSelectedSessionId(sessionId);
+                            setIsSessionDrawerOpen(true);
+                          }}
+                          className="mt-3 inline-flex items-center text-xs font-medium text-primary-600 hover:text-primary-700"
+                        >
+                          查看 Session: {sessionId}
+                        </button>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
             )}
           </div>
