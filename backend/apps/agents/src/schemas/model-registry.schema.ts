@@ -26,6 +26,20 @@ export class ModelRegistry {
   @Prop({ type: Number, default: 1 })
   topP?: number;
 
+  @Prop({
+    type: {
+      enabled: { type: Boolean, default: false },
+      effort: { type: String, enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
+      verbosity: { type: String, enum: ['low', 'medium', 'high'] },
+    },
+    default: undefined,
+  })
+  reasoning?: {
+    enabled: boolean;
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    verbosity?: 'low' | 'medium' | 'high';
+  };
+
   @Prop()
   createdAt?: Date;
 

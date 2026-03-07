@@ -33,6 +33,13 @@ export class Agent {
     maxTokens: { type: Number, required: true },
     temperature: { type: Number },
     topP: { type: Number },
+    reasoning: {
+      type: {
+        enabled: { type: Boolean, default: false },
+        effort: { type: String, enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
+        verbosity: { type: String, enum: ['low', 'medium', 'high'] },
+      },
+    },
   }))
   model: {
     id: string;
@@ -42,6 +49,11 @@ export class Agent {
     maxTokens: number;
     temperature?: number;
     topP?: number;
+    reasoning?: {
+      enabled: boolean;
+      effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+      verbosity?: 'low' | 'medium' | 'high';
+    };
   };
 
   @Prop({ type: [String], default: [] })

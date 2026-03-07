@@ -132,6 +132,7 @@ export class ModelManagementService implements OnModuleInit {
       maxTokens: modelWithoutId.maxTokens,
       temperature: modelWithoutId.temperature,
       topP: modelWithoutId.topP,
+      reasoning: this.normalizeReasoning(modelWithoutId.reasoning),
     };
 
     try {
@@ -187,6 +188,10 @@ export class ModelManagementService implements OnModuleInit {
       provider: updateData.provider ? (this.normalizeProvider(updateData.provider) as AIModel['provider']) : undefined,
       model: updateData.model ? String(updateData.model).trim().toLowerCase() : undefined,
       name: updateData.name?.trim(),
+      reasoning:
+        updateData.reasoning === undefined
+          ? undefined
+          : this.normalizeReasoning(updateData.reasoning),
     };
 
     if (normalizedUpdateData.provider || normalizedUpdateData.model) {
@@ -313,6 +318,28 @@ export class ModelManagementService implements OnModuleInit {
       maxTokens: Number(doc.maxTokens || this.settings.defaultMaxTokens),
       temperature: Number(doc.temperature ?? this.settings.defaultTemperature),
       topP: Number(doc.topP ?? 1),
+      reasoning: this.normalizeReasoning(doc.reasoning),
+    };
+  }
+
+  private normalizeReasoning(reasoning?: AIModel['reasoning']): AIModel['reasoning'] | undefined {
+    if (!reasoning) {
+      return undefined;
+    }
+
+    const enabled = Boolean(reasoning.enabled);
+    const effortValue = String(reasoning.effort || '').trim().toLowerCase();
+    const verbosityValue = String(reasoning.verbosity || '').trim().toLowerCase();
+
+    const validEfforts = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+    const validVerbosity = new Set(['low', 'medium', 'high']);
+
+    return {
+      enabled,
+      ...(validEfforts.has(effortValue) ? { effort: effortValue as NonNullable<AIModel['reasoning']>['effort'] } : {}),
+      ...(validVerbosity.has(verbosityValue)
+        ? { verbosity: verbosityValue as NonNullable<AIModel['reasoning']>['verbosity'] }
+        : {}),
     };
   }
 
@@ -339,6 +366,7 @@ export class ModelManagementService implements OnModuleInit {
         maxTokens: Number(baseModel.maxTokens || this.settings.defaultMaxTokens),
         temperature: Number(baseModel.temperature ?? this.settings.defaultTemperature),
         topP: Number(baseModel.topP ?? 1),
+        reasoning: this.normalizeReasoning(baseModel.reasoning),
       };
 
       try {

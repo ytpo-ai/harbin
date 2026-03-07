@@ -20,6 +20,11 @@ export interface AIModel {
   maxTokens: number;
   temperature?: number;
   topP?: number;
+  reasoning?: {
+    enabled: boolean;
+    effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+    verbosity?: 'low' | 'medium' | 'high';
+  };
 }
 
 export interface ChatMessage {

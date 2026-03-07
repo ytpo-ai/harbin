@@ -289,6 +289,7 @@ export class AgentService {
         maxTokens: normalizedData.model.maxTokens || 4096,
         temperature: normalizedData.model.temperature ?? 0.7,
         topP: normalizedData.model.topP,
+        reasoning: normalizedData.model.reasoning,
       };
       this.modelService.ensureProvider(modelConfig);
       this.logger.log(`Agent ${normalizedData.name} using model: ${modelConfig.name} (${modelConfig.id})`);
@@ -465,6 +466,7 @@ export class AgentService {
       maxTokens: options?.model?.maxTokens || agent.model.maxTokens || 4096,
       temperature: options?.model?.temperature ?? agent.model.temperature ?? 0.7,
       topP: options?.model?.topP ?? agent.model.topP,
+      reasoning: options?.model?.reasoning ?? agent.model.reasoning,
     };
 
     const messages: ChatMessage[] = [
@@ -758,7 +760,8 @@ export class AgentService {
         model: agent.model.model,
         maxTokens: agent.model.maxTokens || 4096,
         temperature: agent.model.temperature || 0.7,
-        topP: agent.model.topP
+        topP: agent.model.topP,
+        reasoning: agent.model.reasoning,
       };
 
       // 获取自定义API Key（如果配置了）
@@ -969,7 +972,8 @@ export class AgentService {
       model: agent.model.model,
       maxTokens: agent.model.maxTokens || 4096,
       temperature: agent.model.temperature || 0.7,
-      topP: agent.model.topP
+      topP: agent.model.topP,
+      reasoning: agent.model.reasoning,
     };
     this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
 
@@ -2659,6 +2663,7 @@ export class AgentService {
           maxTokens: model.maxTokens || 8192,
           temperature: model.temperature ?? 0.2,
           topP: model.topP,
+          reasoning: model.reasoning,
         },
         capabilities: ['model_discovery', 'model_registry_management', 'internet_research'],
         systemPrompt: MODEL_MANAGEMENT_AGENT_PROMPT,

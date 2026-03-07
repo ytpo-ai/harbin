@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider } from '@libs/models';
+import { Injectable, Logger } from '@nestjs/common';
+import { AIV2Provider, AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider } from '@libs/models';
 import { AIModel, ChatMessage } from '../../../../../src/shared/types';
 
 @Injectable()
 export class ModelService {
+  private readonly logger = new Logger(ModelService.name);
   private providers = new Map<string, BaseAIProvider>();
 
   constructor() {
@@ -19,6 +20,14 @@ export class ModelService {
   registerProvider(model: AIModel, apiKey?: string): void {
     let provider: BaseAIProvider;
     const normalizedProvider = (model.provider || '').toLowerCase().trim();
+    const useV2 = this.shouldUseAIV2Provider(model);
+
+    if (useV2) {
+      provider = new AIV2Provider(model, apiKey);
+      this.providers.set(model.id, provider);
+      this.logger.log(`model=${model.model} provider=${normalizedProvider} route=v2`);
+      return;
+    }
 
     switch (normalizedProvider) {
       case 'openai':
@@ -40,6 +49,44 @@ export class ModelService {
     }
 
     this.providers.set(model.id, provider);
+    this.logger.log(`model=${model.model} provider=${normalizedProvider} route=v1`);
+  }
+
+  private shouldUseAIV2Provider(model: AIModel): boolean {
+    const enabled = String(process.env.LLM_PROVIDER_V2_ENABLED || '').toLowerCase();
+    if (!['1', 'true', 'yes', 'on'].includes(enabled)) {
+      return false;
+    }
+
+    const provider = String(model.provider || '').toLowerCase().trim();
+    const modelName = String(model.model || '').toLowerCase().trim();
+
+    const providerAllowlist = this.parseCsvEnv('LLM_PROVIDER_V2_PROVIDERS');
+    const modelAllowlist = this.parseCsvEnv('LLM_PROVIDER_V2_MODELS');
+
+    const isProviderMatched =
+      providerAllowlist.length === 0 ||
+      providerAllowlist.includes('*') ||
+      providerAllowlist.includes(provider);
+
+    const isModelMatched =
+      modelAllowlist.length === 0 ||
+      modelAllowlist.includes('*') ||
+      modelAllowlist.includes(modelName);
+
+    return isProviderMatched && isModelMatched;
+  }
+
+  private parseCsvEnv(name: string): string[] {
+    const raw = String(process.env[name] || '').trim();
+    if (!raw) {
+      return [];
+    }
+
+    return raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean);
   }
 
   ensureProviderWithKey(model: AIModel, apiKey?: string): void {
