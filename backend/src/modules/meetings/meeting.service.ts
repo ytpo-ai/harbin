@@ -619,6 +619,25 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     return hasLogKeyword || hasActionKeyword;
   }
 
+  private isAgentListIntent(content: string): boolean {
+    const text = String(content || '').toLowerCase().trim();
+    if (!text) return false;
+
+    const hasAgentKeyword = text.includes('agent') || text.includes('智能体') || text.includes('助手');
+    const asksList =
+      text.includes('有哪些') ||
+      text.includes('列表') ||
+      text.includes('清单') ||
+      text.includes('当前') ||
+      text.includes('现在') ||
+      text.includes('what agents') ||
+      text.includes('which agents') ||
+      text.includes('list agents') ||
+      text.includes('available agents');
+
+    return hasAgentKeyword && asksList;
+  }
+
   private formatOperationLogResponse(result: any): string {
     const total = Number(result?.total || 0);
     const logs = Array.isArray(result?.logs) ? result.logs : [];
@@ -638,18 +657,55 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     ].join('\n');
   }
 
+  private formatAgentListResponse(result: any): string {
+    const total = Number(result?.total || 0);
+    const visible = Number(result?.visible || 0);
+    const agents = Array.isArray(result?.agents) ? result.agents : [];
+
+    if (visible === 0 || agents.length === 0) {
+      return '我查到了系统当前没有可见的 Agent。若需要，我可以继续帮你筛选隐藏 Agent 或按角色查询。';
+    }
+
+    const rows = agents.slice(0, 8).map((item: any) => {
+      const name = String(item?.name || '未命名 Agent');
+      const role = String(item?.role || 'unknown-role');
+      const status = item?.isActive === true ? 'active' : 'inactive';
+      return `- ${name}（${role}，${status}）`;
+    });
+
+    return [
+      `我知道，当前系统共登记 ${total} 个 Agent，其中可见 ${visible} 个。`,
+      '可见 Agent 示例：',
+      ...rows,
+      rows.length < visible ? `（其余 ${visible - rows.length} 个可继续展开）` : '',
+    ]
+      .filter((line) => line)
+      .join('\n');
+  }
+
   private async respondWithOperationLogSummary(
     meetingId: string,
+    meetingTitle: string,
     assistantAgentId: string,
     triggerMessage: MeetingMessage,
   ): Promise<boolean> {
     try {
-      const execution = await this.agentClientService.executeTool(
+      const execution = await this.agentClientService.executeToolQuery(
         'human_operation_log_mcp_list',
         assistantAgentId,
         {
           page: 1,
           pageSize: 20,
+        },
+        {
+          source: 'meeting.operation_log_intent',
+          context: {
+            executionMode: 'chat',
+            teamContext: {
+              meetingId,
+              meetingTitle,
+            },
+          },
         },
       );
 
@@ -669,6 +725,52 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown operation log query error';
       this.logger.warn(`Operation log routing failed in meeting ${meetingId}: ${message}`);
+      return false;
+    }
+  }
+
+  private async respondWithAgentListSummary(
+    meetingId: string,
+    meetingTitle: string,
+    responderAgentId: string,
+    triggerMessage: MeetingMessage,
+  ): Promise<boolean> {
+    try {
+      const execution = await this.agentClientService.executeToolQuery(
+        'agents_mcp_list',
+        responderAgentId,
+        {
+          includeHidden: false,
+          limit: 30,
+        },
+        {
+          source: 'meeting.agent_list_intent',
+          context: {
+            executionMode: 'chat',
+            teamContext: {
+              meetingId,
+              meetingTitle,
+            },
+          },
+        },
+      );
+
+      const result = execution?.result || execution?.data?.result;
+      const content = this.formatAgentListResponse(result || {});
+
+      await this.sendMessage(meetingId, {
+        senderId: responderAgentId,
+        senderType: 'agent',
+        content,
+        type: 'conclusion',
+        metadata: {
+          relatedMessageId: triggerMessage.id,
+        },
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown agent list query error';
+      this.logger.warn(`Agent list routing failed in meeting ${meetingId}: ${message}`);
       return false;
     }
   }
@@ -1679,11 +1781,25 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       const exclusiveAssistant = exclusiveAssistantResponders[0];
       const handled = await this.respondWithOperationLogSummary(
         meetingId,
+        meeting.title,
         exclusiveAssistant.participantId,
         triggerMessage,
       );
       if (handled) {
         return;
+      }
+    }
+
+    if (this.isAgentListIntent(triggerMessage.content || '')) {
+      const queryResponderId =
+        exclusiveAssistantResponders[0]?.participantId ||
+        presentAgents[0]?.participantId ||
+        regularAgentParticipants[0]?.participantId;
+      if (queryResponderId) {
+        const handled = await this.respondWithAgentListSummary(meetingId, meeting.title, queryResponderId, triggerMessage);
+        if (handled) {
+          return;
+        }
       }
     }
 
@@ -1769,6 +1885,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       }
 
       const response = await this.agentClientService.executeTask(agentId, task as any, {
+        executionMode: 'chat',
         teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
       });
 
@@ -1919,6 +2036,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       const organizationId = await this.resolveMeetingOrganizationId(meeting, triggerMessage);
       const response = await this.agentClientService.executeTask(participant.id, task as any, {
+        executionMode: 'chat',
         teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
       });
       await this.sendMessage(meetingId, {

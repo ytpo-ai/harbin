@@ -23,6 +23,8 @@ export interface AgentMemoSnapshot {
   topic: AgentMemoSnapshotItem[];
 }
 
+export type AgentExecutionMode = 'chat' | 'task';
+
 @Injectable()
 export class AgentClientService {
   private readonly logger = new Logger(AgentClientService.name);
@@ -109,9 +111,12 @@ export class AgentClientService {
     context?: any,
   ): Promise<{ response: string; runId?: string; sessionId?: string }> {
     const startedAt = Date.now();
+    const executionMode = this.resolveExecutionMode(context);
     const contextType = this.resolveContextType(context);
     const contextId = this.resolveContextId(context, task);
-    const actionLabel = this.buildActionLabel(task, contextType);
+    const contextSessionId = this.resolveAgentSessionId(context);
+    const chatTitle = this.resolveChatTitle(context);
+    const actionLabel = this.buildActionLabel(task, contextType, executionMode);
     await this.agentActionLogService.record({
       agentId,
       contextType,
@@ -122,6 +127,9 @@ export class AgentClientService {
         taskId: task.id,
         taskTitle: task.title,
         taskType: task.type,
+        executionMode,
+        agentSessionId: contextSessionId,
+        meetingTitle: chatTitle,
       },
     });
 
@@ -146,6 +154,9 @@ export class AgentClientService {
           taskId: task.id,
           taskTitle: task.title,
           taskType: task.type,
+          executionMode,
+          agentSessionId: response.data?.sessionId || contextSessionId,
+          meetingTitle: chatTitle,
           runId: response.data?.runId,
           sessionId: response.data?.sessionId,
         },
@@ -168,6 +179,9 @@ export class AgentClientService {
           taskId: task.id,
           taskTitle: task.title,
           taskType: task.type,
+          executionMode,
+          agentSessionId: contextSessionId,
+          meetingTitle: chatTitle,
           error: message,
         },
       });
@@ -182,13 +196,10 @@ export class AgentClientService {
 
   private resolveContextType(context?: any): AgentActionContextType {
     const teamContext = context?.teamContext;
-    if (!teamContext) return 'unknown';
-    if (teamContext.meetingId) return 'meeting';
-    if (teamContext.discussionId) return 'meeting';
-    if (teamContext.planId) return 'plan';
-    if (teamContext.taskId || teamContext.orchestrationTaskId) return 'task';
-    if (teamContext.taskKey) return 'task';
-    return 'unknown';
+    if (!teamContext) return 'chat';
+    if (teamContext.planId) return 'orchestration';
+    if (teamContext.taskId || teamContext.orchestrationTaskId || teamContext.taskKey) return 'orchestration';
+    return 'chat';
   }
 
   private resolveContextId(context?: any, task?: Task): string | undefined {
@@ -204,9 +215,44 @@ export class AgentClientService {
     return rawTask?._id?.toString ? rawTask._id.toString() : undefined;
   }
 
-  private buildActionLabel(task: Task, contextType: AgentActionContextType): string {
+  private buildActionLabel(task: Task, contextType: AgentActionContextType, mode: AgentExecutionMode): string {
     const taskType = task?.type ? task.type : 'task';
-    return `${contextType}:${taskType}`;
+    const action = mode === 'chat' ? 'chat_execution' : 'task_execution';
+    return `${action}:${contextType}:${taskType}`;
+  }
+
+  private resolveExecutionMode(context?: any): AgentExecutionMode {
+    const mode = String(context?.executionMode || '').toLowerCase();
+    return mode === 'chat' ? 'chat' : 'task';
+  }
+
+  private resolveAgentSessionId(context?: any): string | undefined {
+    const candidates = [
+      context?.agentSessionId,
+      context?.sessionId,
+      context?.teamContext?.agentSessionId,
+      context?.teamContext?.sessionId,
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private resolveChatTitle(context?: any): string | undefined {
+    const candidates = [
+      context?.teamContext?.meetingTitle,
+      context?.teamContext?.discussionTitle,
+      context?.teamContext?.title,
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
   }
 
   async executeTool(toolId: string, agentId: string, parameters: any, taskId?: string): Promise<any> {
@@ -219,6 +265,78 @@ export class AgentClientService {
       },
     );
     return response.data;
+  }
+
+  async executeToolQuery(
+    toolId: string,
+    agentId: string,
+    parameters: any,
+    options?: {
+      context?: any;
+      source?: string;
+    },
+  ): Promise<any> {
+    const startedAt = Date.now();
+    const context = options?.context;
+    const contextType = this.resolveContextType(context);
+    const contextId = this.resolveContextId(context);
+    const agentSessionId = this.resolveAgentSessionId(context);
+    const chatTitle = this.resolveChatTitle(context);
+    const source = options?.source || 'chat_query';
+
+    await this.agentActionLogService.record({
+      agentId,
+      contextType,
+      contextId,
+      action: 'chat_tool_call',
+      status: 'started',
+      details: {
+        toolId,
+        source,
+        executionMode: 'chat',
+        agentSessionId,
+        meetingTitle: chatTitle,
+      },
+    });
+
+    try {
+      const result = await this.executeTool(toolId, agentId, parameters, context?.teamContext?.taskId);
+      await this.agentActionLogService.record({
+        agentId,
+        contextType,
+        contextId,
+        action: 'chat_tool_call',
+        status: 'completed',
+        durationMs: Date.now() - startedAt,
+        details: {
+          toolId,
+          source,
+          executionMode: 'chat',
+          agentSessionId,
+          meetingTitle: chatTitle,
+        },
+      });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await this.agentActionLogService.record({
+        agentId,
+        contextType,
+        contextId,
+        action: 'chat_tool_call',
+        status: 'failed',
+        durationMs: Date.now() - startedAt,
+        details: {
+          toolId,
+          source,
+          executionMode: 'chat',
+          agentSessionId,
+          meetingTitle: chatTitle,
+          error: message,
+        },
+      });
+      throw error;
+    }
   }
 
   async testAgentConnection(

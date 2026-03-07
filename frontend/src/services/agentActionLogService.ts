@@ -4,10 +4,23 @@ export interface AgentActionLogQuery {
   from?: string;
   to?: string;
   agentId?: string;
-  contextType?: 'meeting' | 'plan' | 'task' | 'unknown' | '';
+  contextType?: 'chat' | 'orchestration' | '';
   contextId?: string;
   action?: string;
-  status?: 'started' | 'completed' | 'failed' | '';
+  status?:
+    | 'started'
+    | 'completed'
+    | 'failed'
+    | 'paused'
+    | 'resumed'
+    | 'cancelled'
+    | 'pending'
+    | 'running'
+    | 'asked'
+    | 'replied'
+    | 'denied'
+    | 'step_started'
+    | '';
   page?: number;
   pageSize?: number;
 }
@@ -15,17 +28,32 @@ export interface AgentActionLogQuery {
 export interface AgentActionLogItem {
   id: string;
   agentId: string;
-  contextType: 'meeting' | 'plan' | 'task' | 'unknown';
+  contextType: 'chat' | 'orchestration';
   contextId?: string;
   action: string;
   details?: {
-    status?: 'started' | 'completed' | 'failed';
+    status?:
+      | 'started'
+      | 'completed'
+      | 'failed'
+      | 'paused'
+      | 'resumed'
+      | 'cancelled'
+      | 'pending'
+      | 'running'
+      | 'asked'
+      | 'replied'
+      | 'denied'
+      | 'step_started'
+      | 'unknown';
     durationMs?: number;
     taskTitle?: string;
     taskId?: string;
     taskType?: string;
     runId?: string;
     sessionId?: string;
+    agentSessionId?: string;
+    meetingTitle?: string;
     error?: string;
     [key: string]: unknown;
   };

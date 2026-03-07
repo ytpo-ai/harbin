@@ -47,10 +47,8 @@ const LOG_STATUS_META: Record<LogStatus | 'unknown', { label: string; badgeClass
 };
 
 const CONTEXT_TYPE_LABEL: Record<AgentActionLogItem['contextType'], string> = {
-  meeting: '会议',
-  plan: '计划',
-  task: '任务',
-  unknown: '未知',
+  chat: 'Chat',
+  orchestration: 'Orchestration',
 };
 
 type MemoDraft = {
@@ -121,6 +119,7 @@ const AgentDetail: React.FC = () => {
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
   const [sessionCopyNotice, setSessionCopyNotice] = useState('');
+  const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
 
   const { data: agent, isLoading: isAgentLoading } = useQuery(
     ['agent-detail', agentId],
@@ -239,6 +238,13 @@ const AgentDetail: React.FC = () => {
     setLogFilters((prev) => ({ ...prev, ...patch, page: 1 }));
   };
 
+  const toggleLogExpanded = (logId: string) => {
+    setExpandedLogIds((prev) => ({
+      ...prev,
+      [logId]: !prev[logId],
+    }));
+  };
+
   const displayedMemos = useMemo(() => {
     if (memoCategory === 'topic') return memos;
     const order = new Map(standardMemoKinds.map((kind, index) => [kind, index]));
@@ -304,13 +310,24 @@ const AgentDetail: React.FC = () => {
   };
 
   const getLogContextLabel = (contextType: AgentActionLogItem['contextType']): string => {
-    return CONTEXT_TYPE_LABEL[contextType] || CONTEXT_TYPE_LABEL.unknown;
+    return CONTEXT_TYPE_LABEL[contextType] || 'Unknown';
   };
 
   const getExtraDetailEntries = (item: AgentActionLogItem): Array<[string, string]> => {
     const details = item.details;
     if (!details) return [];
-    const hiddenKeys = new Set(['status', 'durationMs', 'taskTitle', 'taskId', 'taskType', 'runId', 'sessionId', 'error']);
+    const hiddenKeys = new Set([
+      'status',
+      'durationMs',
+      'taskTitle',
+      'taskId',
+      'taskType',
+      'runId',
+      'sessionId',
+      'agentSessionId',
+      'meetingTitle',
+      'error',
+    ]);
     return Object.entries(details)
       .filter(([key, value]) => !hiddenKeys.has(key) && value !== undefined && value !== null && String(value).trim() !== '')
       .slice(0, 4)
@@ -318,7 +335,7 @@ const AgentDetail: React.FC = () => {
   };
 
   const getLogSessionId = (item: AgentActionLogItem): string => {
-    const raw = item.details?.sessionId;
+    const raw = item.details?.agentSessionId || item.details?.sessionId;
     return typeof raw === 'string' ? raw : '';
   };
 
@@ -636,7 +653,7 @@ const AgentDetail: React.FC = () => {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">Agent 日志</h2>
-              <p className="text-sm text-gray-500">查看该 Agent 在会议/计划/任务中的行为日志</p>
+              <p className="text-sm text-gray-500">查看该 Agent 在 Chat / Orchestration 场景中的行为日志</p>
             </div>
             <button
               onClick={() => logQuery.refetch()}
@@ -676,10 +693,8 @@ const AgentDetail: React.FC = () => {
                 className="rounded-md border border-gray-300 px-3 py-2 text-sm"
               >
                 <option value="">全部上下文</option>
-                <option value="meeting">会议</option>
-                <option value="plan">计划</option>
-                <option value="task">任务</option>
-                <option value="unknown">未知</option>
+                <option value="chat">Chat</option>
+                <option value="orchestration">Orchestration</option>
               </select>
               <select
                 value={logFilters.status || ''}
@@ -729,6 +744,10 @@ const AgentDetail: React.FC = () => {
                   const sessionId = getLogSessionId(item);
                   const durationMs = item.details?.durationMs;
                   const extraEntries = getExtraDetailEntries(item);
+                  const isOrchestration = item.contextType === 'orchestration';
+                  const chatTitle = String(item.details?.meetingTitle || item.details?.taskTitle || '-');
+                  const primaryTitle = isOrchestration ? String(item.details?.taskTitle || '-') : chatTitle;
+                  const isExpanded = expandedLogIds[item.id] === true;
                   return (
                     <article
                       key={item.id}
@@ -738,6 +757,7 @@ const AgentDetail: React.FC = () => {
                         <div>
                           <p className="text-xs uppercase tracking-wider text-gray-500">{new Date(item.timestamp).toLocaleString()}</p>
                           <h3 className="mt-1 text-sm font-semibold text-gray-900">{formatLogAction(item.action)}</h3>
+                          <p className="mt-1 text-sm text-gray-800">{primaryTitle}</p>
                           <p className="mt-1 break-all font-mono text-xs text-gray-500">{item.action}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
@@ -755,38 +775,54 @@ const AgentDetail: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-3 grid grid-cols-1 gap-3 rounded-lg border border-gray-100 bg-white/80 p-3 md:grid-cols-2">
-                        <div>
-                          <p className="text-xs text-gray-500">任务</p>
-                          <p className="mt-1 text-sm text-gray-800">{String(item.details?.taskTitle || '-')}</p>
-                          <p className="mt-1 break-all text-xs text-gray-500">
-                            ID: {item.details?.taskId || '-'} {item.details?.taskType ? `· 类型: ${item.details.taskType}` : ''}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-gray-500">上下文</p>
-                          <p className="mt-1 break-all text-sm text-gray-800">{item.contextId || '-'}</p>
-                          <p className="mt-1 break-all text-xs text-gray-500">Run: {item.details?.runId || '-'}</p>
-                        </div>
+                      <div className="mt-3 flex items-center justify-between">
+                        <p className="text-xs text-gray-500">{isOrchestration ? '任务标题' : '会议标题'} 已固定展示</p>
+                        <button
+                          onClick={() => toggleLogExpanded(item.id)}
+                          className="inline-flex items-center rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                        >
+                          {isExpanded ? '收起详情' : '展开详情'}
+                        </button>
                       </div>
 
-                      {item.details?.error ? (
-                        <div className="mt-3 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                          错误信息：{String(item.details.error)}
-                        </div>
-                      ) : null}
+                      {isExpanded ? (
+                        <div className="mt-3 space-y-3">
+                          <div className="grid grid-cols-1 gap-3 rounded-lg border border-gray-100 bg-white/80 p-3 md:grid-cols-2">
+                            <div>
+                              <p className="text-xs text-gray-500">{isOrchestration ? '任务' : '会议'}</p>
+                              <p className="mt-1 text-sm text-gray-800">{primaryTitle}</p>
+                              {isOrchestration ? (
+                                <p className="mt-1 break-all text-xs text-gray-500">
+                                  ID: {item.details?.taskId || '-'} {item.details?.taskType ? `· 类型: ${item.details.taskType}` : ''}
+                                </p>
+                              ) : null}
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500">上下文</p>
+                              <p className="mt-1 break-all text-sm text-gray-800">{item.contextId || '-'}</p>
+                              <p className="mt-1 break-all text-xs text-gray-500">Run: {item.details?.runId || '-'}</p>
+                            </div>
+                          </div>
 
-                      {extraEntries.length > 0 ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {extraEntries.map(([key, value]) => (
-                            <span
-                              key={`${item.id}-${key}`}
-                              title={value}
-                              className="max-w-full truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600"
-                            >
-                              {key}: {value}
-                            </span>
-                          ))}
+                          {item.details?.error ? (
+                            <div className="rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                              错误信息：{String(item.details.error)}
+                            </div>
+                          ) : null}
+
+                          {extraEntries.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {extraEntries.map(([key, value]) => (
+                                <span
+                                  key={`${item.id}-${key}`}
+                                  title={value}
+                                  className="max-w-full truncate rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-xs text-gray-600"
+                                >
+                                  {key}: {value}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
 

@@ -173,6 +173,7 @@ export class DiscussionService {
       this.logger.log(`Calling AI model for agent ${agent.name}, model: ${agent.model.id}`);
       
       const response = await this.agentClientService.executeTask(agentId, responseTask, {
+        executionMode: 'chat',
         teamContext: {
           discussionId,
           participants: discussion.participants,
@@ -366,6 +367,7 @@ export class DiscussionService {
     };
 
     await this.agentClientService.executeTask(agentId, responseTask, {
+      executionMode: 'chat',
       teamContext: {
         discussionId,
         participants: discussion.participants,
