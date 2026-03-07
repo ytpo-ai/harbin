@@ -1,5 +1,7 @@
 # 会议编排 Pending Intent 补全计划
 
+> 已聚合到主计划：`docs/plan/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`
+
 ## 背景
 
 当前会议编排触发主要依赖单轮关键词和显式参数。当 Agent 返回“请回复执行”后，用户仅回复“执行”时，系统无法自动关联上一轮 `planId`，导致回退到普通对话。

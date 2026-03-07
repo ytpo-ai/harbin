@@ -1,5 +1,7 @@
 # 前端 MCP Profile 管理能力补齐计划
 
+> 已聚合到主计划：`docs/plan/MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md`
+
 ## 背景
 
 当前后端已具备 MCP Profile 查询与更新接口，但前端缺少管理入口，导致：

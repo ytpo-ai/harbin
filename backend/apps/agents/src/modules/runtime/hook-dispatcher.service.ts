@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { RedisService } from '@libs/infra';
 import { RuntimeEvent } from './contracts/runtime-event.contract';
 import { RuntimePersistenceService } from './runtime-persistence.service';
+import { RuntimeActionLogSyncService } from './runtime-action-log-sync.service';
 
 @Injectable()
 export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
@@ -20,6 +21,7 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly redisService: RedisService,
     private readonly persistence: RuntimePersistenceService,
+    private readonly runtimeActionLogSyncService: RuntimeActionLogSyncService,
   ) {}
 
   onModuleInit(): void {
@@ -43,6 +45,9 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
         throw new Error('Redis pub/sub is not ready');
       }
       await this.redisService.publish(channel, event);
+      if (!options?.replay) {
+        await this.runtimeActionLogSyncService.syncRuntimeEvent(event);
+      }
       if (options?.replay) {
         this.metrics.replayPublished += 1;
       } else {

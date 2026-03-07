@@ -21,6 +21,7 @@
 
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
+| `agent/agent_mg` | Agent 管理 | `docs/features/AGENT_MG.md` |
 | `agent/agent_memo` | Agent 备忘录 | `docs/features/AGENT_MEMO.md` |
 | `agent/agent_session` | Agent 会话 | `docs/features/AGENT_SESSION.md` |
 | `agent/agent_skill` | Agent 技能绑定 | `docs/features/AGENT_SKILL.md` |
@@ -30,7 +31,7 @@
 ### 2. 任务编排模块 (orchestration)
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
-| `orchestration/task` | 任务管理 | `docs/features/ORCHETRATION.md` |
+| `orchestration/task` | 任务管理 | `docs/features/ORCHETRATION_TASK.md` |
 | `orchestration.workflow` | 工作流编排 | (待完善) |
 | `orchestration.scheduler` | 定时调度 | (待完善) |
 
@@ -38,7 +39,7 @@
 
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
-| `meeting/meeting_chat` | 会议聊天 | `docs/features/MEETING.md` |
+| `meeting/meeting_chat` | 会议聊天 | `docs/features/MEETING_CHAT.md` |
 | `meeting/meeting_context` | 上下文同步 | (待完善) |
 
 ### 4. 工程智能模块 (engineering-intelligence)
@@ -76,7 +77,7 @@
 | `docs/features/AGENT_SKILL.md` | agent/skill |
 | `docs/features/AGENT_RUNTIME.md` | agent/agent_runtime |
 | `docs/features/ORCHETRATION.md` | orchestration |
-| `docs/features/MEETING.md` | meeting/meeting_chat |
+| `docs/features/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/features/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence |
 
 ### 待完善的功能文档

@@ -1,5 +1,14 @@
 # Agent Orchestration AgentSession Unification 开发沉淀
 
+## 关联主文档索引
+
+- 计划主文档：`docs/plan/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`
+- 治理主文档：`docs/plan/MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md`
+- 开发主沉淀：`docs/development/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`
+- 治理主沉淀：`docs/development/MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md`
+- 技术细节（会议编排执行）：`docs/technical/MEETING_ORCHESTRATION_EXECUTION_TECHNICAL.md`
+- 技术细节（MCP治理）：`docs/technical/MCP_PROFILE_GOVERNANCE_TECHNICAL.md`
+
 ## 1. 背景与目标
 
 本次开发基于 `docs/plan/AGENT_ORCHESTRATION_AGENTSESSION_UNIFICATION_PLAN.md` 执行，目标是将编排与执行分层：

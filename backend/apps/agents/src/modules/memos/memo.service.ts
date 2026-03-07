@@ -802,7 +802,7 @@ export class MemoService {
     await this.createIfMissing({
       agentId: normalizedAgentId,
       memoKind: 'identity',
-      memoType: 'knowledge',
+      memoType: 'standard',
       title: '身份与职责',
       slug: this.buildStableSlug('identity', '身份与职责'),
       content: [

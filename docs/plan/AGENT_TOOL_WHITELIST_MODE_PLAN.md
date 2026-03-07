@@ -1,5 +1,7 @@
 # Agent 工具白名单模式改造计划
 
+> 已聚合到主计划：`docs/plan/MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md`
+
 ## 背景
 
 当前 Agent 工具来源同时包含 `Agent.tools` 与 `MCP Profile.tools`，导致配置认知不一致：

@@ -1,5 +1,7 @@
 # 会议场景编排工具强制触发计划
 
+> 已聚合到主计划：`docs/plan/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`
+
 ## 背景
 
 在会议讨论场景中，即使 Agent 已分配 `orchestration_*` 工具，模型仍可能仅输出自然语言承诺（不产生 `<tool_call>`），导致“有权限但不执行”。

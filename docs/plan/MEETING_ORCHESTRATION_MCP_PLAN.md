@@ -1,5 +1,7 @@
 # 会议场景编排 MCP 工具接入计划
 
+> 已聚合到主计划：`docs/plan/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`
+
 ## 背景
 
 目标是在会议场景中，允许指定 Agent 通过 MCP 工具直接触发和管理计划编排（orchestration），实现“会议内发起计划、执行计划、查询状态、处理人工接管”的闭环。

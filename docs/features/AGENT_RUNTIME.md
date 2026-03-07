@@ -71,6 +71,7 @@
   - 发布失败标记 `failed`，并按指数退避设置 `nextRetryAt`
   - 定时 flush 自动重试
 - replay：支持按 `eventTypes/fromSequence/toSequence/channel/limit` 重放 run 事件。
+- 状态钩子同步日志：`HookDispatcher` 在分发成功链路内同步调用 legacy `agent-action-logs` 内部接口，写入 `agent_action_logs`，并以 `sourceEventId=eventId` 做幂等。
 
 ### 1.5 控制面与运行维护
 
@@ -112,11 +113,12 @@
 |------|------|
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构落地说明、能力边界与 commit 映射 |
 
-### 技术/架构文档 (docs/architecture/, docs/api/)
+### 技术/架构文档 (docs/technical/, docs/api/)
 
 | 文件 | 说明 |
 |------|------|
-| `architecture/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
+| `technical/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
+| `technical/AGENT_RUNTIME_WORKFLOW_TECHNICAL_DESIGN.md` | Runtime 工作流技术设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |
 
 ---
@@ -132,6 +134,7 @@
 | `runtime-orchestrator.service.ts` | run 生命周期编排、事件写入、工具状态迁移 |
 | `runtime-persistence.service.ts` | run/message/part/outbox/session/审计持久化实现 |
 | `hook-dispatcher.service.ts` | Hook 事件分发、重试、flush 与指标 |
+| `runtime-action-log-sync.service.ts` | Runtime 状态钩子同步写入 Agent Action Logs |
 | `contracts/runtime-event.contract.ts` | 运行时事件契约（zod） |
 | `contracts/runtime-run.contract.ts` | run 与工具事件输入契约 |
 | `contracts/runtime-control.contract.ts` | 控制面与运维接口入参契约 |
@@ -153,3 +156,4 @@
 |------|------|
 | `modules/agents/agent.service.ts` | Agent 执行链路接入 runtime（start/assert/complete/fail/tool events） |
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | Runtime 控制类路径网关侧审计日志 |
+| `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |
