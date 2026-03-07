@@ -17,8 +17,10 @@ import { Employee, EmployeeDocument, EmployeeType } from '../../../../../src/sha
 import { OperationLog, OperationLogDocument } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ComposioService } from './composio.service';
 import { ModelManagementService } from '../models/model-management.service';
-import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './code-docs-mcp.util';
-import { buildCodeUpdatesMcpSummary, CodeUpdatesMcpCommit } from './code-updates-mcp.util';
+import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './gh-repo-docs-reader-mcp.util';
+import { buildCodeUpdatesMcpSummary, CodeUpdatesMcpCommit } from './gh-repo-updates-mcp.util';
+import { codeDocsReader } from './local-repo-docs-reader.util';
+import { codeUpdatesReader } from './local-repo-updates-reader.util';
 import { MemoService } from '../memos/memo.service';
 
 const DEFAULT_PROFILE = {
@@ -125,7 +127,22 @@ export class ToolService {
         },
       },
       {
-        id: 'code-docs-mcp',
+        id: 'repo-read',
+        name: 'Repo Read',
+        description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_read', name: 'Repository Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            command: 'string',
+          },
+        },
+      },
+      {
+        id: 'gh-repo-docs-reader-mcp',
         name: 'Code Docs MCP',
         description: 'Summarize implemented core features from repository docs with evidence paths',
         type: 'data_analysis' as const,
@@ -143,7 +160,7 @@ export class ToolService {
         },
       },
       {
-        id: 'code-updates-mcp',
+        id: 'gh-repo-updates-mcp',
         name: 'Code Updates MCP',
         description: 'Summarize recent repository updates from git commits with evidence',
         type: 'data_analysis' as const,
@@ -157,6 +174,38 @@ export class ToolService {
             limit: 'number',
             includeFiles: 'boolean',
             minSeverity: 'string',
+          },
+        },
+      },
+      {
+        id: 'local-repo-docs-reader',
+        name: 'Code Docs Reader',
+        description: 'Read raw documentation files from docs/ directory',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            focus: 'string',
+            maxFiles: 'number',
+          },
+        },
+      },
+      {
+        id: 'local-repo-updates-reader',
+        name: 'Code Updates Reader',
+        description: 'Read raw git commit history from repository',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            hours: 'number',
+            limit: 'number',
           },
         },
       },
@@ -530,12 +579,18 @@ export class ToolService {
         return this.sendSlackMessage(parameters, agentId);
       case 'gmail':
         return this.sendGmail(parameters, agentId);
+      case 'repo-read':
+        return this.executeRepoRead(parameters);
       case 'agents_mcp_list':
         return this.getAgentsMcpList(parameters);
-      case 'code-docs-mcp':
+      case 'gh-repo-docs-reader-mcp':
         return this.getCodeDocsMcp(parameters);
-      case 'code-updates-mcp':
+      case 'gh-repo-updates-mcp':
         return this.getCodeUpdatesMcp(parameters);
+      case 'local-repo-docs-reader':
+        return this.getCodeDocsReader(parameters);
+      case 'local-repo-updates-reader':
+        return this.getCodeUpdatesReader(parameters);
       case 'model_mcp_list_models':
         return this.listSystemModels(parameters);
       case 'model_mcp_search_latest':
@@ -572,9 +627,12 @@ export class ToolService {
       'content_extract',
       'slack',
       'gmail',
+      'repo-read',
       'agents_mcp_list',
-      'code-docs-mcp',
-      'code-updates-mcp',
+      'gh-repo-docs-reader-mcp',
+      'gh-repo-updates-mcp',
+      'local-repo-docs-reader',
+      'local-repo-updates-reader',
       'model_mcp_list_models',
       'model_mcp_search_latest',
       'model_mcp_add_model',
@@ -1502,7 +1560,178 @@ export class ToolService {
     };
   }
 
+  private async getCodeDocsReader(params: {
+    focus?: string;
+    maxFiles?: number;
+  }): Promise<any> {
+    const maxFiles = Math.max(1, Math.min(Number(params?.maxFiles || 20), 50));
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const result = codeDocsReader.read({
+      focus: params?.focus,
+      maxFiles,
+      workspaceRoot,
+    });
+
+    if (result.error) {
+      return {
+        focus: params?.focus || 'all',
+        workspaceRoot,
+        totalDocs: result.totalFiles,
+        returnedFiles: 0,
+        files: [],
+        error: result.error,
+        errorType: result.errorType || result.error.split(':')[0],
+        matchMode: result.matchMode || 'none',
+        focusMatchedCount: result.focusMatchedCount || 0,
+        suggestions: result.suggestions || [],
+        fallbackApplied: result.fallbackApplied || false,
+        retryCount: result.retryCount || 0,
+        attemptedKeywords: result.attemptedKeywords || [],
+        troubleshooting: [
+          'Check if AGENT_WORKSPACE_ROOT environment variable is set correctly',
+          'Verify the docs/ directory exists in the workspace root',
+          'Ensure the agent service has been restarted after setting environment variables',
+        ],
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      focus: params?.focus || 'all',
+      workspaceRoot,
+      totalDocs: result.totalFiles,
+      returnedFiles: result.files.length,
+      matchMode: result.matchMode || 'all',
+      focusMatchedCount: result.focusMatchedCount ?? result.files.length,
+      suggestions: result.suggestions || [],
+      fallbackApplied: result.fallbackApplied || false,
+      retryCount: result.retryCount || 0,
+      attemptedKeywords: result.attemptedKeywords || [],
+      files: result.files.map(f => ({
+        path: f.path,
+        lastModified: f.lastModified,
+        content: f.content,
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async getCodeUpdatesReader(params: {
+    hours?: number;
+    limit?: number;
+  }): Promise<any> {
+    const hours = Math.max(1, Math.min(Number(params?.hours || 24), 168));
+    const limit = Math.max(1, Math.min(Number(params?.limit || 20), 50));
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+
+    const result = codeUpdatesReader.read({ hours, limit, workspaceRoot });
+
+    if (result.error) {
+      return {
+        hours,
+        limit,
+        workspaceRoot,
+        totalCommits: result.totalCommits,
+        commits: [],
+        error: result.error,
+        errorType: result.error.split(':')[0],
+        troubleshooting: [
+          'Verify AGENT_WORKSPACE_ROOT points to a valid git repository',
+          'Ensure the directory contains a .git folder',
+          'Check if git is installed and accessible',
+        ],
+        generatedAt: new Date().toISOString(),
+      };
+    }
+
+    return {
+      hours,
+      limit,
+      workspaceRoot,
+      totalCommits: result.totalCommits,
+      commits: result.commits,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async executeRepoRead(params: { command: string }): Promise<any> {
+    const allowedCommands = ['git log', 'git show', 'git diff', 'cat', 'ls', 'grep', 'head', 'tail', 'find'];
+    const command = (params.command || '').trim();
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+
+    if (!command) {
+      return { 
+        error: 'MISSING_COMMAND: No command provided',
+        command: '',
+        workspaceRoot,
+        troubleshooting: ['Provide a valid command parameter, e.g., "git log --oneline -10" or "ls docs/"'],
+      };
+    }
+
+    const isAllowed = allowedCommands.some(cmd => 
+      command.toLowerCase().startsWith(cmd.toLowerCase())
+    );
+
+    if (!isAllowed) {
+      return { 
+        error: `COMMAND_NOT_ALLOWED: "${command}" is not permitted`,
+        command,
+        workspaceRoot,
+        allowedCommands,
+        troubleshooting: [`Only read-only commands are allowed: ${allowedCommands.join(', ')}`],
+      };
+    }
+
+    try {
+      const { stdout, stderr } = await execFileAsync(command, {
+        cwd: workspaceRoot,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+
+      const output = stdout || stderr;
+      
+      if (!output.trim()) {
+        return {
+          command,
+          workspaceRoot,
+          output: '',
+          success: true,
+          message: 'Command executed successfully but returned no output',
+        };
+      }
+
+      return {
+        command,
+        workspaceRoot,
+        output,
+        success: true,
+      };
+    } catch (error: any) {
+      return {
+        command,
+        workspaceRoot,
+        output: '',
+        success: false,
+        error: `COMMAND_FAILED: ${error.message}`,
+        errorDetails: error.stderr || error.stdout,
+        troubleshooting: [
+          'Check if the command syntax is correct',
+          'Verify the file or directory exists',
+          'Ensure you have read permissions',
+          `Working directory: ${workspaceRoot}`,
+        ],
+      };
+    }
+  }
+
   private async resolveWorkspaceRoot(): Promise<string> {
+    const envWorkspaceRoot = process.env.AGENT_WORKSPACE_ROOT;
+    if (envWorkspaceRoot) {
+      if (await this.fileExists(path.join(envWorkspaceRoot, 'README.md'))) {
+        return envWorkspaceRoot;
+      }
+    }
+
     const candidates = [
       process.cwd(),
       path.resolve(process.cwd(), '..'),

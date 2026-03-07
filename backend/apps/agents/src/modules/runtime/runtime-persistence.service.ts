@@ -22,6 +22,13 @@ export class RuntimePersistenceService {
     return String(content || '').replace(/\s+/g, ' ').trim();
   }
 
+  private normalizeMessageContent(content: unknown): string {
+    if (content === null || content === undefined) {
+      return '';
+    }
+    return typeof content === 'string' ? content : String(content);
+  }
+
   private buildSystemContextKey(content: string): string | null {
     const normalized = this.normalizeSystemContent(content);
     if (!normalized) return null;
@@ -266,13 +273,15 @@ export class RuntimePersistenceService {
     taskId?: string;
     role: 'system' | 'user' | 'assistant' | 'tool';
     sequence: number;
-    content: string;
+    content?: unknown;
     status?: 'pending' | 'streaming' | 'completed' | 'error';
     metadata?: Record<string, unknown>;
   }): Promise<AgentMessage> {
+    const messageContent = this.normalizeMessageContent(input.content);
     const message = new this.messageModel({
       id: `msg-${uuidv4()}`,
       ...input,
+      content: messageContent,
       status: input.status || 'completed',
     });
     const saved = await message.save();
@@ -282,7 +291,7 @@ export class RuntimePersistenceService {
         runId: input.runId,
         taskId: input.taskId,
         role: input.role,
-        content: input.content,
+        content: messageContent,
         status: input.status || 'completed',
         metadata: input.metadata,
       });
@@ -297,18 +306,19 @@ export class RuntimePersistenceService {
       runId?: string;
       taskId?: string;
       role: 'system' | 'user' | 'assistant' | 'tool';
-      content: string;
+      content?: unknown;
       status?: 'pending' | 'streaming' | 'completed' | 'error';
       metadata?: Record<string, unknown>;
     },
   ): Promise<void> {
     const now = new Date();
+    const messageContent = this.normalizeMessageContent(message.content);
     const payload = {
       id: message.id,
       runId: message.runId,
       taskId: message.taskId,
       role: message.role,
-      content: message.content,
+      content: messageContent,
       status: message.status || 'completed',
       metadata: message.metadata,
       timestamp: now,

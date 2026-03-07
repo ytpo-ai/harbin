@@ -26,7 +26,16 @@ export class AgentMessage {
   @Prop({ required: true, default: 0 })
   sequence: number;
 
-  @Prop({ required: true, default: '' })
+  @Prop({
+    required: true,
+    default: '',
+    set: (value: unknown) => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      return typeof value === 'string' ? value : String(value);
+    },
+  })
   content: string;
 
   @Prop({

@@ -112,6 +112,7 @@
 | 文件 | 说明 |
 |------|------|
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构落地说明、能力边界与 commit 映射 |
+| `AGENT_MESSAGE_CONTENT_VALIDATION_PLAN.md` | AgentMessage content 必填校验修复与写入链路一致性说明 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 

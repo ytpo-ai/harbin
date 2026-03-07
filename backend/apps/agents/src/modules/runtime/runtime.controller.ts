@@ -518,14 +518,14 @@ export class RuntimeController {
     @Body()
     body: {
       role: 'system' | 'user' | 'assistant' | 'tool';
-      content: string;
+      content?: unknown;
       status?: 'pending' | 'streaming' | 'completed' | 'error';
       metadata?: Record<string, unknown>;
     },
   ) {
     await this.persistence.appendMessageToSession(id, {
       role: body.role,
-      content: body.content,
+      content: body.content ?? '',
       status: body.status,
       metadata: body.metadata,
     });

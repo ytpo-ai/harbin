@@ -2,64 +2,118 @@
 
 ## 背景与目标
 
-本次迭代目标是将“可读取仓库 docs”升级为可在 CTO 问答中稳定使用的 `code-docs-mcp` 能力，确保对于“当前系统实现了哪些核心功能”类问题，回答可追溯、可验证，且避免泛化臆测。
+本次迭代目标是将"可读取仓库 docs"升级为可在 CTO 问答中稳定使用的 MCP 能力，确保对于"当前系统实现了哪些核心功能"类问题，回答可追溯、可验证，且避免泛化臆测。
+
+经过优化，新增了三种工具实现方式，agent 可根据场景灵活选择。
 
 ## 关键实现
 
-1. 新增内置工具 `code-docs-mcp`
-   - 在 tools 模块注册并可执行。
-   - 入参支持 `query/focus/maxFeatures/maxEvidencePerFeature`。
-   - 输出包含 `coreFeatures`、`analyzedFiles`、`unknownBoundary`。
+### 1. 工具矩阵
 
-2. 新增 docs 功能抽取与聚合逻辑
-   - 从 `README.md`、`docs/features/FUNCTIONS.md` 等文档提取候选功能。
-   - 聚合为核心能力分组，并携带证据路径与行号。
+| 工具 ID | 名称 | 方式 | 说明 |
+|---------|------|------|------|
+| `repo-read` | Repo Read | bash 直接读取 | 允许 git log/cat/ls/grep 等只读命令 |
+| `local-repo-docs-reader` | Local Repo Docs Reader | 后端读取原始内容 | 读取 docs/ 目录下所有 markdown |
+| `local-repo-updates-reader` | Local Repo Updates Reader | 后端读取原始内容 | 读取 git 提交记录 |
+| `gh-repo-docs-reader-mcp` | GH Repo Docs Reader MCP | 结构化摘要 | 从文档提取功能特性（原有） |
+| `gh-repo-updates-mcp` | GH Repo Updates MCP | 结构化摘要 | 从提交分析变更主题（原有） |
 
-3. CTO 侧能力控制与提示约束
-   - 仅 CTO 默认具备 `code-docs-mcp`。
-   - 非 CTO 默认移除该工具。
-   - 提示词约束要求基于证据路径回答，并声明未知边界。
+### 2. 工具优先级
 
-4. 后端硬触发（关键修复）
-   - 对“核心功能盘点”意图增加后端识别。
-   - 命中后先强制调用 `code-docs-mcp`，再格式化输出。
-   - 避免模型跳过工具直接口播泛化内容。
+当用户询问"系统核心功能"或"最近更新"时，agent 优先使用：
 
-5. OpenAI 超时稳定性修复
-   - 将超时与重试改为环境变量可配置：
-     - `OPENAI_TIMEOUT_MS`（默认 60000）
-     - `OPENAI_MAX_RETRIES`（默认 1）
-   - Agent 执行链路识别超时并输出兜底文案，避免直接异常中断。
+1. **repo-read** - 直接执行 bash 命令读取（最灵活）
+2. **local-repo-docs-reader / local-repo-updates-reader** - 读取原始内容返回
+3. **gh-repo-docs-reader-mcp / gh-repo-updates-mcp** - 结构化摘要（原有）
 
-6. `code-updates-mcp` 摘要质量提升
-   - 从“单提交直出”升级为“按主题聚合多提交”。
-   - 输出增加 `whatChanged/whyItMatters/evidenceFiles/severity`，减少泛化描述。
-   - 支持 `minSeverity` 过滤低价值变更，提升“主要更新”可读性。
+### 3. repo-read 工具
+
+- 允许命令：`git log/show/diff`, `cat`, `ls`, `grep`, `head`, `tail`, `find`
+- 只读操作，受限于项目根目录
+- 输出命令执行结果
+
+### 4. 文件重命名
+
+原有工具已重命名以区分实现方式：
+- `code-docs-mcp` → `gh-repo-docs-reader-mcp`
+- `code-updates-mcp` → `gh-repo-updates-mcp`
+- `code-docs-reader` → `local-repo-docs-reader`
+- `code-updates-reader` → `local-repo-updates-reader`
 
 ## 影响文件
 
 - `backend/apps/agents/src/modules/tools/tool.service.ts`
-- `backend/apps/agents/src/modules/tools/code-docs-mcp.util.ts`
+- `backend/apps/agents/src/modules/tools/gh-repo-docs-reader-mcp.util.ts`
+- `backend/apps/agents/src/modules/tools/gh-repo-updates-mcp.util.ts`
+- `backend/apps/agents/src/modules/tools/local-repo-docs-reader.util.ts`
+- `backend/apps/agents/src/modules/tools/local-repo-updates-reader.util.ts`
 - `backend/apps/agents/src/modules/agents/agent.service.ts`
-- `backend/libs/models/src/openai-provider.ts`
-- `docs/plan/CODE_DOCS_MCP_PLAN.md`
-- `docs/features/FUNCTIONS.md`
-- `docs/api/API.md`
-- `README.md`
-- `backend/.env.example`
 
 ## 验证结果
 
-- `npm run build:agents` 通过。
-- 关键运行日志可见：`Forced tool call triggered: code-docs-mcp`。
+- `npm run build`（`backend/`）通过。
+
+## 本次会话补充（2026-03-08）
+
+### 1) local-repo-docs-reader 错误诊断增强
+
+- 增加错误类型与排障信息：`WORKSPACE_ROOT_NOT_FOUND`、`DOCS_DIRECTORY_NOT_FOUND`、`NO_DOCS_FOUND`。
+- 在 `tool.service.ts` 透传 `errorType/troubleshooting`，让上层 Agent 能识别失败原因并给出可执行建议。
+
+### 2) focus 匹配与自动兜底
+
+- `focus` 从“整句包含”升级为“关键词分词 OR 命中”（路径优先、内容次之）。
+- 当路径和内容均未命中时，不再直接中断，而是自动回退读取高优先级文档（README/features/architecture/api）。
+- 新增观测字段：`matchMode`、`focusMatchedCount`、`fallbackApplied`、`retryCount`、`attemptedKeywords`、`suggestions`。
+
+### 3) Agent 提示词约束修正
+
+- 在 `agent.service.ts` 增加约束：遇到 docs 0 命中必须自动重试（放宽 focus 或不传 focus），仍失败再切换 `repo-read`。
+- 约束“不向用户发起二选一追问”，避免多轮阻塞式交互。
+
+### 4) Runtime content 校验修复
+
+- 修复 `AgentMessage validation failed: content is required`：
+  - `runtime-persistence.service.ts` 中统一 `messageContent = input.content ?? ''`，并同时用于 `message.save` 与 `appendMessageToSession`。
+  - 避免出现 model 层已归一化但 session 侧仍传入 `undefined` 的不一致。
+
+### 5) 结果
+
+- 读取 docs 能力从“命中失败即卡住”升级为“可诊断 + 自动兜底 + 单次可交付”。
+- Runtime 写入链路的 `content` 必填问题得到修复，构建验证通过。
 
 ## 结论
 
-`code-docs-mcp` 已具备“可调用 + 可控 + 可追溯 + 可兜底”的闭环能力，能够支撑 CTO 在核心功能问答场景中稳定返回基于 docs 证据的答案。
+现已支持三种工具实现方式，agent 可根据具体场景选择最适合的方式：
+- 需快速获取 → 使用 MCP 摘要
+- 需完整内容 → 使用 reader 工具
+- 需灵活查询 → 使用 repo-read 直接操作
 
 ---
 
-## 计划原文（合并归档：CODE_DOCS_MCP_PLAN.md）
+## 历史版本（合并归档）
+
+> 以下为原版，已实现说明保留作为历史参考。
+
+### 原版：gh-repo-docs-reader-mcp
+
+1. 新增内置工具 `gh-repo-docs-reader-mcp`
+   - 入参支持 `query/focus/maxFeatures/maxEvidencePerFeature`
+   - 输出包含 `coreFeatures`、`analyzedFiles`、`unknownBoundary`
+
+2. 新增 docs 功能抽取与聚合逻辑
+   - 从文档提取候选功能并聚合为核心能力分组
+
+3. CTO 侧能力控制与提示约束
+   - 提示词约束要求基于证据路径回答
+
+### 原版：gh-repo-updates-mcp
+
+1. 摘要质量提升
+   - 从"单提交直出"升级为"按主题聚合多提交"
+   - 输出增加 `whatChanged/whyItMatters/evidenceFiles/severity`
+
+2. 支持 `minSeverity` 过滤低价值变更
 
 # code-docs-mcp 能力建设计划
 

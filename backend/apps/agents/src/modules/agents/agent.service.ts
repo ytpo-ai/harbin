@@ -74,8 +74,11 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
 
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_AGENT_TOOLS = ['model_mcp_list_models', 'model_mcp_search_latest', 'model_mcp_add_model'];
-const CODE_DOCS_MCP_TOOL_ID = 'code-docs-mcp';
-const CODE_UPDATES_MCP_TOOL_ID = 'code-updates-mcp';
+const CODE_DOCS_MCP_TOOL_ID = 'gh-repo-docs-reader-mcp';
+const CODE_UPDATES_MCP_TOOL_ID = 'gh-repo-updates-mcp';
+const CODE_DOCS_READER_TOOL_ID = 'local-repo-docs-reader';
+const CODE_UPDATES_READER_TOOL_ID = 'local-repo-updates-reader';
+const REPO_READ_TOOL_ID = 'repo-read';
 const MEMO_MCP_SEARCH_TOOL_ID = 'memo_mcp_search';
 const MEMO_MCP_APPEND_TOOL_ID = 'memo_mcp_append';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
@@ -1173,7 +1176,7 @@ export class AgentService {
       messages.push({
         role: 'system',
         content:
-          '当用户询问“当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么”时，请优先调用 code-docs-mcp 并基于其 evidence 路径回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
+          '当用户询问“当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么”时，请优先调用 gh-repo-docs-reader-mcp 并基于其 evidence 路径回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
         timestamp: new Date(),
       });
     }
@@ -1182,7 +1185,34 @@ export class AgentService {
       messages.push({
         role: 'system',
         content:
-          '当用户询问“最近24小时/最近一天系统主要更新”时，请优先调用 code-updates-mcp 并基于提交证据回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
+          '当用户询问"最近24小时/最近一天系统主要更新"时，请优先调用 gh-repo-updates-mcp 并基于提交证据回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (allowedToolIds.includes(CODE_DOCS_READER_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 repo-read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 local-repo-docs-reader 读取文档；3) 最后才调用 gh-repo-docs-reader-mcp 获取摘要。若 local-repo-docs-reader 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 repo-read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (allowedToolIds.includes(CODE_UPDATES_READER_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 repo-read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 local-repo-updates-reader；3) 最后才调用 gh-repo-updates-mcp。必须基于实际提交内容回答，不得臆测。',
+        timestamp: new Date(),
+      });
+    }
+
+    if (allowedToolIds.includes(REPO_READ_TOOL_ID)) {
+      messages.push({
+        role: 'system',
+        content:
+          '你拥有 repo-read 工具，可执行只读 bash 命令（如 git log、cat、ls、grep 等）来读取本地仓库文件。当你需要了解代码或文档内容时，请优先使用 repo-read 直接读取。',
         timestamp: new Date(),
       });
     }
