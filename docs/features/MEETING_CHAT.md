@@ -251,3 +251,30 @@ enum ParticipantRole {
 |------|------|------|------|
 | meetingId | string | 是 | 会议 ID |
 | action | string | 是 | 操作 (start/end/pause/resume) |
+
+### 4.2 会议监控 (Meeting Monitor)
+
+系统通过复用现有的 Scheduler 定时计划机制来管理会议空闲状态。
+
+#### 实现方式
+
+- 在 `SchedulerService` 启动时自动创建内置定时计划 `system-meeting-monitor`
+- 定时计划类型为 `interval`，默认每 5 分钟执行一次
+- 执行时会直接调用 backend meeting API 检查会议状态
+
+#### 功能特性
+
+| 特性 | 说明 |
+|------|------|
+| 定时检查 | 每隔 5 分钟检查所有进行中的会议 |
+| 超时提醒 | 会议 1 小时未有消息时，发送提醒消息 |
+| 自动结束 | 会议 2 小时未有消息，自动结束会议 |
+
+#### 配置项
+
+| 环境变量 | 默认值 | 说明 |
+|---------|--------|------|
+| MEETING_ASSISTANT_INTERVAL_MS | 300000 | 检查间隔 (5分钟) |
+| MEETING_INACTIVE_WARNING_MS | 3600000 | 提醒超时 (1小时) |
+| MEETING_INACTIVE_END_MS | 7200000 | 结束超时 (2小时) |
+| BACKEND_API_URL | http://localhost:3001/api | backend API 地址 |

@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Model } from 'mongoose';
 import { CronJob } from 'cron';
+import axios from 'axios';
 import { Agent, AgentDocument } from '../../../shared/schemas/agent.schema';
 import {
   OrchestrationSchedule,
@@ -47,6 +48,55 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     const enabledSchedules = await this.scheduleModel.find({ enabled: true }).exec();
     await Promise.all(enabledSchedules.map((schedule) => this.registerSchedule(schedule)));
+
+    await this.ensureMeetingMonitorSchedule();
+  }
+
+  private async ensureMeetingMonitorSchedule(): Promise<void> {
+    const existing = await this.scheduleModel.findOne({ name: 'system-meeting-monitor' }).exec();
+    if (existing) {
+      return;
+    }
+
+    const intervalMs = Number(process.env.MEETING_ASSISTANT_INTERVAL_MS || 300000);
+    if (intervalMs < 300000) {
+      this.logger.warn('MEETING_ASSISTANT_INTERVAL_MS must be at least 5 minutes, skipping meeting monitor');
+      return;
+    }
+
+    try {
+      const schedule = await new this.scheduleModel({
+        name: 'system-meeting-monitor',
+        description: '系统内置：监控进行中的会议，在会议长时间未活动时发送提醒并自动结束',
+        schedule: {
+          type: 'interval',
+          intervalMs,
+        },
+        target: {
+          executorType: 'system',
+          executorId: 'meeting-monitor',
+          executorName: '会议监控器',
+        },
+        input: {
+          action: 'checkMeetingInactivity',
+        },
+        enabled: true,
+        status: 'idle',
+        nextRunAt: new Date(Date.now() + intervalMs),
+        stats: {
+          totalRuns: 0,
+          successRuns: 0,
+          failedRuns: 0,
+          skippedRuns: 0,
+        },
+        createdBy: 'system',
+      }).save();
+
+      await this.registerSchedule(schedule);
+      this.logger.log(`Created system meeting monitor schedule with interval=${intervalMs}ms`);
+    } catch (error) {
+      this.logger.error('Failed to create meeting monitor schedule', error);
+    }
   }
 
   onModuleDestroy(): void {
@@ -307,6 +357,12 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     if (!scheduleId) {
       return;
     }
+
+    if (schedule.name === 'system-meeting-monitor') {
+      await this.executeMeetingMonitor(schedule);
+      return;
+    }
+
     if (this.runLocks.has(scheduleId)) {
       await this.scheduleModel
         .updateOne(
@@ -505,5 +561,156 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
   private getIntervalKey(scheduleId: string): string {
     return `orch-schedule-interval:${scheduleId}`;
+  }
+
+  private readonly warningThresholdMs = Number(process.env.MEETING_INACTIVE_WARNING_MS || 3600000);
+  private readonly endThresholdMs = Number(process.env.MEETING_INACTIVE_END_MS || 7200000);
+  private readonly WARNING_MESSAGE = '会议已超过1小时未有消息，将自动结束';
+  private readonly END_MESSAGE = '会议已超过2小时未有消息，自动结束会议';
+
+  private async executeMeetingMonitor(schedule: OrchestrationScheduleDocument | OrchestrationSchedule): Promise<void> {
+    const scheduleId = this.getEntityId(schedule as unknown as Record<string, unknown>);
+    this.logger.debug('Executing meeting monitor check...');
+
+    try {
+      const meetings = await this.listActiveMeetings();
+      if (!meetings || meetings.length === 0) {
+        this.logger.debug('No active meetings found');
+        return;
+      }
+
+      this.logger.debug(`Found ${meetings.length} active meetings`);
+
+      for (const meeting of meetings) {
+        await this.processMeeting(meeting);
+      }
+
+      await this.scheduleModel.updateOne(
+        { _id: scheduleId },
+        {
+          $inc: { 'stats.totalRuns': 1, 'stats.successRuns': 1 },
+          $set: { 'lastRun.completedAt': new Date(), status: 'idle' },
+        },
+      );
+    } catch (error) {
+      this.logger.error('Error in meeting monitor', error);
+      await this.scheduleModel.updateOne(
+        { _id: scheduleId },
+        {
+          $inc: { 'stats.totalRuns': 1, 'stats.failedRuns': 1 },
+          $set: { 'lastRun.completedAt': new Date(), status: 'idle', 'lastRun.error': String(error) },
+        },
+      );
+    }
+  }
+
+  private async listActiveMeetings(): Promise<any[]> {
+    try {
+      const baseUrl = process.env.BACKEND_API_URL || 'http://localhost:3001/api';
+      const response = await axios.get(`${baseUrl}/meetings?status=active`, { timeout: 30000 });
+      return response.data || [];
+    } catch (error) {
+      this.logger.error('Failed to list meetings', error);
+      return [];
+    }
+  }
+
+  private async processMeeting(meeting: any): Promise<void> {
+    const meetingId = meeting.id;
+    const lastMessageTime = this.getLastMessageTime(meeting);
+    const now = Date.now();
+    const inactiveMs = now - lastMessageTime;
+
+    this.logger.debug(`Meeting ${meetingId} inactive for ${Math.round(inactiveMs / 60000)} minutes`);
+
+    if (inactiveMs >= this.endThresholdMs) {
+      await this.endMeeting(meetingId);
+      return;
+    }
+
+    if (inactiveMs >= this.warningThresholdMs) {
+      const hasWarning = this.hasSentWarning(meeting);
+      if (!hasWarning) {
+        await this.sendWarningMessage(meetingId);
+      }
+    }
+  }
+
+  private getLastMessageTime(meeting: any): number {
+    const messages = meeting.messages || [];
+    if (messages.length === 0) {
+      const startedAt = meeting.startedAt;
+      if (startedAt) {
+        return new Date(startedAt).getTime();
+      }
+      const scheduledStartTime = meeting.scheduledStartTime;
+      if (scheduledStartTime) {
+        return new Date(scheduledStartTime).getTime();
+      }
+      return Date.now();
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage?.timestamp) {
+      return new Date(lastMessage.timestamp).getTime();
+    }
+
+    return Date.now();
+  }
+
+  private hasSentWarning(meeting: any): boolean {
+    const messages = meeting.messages || [];
+    const oneHourAgo = Date.now() - this.warningThresholdMs;
+
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      const msgTime = msg.timestamp ? new Date(msg.timestamp).getTime() : 0;
+
+      if (msgTime < oneHourAgo) {
+        break;
+      }
+
+      if (msg.content?.includes('已超过') && msg.content?.includes('小时未有消息')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private async sendWarningMessage(meetingId: string): Promise<void> {
+    try {
+      this.logger.log(`Sending warning message to meeting ${meetingId}`);
+      const baseUrl = process.env.BACKEND_API_URL || 'http://localhost:3001/api';
+      const payload = {
+        senderId: 'meeting-assistant',
+        senderType: 'system',
+        content: this.WARNING_MESSAGE,
+        type: 'conclusion',
+      };
+      await axios.post(`${baseUrl}/meetings/${meetingId}/messages`, payload, { timeout: 30000 });
+      this.logger.log(`Warning message sent to meeting ${meetingId}`);
+    } catch (error) {
+      this.logger.error(`Failed to send warning to meeting ${meetingId}`, error);
+    }
+  }
+
+  private async endMeeting(meetingId: string): Promise<void> {
+    try {
+      this.logger.log(`Ending meeting ${meetingId} due to inactivity`);
+
+      const baseUrl = process.env.BACKEND_API_URL || 'http://localhost:3001/api';
+      await axios.post(`${baseUrl}/meetings/${meetingId}/messages`, {
+        senderId: 'meeting-assistant',
+        senderType: 'system',
+        content: this.END_MESSAGE,
+        type: 'conclusion',
+      }, { timeout: 30000 });
+
+      await axios.post(`${baseUrl}/meetings/${meetingId}/end`, {}, { timeout: 30000 });
+      this.logger.log(`Meeting ${meetingId} ended`);
+    } catch (error) {
+      this.logger.error(`Failed to end meeting ${meetingId}`, error);
+    }
   }
 }
