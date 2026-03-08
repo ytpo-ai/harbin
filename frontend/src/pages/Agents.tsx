@@ -11,7 +11,6 @@ import { toolService } from '../services/toolService';
 import { authService } from '../services/authService';
 import { meetingService } from '../services/meetingService';
 import { Agent, AIModel } from '../types';
-import agentTypeConfig from '../config/agentType.json';
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -43,18 +42,6 @@ const normalizeProvider = (provider?: string): string => {
 
 const isProviderCompatible = (modelProvider?: string, keyProvider?: string): boolean => {
   return normalizeProvider(modelProvider) === normalizeProvider(keyProvider);
-};
-
-interface AgentTypeOption {
-  value: string;
-  label: string;
-  defaultPrompt: string;
-}
-
-const agentTypeOptions = (agentTypeConfig as AgentTypeOption[]) || [];
-
-const getAgentTypeMeta = (agentType?: string): AgentTypeOption | undefined => {
-  return agentTypeOptions.find((item) => item.value === (agentType || '').trim());
 };
 
 const shouldApplyNextDefault = (currentValue: string, previousDefault?: string): boolean => {
@@ -238,7 +225,8 @@ const Agents: React.FC = () => {
   };
 
   const isFounder = (agent: Agent) => {
-    return agent.type === 'ai-executive' || agent.name === 'Alex Chen' || agent.name === 'Sarah Kim';
+    const roleCode = (roleMap.get(agent.roleId)?.code || '').trim();
+    return roleCode === 'executive-lead' || agent.name === 'Alex Chen' || agent.name === 'Sarah Kim';
   };
 
   const getFounderRole = (agent: Agent) => {
@@ -369,7 +357,6 @@ const Agents: React.FC = () => {
                       <p className="truncate">{agent.description}</p>
                     </div>
                     <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-                      <span>类型: {agent.type}</span>
                       <span>角色: {getRoleDisplayName(roleMap.get(agent.roleId))}</span>
                       <span className="flex items-center">
                         <CpuChipIcon className="h-3 w-3 mr-1" />
@@ -590,7 +577,6 @@ const CreateAgentModal: React.FC<{
   const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
   const [formData, setFormData] = useState({
     name: '',
-    type: '',
     roleId: '',
     description: '',
     systemPrompt: '',
@@ -657,21 +643,21 @@ const CreateAgentModal: React.FC<{
     }));
   }, [selectedRoleCode]);
 
-  const handleCreateTypeChange = (nextType: string) => {
+  const handleCreateRoleChange = (nextRoleId: string) => {
     setFormData((prev) => {
-      const previousMeta = getAgentTypeMeta(prev.type);
-      const nextMeta = getAgentTypeMeta(nextType);
-      const nextRoleCode = (businessRoles.find((role) => role.id === prev.roleId)?.code || '').trim();
+      const previousRole = businessRoles.find((role) => role.id === prev.roleId);
+      const nextRole = businessRoles.find((role) => role.id === nextRoleId);
+      const nextRoleCode = (nextRole?.code || '').trim();
       const nextAllowedToolIds = new Set(
         (toolPermissionSets.find((set) => set.roleCode === nextRoleCode)?.tools || []).filter(Boolean),
       );
-      const nextPrompt = shouldApplyNextDefault(prev.systemPrompt, previousMeta?.defaultPrompt)
-        ? (nextMeta?.defaultPrompt || prev.systemPrompt)
+      const nextPrompt = shouldApplyNextDefault(prev.systemPrompt, previousRole?.promptTemplate)
+        ? (nextRole?.promptTemplate || prev.systemPrompt)
         : prev.systemPrompt;
 
       return {
         ...prev,
-        type: nextType,
+        roleId: nextRoleId,
         systemPrompt: nextPrompt,
         selectedTools: prev.selectedTools.filter((toolId) => nextAllowedToolIds.has(toolId)),
       };
@@ -688,7 +674,6 @@ const CreateAgentModal: React.FC<{
 
     const agentData = {
       name: formData.name,
-      type: formData.type,
       roleId: formData.roleId,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
@@ -786,7 +771,7 @@ const CreateAgentModal: React.FC<{
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-4">
+            <div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">名称 <span className="text-red-500">*</span></label>
                 <input
@@ -798,21 +783,6 @@ const CreateAgentModal: React.FC<{
                   placeholder="例如: 智能助手"
                 />
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">类型 <span className="text-red-500">*</span></label>
-                <select
-                  required
-                  value={formData.type}
-                  onChange={(e) => handleCreateTypeChange(e.target.value)}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="">选择类型...</option>
-                  {agentTypeOptions.map((typeOption) => (
-                    <option key={typeOption.value} value={typeOption.value}>{typeOption.label}</option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             <div>
@@ -820,7 +790,7 @@ const CreateAgentModal: React.FC<{
               <select
                 required
                 value={formData.roleId}
-                onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
+                onChange={(e) => handleCreateRoleChange(e.target.value)}
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">选择角色...</option>
@@ -965,7 +935,6 @@ const EditAgentModal: React.FC<{
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
   const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
   const [name, setName] = useState(agent.name || '');
-  const [agentType, setAgentType] = useState(agent.type || '');
   const [roleId, setRoleId] = useState(agent.roleId || '');
   const [description, setDescription] = useState(agent.description || '');
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
@@ -1037,7 +1006,6 @@ const EditAgentModal: React.FC<{
     selectedApiKeyId !== (agent.apiKeyId || '') ||
     !arraysEqual(selectedTools, agent.tools || []) ||
     name.trim() !== (agent.name || '').trim() ||
-    agentType.trim() !== (agent.type || '').trim() ||
     roleId.trim() !== (agent.roleId || '').trim() ||
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
@@ -1070,11 +1038,6 @@ const EditAgentModal: React.FC<{
       setActiveTab('basic');
       return;
     }
-    if (!agentType.trim()) {
-      alert('Agent 类型不能为空');
-      setActiveTab('basic');
-      return;
-    }
     if (!roleId.trim()) {
       alert('角色不能为空');
       setActiveTab('basic');
@@ -1091,7 +1054,6 @@ const EditAgentModal: React.FC<{
       apiKeyId: selectedApiKeyId || undefined,
       tools: selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
       name: name.trim(),
-      type: agentType.trim(),
       roleId: roleId.trim(),
       description: description.trim(),
       systemPrompt: systemPrompt.trim(),
@@ -1166,17 +1128,17 @@ const EditAgentModal: React.FC<{
     );
   };
 
-  const handleEditTypeChange = (nextType: string) => {
-    const previousMeta = getAgentTypeMeta(agentType);
-    const nextMeta = getAgentTypeMeta(nextType);
-    const canUpdatePrompt = shouldApplyNextDefault(systemPrompt, previousMeta?.defaultPrompt);
+  const handleEditRoleChange = (nextRoleId: string) => {
+    const previousRole = businessRoles.find((role) => role.id === roleId);
+    const nextRole = businessRoles.find((role) => role.id === nextRoleId);
+    const canUpdatePrompt = shouldApplyNextDefault(systemPrompt, previousRole?.promptTemplate);
 
-    setAgentType(nextType);
+    setRoleId(nextRoleId);
     if (canUpdatePrompt) {
-      setSystemPrompt(nextMeta?.defaultPrompt || '');
+      setSystemPrompt(nextRole?.promptTemplate || '');
     }
     const nextAllowedToolIds = new Set(
-      (toolPermissionSets.find((set) => set.roleCode === selectedRoleCode)?.tools || []).filter(Boolean),
+      (toolPermissionSets.find((set) => set.roleCode === String(nextRole?.code || '').trim())?.tools || []).filter(Boolean),
     );
     setSelectedTools((prev) => prev.filter((toolId) => nextAllowedToolIds.has(toolId)));
   };
@@ -1474,24 +1436,10 @@ const EditAgentModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">类型 <span className="text-red-500">*</span></label>
-              <select
-                value={agentType}
-                onChange={(e) => handleEditTypeChange(e.target.value)}
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              >
-                <option value="">选择类型...</option>
-                {agentTypeOptions.map((typeOption) => (
-                  <option key={typeOption.value} value={typeOption.value}>{typeOption.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">角色 <span className="text-red-500">*</span></label>
               <select
                 value={roleId}
-                onChange={(e) => setRoleId(e.target.value)}
+                onChange={(e) => handleEditRoleChange(e.target.value)}
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">选择角色...</option>

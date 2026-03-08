@@ -40,7 +40,7 @@ export interface AgentMcpToolSummary {
 export interface AgentMcpProfile {
   id: string;
   name: string;
-  type: string;
+  type?: string;
   description: string;
   roleId?: string;
   role: string;
@@ -286,9 +286,6 @@ export class AgentService {
     if (!agentData.name?.trim()) {
       throw new BadRequestException('Agent name is required');
     }
-    if (!agentData.type?.trim()) {
-      throw new BadRequestException('Agent type is required');
-    }
     if (!agentData.roleId?.trim()) {
       throw new BadRequestException('roleId is required');
     }
@@ -300,6 +297,7 @@ export class AgentService {
 
     const normalizedData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
       ...agentData,
+      type: String(agentData.type || '').trim() || undefined,
       roleId: agentData.roleId.trim(),
       description: agentData.description?.trim() || `${agentData.name} Agent`,
       systemPrompt: agentData.systemPrompt?.trim() || `You are ${agentData.name}, a helpful AI assistant.`,
@@ -382,9 +380,14 @@ export class AgentService {
     if (hasTypeField) {
       const normalizedType = typeof updates.type === 'string' ? updates.type.trim() : '';
       if (!normalizedType) {
-        throw new BadRequestException('Agent type cannot be empty');
+        delete normalizedUpdates.type;
+        normalizedUpdates.$unset = {
+          ...(normalizedUpdates.$unset || {}),
+          type: 1,
+        };
+      } else {
+        normalizedUpdates.type = normalizedType;
       }
-      normalizedUpdates.type = normalizedType;
     }
 
     const targetType = hasTypeField
@@ -2487,7 +2490,7 @@ export class AgentService {
   }
 
   private isCtoAgent(agent: Agent): boolean {
-    const signal = `${agent.name || ''} ${agent.type || ''} ${agent.description || ''}`.toLowerCase();
+    const signal = `${agent.name || ''} ${agent.type || ''} ${agent.roleId || ''} ${agent.description || ''}`.toLowerCase();
     return [
       'cto',
       'chief-technology-officer',
@@ -2565,14 +2568,15 @@ export class AgentService {
     const includeHidden = options?.includeHidden === true;
     const agents = await this.getAllAgents();
     const normalizedAgents = agents.map((agent) => this.normalizeAgentEntity(agent));
-    const profileMap = await this.getMcpProfilesByAgentTypes(normalizedAgents.map((agent) => (agent.type || '').trim()));
-    const toolMap = await this.buildToolSummaryMap(normalizedAgents, profileMap);
     const roleMap = await this.getRoleMapByIds(normalizedAgents.map((agent) => agent.roleId));
+    const profileKeys = normalizedAgents.map((agent) => this.resolveProfileLookupKey(agent, roleMap.get(agent.roleId)));
+    const profileMap = await this.getMcpProfilesByAgentTypes(profileKeys);
+    const toolMap = await this.buildToolSummaryMap(normalizedAgents, profileMap, roleMap);
 
     const mapped = normalizedAgents.map((agent) => {
-      const mapKey = (agent.type || '').trim();
-      const profile = profileMap.get(mapKey) || DEFAULT_MCP_PROFILE;
       const role = roleMap.get(agent.roleId);
+      const mapKey = this.resolveProfileLookupKey(agent, role);
+      const profile = profileMap.get(mapKey) || DEFAULT_MCP_PROFILE;
       return this.toMcpProfile(agent, profile, mapKey, toolMap, role);
     });
     const visibleAgents = mapped.filter((item) => includeHidden || item.exposed);
@@ -2592,10 +2596,14 @@ export class AgentService {
     }
 
     const normalized = this.normalizeAgentEntity(agent);
-    const mapKey = (normalized.type || '').trim();
     const role = await this.getRoleById(normalized.roleId);
+    const mapKey = this.resolveProfileLookupKey(normalized, role || undefined);
     const mapProfile = await this.getMcpProfileByRoleCodeOrType(role?.code, mapKey);
-    const toolMap = await this.buildToolSummaryMap([normalized], new Map([[mapKey, mapProfile]]));
+    const roleMap = new Map<string, AgentBusinessRole>();
+    if (role) {
+      roleMap.set(normalized.roleId, role);
+    }
+    const toolMap = await this.buildToolSummaryMap([normalized], new Map([[mapKey, mapProfile]]), roleMap);
     const profile = this.toMcpProfile(normalized, mapProfile, mapKey, toolMap, role || undefined);
 
     if (!includeHidden && !profile.exposed) {
@@ -2664,13 +2672,21 @@ export class AgentService {
     return Array.from(new Set(merged));
   }
 
+  private resolveProfileLookupKey(agent: Agent, role?: AgentBusinessRole): string {
+    const roleCode = String(role?.code || '').trim();
+    if (roleCode) return roleCode;
+    return String(agent.type || '').trim();
+  }
+
   private async buildToolSummaryMap(
     agents: Agent[],
     profileMap: Map<string, AgentMcpMapProfile>,
+    roleMap?: Map<string, AgentBusinessRole>,
   ): Promise<Map<string, AgentMcpToolSummary>> {
     const mergedIds = this.uniqueStrings(
       ...agents.map((agent) => {
-        const mapProfile = profileMap.get((agent.type || '').trim()) || DEFAULT_MCP_PROFILE;
+        const mapKey = this.resolveProfileLookupKey(agent, roleMap?.get(agent.roleId));
+        const mapProfile = profileMap.get(mapKey) || DEFAULT_MCP_PROFILE;
         return [...(agent.tools || []), ...(mapProfile.tools || [])];
       }),
     ).map((toolId) => this.normalizeToolId(toolId));

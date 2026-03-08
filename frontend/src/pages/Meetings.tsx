@@ -1977,7 +1977,7 @@ const CreateMeetingModal: React.FC<{
                       />
                       <div className="ml-3">
                         <p className="text-sm font-medium text-gray-900">{agent.name}</p>
-                        <p className="text-xs text-gray-500">{agent.type}</p>
+                        <p className="text-xs text-gray-500">{agent.roleId}</p>
                       </div>
                     </label>
                   ))}

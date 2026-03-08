@@ -255,7 +255,7 @@ const Discussions: React.FC = () => {
                 </div>
                 <p className="text-sm text-gray-600 mb-2">{agent.description}</p>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-500">类型: {agent.type}</span>
+                  <span className="text-gray-500">角色: {agent.roleId}</span>
                   <span className="text-gray-500">{agent.model.name}</span>
                 </div>
               </div>
@@ -361,7 +361,7 @@ const CreateDiscussionModal: React.FC<{
                       />
                       <div className="ml-3">
                         <p className="text-sm font-medium text-gray-900">{agent.name}</p>
-                        <p className="text-xs text-gray-500">{agent.type} - {agent.model.name}</p>
+                        <p className="text-xs text-gray-500">{agent.roleId} - {agent.model.name}</p>
                       </div>
                     </label>
                   ))

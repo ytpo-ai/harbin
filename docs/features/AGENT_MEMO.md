@@ -57,7 +57,7 @@ type MemoType = 'knowledge' | 'standard';
 - **数据源**：Agent 表、AgentSkill 表、Skill 表、OrchestrationTask 表
 - **更新触发**：`agent.updated`、`agent.skill_changed`、定时任务
 - **内容模板**：
-  - Agent Profile（角色、类型、描述）
+  - Agent Profile（角色、历史类型、描述）
   - 技能矩阵（绑定技能、熟练度、统计）
   - 能力域（工具集、模型能力）
   - 工作风格（人格特质、学习能力）
@@ -141,14 +141,14 @@ type MemoType = 'knowledge' | 'standard';
 
 #### 聚合结果
 
-- Identity：`docs/memos/<agentId>/identity/identity-and-responsibilities.md`
-- Evaluation：`docs/memos/<agentId>/evaluation/evaluation-<period>.md`
+- Identity：`$AGENT_DATA_ROOT/memos/<agentId>/identity/identity-and-responsibilities.md`（未配置时回退 `docs/memos/...`）
+- Evaluation：`$AGENT_DATA_ROOT/memos/<agentId>/evaluation/evaluation-<period>.md`（未配置时回退 `docs/memos/...`）
 - Topic：按 `agent + topic` 归并到 `topic-*.md`
 
 #### 文档落盘
 
-- 目录：`docs/memos/<agentId>/<memoKind>/<slug>.md`
-- 索引：`docs/memos/README.md`
+- 目录：`$AGENT_DATA_ROOT/memos/<agentId>/<memoKind>/<slug>.md`（未配置时回退 `docs/memos/...`）
+- 索引：`$AGENT_DATA_ROOT/memos/README.md`（未配置时回退 `docs/memos/README.md`）
 
 ---
 

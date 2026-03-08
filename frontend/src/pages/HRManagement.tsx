@@ -190,7 +190,7 @@ const HRManagement: React.FC = () => {
               disabled={syncRolesMutation.isLoading}
               className="px-4 py-2 border border-primary-200 text-primary-700 rounded-md hover:bg-primary-50 disabled:opacity-50"
             >
-              {syncRolesMutation.isLoading ? '同步中...' : '从 agent_type 初始化并关联 Agent'}
+              {syncRolesMutation.isLoading ? '同步中...' : '从系统角色模板初始化并关联 Agent'}
             </button>
             <button
               type="button"

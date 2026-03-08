@@ -473,7 +473,7 @@ const AgentDetail: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">
-              {agent?.type || '-'}
+              {agent?.roleId || '-'}
             </span>
             <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">
               {agent?.model?.name || '-'}
