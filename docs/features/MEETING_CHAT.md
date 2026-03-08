@@ -166,6 +166,7 @@ enum ParticipantRole {
 | `HUMAN_EXCLUSIVE_ASSISTANT_MEETING_PLAN.md` | 人类专属助理会议计划 |
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志语义收敛计划 |
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控计划 |
+| `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -178,6 +179,7 @@ enum ParticipantRole {
 | `HUMAN_EXCLUSIVE_ASSISTANT_MEETING_PLAN.md` | 人类专属助理会议开发总结 |
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志前端优化开发总结 |
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控开发总结 |
+| `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复开发总结 |
 
 ### 技术文档 (docs/technical/)
 
@@ -256,13 +258,13 @@ enum ParticipantRole {
 
 ### 4.2 会议监控 (Meeting Monitor)
 
-系统通过复用现有的 Scheduler 定时计划机制来管理会议空闲状态。
+系统通过复用现有的 Scheduler 定时计划机制触发编排任务来管理会议空闲状态。
 
 #### 实现方式
 
 - 在 `SchedulerService` 启动时自动创建内置定时计划 `system-meeting-monitor`
 - 定时计划类型为 `interval`，默认每 5 分钟执行一次
-- 执行时会直接调用 backend meeting API 检查会议状态
+- 执行时统一走 `OrchestrationService.executeStandaloneTask`，由 meeting-assistant 通过 MCP 工具完成巡检与处置
 
 #### 功能特性
 
