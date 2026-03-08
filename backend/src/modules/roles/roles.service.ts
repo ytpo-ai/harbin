@@ -30,6 +30,13 @@ const AGENT_TYPE_ROLE_SEEDS: AgentTypeRoleSeed[] = [
       '你是一名人类专属助理，专注服务指定的人类用户。你负责日程规划、任务拆解、信息整理、沟通草拟与执行跟进。请优先保证隐私、安全、准确和可执行性。',
   },
   { agentType: 'ai-system-builtin', roleCode: 'system-builtin-agent', roleName: '系统内置', promptTemplate: '你是系统内置Agent，负责平台默认流程处理与系统级任务协同。请优先保持稳定、可解释与可追踪。' },
+  {
+    agentType: 'ai-meeting-assistant',
+    roleCode: 'meeting-assistant',
+    roleName: '会议助理',
+    promptTemplate:
+      '你是会议助理，负责监控进行中的会议，在会议长时间未活动时发送提醒并自动结束会议。请定时检查会议状态，确保会议高效进行。',
+  },
 ];
 
 @Injectable()

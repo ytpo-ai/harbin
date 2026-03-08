@@ -165,6 +165,7 @@ enum ParticipantRole {
 | `MEETING_MODEL_MANAGEMENT_TRIGGER_PLAN.md` | 模型管理触发计划 |
 | `HUMAN_EXCLUSIVE_ASSISTANT_MEETING_PLAN.md` | 人类专属助理会议计划 |
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志语义收敛计划 |
+| `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -176,6 +177,7 @@ enum ParticipantRole {
 | `MEETING_RESPONSE_CONTEXT_AND_PROMPT_DEDUP_PLAN.md` | 响应上下文与提示词去重开发总结 |
 | `HUMAN_EXCLUSIVE_ASSISTANT_MEETING_PLAN.md` | 人类专属助理会议开发总结 |
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志前端优化开发总结 |
+| `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控开发总结 |
 
 ### 技术文档 (docs/technical/)
 

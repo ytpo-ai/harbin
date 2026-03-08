@@ -73,9 +73,9 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
           intervalMs,
         },
         target: {
-          executorType: 'system',
-          executorId: 'meeting-monitor',
-          executorName: '会议监控器',
+          executorType: 'agent',
+          executorId: 'meeting-assistant',
+          executorName: '会议助理',
         },
         input: {
           action: 'checkMeetingInactivity',
