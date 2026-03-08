@@ -106,6 +106,7 @@ const CODE_UPDATES_READER_TOOL_ID = 'internal.updates.read';
 const REPO_READ_TOOL_ID = 'internal.repo.read';
 const MEMO_MCP_SEARCH_TOOL_ID = 'internal.memo.search';
 const MEMO_MCP_APPEND_TOOL_ID = 'internal.memo.append';
+const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 mcp.model.list 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 mcp.model.searchLatest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 mcp.model.add。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -1396,7 +1397,7 @@ export class AgentService {
     runtimeContext?: RuntimeRunContext,
     executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
   ): Promise<string> {
-    const maxToolRounds = 3;
+    const maxToolRounds = this.getMaxToolRounds();
     const messages = [...initialMessages];
     const assignedToolIds = new Set(await this.getAllowedToolIds(agent));
     const agentRuntimeId = agent.id || (agent as any)._id?.toString?.() || '';
@@ -1660,6 +1661,14 @@ export class AgentService {
     }
 
     return '工具调用轮次已达上限，请精简调用后重试。';
+  }
+
+  private getMaxToolRounds(): number {
+    const configuredRounds = Number(process.env.MAX_TOOL_ROUNDS);
+    if (Number.isFinite(configuredRounds) && configuredRounds > 0) {
+      return Math.floor(configuredRounds);
+    }
+    return DEFAULT_MAX_TOOL_ROUNDS;
   }
 
   private parseToolCallPayload(payload: string): { tool: string; parameters: any } | null {

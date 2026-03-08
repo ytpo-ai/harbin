@@ -234,6 +234,8 @@ enum ParticipantRole {
 | `builtin.mcp.meeting.sendMessage` | Meeting MCP Send Message | 向会议发送消息 | meeting_write |
 | `builtin.mcp.meeting.updateStatus` | Meeting MCP Update Status | 修改会议状态 (start/end/pause/resume) | meeting_write |
 
+> 说明：会议 MCP 工具按当前系统单租户模式运行，不依赖 organization/tenant/workspace 上下文。
+
 #### 4.1.1 meeting.list 参数
 
 | 参数 | 类型 | 必填 | 说明 |
@@ -274,6 +276,8 @@ enum ParticipantRole {
 | 超时提醒 | 会议 1 小时未有消息时，发送提醒消息 |
 | 自动结束 | 会议 2 小时未有消息，自动结束会议 |
 
+> 监控消息由 `system` 发送者写入会议消息流，不依赖会议参与者在场状态。
+
 #### 配置项
 
 | 环境变量 | 默认值 | 说明 |
@@ -281,4 +285,5 @@ enum ParticipantRole {
 | MEETING_ASSISTANT_INTERVAL_MS | 300000 | 检查间隔 (5分钟) |
 | MEETING_INACTIVE_WARNING_MS | 3600000 | 提醒超时 (1小时) |
 | MEETING_INACTIVE_END_MS | 7200000 | 结束超时 (2小时) |
+| MAX_TOOL_ROUNDS | 30 | Agent 单任务工具调用轮次上限（会议监控批量处理依赖此项） |
 | BACKEND_API_URL | http://localhost:3001/api | backend API 地址 |
