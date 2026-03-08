@@ -5,9 +5,12 @@ import {
   ArrowPathIcon,
   ChevronRightIcon,
   ClockIcon,
+  EyeIcon,
   PencilSquareIcon,
   PlayIcon,
+  PlusIcon,
   SparklesIcon,
+  TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { agentService } from '../services/agentService';
@@ -48,6 +51,8 @@ const formatDateTime = (value?: string) => {
 const Orchestration: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<PlanMode>('hybrid');
@@ -73,9 +78,9 @@ const Orchestration: React.FC = () => {
     ['orchestration-plan', selectedPlanId],
     () => orchestrationService.getPlanById(selectedPlanId),
     {
-      enabled: Boolean(selectedPlanId),
+      enabled: Boolean(selectedPlanId) && isDetailDrawerOpen,
       refetchInterval: (data) => {
-        if (!selectedPlanId) {
+        if (!selectedPlanId || !isDetailDrawerOpen) {
           return false;
         }
         const status = (data as any)?.status as string | undefined;
@@ -97,6 +102,7 @@ const Orchestration: React.FC = () => {
     () => planDetail?.tasks?.find((task) => task._id === debugTaskId),
     [planDetail?.tasks, debugTaskId],
   );
+  const planTasks = planDetail?.tasks ?? [];
 
   const { data: debugSessionDetail, isFetching: debugSessionLoading } = useQuery(
     ['orchestration-debug-session', debugSessionId],
@@ -148,7 +154,9 @@ const Orchestration: React.FC = () => {
       await queryClient.invalidateQueries('orchestration-plans');
       if (created?._id) {
         setSelectedPlanId(created._id);
+        setIsDetailDrawerOpen(true);
       }
+      setIsCreateModalOpen(false);
     },
   });
 
@@ -224,11 +232,12 @@ const Orchestration: React.FC = () => {
       const latestPlans = await orchestrationService.getPlans();
       if (!latestPlans.length) {
         setSelectedPlanId('');
+        setIsDetailDrawerOpen(false);
         return;
       }
       const next = latestPlans.find((plan) => plan._id !== deletedPlanId) || latestPlans[0];
       setSelectedPlanId(next._id);
-      queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]);
+      queryClient.invalidateQueries(['orchestration-plan', next._id]);
     },
   });
 
@@ -271,7 +280,12 @@ const Orchestration: React.FC = () => {
     setMode(plan.strategy?.mode || 'hybrid');
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
     setAutoRun(false);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsCreateModalOpen(true);
+  };
+
+  const openPlanDetail = (planId: string) => {
+    setSelectedPlanId(planId);
+    setIsDetailDrawerOpen(true);
   };
 
   const openDebugDrawer = (taskId: string, tab: DrawerTab = 'debug') => {
@@ -314,191 +328,270 @@ const Orchestration: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900">计划编排中心</h1>
-          <p className="text-sm text-gray-500">通过一句提示词拆解任务，并统一管理 Agent Session</p>
+      <div className="rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-sky-50 to-cyan-50 px-4 py-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">计划编排中心</h1>
+            <p className="mt-1 text-sm text-slate-600">默认展示 Plan 列表，支持弹窗创建与抽屉查看详情。</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => queryClient.invalidateQueries('orchestration-plans')}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              <ArrowPathIcon className="h-4 w-4" /> 刷新
+            </button>
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700"
+            >
+              <PlusIcon className="h-4 w-4" /> 创建计划
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => {
-            queryClient.invalidateQueries('orchestration-plans');
-          }}
-          className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-md border border-gray-200 hover:bg-gray-50"
-        >
-          <ArrowPathIcon className="h-4 w-4" /> 刷新
-        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 min-h-[620px]">
-          <aside className="lg:col-span-4 bg-white border border-gray-200 rounded-lg flex flex-col">
-            <div className="p-3 border-b border-gray-200">
-              <p className="text-sm font-semibold text-gray-900">新建编排计划</p>
-              <div className="mt-2 space-y-2">
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="计划标题（可选）"
-                  className="w-full text-sm border border-gray-300 rounded px-2 py-1.5"
-                />
-                <textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  placeholder="输入一句提示词，例如：发布一个 Agent API 网关版本"
-                  className="w-full min-h-[110px] text-sm border border-gray-300 rounded px-2 py-1.5"
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <select
-                    value={mode}
-                    onChange={(event) => setMode(event.target.value as PlanMode)}
-                    className="text-sm border border-gray-300 rounded px-2 py-1.5"
-                  >
-                    <option value="sequential">串行</option>
-                    <option value="parallel">并行</option>
-                    <option value="hybrid">混合</option>
-                  </select>
-                  <select
-                    value={plannerAgentId}
-                    onChange={(event) => setPlannerAgentId(event.target.value)}
-                    className="text-sm border border-gray-300 rounded px-2 py-1.5"
-                  >
-                    <option value="">默认 Planner</option>
-                    {agents.map((agent) => (
-                      <option key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <label className="text-xs text-gray-600 inline-flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={autoRun}
-                    onChange={(event) => setAutoRun(event.target.checked)}
-                  />
-                  创建后自动执行
-                </label>
-                <button
-                  onClick={() =>
-                    createPlanMutation.mutate({
-                      prompt: prompt.trim(),
-                      title: title.trim() || undefined,
-                      plannerAgentId: plannerAgentId || undefined,
-                      mode,
-                      autoRun,
-                    })
-                  }
-                  disabled={!prompt.trim() || createPlanMutation.isLoading}
-                  className="w-full inline-flex items-center justify-center gap-1 text-sm bg-primary-600 text-white rounded px-2 py-2 disabled:bg-gray-300"
-                >
-                  <SparklesIcon className="h-4 w-4" /> 生成计划
-                </button>
-              </div>
-            </div>
+      <section className="rounded-xl border border-slate-200 bg-white">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <p className="text-sm font-semibold text-slate-900">Plan 列表</p>
+          <p className="text-xs text-slate-500">共 {plans.length} 条</p>
+        </div>
 
-            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
-              <p className="text-sm font-semibold text-gray-900">计划列表</p>
-              <span className="text-xs text-gray-500">{plans.length}</span>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600">
+              <tr>
+                <th className="px-4 py-3 text-left font-medium">计划</th>
+                <th className="px-4 py-3 text-left font-medium">状态</th>
+                <th className="px-4 py-3 text-left font-medium">模式</th>
+                <th className="px-4 py-3 text-left font-medium">进度</th>
+                <th className="px-4 py-3 text-left font-medium">更新时间</th>
+                <th className="px-4 py-3 text-left font-medium">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
               {plansLoading ? (
-                <p className="text-sm text-gray-400 px-2 py-3">加载中...</p>
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-400">
+                    加载中...
+                  </td>
+                </tr>
               ) : plans.length === 0 ? (
-                <p className="text-sm text-gray-400 px-2 py-3">暂无计划</p>
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
+                    暂无计划，点击右上角“创建计划”开始。
+                  </td>
+                </tr>
               ) : (
                 plans.map((plan) => (
-                  <button
-                    key={plan._id}
-                    onClick={() => setSelectedPlanId(plan._id)}
-                    className={`w-full text-left px-2 py-2 rounded border ${
-                      selectedPlanId === plan._id
-                        ? 'border-primary-500 bg-primary-50'
-                        : 'border-transparent hover:bg-gray-50'
-                    }`}
-                  >
-                    <p className="text-sm font-medium text-gray-900 truncate">{plan.title}</p>
-                    <div className="mt-1 flex items-center justify-between">
-                      <span className={`text-xs px-1.5 py-0.5 rounded ${STATUS_COLOR[plan.status] || STATUS_COLOR.pending}`}>
+                  <tr key={plan._id} className="hover:bg-slate-50/60">
+                    <td className="px-4 py-3 align-top">
+                      <p className="font-medium text-slate-900">{plan.title || '未命名计划'}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">{plan.sourcePrompt || '-'}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[plan.status] || STATUS_COLOR.pending}`}>
                         {plan.status}
                       </span>
-                      <span className="text-xs text-gray-500">{plan.stats.completedTasks}/{plan.stats.totalTasks}</span>
-                    </div>
-                  </button>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{plan.strategy?.mode || '-'}</td>
+                    <td className="px-4 py-3 text-slate-700">{plan.stats.completedTasks}/{plan.stats.totalTasks}</td>
+                    <td className="px-4 py-3 text-slate-700">{formatDateTime(plan.updatedAt)}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => openPlanDetail(plan._id)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        title="查看详情"
+                        aria-label="查看详情"
+                      >
+                        <EyeIcon className="h-4 w-4" />
+                      </button>
+                    </td>
+                  </tr>
                 ))
               )}
-            </div>
-          </aside>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-          <section className="lg:col-span-8 bg-white border border-gray-200 rounded-lg flex flex-col">
-            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">创建编排计划</p>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="关闭创建弹窗"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-4">
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="计划标题（可选）"
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+              <textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="输入一句提示词，例如：发布一个 Agent API 网关版本"
+                className="min-h-[120px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={mode}
+                  onChange={(event) => setMode(event.target.value as PlanMode)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="sequential">串行</option>
+                  <option value="parallel">并行</option>
+                  <option value="hybrid">混合</option>
+                </select>
+                <select
+                  value={plannerAgentId}
+                  onChange={(event) => setPlannerAgentId(event.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="">默认 Planner</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={autoRun}
+                  onChange={(event) => setAutoRun(event.target.checked)}
+                />
+                创建后自动执行
+              </label>
+              {createPlanMutation.isError && <p className="text-xs text-rose-600">创建失败，请稍后重试。</p>}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() =>
+                  createPlanMutation.mutate({
+                    prompt: prompt.trim(),
+                    title: title.trim() || undefined,
+                    plannerAgentId: plannerAgentId || undefined,
+                    mode,
+                    autoRun,
+                  })
+                }
+                disabled={!prompt.trim() || createPlanMutation.isLoading}
+                className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white disabled:bg-slate-300"
+              >
+                <SparklesIcon className="h-4 w-4" /> 生成计划
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isDetailDrawerOpen && (
+        <div className="fixed inset-0 z-40">
+          <button
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setIsDetailDrawerOpen(false)}
+            aria-label="关闭详情抽屉"
+          />
+          <aside className="absolute right-0 top-0 h-full w-full max-w-5xl overflow-y-auto bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div>
-                <p className="text-sm font-semibold text-gray-900">{planDetail?.title || '未选择计划'}</p>
-                <p className="text-xs text-gray-500">mode: {planDetail?.strategy?.mode || '-'}</p>
+                <p className="text-sm font-semibold text-slate-900">{planDetail?.title || '计划详情'}</p>
+                <p className="text-xs text-slate-500">mode: {planDetail?.strategy?.mode || '-'}</p>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => planDetail && copyPlanToForm(planDetail)}
-                  disabled={!planDetail}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-gray-200 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  复制计划
-                </button>
-                <button
-                  onClick={() => {
-                    if (!selectedPlanId) return;
-                    const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
-                    if (!ok) return;
-                    deletePlanMutation.mutate(selectedPlanId);
-                  }}
-                  disabled={!selectedPlanId || deletePlanMutation.isLoading}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                >
-                  删除计划
-                </button>
-                <button
-                  onClick={() =>
-                    selectedPlanId && runPlanMutation.mutate({ planId: selectedPlanId, continueOnFailure: true })
-                  }
-                  disabled={!selectedPlanId || runPlanMutation.isLoading}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 text-xs bg-gray-900 text-white rounded disabled:bg-gray-300"
-                >
-                  <PlayIcon className="h-4 w-4" /> 运行计划
-                </button>
-              </div>
+              <button
+                onClick={() => setIsDetailDrawerOpen(false)}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="关闭抽屉"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
             </div>
 
-            <div className="p-3 border-b border-gray-200 bg-gray-50/60 space-y-2">
-              <p className="text-xs text-gray-700">
-                <span className="font-medium">Planner Agent:</span> {planDetail?.strategy?.plannerAgentId || '默认'}
-              </p>
-              <div>
-                <p className="text-xs font-medium text-gray-700 mb-1">原始 Prompt</p>
-                <pre className="text-xs whitespace-pre-wrap text-gray-600 bg-white border border-gray-200 rounded p-2">
-                  {planDetail?.sourcePrompt || '-'}
-                </pre>
-              </div>
-            </div>
-
-            <div className="p-3 border-b border-gray-200 text-xs text-gray-600">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <div>总任务: {planDetail?.stats?.totalTasks ?? '-'}</div>
-                <div>已完成: {planDetail?.stats?.completedTasks ?? '-'}</div>
-                <div>失败: {planDetail?.stats?.failedTasks ?? '-'}</div>
-                <div>待人工: {planDetail?.stats?.waitingHumanTasks ?? '-'}</div>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-3 space-y-2">
-              {planDetailLoading ? (
-                <p className="text-sm text-gray-400">加载计划详情...</p>
-              ) : !planDetail?.tasks?.length ? (
-                <p className="text-sm text-gray-400">该计划暂无任务</p>
+            <div className="space-y-3 p-4">
+              {!selectedPlanId ? (
+                <p className="text-sm text-slate-500">未选择计划。</p>
+              ) : planDetailLoading && !planDetail ? (
+                <p className="text-sm text-slate-500">加载中...</p>
+              ) : !planDetail ? (
+                <p className="text-sm text-slate-500">未获取到计划详情。</p>
               ) : (
-                planDetail.tasks.map((task) => (
-                  <div
-                    key={task._id}
-                    className={`border rounded-lg p-3 space-y-2 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-gray-200'}`}
-                  >
+                <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => copyPlanToForm(planDetail)}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                    >
+                      <PencilSquareIcon className="h-3.5 w-3.5" /> 复制到新建
+                    </button>
+                    <button
+                      onClick={() =>
+                        selectedPlanId && runPlanMutation.mutate({ planId: selectedPlanId, continueOnFailure: true })
+                      }
+                      disabled={!selectedPlanId || runPlanMutation.isLoading}
+                      className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+                    >
+                      <PlayIcon className="h-3.5 w-3.5" /> 运行计划
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!selectedPlanId) return;
+                        const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
+                        if (!ok) return;
+                        deletePlanMutation.mutate(selectedPlanId);
+                      }}
+                      disabled={!selectedPlanId || deletePlanMutation.isLoading}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      <TrashIcon className="h-3.5 w-3.5" /> 删除计划
+                    </button>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-700">
+                    <p>
+                      <span className="font-medium">Planner Agent:</span> {planDetail.strategy?.plannerAgentId || '默认'}
+                    </p>
+                    <div className="mt-2">
+                      <p className="mb-1 font-medium">原始 Prompt</p>
+                      <pre className="whitespace-pre-wrap rounded border border-slate-200 bg-white p-2 text-xs text-slate-600">
+                        {planDetail.sourcePrompt || '-'}
+                      </pre>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-700 md:grid-cols-4">
+                    <div>总任务: {planDetail.stats?.totalTasks ?? '-'}</div>
+                    <div>已完成: {planDetail.stats?.completedTasks ?? '-'}</div>
+                    <div>失败: {planDetail.stats?.failedTasks ?? '-'}</div>
+                    <div>待人工: {planDetail.stats?.waitingHumanTasks ?? '-'}</div>
+                  </div>
+
+                  <div className="space-y-2">
+                    {planTasks.length === 0 ? (
+                      <p className="text-sm text-slate-400">该计划暂无任务</p>
+                    ) : (
+                      planTasks.map((task) => (
+                        <div
+                          key={task._id}
+                          className={`space-y-2 rounded-lg border p-3 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-gray-200'}`}
+                        >
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <p className="text-sm font-medium text-gray-900">#{task.order + 1} {task.title}</p>
@@ -631,11 +724,16 @@ const Orchestration: React.FC = () => {
                     {task.result?.output && (
                       <p className="text-xs text-gray-600 line-clamp-2">输出: {task.result.output}</p>
                     )}
+                        </div>
+                      ))
+                    )}
                   </div>
-                ))
+                </>
               )}
             </div>
-          </section>
+          </aside>
+        </div>
+      )}
 
           {debugDrawerOpen && (
             <div className="fixed inset-0 z-[90]">
@@ -791,7 +889,6 @@ const Orchestration: React.FC = () => {
               </aside>
             </div>
           )}
-        </div>
       </div>
   );
 };

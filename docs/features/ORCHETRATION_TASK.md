@@ -95,6 +95,7 @@
 |------|------|
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行主计划 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理主计划 |
+| `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -102,6 +103,7 @@
 |------|------|
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行开发沉淀 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理开发沉淀 |
+| `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -176,6 +178,7 @@
 |------|------|
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行主计划 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理主计划 |
+| `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -183,6 +186,7 @@
 |------|------|
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行开发沉淀 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理开发沉淀 |
+| `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
