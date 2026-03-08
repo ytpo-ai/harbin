@@ -54,10 +54,22 @@ interface AgentBusinessRole {
   id: string;
   code: string;
   name: string;
+  description?: string;
   status: 'active' | 'inactive';
   capabilities?: string[];
   tools?: string[];
   promptTemplate?: string;
+}
+
+export interface AgentToolPermissionSet {
+  roleId?: string;
+  roleCode: string;
+  roleName: string;
+  roleStatus: 'active' | 'inactive' | 'unknown';
+  tools: string[];
+  capabilities: string[];
+  exposed: boolean;
+  description?: string;
 }
 
 export interface AgentMcpMapProfile {
@@ -309,10 +321,11 @@ export class AgentService {
       isActive: agentData.isActive ?? true,
     };
 
-    normalizedData.tools = await this.ensureToolsWithinMcpProfileWhitelist(
-      normalizedData.type,
+    normalizedData.tools = await this.ensureToolsWithinRolePermissionWhitelist(
+      normalizedData.roleId,
       normalizedData.tools || [],
       'create',
+      normalizedData.type,
     );
 
     try {
@@ -378,22 +391,6 @@ export class AgentService {
       ? normalizedUpdates.type
       : (existingAgent.type || '').trim();
 
-    const hasToolsField = Object.prototype.hasOwnProperty.call(updates, 'tools');
-    if (hasToolsField || hasTypeField) {
-      const candidateTools = hasToolsField
-        ? Array.isArray(updates.tools)
-          ? updates.tools
-          : []
-        : Array.isArray(existingAgent.tools)
-          ? existingAgent.tools
-          : [];
-      normalizedUpdates.tools = await this.ensureToolsWithinMcpProfileWhitelist(
-        targetType,
-        candidateTools,
-        'update',
-      );
-    }
-
     const hasRoleIdField = Object.prototype.hasOwnProperty.call(updates, 'roleId');
     if (hasRoleIdField) {
       const normalizedRoleId = typeof updates.roleId === 'string' ? updates.roleId.trim() : '';
@@ -404,6 +401,25 @@ export class AgentService {
       normalizedUpdates.roleId = normalizedRoleId;
     } else if (!(existingAgent.roleId || '').trim()) {
       throw new BadRequestException('roleId is required');
+    }
+
+    const targetRoleId = hasRoleIdField ? normalizedUpdates.roleId : String(existingAgent.roleId || '').trim();
+
+    const hasToolsField = Object.prototype.hasOwnProperty.call(updates, 'tools');
+    if (hasToolsField || hasTypeField || hasRoleIdField) {
+      const candidateTools = hasToolsField
+        ? Array.isArray(updates.tools)
+          ? updates.tools
+          : []
+        : Array.isArray(existingAgent.tools)
+          ? existingAgent.tools
+          : [];
+      normalizedUpdates.tools = await this.ensureToolsWithinRolePermissionWhitelist(
+        targetRoleId,
+        candidateTools,
+        'update',
+        targetType,
+      );
     }
 
     const hasApiKeyIdField = Object.prototype.hasOwnProperty.call(updates, 'apiKeyId');
@@ -437,25 +453,27 @@ export class AgentService {
     return updated;
   }
 
-  private async ensureToolsWithinMcpProfileWhitelist(
-    agentType: string,
+  private async ensureToolsWithinRolePermissionWhitelist(
+    roleId: string,
     tools: string[],
     action: 'create' | 'update',
+    fallbackAgentType?: string,
   ): Promise<string[]> {
-    const normalizedType = (agentType || '').trim();
-    if (!normalizedType) {
-      throw new BadRequestException('Agent type is required before assigning tools');
+    const normalizedRoleId = String(roleId || '').trim();
+    if (!normalizedRoleId) {
+      throw new BadRequestException('roleId is required before assigning tools');
     }
 
-    const profile = await this.getMcpProfileByAgentType(normalizedType);
+    const role = await this.assertRoleExists(normalizedRoleId);
+    const profile = await this.getMcpProfileByRoleCodeOrType(role.code, fallbackAgentType);
     const whitelist = new Set(this.normalizeToolIds(profile.tools || []));
     const normalizedTools = this.normalizeToolIds(tools || []);
     const invalid = normalizedTools.filter((toolId) => !whitelist.has(toolId));
 
     if (invalid.length > 0) {
       throw new BadRequestException(
-        `Invalid tools for agent type ${normalizedType} on ${action}: ${invalid.join(', ')}. ` +
-          'Agent.tools must be a subset of MCP Profile.tools.',
+        `Invalid tools for role ${role.code} on ${action}: ${invalid.join(', ')}. ` +
+          'Agent.tools must be a subset of the role tool permission set.',
       );
     }
 
@@ -2451,7 +2469,8 @@ export class AgentService {
   }
 
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
-    const profile = await this.getMcpProfileByAgentType((agent.type || '').trim());
+    const role = await this.getRoleById(agent.roleId);
+    const profile = await this.getMcpProfileByRoleCodeOrType(role?.code, (agent.type || '').trim());
     const merged = this
       .uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID])
       .map((toolId) => this.normalizeToolId(toolId));
@@ -2490,7 +2509,7 @@ export class AgentService {
     }
 
     try {
-      const response = await axios.get(`${this.legacyBaseUrl}/hr/roles`, {
+      const response = await axios.get(`${this.legacyBaseUrl}/roles`, {
         params,
         timeout: this.roleRequestTimeoutMs,
       });
@@ -2509,7 +2528,7 @@ export class AgentService {
     }
 
     try {
-      const response = await axios.get(`${this.legacyBaseUrl}/hr/roles/${encodeURIComponent(normalizedRoleId)}`, {
+      const response = await axios.get(`${this.legacyBaseUrl}/roles/${encodeURIComponent(normalizedRoleId)}`, {
         timeout: this.roleRequestTimeoutMs,
       });
       return response.data || null;
@@ -2574,9 +2593,9 @@ export class AgentService {
 
     const normalized = this.normalizeAgentEntity(agent);
     const mapKey = (normalized.type || '').trim();
-    const mapProfile = await this.getMcpProfileByAgentType(mapKey);
-    const toolMap = await this.buildToolSummaryMap([normalized], new Map([[mapKey, mapProfile]]));
     const role = await this.getRoleById(normalized.roleId);
+    const mapProfile = await this.getMcpProfileByRoleCodeOrType(role?.code, mapKey);
+    const toolMap = await this.buildToolSummaryMap([normalized], new Map([[mapKey, mapProfile]]));
     const profile = this.toMcpProfile(normalized, mapProfile, mapKey, toolMap, role || undefined);
 
     if (!includeHidden && !profile.exposed) {
@@ -2709,6 +2728,131 @@ export class AgentService {
     };
   }
 
+  async getToolPermissionSets(): Promise<AgentToolPermissionSet[]> {
+    const roles = await this.getAvailableRoles();
+    const roleCodes = Array.from(new Set(roles.map((role) => String(role.code || '').trim()).filter(Boolean)));
+    const profiles = await this.agentProfileModel.find({ agentType: { $in: roleCodes } }).exec();
+    const profileMap = new Map(profiles.map((profile) => [String(profile.agentType || '').trim(), profile]));
+
+    return roles.map((role) => {
+      const roleCode = String(role.code || '').trim();
+      const profile = profileMap.get(roleCode);
+      return {
+        roleId: role.id,
+        roleCode,
+        roleName: role.name || roleCode,
+        roleStatus: role.status || 'unknown',
+        tools: this.normalizeToolIds(profile?.tools || []),
+        capabilities: profile?.capabilities || [],
+        exposed: profile?.exposed === true,
+        description: profile?.description || role.description || '',
+      };
+    });
+  }
+
+  async upsertToolPermissionSet(
+    roleCode: string,
+    updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'capabilities' | 'exposed' | 'description'>>,
+  ): Promise<AgentToolPermissionSet> {
+    const normalizedRoleCode = String(roleCode || '').trim();
+    if (!normalizedRoleCode) {
+      throw new BadRequestException('roleCode is required');
+    }
+
+    const roles = await this.getAvailableRoles();
+    const role = roles.find((item) => String(item.code || '').trim() === normalizedRoleCode);
+    if (!role) {
+      throw new BadRequestException(`Role code not found: ${normalizedRoleCode}`);
+    }
+
+    const payload: Partial<AgentProfile> = {
+      role: normalizedRoleCode,
+      tools: this.normalizeToolIds(updates.tools || []),
+      capabilities: updates.capabilities || [],
+      exposed: updates.exposed === true,
+      description: updates.description || '',
+    };
+
+    const profile = await this.agentProfileModel
+      .findOneAndUpdate({ agentType: normalizedRoleCode }, { ...payload, agentType: normalizedRoleCode }, { new: true, upsert: true })
+      .exec();
+
+    return {
+      roleId: role.id,
+      roleCode: normalizedRoleCode,
+      roleName: role.name || normalizedRoleCode,
+      roleStatus: role.status || 'unknown',
+      tools: this.normalizeToolIds(profile?.tools || []),
+      capabilities: profile?.capabilities || [],
+      exposed: profile?.exposed === true,
+      description: profile?.description || role.description || '',
+    };
+  }
+
+  async resetToolPermissionSetsBySystemRoles(): Promise<{
+    totalRoles: number;
+    resetCount: number;
+    missingRoleCodes: string[];
+  }> {
+    const systemSeeds = new Map<string, { tools: string[]; capabilities: string[]; exposed: boolean; description: string }>();
+    for (const seed of MCP_PROFILE_SEEDS) {
+      const roleCode = String(seed.role || '').trim();
+      if (!roleCode) {
+        continue;
+      }
+      const existing = systemSeeds.get(roleCode);
+      if (!existing) {
+        systemSeeds.set(roleCode, {
+          tools: this.normalizeToolIds(seed.tools || []),
+          capabilities: [...(seed.capabilities || [])],
+          exposed: seed.exposed === true,
+          description: seed.description || '',
+        });
+        continue;
+      }
+      existing.tools = this.uniqueStrings(existing.tools, this.normalizeToolIds(seed.tools || []));
+      existing.capabilities = this.uniqueStrings(existing.capabilities, seed.capabilities || []);
+      existing.exposed = existing.exposed || seed.exposed === true;
+      if (!existing.description && seed.description) {
+        existing.description = seed.description;
+      }
+    }
+
+    const roles = await this.getAvailableRoles();
+    const roleCodeSet = new Set(roles.map((role) => String(role.code || '').trim()).filter(Boolean));
+    const missingRoleCodes: string[] = [];
+    let resetCount = 0;
+
+    for (const [roleCode, seed] of systemSeeds.entries()) {
+      if (!roleCodeSet.has(roleCode)) {
+        missingRoleCodes.push(roleCode);
+        continue;
+      }
+
+      await this.agentProfileModel
+        .findOneAndUpdate(
+          { agentType: roleCode },
+          {
+            agentType: roleCode,
+            role: roleCode,
+            tools: this.normalizeToolIds(seed.tools || []),
+            capabilities: seed.capabilities || [],
+            exposed: seed.exposed === true,
+            description: seed.description || '',
+          },
+          { upsert: true, new: true },
+        )
+        .exec();
+      resetCount += 1;
+    }
+
+    return {
+      totalRoles: roles.length,
+      resetCount,
+      missingRoleCodes,
+    };
+  }
+
   async getMcpProfiles(): Promise<AgentProfile[]> {
     const profiles = await this.agentProfileModel.find().sort({ agentType: 1 }).exec();
     return profiles.map((profile) => {
@@ -2770,6 +2914,39 @@ export class AgentService {
       });
     }
     return map;
+  }
+
+  private async getMcpProfileByRoleCodeOrType(roleCode?: string, agentType?: string): Promise<AgentMcpMapProfile> {
+    const normalizedRoleCode = String(roleCode || '').trim();
+    if (normalizedRoleCode) {
+      const roleProfile = await this.agentProfileModel.findOne({ agentType: normalizedRoleCode }).exec();
+      if (roleProfile) {
+        return {
+          role: roleProfile.role,
+          tools: this.normalizeToolIds(roleProfile.tools || []),
+          capabilities: roleProfile.capabilities || [],
+          exposed: roleProfile.exposed === true,
+          description: roleProfile.description || '',
+        };
+      }
+    }
+
+    const normalizedType = String(agentType || '').trim();
+    if (!normalizedType) {
+      return DEFAULT_MCP_PROFILE;
+    }
+
+    const typeProfile = await this.agentProfileModel.findOne({ agentType: normalizedType }).exec();
+    if (!typeProfile) {
+      return DEFAULT_MCP_PROFILE;
+    }
+    return {
+      role: typeProfile.role,
+      tools: this.normalizeToolIds(typeProfile.tools || []),
+      capabilities: typeProfile.capabilities || [],
+      exposed: typeProfile.exposed === true,
+      description: typeProfile.description || '',
+    };
   }
 
   private async getMcpProfileByAgentType(agentType: string): Promise<AgentMcpMapProfile> {

@@ -129,6 +129,7 @@ const Layout: React.FC = () => {
         { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
         { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
         { name: '人力资源', href: '/hr', icon: UserGroupIcon },
+        { name: '角色管理', href: '/roles', icon: UserGroupIcon },
       ],
     },
   ];

@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
-import type { AgentMcpProfile } from '../services/agentService';
+import type { AgentBusinessRole } from '../services/agentService';
+import type { AgentToolPermissionSet } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
 import { toolService } from '../services/toolService';
@@ -47,7 +48,6 @@ const isProviderCompatible = (modelProvider?: string, keyProvider?: string): boo
 interface AgentTypeOption {
   value: string;
   label: string;
-  defaultRole: string;
   defaultPrompt: string;
 }
 
@@ -63,6 +63,25 @@ const shouldApplyNextDefault = (currentValue: string, previousDefault?: string):
   return !!previousDefault && normalized === previousDefault.trim();
 };
 
+const getRoleDisplayName = (role?: AgentBusinessRole): string => {
+  if (!role) return '-';
+  return role.name || role.code || role.id;
+};
+
+const getToolKey = (tool?: any): string => {
+  return String(tool?.toolId || tool?.id || '').trim();
+};
+
+const getToolNamespace = (tool?: any): string => {
+  if (tool?.namespace) return String(tool.namespace).trim();
+  const key = getToolKey(tool);
+  return key.includes('.') ? key.split('.')[0] : 'other';
+};
+
+const getToolProvider = (tool?: any): string => {
+  return String(tool?.provider || 'unknown').trim();
+};
+
 const Agents: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -70,8 +89,8 @@ const Agents: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [startingChatAgentId, setStartingChatAgentId] = useState<string>('');
-  const [editingMcpProfile, setEditingMcpProfile] = useState<AgentMcpProfile | null>(null);
-  const [managementTab, setManagementTab] = useState<'agents' | 'mcpProfiles'>('agents');
+  const [editingPermissionSet, setEditingPermissionSet] = useState<AgentToolPermissionSet | null>(null);
+  const [managementTab, setManagementTab] = useState<'agents' | 'permissionSets'>('agents');
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;
@@ -86,7 +105,18 @@ const Agents: React.FC = () => {
   const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
   const { data: availableModels } = useQuery('models', modelService.getAvailableModels);
   const { data: availableTools } = useQuery('tools', toolService.getTools);
-  const { data: mcpProfiles } = useQuery('agentMcpProfiles', agentService.getMcpProfiles);
+  const { data: toolPermissionSets } = useQuery('agentToolPermissionSets', agentService.getToolPermissionSets);
+  const { data: businessRoles } = useQuery('agentBusinessRoles', () => agentService.getRoles('all'));
+
+  const roleMap = useMemo(() => {
+    const map = new Map<string, AgentBusinessRole>();
+    for (const role of businessRoles || []) {
+      if (role?.id) {
+        map.set(role.id, role);
+      }
+    }
+    return map;
+  }, [businessRoles]);
 
   const deleteAgentMutation = useMutation(agentService.deleteAgent, {
     onSuccess: () => {
@@ -116,16 +146,26 @@ const Agents: React.FC = () => {
     }
   );
 
-  const upsertMcpProfileMutation = useMutation(
-    ({ agentType, updates }: { agentType: string; updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'> }) =>
-      agentService.upsertMcpProfile(agentType, updates),
+  const upsertPermissionSetMutation = useMutation(
+    ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'> }) =>
+      agentService.upsertToolPermissionSet(roleCode, updates),
     {
       onSuccess: () => {
-        queryClient.invalidateQueries('agentMcpProfiles');
-        setEditingMcpProfile(null);
+        queryClient.invalidateQueries('agentToolPermissionSets');
+        setEditingPermissionSet(null);
       },
     },
   );
+
+  const resetPermissionSetMutation = useMutation(agentService.resetToolPermissionSetsBySystemRoles, {
+    onSuccess: (result) => {
+      queryClient.invalidateQueries('agentToolPermissionSets');
+      const missing = (result.missingRoleCodes || []).length
+        ? `\n缺失角色: ${(result.missingRoleCodes || []).join(', ')}`
+        : '';
+      alert(`已按系统角色重置工具权限集。\n重置数量: ${result.resetCount}/${result.totalRoles}${missing}`);
+    },
+  });
 
   const handleDelete = (agent: Agent) => {
     const id = getAgentId(agent);
@@ -245,14 +285,14 @@ const Agents: React.FC = () => {
             Agent 管理
           </button>
           <button
-            onClick={() => setManagementTab('mcpProfiles')}
+            onClick={() => setManagementTab('permissionSets')}
             className={`py-2 text-sm font-medium border-b-2 ${
-              managementTab === 'mcpProfiles'
+              managementTab === 'permissionSets'
                 ? 'border-primary-600 text-primary-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            MCP Profile 管理
+            工具权限集管理
           </button>
         </nav>
       </div>
@@ -330,6 +370,7 @@ const Agents: React.FC = () => {
                     </div>
                     <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
                       <span>类型: {agent.type}</span>
+                      <span>角色: {getRoleDisplayName(roleMap.get(agent.roleId))}</span>
                       <span className="flex items-center">
                         <CpuChipIcon className="h-3 w-3 mr-1" />
                         {agent.model?.name}
@@ -409,21 +450,30 @@ const Agents: React.FC = () => {
       </>
       )}
 
-      {managementTab === 'mcpProfiles' && (
+      {managementTab === 'permissionSets' && (
       <div className="bg-white shadow overflow-hidden sm:rounded-md">
         <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">MCP Profile 管理</h2>
-            <p className="mt-1 text-sm text-gray-500">按 Agent Type 管理 MCP 工具与能力映射</p>
+            <h2 className="text-lg font-semibold text-gray-900">工具权限集管理</h2>
+            <p className="mt-1 text-sm text-gray-500">按系统角色管理工具白名单与能力集合</p>
           </div>
-          <span className="text-xs text-gray-500">共 {mcpProfiles?.length || 0} 个 profile</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-500">共 {toolPermissionSets?.length || 0} 个权限集</span>
+            <button
+              onClick={() => resetPermissionSetMutation.mutate()}
+              disabled={resetPermissionSetMutation.isLoading}
+              className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
+            >
+              {resetPermissionSetMutation.isLoading ? '重置中...' : '按系统角色重置数据'}
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Agent Type</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Role</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">系统角色</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Role Code</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Exposed</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
@@ -431,36 +481,36 @@ const Agents: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(mcpProfiles || []).map((profile) => (
-                <tr key={profile.agentType}>
-                  <td className="px-4 py-3 font-medium text-gray-900">{profile.agentType}</td>
-                  <td className="px-4 py-3 text-gray-700">{profile.role || '-'}</td>
+              {(toolPermissionSets || []).map((set) => (
+                <tr key={set.roleCode}>
+                  <td className="px-4 py-3 font-medium text-gray-900">{set.roleName || '-'}</td>
+                  <td className="px-4 py-3 text-gray-700">{set.roleCode || '-'}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        profile.exposed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
+                        set.exposed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
                       }`}
                     >
-                      {profile.exposed ? '是' : '否'}
+                      {set.exposed ? '是' : '否'}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-gray-700">{profile.tools?.length || 0}</td>
-                  <td className="px-4 py-3 text-gray-700">{profile.capabilities?.length || 0}</td>
+                  <td className="px-4 py-3 text-gray-700">{set.tools?.length || 0}</td>
+                  <td className="px-4 py-3 text-gray-700">{set.capabilities?.length || 0}</td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => setEditingMcpProfile(profile)}
+                      onClick={() => setEditingPermissionSet(set)}
                       className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
                     >
                       <PencilIcon className="h-3 w-3 mr-1" />
-                      编辑 Profile
+                      编辑权限集
                     </button>
                   </td>
                 </tr>
               ))}
-              {(mcpProfiles || []).length === 0 && (
+              {(toolPermissionSets || []).length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    暂无 MCP Profile
+                    暂无工具权限集
                   </td>
                 </tr>
               )}
@@ -475,7 +525,8 @@ const Agents: React.FC = () => {
             <CreateAgentModal 
               availableModels={availableModels || []}
               availableTools={availableTools || []}
-              mcpProfiles={mcpProfiles || []}
+              toolPermissionSets={toolPermissionSets || []}
+              businessRoles={businessRoles || []}
               onClose={() => setIsCreateModalOpen(false)}
               onSuccess={() => {
                 setIsCreateModalOpen(false);
@@ -489,7 +540,8 @@ const Agents: React.FC = () => {
           agent={editingAgent}
           availableModels={availableModels || []}
           availableTools={availableTools || []}
-          mcpProfiles={mcpProfiles || []}
+          toolPermissionSets={toolPermissionSets || []}
+          businessRoles={businessRoles || []}
           onClose={() => {
             setIsEditModalOpen(false);
             setEditingAgent(null);
@@ -506,18 +558,18 @@ const Agents: React.FC = () => {
         />
       )}
 
-      {editingMcpProfile && (
-        <EditMcpProfileModal
-          profile={editingMcpProfile}
+      {editingPermissionSet && (
+        <EditToolPermissionSetModal
+          permissionSet={editingPermissionSet}
           availableTools={availableTools || []}
-          onClose={() => setEditingMcpProfile(null)}
+          onClose={() => setEditingPermissionSet(null)}
           onSave={(updates) => {
-            upsertMcpProfileMutation.mutate({
-              agentType: editingMcpProfile.agentType,
+            upsertPermissionSetMutation.mutate({
+              roleCode: editingPermissionSet.roleCode,
               updates,
             });
           }}
-          isSaving={upsertMcpProfileMutation.isLoading}
+          isSaving={upsertPermissionSetMutation.isLoading}
         />
       )}
     </div>
@@ -527,16 +579,19 @@ const Agents: React.FC = () => {
 // 创建Agent模态框组件
 const CreateAgentModal: React.FC<{
   availableModels: AIModel[];
-  availableTools: Array<{ id: string; name: string; enabled?: boolean }>;
-  mcpProfiles: AgentMcpProfile[];
+  availableTools: Array<{ id: string; toolId?: string; name: string; enabled?: boolean }>;
+  toolPermissionSets: AgentToolPermissionSet[];
+  businessRoles: AgentBusinessRole[];
   onClose: () => void;
   onSuccess: () => void;
-}> = ({ availableModels, availableTools, mcpProfiles, onClose, onSuccess }) => {
+}> = ({ availableModels, availableTools, toolPermissionSets, businessRoles, onClose, onSuccess }) => {
   const queryClient = useQueryClient();
+  const [toolProviderFilter, setToolProviderFilter] = useState('');
+  const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     type: '',
-    role: '',
+    roleId: '',
     description: '',
     systemPrompt: '',
     capabilities: '',
@@ -559,23 +614,57 @@ const CreateAgentModal: React.FC<{
     },
   });
 
+  const selectedRoleCode = (businessRoles.find((role) => role.id === formData.roleId)?.code || '').trim();
   const allowedToolIds = new Set(
-    (mcpProfiles.find((profile) => profile.agentType === formData.type)?.tools || []).filter(Boolean),
+    (toolPermissionSets.find((set) => set.roleCode === selectedRoleCode)?.tools || []).filter(Boolean),
   );
   const allowedTools = availableTools.filter(
-    (tool) => tool.enabled !== false && allowedToolIds.has(tool.id),
+    (tool) => tool.enabled !== false && allowedToolIds.has(getToolKey(tool)),
   );
+
+  const createToolProviderOptions = useMemo(() => {
+    return Array.from(new Set(allowedTools.map((tool) => getToolProvider(tool)).filter(Boolean))).sort();
+  }, [allowedTools]);
+
+  const createToolNamespaceOptions = useMemo(() => {
+    return Array.from(new Set(allowedTools.map((tool) => getToolNamespace(tool)).filter(Boolean))).sort();
+  }, [allowedTools]);
+
+  const groupedAllowedTools = useMemo(() => {
+    const filtered = allowedTools
+      .filter((tool) => !toolProviderFilter || getToolProvider(tool) === toolProviderFilter)
+      .filter((tool) => !toolNamespaceFilter || getToolNamespace(tool) === toolNamespaceFilter);
+
+    const grouped = new Map<string, typeof filtered>();
+    for (const tool of filtered) {
+      const namespace = getToolNamespace(tool);
+      if (!grouped.has(namespace)) grouped.set(namespace, []);
+      grouped.get(namespace)!.push(tool);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([namespace, items]) => ({
+        namespace,
+        items: items.sort((a, b) => getToolKey(a).localeCompare(getToolKey(b))),
+      }))
+      .sort((a, b) => a.namespace.localeCompare(b.namespace));
+  }, [allowedTools, toolProviderFilter, toolNamespaceFilter]);
+
+  useEffect(() => {
+    setFormData((prev) => ({
+      ...prev,
+      selectedTools: prev.selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
+    }));
+  }, [selectedRoleCode]);
 
   const handleCreateTypeChange = (nextType: string) => {
     setFormData((prev) => {
       const previousMeta = getAgentTypeMeta(prev.type);
       const nextMeta = getAgentTypeMeta(nextType);
+      const nextRoleCode = (businessRoles.find((role) => role.id === prev.roleId)?.code || '').trim();
       const nextAllowedToolIds = new Set(
-        (mcpProfiles.find((profile) => profile.agentType === nextType)?.tools || []).filter(Boolean),
+        (toolPermissionSets.find((set) => set.roleCode === nextRoleCode)?.tools || []).filter(Boolean),
       );
-      const nextRole = shouldApplyNextDefault(prev.role, previousMeta?.defaultRole)
-        ? (nextMeta?.defaultRole || prev.role)
-        : prev.role;
       const nextPrompt = shouldApplyNextDefault(prev.systemPrompt, previousMeta?.defaultPrompt)
         ? (nextMeta?.defaultPrompt || prev.systemPrompt)
         : prev.systemPrompt;
@@ -583,7 +672,6 @@ const CreateAgentModal: React.FC<{
       return {
         ...prev,
         type: nextType,
-        role: nextRole,
         systemPrompt: nextPrompt,
         selectedTools: prev.selectedTools.filter((toolId) => nextAllowedToolIds.has(toolId)),
       };
@@ -601,7 +689,7 @@ const CreateAgentModal: React.FC<{
     const agentData = {
       name: formData.name,
       type: formData.type,
-      role: formData.role || undefined,
+      roleId: formData.roleId,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
       capabilities: formData.capabilities.split(',').map(cap => cap.trim()).filter(Boolean),
@@ -728,14 +816,20 @@ const CreateAgentModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">角色（默认可自动填充）</label>
-              <input
-                type="text"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              <label className="block text-sm font-medium text-gray-700 mb-1">角色 <span className="text-red-500">*</span></label>
+              <select
+                required
+                value={formData.roleId}
+                onChange={(e) => setFormData({ ...formData, roleId: e.target.value })}
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                placeholder="例如: executive-assistant"
-              />
+              >
+                <option value="">选择角色...</option>
+                {businessRoles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {getRoleDisplayName(role)}
+                  </option>
+                ))}
+              </select>
             </div>
             
             <div>
@@ -774,33 +868,61 @@ const CreateAgentModal: React.FC<{
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">可用工具</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                <select
+                  value={toolProviderFilter}
+                  onChange={(e) => setToolProviderFilter(e.target.value)}
+                  className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+                >
+                  <option value="">全部 Provider</option>
+                  {createToolProviderOptions.map((provider) => (
+                    <option key={provider} value={provider}>{provider}</option>
+                  ))}
+                </select>
+                <select
+                  value={toolNamespaceFilter}
+                  onChange={(e) => setToolNamespaceFilter(e.target.value)}
+                  className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+                >
+                  <option value="">全部 Namespace</option>
+                  {createToolNamespaceOptions.map((namespace) => (
+                    <option key={namespace} value={namespace}>{namespace}</option>
+                  ))}
+                </select>
+              </div>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-                {allowedTools.map((tool) => {
-                  const checked = formData.selectedTools.includes(tool.id);
-                  return (
-                    <label key={tool.id} className="flex items-center justify-between text-sm text-gray-700">
-                      <span>{tool.name}</span>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          setFormData((prev) => ({
-                            ...prev,
-                            selectedTools: e.target.checked
-                              ? [...prev.selectedTools, tool.id]
-                              : prev.selectedTools.filter((id) => id !== tool.id),
-                          }));
-                        }}
-                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                      />
-                    </label>
-                  );
-                })}
-                {allowedTools.length === 0 && (
+                {groupedAllowedTools.map((group) => (
+                  <div key={group.namespace} className="space-y-1">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
+                    {group.items.map((tool) => {
+                      const toolId = getToolKey(tool);
+                      const checked = formData.selectedTools.includes(toolId);
+                      return (
+                        <label key={toolId} className="flex items-center justify-between text-sm text-gray-700 pl-1">
+                          <span>{tool.name}</span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              setFormData((prev) => ({
+                                ...prev,
+                                selectedTools: e.target.checked
+                                  ? [...prev.selectedTools, toolId]
+                                  : prev.selectedTools.filter((id) => id !== toolId),
+                              }));
+                            }}
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                ))}
+                {groupedAllowedTools.length === 0 && (
                   <p className="text-xs text-gray-500">暂无可用工具</p>
                 )}
               </div>
-              <p className="mt-1 text-xs text-gray-500">白名单模式：仅可选择该 Agent Type 的 MCP Profile.tools 子集。</p>
+              <p className="mt-1 text-xs text-gray-500">白名单模式：仅可选择当前角色工具权限集中的工具子集。</p>
             </div>
             
             <div className="flex justify-end space-x-3 pt-4 border-t">
@@ -813,7 +935,7 @@ const CreateAgentModal: React.FC<{
               </button>
               <button
                 type="submit"
-                disabled={createAgentMutation.isLoading || !formData.modelId}
+                disabled={createAgentMutation.isLoading || !formData.modelId || !formData.roleId}
                 className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
               >
                 {createAgentMutation.isLoading ? '创建中...' : '创建Agent'}
@@ -829,19 +951,22 @@ const CreateAgentModal: React.FC<{
 const EditAgentModal: React.FC<{
   agent: Agent;
   availableModels: AIModel[];
-  availableTools: Array<{ id: string; name: string; description?: string; enabled?: boolean }>;
-  mcpProfiles: AgentMcpProfile[];
+  availableTools: Array<{ id: string; toolId?: string; name: string; description?: string; enabled?: boolean }>;
+  toolPermissionSets: AgentToolPermissionSet[];
+  businessRoles: AgentBusinessRole[];
   onClose: () => void;
   onSave: (updates: Partial<Agent>) => void;
   isLoading: boolean;
-}> = ({ agent, availableModels, availableTools, mcpProfiles, onClose, onSave, isLoading }) => {
+}> = ({ agent, availableModels, availableTools, toolPermissionSets, businessRoles, onClose, onSave, isLoading }) => {
   const [activeTab, setActiveTab] = useState<'model' | 'tools' | 'basic'>('model');
+  const [toolProviderFilter, setToolProviderFilter] = useState('');
+  const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
   const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
   const [name, setName] = useState(agent.name || '');
   const [agentType, setAgentType] = useState(agent.type || '');
-  const [role, setRole] = useState(agent.role || '');
+  const [roleId, setRoleId] = useState(agent.roleId || '');
   const [description, setDescription] = useState(agent.description || '');
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
   const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
@@ -863,12 +988,41 @@ const EditAgentModal: React.FC<{
     .map((cap) => cap.trim())
     .filter(Boolean);
 
+  const selectedRoleCode = (businessRoles.find((role) => role.id === roleId)?.code || '').trim();
   const allowedToolIds = new Set(
-    (mcpProfiles.find((profile) => profile.agentType === agentType)?.tools || []).filter(Boolean),
+    (toolPermissionSets.find((set) => set.roleCode === selectedRoleCode)?.tools || []).filter(Boolean),
   );
   const allowedTools = availableTools.filter(
-    (tool) => tool.enabled !== false && allowedToolIds.has(tool.id),
+    (tool) => tool.enabled !== false && allowedToolIds.has(getToolKey(tool)),
   );
+
+  const editToolProviderOptions = useMemo(() => {
+    return Array.from(new Set(allowedTools.map((tool) => getToolProvider(tool)).filter(Boolean))).sort();
+  }, [allowedTools]);
+
+  const editToolNamespaceOptions = useMemo(() => {
+    return Array.from(new Set(allowedTools.map((tool) => getToolNamespace(tool)).filter(Boolean))).sort();
+  }, [allowedTools]);
+
+  const groupedAllowedTools = useMemo(() => {
+    const filtered = allowedTools
+      .filter((tool) => !toolProviderFilter || getToolProvider(tool) === toolProviderFilter)
+      .filter((tool) => !toolNamespaceFilter || getToolNamespace(tool) === toolNamespaceFilter);
+
+    const grouped = new Map<string, typeof filtered>();
+    for (const tool of filtered) {
+      const namespace = getToolNamespace(tool);
+      if (!grouped.has(namespace)) grouped.set(namespace, []);
+      grouped.get(namespace)!.push(tool);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([namespace, items]) => ({
+        namespace,
+        items: items.sort((a, b) => getToolKey(a).localeCompare(getToolKey(b))),
+      }))
+      .sort((a, b) => a.namespace.localeCompare(b.namespace));
+  }, [allowedTools, toolProviderFilter, toolNamespaceFilter]);
   const invalidSelectedTools = selectedTools.filter((toolId) => !allowedToolIds.has(toolId));
 
   const arraysEqual = (a: string[] = [], b: string[] = []) => {
@@ -884,14 +1038,14 @@ const EditAgentModal: React.FC<{
     !arraysEqual(selectedTools, agent.tools || []) ||
     name.trim() !== (agent.name || '').trim() ||
     agentType.trim() !== (agent.type || '').trim() ||
-    role.trim() !== (agent.role || '').trim() ||
+    roleId.trim() !== (agent.roleId || '').trim() ||
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
     !arraysEqual(parsedCapabilities, agent.capabilities || []);
 
   useEffect(() => {
     setSelectedTools((prev) => prev.filter((toolId) => allowedToolIds.has(toolId)));
-  }, [agentType]);
+  }, [selectedRoleCode]);
 
   const anthropicModelMayBeDeprecated =
     selectedModel?.provider === 'anthropic' &&
@@ -921,6 +1075,11 @@ const EditAgentModal: React.FC<{
       setActiveTab('basic');
       return;
     }
+    if (!roleId.trim()) {
+      alert('角色不能为空');
+      setActiveTab('basic');
+      return;
+    }
     if (!systemPrompt.trim()) {
       alert('Prompt 不能为空');
       setActiveTab('basic');
@@ -933,7 +1092,7 @@ const EditAgentModal: React.FC<{
       tools: selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
       name: name.trim(),
       type: agentType.trim(),
-      role: role.trim() || undefined,
+      roleId: roleId.trim(),
       description: description.trim(),
       systemPrompt: systemPrompt.trim(),
       capabilities: parsedCapabilities,
@@ -1010,18 +1169,14 @@ const EditAgentModal: React.FC<{
   const handleEditTypeChange = (nextType: string) => {
     const previousMeta = getAgentTypeMeta(agentType);
     const nextMeta = getAgentTypeMeta(nextType);
-    const canUpdateRole = shouldApplyNextDefault(role, previousMeta?.defaultRole);
     const canUpdatePrompt = shouldApplyNextDefault(systemPrompt, previousMeta?.defaultPrompt);
 
     setAgentType(nextType);
-    if (canUpdateRole) {
-      setRole(nextMeta?.defaultRole || '');
-    }
     if (canUpdatePrompt) {
       setSystemPrompt(nextMeta?.defaultPrompt || '');
     }
     const nextAllowedToolIds = new Set(
-      (mcpProfiles.find((profile) => profile.agentType === nextType)?.tools || []).filter(Boolean),
+      (toolPermissionSets.find((set) => set.roleCode === selectedRoleCode)?.tools || []).filter(Boolean),
     );
     setSelectedTools((prev) => prev.filter((toolId) => nextAllowedToolIds.has(toolId)));
   };
@@ -1245,35 +1400,63 @@ const EditAgentModal: React.FC<{
           <div className="space-y-3">
             {invalidSelectedTools.length > 0 && (
               <div className="p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-xs">
-                发现 {invalidSelectedTools.length} 个历史工具不在当前 Agent Type 白名单中，保存时将自动移除。
+                发现 {invalidSelectedTools.length} 个历史工具不在当前角色白名单中，保存时将自动移除。
               </div>
             )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <select
+                value={toolProviderFilter}
+                onChange={(e) => setToolProviderFilter(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              >
+                <option value="">全部 Provider</option>
+                {editToolProviderOptions.map((provider) => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+              <select
+                value={toolNamespaceFilter}
+                onChange={(e) => setToolNamespaceFilter(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              >
+                <option value="">全部 Namespace</option>
+                {editToolNamespaceOptions.map((namespace) => (
+                  <option key={namespace} value={namespace}>{namespace}</option>
+                ))}
+              </select>
+            </div>
             <div className="max-h-[58vh] overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-            {allowedTools.map((tool) => {
-              const checked = selectedTools.includes(tool.id);
-              return (
-                <label key={tool.id} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
-                      {tool.description && <p className="text-xs text-gray-500 mt-0.5">{tool.description}</p>}
-                      <p className="text-xs text-gray-400 mt-0.5">ID: {tool.id}</p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => toggleTool(tool.id, e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mt-1"
-                    />
-                  </div>
-                </label>
-              );
-            })}
-            {allowedTools.length === 0 && (
+            {groupedAllowedTools.map((group) => (
+              <div key={group.namespace} className="space-y-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
+                {group.items.map((tool) => {
+                  const toolId = getToolKey(tool);
+                  const checked = selectedTools.includes(toolId);
+                  return (
+                    <label key={toolId} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{tool.name}</p>
+                          {tool.description && <p className="text-xs text-gray-500 mt-0.5">{tool.description}</p>}
+                          <p className="text-xs text-gray-400 mt-0.5">ID: {toolId}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => toggleTool(toolId, e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mt-1"
+                        />
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+            {groupedAllowedTools.length === 0 && (
               <p className="text-xs text-gray-500">暂无可配置工具</p>
             )}
             </div>
-            <p className="text-xs text-gray-500">白名单模式：仅可选择该 Agent Type 的 MCP Profile.tools 子集。</p>
+            <p className="text-xs text-gray-500">白名单模式：仅可选择当前角色工具权限集中的工具子集。</p>
           </div>
         )}
 
@@ -1305,14 +1488,19 @@ const EditAgentModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">角色（单个Agent级别，可选）</label>
-              <input
-                type="text"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
+              <label className="block text-sm font-medium text-gray-700 mb-1">角色 <span className="text-red-500">*</span></label>
+              <select
+                value={roleId}
+                onChange={(e) => setRoleId(e.target.value)}
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                placeholder="例如: chief-architect"
-              />
+              >
+                <option value="">选择角色...</option>
+                {businessRoles.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {getRoleDisplayName(role)}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>
@@ -1370,18 +1558,19 @@ const EditAgentModal: React.FC<{
   );
 };
 
-const EditMcpProfileModal: React.FC<{
-  profile: AgentMcpProfile;
-  availableTools: Array<{ id: string; name: string; enabled?: boolean }>;
+const EditToolPermissionSetModal: React.FC<{
+  permissionSet: AgentToolPermissionSet;
+  availableTools: Array<{ id: string; toolId?: string; name: string; provider?: string; namespace?: string; enabled?: boolean }>;
   onClose: () => void;
-  onSave: (updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>) => void;
+  onSave: (updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'>) => void;
   isSaving: boolean;
-}> = ({ profile, availableTools, onClose, onSave, isSaving }) => {
-  const [role, setRole] = useState(profile.role || '');
-  const [description, setDescription] = useState(profile.description || '');
-  const [tools, setTools] = useState<string[]>(profile.tools || []);
-  const [capabilitiesText, setCapabilitiesText] = useState((profile.capabilities || []).join(', '));
-  const [exposed, setExposed] = useState(profile.exposed === true);
+}> = ({ permissionSet, availableTools, onClose, onSave, isSaving }) => {
+  const [description, setDescription] = useState(permissionSet.description || '');
+  const [tools, setTools] = useState<string[]>(permissionSet.tools || []);
+  const [capabilitiesText, setCapabilitiesText] = useState((permissionSet.capabilities || []).join(', '));
+  const [exposed, setExposed] = useState(permissionSet.exposed === true);
+  const [providerFilter, setProviderFilter] = useState('');
+  const [namespaceFilter, setNamespaceFilter] = useState('');
 
   const toggleTool = (toolId: string, checked: boolean) => {
     setTools((prev) => (checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)));
@@ -1392,24 +1581,49 @@ const EditMcpProfileModal: React.FC<{
     .map((item) => item.trim())
     .filter(Boolean);
 
+  const providerOptions = useMemo(() => {
+    return Array.from(
+      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => getToolProvider(tool)).filter(Boolean)),
+    ).sort();
+  }, [availableTools]);
+
+  const namespaceOptions = useMemo(() => {
+    return Array.from(
+      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => getToolNamespace(tool)).filter(Boolean)),
+    ).sort();
+  }, [availableTools]);
+
+  const groupedTools = useMemo(() => {
+    const filtered = availableTools
+      .filter((tool) => tool.enabled !== false)
+      .filter((tool) => !providerFilter || getToolProvider(tool) === providerFilter)
+      .filter((tool) => !namespaceFilter || getToolNamespace(tool) === namespaceFilter);
+
+    const grouped = new Map<string, typeof filtered>();
+    for (const tool of filtered) {
+      const namespace = getToolNamespace(tool);
+      if (!grouped.has(namespace)) grouped.set(namespace, []);
+      grouped.get(namespace)!.push(tool);
+    }
+
+    return Array.from(grouped.entries())
+      .map(([namespace, items]) => ({
+        namespace,
+        items: items.sort((a, b) => getToolKey(a).localeCompare(getToolKey(b))),
+      }))
+      .sort((a, b) => a.namespace.localeCompare(b.namespace));
+  }, [availableTools, providerFilter, namespaceFilter]);
+
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-10 mx-auto p-6 border w-[720px] shadow-lg rounded-lg bg-white max-h-[90vh] overflow-y-auto">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">编辑 MCP Profile</h3>
+        <h3 className="text-xl font-semibold text-gray-900 mb-2">编辑工具权限集</h3>
         <p className="text-sm text-gray-500 mb-5">
-          Agent Type: <span className="font-medium text-gray-900">{profile.agentType}</span>
+          系统角色: <span className="font-medium text-gray-900">{permissionSet.roleName}</span>
+          <span className="ml-2 text-xs text-gray-400">({permissionSet.roleCode})</span>
         </p>
 
         <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <input
-              type="text"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
@@ -1446,24 +1660,55 @@ const EditMcpProfileModal: React.FC<{
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Tools</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+              <select
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              >
+                <option value="">全部 Provider</option>
+                {providerOptions.map((provider) => (
+                  <option key={provider} value={provider}>{provider}</option>
+                ))}
+              </select>
+              <select
+                value={namespaceFilter}
+                onChange={(e) => setNamespaceFilter(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
+              >
+                <option value="">全部 Namespace</option>
+                {namespaceOptions.map((namespace) => (
+                  <option key={namespace} value={namespace}>{namespace}</option>
+                ))}
+              </select>
+            </div>
             <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-              {availableTools.filter((tool) => tool.enabled !== false).map((tool) => {
-                const checked = tools.includes(tool.id);
-                return (
-                  <label key={tool.id} className="flex items-center justify-between text-sm text-gray-700">
-                    <span>
-                      {tool.name}
-                      <span className="ml-2 text-xs text-gray-400">{tool.id}</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => toggleTool(tool.id, e.target.checked)}
-                      className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                    />
-                  </label>
-                );
-              })}
+              {groupedTools.map((group) => (
+                <div key={group.namespace} className="space-y-1">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
+                  {group.items.map((tool) => {
+                    const toolId = getToolKey(tool);
+                    const checked = tools.includes(toolId);
+                    return (
+                      <label key={toolId} className="flex items-center justify-between text-sm text-gray-700 pl-1">
+                        <span>
+                          {tool.name}
+                          <span className="ml-2 text-xs text-gray-400">{toolId}</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => toggleTool(toolId, e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              ))}
+              {groupedTools.length === 0 && (
+                <p className="text-xs text-gray-500">当前筛选条件下暂无可配置工具</p>
+              )}
             </div>
           </div>
         </div>
@@ -1478,7 +1723,6 @@ const EditMcpProfileModal: React.FC<{
           <button
             onClick={() =>
               onSave({
-                role: role.trim(),
                 tools,
                 capabilities,
                 exposed,

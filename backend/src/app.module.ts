@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TaskModule } from './modules/tasks/task.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { HRModule } from './modules/hr/hr.module';
+import { RolesModule } from './modules/roles/roles.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
@@ -52,6 +53,7 @@ import jwtConfig from './config/jwt.config';
     TaskModule,
     ChatModule,
     HRModule,
+    RolesModule,
     ApiKeysModule,
     MeetingModule,
     EmployeeModule,

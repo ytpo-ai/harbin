@@ -24,7 +24,7 @@ export interface Agent {
   id: string;
   name: string;
   type: string;
-  role?: string;
+  roleId: string;
   description: string;
   model: AIModel;
   capabilities: string[];
@@ -102,6 +102,15 @@ export interface DiscussionMessage {
 
 export interface Tool {
   id: string;
+  toolId?: string;
+  legacyToolId?: string;
+  provider?: string;
+  namespace?: string;
+  toolkitId?: string;
+  resource?: string;
+  action?: string;
+  capabilitySet?: string[];
+  status?: 'active' | 'hidden' | 'deprecated';
   name: string;
   description: string;
   type: 'code_execution' | 'web_search' | 'file_operation' | 'data_analysis' | 'video_editing' | 'api_call' | 'custom';
@@ -243,6 +252,10 @@ export interface PerformanceRecord {
 
 export interface ToolExecution {
   id: string;
+  legacyToolId?: string;
+  requestedToolId?: string;
+  resolvedToolId?: string;
+  traceId?: string;
   toolId: string;
   agentId: string;
   taskId?: string;

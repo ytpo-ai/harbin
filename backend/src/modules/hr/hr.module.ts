@@ -7,7 +7,13 @@ import { TaskModule } from '../tasks/task.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Employee.name, schema: EmployeeSchema }]), ToolClientModule, TaskModule],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Employee.name, schema: EmployeeSchema },
+    ]),
+    ToolClientModule,
+    TaskModule,
+  ],
   controllers: [HRController],
   providers: [HRService],
   exports: [HRService],

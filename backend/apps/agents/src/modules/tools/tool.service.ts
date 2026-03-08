@@ -2447,6 +2447,8 @@ export class ToolService {
     const agents = await this.agentModel.find().exec();
     const agentTypes = Array.from(new Set(agents.map((agent: any) => String(agent.type || '').trim()).filter(Boolean)));
     const profiles = await this.agentProfileModel.find({ agentType: { $in: agentTypes } }).exec();
+    const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
+    const roleNameMap = await this.getRoleNameMapByIds(roleIds);
     const profileMap = new Map<string, AgentProfile>();
     for (const profile of profiles) {
       profileMap.set(profile.agentType, profile);
@@ -2460,7 +2462,8 @@ export class ToolService {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
         type: plain.type,
-        role: plain.role || profile.role,
+        roleId: plain.roleId,
+        role: roleNameMap.get(String(plain.roleId || '').trim()) || profile.role,
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...(profile.capabilities || [])])).slice(0, 12),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
@@ -2476,6 +2479,34 @@ export class ToolService {
       agents: visibleAgents,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  private async getRoleNameMapByIds(roleIds: string[]): Promise<Map<string, string>> {
+    const uniqueRoleIds = Array.from(new Set((roleIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
+    const map = new Map<string, string>();
+    if (!uniqueRoleIds.length) {
+      return map;
+    }
+
+    await Promise.all(
+      uniqueRoleIds.map(async (roleId) => {
+        try {
+          const response = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(roleId)}`, {
+            timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
+          });
+          const role = response.data || {};
+          const displayName = String(role.name || role.code || '').trim();
+          if (displayName) {
+            map.set(roleId, displayName);
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown role fetch error';
+          this.logger.warn(`Failed to resolve role ${roleId} in tools mcp list: ${message}`);
+        }
+      }),
+    );
+
+    return map;
   }
 
   private async getCodeDocsMcp(params: {

@@ -6,7 +6,7 @@ export interface Agent {
 	id?: string;
 	name: string;
 	type: string;
-	role?: string;
+	roleId: string;
 	description: string;
 	model: AIModel;
 	capabilities: string[];

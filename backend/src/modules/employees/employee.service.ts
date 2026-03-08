@@ -538,11 +538,12 @@ export class EmployeeService implements OnModuleInit {
     const ownerDisplayName = employee.name || employee.email || employee.id;
     const assistantName = await this.buildAssistantName(this.buildAssistantDisplayName(ownerDisplayName));
     const model = this.pickDefaultAssistantModel();
+    const assistantRoleId = process.env.DEFAULT_EXCLUSIVE_ASSISTANT_ROLE_ID || 'human-exclusive-assistant-role';
 
     const createdAssistant = await this.agentClientService.createAgent({
       name: assistantName,
       type: 'ai-human-exclusive-assistant',
-      role: 'human-exclusive-assistant',
+      roleId: assistantRoleId,
       description: `人类成员 ${ownerDisplayName} 的专属助理`,
       model,
       capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],

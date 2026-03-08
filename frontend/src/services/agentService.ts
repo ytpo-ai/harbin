@@ -10,6 +10,28 @@ export interface AgentMcpProfile {
   description?: string;
 }
 
+export interface AgentBusinessRole {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  capabilities?: string[];
+  tools?: string[];
+  promptTemplate?: string;
+  status: 'active' | 'inactive';
+}
+
+export interface AgentToolPermissionSet {
+  roleId?: string;
+  roleCode: string;
+  roleName: string;
+  roleStatus: 'active' | 'inactive' | 'unknown';
+  tools: string[];
+  capabilities: string[];
+  exposed: boolean;
+  description?: string;
+}
+
 export interface AgentTestResult {
   success: boolean;
   agent?: string;
@@ -163,6 +185,30 @@ export const agentService = {
     updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>,
   ): Promise<AgentMcpProfile> {
     const response = await api.put(`/agents/mcp/profiles/${encodeURIComponent(agentType)}`, updates);
+    return response.data;
+  },
+
+  async getRoles(status: 'active' | 'inactive' | 'all' = 'active'): Promise<AgentBusinessRole[]> {
+    const query = status === 'all' ? '' : `?status=${status}`;
+    const response = await api.get(`/agents/roles${query}`);
+    return response.data;
+  },
+
+  async getToolPermissionSets(): Promise<AgentToolPermissionSet[]> {
+    const response = await api.get('/agents/tool-permission-sets');
+    return response.data;
+  },
+
+  async upsertToolPermissionSet(
+    roleCode: string,
+    updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'>,
+  ): Promise<AgentToolPermissionSet> {
+    const response = await api.put(`/agents/tool-permission-sets/${encodeURIComponent(roleCode)}`, updates);
+    return response.data;
+  },
+
+  async resetToolPermissionSetsBySystemRoles(): Promise<{ totalRoles: number; resetCount: number; missingRoleCodes: string[] }> {
+    const response = await api.post('/agents/tool-permission-sets/reset-system-roles');
     return response.data;
   },
 

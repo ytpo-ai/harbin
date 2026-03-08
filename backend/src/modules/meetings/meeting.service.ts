@@ -76,7 +76,6 @@ export class MeetingService {
   private readonly logger = new Logger(MeetingService.name);
   private eventListeners = new Map<string, ((event: MeetingEvent) => void)[]>();
   private readonly modelManagementAgentName = 'model management agent';
-  private readonly modelManagementAgentRole = 'model-management-specialist';
   private readonly meetingAgentStateKeyPrefix = 'meeting:agent-state';
   private readonly meetingAgentStateTtlSeconds = 90;
   private readonly responseDedupWindowMs = 15000;
@@ -782,9 +781,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const normalizedName = String(agent.name || '').toLowerCase().trim();
     const normalizedType = String(agent.type || '').toLowerCase().trim();
-    const normalizedRole = String(agent.role || '').toLowerCase().trim();
-
-    if (normalizedName === this.modelManagementAgentName || normalizedRole === this.modelManagementAgentRole) {
+    if (normalizedName === this.modelManagementAgentName) {
       return true;
     }
 
@@ -855,9 +852,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       if (!agent) continue;
 
       const normalizedName = String(agent.name || '').toLowerCase().trim();
-      const normalizedRole = String(agent.role || '').toLowerCase().trim();
-
-      if (normalizedName === this.modelManagementAgentName || normalizedRole === this.modelManagementAgentRole) {
+      if (normalizedName === this.modelManagementAgentName) {
         return participant.participantId;
       }
     }

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeStatus } from '../../shared/schemas/employee.schema';
@@ -7,8 +7,6 @@ import { TaskService } from '../tasks/task.service';
 
 @Injectable()
 export class HRService {
-  private readonly logger = new Logger(HRService.name);
-
   constructor(
     @InjectModel(Employee.name) private readonly employeeModel: Model<EmployeeDocument>,
     private readonly toolClientService: ToolClientService,

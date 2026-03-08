@@ -29,8 +29,16 @@
 - `POST /discussions/:id/messages`：发送消息
 - `POST /discussions/:id/end`：结束讨论
 
-## HR（`/hr`）
+## Roles（`/roles`）
 
+- `GET /roles`：查询角色列表
+- `GET /roles/:id`：查询角色详情
+- `POST /roles`：创建角色
+- `PUT /roles/:id`：更新角色
+- `DELETE /roles/:id`：删除角色
+- `POST /roles/sync-from-agent-types`：根据 `agent_type` 初始化角色并可选回填 Agent `roleId`
+
+## HR（`/hr`）
 - `GET /hr/performance/:agentId`：绩效报告
 - `GET /hr/low-performers`：低绩效识别
 - `GET /hr/hiring-recommendations`：招聘建议

@@ -10,10 +10,15 @@
 
 - `GET /agents`：获取 Agent 列表
 - `POST /agents`：创建 Agent
-- `PUT /agents/:id`：更新 Agent（支持 `type`、`role`）
+- `PUT /agents/:id`：更新 Agent（支持 `type`、`roleId`）
 - `DELETE /agents/:id`：删除 Agent
 - `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
+
+硬切换约束：
+
+- `roleId` 为必填字段（创建与更新均需满足）。
+- 角色主数据来源为 legacy Roles 模块（`/roles`），agents service 仅保存引用。
 
 工具白名单约束：
 
@@ -42,6 +47,26 @@ Profile 字段说明：
 
 - MCP profile 的 `tools` 读写统一使用 canonical toolId；若传入 legacy id，服务端会自动归一化。
 
+## 工具权限集（按系统角色）
+
+- `GET /agents/tool-permission-sets`：按 HR 系统角色查询工具权限集
+- `PUT /agents/tool-permission-sets/:roleCode`：更新指定角色的工具权限集
+- `POST /agents/tool-permission-sets/reset-system-roles`：按系统角色默认种子重置权限集
+
+说明：
+
+- 工具白名单校验优先按 `agent.roleId -> role.code` 读取权限集。
+- 若角色权限集不存在，服务端回退到历史 `agent.type` profile 读取（兼容旧数据）。
+
+## Agent Roles Proxy（`/agents/roles`）
+
+- `GET /agents/roles?status=active|inactive`：查询 HR 角色列表（跨服务代理）
+- `GET /agents/roles/:id`：查询单个 HR 角色（跨服务代理）
+
+说明：
+
+- 此接口不持有角色主数据，仅代理 legacy HR 角色查询能力。
+
 ## Skills（`/skills`）
 
 - `GET /skills`：获取技能库（支持筛选）
@@ -59,10 +84,15 @@ Profile 字段说明：
 ## Tools（`/tools`）
 
 - `GET /tools`：获取工具列表
-- `GET /tools/registry`：按统一工具模型查询（支持 `provider/toolkitId/namespace/resource/action/category/capability/enabled` 过滤）
-- `GET /tools/toolkits`：查询 Toolkit 实体列表（支持 `provider/namespace/status`）
+- `GET /tools/registry`：按统一工具模型查询（支持 `provider/executionChannel/toolkitId/namespace/resource/action/category/capability/enabled` 过滤）
+- `GET /tools/toolkits`：查询 Toolkit 实体列表（支持 `provider/executionChannel/namespace/status` 过滤）
 - `GET /tools/toolkits/:id`：查询单个 Toolkit 实体
 - `GET /tools/router/topk`：工具路由 Top-K（支持 `provider/domain/namespace/resource/action/capability/limit`）
+
+分类说明：
+
+- `provider`：工具来源平台，仅支持 `composio`（外部集成）和 `builtin`（内置能力）
+- `executionChannel`：工具执行时所走的调用链路，支持 `mcp`（通过 MCP 协议调用）和 `internal`（本服务直接处理）
 
 兼容说明：
 
@@ -73,10 +103,10 @@ Profile 字段说明：
 
 执行兼容说明：
 
-- `GET /tools` 与 `GET /tools/:id` 响应包含统一字段：`toolId`、`legacyToolId`、`provider`、`namespace`、`capabilitySet`。
+- `GET /tools` 与 `GET /tools/:id` 响应包含统一字段：`toolId`、`legacyToolId`、`provider`、`executionChannel`、`namespace`、`capabilitySet`。
 - `POST /tools/:id/execute` 仅面向 canonical tool id；执行链路内统一记录 `requestedToolId/resolvedToolId/traceId`。
-- 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`。
-- `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`。
+- 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`、`executionChannel`。
+- `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`，并包含 `executionChannel`。
 - `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
 
 常用 MCP 工具执行端点（均为 `POST /tools/:id/execute`）：

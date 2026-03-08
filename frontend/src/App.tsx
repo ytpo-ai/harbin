@@ -9,6 +9,7 @@ import AgentDetail from './pages/AgentDetail';
 import Tools from './pages/Tools';
 import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
+import HRManagement from './pages/HRManagement';
 import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import EngineeringIntelligence from './pages/EngineeringIntelligence';
@@ -63,6 +64,7 @@ function App() {
             <Route path="/tools" element={<ProtectedRoute><Tools /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
             <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />
+            <Route path="/roles" element={<ProtectedRoute><HRManagement /></ProtectedRoute>} />
             <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />

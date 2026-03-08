@@ -79,6 +79,29 @@ export class AgentController {
     return this.agentService.upsertMcpProfile(agentType, body);
   }
 
+  @Get('tool-permission-sets')
+  async getToolPermissionSets() {
+    return this.agentService.getToolPermissionSets();
+  }
+
+  @Put('tool-permission-sets/:roleCode')
+  async upsertToolPermissionSet(
+    @Param('roleCode') roleCode: string,
+    @Body() body: { tools?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
+  ) {
+    return this.agentService.upsertToolPermissionSet(roleCode, body);
+  }
+
+  @Post('tool-permission-sets/reset-system-roles')
+  async resetToolPermissionSetsBySystemRoles() {
+    return this.agentService.resetToolPermissionSetsBySystemRoles();
+  }
+
+  @Post('mcp/migrate-tool-ids')
+  async migrateMcpToolIdsToCanonical() {
+    return this.agentService.migrateAllToolIdsToCanonical();
+  }
+
   @Get('mcp')
   async getMcpAgents(@Query('includeHidden') includeHidden?: string) {
     return this.agentService.getMcpAgents({ includeHidden: this.toBooleanFlag(includeHidden) });
@@ -87,6 +110,16 @@ export class AgentController {
   @Get('mcp/:id')
   async getMcpAgent(@Param('id') id: string, @Query('includeHidden') includeHidden?: string) {
     return this.agentService.getMcpAgent(id, { includeHidden: this.toBooleanFlag(includeHidden) });
+  }
+
+  @Get('roles')
+  async getAvailableRoles(@Query('status') status?: 'active' | 'inactive') {
+    return this.agentService.getAvailableRoles({ status });
+  }
+
+  @Get('roles/:id')
+  async getRoleById(@Param('id') id: string) {
+    return this.agentService.getRoleById(id);
   }
 
   @Get(':id')
