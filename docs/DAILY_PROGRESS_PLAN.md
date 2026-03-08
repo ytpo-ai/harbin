@@ -8,6 +8,85 @@
 
 ## 每日进度
 
+### 2026-03-08
+
+**完成事项**
+
+- Docs/Updates 读取能力增强：补齐 focus 匹配兜底、诊断字段与自动回退策略，降低文档检索“无结果”场景下的不可观测性。
+- 运行时消息写入稳健性提升：强化 runtime message content 归一化与写入链路容错，减少异常输入导致的持久化失败。
+- 模型层结构收敛：将 legacy provider 迁移到 `v1` 命名空间，明确 AI SDK v2 渐进迁移边界。
+
+**影响范围**
+
+- 后端/API：docs reader 工具链路、runtime 持久化、工具服务返回诊断信息。
+- 模型能力：provider 目录结构与导出路径调整，降低后续迁移耦合。
+- 文档：MCP 代码文档能力、消息校验与模型迁移计划持续同步。
+
+**关联文档**
+
+- `docs/plan/CODE_DOCS_MCP_PLAN.md`
+- `docs/plan/AGENT_MESSAGE_CONTENT_VALIDATION_PLAN.md`
+- `docs/plan/AI_SDK_PROVIDER_MIGRATION_PLAN.md`
+- `docs/features/AGENT_RUNTIME.md`
+
+### 2026-03-07
+
+**完成事项**
+
+- 模型能力升级：落地 AI SDK v2 渐进路由与推理控制参数，完善模型管理与调用策略。
+- Agent 聊天链路优化：拆分 chat query 执行路径并优化日志上下文展示，减少高频查询的执行负担。
+- 前端体验优化：完成 AgentDetail 与 Memos 页面的可读性和信息分层优化，增强日志查看效率。
+- 架构与能力文档补齐：集中更新 runtime、编排、MCP 治理与会议执行相关文档基线。
+
+**影响范围**
+
+- 后端/API：模型注册与路由策略、聊天查询链路、action log 查询与展示上下文。
+- 前端：Agent 详情页日志展示、备忘录页交互与信息结构。
+- 架构与文档：运行时/会议/编排相关功能文档与技术文档可追溯性增强。
+
+**关联文档**
+
+- `docs/plan/AI_SDK_PROVIDER_MIGRATION_PLAN.md`
+- `docs/plan/AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md`
+- `docs/plan/AGENT_DETAIL_LOG_LIST_UI_OPTIMIZATION_PLAN.md`
+- `docs/features/AGENT_RUNTIME.md`
+- `docs/features/ORCHETRATION_TASK.md`
+
+### 2026-03-05
+
+**完成事项**
+
+- Agent 详情页新增 memos/logs 标签页，统一记忆与日志入口，提升排查与追踪效率。
+- 会议响应上下文与提示词去重方案文档化，明确 dedup 规则与实现边界。
+
+**影响范围**
+
+- 前端：AgentDetail 信息架构扩展，支持按标签快速切换查看。
+- 会议与提示词链路：上下文去重策略明确，减少重复注入带来的噪音。
+- 文档：会议上下文同步与去重方案可追溯性增强。
+
+**关联文档**
+
+- `docs/plan/MEETING_AGENT_SESSION_CONTEXT_SYNC_AND_DEDUP_PLAN.md`
+- `docs/plan/MEETING_RESPONSE_CONTEXT_AND_PROMPT_DEDUP_PLAN.md`
+- `docs/features/MEETING_CHAT.md`
+
+### 2026-03-04
+
+**完成事项**
+
+- 修复 identity 聚合链路中的 agent ID 查询问题，提升备忘录身份聚合结果稳定性。
+
+**影响范围**
+
+- 后端：memo identity 聚合服务与 Agent 关联查询逻辑。
+- 数据一致性：减少因 ID 查询异常导致的身份信息缺失。
+
+**关联文档**
+
+- `docs/plan/AGENT_IDENTITY_MEMO_MISSING_PLAN.md`
+- `docs/features/AGENT_MEMO.md`
+
 ### 2026-03-03
 
 **完成事项**

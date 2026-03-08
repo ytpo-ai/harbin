@@ -9,6 +9,9 @@ export class RuntimeActionLogSyncService {
   private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly timeout = Number(process.env.RUNTIME_ACTION_LOG_SYNC_TIMEOUT_MS || 8000);
+  private readonly maxPayloadChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_PAYLOAD_CHARS || 12000);
+  private readonly maxToolOutputChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_TOOL_OUTPUT_CHARS || 8000);
+  private readonly previewChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_PREVIEW_CHARS || 2000);
 
   private readonly allowedEventTypes = new Set<string>([
     'run.started',
@@ -32,7 +35,7 @@ export class RuntimeActionLogSyncService {
       return;
     }
 
-    const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const payload = this.compactPayloadForSync(event);
     await axios.post(
       `${this.legacyBaseUrl}/agent-action-logs/internal/runtime-hooks`,
       {
@@ -55,6 +58,59 @@ export class RuntimeActionLogSyncService {
         timeout: this.timeout,
       },
     );
+  }
+
+  private compactPayloadForSync(event: RuntimeEvent): Record<string, unknown> {
+    const rawPayload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    let compactPayload = rawPayload;
+
+    if (event.eventType === 'tool.completed') {
+      compactPayload = this.compactToolCompletedPayload(rawPayload);
+    }
+
+    const compactPayloadText = this.safeStringify(compactPayload);
+    if (compactPayloadText.length <= this.maxPayloadChars) {
+      return compactPayload;
+    }
+
+    return {
+      payloadTruncated: true,
+      payloadOriginalSize: compactPayloadText.length,
+      payloadPreview: compactPayloadText.slice(0, this.previewChars),
+    };
+  }
+
+  private compactToolCompletedPayload(payload: Record<string, unknown>): Record<string, unknown> {
+    const output = payload.output;
+    if (output === undefined) {
+      return payload;
+    }
+
+    const outputText = this.safeStringify(output);
+    if (outputText.length <= this.maxToolOutputChars) {
+      return payload;
+    }
+
+    const { output: _output, ...rest } = payload;
+    return {
+      ...rest,
+      outputTruncated: true,
+      outputSize: outputText.length,
+      outputType: Array.isArray(output) ? 'array' : typeof output,
+      outputPreview: outputText.slice(0, this.previewChars),
+    };
+  }
+
+  private safeStringify(value: unknown): string {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized !== undefined) {
+        return serialized;
+      }
+    } catch {
+      // fallback below
+    }
+    return String(value);
   }
 
   private buildSignedHeaders(event: RuntimeEvent): Record<string, string> {

@@ -21,7 +21,11 @@ export class MemoDocSyncService {
 
   private getMemoDirs(agentId?: string, memoKind?: string) {
     const root = this.resolveWorkspaceRoot();
-    const baseDir = path.join(root, 'docs', 'memos');
+    const configuredDataRoot = process.env.AGENT_DATA_ROOT?.trim();
+    const dataRoot = configuredDataRoot
+      ? path.resolve(path.isAbsolute(configuredDataRoot) ? configuredDataRoot : path.join(root, configuredDataRoot))
+      : null;
+    const baseDir = dataRoot ? path.join(dataRoot, 'memos') : path.join(root, 'docs', 'memos');
     const agentDir = agentId ? path.join(baseDir, this.normalizeSegment(agentId)) : baseDir;
     const kindDir = memoKind ? path.join(agentDir, this.normalizeSegment(memoKind)) : agentDir;
     return { root, baseDir, agentDir, kindDir };

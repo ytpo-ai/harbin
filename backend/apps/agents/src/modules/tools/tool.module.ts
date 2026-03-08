@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
 import { Tool, ToolSchema } from '../../../../../src/shared/schemas/tool.schema';
+import { Toolkit, ToolkitSchema } from '../../../../../src/shared/schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionSchema } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
@@ -20,6 +21,7 @@ import { MemoModule } from '../memos/memo.module';
     MemoModule,
     MongooseModule.forFeature([
       { name: Tool.name, schema: ToolSchema },
+      { name: Toolkit.name, schema: ToolkitSchema },
       { name: ToolExecution.name, schema: ToolExecutionSchema },
       { name: Agent.name, schema: AgentSchema },
       { name: AgentProfile.name, schema: AgentProfileSchema },

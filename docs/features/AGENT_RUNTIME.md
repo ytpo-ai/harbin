@@ -72,6 +72,7 @@
   - 定时 flush 自动重试
 - replay：支持按 `eventTypes/fromSequence/toSequence/channel/limit` 重放 run 事件。
 - 状态钩子同步日志：`HookDispatcher` 在分发成功链路内同步调用 legacy `agent-action-logs` 内部接口，写入 `agent_action_logs`，并以 `sourceEventId=eventId` 做幂等。
+- 大 payload 防护：同步 legacy 前会对超大 `payload`（尤其 `tool.completed.payload.output`）做截断摘要，写入 `outputPreview/outputSize/outputTruncated`，避免请求体过大导致 `413`。
 
 ### 1.5 控制面与运行维护
 

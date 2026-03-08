@@ -23,11 +23,16 @@ export class SkillDocSyncService {
 
   private getSkillDirs() {
     const root = this.resolveWorkspaceRoot();
+    const configuredDataRoot = process.env.AGENT_DATA_ROOT?.trim();
+    const dataRoot = configuredDataRoot
+      ? path.resolve(path.isAbsolute(configuredDataRoot) ? configuredDataRoot : path.join(root, configuredDataRoot))
+      : null;
+    const baseDir = dataRoot ? path.join(dataRoot, 'skills') : path.join(root, 'docs', 'skills');
     return {
       root,
-      baseDir: path.join(root, 'docs', 'skills'),
-      libraryDir: path.join(root, 'docs', 'skills', 'library'),
-      suggestionDir: path.join(root, 'docs', 'skills', 'suggestions'),
+      baseDir,
+      libraryDir: path.join(baseDir, 'library'),
+      suggestionDir: path.join(baseDir, 'suggestions'),
     };
   }
 

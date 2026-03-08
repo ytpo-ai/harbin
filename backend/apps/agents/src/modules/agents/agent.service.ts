@@ -251,9 +251,9 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     agentType: 'ai-meeting-assistant',
     role: 'meeting-assistant',
     tools: [
-      'mcp.meeting.list',
-      'mcp.meeting.sendMessage',
-      'mcp.meeting.updateStatus',
+      'builtin.mcp.meeting.list',
+      'builtin.mcp.meeting.sendMessage',
+      'builtin.mcp.meeting.updateStatus',
     ],
     capabilities: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
     exposed: true,

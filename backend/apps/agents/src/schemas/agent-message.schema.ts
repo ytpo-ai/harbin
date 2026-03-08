@@ -27,7 +27,6 @@ export class AgentMessage {
   sequence: number;
 
   @Prop({
-    required: true,
     default: '',
     set: (value: unknown) => {
       if (value === null || value === undefined) {
@@ -50,6 +49,13 @@ export class AgentMessage {
 }
 
 export const AgentMessageSchema = SchemaFactory.createForClass(AgentMessage);
+
+AgentMessageSchema.pre('validate', function ensureContent(this: AgentMessageDocument, next) {
+  if (this.content === null || this.content === undefined) {
+    this.content = '';
+  }
+  next();
+});
 
 AgentMessageSchema.index({ runId: 1, sequence: 1 });
 AgentMessageSchema.index({ sessionId: 1, sequence: 1 });

@@ -14,6 +14,7 @@ export class ToolController {
   @Get('registry')
   getToolRegistry(
     @Query('provider') provider?: string,
+    @Query('executionChannel') executionChannel?: string,
     @Query('toolkitId') toolkitId?: string,
     @Query('namespace') namespace?: string,
     @Query('resource') resource?: string,
@@ -24,6 +25,7 @@ export class ToolController {
   ) {
     return this.toolService.getToolRegistry({
       provider,
+      executionChannel,
       toolkitId,
       namespace,
       resource,

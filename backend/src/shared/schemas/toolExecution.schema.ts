@@ -17,6 +17,9 @@ export class ToolExecution {
   @Prop()
   resolvedToolId?: string;
 
+  @Prop()
+  executionChannel?: string;
+
   @Prop({ required: true })
   toolId: string;
 

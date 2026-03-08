@@ -8,6 +8,27 @@ export class Tool {
   @Prop({ required: true, unique: true })
   id: string;
 
+  @Prop({ index: true })
+  canonicalId?: string;
+
+  @Prop({ index: true })
+  provider?: string;
+
+  @Prop({ index: true })
+  executionChannel?: string;
+
+  @Prop({ index: true })
+  toolkitId?: string;
+
+  @Prop({ index: true })
+  namespace?: string;
+
+  @Prop()
+  resource?: string;
+
+  @Prop()
+  action?: string;
+
   @Prop({ required: true })
   name: string;
 
@@ -23,11 +44,35 @@ export class Tool {
   @Prop({ required: true })
   category: string;
 
+  @Prop({ type: [String], default: [] })
+  capabilitySet?: string[];
+
+  @Prop({ type: [String], default: [] })
+  tags?: string[];
+
+  @Prop({ enum: ['active', 'hidden', 'deprecated'], default: 'active' })
+  status?: 'active' | 'hidden' | 'deprecated';
+
+  @Prop({ default: false })
+  deprecated?: boolean;
+
+  @Prop()
+  replacedBy?: string;
+
+  @Prop({ type: [String], default: [] })
+  aliases?: string[];
+
   @Prop({ default: true })
   enabled: boolean;
 
   @Prop({ type: Object })
   config?: any;
+
+  @Prop({ type: Object })
+  inputSchema?: any;
+
+  @Prop({ type: Object })
+  outputSchema?: any;
 
   @Prop({ type: [{
     id: String,

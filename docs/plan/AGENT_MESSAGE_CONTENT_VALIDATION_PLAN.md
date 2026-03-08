@@ -13,6 +13,14 @@
 4. 扫描相关调用点，确认不存在绕过归一化直接写入 `AgentMessage` 的路径。
 5. 运行最小化验证（类型检查/关键链路构建或测试）确认修复有效且无回归。
 
+## 执行结果
+
+- [x] 已确认 `AgentMessage` 在 `apps/agents` 仅由 runtime 持久化服务写入。
+- [x] 已在 schema 增加 `set` 与 `pre('validate')` 双重兜底，统一将 `null/undefined` 归一化为 `''`。
+- [x] 已在 runtime 持久化层引入 `normalizeMessageContent`，并统一应用于 `createMessage/appendMessageToSession`。
+- [x] 已放宽 `AgentMessage.content` 的必填约束（保留默认空字符串），避免历史/异常输入触发 Mongoose `required` 校验失败。
+- [x] 已执行 `npm run build:agents`，编译通过。
+
 ## 关键影响点
 
 - 后端：`apps/agents` runtime 持久化、`AgentMessage` schema。

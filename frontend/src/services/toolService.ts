@@ -1,10 +1,26 @@
 import api from './api';
 import { Tool, ToolExecution } from '../types';
 
+export interface ToolRegistryQuery {
+  provider?: string;
+  toolkitId?: string;
+  namespace?: string;
+}
+
 export const toolService = {
   // 获取所有工具
   async getTools(): Promise<Tool[]> {
     const response = await api.get('/tools');
+    return response.data;
+  },
+
+  async getToolRegistry(query?: ToolRegistryQuery): Promise<Tool[]> {
+    const params = new URLSearchParams();
+    if (query?.provider) params.append('provider', query.provider);
+    if (query?.toolkitId) params.append('toolkitId', query.toolkitId);
+    if (query?.namespace) params.append('namespace', query.namespace);
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const response = await api.get(`/tools/registry${suffix}`);
     return response.data;
   },
 
