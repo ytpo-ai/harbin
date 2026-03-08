@@ -17,7 +17,7 @@
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
 | `orchestration_plans` | `orchestration-plan.schema.ts` | 计划主表，包含策略、统计、状态 |
-| `orchestration_tasks` | `orchestration-task.schema.ts` | 任务表，包含分配、执行结果、依赖关系 |
+| `orchestration_tasks` | `orchestration-task.schema.ts` | 任务表，包含分配、执行结果、依赖关系与触发模式 (`mode=plan|schedule`) |
 | `plan_sessions` | `plan-session.schema.ts` | 会话聚合视图（任务状态快照） |
 
 #### OrchestrationPlan 状态

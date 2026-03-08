@@ -14,7 +14,9 @@ export type TaskStatus =
 
 export interface OrchestrationTask {
   _id: string;
-  planId: string;
+  mode?: 'plan' | 'schedule';
+  planId?: string;
+  scheduleId?: string;
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';

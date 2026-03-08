@@ -13,13 +13,21 @@ export type OrchestrationTaskStatus =
   | 'failed'
   | 'cancelled';
 
+export type OrchestrationTaskMode = 'plan' | 'schedule';
+
 @Schema({ timestamps: true })
 export class OrchestrationTask {
   @Prop()
   id?: string;
 
-  @Prop({ required: true })
-  planId: string;
+  @Prop()
+  planId?: string;
+
+  @Prop({ enum: ['plan', 'schedule'], default: 'plan' })
+  mode: OrchestrationTaskMode;
+
+  @Prop()
+  scheduleId?: string;
 
   @Prop({ required: true })
   title: string;
@@ -88,3 +96,4 @@ export const OrchestrationTaskSchema = SchemaFactory.createForClass(Orchestratio
 
 OrchestrationTaskSchema.index({ planId: 1, order: 1 });
 OrchestrationTaskSchema.index({ status: 1 });
+OrchestrationTaskSchema.index({ mode: 1, scheduleId: 1, createdAt: -1 });

@@ -13,6 +13,7 @@ import {
   BoltIcon,
   DocumentTextIcon,
   BookOpenIcon,
+  ClockIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
@@ -116,7 +117,10 @@ const Layout: React.FC = () => {
     {
       name: '任务计划',
       icon: DocumentTextIcon,
-      items: [{ name: '计划编排', href: '/orchestration', icon: DocumentTextIcon }],
+      items: [
+        { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
+        { name: '定时服务', href: '/scheduler', icon: ClockIcon },
+      ],
     },
     {
       name: '系统管理',

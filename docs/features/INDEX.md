@@ -33,7 +33,7 @@
 |---------|------|----------|
 | `orchestration/task` | 任务管理 | `docs/features/ORCHETRATION_TASK.md` |
 | `orchestration.workflow` | 工作流编排 | (待完善) |
-| `orchestration.scheduler` | 定时调度 | (待完善) |
+| `orchestration.scheduler` | 定时调度 | `docs/features/ORCHETRATION_SCHEDULER.md` |
 
 ### 3. Meeting 模块 (meeting)
 
@@ -77,6 +77,7 @@
 | `docs/features/AGENT_SKILL.md` | agent/skill |
 | `docs/features/AGENT_RUNTIME.md` | agent/agent_runtime |
 | `docs/features/ORCHETRATION.md` | orchestration |
+| `docs/features/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/features/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/features/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence |
 

@@ -93,6 +93,7 @@ export class OrchestrationService {
       const task = planningResult.tasks[i];
       const assignment = await this.selectExecutor(task.title, task.description);
       tasksToCreate.push({
+        mode: 'plan',
         planId: plan._id.toString(),
         title: task.title,
         description: task.description,
@@ -375,11 +376,14 @@ export class OrchestrationService {
     if (!updated) {
       throw new NotFoundException('Task not found');
     }
-    await this.updatePlanSessionTask(task.planId, taskId, {
-      status: updated.status,
-      executorType: dto.executorType,
-      executorId: dto.executorId,
-    });
+    if (task.mode === 'plan') {
+      const planId = this.requirePlanId(task);
+      await this.updatePlanSessionTask(planId, taskId, {
+        status: updated.status,
+        executorType: dto.executorType,
+        executorId: dto.executorId,
+      });
+    }
     return updated;
   }
 
@@ -421,12 +425,15 @@ export class OrchestrationService {
     if (!updated) {
       throw new NotFoundException('Task not found');
     }
-    await this.updatePlanSessionTask(task.planId, taskId, {
-      status: 'completed',
-      output: dto.output || dto.summary || 'Completed by human assignee',
-      error: undefined,
-    });
-    await this.refreshPlanStats(task.planId);
+    if (task.mode === 'plan') {
+      const planId = this.requirePlanId(task);
+      await this.updatePlanSessionTask(planId, taskId, {
+        status: 'completed',
+        output: dto.output || dto.summary || 'Completed by human assignee',
+        error: undefined,
+      });
+      await this.refreshPlanStats(planId);
+    }
     return updated;
   }
 
@@ -440,6 +447,7 @@ export class OrchestrationService {
     if (task.status !== 'failed') {
       throw new BadRequestException('Only failed tasks can be retried');
     }
+    const planId = this.requirePlanId(task);
 
     const nextStatus = task.assignment?.executorType === 'unassigned' ? 'pending' : 'assigned';
 
@@ -471,14 +479,14 @@ export class OrchestrationService {
       throw new NotFoundException('Task not found');
     }
 
-    await this.updatePlanSessionTask(task.planId, taskId, {
+    await this.updatePlanSessionTask(planId, taskId, {
       status: nextStatus,
       output: undefined,
       error: undefined,
     });
 
-    await this.refreshPlanStats(task.planId);
-    const run = await this.runPlanAsync(task.planId, { continueOnFailure: true });
+    await this.refreshPlanStats(planId);
+    const run = await this.runPlanAsync(planId, { continueOnFailure: true });
 
     return {
       task: updatedTask,
@@ -522,9 +530,12 @@ export class OrchestrationService {
       throw new NotFoundException('Task not found');
     }
 
-    await this.updatePlanSessionTask(task.planId, taskId, {
-      input: updated.description,
-    });
+    if (task.mode === 'plan') {
+      const planId = this.requirePlanId(task);
+      await this.updatePlanSessionTask(planId, taskId, {
+        input: updated.description,
+      });
+    }
 
     return updated;
   }
@@ -537,12 +548,13 @@ export class OrchestrationService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    const planId = this.requirePlanId(task);
     if (task.status === 'in_progress') {
       throw new BadRequestException('Task is already running');
     }
 
     const dependencyTasks = await this.orchestrationTaskModel
-      .find({ _id: { $in: task.dependencyTaskIds || [] }, planId: task.planId })
+      .find({ _id: { $in: task.dependencyTaskIds || [] }, planId })
       .select({ _id: 1, status: 1, title: 1 })
       .exec();
     const unmetDependencies = dependencyTasks.filter((dep) => dep.status !== 'completed');
@@ -586,13 +598,13 @@ export class OrchestrationService {
       throw new NotFoundException('Task not found');
     }
 
-    const execution = await this.executeTaskNode(task.planId, refreshedTask);
+    const execution = await this.executeTaskNode(planId, refreshedTask);
 
-    await this.refreshPlanStats(task.planId);
-    const latest = await this.getPlanById(task.planId);
+    await this.refreshPlanStats(planId);
+    const latest = await this.getPlanById(planId);
     const nextPlanStatus = this.derivePlanStatus(latest.tasks);
-    await this.setPlanStatus(task.planId, nextPlanStatus);
-    await this.setPlanSessionStatus(task.planId, nextPlanStatus);
+    await this.setPlanStatus(planId, nextPlanStatus);
+    await this.setPlanSessionStatus(planId, nextPlanStatus);
 
     const latestTask = await this.orchestrationTaskModel.findOne({ _id: taskId }).exec();
     if (!latestTask) {
@@ -853,6 +865,24 @@ export class OrchestrationService {
       return entity._id.toString();
     }
     return '';
+  }
+
+  async executeStandaloneTask(taskId: string): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
+    const task = await this.orchestrationTaskModel.findOne({ _id: taskId }).exec();
+    if (!task) {
+      throw new NotFoundException('Task not found');
+    }
+    const scopeId = task.mode === 'plan'
+      ? this.requirePlanId(task)
+      : task.scheduleId || `schedule-${taskId}`;
+    return this.executeTaskNode(scopeId, task);
+  }
+
+  private requirePlanId(task: OrchestrationTask): string {
+    if (!task.planId) {
+      throw new BadRequestException('Task is not associated with orchestration plan');
+    }
+    return task.planId;
   }
 
   private async markTaskFailed(taskId: string, errorMessage: string): Promise<void> {

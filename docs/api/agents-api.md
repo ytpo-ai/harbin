@@ -49,7 +49,7 @@ Profile 字段说明：
 - `POST /skills/manager/suggest/:agentId`：生成技能建议
 - `GET /skills/suggestions/agents/:agentId`：查询建议记录
 - `PUT /skills/suggestions/:id`：审核建议
-- `POST /skills/docs/rebuild`：重建 `docs/skills` 文档
+- `POST /skills/docs/rebuild`：重建技能文档（默认 `docs/skills`，配置 `AGENT_DATA_ROOT` 后写入 `$AGENT_DATA_ROOT/skills`）
 
 ## Tools（`/tools`）
 
@@ -135,3 +135,16 @@ Profile 字段说明：
 - `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/cancel`：取消 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/replay`：重放 run 事件到 hook 通道（支持 body: `eventTypes`、`fromSequence`、`toSequence`、`channel`、`limit`）
+
+## Orchestration Scheduler（Legacy Backend）
+
+- 以下接口由 legacy backend 提供（非 agents service），用于管理定时调度任务：
+- `POST /orchestration/schedules`：创建定时计划
+- `GET /orchestration/schedules`：获取计划列表
+- `GET /orchestration/schedules/:id`：获取计划详情
+- `PUT /orchestration/schedules/:id`：更新计划
+- `DELETE /orchestration/schedules/:id`：删除计划
+- `POST /orchestration/schedules/:id/enable`：启用计划
+- `POST /orchestration/schedules/:id/disable`：停用计划
+- `POST /orchestration/schedules/:id/trigger`：手动触发计划
+- `GET /orchestration/schedules/:id/history?limit=20`：查看执行历史（底层来源：`orchestration_tasks`，`mode=schedule`）
