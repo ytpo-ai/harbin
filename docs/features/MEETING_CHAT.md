@@ -211,3 +211,43 @@ enum ParticipantRole {
 |------|------|
 | `pages/Meetings.tsx` | 会议管理页面 |
 | `services/meetingService.ts` | Meeting API 调用服务，包含类型定义 |
+
+### Agent MCP 工具 (backend/apps/agents/src/)
+
+| 文件 | 功能 |
+|------|------|
+| `modules/tools/tool.service.ts` | MCP 工具定义与实现，包含 meeting.list、meeting.sendMessage、meeting.updateStatus |
+
+---
+
+## 4. MCP 工具
+
+### 4.1 会议管理工具
+
+| 工具 ID | 名称 | 功能 | 所需权限 |
+|---------|------|------|----------|
+| `builtin.mcp.meeting.list` | Meeting MCP List | 查询当前会议列表 | meeting_read |
+| `builtin.mcp.meeting.sendMessage` | Meeting MCP Send Message | 向会议发送消息 | meeting_write |
+| `builtin.mcp.meeting.updateStatus` | Meeting MCP Update Status | 修改会议状态 (start/end/pause/resume) | meeting_write |
+
+#### 4.1.1 meeting.list 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| status | string | 否 | 筛选状态 (pending/active/paused/ended) |
+| limit | number | 否 | 返回数量限制 |
+
+#### 4.1.2 meeting.sendMessage 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meetingId | string | 是 | 会议 ID |
+| content | string | 是 | 消息内容 |
+| type | string | 否 | 消息类型 (默认: opinion) |
+
+#### 4.1.3 meeting.updateStatus 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meetingId | string | 是 | 会议 ID |
+| action | string | 是 | 操作 (start/end/pause/resume) |
