@@ -70,11 +70,5 @@
     "label": "系统内置",
     "defaultRole": "system-builtin-agent",
     "defaultPrompt": "你是系统内置Agent，负责平台默认流程处理与系统级任务协同。请优先保持稳定、可解释与可追踪。"
-  },
-  {
-    "value": "ai-meeting-assistant",
-    "label": "会议助理",
-    "defaultRole": "meeting-assistant",
-    "defaultPrompt": "你是会议助理，负责监控进行中的会议，在会议长时间未活动时发送提醒并自动结束会议。请定时检查会议状态，确保会议高效进行。"
   }
 ]
