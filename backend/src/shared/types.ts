@@ -84,15 +84,43 @@ export interface DiscussionMessage {
 
 export interface Tool {
 	id: string;
+	canonicalId?: string;
+	provider?: string;
+	toolkitId?: string;
+	namespace?: string;
+	resource?: string;
+	action?: string;
 	name: string;
 	description: string;
 	type: 'code_execution' | 'web_search' | 'file_operation' | 'data_analysis' | 'video_editing' | 'api_call' | 'custom';
 	category: string;
+	capabilitySet?: string[];
+	tags?: string[];
+	status?: 'active' | 'hidden' | 'deprecated';
+	deprecated?: boolean;
+	replacedBy?: string;
+	aliases?: string[];
 	enabled: boolean;
 	config?: any;
+	inputSchema?: any;
+	outputSchema?: any;
 	requiredPermissions: Permission[];
 	tokenCost?: number;
 	executionTime?: number;
+}
+
+export interface Toolkit {
+	id: string;
+	provider: string;
+	namespace: string;
+	name: string;
+	description?: string;
+	version?: string;
+	authStrategy?: 'oauth2' | 'apiKey' | 'none';
+	status?: 'active' | 'disabled' | 'deprecated';
+	rateLimitPolicyId?: string;
+	defaultTimeoutMs?: number;
+	metadata?: Record<string, unknown>;
 }
 
 export interface Permission {
@@ -202,14 +230,20 @@ export interface PerformanceRecord {
 
 export interface ToolExecution {
 	id: string;
+	traceId?: string;
+	requestedToolId?: string;
+	resolvedToolId?: string;
 	toolId: string;
 	agentId: string;
 	taskId?: string;
+	idempotencyKey?: string;
 	parameters: any;
 	result?: any;
 	status: 'pending' | 'executing' | 'completed' | 'failed';
 	tokenCost: number;
 	executionTime: number;
+	retryCount: number;
 	error?: string;
+	errorCode?: string;
 	timestamp: Date;
 }

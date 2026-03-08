@@ -28,6 +28,7 @@
 - `GET /agents/mcp/profiles`：获取 MCP Profiles
 - `GET /agents/mcp/profiles/:agentType`：获取单个 Profile
 - `PUT /agents/mcp/profiles/:agentType`：创建/更新 Profile
+- `POST /agents/mcp/migrate-tool-ids`：批量将 Agent/AgentProfile 中 legacy tool id 迁移为 canonical toolId
 
 Profile 字段说明：
 
@@ -36,6 +37,10 @@ Profile 字段说明：
 - `capabilities`: 能力标签列表
 - `exposed`: 是否在 MCP 可见列表中展示
 - `description`: 描述信息
+
+兼容说明：
+
+- MCP profile 的 `tools` 读写统一使用 canonical toolId；若传入 legacy id，服务端会自动归一化。
 
 ## Skills（`/skills`）
 
@@ -54,9 +59,25 @@ Profile 字段说明：
 ## Tools（`/tools`）
 
 - `GET /tools`：获取工具列表
+- `GET /tools/registry`：按统一工具模型查询（支持 `provider/toolkitId/namespace/resource/action/category/capability/enabled` 过滤）
+- `GET /tools/toolkits`：查询 Toolkit 实体列表（支持 `provider/namespace/status`）
+- `GET /tools/toolkits/:id`：查询单个 Toolkit 实体
+- `GET /tools/router/topk`：工具路由 Top-K（支持 `provider/domain/namespace/resource/action/capability/limit`）
+
+兼容说明：
+
+- 当前接口仅接受 canonical toolId，不再支持 legacy tool id 映射。
 - `POST /tools/:id/execute`：执行工具
 - `GET /tools/executions/history`：执行历史
 - `GET /tools/executions/stats`：执行统计
+
+执行兼容说明：
+
+- `GET /tools` 与 `GET /tools/:id` 响应包含统一字段：`toolId`、`legacyToolId`、`provider`、`namespace`、`capabilitySet`。
+- `POST /tools/:id/execute` 仅面向 canonical tool id；执行链路内统一记录 `requestedToolId/resolvedToolId/traceId`。
+- 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`。
+- `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`。
+- `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
 
 常用 MCP 工具执行端点（均为 `POST /tools/:id/execute`）：
 
@@ -64,8 +85,8 @@ Profile 字段说明：
 - `model_mcp_search_latest`
 - `model_mcp_add_model`
 - `human_operation_log_mcp_list`
-- `code-docs-mcp`
-- `code-updates-mcp`
+- `gh-repo-docs-reader-mcp`
+- `gh-repo-updates-mcp`
 - `orchestration_create_plan`
 - `orchestration_run_plan`
 - `orchestration_get_plan`

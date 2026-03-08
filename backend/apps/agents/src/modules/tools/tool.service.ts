@@ -10,6 +10,7 @@ import { promisify } from 'util';
 import { GatewayUserContext } from '@libs/contracts';
 import { encodeUserContext, signEncodedContext } from '@libs/auth';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
+import { Toolkit, ToolkitDocument } from '../../../../../src/shared/schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
@@ -37,6 +38,55 @@ interface ToolExecutionContext {
   taskType?: string;
   teamId?: string;
   taskId?: string;
+  idempotencyKey?: string;
+}
+
+interface ToolRouterQuery {
+  provider?: string;
+  domain?: string;
+  namespace?: string;
+  resource?: string;
+  action?: string;
+  capability?: string;
+  limit?: number;
+}
+
+interface ToolGovernancePolicy {
+  timeoutMs: number;
+  maxRetries: number;
+  rateLimitPerMinute: number;
+  circuitFailureThreshold: number;
+  circuitOpenMs: number;
+  idempotencyTtlMs: number;
+}
+
+interface CircuitState {
+  failures: number;
+  openUntil: number;
+  lastFailureAt: number;
+}
+
+interface ToolRegistryQuery {
+  provider?: string;
+  toolkitId?: string;
+  namespace?: string;
+  resource?: string;
+  action?: string;
+  category?: string;
+  capability?: string;
+  enabled?: string | boolean;
+}
+
+interface ToolkitRegistryQuery {
+  provider?: string;
+  namespace?: string;
+  status?: string;
+}
+
+interface NormalizedToolError {
+  code: string;
+  message: string;
+  retryable: boolean;
 }
 
 @Injectable()
@@ -44,9 +94,12 @@ export class ToolService {
   private readonly logger = new Logger(ToolService.name);
   private readonly orchestrationBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
+  private readonly rateLimitHits = new Map<string, number[]>();
+  private readonly circuitBreakers = new Map<string, CircuitState>();
 
   constructor(
     @InjectModel(Tool.name) private toolModel: Model<ToolDocument>,
+    @InjectModel(Toolkit.name) private toolkitModel: Model<ToolkitDocument>,
     @InjectModel(ToolExecution.name) private executionModel: Model<ToolExecutionDocument>,
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
@@ -59,10 +112,302 @@ export class ToolService {
     void this.initializeBuiltinTools();
   }
 
+  private inferProviderFromToolId(toolId: string): string {
+    const parts = String(toolId || '').split('.').filter(Boolean);
+    const head = (parts[0] || '').toLowerCase();
+    if (head === 'composio' || head === 'mcp' || head === 'internal') return head;
+    if (['github', 'slack', 'gmail'].includes(head)) return 'composio';
+    return 'internal';
+  }
+
+  private inferNamespaceFromToolId(toolId: string): string {
+    const parts = String(toolId || '').split('.').filter(Boolean);
+    const head = (parts[0] || '').toLowerCase();
+    if (head === 'composio' || head === 'mcp' || head === 'internal') {
+      return parts[1] || head;
+    }
+    return parts[0] || 'internal';
+  }
+
+  private inferResourceAndAction(toolId: string): { resource: string; action: string } {
+    const parts = toolId.split('.').filter(Boolean);
+    if (parts.length >= 3) {
+      return {
+        resource: parts[1],
+        action: parts.slice(2).join('.'),
+      };
+    }
+    if (parts.length === 2) {
+      return {
+        resource: parts[1],
+        action: 'execute',
+      };
+    }
+    return {
+      resource: 'generic',
+      action: 'execute',
+    };
+  }
+
+  private buildBuiltinToolMetadata(toolData: {
+    id: string;
+    category: string;
+    implementation?: { parameters?: Record<string, unknown> };
+  }) {
+    const canonicalId = toolData.id;
+    const provider = this.inferProviderFromToolId(canonicalId);
+    const namespace = this.inferNamespaceFromToolId(canonicalId);
+    const { resource, action } = this.inferResourceAndAction(canonicalId);
+    return {
+      canonicalId,
+      provider,
+      toolkitId: `${provider}.${namespace}`,
+      namespace,
+      resource,
+      action,
+      capabilitySet: [toolData.category.toLowerCase().replace(/\s+/g, '_')],
+      tags: [namespace, provider],
+      status: 'active' as const,
+      deprecated: false,
+      aliases: canonicalId === toolData.id ? [] : [toolData.id],
+      inputSchema: toolData.implementation?.parameters || {},
+      outputSchema: {},
+    };
+  }
+
+  private inferToolkitAuthStrategy(provider: string, namespace: string): 'oauth2' | 'apiKey' | 'none' {
+    if (provider === 'composio' && ['gmail', 'slack', 'github'].includes(namespace)) return 'oauth2';
+    if (provider === 'internal') return 'none';
+    return 'apiKey';
+  }
+
+  private buildToolkitView(toolkit: Toolkit) {
+    const base = (toolkit as any)?.toObject ? (toolkit as any).toObject() : toolkit;
+    return {
+      ...base,
+      id: toolkit.id,
+      provider: toolkit.provider,
+      namespace: toolkit.namespace,
+      status: toolkit.status || 'active',
+      version: toolkit.version || 'v1',
+      authStrategy: toolkit.authStrategy || this.inferToolkitAuthStrategy(toolkit.provider, toolkit.namespace),
+    };
+  }
+
+  private async upsertToolkit(toolkitData: {
+    id: string;
+    provider: string;
+    namespace: string;
+    name: string;
+    description?: string;
+  }): Promise<void> {
+    await this.toolkitModel
+      .updateOne(
+        { id: toolkitData.id },
+        {
+          $set: {
+            provider: toolkitData.provider,
+            namespace: toolkitData.namespace,
+            name: toolkitData.name,
+            description: toolkitData.description || '',
+            version: 'v1',
+            status: 'active',
+            authStrategy: this.inferToolkitAuthStrategy(toolkitData.provider, toolkitData.namespace),
+            metadata: {
+              source: 'tool-registry',
+            },
+          },
+          $setOnInsert: {
+            id: toolkitData.id,
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+  }
+
+  private async syncToolkitsFromTools(): Promise<void> {
+    const tools = await this.toolModel
+      .find({ enabled: { $ne: false } })
+      .select({ id: 1, canonicalId: 1 })
+      .lean()
+      .exec();
+    const toolkitMap = new Map<string, { id: string; provider: string; namespace: string }>();
+    for (const tool of tools as any[]) {
+      const toolId = String(tool.canonicalId || tool.id || '').trim();
+      const provider = this.inferProviderFromToolId(toolId);
+      const namespace = this.inferNamespaceFromToolId(toolId);
+      const toolkitId = `${provider}.${namespace}`;
+      if (!toolkitId || !provider || !namespace) continue;
+      toolkitMap.set(toolkitId, { id: toolkitId, provider, namespace });
+    }
+
+    for (const toolkit of toolkitMap.values()) {
+      await this.upsertToolkit({
+        id: toolkit.id,
+        provider: toolkit.provider,
+        namespace: toolkit.namespace,
+        name: `${toolkit.provider}.${toolkit.namespace}`,
+        description: `Toolkit for ${toolkit.namespace} tools (${toolkit.provider})`,
+      });
+    }
+
+    const activeToolkitIds = Array.from(toolkitMap.keys());
+    await this.toolkitModel
+      .updateMany(
+        activeToolkitIds.length ? { id: { $nin: activeToolkitIds } } : {},
+        { $set: { status: 'deprecated' } },
+      )
+      .exec();
+  }
+
+  private normalizeBooleanQuery(value?: string | boolean): boolean | undefined {
+    if (typeof value === 'boolean') return value;
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') return true;
+    if (normalized === 'false') return false;
+    return undefined;
+  }
+
+  private parsePositiveInt(raw: unknown, fallback: number): number {
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num <= 0) return fallback;
+    return Math.floor(num);
+  }
+
+  private getGovernancePolicy(tool: Tool): ToolGovernancePolicy {
+    const config = (tool.config || {}) as Record<string, any>;
+    const governance = (config.governance || {}) as Record<string, any>;
+    return {
+      timeoutMs: this.parsePositiveInt(
+        governance.timeoutMs ?? process.env.AGENTS_TOOL_TIMEOUT_MS,
+        30000,
+      ),
+      maxRetries: this.parsePositiveInt(
+        governance.maxRetries ?? process.env.AGENTS_TOOL_RETRY_MAX,
+        1,
+      ),
+      rateLimitPerMinute: this.parsePositiveInt(
+        governance.rateLimitPerMinute ?? process.env.AGENTS_TOOL_RATE_LIMIT_PER_MIN,
+        120,
+      ),
+      circuitFailureThreshold: this.parsePositiveInt(
+        governance.circuitFailureThreshold ?? process.env.AGENTS_TOOL_CIRCUIT_FAILURE_THRESHOLD,
+        5,
+      ),
+      circuitOpenMs: this.parsePositiveInt(
+        governance.circuitOpenMs ?? process.env.AGENTS_TOOL_CIRCUIT_OPEN_MS,
+        60000,
+      ),
+      idempotencyTtlMs: this.parsePositiveInt(
+        governance.idempotencyTtlMs ?? process.env.AGENTS_TOOL_IDEMPOTENCY_TTL_MS,
+        300000,
+      ),
+    };
+  }
+
+  private getIdempotencyKey(parameters: any, executionContext?: ToolExecutionContext): string | undefined {
+    const fromContext = String(executionContext?.idempotencyKey || '').trim();
+    if (fromContext) return fromContext;
+    const fromParams = String(parameters?.idempotencyKey || parameters?.__idempotencyKey || '').trim();
+    if (fromParams) return fromParams;
+    return undefined;
+  }
+
+  private enforceRateLimit(toolId: string, agentId: string, policy: ToolGovernancePolicy): void {
+    const key = `${toolId}:${agentId}`;
+    const now = Date.now();
+    const windowStart = now - 60_000;
+    const hits = (this.rateLimitHits.get(key) || []).filter((ts) => ts >= windowStart);
+    if (hits.length >= policy.rateLimitPerMinute) {
+      throw new Error(`rate limit exceeded for ${toolId}`);
+    }
+    hits.push(now);
+    this.rateLimitHits.set(key, hits);
+  }
+
+  private ensureCircuitClosed(toolId: string): void {
+    const circuit = this.circuitBreakers.get(toolId);
+    if (!circuit) return;
+    if (circuit.openUntil > Date.now()) {
+      throw new Error(`circuit open for ${toolId}`);
+    }
+  }
+
+  private recordCircuitSuccess(toolId: string): void {
+    this.circuitBreakers.delete(toolId);
+  }
+
+  private recordCircuitFailure(toolId: string, policy: ToolGovernancePolicy): void {
+    const current = this.circuitBreakers.get(toolId) || { failures: 0, openUntil: 0, lastFailureAt: 0 };
+    const failures = current.failures + 1;
+    const now = Date.now();
+    const openUntil = failures >= policy.circuitFailureThreshold ? now + policy.circuitOpenMs : 0;
+    this.circuitBreakers.set(toolId, {
+      failures,
+      openUntil,
+      lastFailureAt: now,
+    });
+  }
+
+  private async executeWithTimeout<T>(task: () => Promise<T>, timeoutMs: number): Promise<T> {
+    return await Promise.race([
+      task(),
+      new Promise<T>((_, reject) => {
+        setTimeout(() => reject(new Error(`execution timeout after ${timeoutMs}ms`)), timeoutMs);
+      }),
+    ]);
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private normalizeErrorToCode(error: unknown): string {
+    return this.normalizeToolError(error).code;
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    const code = this.normalizeErrorToCode(error);
+    return code === 'TOOL_TIMEOUT' || code === 'TOOL_EXECUTION_FAILED' || code === 'TOOL_RATE_LIMITED';
+  }
+
+  private toToolView(tool: Tool) {
+    const base = (tool as any)?.toObject ? (tool as any).toObject() : tool;
+    const toolId = tool.canonicalId || tool.id;
+    const provider = this.inferProviderFromToolId(toolId);
+    const namespace = this.inferNamespaceFromToolId(toolId);
+    return {
+      ...base,
+      legacyToolId: tool.id,
+      toolId,
+      provider,
+      namespace,
+      toolkitId: `${provider}.${namespace}`,
+      capabilitySet: tool.capabilitySet || [],
+      status: tool.status || 'active',
+    };
+  }
+
+  private toExecutionView(execution: ToolExecution) {
+    const base = (execution as any)?.toObject ? (execution as any).toObject() : execution;
+    const legacyToolId = String(base.toolId || '');
+    const resolvedToolId = String(base.resolvedToolId || legacyToolId);
+    return {
+      ...base,
+      legacyToolId,
+      toolId: resolvedToolId,
+      resolvedToolId,
+      requestedToolId: base.requestedToolId || resolvedToolId,
+      traceId: base.traceId || base.id,
+    };
+  }
+
   private async initializeBuiltinTools() {
     const builtinTools = [
       {
-        id: 'websearch',
+        id: 'internal.web.search',
         name: 'Web Search',
         description: 'Search web information via Composio SERPAPI',
         type: 'web_search' as const,
@@ -75,7 +420,7 @@ export class ToolService {
         },
       },
       {
-        id: 'webfetch',
+        id: 'internal.web.fetch',
         name: 'Web Fetch',
         description: 'Fetch webpage content by URL and return clean text',
         type: 'web_search' as const,
@@ -88,7 +433,7 @@ export class ToolService {
         },
       },
       {
-        id: 'content_extract',
+        id: 'internal.content.extract',
         name: 'Content Extract',
         description: 'Extract clean text, key bullets and numeric rows from raw html or text',
         type: 'data_analysis' as const,
@@ -101,7 +446,7 @@ export class ToolService {
         },
       },
       {
-        id: 'slack',
+        id: 'composio.slack.sendMessage',
         name: 'Slack',
         description: 'Send Slack messages via Composio',
         type: 'api_call' as const,
@@ -114,7 +459,7 @@ export class ToolService {
         },
       },
       {
-        id: 'gmail',
+        id: 'composio.gmail.sendEmail',
         name: 'Gmail',
         description: 'Send or draft email via Composio',
         type: 'api_call' as const,
@@ -127,7 +472,7 @@ export class ToolService {
         },
       },
       {
-        id: 'repo-read',
+        id: 'internal.repo.read',
         name: 'Repo Read',
         description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
         type: 'data_analysis' as const,
@@ -142,7 +487,7 @@ export class ToolService {
         },
       },
       {
-        id: 'gh-repo-docs-reader-mcp',
+        id: 'mcp.docs.summary',
         name: 'Code Docs MCP',
         description: 'Summarize implemented core features from repository docs with evidence paths',
         type: 'data_analysis' as const,
@@ -160,7 +505,7 @@ export class ToolService {
         },
       },
       {
-        id: 'gh-repo-updates-mcp',
+        id: 'mcp.updates.summary',
         name: 'Code Updates MCP',
         description: 'Summarize recent repository updates from git commits with evidence',
         type: 'data_analysis' as const,
@@ -178,7 +523,7 @@ export class ToolService {
         },
       },
       {
-        id: 'local-repo-docs-reader',
+        id: 'internal.docs.read',
         name: 'Code Docs Reader',
         description: 'Read raw documentation files from docs/ directory',
         type: 'data_analysis' as const,
@@ -194,7 +539,7 @@ export class ToolService {
         },
       },
       {
-        id: 'local-repo-updates-reader',
+        id: 'internal.updates.read',
         name: 'Code Updates Reader',
         description: 'Read raw git commit history from repository',
         type: 'data_analysis' as const,
@@ -210,7 +555,7 @@ export class ToolService {
         },
       },
       {
-        id: 'agents_mcp_list',
+        id: 'internal.agents.list',
         name: 'Agents MCP List',
         description: 'List current agents, roles, and capability summaries from MCP visibility rules',
         type: 'data_analysis' as const,
@@ -223,7 +568,7 @@ export class ToolService {
         },
       },
       {
-        id: 'model_mcp_list_models',
+        id: 'mcp.model.list',
         name: 'Model MCP List Models',
         description: 'List models currently available in system registry',
         type: 'data_analysis' as const,
@@ -239,7 +584,7 @@ export class ToolService {
         },
       },
       {
-        id: 'model_mcp_search_latest',
+        id: 'mcp.model.searchLatest',
         name: 'Model MCP Search Latest',
         description: 'Search latest model releases from internet and return normalized candidates',
         type: 'web_search' as const,
@@ -257,7 +602,7 @@ export class ToolService {
         },
       },
       {
-        id: 'model_mcp_add_model',
+        id: 'mcp.model.add',
         name: 'Model MCP Add Model',
         description: 'Add a model into system model registry with deduplication',
         type: 'data_analysis' as const,
@@ -278,7 +623,7 @@ export class ToolService {
         },
       },
       {
-        id: 'memo_mcp_search',
+        id: 'internal.memo.search',
         name: 'Memo MCP Search',
         description: 'Search agent memo memory with progressive loading summaries',
         type: 'data_analysis' as const,
@@ -297,7 +642,7 @@ export class ToolService {
         },
       },
       {
-        id: 'memo_mcp_append',
+        id: 'internal.memo.append',
         name: 'Memo MCP Append',
         description: 'Append or create memo entries for long-term memory',
         type: 'data_analysis' as const,
@@ -318,7 +663,7 @@ export class ToolService {
         },
       },
       {
-        id: 'human_operation_log_mcp_list',
+        id: 'mcp.humanOperationLog.list',
         name: 'Human Operation Log MCP List',
         description: 'List operation logs for the human bound to the requesting exclusive assistant',
         type: 'data_analysis' as const,
@@ -340,7 +685,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_create_plan',
+        id: 'mcp.orchestration.createPlan',
         name: 'Orchestration Create Plan',
         description: 'Create orchestration plan from prompt in meeting workflow',
         type: 'api_call' as const,
@@ -359,7 +704,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_run_plan',
+        id: 'mcp.orchestration.runPlan',
         name: 'Orchestration Run Plan',
         description: 'Run an orchestration plan in meeting workflow',
         type: 'api_call' as const,
@@ -376,7 +721,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_get_plan',
+        id: 'mcp.orchestration.getPlan',
         name: 'Orchestration Get Plan',
         description: 'Get orchestration plan details',
         type: 'api_call' as const,
@@ -391,7 +736,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_list_plans',
+        id: 'mcp.orchestration.listPlans',
         name: 'Orchestration List Plans',
         description: 'List orchestration plans',
         type: 'api_call' as const,
@@ -404,7 +749,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_reassign_task',
+        id: 'mcp.orchestration.reassignTask',
         name: 'Orchestration Reassign Task',
         description: 'Reassign orchestration task executor',
         type: 'api_call' as const,
@@ -423,7 +768,7 @@ export class ToolService {
         },
       },
       {
-        id: 'orchestration_complete_human_task',
+        id: 'mcp.orchestration.completeHumanTask',
         name: 'Orchestration Complete Human Task',
         description: 'Mark waiting human task as completed',
         type: 'api_call' as const,
@@ -452,16 +797,87 @@ export class ToolService {
       'api_call',
     ];
 
+    const deprecatedToolIds = [
+      'code-docs-mcp',
+      'code-docs-reader',
+      'code-updates-mcp',
+      'code-updates-reader',
+      'websearch',
+      'webfetch',
+      'content_extract',
+      'slack',
+      'gmail',
+      'repo-read',
+      'gh-repo-docs-reader-mcp',
+      'gh-repo-updates-mcp',
+      'local-repo-docs-reader',
+      'local-repo-updates-reader',
+      'agents_mcp_list',
+      'model_mcp_list_models',
+      'model_mcp_search_latest',
+      'model_mcp_add_model',
+      'memo_mcp_search',
+      'memo_mcp_append',
+      'human_operation_log_mcp_list',
+      'orchestration_create_plan',
+      'orchestration_run_plan',
+      'orchestration_get_plan',
+      'orchestration_list_plans',
+      'orchestration_reassign_task',
+      'orchestration_complete_human_task',
+    ];
+
     await this.toolModel.deleteMany({ id: { $in: virtualToolIds } }).exec();
+    await this.toolModel.deleteMany({ id: { $in: deprecatedToolIds } }).exec();
 
     for (const toolData of builtinTools) {
+      const metadata = this.buildBuiltinToolMetadata(toolData);
       const existingTool = await this.toolModel.findOne({ id: toolData.id }).exec();
       if (!existingTool) {
-        const tool = new this.toolModel(toolData);
+        const tool = new this.toolModel({
+          ...toolData,
+          ...metadata,
+        });
         await tool.save();
+        await this.upsertToolkit({
+          id: metadata.toolkitId,
+          provider: metadata.provider,
+          namespace: metadata.namespace,
+          name: `${metadata.provider}.${metadata.namespace}`,
+          description: `Toolkit for ${metadata.namespace} tools (${metadata.provider})`,
+        });
         this.logger.log(`已注册内置工具: ${toolData.name}`);
+        continue;
       }
+
+      await this.toolModel
+        .updateOne(
+          { id: toolData.id },
+          {
+            $set: {
+              ...metadata,
+              name: toolData.name,
+              description: toolData.description,
+              type: toolData.type,
+              category: toolData.category,
+              requiredPermissions: toolData.requiredPermissions,
+              tokenCost: toolData.tokenCost,
+              implementation: toolData.implementation,
+            },
+          },
+        )
+        .exec();
+
+      await this.upsertToolkit({
+        id: metadata.toolkitId,
+        provider: metadata.provider,
+        namespace: metadata.namespace,
+        name: `${metadata.provider}.${metadata.namespace}`,
+        description: `Toolkit for ${metadata.namespace} tools (${metadata.provider})`,
+      });
     }
+
+    await this.syncToolkitsFromTools();
 
     const implementedToolIds = new Set(this.getImplementedToolIds());
     const missingImplementations = builtinTools
@@ -489,31 +905,227 @@ export class ToolService {
     return this.toolModel.find().sort({ category: 1, name: 1 }).exec();
   }
 
+  async getAllToolsView(): Promise<any[]> {
+    const tools = await this.getAllTools();
+    return tools.map((tool) => this.toToolView(tool));
+  }
+
+  async getToolkits(query: ToolkitRegistryQuery = {}): Promise<any[]> {
+    const provider = String(query.provider || '').trim().toLowerCase();
+    const namespace = String(query.namespace || '').trim().toLowerCase();
+    const status = String(query.status || '').trim().toLowerCase();
+    const rows = await this.toolkitModel.find().sort({ provider: 1, namespace: 1 }).exec();
+    return rows
+      .map((toolkit) => this.buildToolkitView(toolkit))
+      .filter((toolkit) => !provider || String(toolkit.provider).toLowerCase() === provider)
+      .filter((toolkit) => !namespace || String(toolkit.namespace).toLowerCase() === namespace)
+      .filter((toolkit) => !status || String(toolkit.status).toLowerCase() === status);
+  }
+
+  async getToolkit(id: string): Promise<any | null> {
+    const toolkit = await this.toolkitModel.findOne({ id: String(id || '').trim() }).exec();
+    if (!toolkit) return null;
+    return this.buildToolkitView(toolkit);
+  }
+
+  async getToolRegistry(query: ToolRegistryQuery): Promise<
+    Array<{
+      legacyToolId: string;
+      toolId: string;
+      name: string;
+      description: string;
+      category: string;
+      provider: string;
+      toolkitId?: string;
+      namespace: string;
+      resource?: string;
+      action?: string;
+      enabled: boolean;
+      type: Tool['type'];
+      requiredPermissions: Tool['requiredPermissions'];
+      capabilitySet: string[];
+      tokenCost?: number;
+    }>
+  > {
+    const tools = await this.getAllTools();
+    const providerFilter = String(query.provider || '').trim().toLowerCase();
+    const toolkitIdFilter = String(query.toolkitId || '').trim().toLowerCase();
+    const namespaceFilter = String(query.namespace || '').trim().toLowerCase();
+    const resourceFilter = String(query.resource || '').trim().toLowerCase();
+    const actionFilter = String(query.action || '').trim().toLowerCase();
+    const categoryFilter = String(query.category || '').trim().toLowerCase();
+    const capabilityFilter = String(query.capability || '').trim().toLowerCase();
+    const enabledFilter = this.normalizeBooleanQuery(query.enabled);
+
+    return tools
+      .map((tool) => {
+        const toolId = tool.canonicalId || tool.id;
+        const inferredProvider = this.inferProviderFromToolId(toolId);
+        const inferredNamespace = this.inferNamespaceFromToolId(toolId);
+        return {
+          legacyToolId: tool.id,
+          toolId,
+          name: tool.name,
+          description: tool.description,
+          category: tool.category,
+          provider: inferredProvider,
+          toolkitId: `${inferredProvider}.${inferredNamespace}`,
+          namespace: inferredNamespace,
+          resource: tool.resource,
+          action: tool.action,
+          enabled: tool.enabled !== false,
+          type: tool.type,
+          requiredPermissions: tool.requiredPermissions || [],
+          capabilitySet: tool.capabilitySet || [],
+          tokenCost: tool.tokenCost,
+        };
+      })
+      .filter((tool) => !providerFilter || tool.provider === providerFilter)
+      .filter((tool) => !toolkitIdFilter || (tool.toolkitId || '').toLowerCase() === toolkitIdFilter)
+      .filter((tool) => !namespaceFilter || tool.namespace === namespaceFilter)
+      .filter((tool) => !resourceFilter || (tool.resource || '').toLowerCase() === resourceFilter)
+      .filter((tool) => !actionFilter || (tool.action || '').toLowerCase() === actionFilter)
+      .filter((tool) => !categoryFilter || tool.category.toLowerCase() === categoryFilter)
+      .filter((tool) =>
+        !capabilityFilter || tool.capabilitySet.some((capability) => capability.toLowerCase() === capabilityFilter),
+      )
+      .filter((tool) => enabledFilter === undefined || tool.enabled === enabledFilter)
+      .sort((a, b) => a.toolId.localeCompare(b.toolId));
+  }
+
+  async getTopKToolRoutes(query: ToolRouterQuery): Promise<
+    Array<{
+      toolId: string;
+      provider: string;
+      namespace: string;
+      action?: string;
+      score: number;
+      reason: string;
+    }>
+  > {
+    const namespace = String(query.namespace || query.domain || '').trim();
+    const limit = Math.min(this.parsePositiveInt(query.limit, 5), 20);
+    const tools = await this.getToolRegistry({
+      provider: query.provider,
+      namespace: namespace || undefined,
+      resource: query.resource,
+      action: query.action,
+      capability: query.capability,
+      enabled: true,
+    });
+
+    const metricRows = await this.executionModel
+      .aggregate([
+        {
+          $match: {
+            timestamp: {
+              $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+            },
+          },
+        },
+        {
+          $group: {
+            _id: { $ifNull: ['$resolvedToolId', '$toolId'] },
+            total: { $sum: 1 },
+            successRate: { $avg: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+            avgExecutionTime: { $avg: '$executionTime' },
+          },
+        },
+      ])
+      .exec();
+
+    const metricMap = new Map<string, { total: number; successRate: number; avgExecutionTime: number }>();
+    for (const row of metricRows) {
+      metricMap.set(String((row as any)._id || ''), {
+        total: Number((row as any).total || 0),
+        successRate: Number((row as any).successRate || 0),
+        avgExecutionTime: Number((row as any).avgExecutionTime || 0),
+      });
+    }
+
+    const ranked = tools
+      .map((tool) => {
+        const metrics = metricMap.get(tool.toolId) || { total: 0, successRate: 0.9, avgExecutionTime: 1000 };
+        const successScore = Math.max(0, Math.min(60, metrics.successRate * 60));
+        const latencyScore = Math.max(0, 20 - Math.min(metrics.avgExecutionTime, 10000) / 500);
+        const volumeScore = Math.min(10, Math.log10(metrics.total + 1) * 5);
+        const costPenalty = Math.min(10, Math.max(0, Number(tool.tokenCost || 0) / 5));
+        const score = Number((successScore + latencyScore + volumeScore - costPenalty).toFixed(2));
+        return {
+          tool,
+          score,
+          reason: `success=${(metrics.successRate * 100).toFixed(1)}%, latency=${Math.round(metrics.avgExecutionTime)}ms, volume=${metrics.total}`,
+        };
+      })
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((item) => ({
+        toolId: item.tool.toolId,
+        provider: item.tool.provider,
+        namespace: item.tool.namespace,
+        action: item.tool.action,
+        score: item.score,
+        reason: item.reason,
+      }));
+
+    return ranked;
+  }
+
   async getTool(toolId: string): Promise<Tool | null> {
-    return this.toolModel.findOne({ id: toolId }).exec();
+    return this.toolModel
+      .findOne({
+        $or: [{ id: toolId }, { canonicalId: toolId }],
+      })
+      .exec();
+  }
+
+  async getToolView(toolId: string): Promise<any | null> {
+    const tool = await this.getTool(toolId);
+    if (!tool) return null;
+    return this.toToolView(tool);
   }
 
   async getToolsByIds(toolIds: string[]): Promise<Tool[]> {
     if (!toolIds.length) return [];
-    return this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
+    const normalizedToolIds = Array.from(new Set(toolIds.map((item) => String(item || '').trim()).filter(Boolean)));
+    return this.toolModel
+      .find({
+        enabled: true,
+        $or: [{ id: { $in: normalizedToolIds } }, { canonicalId: { $in: normalizedToolIds } }],
+      })
+      .exec();
   }
 
   async createTool(toolData: Omit<Tool, 'id' | 'createdAt' | 'updatedAt'>): Promise<Tool> {
+    const canonicalId = toolData.canonicalId || `internal.custom.${uuidv4().slice(0, 8)}`;
+    const provider = toolData.provider || this.inferProviderFromToolId(canonicalId);
+    const namespace = toolData.namespace || this.inferNamespaceFromToolId(canonicalId);
+    const { resource, action } = this.inferResourceAndAction(canonicalId);
     const newTool = new this.toolModel({
       ...toolData,
       id: uuidv4(),
+      canonicalId,
+      provider,
+      namespace,
+      resource: toolData.resource || resource,
+      action: toolData.action || action,
+      toolkitId: toolData.toolkitId || `${provider}.${namespace}`,
+      status: toolData.status || 'active',
+      aliases: toolData.aliases || [],
+      inputSchema: toolData.inputSchema || toolData.implementation?.parameters || {},
+      outputSchema: toolData.outputSchema || {},
     });
     return newTool.save();
   }
 
   async updateTool(toolId: string, updates: Partial<Tool>): Promise<Tool | null> {
     return this.toolModel
-      .findOneAndUpdate({ id: toolId }, { ...updates, updatedAt: new Date() }, { new: true })
+      .findOneAndUpdate({ $or: [{ id: toolId }, { canonicalId: toolId }] }, { ...updates, updatedAt: new Date() }, { new: true })
       .exec();
   }
 
   async deleteTool(toolId: string): Promise<boolean> {
-    const result = await this.toolModel.findOneAndDelete({ id: toolId }).exec();
+    const result = await this.toolModel.findOneAndDelete({ $or: [{ id: toolId }, { canonicalId: toolId }] }).exec();
     return !!result;
   }
 
@@ -532,34 +1144,146 @@ export class ToolService {
       throw new Error(`Tool is disabled: ${toolId}`);
     }
 
+    const resolvedCanonicalToolId = tool.canonicalId || tool.id;
+    const traceId = uuidv4();
+    const governance = this.getGovernancePolicy(tool);
+    const idempotencyKey = this.getIdempotencyKey(parameters, executionContext);
+
+    if (idempotencyKey) {
+      const idempotentCutoff = new Date(Date.now() - governance.idempotencyTtlMs);
+      const existing = await this.executionModel
+        .findOne({
+          agentId,
+          toolId: resolvedCanonicalToolId,
+          idempotencyKey,
+          status: 'completed',
+          timestamp: { $gte: idempotentCutoff },
+        })
+        .sort({ timestamp: -1 })
+        .exec();
+      if (existing) {
+        return existing;
+      }
+    }
+
+    this.enforceRateLimit(resolvedCanonicalToolId, agentId, governance);
+    this.ensureCircuitClosed(resolvedCanonicalToolId);
+
     const execution = new this.executionModel({
       id: uuidv4(),
-      toolId,
+      traceId,
+      requestedToolId: toolId,
+      resolvedToolId: resolvedCanonicalToolId,
+      toolId: resolvedCanonicalToolId,
       agentId,
       taskId,
+      idempotencyKey,
       parameters,
       status: 'executing',
       tokenCost: tool.tokenCost || 0,
+      retryCount: 0,
     });
     await execution.save();
 
     try {
-      const result = await this.executeToolImplementation(tool, parameters, agentId, {
-        ...(executionContext || {}),
-        taskId: taskId || executionContext?.taskId,
-      });
-      execution.result = result;
+      this.authorizeToolExecution(tool, agentId);
+      this.validateToolInput(parameters);
+
+      let attempt = 0;
+      let rawResult: any;
+      const maxRetries = Math.min(governance.maxRetries, 5);
+
+      while (attempt <= maxRetries) {
+        try {
+          rawResult = await this.executeWithTimeout(
+            () =>
+              this.executeToolImplementation(tool, parameters, agentId, {
+                ...(executionContext || {}),
+                taskId: taskId || executionContext?.taskId,
+                idempotencyKey,
+              }),
+            governance.timeoutMs,
+          );
+          execution.retryCount = attempt;
+          break;
+        } catch (error) {
+          const shouldRetry = attempt < maxRetries && this.isRetryableError(error);
+          if (!shouldRetry) {
+            throw error;
+          }
+          attempt += 1;
+          execution.retryCount = attempt;
+          await this.sleep(Math.min(1000 * attempt, 3000));
+        }
+      }
+
+      execution.result = this.normalizeToolResult(rawResult, traceId);
       execution.status = 'completed';
       execution.executionTime = Date.now() - execution.timestamp.getTime();
       await execution.save();
+      this.recordCircuitSuccess(resolvedCanonicalToolId);
       return execution;
     } catch (error) {
       execution.status = 'failed';
-      execution.error = error instanceof Error ? error.message : 'Unknown error';
+      const normalizedError = this.normalizeToolError(error);
+      execution.error = normalizedError.message;
+      execution.errorCode = normalizedError.code;
+      execution.result = {
+        success: false,
+        error: normalizedError,
+        traceId,
+      };
       execution.executionTime = Date.now() - execution.timestamp.getTime();
       await execution.save();
+      this.recordCircuitFailure(resolvedCanonicalToolId, governance);
       throw error;
     }
+  }
+
+  private authorizeToolExecution(tool: Tool, agentId: string): void {
+    if (!tool.enabled) {
+      throw new Error('Tool is disabled');
+    }
+    if (!agentId?.trim()) {
+      throw new Error('Missing agentId in tool execution');
+    }
+  }
+
+  private validateToolInput(parameters: any): void {
+    if (parameters === undefined || parameters === null) {
+      throw new Error('Missing tool parameters');
+    }
+  }
+
+  private normalizeToolResult(rawResult: any, traceId: string) {
+    return {
+      success: true,
+      traceId,
+      data: rawResult,
+    };
+  }
+
+  private normalizeToolError(error: unknown): NormalizedToolError {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    const code = this.inferExecutionErrorCode(error);
+    return {
+      code,
+      message,
+      retryable: code === 'TOOL_TIMEOUT' || code === 'TOOL_EXECUTION_FAILED',
+    };
+  }
+
+  private inferExecutionErrorCode(error: unknown): string {
+    const message = String((error as any)?.message || '').toLowerCase();
+    if (!message) return 'TOOL_EXECUTION_FAILED';
+    if (message.includes('timeout')) return 'TOOL_TIMEOUT';
+    if (message.includes('not found')) return 'TOOL_NOT_FOUND';
+    if (message.includes('disabled')) return 'TOOL_DISABLED';
+    if (message.includes('rate limit')) return 'TOOL_RATE_LIMITED';
+    if (message.includes('circuit open')) return 'TOOL_CIRCUIT_OPEN';
+    if (message.includes('requires confirm=true')) return 'TOOL_CONFIRM_REQUIRED';
+    if (message.includes('missing organization context')) return 'TOOL_CONTEXT_MISSING';
+    return 'TOOL_EXECUTION_FAILED';
   }
 
   private async executeToolImplementation(
@@ -569,51 +1293,51 @@ export class ToolService {
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
     switch (tool.id) {
-      case 'websearch':
+      case 'internal.web.search':
         return this.performWebSearch(parameters, agentId);
-      case 'webfetch':
+      case 'internal.web.fetch':
         return this.performWebFetch(parameters);
-      case 'content_extract':
+      case 'internal.content.extract':
         return this.performContentExtract(parameters);
-      case 'slack':
+      case 'composio.slack.sendMessage':
         return this.sendSlackMessage(parameters, agentId);
-      case 'gmail':
+      case 'composio.gmail.sendEmail':
         return this.sendGmail(parameters, agentId);
-      case 'repo-read':
+      case 'internal.repo.read':
         return this.executeRepoRead(parameters);
-      case 'agents_mcp_list':
+      case 'internal.agents.list':
         return this.getAgentsMcpList(parameters);
-      case 'gh-repo-docs-reader-mcp':
+      case 'mcp.docs.summary':
         return this.getCodeDocsMcp(parameters);
-      case 'gh-repo-updates-mcp':
+      case 'mcp.updates.summary':
         return this.getCodeUpdatesMcp(parameters);
-      case 'local-repo-docs-reader':
+      case 'internal.docs.read':
         return this.getCodeDocsReader(parameters);
-      case 'local-repo-updates-reader':
+      case 'internal.updates.read':
         return this.getCodeUpdatesReader(parameters);
-      case 'model_mcp_list_models':
+      case 'mcp.model.list':
         return this.listSystemModels(parameters);
-      case 'model_mcp_search_latest':
+      case 'mcp.model.searchLatest':
         return this.searchLatestModels(parameters, agentId);
-      case 'model_mcp_add_model':
+      case 'mcp.model.add':
         return this.addModelToSystem(parameters);
-      case 'human_operation_log_mcp_list':
+      case 'mcp.humanOperationLog.list':
         return this.listHumanOperationLogs(parameters, agentId);
-      case 'memo_mcp_search':
+      case 'internal.memo.search':
         return this.searchMemoMemory(parameters, agentId);
-      case 'memo_mcp_append':
+      case 'internal.memo.append':
         return this.appendMemoMemory(parameters, agentId);
-      case 'orchestration_create_plan':
+      case 'mcp.orchestration.createPlan':
         return this.createOrchestrationPlan(parameters, agentId, executionContext);
-      case 'orchestration_run_plan':
+      case 'mcp.orchestration.runPlan':
         return this.runOrchestrationPlan(parameters, agentId, executionContext);
-      case 'orchestration_get_plan':
+      case 'mcp.orchestration.getPlan':
         return this.getOrchestrationPlan(parameters, agentId, executionContext);
-      case 'orchestration_list_plans':
+      case 'mcp.orchestration.listPlans':
         return this.listOrchestrationPlans(parameters, agentId, executionContext);
-      case 'orchestration_reassign_task':
+      case 'mcp.orchestration.reassignTask':
         return this.reassignOrchestrationTask(parameters, agentId, executionContext);
-      case 'orchestration_complete_human_task':
+      case 'mcp.orchestration.completeHumanTask':
         return this.completeOrchestrationHumanTask(parameters, agentId, executionContext);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
@@ -622,29 +1346,29 @@ export class ToolService {
 
   private getImplementedToolIds(): string[] {
     return [
-      'websearch',
-      'webfetch',
-      'content_extract',
-      'slack',
-      'gmail',
-      'repo-read',
-      'agents_mcp_list',
-      'gh-repo-docs-reader-mcp',
-      'gh-repo-updates-mcp',
-      'local-repo-docs-reader',
-      'local-repo-updates-reader',
-      'model_mcp_list_models',
-      'model_mcp_search_latest',
-      'model_mcp_add_model',
-      'human_operation_log_mcp_list',
-      'memo_mcp_search',
-      'memo_mcp_append',
-      'orchestration_create_plan',
-      'orchestration_run_plan',
-      'orchestration_get_plan',
-      'orchestration_list_plans',
-      'orchestration_reassign_task',
-      'orchestration_complete_human_task',
+      'internal.web.search',
+      'internal.web.fetch',
+      'internal.content.extract',
+      'composio.slack.sendMessage',
+      'composio.gmail.sendEmail',
+      'internal.repo.read',
+      'internal.agents.list',
+      'mcp.docs.summary',
+      'mcp.updates.summary',
+      'internal.docs.read',
+      'internal.updates.read',
+      'mcp.model.list',
+      'mcp.model.searchLatest',
+      'mcp.model.add',
+      'mcp.humanOperationLog.list',
+      'internal.memo.search',
+      'internal.memo.append',
+      'mcp.orchestration.createPlan',
+      'mcp.orchestration.runPlan',
+      'mcp.orchestration.getPlan',
+      'mcp.orchestration.listPlans',
+      'mcp.orchestration.reassignTask',
+      'mcp.orchestration.completeHumanTask',
     ];
   }
 
@@ -1990,20 +2714,24 @@ export class ToolService {
     };
   }
 
-  async getToolExecutions(agentId?: string, toolId?: string): Promise<ToolExecution[]> {
+  async getToolExecutions(agentId?: string, toolId?: string): Promise<any[]> {
     const filter: any = {};
     if (agentId) filter.agentId = agentId;
-    if (toolId) filter.toolId = toolId;
-    return this.executionModel.find(filter).sort({ timestamp: -1 }).exec();
+    if (toolId) {
+      filter.$or = [{ toolId }, { resolvedToolId: toolId }, { requestedToolId: toolId }];
+    }
+    const executions = await this.executionModel.find(filter).sort({ timestamp: -1 }).exec();
+    return executions.map((execution) => this.toExecutionView(execution as any));
   }
 
   async getToolExecutionStats(): Promise<any> {
-    return this.executionModel
+    const rows = await this.executionModel
       .aggregate([
         {
           $group: {
-            _id: '$toolId',
+            _id: { $ifNull: ['$resolvedToolId', '$toolId'] },
             totalExecutions: { $sum: 1 },
+            failedExecutions: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } },
             totalCost: { $sum: '$tokenCost' },
             avgExecutionTime: { $avg: '$executionTime' },
             successRate: { $avg: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
@@ -2011,5 +2739,55 @@ export class ToolService {
         },
       ])
       .exec();
+
+    const failureRows = await this.executionModel
+      .aggregate([
+        {
+          $match: {
+            status: 'failed',
+          },
+        },
+        {
+          $group: {
+            _id: {
+              toolId: { $ifNull: ['$resolvedToolId', '$toolId'] },
+              errorCode: { $ifNull: ['$errorCode', 'TOOL_EXECUTION_FAILED'] },
+            },
+            count: { $sum: 1 },
+          },
+        },
+      ])
+      .exec();
+
+    const failureByTool = new Map<string, Array<{ errorCode: string; count: number }>>();
+    for (const row of failureRows as any[]) {
+      const toolId = String(row?._id?.toolId || 'unknown');
+      const errorCode = String(row?._id?.errorCode || 'TOOL_EXECUTION_FAILED');
+      const bucket = failureByTool.get(toolId) || [];
+      bucket.push({ errorCode, count: Number(row?.count || 0) });
+      failureByTool.set(toolId, bucket);
+    }
+
+    return rows.map((row) => {
+      const { _id, ...rest } = row;
+      const toolId = String(_id);
+      const failureReasons = (failureByTool.get(toolId) || []).sort((a, b) => b.count - a.count);
+      const successRate = Number((rest as any).successRate || 0);
+      const avgExecutionTime = Number((rest as any).avgExecutionTime || 0);
+      const totalExecutions = Number((rest as any).totalExecutions || 0);
+      const healthScore = Math.max(
+        0,
+        Math.min(
+          100,
+          Math.round(successRate * 70 + Math.max(0, 20 - Math.min(avgExecutionTime, 10000) / 500) + Math.min(10, Math.log10(totalExecutions + 1) * 5)),
+        ),
+      );
+      return {
+        ...rest,
+        toolId,
+        failureReasons,
+        healthScore,
+      };
+    });
   }
 }
