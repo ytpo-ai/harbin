@@ -6,7 +6,7 @@ import { CreateSessionDto, SessionQueryDto } from './dto';
 export class SessionManagerService {
   constructor(private readonly agentClientService: AgentClientService) {}
 
-  async createSession(organizationId: string, dto: CreateSessionDto): Promise<any> {
+  async createSession(dto: CreateSessionDto): Promise<any> {
     const session = await this.agentClientService.createSession({
       sessionId: (dto as any).id,
       ownerType: dto.ownerType,
@@ -14,7 +14,7 @@ export class SessionManagerService {
       title: dto.title,
       planContext: (dto as any).planContext,
       meetingContext: (dto as any).meetingContext,
-      metadata: { ...(dto as any).metadata, organizationId },
+      metadata: (dto as any).metadata,
     });
     if (!session) {
       throw new NotFoundException('Failed to create session');
@@ -22,7 +22,7 @@ export class SessionManagerService {
     return session;
   }
 
-  async getSessionOrThrow(organizationId: string, sessionId: string): Promise<any> {
+  async getSessionOrThrow(sessionId: string): Promise<any> {
     const normalized = String(sessionId || '').trim();
     if (!normalized) {
       throw new NotFoundException('Session not found');
@@ -35,12 +35,11 @@ export class SessionManagerService {
     return session;
   }
 
-  async listSessions(organizationId: string, query: SessionQueryDto): Promise<any[]> {
+  async listSessions(query: SessionQueryDto): Promise<any[]> {
     return [];
   }
 
   async appendMessage(
-    organizationId: string,
     sessionId: string,
     message: { role: 'user' | 'assistant' | 'system'; content: string; metadata?: Record<string, any> },
   ): Promise<any> {
@@ -48,7 +47,7 @@ export class SessionManagerService {
       role: message.role,
       content: message.content,
       status: 'completed',
-      metadata: { ...message.metadata, organizationId },
+      metadata: message.metadata,
     });
     if (!session) {
       throw new NotFoundException('Session not found');
@@ -57,7 +56,6 @@ export class SessionManagerService {
   }
 
   async appendMessages(
-    organizationId: string,
     sessionId: string,
     messages: { role: 'user' | 'assistant' | 'system'; content: string; metadata?: Record<string, any> }[],
   ): Promise<any> {
@@ -67,7 +65,7 @@ export class SessionManagerService {
         role: message.role,
         content: message.content,
         status: 'completed',
-        metadata: { ...message.metadata, organizationId },
+        metadata: message.metadata,
       });
     }
     if (!result) {
@@ -76,7 +74,7 @@ export class SessionManagerService {
     return result;
   }
 
-  async archiveSession(organizationId: string, sessionId: string, summary?: string): Promise<any> {
+  async archiveSession(sessionId: string, summary?: string): Promise<any> {
     const session = await this.agentClientService.archiveSession(sessionId, summary);
     if (!session) {
       throw new NotFoundException('Session not found');
@@ -84,7 +82,7 @@ export class SessionManagerService {
     return session;
   }
 
-  async resumeSession(organizationId: string, sessionId: string): Promise<any> {
+  async resumeSession(sessionId: string): Promise<any> {
     const session = await this.agentClientService.resumeSession(sessionId);
     if (!session) {
       throw new NotFoundException('Session not found');
@@ -93,13 +91,12 @@ export class SessionManagerService {
   }
 
   async getOrCreateAgentSession(
-    organizationId: string,
     agentId: string,
     linkedPlanId: string,
     title: string,
     linkedTaskId?: string,
   ): Promise<any> {
-    return this.createSession(organizationId, {
+    return this.createSession({
       ownerType: 'agent',
       ownerId: agentId,
       title,

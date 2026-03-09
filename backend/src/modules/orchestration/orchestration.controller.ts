@@ -186,60 +186,47 @@ export class OrchestrationController {
   }
 
   @Post('sessions')
-  async createSession(@Body() dto: CreateSessionDto, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.createSession(user.id, dto);
+  async createSession(@Body() dto: CreateSessionDto) {
+    return this.sessionManagerService.createSession(dto);
   }
 
   @Get('sessions')
-  async listSessions(
-    @Query() query: SessionQueryDto,
-    @Headers('authorization') authHeader: string,
-  ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.listSessions(user.id, query);
+  async listSessions(@Query() query: SessionQueryDto) {
+    return this.sessionManagerService.listSessions(query);
   }
 
   @Get('sessions/:id')
-  async getSession(@Param('id') sessionId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.getSessionOrThrow(user.id, sessionId);
+  async getSession(@Param('id') sessionId: string) {
+    return this.sessionManagerService.getSessionOrThrow(sessionId);
   }
 
   @Post('sessions/:id/messages')
   async appendSessionMessage(
     @Param('id') sessionId: string,
     @Body() dto: SessionMessageDto,
-    @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.appendMessage(user.id, sessionId, dto);
+    return this.sessionManagerService.appendMessage(sessionId, dto);
   }
 
   @Post('sessions/:id/messages/batch')
   async appendSessionMessages(
     @Param('id') sessionId: string,
     @Body() dto: BatchAppendMessagesDto,
-    @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.appendMessages(user.id, sessionId, dto.messages);
+    return this.sessionManagerService.appendMessages(sessionId, dto.messages);
   }
 
   @Post('sessions/:id/archive')
   async archiveSession(
     @Param('id') sessionId: string,
     @Body() dto: ArchiveSessionDto,
-    @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.archiveSession(user.id, sessionId, dto.summary);
+    return this.sessionManagerService.archiveSession(sessionId, dto.summary);
   }
 
   @Post('sessions/:id/resume')
-  async resumeSession(@Param('id') sessionId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
-    return this.sessionManagerService.resumeSession(user.id, sessionId);
+  async resumeSession(@Param('id') sessionId: string) {
+    return this.sessionManagerService.resumeSession(sessionId);
   }
 
 }

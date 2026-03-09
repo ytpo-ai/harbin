@@ -22,7 +22,6 @@ export const RuntimeEventTypeSchema = z.enum([
 export const RuntimeEventSchema = z.object({
   eventId: z.string().min(1),
   eventType: RuntimeEventTypeSchema,
-  organizationId: z.string().min(1).optional(),
   agentId: z.string().min(1),
   sessionId: z.string().min(1).optional(),
   runId: z.string().min(1),

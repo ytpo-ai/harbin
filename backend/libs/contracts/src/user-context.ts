@@ -1,7 +1,6 @@
 export interface GatewayUserContext {
   employeeId: string;
   email?: string;
-  organizationId?: string;
   role?: string;
   issuedAt: number;
   expiresAt: number;

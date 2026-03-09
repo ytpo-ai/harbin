@@ -26,14 +26,12 @@ export const RuntimeReplayBodySchema = z.object({
 
 export const RuntimeDeadLetterQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(1000).optional(),
-  organizationId: z.string().min(1).max(120).optional(),
   runId: z.string().min(1).max(120).optional(),
   eventType: z.string().min(1).max(120).optional(),
 });
 
 export const RuntimeDeadLetterRequeueBodySchema = z.object({
   eventIds: z.array(z.string().min(1).max(120)).min(1).max(500).optional(),
-  organizationId: z.string().min(1).max(120).optional(),
   runId: z.string().min(1).max(120).optional(),
   eventType: z.string().min(1).max(120).optional(),
   limit: z.number().int().positive().max(1000).optional(),
@@ -49,7 +47,6 @@ export const RuntimePurgeLegacyBodySchema = z.object({
 export const RuntimeMaintenanceAuditQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(500).optional(),
   action: z.enum(['dead_letter_requeue', 'purge_legacy']).optional(),
-  organizationId: z.string().min(1).max(120).optional(),
   batchId: z.string().min(1).max(120).optional(),
 });
 

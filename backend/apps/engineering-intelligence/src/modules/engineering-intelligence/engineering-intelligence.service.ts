@@ -346,17 +346,16 @@ export class EngineeringIntelligenceService {
     };
   }
 
-  async createRepository(payload: CreateEngineeringRepositoryDto, organizationId: string) {
+  async createRepository(payload: CreateEngineeringRepositoryDto) {
     const { owner, repo } = this.parseGithubUrl(payload.repositoryUrl);
 
     const repoInfo = await this.githubRequest<{ default_branch: string }>(`/repos/${owner}/${repo}`);
     const branch = payload.branch?.trim() || repoInfo.default_branch || 'main';
 
     const created = await this.repositoryModel.findOneAndUpdate(
-      { organizationId, repositoryUrl: payload.repositoryUrl.trim() },
+      { repositoryUrl: payload.repositoryUrl.trim() },
       {
         $set: {
-          organizationId,
           repositoryUrl: payload.repositoryUrl.trim(),
           owner,
           repo,
@@ -369,17 +368,17 @@ export class EngineeringIntelligenceService {
     return created;
   }
 
-  async listRepositories(organizationId: string) {
+  async listRepositories() {
     return this.repositoryModel
-      .find({ organizationId })
+      .find({})
       .sort({ updatedAt: -1 })
       .exec();
   }
 
-  async updateRepository(id: string, payload: UpdateEngineeringRepositoryDto, organizationId: string) {
+  async updateRepository(id: string, payload: UpdateEngineeringRepositoryDto) {
     const updated = await this.repositoryModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(id), organizationId },
+        { _id: new Types.ObjectId(id) },
         { $set: payload },
         { new: true },
       )
@@ -392,16 +391,16 @@ export class EngineeringIntelligenceService {
     return updated;
   }
 
-  async deleteRepository(id: string, organizationId: string) {
+  async deleteRepository(id: string) {
     const result = await this.repositoryModel
-      .deleteOne({ _id: new Types.ObjectId(id), organizationId })
+      .deleteOne({ _id: new Types.ObjectId(id) })
       .exec();
     return { success: result.deletedCount > 0 };
   }
 
-  async summarizeRepository(id: string, organizationId: string) {
+  async summarizeRepository(id: string) {
     const repoConfig = await this.repositoryModel
-      .findOne({ _id: new Types.ObjectId(id), organizationId })
+      .findOne({ _id: new Types.ObjectId(id) })
       .exec();
 
     if (!repoConfig) {
@@ -467,9 +466,9 @@ export class EngineeringIntelligenceService {
     }
   }
 
-  async getRepositoryDocsTree(id: string, organizationId: string) {
+  async getRepositoryDocsTree(id: string) {
     const repoConfig = await this.repositoryModel
-      .findOne({ _id: new Types.ObjectId(id), organizationId })
+      .findOne({ _id: new Types.ObjectId(id) })
       .exec();
 
     if (!repoConfig) {
@@ -499,14 +498,14 @@ export class EngineeringIntelligenceService {
     };
   }
 
-  async getRepositoryDocContent(id: string, organizationId: string, docPath: string) {
+  async getRepositoryDocContent(id: string, docPath: string) {
     const normalizedDocPath = this.normalizeDocPath(docPath);
     if (!normalizedDocPath || !normalizedDocPath.startsWith('docs/')) {
       throw new BadRequestException('docPath must start with docs/');
     }
 
     const repoConfig = await this.repositoryModel
-      .findOne({ _id: new Types.ObjectId(id), organizationId })
+      .findOne({ _id: new Types.ObjectId(id) })
       .exec();
 
     if (!repoConfig) {
@@ -571,7 +570,7 @@ export class EngineeringIntelligenceService {
     };
   }
 
-  async getRepositoryDocHistory(id: string, organizationId: string, docPath: string, limit = 20) {
+  async getRepositoryDocHistory(id: string, docPath: string, limit = 20) {
     const normalizedDocPath = this.normalizeDocPath(docPath);
     if (!normalizedDocPath || !normalizedDocPath.startsWith('docs/')) {
       throw new BadRequestException('docPath must start with docs/');
@@ -580,7 +579,7 @@ export class EngineeringIntelligenceService {
     const parsedLimit = Number.isFinite(limit) ? limit : 20;
     const normalizedLimit = Math.min(Math.max(parsedLimit, 1), 50);
     const repoConfig = await this.repositoryModel
-      .findOne({ _id: new Types.ObjectId(id), organizationId })
+      .findOne({ _id: new Types.ObjectId(id) })
       .exec();
 
     if (!repoConfig) {

@@ -108,9 +108,6 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getChannel(event: RuntimeEvent): string {
-    if (event.organizationId) {
-      return `agent-runtime:${event.organizationId}`;
-    }
     return `agent-runtime:${event.agentId}`;
   }
 }

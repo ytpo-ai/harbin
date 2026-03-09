@@ -41,7 +41,6 @@ export class GatewayAuthGuard implements CanActivate {
     const userContext: GatewayUserContext = {
       employeeId: payload.employeeId,
       email: payload.email,
-      organizationId: payload.organizationId,
       role: '',
       issuedAt: Date.now(),
       expiresAt: payload.exp,

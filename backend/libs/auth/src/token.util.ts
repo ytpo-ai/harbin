@@ -3,7 +3,6 @@ import * as crypto from 'crypto';
 export interface EmployeeJwtPayload {
   employeeId: string;
   email?: string;
-  organizationId?: string;
   exp: number;
 }
 

@@ -243,9 +243,8 @@ export class GatewayProxyService {
       if (runtimeControl) {
         const actorId = req.userContext?.employeeId || 'unknown';
         const actorRole = req.userContext?.role || 'unknown';
-        const orgId = req.userContext?.organizationId || 'unknown';
         this.logger.warn(
-          `runtime_control_audit requestId=${requestId} action=${runtimeControl.action} runId=${runtimeControl.runId} actorId=${actorId} actorRole=${actorRole} organizationId=${orgId} status=failed error=${message}`,
+          `runtime_control_audit requestId=${requestId} action=${runtimeControl.action} runId=${runtimeControl.runId} actorId=${actorId} actorRole=${actorRole} status=failed error=${message}`,
         );
       }
 

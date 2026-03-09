@@ -65,10 +65,14 @@ export interface CreateMeetingDto {
 
 export interface MeetingMessageDto {
   senderId: string;
-  senderType: 'employee' | 'agent';
+  senderType: 'employee' | 'agent' | 'system';
   content: string;
   type?: MeetingMessage['type'];
   metadata?: MeetingMessage['metadata'];
+}
+
+export interface ControlMeetingMessageDto {
+  employeeId: string;
 }
 
 @Injectable()
@@ -206,11 +210,9 @@ export class MeetingService {
     meeting: MeetingDocument,
     triggerMessage: MeetingMessage,
     participantProfiles: ParticipantContextProfile[],
-    organizationId?: string,
   ) {
     return {
       meetingId: meeting.id,
-      organizationId,
       initiatorId: triggerMessage.senderId,
       meetingType: meeting.type,
       meetingTitle: meeting.title,
@@ -1347,7 +1349,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const isHumanProxyMessage = dto.senderType === 'employee';
     let effectiveSenderId = dto.senderId;
-    let effectiveSenderType: 'employee' | 'agent' = dto.senderType;
+    let effectiveSenderType: 'employee' | 'agent' | 'system' = dto.senderType;
 
     if (isHumanProxyMessage) {
       const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(dto.senderId);
@@ -1355,20 +1357,27 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       effectiveSenderType = 'agent';
     }
 
+    const isSystemMessage = effectiveSenderType === 'system';
+
     // Check if sender is host
-    const isHost = meeting.hostId === effectiveSenderId && meeting.hostType === effectiveSenderType;
-    
+    const isHost =
+      !isSystemMessage &&
+      meeting.hostId === effectiveSenderId &&
+      (meeting.hostType as 'employee' | 'agent') === effectiveSenderType;
+
     // Find participant in the meeting
-    let participant = meeting.participants.find(
-      p => p.participantId === effectiveSenderId && p.participantType === effectiveSenderType,
-    );
+    let participant = isSystemMessage
+      ? undefined
+      : meeting.participants.find(
+          p => p.participantId === effectiveSenderId && p.participantType === effectiveSenderType,
+        );
 
     if (participant && !participant.isPresent) {
       participant.isPresent = true;
       participant.joinedAt = participant.joinedAt || new Date();
     }
-    
-    if (!participant && !isHost) {
+
+    if (!isSystemMessage && !participant && !isHost) {
       throw new ConflictException('Participant is not in the meeting or not present');
     }
 
@@ -1384,6 +1393,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
         ...(isHumanProxyMessage ? {
           isAIProxy: true,
           proxyForEmployeeId: dto.senderId,
+          pendingResponsePaused: false,
         } : {}),
       },
     };
@@ -1848,6 +1858,16 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
       if (!meeting || meeting.status !== MeetingStatus.ACTIVE) return;
 
+      const latestTriggerMessage = this.getMessageById(meeting, triggerMessage.id);
+      if (!latestTriggerMessage) {
+        this.logger.log(`Skip response because trigger message was removed: ${triggerMessage.id}`);
+        return;
+      }
+      if (latestTriggerMessage.metadata?.pendingResponsePaused) {
+        this.logger.log(`Skip response because trigger message is paused: ${triggerMessage.id}`);
+        return;
+      }
+
       const agent = await this.agentClientService.getAgent(agentId);
       if (!agent) return;
 
@@ -1856,7 +1876,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       const contextMessages = await this.buildDiscussionContext(meeting, agentId, triggerMessage);
 
       const participantProfiles = await this.buildParticipantContextProfiles(meeting);
-      const organizationId = await this.resolveMeetingOrganizationId(meeting, triggerMessage);
       
       const task = {
         title: `参与会议讨论: ${meeting.title}`,
@@ -1881,7 +1900,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       const response = await this.agentClientService.executeTask(agentId, task as any, {
         executionMode: 'chat',
-        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
+        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
 
       const messageType = this.analyzeMessageType(response);
@@ -1902,13 +1921,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     } finally {
       await this.clearAgentThinking(meetingId, agentId, { reason: 'response_finished', token: stateToken });
     }
-  }
-
-  private async resolveMeetingOrganizationId(
-    meeting: MeetingDocument,
-    triggerMessage: MeetingMessage,
-  ): Promise<string | undefined> {
-    return undefined;
   }
 
   /**
@@ -2029,10 +2041,9 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
         timestamp: new Date(),
       };
 
-      const organizationId = await this.resolveMeetingOrganizationId(meeting, triggerMessage);
       const response = await this.agentClientService.executeTask(participant.id, task as any, {
         executionMode: 'chat',
-        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles, organizationId),
+        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
       await this.sendMessage(meetingId, {
         senderId: participant.id,
@@ -2178,6 +2189,118 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     }
     
     return 'opinion';
+  }
+
+  private hasAgentRepliedToMessage(meeting: MeetingDocument, messageId: string): boolean {
+    return (meeting.messages || []).some((item) => {
+      if (!item || item.senderType !== 'agent') {
+        return false;
+      }
+      const metadata = (item.metadata || {}) as Record<string, unknown>;
+      return metadata.relatedMessageId === messageId;
+    });
+  }
+
+  private getMessageById(meeting: MeetingDocument, messageId: string): MeetingMessage | null {
+    const target = (meeting.messages || []).find((item) => item.id === messageId);
+    return target || null;
+  }
+
+  private assertMessageController(message: MeetingMessage, employeeId: string): void {
+    const controllerId = (message.metadata || {}).proxyForEmployeeId;
+    if (!controllerId || controllerId !== employeeId) {
+      throw new ConflictException('Only the original sender can control this message');
+    }
+  }
+
+  async pauseMessageResponse(meetingId: string, messageId: string, employeeId: string): Promise<MeetingMessage> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status !== MeetingStatus.ACTIVE) {
+      throw new ConflictException('Only active meetings support message pause');
+    }
+
+    const message = this.getMessageById(meeting, messageId);
+    if (!message) {
+      throw new NotFoundException(`Message not found: ${messageId}`);
+    }
+
+    this.assertMessageController(message, employeeId);
+
+    if (this.hasAgentRepliedToMessage(meeting, messageId)) {
+      throw new ConflictException('Message already has replies and cannot be paused');
+    }
+
+    const metadata = {
+      ...(message.metadata || {}),
+      pendingResponsePaused: true,
+      pendingResponsePausedAt: new Date().toISOString(),
+    } as Record<string, unknown>;
+
+    message.metadata = metadata as MeetingMessage['metadata'];
+    await meeting.save();
+    await this.clearAllMeetingAgentThinking(meetingId, 'message_response_paused');
+
+    return message;
+  }
+
+  async revokePausedMessage(meetingId: string, messageId: string, employeeId: string): Promise<Meeting> {
+    const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
+    if (!meeting) {
+      throw new NotFoundException(`Meeting not found: ${meetingId}`);
+    }
+
+    this.ensureMeetingCompatibility(meeting);
+
+    if (meeting.status !== MeetingStatus.ACTIVE) {
+      throw new ConflictException('Only active meetings support message revoke');
+    }
+
+    const targetMessage = this.getMessageById(meeting, messageId);
+    if (!targetMessage) {
+      throw new NotFoundException(`Message not found: ${messageId}`);
+    }
+
+    this.assertMessageController(targetMessage, employeeId);
+
+    if (!targetMessage.metadata?.pendingResponsePaused) {
+      throw new ConflictException('Message must be paused before revoke');
+    }
+
+    if (this.hasAgentRepliedToMessage(meeting, messageId)) {
+      throw new ConflictException('Message already has replies and cannot be revoked');
+    }
+
+    const messageIndex = meeting.messages.findIndex((item) => item.id === messageId);
+    if (messageIndex < 0) {
+      throw new NotFoundException(`Message not found: ${messageId}`);
+    }
+
+    const [removedMessage] = meeting.messages.splice(messageIndex, 1);
+    meeting.messageCount = Math.max(0, (meeting.messageCount || 0) - 1);
+
+    const senderParticipant = meeting.participants.find(
+      (participant) =>
+        participant.participantId === removedMessage.senderId &&
+        participant.participantType === removedMessage.senderType,
+    );
+
+    if (senderParticipant) {
+      senderParticipant.messageCount = Math.max(0, (senderParticipant.messageCount || 0) - 1);
+      if (senderParticipant.messageCount === 0) {
+        senderParticipant.hasSpoken = false;
+      }
+    }
+
+    await meeting.save();
+    await this.clearAllMeetingAgentThinking(meetingId, 'message_revoked');
+
+    return meeting;
   }
 
   /**

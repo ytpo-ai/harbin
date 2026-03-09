@@ -156,7 +156,6 @@ export class AuthService {
     return createToken({
       employeeId: data.employeeId,
       email: data.email,
-      organizationId: data.organizationId,
     }, this.jwtSecret, this.jwtExpiresIn);
   }
 

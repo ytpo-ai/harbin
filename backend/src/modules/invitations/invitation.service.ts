@@ -7,7 +7,6 @@ import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
 
 export interface CreateInvitationDto {
-  organizationId: string;
   invitedBy: string;
   invitedByName: string;
   role: InvitationRole;
@@ -16,24 +15,16 @@ export interface CreateInvitationDto {
   email?: string;
   name?: string;
   message?: string;
-  expiresInDays?: number;  // 默认7天
-  maxUses?: number;      // 默认1次
+  expiresInDays?: number;
+  maxUses?: number;
 }
 
 export interface AcceptInvitationDto {
   code: string;
   linkToken: string;
-  // 用户信息
   email: string;
   name: string;
   password: string;
-}
-
-export interface InvitationStats {
-  total: number;
-  pending: number;
-  accepted: number;
-  expired: number;
 }
 
 @Injectable()
@@ -49,19 +40,14 @@ export class InvitationService {
    * 创建邀请
    */
   async createInvitation(dto: CreateInvitationDto): Promise<Invitation> {
-    // 生成短邀请码（6位）
     const code = this.generateShortCode();
-    
-    // 生成链接Token
     const linkToken = uuidv4();
 
-    // 过期时间
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + (dto.expiresInDays || 7));
 
     const invitation = new this.invitationModel({
       id: uuidv4(),
-      organizationId: dto.organizationId,
       code,
       invitedBy: dto.invitedBy,
       invitedByName: dto.invitedByName,
@@ -79,7 +65,7 @@ export class InvitationService {
     });
 
     const saved = await invitation.save();
-    this.logger.log(`Created invitation: ${code} for org ${dto.organizationId}`);
+    this.logger.log(`Created invitation: ${code}`);
 
     return saved;
   }
@@ -96,36 +82,6 @@ export class InvitationService {
    */
   async getByLinkToken(linkToken: string): Promise<Invitation | null> {
     return this.invitationModel.findOne({ linkToken }).exec();
-  }
-
-  /**
-   * 获取组织所有邀请
-   */
-  async getByOrganization(organizationId: string): Promise<Invitation[]> {
-    return this.invitationModel.find({ organizationId })
-      .sort({ createdAt: -1 })
-      .exec();
-  }
-
-  /**
-   * 获取组织的邀请统计
-   */
-  async getStats(organizationId: string): Promise<InvitationStats> {
-    const total = await this.invitationModel.countDocuments({ organizationId });
-    const pending = await this.invitationModel.countDocuments({ 
-      organizationId, 
-      status: InvitationStatus.PENDING 
-    });
-    const accepted = await this.invitationModel.countDocuments({ 
-      organizationId, 
-      status: InvitationStatus.ACCEPTED 
-    });
-    const expired = await this.invitationModel.countDocuments({ 
-      organizationId, 
-      status: InvitationStatus.EXPIRED 
-    });
-
-    return { total, pending, accepted, expired };
   }
 
   /**
@@ -297,19 +253,6 @@ export class InvitationService {
     this.logger.log(`Invitation ${invitation.code} resent, expires at ${invitation.expiresAt}`);
 
     return invitation;
-  }
-
-  /**
-   * 删除过期邀请
-   */
-  async deleteExpiredInvitations(organizationId: string): Promise<number> {
-    const result = await this.invitationModel.deleteMany({
-      organizationId,
-      status: InvitationStatus.PENDING,
-      expiresAt: { $lt: new Date() },
-    }).exec();
-
-    return result.deletedCount;
   }
 
   /**

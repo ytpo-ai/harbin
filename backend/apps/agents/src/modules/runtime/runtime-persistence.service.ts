@@ -72,7 +72,6 @@ export class RuntimePersistenceService {
   async ensureSession(input: {
     sessionId?: string;
     sessionType?: 'meeting' | 'task';
-    organizationId?: string;
     ownerId: string;
     ownerType?: 'agent' | 'employee' | 'system';
     title: string;
@@ -100,7 +99,6 @@ export class RuntimePersistenceService {
           $setOnInsert: {
             id: sessionId,
             sessionType,
-            organizationId: input.organizationId,
             ownerType: input.ownerType || 'agent',
             ownerId: input.ownerId,
             title: input.title,
@@ -112,7 +110,6 @@ export class RuntimePersistenceService {
           },
           $set: {
             lastActiveAt: now,
-            organizationId: input.organizationId,
             planContext: input.planContext,
             meetingContext: input.meetingContext,
           },
@@ -222,7 +219,6 @@ export class RuntimePersistenceService {
     agentName: string;
     sessionId?: string;
     taskId?: string;
-    organizationId?: string;
     taskTitle: string;
     taskDescription: string;
     metadata?: Record<string, unknown>;
@@ -626,7 +622,6 @@ export class RuntimePersistenceService {
       eventType: parsed.eventType,
       runId: parsed.runId,
       agentId: parsed.agentId,
-      organizationId: parsed.organizationId,
       sessionId: parsed.sessionId,
       taskId: parsed.taskId,
       messageId: parsed.messageId,
@@ -748,15 +743,11 @@ export class RuntimePersistenceService {
 
   async findDeadLetterEvents(options?: {
     limit?: number;
-    organizationId?: string;
     runId?: string;
     eventType?: string;
   }): Promise<AgentEventOutbox[]> {
     const limit = options?.limit || 200;
     const filter: Record<string, unknown> = { status: 'failed' };
-    if (options?.organizationId) {
-      filter.organizationId = options.organizationId;
-    }
     if (options?.runId) {
       filter.runId = options.runId;
     }
@@ -772,14 +763,10 @@ export class RuntimePersistenceService {
   }
 
   async countDeadLetterEvents(options?: {
-    organizationId?: string;
     runId?: string;
     eventType?: string;
   }): Promise<number> {
     const filter: Record<string, unknown> = { status: 'failed' };
-    if (options?.organizationId) {
-      filter.organizationId = options.organizationId;
-    }
     if (options?.runId) {
       filter.runId = options.runId;
     }
@@ -789,15 +776,12 @@ export class RuntimePersistenceService {
     return this.outboxModel.countDocuments(filter).exec();
   }
 
-  async findDeadLetterEventsByEventIds(eventIds: string[], organizationId?: string): Promise<AgentEventOutbox[]> {
+  async findDeadLetterEventsByEventIds(eventIds: string[]): Promise<AgentEventOutbox[]> {
     if (!eventIds.length) return [];
     const filter: Record<string, unknown> = {
       status: 'failed',
       eventId: { $in: eventIds },
     };
-    if (organizationId) {
-      filter.organizationId = organizationId;
-    }
     return this.outboxModel.find(filter).exec();
   }
 
@@ -820,7 +804,6 @@ export class RuntimePersistenceService {
 
   async requeueDeadLetterByFilter(options?: {
     limit?: number;
-    organizationId?: string;
     runId?: string;
     eventType?: string;
   }): Promise<number> {
@@ -853,7 +836,6 @@ export class RuntimePersistenceService {
     batchId: string;
     actorId: string;
     actorRole: string;
-    organizationId?: string;
     dryRun: boolean;
     matched: number;
     affected: number;
@@ -870,15 +852,11 @@ export class RuntimePersistenceService {
 
   async listMaintenanceAudits(options?: {
     limit?: number;
-    organizationId?: string;
     action?: 'dead_letter_requeue' | 'purge_legacy';
     batchId?: string;
   }): Promise<AgentRuntimeMaintenanceAudit[]> {
     const limit = options?.limit || 50;
     const filter: Record<string, unknown> = {};
-    if (options?.organizationId) {
-      filter.organizationId = options.organizationId;
-    }
     if (options?.action) {
       filter.action = options.action;
     }

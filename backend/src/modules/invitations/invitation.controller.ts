@@ -24,30 +24,6 @@ export class InvitationController {
   }
 
   /**
-   * 获取组织所有邀请
-   */
-  @Get('organization/:organizationId')
-  async getByOrganization(@Param('organizationId') organizationId: string) {
-    const invitations = await this.invitationService.getByOrganization(organizationId);
-    return {
-      success: true,
-      data: invitations,
-    };
-  }
-
-  /**
-   * 获取邀请统计
-   */
-  @Get('stats/:organizationId')
-  async getStats(@Param('organizationId') organizationId: string) {
-    const stats = await this.invitationService.getStats(organizationId);
-    return {
-      success: true,
-      data: stats,
-    };
-  }
-
-  /**
    * 验证邀请
    */
   @Post('validate')
@@ -120,19 +96,6 @@ export class InvitationController {
         link,
       },
       message: '邀请已重新发送',
-    };
-  }
-
-  /**
-   * 删除过期邀请
-   */
-  @Delete('cleanup/:organizationId')
-  async cleanupExpired(@Param('organizationId') organizationId: string) {
-    const deletedCount = await this.invitationService.deleteExpiredInvitations(organizationId);
-    return {
-      success: true,
-      data: { deletedCount },
-      message: `已删除 ${deletedCount} 个过期邀请`,
     };
   }
 }

@@ -71,6 +71,31 @@
 2. 业务语义统一：当前 HR 已做“无组织模块”的兼容实现，重构组织域后建议重新对齐 HR 口径。
 3. 重构落地建议：建议下一阶段先确定新领域模型（组织、股权、治理边界）后再重建 API 与前端页面，避免再次返工。
 
+## 二次清理（organizationId 遗留）
+
+### 背景
+
+在首轮下线后，后端多个模块仍保留 `organizationId` 字段、参数和透传逻辑。为完成“无组织概念”落地，本次执行了后端二次清理。
+
+### 本次完成项
+
+1. `engineering-intelligence`：移除仓库 schema、controller、service 中的 `organizationId` 读写与过滤。
+2. `orchestration/session`：移除 `session-manager` 全链路 `organizationId` 参数，更新 controller 调用。
+3. `meetings`：移除 `resolveMeetingOrganizationId` 与 `teamContext.organizationId` 传递。
+4. `invitations`：移除按组织维度的查询、统计、清理接口及 service 逻辑。
+5. `gateway/auth/libs`：移除 JWT payload、gateway user context 与代理日志中的 `organizationId`。
+6. `agents runtime`：移除 contracts、persistence、hook、action-log-sync、tools 中的组织上下文与过滤逻辑。
+
+### 结果验证
+
+- 代码检索：`backend/**/*.ts` 中 `organizationId` 命中为 0。
+- 构建验证：`backend npm run build` 通过。
+
+### 影响说明
+
+- 历史数据库中可能仍存在旧字段（如 `organizationId`），但代码已不再依赖。
+- 运行时与编排链路已改为不携带组织上下文，后续如需租户隔离需重新设计隔离模型。
+
 ## 关联计划文档
 
 - `docs/plan/ORG_GOVERNANCE_REMOVAL_PLAN.md`

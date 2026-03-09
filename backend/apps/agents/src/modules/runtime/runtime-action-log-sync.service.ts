@@ -118,7 +118,6 @@ export class RuntimeActionLogSyncService {
     const context: GatewayUserContext = {
       employeeId: 'agents-service',
       role: 'system',
-      organizationId: event.organizationId,
       issuedAt: now,
       expiresAt: now + 60 * 1000,
     };

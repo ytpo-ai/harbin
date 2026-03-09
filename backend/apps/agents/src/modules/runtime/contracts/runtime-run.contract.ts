@@ -5,7 +5,6 @@ export const RuntimeStartRunInputSchema = z.object({
   agentName: z.string().min(1),
   taskId: z.string().min(1).optional(),
   sessionId: z.string().min(1).optional(),
-  organizationId: z.string().min(1).optional(),
   taskTitle: z.string().min(1),
   taskDescription: z.string().default(''),
   userContent: z.string().default(''),

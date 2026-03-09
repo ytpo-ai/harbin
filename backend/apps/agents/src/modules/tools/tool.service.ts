@@ -1602,12 +1602,11 @@ export class ToolService {
     };
   }
 
-  private buildSignedHeaders(organizationId?: string): Record<string, string> {
+  private buildSignedHeaders(): Record<string, string> {
     const now = Date.now();
     const context: GatewayUserContext = {
       employeeId: 'agents-service',
       role: 'system',
-      organizationId,
       issuedAt: now,
       expiresAt: now + 60 * 1000,
     };
@@ -1622,7 +1621,6 @@ export class ToolService {
 
   private resolveMeetingContext(executionContext?: ToolExecutionContext): {
     meetingId?: string;
-    organizationId?: string;
     initiatorId?: string;
     taskType?: string;
   } {
@@ -1631,9 +1629,6 @@ export class ToolService {
       meetingId:
         (typeof teamContext.meetingId === 'string' && teamContext.meetingId) ||
         (typeof executionContext?.teamId === 'string' && executionContext.teamId) ||
-        undefined,
-      organizationId:
-        (typeof teamContext.organizationId === 'string' && teamContext.organizationId) ||
         undefined,
       initiatorId:
         (typeof teamContext.initiatorId === 'string' && teamContext.initiatorId) ||
@@ -1647,7 +1642,6 @@ export class ToolService {
 
   private assertMeetingContext(executionContext?: ToolExecutionContext): {
     meetingId: string;
-    organizationId?: string;
     initiatorId?: string;
   } {
     const context = this.resolveMeetingContext(executionContext);
@@ -1657,55 +1651,8 @@ export class ToolService {
     }
     return {
       meetingId: context.meetingId || 'unknown-meeting',
-      organizationId: context.organizationId,
       initiatorId: context.initiatorId,
     };
-  }
-
-  private async resolveOrganizationIdForAgent(
-    agentId?: string,
-    fallback?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<string | undefined> {
-    if (fallback) {
-      return fallback;
-    }
-    const meetingContext = this.resolveMeetingContext(executionContext);
-    if (meetingContext.initiatorId) {
-      const initiator = await this.employeeModel
-        .findOne({ id: meetingContext.initiatorId })
-        .select({ organizationId: 1 })
-        .lean()
-        .exec();
-      const initiatorOrg = (initiator as any)?.organizationId;
-      if (initiatorOrg) {
-        return initiatorOrg;
-      }
-    }
-    const participants = Array.isArray(executionContext?.teamContext?.participants)
-      ? (executionContext?.teamContext?.participants as unknown[])
-      : [];
-    for (const candidateId of participants) {
-      if (typeof candidateId !== 'string' || !candidateId.trim()) continue;
-      const employee = await this.employeeModel
-        .findOne({ id: candidateId.trim() })
-        .select({ organizationId: 1 })
-        .lean()
-        .exec();
-      const employeeOrg = (employee as any)?.organizationId;
-      if (employeeOrg) {
-        return employeeOrg;
-      }
-    }
-    if (!agentId) {
-      return undefined;
-    }
-    const owner = await this.employeeModel
-      .findOne({ agentId })
-      .select({ organizationId: 1 })
-      .lean()
-      .exec();
-    return (owner as any)?.organizationId;
   }
 
   private requireConfirm(params: any, action: string): void {
@@ -1719,10 +1666,9 @@ export class ToolService {
     method: 'GET' | 'POST',
     endpoint: string,
     body: any,
-    organizationId?: string,
   ): Promise<any> {
     const url = `${this.orchestrationBaseUrl}/orchestration${endpoint}`;
-    const headers = this.buildSignedHeaders(organizationId);
+    const headers = this.buildSignedHeaders();
     const response = await axios.request({
       method,
       url,
@@ -1737,10 +1683,9 @@ export class ToolService {
     method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     endpoint: string,
     body?: any,
-    organizationId?: string,
   ): Promise<any> {
     const url = `${this.backendBaseUrl}/meetings${endpoint}`;
-    const headers = this.buildSignedHeaders(organizationId);
+    const headers = this.buildSignedHeaders();
     const response = await axios.request({
       method,
       url,
@@ -1758,7 +1703,6 @@ export class ToolService {
       mode?: 'sequential' | 'parallel' | 'hybrid';
       plannerAgentId?: string;
       autoRun?: boolean;
-      organizationId?: string;
     },
     agentId?: string,
     executionContext?: ToolExecutionContext,
@@ -1774,15 +1718,7 @@ export class ToolService {
       plannerAgentId: params.plannerAgentId,
       autoRun: params.autoRun === true,
     };
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_create_plan');
-    }
-    const result = await this.callOrchestrationApi('POST', '/plans/from-prompt', payload, organizationId);
+    const result = await this.callOrchestrationApi('POST', '/plans/from-prompt', payload);
     return {
       action: 'create_plan',
       meetingId: meeting.meetingId,
@@ -1792,7 +1728,7 @@ export class ToolService {
   }
 
   private async runOrchestrationPlan(
-    params: { planId?: string; continueOnFailure?: boolean; confirm?: boolean; organizationId?: string },
+    params: { planId?: string; continueOnFailure?: boolean; confirm?: boolean },
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
@@ -1801,19 +1737,10 @@ export class ToolService {
       throw new Error('orchestration_run_plan requires planId');
     }
     this.requireConfirm(params, 'orchestration_run_plan');
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_run_plan');
-    }
     const result = await this.callOrchestrationApi(
       'POST',
       `/plans/${params.planId.trim()}/run`,
       { continueOnFailure: params.continueOnFailure === true },
-      organizationId,
     );
     return {
       action: 'run_plan',
@@ -1824,7 +1751,7 @@ export class ToolService {
   }
 
   private async getOrchestrationPlan(
-    params: { planId?: string; organizationId?: string },
+    params: { planId?: string },
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
@@ -1832,15 +1759,7 @@ export class ToolService {
     if (!params?.planId?.trim()) {
       throw new Error('orchestration_get_plan requires planId');
     }
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_get_plan');
-    }
-    const result = await this.callOrchestrationApi('GET', `/plans/${params.planId.trim()}`, undefined, organizationId);
+    const result = await this.callOrchestrationApi('GET', `/plans/${params.planId.trim()}`, undefined);
     return {
       action: 'get_plan',
       meetingId: meeting.meetingId,
@@ -1850,20 +1769,12 @@ export class ToolService {
   }
 
   private async listOrchestrationPlans(
-    params: { organizationId?: string },
+    params: Record<string, never>,
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
     const meeting = this.assertMeetingContext(executionContext);
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_list_plans');
-    }
-    const result = await this.callOrchestrationApi('GET', '/plans', undefined, organizationId);
+    const result = await this.callOrchestrationApi('GET', '/plans', undefined);
     return {
       action: 'list_plans',
       meetingId: meeting.meetingId,
@@ -1879,7 +1790,6 @@ export class ToolService {
       executorId?: string;
       reason?: string;
       confirm?: boolean;
-      organizationId?: string;
     },
     agentId?: string,
     executionContext?: ToolExecutionContext,
@@ -1892,14 +1802,6 @@ export class ToolService {
       throw new Error('orchestration_reassign_task requires executorType');
     }
     this.requireConfirm(params, 'orchestration_reassign_task');
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_reassign_task');
-    }
     const result = await this.callOrchestrationApi(
       'POST',
       `/tasks/${params.taskId.trim()}/reassign`,
@@ -1908,7 +1810,6 @@ export class ToolService {
         executorId: params.executorId,
         reason: params.reason,
       },
-      organizationId,
     );
     return {
       action: 'reassign_task',
@@ -1919,7 +1820,7 @@ export class ToolService {
   }
 
   private async completeOrchestrationHumanTask(
-    params: { taskId?: string; summary?: string; output?: string; confirm?: boolean; organizationId?: string },
+    params: { taskId?: string; summary?: string; output?: string; confirm?: boolean },
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
@@ -1928,14 +1829,6 @@ export class ToolService {
       throw new Error('orchestration_complete_human_task requires taskId');
     }
     this.requireConfirm(params, 'orchestration_complete_human_task');
-    const organizationId = await this.resolveOrganizationIdForAgent(
-      agentId,
-      params.organizationId || meeting.organizationId,
-      executionContext,
-    );
-    if (!organizationId) {
-      throw new Error('Missing organization context for orchestration_complete_human_task');
-    }
     const result = await this.callOrchestrationApi(
       'POST',
       `/tasks/${params.taskId.trim()}/complete-human`,
@@ -1943,7 +1836,6 @@ export class ToolService {
         summary: params.summary,
         output: params.output,
       },
-      organizationId,
     );
     return {
       action: 'complete_human_task',
