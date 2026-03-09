@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import { access, readFile } from 'fs/promises';
+import { access } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -17,9 +17,8 @@ import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/sc
 import { Employee, EmployeeDocument, EmployeeType } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogDocument } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ComposioService } from './composio.service';
+import { WebToolsService } from './web-tools.service';
 import { ModelManagementService } from '../models/model-management.service';
-import { buildCodeDocsMcpSummary, CodeDocsMcpFeatureCandidate } from './gh-repo-docs-reader-mcp.util';
-import { buildCodeUpdatesMcpSummary, CodeUpdatesMcpCommit } from './gh-repo-updates-mcp.util';
 import { codeDocsReader } from './local-repo-docs-reader.util';
 import { codeUpdatesReader } from './local-repo-updates-reader.util';
 import { MemoService } from '../memos/memo.service';
@@ -90,6 +89,16 @@ interface NormalizedToolError {
   retryable: boolean;
 }
 
+interface ParsedToolIdentity {
+  provider: string;
+  executionChannel: string;
+  namespace: string;
+  toolkit: string;
+  toolkitId: string;
+  resource: string;
+  action: string;
+}
+
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
@@ -108,6 +117,7 @@ export class ToolService {
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
     @InjectModel(OperationLog.name) private operationLogModel: Model<OperationLogDocument>,
     private composioService: ComposioService,
+    private webToolsService: WebToolsService,
     private modelManagementService: ModelManagementService,
     private memoService: MemoService,
   ) {
@@ -115,60 +125,119 @@ export class ToolService {
   }
 
   private inferProviderFromToolId(toolId: string): string {
-    const parts = String(toolId || '').split('.').filter(Boolean);
-    if (parts[0] === 'builtin' || parts[0] === 'composio') {
-      return parts[0];
-    }
-    if (parts[0] === 'gh') return 'builtin';
-    if (parts[0] === 'composio') return 'composio';
-    return 'builtin';
+    return this.parseToolIdentity(toolId).provider;
   }
 
-  private inferExecutionChannel(toolId: string): string {
+  private parseToolIdentity(toolId: string): ParsedToolIdentity {
     const parts = String(toolId || '').split('.').filter(Boolean);
-    if (parts[0] === 'builtin' && parts[1]) {
-      return parts[1];
-    }
-    if (parts[0] === 'gh') return 'gh';
-    if (parts[0] === 'composio') return 'mcp';
-    return 'internal';
-  }
-
-  private inferNamespaceFromToolId(toolId: string): string {
-    const parts = String(toolId || '').split('.').filter(Boolean);
-    if (parts[0] === 'builtin' || parts[0] === 'composio') {
-      return parts[2] || parts[1] || 'unknown';
-    }
-    if (parts[0] === 'gh') {
-      return parts[1] || 'gh';
-    }
-    return parts[0] || 'internal';
-  }
-
-  private inferResourceAndAction(toolId: string): { resource: string; action: string } {
-    const parts = toolId.split('.').filter(Boolean);
-    if (parts.length >= 4) {
+    if (!parts.length) {
       return {
-        resource: parts[2],
-        action: parts.slice(3).join('.'),
-      };
-    }
-    if (parts.length >= 3) {
-      return {
-        resource: parts[1],
-        action: parts.slice(2).join('.'),
-      };
-    }
-    if (parts.length === 2) {
-      return {
-        resource: parts[1],
+        provider: 'builtin',
+        executionChannel: 'internal',
+        namespace: 'other',
+        toolkit: 'generic',
+        toolkitId: 'builtin.other.internal.generic',
+        resource: 'generic',
         action: 'execute',
       };
     }
+
+    if ((parts[0] === 'builtin' || parts[0] === 'composio') && parts.length >= 5 && ['mcp', 'internal'].includes(parts[2])) {
+      const provider = parts[0];
+      const namespace = parts[1] || 'other';
+      const executionChannel = parts[2] || 'internal';
+      const toolkit = parts[3] || 'generic';
+      const action = parts.slice(4).join('.') || 'execute';
+      return {
+        provider,
+        executionChannel,
+        namespace,
+        toolkit,
+        toolkitId: `${provider}.${namespace}.${executionChannel}.${toolkit}`,
+        resource: toolkit,
+        action,
+      };
+    }
+
+    if (parts[0] === 'builtin' || parts[0] === 'composio') {
+      const provider = parts[0];
+      const executionChannel = parts[1] || (provider === 'composio' ? 'mcp' : 'internal');
+      const namespace = parts[2] || 'other';
+      const toolkit = parts[2] || 'generic';
+      const resource = parts[2] || 'generic';
+      const action = parts.slice(3).join('.') || 'execute';
+      return {
+        provider,
+        executionChannel,
+        namespace,
+        toolkit,
+        toolkitId: `${provider}.${namespace}.${executionChannel}.${toolkit}`,
+        resource,
+        action,
+      };
+    }
+
+    if (parts[0] === 'gh') {
+      const provider = 'builtin';
+      const executionChannel = 'mcp';
+      const namespace = 'sys-mg';
+      const toolkit = 'rd-related';
+      const action = parts.slice(1).join('.') || 'execute';
+      return {
+        provider,
+        executionChannel,
+        namespace,
+        toolkit,
+        toolkitId: `${provider}.${namespace}.${executionChannel}.${toolkit}`,
+        resource: toolkit,
+        action,
+      };
+    }
+
+    const provider = parts[0] === 'composio' ? 'composio' : 'builtin';
+    const executionChannel = parts[0] === 'internal' ? 'internal' : parts[1] || 'internal';
+    const namespace = parts[2] || parts[1] || parts[0] || 'other';
+    const toolkit = parts[3] || namespace;
+    const action = parts.slice(4).join('.') || parts.slice(3).join('.') || 'execute';
     return {
-      resource: 'generic',
-      action: 'execute',
+      provider,
+      executionChannel,
+      namespace,
+      toolkit,
+      toolkitId: `${provider}.${namespace}.${executionChannel}.${toolkit}`,
+      resource: toolkit,
+      action,
     };
+  }
+
+  private inferExecutionChannel(toolId: string): string {
+    return this.parseToolIdentity(toolId).executionChannel;
+  }
+
+  private inferNamespaceFromToolId(toolId: string): string {
+    return this.parseToolIdentity(toolId).namespace;
+  }
+
+  private inferToolkitFromToolId(toolId: string): string {
+    return this.parseToolIdentity(toolId).toolkit;
+  }
+
+  private inferToolkitIdFromToolId(toolId: string): string {
+    return this.parseToolIdentity(toolId).toolkitId;
+  }
+
+  private inferResourceAndAction(toolId: string): { resource: string; action: string } {
+    const parsed = this.parseToolIdentity(toolId);
+    return { resource: parsed.resource, action: parsed.action };
+  }
+
+  private getToolkitDisplayName(toolkit: string): string {
+    if (toolkit === 'rd-related') return 'RD Toolkit';
+    return toolkit
+      .split('-')
+      .filter(Boolean)
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(' ');
   }
 
   private buildBuiltinToolMetadata(toolData: {
@@ -177,20 +246,21 @@ export class ToolService {
     implementation?: { parameters?: Record<string, unknown> };
   }) {
     const canonicalId = toolData.id;
-    const provider = this.inferProviderFromToolId(canonicalId);
-    const executionChannel = this.inferExecutionChannel(canonicalId);
-    const namespace = this.inferNamespaceFromToolId(canonicalId);
+    const identity = this.parseToolIdentity(canonicalId);
+    const provider = identity.provider;
+    const executionChannel = identity.executionChannel;
+    const namespace = identity.namespace;
     const { resource, action } = this.inferResourceAndAction(canonicalId);
     return {
       canonicalId,
       provider,
       executionChannel,
-      toolkitId: `${provider}.${namespace}`,
+      toolkitId: identity.toolkitId,
       namespace,
       resource,
       action,
       capabilitySet: [toolData.category.toLowerCase().replace(/\s+/g, '_')],
-      tags: [namespace, provider, executionChannel],
+      tags: [namespace, provider, executionChannel, identity.toolkit],
       status: 'active' as const,
       deprecated: false,
       aliases: canonicalId === toolData.id ? [] : [toolData.id],
@@ -199,8 +269,8 @@ export class ToolService {
     };
   }
 
-  private inferToolkitAuthStrategy(provider: string, namespace: string): 'oauth2' | 'apiKey' | 'none' {
-    if (provider === 'composio' && ['gmail', 'slack', 'github'].includes(namespace)) return 'oauth2';
+  private inferToolkitAuthStrategy(provider: string, namespace: string, toolkit?: string): 'oauth2' | 'apiKey' | 'none' {
+    if (provider === 'composio' && ['gmail', 'slack', 'github'].includes(toolkit || namespace)) return 'oauth2';
     if (provider === 'builtin') return 'none';
     return 'apiKey';
   }
@@ -223,6 +293,7 @@ export class ToolService {
     provider: string;
     executionChannel?: string;
     namespace: string;
+    toolkit?: string;
     name: string;
     description?: string;
   }): Promise<void> {
@@ -238,9 +309,10 @@ export class ToolService {
             description: toolkitData.description || '',
             version: 'v1',
             status: 'active',
-            authStrategy: this.inferToolkitAuthStrategy(toolkitData.provider, toolkitData.namespace),
+            authStrategy: this.inferToolkitAuthStrategy(toolkitData.provider, toolkitData.namespace, toolkitData.toolkit),
             metadata: {
               source: 'tool-registry',
+              toolkit: toolkitData.toolkit || '',
             },
           },
           $setOnInsert: {
@@ -258,15 +330,17 @@ export class ToolService {
       .select({ id: 1, canonicalId: 1 })
       .lean()
       .exec();
-    const toolkitMap = new Map<string, { id: string; provider: string; executionChannel: string; namespace: string }>();
+    const toolkitMap = new Map<string, { id: string; provider: string; executionChannel: string; namespace: string; toolkit: string }>();
     for (const tool of tools as any[]) {
       const toolId = String(tool.canonicalId || tool.id || '').trim();
-      const provider = this.inferProviderFromToolId(toolId);
-      const executionChannel = this.inferExecutionChannel(toolId);
-      const namespace = this.inferNamespaceFromToolId(toolId);
-      const toolkitId = `${provider}.${namespace}`;
+      const identity = this.parseToolIdentity(toolId);
+      const provider = identity.provider;
+      const executionChannel = identity.executionChannel;
+      const namespace = identity.namespace;
+      const toolkit = identity.toolkit;
+      const toolkitId = identity.toolkitId;
       if (!toolkitId || !provider || !namespace) continue;
-      toolkitMap.set(toolkitId, { id: toolkitId, provider, executionChannel, namespace });
+      toolkitMap.set(toolkitId, { id: toolkitId, provider, executionChannel, namespace, toolkit });
     }
 
     for (const toolkit of toolkitMap.values()) {
@@ -275,8 +349,9 @@ export class ToolService {
         provider: toolkit.provider,
         executionChannel: toolkit.executionChannel,
         namespace: toolkit.namespace,
-        name: `${toolkit.provider}.${toolkit.namespace}`,
-        description: `Toolkit for ${toolkit.namespace} tools (${toolkit.provider})`,
+        toolkit: toolkit.toolkit,
+        name: this.getToolkitDisplayName(toolkit.toolkit),
+        description: `Toolkit for ${toolkit.namespace}/${toolkit.toolkit} (${toolkit.provider})`,
       });
     }
 
@@ -404,9 +479,10 @@ export class ToolService {
   private toToolView(tool: Tool) {
     const base = (tool as any)?.toObject ? (tool as any).toObject() : tool;
     const toolId = tool.canonicalId || tool.id;
-    const provider = this.inferProviderFromToolId(toolId);
-    const executionChannel = this.inferExecutionChannel(toolId);
-    const namespace = this.inferNamespaceFromToolId(toolId);
+    const identity = this.parseToolIdentity(toolId);
+    const provider = identity.provider;
+    const executionChannel = identity.executionChannel;
+    const namespace = identity.namespace;
     return {
       ...base,
       legacyToolId: tool.id,
@@ -414,10 +490,33 @@ export class ToolService {
       provider,
       executionChannel,
       namespace,
-      toolkitId: `${provider}.${namespace}`,
+      toolkitId: identity.toolkitId,
       capabilitySet: tool.capabilitySet || [],
       status: tool.status || 'active',
     };
+  }
+
+  private async alignStoredToolMetadata(): Promise<void> {
+    const tools = await this.toolModel
+      .find()
+      .select({ id: 1, canonicalId: 1, provider: 1, executionChannel: 1, namespace: 1, toolkitId: 1, resource: 1, action: 1 })
+      .lean()
+      .exec();
+
+    for (const tool of tools as any[]) {
+      const toolId = String(tool.canonicalId || tool.id || '').trim();
+      if (!toolId) continue;
+      const identity = this.parseToolIdentity(toolId);
+      const update: Record<string, unknown> = {};
+      if (String(tool.provider || '') !== identity.provider) update.provider = identity.provider;
+      if (String(tool.executionChannel || '') !== identity.executionChannel) update.executionChannel = identity.executionChannel;
+      if (String(tool.namespace || '') !== identity.namespace) update.namespace = identity.namespace;
+      if (String(tool.toolkitId || '') !== identity.toolkitId) update.toolkitId = identity.toolkitId;
+      if (String(tool.resource || '') !== identity.resource) update.resource = identity.resource;
+      if (String(tool.action || '') !== identity.action) update.action = identity.action;
+      if (!Object.keys(update).length) continue;
+      await this.toolModel.updateOne({ _id: (tool as any)._id }, { $set: update }).exec();
+    }
   }
 
   private toExecutionView(execution: ToolExecution) {
@@ -437,8 +536,21 @@ export class ToolService {
   private async initializeBuiltinTools() {
     const builtinTools = [
       {
-        id: 'builtin.internal.web.search',
-        name: 'Web Search',
+        id: 'builtin.web-retrieval.internal.web-search.exa',
+        name: 'Web Search Exa',
+        description: 'Search web information via Exa (auto + highlights compact)',
+        type: 'web_search' as const,
+        category: 'Information Retrieval',
+        requiredPermissions: [{ id: 'basic_web', name: 'Basic Web Access', level: 'basic' }],
+        tokenCost: 10,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: { query: 'string', maxResults: 'number' },
+        },
+      },
+      {
+        id: 'composio.web-retrieval.mcp.web-search.serp',
+        name: 'Web Search SERP',
         description: 'Search web information via Composio SERPAPI',
         type: 'web_search' as const,
         category: 'Information Retrieval',
@@ -450,7 +562,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.web.fetch',
+        id: 'builtin.web-retrieval.internal.web-fetch.fetch',
         name: 'Web Fetch',
         description: 'Fetch webpage content by URL and return clean text',
         type: 'web_search' as const,
@@ -463,7 +575,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.content.extract',
+        id: 'builtin.data-analysis.internal.content-analysis.extract',
         name: 'Content Extract',
         description: 'Extract clean text, key bullets and numeric rows from raw html or text',
         type: 'data_analysis' as const,
@@ -476,7 +588,7 @@ export class ToolService {
         },
       },
       {
-        id: 'composio.mcp.slack.sendMessage',
+        id: 'composio.communication.mcp.slack.send-message',
         name: 'Slack',
         description: 'Send Slack messages via Composio',
         type: 'api_call' as const,
@@ -489,7 +601,7 @@ export class ToolService {
         },
       },
       {
-        id: 'composio.mcp.gmail.sendEmail',
+        id: 'composio.communication.mcp.gmail.send-email',
         name: 'Gmail',
         description: 'Send or draft email via Composio',
         type: 'api_call' as const,
@@ -502,7 +614,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.repo.read',
+        id: 'builtin.sys-mg.internal.rd-related.repo-read',
         name: 'Repo Read',
         description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
         type: 'data_analysis' as const,
@@ -517,83 +629,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.docs.summary',
-        name: 'Code Docs MCP',
-        description: 'Summarize implemented core features from repository docs with evidence paths',
-        type: 'data_analysis' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
-        tokenCost: 4,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            query: 'string',
-            focus: 'string',
-            maxFeatures: 'number',
-            maxEvidencePerFeature: 'number',
-          },
-        },
-      },
-      {
-        id: 'builtin.mcp.updates.summary',
-        name: 'Code Updates MCP',
-        description: 'Summarize recent repository updates from git commits with evidence',
-        type: 'data_analysis' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
-        tokenCost: 4,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            hours: 'number',
-            limit: 'number',
-            includeFiles: 'boolean',
-            minSeverity: 'string',
-          },
-        },
-      },
-      {
-        id: 'builtin.gh.docs.summary',
-        name: 'GitHub Docs MCP',
-        description: 'Summarize implemented core features from GitHub repository docs with evidence paths',
-        type: 'data_analysis' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
-        tokenCost: 5,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            repo: 'string',
-            owner: 'string',
-            query: 'string',
-            focus: 'string',
-            maxFeatures: 'number',
-            maxEvidencePerFeature: 'number',
-          },
-        },
-      },
-      {
-        id: 'builtin.gh.updates.summary',
-        name: 'GitHub Updates MCP',
-        description: 'Summarize recent repository updates from GitHub with evidence',
-        type: 'data_analysis' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
-        tokenCost: 5,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            repo: 'string',
-            owner: 'string',
-            hours: 'number',
-            limit: 'number',
-            includeFiles: 'boolean',
-            minSeverity: 'string',
-          },
-        },
-      },
-      {
-        id: 'builtin.internal.docs.read',
+        id: 'builtin.sys-mg.internal.rd-related.docs-read',
         name: 'Code Docs Reader',
         description: 'Read raw documentation files from docs/ directory',
         type: 'data_analysis' as const,
@@ -609,7 +645,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.updates.read',
+        id: 'builtin.sys-mg.internal.rd-related.updates-read',
         name: 'Code Updates Reader',
         description: 'Read raw git commit history from repository',
         type: 'data_analysis' as const,
@@ -625,7 +661,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.agents.list',
+        id: 'builtin.sys-mg.internal.agent-admin.list-agents',
         name: 'Agents MCP List',
         description: 'List current agents, roles, and capability summaries from MCP visibility rules',
         type: 'data_analysis' as const,
@@ -638,7 +674,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.model.list',
+        id: 'builtin.sys-mg.mcp.model-admin.list-models',
         name: 'Model MCP List Models',
         description: 'List models currently available in system registry',
         type: 'data_analysis' as const,
@@ -654,25 +690,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.model.searchLatest',
-        name: 'Model MCP Search Latest',
-        description: 'Search latest model releases from internet and return normalized candidates',
-        type: 'web_search' as const,
-        category: 'Model Management',
-        requiredPermissions: [{ id: 'model_registry_read', name: 'Model Registry Read', level: 'basic' }],
-        tokenCost: 8,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            providers: 'string[]',
-            query: 'string',
-            maxResultsPerQuery: 'number',
-            limit: 'number',
-          },
-        },
-      },
-      {
-        id: 'builtin.mcp.model.add',
+        id: 'builtin.sys-mg.mcp.model-admin.add-model',
         name: 'Model MCP Add Model',
         description: 'Add a model into system model registry with deduplication',
         type: 'data_analysis' as const,
@@ -693,7 +711,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.memo.search',
+        id: 'builtin.sys-mg.internal.memory.search-memo',
         name: 'Memo MCP Search',
         description: 'Search agent memo memory with progressive loading summaries',
         type: 'data_analysis' as const,
@@ -712,7 +730,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.internal.memo.append',
+        id: 'builtin.sys-mg.internal.memory.append-memo',
         name: 'Memo MCP Append',
         description: 'Append or create memo entries for long-term memory',
         type: 'data_analysis' as const,
@@ -733,7 +751,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.humanOperationLog.list',
+        id: 'builtin.sys-mg.mcp.audit.list-human-operation-log',
         name: 'Human Operation Log MCP List',
         description: 'List operation logs for the human bound to the requesting exclusive assistant',
         type: 'data_analysis' as const,
@@ -755,7 +773,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.createPlan',
+        id: 'builtin.sys-mg.mcp.orchestration.create-plan',
         name: 'Orchestration Create Plan',
         description: 'Create orchestration plan from prompt in meeting workflow',
         type: 'api_call' as const,
@@ -774,7 +792,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.runPlan',
+        id: 'builtin.sys-mg.mcp.orchestration.run-plan',
         name: 'Orchestration Run Plan',
         description: 'Run an orchestration plan in meeting workflow',
         type: 'api_call' as const,
@@ -791,7 +809,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.getPlan',
+        id: 'builtin.sys-mg.mcp.orchestration.get-plan',
         name: 'Orchestration Get Plan',
         description: 'Get orchestration plan details',
         type: 'api_call' as const,
@@ -806,7 +824,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.listPlans',
+        id: 'builtin.sys-mg.mcp.orchestration.list-plans',
         name: 'Orchestration List Plans',
         description: 'List orchestration plans',
         type: 'api_call' as const,
@@ -819,7 +837,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.reassignTask',
+        id: 'builtin.sys-mg.mcp.orchestration.reassign-task',
         name: 'Orchestration Reassign Task',
         description: 'Reassign orchestration task executor',
         type: 'api_call' as const,
@@ -838,7 +856,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.orchestration.completeHumanTask',
+        id: 'builtin.sys-mg.mcp.orchestration.complete-human-task',
         name: 'Orchestration Complete Human Task',
         description: 'Mark waiting human task as completed',
         type: 'api_call' as const,
@@ -856,9 +874,9 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.meeting.list',
+        id: 'builtin.sys-mg.mcp.meeting.list-meetings',
         name: 'Meeting MCP List',
-        description: 'List current meetings in the organization',
+        description: 'List current meetings',
         type: 'data_analysis' as const,
         category: 'Meeting',
         requiredPermissions: [{ id: 'meeting_read', name: 'Meeting Read', level: 'basic' }],
@@ -872,7 +890,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.meeting.sendMessage',
+        id: 'builtin.sys-mg.mcp.meeting.send-message',
         name: 'Meeting MCP Send Message',
         description: 'Send a message to a specific meeting',
         type: 'api_call' as const,
@@ -889,7 +907,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.mcp.meeting.updateStatus',
+        id: 'builtin.sys-mg.mcp.meeting.update-status',
         name: 'Meeting MCP Update Status',
         description: 'Update meeting status (start/end/pause/resume)',
         type: 'api_call' as const,
@@ -963,8 +981,9 @@ export class ToolService {
           provider: metadata.provider,
           executionChannel: metadata.executionChannel,
           namespace: metadata.namespace,
-          name: `${metadata.provider}.${metadata.namespace}`,
-          description: `Toolkit for ${metadata.namespace} tools (${metadata.provider})`,
+          toolkit: this.inferToolkitFromToolId(metadata.canonicalId),
+          name: this.getToolkitDisplayName(this.inferToolkitFromToolId(metadata.canonicalId)),
+          description: `Toolkit for ${metadata.namespace}/${this.inferToolkitFromToolId(metadata.canonicalId)} (${metadata.provider})`,
         });
         this.logger.log(`已注册内置工具: ${toolData.name}`);
         continue;
@@ -993,11 +1012,13 @@ export class ToolService {
         provider: metadata.provider,
         executionChannel: metadata.executionChannel,
         namespace: metadata.namespace,
-        name: `${metadata.provider}.${metadata.namespace}`,
-        description: `Toolkit for ${metadata.namespace} tools (${metadata.provider})`,
+        toolkit: this.inferToolkitFromToolId(metadata.canonicalId),
+        name: this.getToolkitDisplayName(this.inferToolkitFromToolId(metadata.canonicalId)),
+        description: `Toolkit for ${metadata.namespace}/${this.inferToolkitFromToolId(metadata.canonicalId)} (${metadata.provider})`,
       });
     }
 
+    await this.alignStoredToolMetadata();
     await this.syncToolkitsFromTools();
 
     const implementedToolIds = new Set(this.getImplementedToolIds());
@@ -1021,152 +1042,6 @@ export class ToolService {
       this.logger.warn(`Persisted built-in tools without implementation: ${unresolvedPersisted.join(', ')}`);
     }
 
-    await this.migrateLegacyProviderToBuiltin();
-    await this.renameLegacyToolIds();
-  }
-
-  private readonly toolIdMapping: Record<string, string> = {
-    'internal.web.search': 'builtin.internal.web.search',
-    'internal.web.fetch': 'builtin.internal.web.fetch',
-    'internal.content.extract': 'builtin.internal.content.extract',
-    'composio.slack.sendMessage': 'composio.mcp.slack.sendMessage',
-    'composio.gmail.sendEmail': 'composio.mcp.gmail.sendEmail',
-    'internal.repo.read': 'builtin.internal.repo.read',
-    'internal.agents.list': 'builtin.internal.agents.list',
-    'mcp.docs.summary': 'builtin.mcp.docs.summary',
-    'mcp.updates.summary': 'builtin.mcp.updates.summary',
-    'internal.docs.read': 'builtin.internal.docs.read',
-    'internal.updates.read': 'builtin.internal.updates.read',
-    'mcp.model.list': 'builtin.mcp.model.list',
-    'mcp.model.searchLatest': 'builtin.mcp.model.searchLatest',
-    'mcp.model.add': 'builtin.mcp.model.add',
-    'mcp.humanOperationLog.list': 'builtin.mcp.humanOperationLog.list',
-    'internal.memo.search': 'builtin.internal.memo.search',
-    'internal.memo.append': 'builtin.internal.memo.append',
-    'mcp.orchestration.createPlan': 'builtin.mcp.orchestration.createPlan',
-    'mcp.orchestration.runPlan': 'builtin.mcp.orchestration.runPlan',
-    'mcp.orchestration.getPlan': 'builtin.mcp.orchestration.getPlan',
-    'mcp.orchestration.listPlans': 'builtin.mcp.orchestration.listPlans',
-    'mcp.orchestration.reassignTask': 'builtin.mcp.orchestration.reassignTask',
-    'mcp.orchestration.completeHumanTask': 'builtin.mcp.orchestration.completeHumanTask',
-    'gh-repo-docs-reader-mcp': 'builtin.gh.docs.summary',
-    'gh-repo-updates-mcp': 'builtin.gh.updates.summary',
-  };
-
-  private async renameLegacyToolIds(): Promise<void> {
-    const legacyTools = await this.toolModel.find({
-      $or: [
-        { id: { $in: Object.keys(this.toolIdMapping) } },
-        { canonicalId: { $in: Object.keys(this.toolIdMapping) } },
-      ],
-    }).lean().exec();
-
-    if (legacyTools.length === 0) return;
-
-    this.logger.log(`Renaming ${legacyTools.length} legacy tool IDs to new format`);
-
-    for (const tool of legacyTools as any[]) {
-      const oldToolId = tool.id;
-      const oldCanonicalId = tool.canonicalId;
-      const newToolId = this.toolIdMapping[oldToolId] || this.toolIdMapping[oldCanonicalId];
-      if (!newToolId) continue;
-
-      const existingWithNewId = await this.toolModel.findOne({ 
-        $or: [{ id: newToolId }, { canonicalId: newToolId }] 
-      }).lean().exec();
-      
-      if (existingWithNewId) {
-        this.logger.log(`Target ID ${newToolId} already exists, removing old duplicate and keeping new`);
-        await this.toolModel.deleteOne({ _id: existingWithNewId._id });
-      }
-
-      const newProvider = this.inferProviderFromToolId(newToolId);
-      const newExecutionChannel = this.inferExecutionChannel(newToolId);
-      const newNamespace = this.inferNamespaceFromToolId(newToolId);
-      const newToolkitId = `${newProvider}.${newNamespace}`;
-
-      await this.toolModel.updateOne(
-        { _id: tool._id },
-        {
-          $set: {
-            id: newToolId,
-            canonicalId: newToolId,
-            provider: newProvider,
-            executionChannel: newExecutionChannel,
-            namespace: newNamespace,
-            toolkitId: newToolkitId,
-          },
-        },
-      );
-      this.logger.log(`Renamed tool: ${oldToolId} -> ${newToolId}`);
-    }
-
-    const legacyToolkitIds = Object.keys(this.toolIdMapping).map(id => {
-      const parts = id.split('.');
-      return parts.slice(0, 2).join('.');
-    });
-    const uniqueLegacyToolkitIds = [...new Set(legacyToolkitIds)];
-
-    for (const oldToolkitId of uniqueLegacyToolkitIds) {
-      const newToolkitId = this.toolIdMapping[oldToolkitId] || oldToolkitId.replace(/^(composio|internal|mcp)\./, (match) => {
-        if (match === 'composio.') return 'composio.mcp.';
-        if (match === 'internal.') return 'builtin.internal.';
-        if (match === 'mcp.') return 'builtin.mcp.';
-        return match;
-      });
-
-      const toolkit = await this.toolkitModel.findOne({ id: oldToolkitId }).lean().exec();
-      if (toolkit) {
-        const newProvider = this.inferProviderFromToolId(newToolkitId);
-        const newExecutionChannel = this.inferExecutionChannel(newToolkitId);
-        const newNamespace = this.inferNamespaceFromToolId(newToolkitId);
-
-        await this.toolkitModel.updateOne(
-          { _id: toolkit._id },
-          {
-            $set: {
-              id: newToolkitId,
-              provider: newProvider,
-              executionChannel: newExecutionChannel,
-              namespace: newNamespace,
-            },
-          },
-        );
-        this.logger.log(`Renamed toolkit: ${oldToolkitId} -> ${newToolkitId}`);
-      }
-    }
-
-    this.logger.log('Legacy tool ID renaming completed');
-  }
-
-  private async migrateLegacyProviderToBuiltin(): Promise<void> {
-    const allTools = await this.toolModel.find({}).lean().exec();
-    if (allTools.length === 0) return;
-
-    this.logger.log(`Migrating ${allTools.length} tools to new provider/executionChannel schema`);
-
-    for (const tool of allTools as any[]) {
-      const toolId = String(tool.canonicalId || tool.id || '').trim();
-      const newProvider = this.inferProviderFromToolId(toolId);
-      const newExecutionChannel = this.inferExecutionChannel(toolId);
-      await this.toolModel.updateOne(
-        { _id: tool._id },
-        { $set: { provider: newProvider, executionChannel: newExecutionChannel } },
-      );
-    }
-
-    const allToolkits = await this.toolkitModel.find({}).lean().exec();
-    for (const toolkit of allToolkits as any[]) {
-      const toolkitId = String(toolkit.id || '').trim();
-      const newProvider = this.inferProviderFromToolId(toolkitId);
-      const newExecutionChannel = this.inferExecutionChannel(toolkitId);
-      await this.toolkitModel.updateOne(
-        { _id: toolkit._id },
-        { $set: { provider: newProvider, executionChannel: newExecutionChannel } },
-      );
-    }
-
-    this.logger.log('Provider/executionChannel migration completed');
   }
 
   async getAllTools(): Promise<Tool[]> {
@@ -1230,21 +1105,19 @@ export class ToolService {
     return tools
       .map((tool) => {
         const toolId = tool.canonicalId || tool.id;
-        const inferredProvider = this.inferProviderFromToolId(toolId);
-        const inferredExecutionChannel = this.inferExecutionChannel(toolId);
-        const inferredNamespace = this.inferNamespaceFromToolId(toolId);
+        const identity = this.parseToolIdentity(toolId);
         return {
           legacyToolId: tool.id,
           toolId,
           name: tool.name,
           description: tool.description,
           category: tool.category,
-          provider: inferredProvider,
-          executionChannel: inferredExecutionChannel,
-          toolkitId: `${inferredProvider}.${inferredNamespace}`,
-          namespace: inferredNamespace,
-          resource: tool.resource,
-          action: tool.action,
+          provider: identity.provider,
+          executionChannel: identity.executionChannel,
+          toolkitId: identity.toolkitId,
+          namespace: identity.namespace,
+          resource: tool.resource || identity.resource,
+          action: tool.action || identity.action,
           enabled: tool.enabled !== false,
           type: tool.type,
           requiredPermissions: tool.requiredPermissions || [],
@@ -1371,9 +1244,10 @@ export class ToolService {
 
   async createTool(toolData: Omit<Tool, 'id' | 'createdAt' | 'updatedAt'>): Promise<Tool> {
     const canonicalId = toolData.canonicalId || `internal.custom.${uuidv4().slice(0, 8)}`;
-    const provider = toolData.provider || this.inferProviderFromToolId(canonicalId);
-    const executionChannel = toolData.executionChannel || this.inferExecutionChannel(canonicalId);
-    const namespace = toolData.namespace || this.inferNamespaceFromToolId(canonicalId);
+    const identity = this.parseToolIdentity(canonicalId);
+    const provider = toolData.provider || identity.provider;
+    const executionChannel = toolData.executionChannel || identity.executionChannel;
+    const namespace = toolData.namespace || identity.namespace;
     const { resource, action } = this.inferResourceAndAction(canonicalId);
     const newTool = new this.toolModel({
       ...toolData,
@@ -1384,7 +1258,7 @@ export class ToolService {
       namespace,
       resource: toolData.resource || resource,
       action: toolData.action || action,
-      toolkitId: toolData.toolkitId || `${provider}.${namespace}`,
+      toolkitId: toolData.toolkitId || this.inferToolkitIdFromToolId(canonicalId),
       status: toolData.status || 'active',
       aliases: toolData.aliases || [],
       inputSchema: toolData.inputSchema || toolData.implementation?.parameters || {},
@@ -1571,61 +1445,53 @@ export class ToolService {
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
     switch (tool.id) {
-      case 'builtin.internal.web.search':
-        return this.performWebSearch(parameters, agentId);
-      case 'builtin.internal.web.fetch':
-        return this.performWebFetch(parameters);
-      case 'builtin.internal.content.extract':
-        return this.performContentExtract(parameters);
-      case 'composio.mcp.slack.sendMessage':
+      case 'builtin.web-retrieval.internal.web-search.exa':
+        return this.webToolsService.performWebSearchExa(parameters);
+      case 'composio.web-retrieval.mcp.web-search.serp':
+        return this.webToolsService.performWebSearchSerp(parameters, agentId);
+      case 'builtin.web-retrieval.internal.web-fetch.fetch':
+        return this.webToolsService.performWebFetch(parameters);
+      case 'builtin.data-analysis.internal.content-analysis.extract':
+        return this.webToolsService.performContentExtract(parameters);
+      case 'composio.communication.mcp.slack.send-message':
         return this.sendSlackMessage(parameters, agentId);
-      case 'composio.mcp.gmail.sendEmail':
+      case 'composio.communication.mcp.gmail.send-email':
         return this.sendGmail(parameters, agentId);
-      case 'builtin.internal.repo.read':
+      case 'builtin.sys-mg.internal.rd-related.repo-read':
         return this.executeRepoRead(parameters);
-      case 'builtin.internal.agents.list':
+      case 'builtin.sys-mg.internal.agent-admin.list-agents':
         return this.getAgentsMcpList(parameters);
-      case 'builtin.mcp.docs.summary':
-        return this.getCodeDocsMcp(parameters);
-      case 'builtin.mcp.updates.summary':
-        return this.getCodeUpdatesMcp(parameters);
-      case 'builtin.gh.docs.summary':
-        return this.getGhRepoDocsMcp(parameters);
-      case 'builtin.gh.updates.summary':
-        return this.getGhRepoUpdatesMcp(parameters);
-      case 'builtin.internal.docs.read':
+      case 'builtin.sys-mg.internal.rd-related.docs-read':
         return this.getCodeDocsReader(parameters);
-      case 'builtin.internal.updates.read':
+      case 'builtin.sys-mg.internal.rd-related.updates-read':
         return this.getCodeUpdatesReader(parameters);
-      case 'builtin.mcp.model.list':
+      case 'builtin.sys-mg.mcp.model-admin.list-models':
         return this.listSystemModels(parameters);
-      case 'builtin.mcp.model.searchLatest':
-        return this.searchLatestModels(parameters, agentId);
-      case 'builtin.mcp.model.add':
+      case 'builtin.sys-mg.mcp.model-admin.add-model':
         return this.addModelToSystem(parameters);
-      case 'builtin.mcp.humanOperationLog.list':
+      case 'builtin.sys-mg.mcp.audit.list-human-operation-log':
         return this.listHumanOperationLogs(parameters, agentId);
-      case 'builtin.internal.memo.search':
+      case 'builtin.sys-mg.internal.memory.search-memo':
         return this.searchMemoMemory(parameters, agentId);
-      case 'builtin.internal.memo.append':
+      case 'builtin.sys-mg.internal.memory.append-memo':
         return this.appendMemoMemory(parameters, agentId);
-      case 'builtin.mcp.orchestration.createPlan':
+      case 'builtin.sys-mg.mcp.orchestration.create-plan':
         return this.createOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.mcp.orchestration.runPlan':
+      case 'builtin.sys-mg.mcp.orchestration.run-plan':
         return this.runOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.mcp.orchestration.getPlan':
+      case 'builtin.sys-mg.mcp.orchestration.get-plan':
         return this.getOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.mcp.orchestration.listPlans':
+      case 'builtin.sys-mg.mcp.orchestration.list-plans':
         return this.listOrchestrationPlans(parameters, agentId, executionContext);
-      case 'builtin.mcp.orchestration.reassignTask':
+      case 'builtin.sys-mg.mcp.orchestration.reassign-task':
         return this.reassignOrchestrationTask(parameters, agentId, executionContext);
-      case 'builtin.mcp.orchestration.completeHumanTask':
+      case 'builtin.sys-mg.mcp.orchestration.complete-human-task':
         return this.completeOrchestrationHumanTask(parameters, agentId, executionContext);
-      case 'builtin.mcp.meeting.list':
+      case 'builtin.sys-mg.mcp.meeting.list-meetings':
         return this.listMeetings(parameters, agentId, executionContext);
-      case 'builtin.mcp.meeting.sendMessage':
+      case 'builtin.sys-mg.mcp.meeting.send-message':
         return this.sendMeetingMessage(parameters, agentId, executionContext);
-      case 'builtin.mcp.meeting.updateStatus':
+      case 'builtin.sys-mg.mcp.meeting.update-status':
         return this.updateMeetingStatus(parameters, agentId, executionContext);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
@@ -1634,34 +1500,30 @@ export class ToolService {
 
   private getImplementedToolIds(): string[] {
     return [
-      'builtin.internal.web.search',
-      'builtin.internal.web.fetch',
-      'builtin.internal.content.extract',
-      'composio.mcp.slack.sendMessage',
-      'composio.mcp.gmail.sendEmail',
-      'builtin.internal.repo.read',
-      'builtin.internal.agents.list',
-      'builtin.mcp.docs.summary',
-      'builtin.mcp.updates.summary',
-      'builtin.gh.docs.summary',
-      'builtin.gh.updates.summary',
-      'builtin.internal.docs.read',
-      'builtin.internal.updates.read',
-      'builtin.mcp.model.list',
-      'builtin.mcp.model.searchLatest',
-      'builtin.mcp.model.add',
-      'builtin.mcp.humanOperationLog.list',
-      'builtin.internal.memo.search',
-      'builtin.internal.memo.append',
-      'builtin.mcp.orchestration.createPlan',
-      'builtin.mcp.orchestration.runPlan',
-      'builtin.mcp.orchestration.getPlan',
-      'builtin.mcp.orchestration.listPlans',
-      'builtin.mcp.orchestration.reassignTask',
-      'builtin.mcp.orchestration.completeHumanTask',
-      'builtin.mcp.meeting.list',
-      'builtin.mcp.meeting.sendMessage',
-      'builtin.mcp.meeting.updateStatus',
+      'builtin.web-retrieval.internal.web-search.exa',
+      'composio.web-retrieval.mcp.web-search.serp',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'builtin.data-analysis.internal.content-analysis.extract',
+      'composio.communication.mcp.slack.send-message',
+      'composio.communication.mcp.gmail.send-email',
+      'builtin.sys-mg.internal.rd-related.repo-read',
+      'builtin.sys-mg.internal.agent-admin.list-agents',
+      'builtin.sys-mg.internal.rd-related.docs-read',
+      'builtin.sys-mg.internal.rd-related.updates-read',
+      'builtin.sys-mg.mcp.model-admin.list-models',
+      'builtin.sys-mg.mcp.model-admin.add-model',
+      'builtin.sys-mg.mcp.audit.list-human-operation-log',
+      'builtin.sys-mg.internal.memory.search-memo',
+      'builtin.sys-mg.internal.memory.append-memo',
+      'builtin.sys-mg.mcp.orchestration.create-plan',
+      'builtin.sys-mg.mcp.orchestration.run-plan',
+      'builtin.sys-mg.mcp.orchestration.get-plan',
+      'builtin.sys-mg.mcp.orchestration.list-plans',
+      'builtin.sys-mg.mcp.orchestration.reassign-task',
+      'builtin.sys-mg.mcp.orchestration.complete-human-task',
+      'builtin.sys-mg.mcp.meeting.list-meetings',
+      'builtin.sys-mg.mcp.meeting.send-message',
+      'builtin.sys-mg.mcp.meeting.update-status',
     ];
   }
 
@@ -2098,147 +1960,12 @@ export class ToolService {
     return value;
   }
 
-  private inferProvider(text: string): string {
-    const value = text.toLowerCase();
-    if (value.includes('openai') || value.includes('gpt-') || /\bo1\b/.test(value)) return 'openai';
-    if (value.includes('anthropic') || value.includes('claude-')) return 'anthropic';
-    if (value.includes('google') || value.includes('gemini-')) return 'google';
-    if (value.includes('moonshot') || value.includes('kimi-')) return 'moonshot';
-    if (value.includes('deepseek')) return 'deepseek';
-    if (value.includes('mistral')) return 'mistral';
-    if (value.includes('meta') || value.includes('llama-')) return 'meta';
-    if (value.includes('alibaba') || value.includes('qwen')) return 'alibaba';
-    if (value.includes('xai') || value.includes('grok')) return 'xai';
-    return 'custom';
-  }
-
-  private extractCandidateModels(text: string): Array<{ model: string; provider: string }> {
-    const regex =
-      /(gpt-[a-z0-9.\-]+|o1[a-z0-9.\-]*|claude-[a-z0-9.\-]+|gemini-[a-z0-9.\-]+|deepseek-[a-z0-9.\-]+|qwen[a-z0-9.\-]*|llama-[a-z0-9.\-]+|kimi-[a-z0-9.\-]+|moonshot-[a-z0-9.\-]+|mistral-[a-z0-9.\-]+|grok-[a-z0-9.\-]+)/gi;
-    const matches = text.match(regex) || [];
-    const unique = Array.from(new Set(matches.map((item) => item.toLowerCase())));
-    return unique.map((model) => ({
-      model,
-      provider: this.inferProvider(model),
-    }));
-  }
-
   private toModelDisplayName(model: string): string {
     return model
       .split('-')
       .filter(Boolean)
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
-  }
-
-  private async searchLatestModels(
-    params: { providers?: string[]; query?: string; maxResultsPerQuery?: number; limit?: number },
-    userId?: string,
-  ): Promise<any> {
-    const maxResultsPerQuery = Math.max(3, Math.min(Number(params?.maxResultsPerQuery || 10), 20));
-    const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
-    const providers = (params?.providers || [])
-      .map((provider) => this.normalizeProvider(provider))
-      .filter(Boolean);
-    const defaultProviders = ['openai', 'anthropic', 'google', 'moonshot', 'deepseek', 'mistral', 'meta', 'alibaba'];
-    const providerTargets = providers.length ? providers : defaultProviders;
-
-    const queries = params?.query?.trim()
-      ? [params.query.trim()]
-      : providerTargets.map(
-          (provider) => `${provider} latest AI model release official announcement ${new Date().getFullYear()}`,
-        );
-
-    const settled = await Promise.allSettled(
-      queries.map((query) => this.composioService.webSearch(query, maxResultsPerQuery, userId)),
-    );
-
-    const candidates: Array<{
-      provider: string;
-      model: string;
-      name: string;
-      sourceTitle: string;
-      sourceUrl: string;
-      snippet?: string;
-      confidence: 'low' | 'medium' | 'high';
-    }> = [];
-    const failedQueries: Array<{ query: string; error: string }> = [];
-
-    settled.forEach((item, index) => {
-      const query = queries[index];
-      if (item.status !== 'fulfilled' || !item.value?.successful) {
-        failedQueries.push({
-          query,
-          error:
-            item.status === 'fulfilled'
-              ? item.value?.error || 'Search failed'
-              : item.reason instanceof Error
-                ? item.reason.message
-                : 'Search failed',
-        });
-        return;
-      }
-
-      const raw = item.value?.data || {};
-      const rows = raw?.organic || raw?.results?.organic_results || raw?.results || [];
-      const organicResults = Array.isArray(rows) ? rows : [];
-
-      for (const row of organicResults) {
-        const title = String(row?.title || '').trim();
-        const url = String(row?.link || row?.url || '').trim();
-        const snippet = String(row?.snippet || '').trim();
-        const joined = `${title} ${snippet}`.trim();
-        if (!joined) continue;
-
-        const extracted = this.extractCandidateModels(joined);
-        for (const candidate of extracted) {
-          const inferred = this.normalizeProvider(candidate.provider || this.inferProvider(`${joined} ${url}`));
-          const confidence =
-            url.includes('openai.com') ||
-            url.includes('anthropic.com') ||
-            url.includes('google.com') ||
-            url.includes('deepseek.com') ||
-            url.includes('moonshot.cn')
-              ? 'high'
-              : snippet.toLowerCase().includes('official')
-                ? 'medium'
-                : 'low';
-
-          candidates.push({
-            provider: inferred,
-            model: candidate.model,
-            name: this.toModelDisplayName(candidate.model),
-            sourceTitle: title,
-            sourceUrl: url,
-            snippet,
-            confidence,
-          });
-        }
-      }
-    });
-
-    const dedupMap = new Map<string, (typeof candidates)[number]>();
-    for (const candidate of candidates) {
-      const key = `${candidate.provider}:${candidate.model}`;
-      const existing = dedupMap.get(key);
-      if (!existing) {
-        dedupMap.set(key, candidate);
-        continue;
-      }
-      if (existing.confidence !== 'high' && candidate.confidence === 'high') {
-        dedupMap.set(key, candidate);
-      }
-    }
-
-    const normalized = Array.from(dedupMap.values()).slice(0, limit);
-
-    return {
-      searchedAt: new Date().toISOString(),
-      queryCount: queries.length,
-      failedQueries,
-      totalCandidates: normalized.length,
-      candidates: normalized,
-    };
   }
 
   private async addModelToSystem(params: {
@@ -2509,329 +2236,6 @@ export class ToolService {
     return map;
   }
 
-  private async getCodeDocsMcp(params: {
-    query?: string;
-    focus?: string;
-    maxFeatures?: number;
-    maxEvidencePerFeature?: number;
-  }): Promise<any> {
-    const maxFeatures = Math.max(1, Math.min(Number(params?.maxFeatures || 8), 20));
-    const maxEvidencePerFeature = Math.max(1, Math.min(Number(params?.maxEvidencePerFeature || 3), 6));
-    const workspaceRoot = await this.resolveWorkspaceRoot();
-    const targetFiles = [
-      'README.md',
-      'FEATURES.md',
-      'docs/features/FUNCTIONS.md',
-      'docs/overview/README.md',
-      'docs/README.md',
-      'docs/guide/USER_GUIDE.md',
-    ];
-
-    const candidates: CodeDocsMcpFeatureCandidate[] = [];
-    const loadedFiles: string[] = [];
-
-    for (const relativePath of targetFiles) {
-      const absolutePath = path.join(workspaceRoot, relativePath);
-      const exists = await this.fileExists(absolutePath);
-      if (!exists) continue;
-
-      const content = await readFile(absolutePath, 'utf8');
-      loadedFiles.push(relativePath);
-      candidates.push(...buildCodeDocsMcpSummary.collectCandidatesFromMarkdown(content, relativePath));
-    }
-
-    if (!loadedFiles.length) {
-      return {
-        query: params?.query || '',
-        focus: params?.focus || 'core_features',
-        analyzedFiles: [],
-        coreFeatures: [],
-        unknownBoundary: ['仓库 docs 未找到可读取的目标文档，暂无法盘点核心功能。'],
-        generatedAt: new Date().toISOString(),
-      };
-    }
-
-    const summary = buildCodeDocsMcpSummary.summarizeFeatures(candidates, {
-      query: params?.query,
-      maxFeatures,
-      maxEvidencePerFeature,
-    });
-
-    return {
-      query: params?.query || '',
-      focus: params?.focus || 'core_features',
-      analyzedFiles: loadedFiles,
-      coreFeatures: summary.features,
-      unknownBoundary: summary.unknownBoundary,
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async getCodeUpdatesMcp(params: {
-    hours?: number;
-    limit?: number;
-    includeFiles?: boolean;
-    minSeverity?: 'high' | 'medium' | 'low';
-  }): Promise<any> {
-    const hours = Math.max(1, Math.min(Number(params?.hours || 24), 168));
-    const limit = Math.max(1, Math.min(Number(params?.limit || 10), 30));
-    const includeFiles = params?.includeFiles !== false;
-    const minSeverity = ['high', 'medium', 'low'].includes(String(params?.minSeverity || '').toLowerCase())
-      ? (String(params?.minSeverity).toLowerCase() as 'high' | 'medium' | 'low')
-      : 'medium';
-
-    const workspaceRoot = await this.resolveWorkspaceRoot();
-    const hasGit = await this.fileExists(path.join(workspaceRoot, '.git'));
-    if (!hasGit) {
-      return {
-        hours,
-        limit,
-        commits: [],
-        majorUpdates: [],
-        unknownBoundary: ['当前运行目录无 .git 信息，无法统计最近更新。'],
-        minSeverity,
-        generatedAt: new Date().toISOString(),
-      };
-    }
-
-    const sinceArg = `${hours} hours ago`;
-    const logFormat = '%H%x1f%h%x1f%an%x1f%aI%x1f%s%x1e';
-    const { stdout } = await execFileAsync(
-      'git',
-      ['log', `--since=${sinceArg}`, '--date=iso-strict', `--format=${logFormat}`, '-n', String(limit)],
-      { cwd: workspaceRoot },
-    );
-
-    const commits = this.parseCodeUpdatesCommits(stdout || '');
-    const commitsWithFiles: CodeUpdatesMcpCommit[] = [];
-
-    for (const commit of commits) {
-      if (includeFiles) {
-        const files = await this.getCommitFiles(workspaceRoot, commit.hash);
-        commitsWithFiles.push({ ...commit, files });
-      } else {
-        commitsWithFiles.push({ ...commit, files: [] });
-      }
-    }
-
-    const summary = buildCodeUpdatesMcpSummary.summarize(commitsWithFiles, { limit, minSeverity });
-    return {
-      hours,
-      limit,
-      minSeverity,
-      commits: commitsWithFiles,
-      majorUpdates: summary.majorUpdates,
-      unknownBoundary: summary.unknownBoundary,
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async getGhRepoDocsMcp(params: {
-    repo?: string;
-    owner?: string;
-    query?: string;
-    focus?: string;
-    maxFeatures?: number;
-    maxEvidencePerFeature?: number;
-  }): Promise<any> {
-    const owner = params?.owner?.trim();
-    const repo = params?.repo?.trim();
-    const maxFeatures = Math.max(1, Math.min(Number(params?.maxFeatures || 8), 20));
-    const maxEvidencePerFeature = Math.max(1, Math.min(Number(params?.maxEvidencePerFeature || 3), 6));
-
-    if (!owner || !repo) {
-      return {
-        query: params?.query || '',
-        focus: params?.focus || 'core_features',
-        analyzedFiles: [],
-        coreFeatures: [],
-        unknownBoundary: ['GitHub docs reader requires owner and repo parameters.'],
-        generatedAt: new Date().toISOString(),
-      };
-    }
-
-    const targetFiles = [
-      'README.md',
-      'FEATURES.md',
-      'docs/features/FUNCTIONS.md',
-      'docs/overview/README.md',
-      'docs/README.md',
-      'docs/guide/USER_GUIDE.md',
-    ];
-
-    const candidates: CodeDocsMcpFeatureCandidate[] = [];
-    const loadedFiles: string[] = [];
-
-    for (const filePath of targetFiles) {
-      try {
-        const content = await this.fetchGhFileContent(owner, repo, filePath);
-        if (content) {
-          loadedFiles.push(`${owner}/${repo}/${filePath}`);
-          candidates.push(...buildCodeDocsMcpSummary.collectCandidatesFromMarkdown(content, filePath));
-        }
-      } catch (error) {
-        this.logger.warn(`Failed to fetch ${filePath} from ${owner}/${repo}: ${error}`);
-      }
-    }
-
-    if (!loadedFiles.length) {
-      return {
-        query: params?.query || '',
-        focus: params?.focus || 'core_features',
-        analyzedFiles: [],
-        coreFeatures: [],
-        unknownBoundary: [`无法从 GitHub 仓库 ${owner}/${repo} 获取文档内容。`],
-        generatedAt: new Date().toISOString(),
-      };
-    }
-
-    const summary = buildCodeDocsMcpSummary.summarizeFeatures(candidates, {
-      query: params?.query,
-      maxFeatures,
-      maxEvidencePerFeature,
-    });
-
-    return {
-      query: params?.query || '',
-      focus: params?.focus || 'core_features',
-      analyzedFiles: loadedFiles,
-      coreFeatures: summary.features,
-      unknownBoundary: summary.unknownBoundary,
-      generatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async getGhRepoUpdatesMcp(params: {
-    repo?: string;
-    owner?: string;
-    hours?: number;
-    limit?: number;
-    includeFiles?: boolean;
-    minSeverity?: 'high' | 'medium' | 'low';
-  }): Promise<any> {
-    const owner = params?.owner?.trim();
-    const repo = params?.repo?.trim();
-    const hours = Math.max(1, Math.min(Number(params?.hours || 24), 168));
-    const limit = Math.max(1, Math.min(Number(params?.limit || 10), 30));
-    const includeFiles = params?.includeFiles !== false;
-    const minSeverity = ['high', 'medium', 'low'].includes(String(params?.minSeverity || '').toLowerCase())
-      ? (String(params?.minSeverity).toLowerCase() as 'high' | 'medium' | 'low')
-      : 'medium';
-
-    if (!owner || !repo) {
-      return {
-        hours,
-        limit,
-        commits: [],
-        majorUpdates: [],
-        unknownBoundary: ['GitHub updates reader requires owner and repo parameters.'],
-        minSeverity,
-        generatedAt: new Date().toISOString(),
-      };
-    }
-
-    try {
-      const sinceDate = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-      const commits = await this.fetchGhCommits(owner, repo, sinceDate, limit);
-
-      const commitsWithFiles: CodeUpdatesMcpCommit[] = [];
-      for (const commit of commits) {
-        if (includeFiles) {
-          try {
-            const files = await this.fetchGhCommitFiles(owner, repo, commit.sha);
-            commitsWithFiles.push({
-              hash: commit.sha,
-              shortHash: commit.sha.substring(0, 7),
-              author: commit.commit.author.name,
-              committedAt: commit.commit.author.date,
-              subject: commit.commit.message.split('\n')[0],
-              files,
-            });
-          } catch {
-            commitsWithFiles.push({
-              hash: commit.sha,
-              shortHash: commit.sha.substring(0, 7),
-              author: commit.commit.author.name,
-              committedAt: commit.commit.author.date,
-              subject: commit.commit.message.split('\n')[0],
-              files: [],
-            });
-          }
-        } else {
-          commitsWithFiles.push({
-            hash: commit.sha,
-            shortHash: commit.sha.substring(0, 7),
-            author: commit.commit.author.name,
-            committedAt: commit.commit.author.date,
-            subject: commit.commit.message.split('\n')[0],
-            files: [],
-          });
-        }
-      }
-
-      const summary = buildCodeUpdatesMcpSummary.summarize(commitsWithFiles, { limit, minSeverity });
-      return {
-        hours,
-        limit,
-        minSeverity,
-        commits: commitsWithFiles,
-        majorUpdates: summary.majorUpdates,
-        unknownBoundary: summary.unknownBoundary,
-        generatedAt: new Date().toISOString(),
-      };
-    } catch (error) {
-      return {
-        hours,
-        limit,
-        commits: [],
-        majorUpdates: [],
-        unknownBoundary: [`从 GitHub 获取更新失败: ${error}`],
-        minSeverity,
-        generatedAt: new Date().toISOString(),
-      };
-    }
-  }
-
-  private async fetchGhFileContent(owner: string, repo: string, path: string): Promise<string | null> {
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    const response = await axios.get(url, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'AI-Agent-Team',
-      },
-      timeout: 10000,
-    });
-    if (response.data && response.data.content) {
-      return Buffer.from(response.data.content, 'base64').toString('utf-8');
-    }
-    return null;
-  }
-
-  private async fetchGhCommits(owner: string, repo: string, since: string, limit: number): Promise<any[]> {
-    const url = `https://api.github.com/repos/${owner}/${repo}/commits`;
-    const response = await axios.get(url, {
-      params: { since, per_page: limit },
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'AI-Agent-Team',
-      },
-      timeout: 10000,
-    });
-    return response.data || [];
-  }
-
-  private async fetchGhCommitFiles(owner: string, repo: string, sha: string): Promise<string[]> {
-    const url = `https://api.github.com/repos/${owner}/${repo}/commits/${sha}`;
-    const response = await axios.get(url, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'AI-Agent-Team',
-      },
-      timeout: 10000,
-    });
-    return (response.data.files || []).map((f: any) => f.filename);
-  }
-
   private async getCodeDocsReader(params: {
     focus?: string;
     maxFiles?: number;
@@ -3029,189 +2433,6 @@ export class ToolService {
     }
   }
 
-  private parseCodeUpdatesCommits(raw: string): CodeUpdatesMcpCommit[] {
-    const rows = raw
-      .split('\x1e')
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    const result: CodeUpdatesMcpCommit[] = [];
-    for (const row of rows) {
-      const [hash, shortHash, author, committedAt, subject] = row.split('\x1f');
-      if (!hash) continue;
-      result.push({
-        hash: (hash || '').trim(),
-        shortHash: (shortHash || '').trim(),
-        author: (author || '').trim(),
-        committedAt: (committedAt || '').trim(),
-        subject: (subject || '').trim(),
-        files: [],
-      });
-    }
-    return result;
-  }
-
-  private async getCommitFiles(workspaceRoot: string, hash: string): Promise<string[]> {
-    try {
-      const { stdout } = await execFileAsync('git', ['show', '--name-only', '--pretty=format:', hash], {
-        cwd: workspaceRoot,
-      });
-      return (stdout || '')
-        .split(/\r?\n/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-        .slice(0, 100);
-    } catch {
-      return [];
-    }
-  }
-
-  private async performWebSearch(params: { query: string; maxResults?: number }, userId?: string): Promise<any> {
-    if (!params?.query) {
-      throw new Error('websearch requires parameter: query');
-    }
-
-    const result = await this.composioService.webSearch(params.query, params.maxResults || 10, userId);
-    if (!result.successful) {
-      throw new Error(result.error || 'Composio websearch failed');
-    }
-
-    const raw = result.data || {};
-    const rows = raw?.organic || raw?.results?.organic_results || raw?.results || [];
-    const organicResults = Array.isArray(rows) ? rows : [];
-
-    return {
-      query: params.query,
-      provider: 'composio/serpapi',
-      results: organicResults.map((item: any) => ({
-        title: item.title,
-        url: item.link,
-        snippet: item.snippet,
-        date: item.date,
-      })),
-      totalResults: organicResults.length,
-      raw,
-    };
-  }
-
-  private async performWebFetch(params: { url: string; maxChars?: number; timeoutMs?: number }): Promise<any> {
-    const url = String(params?.url || '').trim();
-    if (!url) {
-      throw new Error('webfetch requires parameter: url');
-    }
-    if (!/^https?:\/\//i.test(url)) {
-      throw new Error('webfetch requires http/https url');
-    }
-
-    const timeoutMs = Math.min(Math.max(Number(params?.timeoutMs || 12000), 3000), 30000);
-    const maxChars = Math.min(Math.max(Number(params?.maxChars || 12000), 1000), 50000);
-
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
-        headers: {
-          'user-agent': 'ai-agent-team-webfetch/1.0',
-          accept: 'text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`webfetch failed with status ${response.status}`);
-      }
-
-      const contentType = (response.headers.get('content-type') || '').toLowerCase();
-      const raw = await response.text();
-      const cleanText = this.extractCleanText(raw);
-      const truncated = cleanText.length > maxChars;
-
-      return {
-        url,
-        status: response.status,
-        contentType,
-        title: this.extractHtmlTitle(raw),
-        content: truncated ? cleanText.slice(0, maxChars) : cleanText,
-        contentLength: cleanText.length,
-        truncated,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'webfetch unknown error';
-      throw new Error(`webfetch failed: ${message}`);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  private async performContentExtract(params: {
-    content: string;
-    maxBullets?: number;
-    maxNumericRows?: number;
-  }): Promise<any> {
-    const rawContent = String(params?.content || '').trim();
-    if (!rawContent) {
-      throw new Error('content_extract requires parameter: content');
-    }
-
-    const text = this.extractCleanText(rawContent);
-    const lines = text
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    const maxBullets = Math.min(Math.max(Number(params?.maxBullets || 8), 3), 20);
-    const maxNumericRows = Math.min(Math.max(Number(params?.maxNumericRows || 12), 3), 30);
-
-    const bullets = lines
-      .filter((line) => line.length >= 18)
-      .slice(0, maxBullets)
-      .map((line) => `- ${line}`);
-
-    const numericRows = lines
-      .filter((line) => /\d/.test(line) && /[,:|\-]/.test(line) && line.length >= 8)
-      .slice(0, maxNumericRows);
-
-    return {
-      text,
-      bullets,
-      numericRows,
-      stats: {
-        textLength: text.length,
-        lineCount: lines.length,
-        bulletCount: bullets.length,
-        numericRowCount: numericRows.length,
-      },
-    };
-  }
-
-  private extractHtmlTitle(raw: string): string | undefined {
-    const match = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    if (!match?.[1]) {
-      return undefined;
-    }
-    return match[1].replace(/\s+/g, ' ').trim();
-  }
-
-  private extractCleanText(raw: string): string {
-    return raw
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;/gi, "'")
-      .replace(/\r/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/[ \t]{2,}/g, ' ')
-      .trim();
-  }
-
   private async sendSlackMessage(params: { channel: string; text: string }, userId?: string): Promise<any> {
     if (!params?.channel || !params?.text) {
       throw new Error('slack requires parameters: channel, text');
@@ -3341,14 +2562,9 @@ export class ToolService {
 
   private async listMeetings(
     params: { status?: string; limit?: number },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
+    _agentId?: string,
+    _executionContext?: ToolExecutionContext,
   ): Promise<any> {
-    const organizationId = await this.resolveOrganizationIdForAgent(agentId, undefined, executionContext);
-    if (!organizationId) {
-      throw new Error('Missing organization context for meeting_list');
-    }
-
     const queryParams = new URLSearchParams();
     if (params?.status) {
       queryParams.append('status', params.status);
@@ -3358,11 +2574,10 @@ export class ToolService {
     }
 
     const endpoint = queryParams.toString() ? `?${queryParams.toString()}` : '';
-    const result = await this.callMeetingApi('GET', endpoint, undefined, organizationId);
+    const result = await this.callMeetingApi('GET', endpoint);
 
     return {
       action: 'list_meetings',
-      organizationId,
       total: result?.length || 0,
       meetings: result,
       fetchedAt: new Date().toISOString(),
@@ -3381,28 +2596,22 @@ export class ToolService {
       throw new Error('meeting_send_message requires content');
     }
 
-    const organizationId = await this.resolveOrganizationIdForAgent(agentId, undefined, executionContext);
-    if (!organizationId) {
-      throw new Error('Missing organization context for meeting_send_message');
-    }
+    const meetingContext = this.resolveMeetingContext(executionContext);
+    const meetingId = params.meetingId.trim();
+    const sendAsAgent = Boolean(agentId && meetingContext.meetingId && meetingContext.meetingId === meetingId);
 
     const payload = {
-      senderId: agentId || 'system',
-      senderType: agentId ? 'agent' : 'system',
+      senderId: sendAsAgent ? agentId : 'system',
+      senderType: sendAsAgent ? 'agent' : 'system',
       content: params.content.trim(),
       type: params.type || 'opinion',
     };
 
-    const result = await this.callMeetingApi(
-      'POST',
-      `/${params.meetingId.trim()}/messages`,
-      payload,
-      organizationId,
-    );
+    const result = await this.callMeetingApi('POST', `/${meetingId}/messages`, payload);
 
     return {
       action: 'send_message',
-      meetingId: params.meetingId,
+      meetingId,
       senderId: payload.senderId,
       message: result,
       sentAt: new Date().toISOString(),
@@ -3411,8 +2620,8 @@ export class ToolService {
 
   private async updateMeetingStatus(
     params: { meetingId?: string; action?: string },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
+    _agentId?: string,
+    _executionContext?: ToolExecutionContext,
   ): Promise<any> {
     if (!params?.meetingId?.trim()) {
       throw new Error('meeting_update_status requires meetingId');
@@ -3427,12 +2636,7 @@ export class ToolService {
       throw new Error(`Invalid action: ${action}. Must be one of: ${validActions.join(', ')}`);
     }
 
-    const organizationId = await this.resolveOrganizationIdForAgent(agentId, undefined, executionContext);
-    if (!organizationId) {
-      throw new Error('Missing organization context for meeting_update_status');
-    }
-
-    const result = await this.callMeetingApi('POST', `/${params.meetingId.trim()}/${action}`, undefined, organizationId);
+    const result = await this.callMeetingApi('POST', `/${params.meetingId.trim()}/${action}`);
 
     return {
       action: 'update_status',
