@@ -98,33 +98,35 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
 
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_ROLE_ID = 'system-model-management-role';
-const MODEL_MANAGEMENT_AGENT_TOOLS = ['mcp.model.list', 'mcp.model.searchLatest', 'mcp.model.add'];
-const CODE_DOCS_MCP_TOOL_ID = 'mcp.docs.summary';
-const CODE_UPDATES_MCP_TOOL_ID = 'mcp.updates.summary';
-const CODE_DOCS_READER_TOOL_ID = 'internal.docs.read';
-const CODE_UPDATES_READER_TOOL_ID = 'internal.updates.read';
-const REPO_READ_TOOL_ID = 'internal.repo.read';
-const MEMO_MCP_SEARCH_TOOL_ID = 'internal.memo.search';
-const MEMO_MCP_APPEND_TOOL_ID = 'internal.memo.append';
+const MODEL_MANAGEMENT_AGENT_TOOLS = ['builtin.sys-mg.mcp.model-admin.list-models', 'builtin.sys-mg.mcp.model-admin.add-model'];
+const CODE_DOCS_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-read';
+const CODE_UPDATES_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.updates-read';
+const REPO_READ_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-read';
+const MEMO_MCP_SEARCH_TOOL_ID = 'builtin.sys-mg.internal.memory.search-memo';
+const MEMO_MCP_APPEND_TOOL_ID = 'builtin.sys-mg.internal.memory.append-memo';
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const MODEL_MANAGEMENT_AGENT_PROMPT =
-  '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 mcp.model.list 再回答；若用户要求搜索最新模型，处理流程必须严格遵循: 1) 先调用 mcp.model.searchLatest 获取候选模型与来源 2) 先向用户返回候选结果摘要并询问“是否需要添加到系统” 3) 仅当用户明确确认“需要添加/确认添加”后，才调用 mcp.model.add。未确认时严禁写入系统；不得编造模型参数或来源。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
+  '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 mcp.model.list 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 mcp.model.add。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
 const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-executive',
     role: 'executive-lead',
     tools: [
-      'internal.web.search',
-      'internal.web.fetch',
-      'internal.content.extract',
-      'internal.agents.list',
-      'mcp.orchestration.createPlan',
-      'mcp.orchestration.runPlan',
-      'mcp.orchestration.getPlan',
-      'mcp.orchestration.listPlans',
-      'mcp.orchestration.reassignTask',
-      'mcp.orchestration.completeHumanTask',
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'builtin.data-analysis.internal.content-analysis.extract',
+      'builtin.sys-mg.internal.agent-admin.list-agents',
+      'builtin.sys-mg.mcp.orchestration.create-plan',
+      'builtin.sys-mg.mcp.orchestration.update-plan',
+      'builtin.sys-mg.mcp.orchestration.run-plan',
+      'builtin.sys-mg.mcp.orchestration.get-plan',
+      'builtin.sys-mg.mcp.orchestration.list-plans',
+      'builtin.sys-mg.mcp.orchestration.reassign-task',
+      'builtin.sys-mg.mcp.orchestration.complete-human-task',
+      'builtin.sys-mg.mcp.orchestration.create-schedule',
+      'builtin.sys-mg.mcp.orchestration.update-schedule',
+      'builtin.sys-mg.mcp.orchestration.debug-task',
     ],
     capabilities: ['strategy_planning', 'decision_making', 'stakeholder_communication', 'resource_governance'],
     exposed: true,
@@ -134,14 +136,18 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     agentType: 'ai-management-assistant',
     role: 'management-assistant',
     tools: [
-      'internal.web.search',
-      'internal.web.fetch',
-      'internal.content.extract',
-      'internal.agents.list',
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'builtin.data-analysis.internal.content-analysis.extract',
+      'builtin.sys-mg.internal.agent-admin.list-agents',
       'mcp.orchestration.createPlan',
+      'mcp.orchestration.updatePlan',
       'mcp.orchestration.runPlan',
       'mcp.orchestration.getPlan',
       'mcp.orchestration.listPlans',
+      'mcp.orchestration.createSchedule',
+      'mcp.orchestration.updateSchedule',
+      'mcp.orchestration.debugTask',
     ],
     capabilities: ['schedule_management', 'meeting_followup', 'information_synthesis'],
     exposed: true,
@@ -150,7 +156,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-technical-expert',
     role: 'technical-architect',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract', 'internal.agents.list'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'builtin.data-analysis.internal.content-analysis.extract', 'internal.agents.list'],
     capabilities: ['system_design', 'technical_planning', 'risk_assessment'],
     exposed: true,
     description: '负责技术架构、方案评审与技术风险控制。',
@@ -158,7 +164,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-fullstack-engineer',
     role: 'fullstack-engineer',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
     exposed: true,
     description: '负责前后端实现、联调测试与工程交付。',
@@ -166,7 +172,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-devops-engineer',
     role: 'devops-engineer',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['deployment_automation', 'monitoring_alerting', 'incident_response'],
     exposed: true,
     description: '负责部署发布、监控告警与系统稳定性保障。',
@@ -174,7 +180,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-data-analyst',
     role: 'data-analyst',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['data_analysis', 'insight_generation', 'reporting'],
     exposed: true,
     description: '负责数据分析、结论提炼与报告输出。',
@@ -183,12 +189,16 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     agentType: 'ai-product-manager',
     role: 'product-manager',
     tools: [
-      'internal.web.search',
-      'internal.web.fetch',
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
       'mcp.orchestration.createPlan',
+      'mcp.orchestration.updatePlan',
       'mcp.orchestration.runPlan',
       'mcp.orchestration.getPlan',
       'mcp.orchestration.listPlans',
+      'mcp.orchestration.createSchedule',
+      'mcp.orchestration.updateSchedule',
+      'mcp.orchestration.debugTask',
     ],
     capabilities: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
     exposed: true,
@@ -205,7 +215,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-admin-assistant',
     role: 'administrative-assistant',
-    tools: ['internal.web.search', 'internal.web.fetch'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'internal.web.fetch'],
     capabilities: ['administrative_coordination', 'meeting_support', 'document_management'],
     exposed: true,
     description: '负责行政事务、会议支持与流程协同。',
@@ -213,7 +223,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-marketing-expert',
     role: 'marketing-strategist',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['campaign_planning', 'brand_communication', 'growth_optimization'],
     exposed: true,
     description: '负责市场策略、活动策划与增长转化。',
@@ -221,7 +231,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
     agentType: 'ai-human-exclusive-assistant',
     role: 'human-exclusive-assistant',
-    tools: ['internal.web.search', 'internal.web.fetch', 'internal.content.extract', 'mcp.humanOperationLog.list'],
+    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'builtin.data-analysis.internal.content-analysis.extract', 'mcp.humanOperationLog.list'],
     capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
     exposed: true,
     description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
@@ -230,19 +240,21 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     agentType: 'ai-system-builtin',
     role: 'system-builtin-agent',
     tools: [
-      'internal.web.search',
-      'internal.web.fetch',
-      'internal.content.extract',
-      'internal.agents.list',
-      'mcp.model.list',
-      'mcp.model.searchLatest',
-      'mcp.model.add',
-      'mcp.orchestration.createPlan',
-      'mcp.orchestration.runPlan',
-      'mcp.orchestration.getPlan',
-      'mcp.orchestration.listPlans',
-      'mcp.orchestration.reassignTask',
-      'mcp.orchestration.completeHumanTask',
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'builtin.data-analysis.internal.content-analysis.extract',
+      'builtin.sys-mg.internal.agent-admin.list-agents',
+      'builtin.sys-mg.mcp.model-admin.list-models',
+      'builtin.sys-mg.mcp.model-admin.add-model',
+      'builtin.sys-mg.mcp.orchestration.create-plan',
+      'builtin.sys-mg.mcp.orchestration.run-plan',
+      'builtin.sys-mg.mcp.orchestration.get-plan',
+      'builtin.sys-mg.mcp.orchestration.list-plans',
+      'builtin.sys-mg.mcp.orchestration.reassign-task',
+      'builtin.sys-mg.mcp.orchestration.complete-human-task',
+      'builtin.sys-mg.mcp.orchestration.create-schedule',
+      'builtin.sys-mg.mcp.orchestration.update-schedule',
+      'builtin.sys-mg.mcp.orchestration.debug-task',
     ],
     capabilities: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
     exposed: true,
@@ -252,9 +264,9 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     agentType: 'ai-meeting-assistant',
     role: 'meeting-assistant',
     tools: [
-      'builtin.mcp.meeting.list',
-      'builtin.mcp.meeting.sendMessage',
-      'builtin.mcp.meeting.updateStatus',
+      'builtin.sys-mg.mcp.meeting.list-meetings',
+      'builtin.sys-mg.mcp.meeting.send-message',
+      'builtin.sys-mg.mcp.meeting.update-status',
     ],
     capabilities: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
     exposed: true,
@@ -279,8 +291,19 @@ export class AgentService {
     private readonly memoService: MemoService,
     private readonly memoEventBus: MemoEventBusService,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
-  ) {
-    void this.bootstrapMcpProfilesAndAgentTypes();
+  ) {}
+
+  async seedMcpProfileSeeds(): Promise<void> {
+    await this.ensureMcpProfileSeeds();
+  }
+
+  async seedModelManagementAgent(): Promise<void> {
+    await this.ensureModelManagementAgent();
+  }
+
+  async seedAgentSystemData(): Promise<void> {
+    await this.seedMcpProfileSeeds();
+    await this.seedModelManagementAgent();
   }
 
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
@@ -1253,38 +1276,11 @@ export class AgentService {
       });
     }
 
-    if (allowedToolIds.includes('mcp.model.searchLatest') && allowedToolIds.includes('mcp.model.add')) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户要求“搜索最新模型并加入系统”时，请按顺序调用 mcp.model.searchLatest 与 mcp.model.add；必须先返回候选并询问“是否需要添加到系统”，仅在用户明确确认后才允许入库。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes(CODE_DOCS_MCP_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问“当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么”时，请优先调用 mcp.docs.summary 并基于其 evidence 路径回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes(CODE_UPDATES_MCP_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问"最近24小时/最近一天系统主要更新"时，请优先调用 mcp.updates.summary 并基于提交证据回答；若工具返回 unknownBoundary，必须明确告知未知范围，不得臆测。',
-        timestamp: new Date(),
-      });
-    }
-
     if (allowedToolIds.includes(CODE_DOCS_READER_TOOL_ID)) {
       messages.push({
         role: 'system',
         content:
-          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 internal.docs.read 读取文档；3) 最后才调用 mcp.docs.summary 获取摘要。若 internal.docs.read 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 internal.repo.read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
+          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 internal.docs.read 读取文档。若 internal.docs.read 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 internal.repo.read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
         timestamp: new Date(),
       });
     }
@@ -1293,7 +1289,7 @@ export class AgentService {
       messages.push({
         role: 'system',
         content:
-          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 internal.updates.read；3) 最后才调用 mcp.updates.summary。必须基于实际提交内容回答，不得臆测。',
+          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 internal.updates.read。必须基于实际提交内容回答，不得臆测。',
         timestamp: new Date(),
       });
     }
@@ -1414,54 +1410,6 @@ export class AgentService {
       return deterministicModelManagementResult;
     }
 
-    const forcedDocsQuery = this.extractForcedCodeDocsQuery(task, messages);
-    if (forcedDocsQuery && assignedToolIds.has(CODE_DOCS_MCP_TOOL_ID)) {
-      this.logger.log(`Forced tool call triggered: ${CODE_DOCS_MCP_TOOL_ID} (agent=${agent.name})`);
-      try {
-        const execution = await this.toolService.executeTool(
-          CODE_DOCS_MCP_TOOL_ID,
-          agentRuntimeId,
-          {
-            query: forcedDocsQuery,
-            focus: 'core_features',
-            maxFeatures: 8,
-            maxEvidencePerFeature: 3,
-          },
-          task.id,
-          executionContext,
-        );
-        return this.formatCodeDocsMcpAnswer(this.extractToolResultPayload(execution));
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'unknown error';
-        this.logger.warn(`Forced tool call ${CODE_DOCS_MCP_TOOL_ID} failed: ${message}`);
-        return `我尝试通过 ${CODE_DOCS_MCP_TOOL_ID} 读取 docs 进行核心功能盘点，但调用失败（${message}）。当前无法提供可靠清单，请稍后重试。`;
-      }
-    }
-
-    const forcedUpdatesHours = this.extractForcedCodeUpdatesWindowHours(task, messages);
-    if (forcedUpdatesHours && assignedToolIds.has(CODE_UPDATES_MCP_TOOL_ID)) {
-      this.logger.log(`Forced tool call triggered: ${CODE_UPDATES_MCP_TOOL_ID} (agent=${agent.name}, hours=${forcedUpdatesHours})`);
-      try {
-        const execution = await this.toolService.executeTool(
-          CODE_UPDATES_MCP_TOOL_ID,
-          agentRuntimeId,
-          {
-            hours: forcedUpdatesHours,
-            limit: 10,
-            includeFiles: true,
-            minSeverity: 'medium',
-          },
-          task.id,
-          executionContext,
-        );
-        return this.formatCodeUpdatesMcpAnswer(this.extractToolResultPayload(execution), forcedUpdatesHours);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'unknown error';
-        this.logger.warn(`Forced tool call ${CODE_UPDATES_MCP_TOOL_ID} failed: ${message}`);
-        return `我尝试通过 ${CODE_UPDATES_MCP_TOOL_ID} 汇总最近更新，但调用失败（${message}）。当前无法提供可靠更新清单，请稍后重试。`;
-      }
-    }
-
     const forcedOrchestrationAction = this.extractForcedOrchestrationAction(
       task,
       messages,
@@ -1471,11 +1419,15 @@ export class AgentService {
     if (!forcedOrchestrationAction && this.hasMeetingOrchestrationIntent(task, messages, executionContext)) {
       const hasAnyOrchestrationTool = [
         'mcp.orchestration.createPlan',
+        'mcp.orchestration.updatePlan',
         'mcp.orchestration.runPlan',
         'mcp.orchestration.getPlan',
         'mcp.orchestration.listPlans',
         'mcp.orchestration.reassignTask',
         'mcp.orchestration.completeHumanTask',
+        'mcp.orchestration.createSchedule',
+        'mcp.orchestration.updateSchedule',
+        'mcp.orchestration.debugTask',
       ].some((toolId) => assignedToolIds.has(toolId));
       if (!hasAnyOrchestrationTool) {
         return '我识别到你希望执行计划编排，但当前这个 Agent 未分配 mcp.orchestration.* 工具。请在 Agent 管理中为其绑定对应 MCP Profile 工具后重试。';
@@ -1574,6 +1526,7 @@ export class AgentService {
             agentId: agentRuntimeId,
             taskId: task.id,
             toolId: normalizedToolId,
+            toolName: toolCall.tool,
             toolCallId,
             input: toolCall.parameters,
             traceId: runtimeContext.traceId,
@@ -1585,7 +1538,9 @@ export class AgentService {
             agentId: agentRuntimeId,
             taskId: task.id,
             toolId: normalizedToolId,
+            toolName: toolCall.tool,
             toolCallId,
+            input: toolCall.parameters,
             traceId: runtimeContext.traceId,
             sequence: round + 1,
             messageId: runtimeContext.userMessageId,
@@ -1615,7 +1570,9 @@ export class AgentService {
             agentId: agentRuntimeId,
             taskId: task.id,
             toolId: normalizedToolId,
+            toolName: toolCall.tool,
             toolCallId,
+            input: toolCall.parameters,
             output: toolResultPayload,
             traceId: runtimeContext.traceId,
             sequence: round + 1,
@@ -1642,7 +1599,9 @@ export class AgentService {
             agentId: agentRuntimeId,
             taskId: task.id,
             toolId: normalizedToolId,
+            toolName: toolCall.tool,
             toolCallId,
+            input: toolCall.parameters,
             error: logError.message,
             traceId: runtimeContext.traceId,
             sequence: round + 1,
@@ -1870,23 +1829,14 @@ export class AgentService {
       userText.includes('yes, add') ||
       userText.includes('yes add');
 
-    const searchingAndAdding =
-      userText.includes('搜索并添加') ||
-      userText.includes('search and add');
-
     const addExecuted = executedToolIds.has('mcp.model.add');
     const listExecuted = executedToolIds.has('mcp.model.list');
-    const searchExecuted = executedToolIds.has('mcp.model.searchLatest');
 
     if (claimsAddSuccess && (!addExecuted || !listExecuted)) {
       return true;
     }
 
     if (confirmsAddAction && !addExecuted) {
-      return true;
-    }
-
-    if (searchingAndAdding && !searchExecuted) {
       return true;
     }
 
@@ -1938,7 +1888,7 @@ export class AgentService {
     if (asksAddStatus && assignedToolIds.has('mcp.model.list')) {
       try {
         const listExecution = await this.toolService.executeTool(
-          'mcp.model.list',
+          'builtin.sys-mg.mcp.model-admin.list-models',
           agentRuntimeId,
           { limit: 500 },
           task.id,
@@ -1974,7 +1924,7 @@ export class AgentService {
       const provider = this.inferProviderFromModelId(model);
       try {
         const addExecution = await this.toolService.executeTool(
-          'mcp.model.add',
+          'builtin.sys-mg.mcp.model-admin.add-model',
           agentRuntimeId,
           {
             provider,
@@ -2007,7 +1957,7 @@ export class AgentService {
 
     try {
       const listExecution = await this.toolService.executeTool(
-        'mcp.model.list',
+        'builtin.sys-mg.mcp.model-admin.list-models',
         agentRuntimeId,
         { limit: 500 },
         task.id,
@@ -2068,65 +2018,6 @@ export class AgentService {
       .join(' ');
   }
 
-  private extractForcedCodeDocsQuery(task: Task, messages: ChatMessage[]): string | null {
-    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
-      .reverse()
-      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
-
-    const querySource = `${task.title || ''}\n${task.description || ''}\n${latestUserMessage || ''}`.toLowerCase();
-    const patterns = [
-      '当前系统实现了哪些核心功能',
-      '系统实现了哪些核心功能',
-      '核心功能',
-      '系统能力清单',
-      'docs里实现了什么',
-      'docs 实现了什么',
-      'what core features',
-      'implemented core features',
-      'system capabilities',
-    ];
-
-    const matched = patterns.some((pattern) => querySource.includes(pattern.toLowerCase()));
-    if (!matched) {
-      return null;
-    }
-
-    return latestUserMessage || task.title || '当前系统实现了哪些核心功能';
-  }
-
-  private extractForcedCodeUpdatesWindowHours(task: Task, messages: ChatMessage[]): number | null {
-    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
-      .reverse()
-      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
-
-    const querySource = `${task.title || ''}\n${task.description || ''}\n${latestUserMessage || ''}`.toLowerCase();
-    const patterns = [
-      '最近24小时',
-      '24小时',
-      '最近一天',
-      'today update',
-      'last 24 hours',
-      'recent updates',
-      '主要更新',
-      '更新总结',
-    ];
-
-    const matched = patterns.some((pattern) => querySource.includes(pattern.toLowerCase()));
-    if (!matched) {
-      return null;
-    }
-
-    const hourMatch = querySource.match(/(\d{1,3})\s*(小时|h|hours?)/i);
-    if (hourMatch) {
-      const parsed = Number(hourMatch[1]);
-      if (Number.isFinite(parsed)) {
-        return Math.max(1, Math.min(Math.floor(parsed), 168));
-      }
-    }
-
-    return 24;
-  }
-
   private extractForcedOrchestrationAction(
     task: Task,
     messages: ChatMessage[],
@@ -2140,7 +2031,10 @@ export class AgentService {
           | 'mcp.orchestration.getPlan'
           | 'mcp.orchestration.listPlans'
           | 'mcp.orchestration.reassignTask'
-          | 'mcp.orchestration.completeHumanTask';
+          | 'mcp.orchestration.completeHumanTask'
+          | 'mcp.orchestration.createSchedule'
+          | 'mcp.orchestration.updateSchedule'
+          | 'mcp.orchestration.debugTask';
         parameters: Record<string, any>;
         reason: string;
       }
@@ -2182,6 +2076,56 @@ export class AgentService {
           autoRun: false,
         },
         reason: 'meeting_orchestration_create',
+      };
+    }
+
+    if (
+      assignedToolIds.has('mcp.orchestration.createSchedule') &&
+      includesAny(['创建定时计划', '新增定时计划', '创建调度计划', 'create schedule', 'mcp.orchestration.createSchedule'])
+    ) {
+      const selectedPlanId = planId || recoveredPlanId;
+      if (!selectedPlanId) {
+        if (!assignedToolIds.has('mcp.orchestration.listPlans')) {
+          return null;
+        }
+        return {
+          tool: 'mcp.orchestration.listPlans',
+          parameters: {},
+          reason: 'meeting_orchestration_create_schedule_missing_planid_fallback_list',
+        };
+      }
+      return {
+        tool: 'mcp.orchestration.createSchedule',
+        parameters: {
+          planId: selectedPlanId,
+          scheduleType: 'cron',
+          expression: '0 */2 * * *',
+          timezone: 'Asia/Shanghai',
+          enabled: true,
+        },
+        reason: 'meeting_orchestration_create_schedule',
+      };
+    }
+
+    if (
+      assignedToolIds.has('mcp.orchestration.updateSchedule') &&
+      includesAny(['修改定时计划', '更新定时计划', '调整定时计划', 'update schedule', 'mcp.orchestration.updateSchedule'])
+    ) {
+      const scheduleId = this.extractEntityIdFromText(latestUser, 'schedule');
+      if (!scheduleId) {
+        return null;
+      }
+      const enabledSignal = includesAny(['启用', 'enable']) ? true : includesAny(['停用', 'disable']) ? false : undefined;
+      if (enabledSignal === undefined) {
+        return null;
+      }
+      return {
+        tool: 'mcp.orchestration.updateSchedule',
+        parameters: {
+          scheduleId,
+          enabled: enabledSignal,
+        },
+        reason: 'meeting_orchestration_update_schedule',
       };
     }
 
@@ -2276,6 +2220,23 @@ export class AgentService {
       };
     }
 
+    if (
+      assignedToolIds.has('mcp.orchestration.debugTask') &&
+      includesAny(['调试任务', '任务调试', 'debug task', 'debug-run', 'mcp.orchestration.debugTask'])
+    ) {
+      if (!taskId) {
+        return null;
+      }
+      return {
+        tool: 'mcp.orchestration.debugTask',
+        parameters: {
+          taskId,
+          resetResult: true,
+        },
+        reason: 'meeting_orchestration_debug_task',
+      };
+    }
+
     return null;
   }
 
@@ -2310,6 +2271,14 @@ export class AgentService {
       '人工完成任务',
       'create plan',
       'run plan',
+      'create schedule',
+      'update schedule',
+      '调试任务',
+      '任务调试',
+      'debug task',
+      'debug-run',
+      '定时计划',
+      '调度计划',
       '执行',
       '继续',
       '开始',
@@ -2358,7 +2327,7 @@ export class AgentService {
     return null;
   }
 
-  private extractEntityIdFromText(input: string, entity: 'plan' | 'task'): string | null {
+  private extractEntityIdFromText(input: string, entity: 'plan' | 'task' | 'schedule'): string | null {
     const text = String(input || '');
     const explicit = text.match(new RegExp(`${entity}\\s*[_-]?id\\s*[:：]\\s*([a-zA-Z0-9_-]{6,64})`, 'i'));
     if (explicit?.[1]) {
@@ -2382,6 +2351,9 @@ export class AgentService {
       const taskCount = Array.isArray(payload?.tasks) ? payload.tasks.length : 0;
       return `已触发计划创建，planId=${planId}，任务数=${taskCount}。如需继续执行，请回复“执行计划 planId:${planId}”。`;
     }
+    if (tool === 'mcp.orchestration.updatePlan') {
+      return `已提交计划更新（planId=${parameters.planId || 'unknown'}）。`;
+    }
     if (tool === 'mcp.orchestration.runPlan') {
       return `已触发计划执行（planId=${parameters.planId}，continueOnFailure=${parameters.continueOnFailure === true ? 'true' : 'false'}）。可继续让我查询执行进度。`;
     }
@@ -2403,81 +2375,22 @@ export class AgentService {
     if (tool === 'mcp.orchestration.completeHumanTask') {
       return `已提交人工任务完成回填（taskId=${parameters.taskId}）。`;
     }
+    if (tool === 'mcp.orchestration.createSchedule') {
+      const scheduleId = payload?.id || payload?._id || payload?.scheduleId || 'unknown';
+      const nextRunAt = payload?.nextRunAt || payload?.schedule?.nextRunAt || 'unknown';
+      return `已创建定时计划，scheduleId=${scheduleId}，nextRunAt=${nextRunAt}。`;
+    }
+    if (tool === 'mcp.orchestration.updateSchedule') {
+      return `已提交定时计划更新（scheduleId=${parameters.scheduleId}）。`;
+    }
+    if (tool === 'mcp.orchestration.debugTask') {
+      const status = payload?.execution?.status || payload?.task?.status || payload?.debug?.status || 'unknown';
+      const error = payload?.execution?.error || payload?.debug?.error;
+      return error
+        ? `已执行任务调试（taskId=${parameters.taskId}，status=${status}），失败原因：${error}`
+        : `已执行任务调试（taskId=${parameters.taskId}，status=${status}）。`;
+    }
     return `已执行编排工具 ${tool}。`;
-  }
-
-  private formatCodeDocsMcpAnswer(result: any): string {
-    const features = Array.isArray(result?.coreFeatures) ? result.coreFeatures : [];
-    const unknownBoundary = Array.isArray(result?.unknownBoundary) ? result.unknownBoundary : [];
-
-    if (!features.length) {
-      const boundary = unknownBoundary.length
-        ? unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')
-        : '1. 当前 docs 未检索到可确认的核心功能描述。';
-      return `基于仓库 docs 的盘点结果，目前没有检索到可确认的核心功能清单。\n\n已知/未知边界：\n${boundary}`;
-    }
-
-    const featureLines = features.map((feature: any, index: number) => {
-      const evidence = Array.isArray(feature?.evidence) ? feature.evidence : [];
-      const evidenceText = evidence.length
-        ? evidence
-            .map((item: any) => {
-              const p = item?.path || 'unknown';
-              const l = Number(item?.line || 0);
-              return l > 0 ? `${p}:${l}` : p;
-            })
-            .join('，')
-        : '无';
-      return `${index + 1}. ${feature?.name || '未命名功能'}：${feature?.summary || '暂无摘要'}（依据：${evidenceText}）`;
-    });
-
-    const boundaryBlock = unknownBoundary.length
-      ? `\n\n已知/未知边界：\n${unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`
-      : '';
-
-    return `基于仓库 docs 的盘点，当前系统已实现的核心功能如下：\n\n${featureLines.join('\n')}${boundaryBlock}`;
-  }
-
-  private formatCodeUpdatesMcpAnswer(result: any, hours: number): string {
-    const updates = Array.isArray(result?.majorUpdates) ? result.majorUpdates : [];
-    const commits = Array.isArray(result?.commits) ? result.commits : [];
-    const unknownBoundary = Array.isArray(result?.unknownBoundary) ? result.unknownBoundary : [];
-
-    if (!updates.length) {
-      const boundary = unknownBoundary.length
-        ? unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')
-        : '1. 指定时间窗口内未检索到可确认的更新记录。';
-      return `基于最近 ${hours} 小时的仓库提交记录，当前没有检索到可确认的主要更新。\n\n已知/未知边界：\n${boundary}`;
-    }
-
-    const updateLines = updates.map((item: any, index: number) => {
-      const modules = Array.isArray(item?.impactedModules) ? item.impactedModules.join('、') : 'unknown';
-      const commitHashes = Array.isArray(item?.commits)
-        ? item.commits.map((hash: string) => String(hash).slice(0, 7)).join('，')
-        : 'unknown';
-      const whatChanged = Array.isArray(item?.whatChanged)
-        ? item.whatChanged.slice(0, 3).map((part: string) => `- ${part}`).join('；')
-        : '- 常规更新';
-      const whyItMatters = item?.whyItMatters || '提升系统稳定性与可维护性。';
-      const evidenceFiles = Array.isArray(item?.evidenceFiles) ? item.evidenceFiles.slice(0, 3).join('，') : '无';
-      return `${index + 1}. ${item?.title || '未命名更新'}\n   变更内容：${whatChanged}\n   业务价值：${whyItMatters}\n   影响模块：${modules}\n   证据提交：${commitHashes}\n   证据文件：${evidenceFiles}`;
-    });
-
-    const recentEvidence = commits
-      .slice(0, 5)
-      .map((commit: any, idx: number) => {
-        const short = commit?.shortHash || String(commit?.hash || '').slice(0, 7);
-        const at = commit?.committedAt || 'unknown-time';
-        const subject = commit?.subject || 'no-subject';
-        return `${idx + 1}. ${short} | ${at} | ${subject}`;
-      })
-      .join('\n');
-
-    const boundaryBlock = unknownBoundary.length
-      ? `\n\n已知/未知边界：\n${unknownBoundary.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`
-      : '';
-
-    return `基于最近 ${hours} 小时的仓库提交记录，系统主要更新如下：\n\n${updateLines.join('\n')}\n\n提交证据：\n${recentEvidence}${boundaryBlock}`;
   }
 
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
@@ -2487,9 +2400,9 @@ export class AgentService {
       .uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID])
       .map((toolId) => this.normalizeToolId(toolId));
     if (this.isCtoAgent(agent)) {
-      return this.uniqueStrings(merged, [CODE_DOCS_MCP_TOOL_ID, CODE_UPDATES_MCP_TOOL_ID]);
+      return this.uniqueStrings(merged, [REPO_READ_TOOL_ID, CODE_DOCS_READER_TOOL_ID, CODE_UPDATES_READER_TOOL_ID]);
     }
-    return merged.filter((toolId) => toolId !== CODE_DOCS_MCP_TOOL_ID && toolId !== CODE_UPDATES_MCP_TOOL_ID);
+    return merged;
   }
 
   private buildTaskResultMemo(response: string): string {
@@ -3025,7 +2938,7 @@ export class AgentService {
           { agentType: 'ai-human-exclusive-assistant' },
           {
             $addToSet: {
-              tools: 'mcp.humanOperationLog.list',
+              tools: 'builtin.sys-mg.mcp.humanOperationLog.list',
             },
           },
         )
@@ -3094,7 +3007,7 @@ export class AgentService {
         capabilities: ['model_discovery', 'model_registry_management', 'internet_research'],
         systemPrompt: MODEL_MANAGEMENT_AGENT_PROMPT,
         isActive: true,
-        tools: ['internal.web.search', ...MODEL_MANAGEMENT_AGENT_TOOLS],
+        tools: ['builtin.web-retrieval.internal.web-search.exa', ...MODEL_MANAGEMENT_AGENT_TOOLS],
         permissions: ['model_registry_read', 'model_registry_write'],
         personality: {
           workEthic: 90,
@@ -3132,10 +3045,4 @@ export class AgentService {
     }
   }
 
-  private async bootstrapMcpProfilesAndAgentTypes(): Promise<void> {
-    await this.ensureMcpProfileSeeds();
-    // 移除强制迁移：禁止后端重启时将用户自定义 agent 重置为系统内置
-    // await this.migrateAllAgentsToSystemBuiltin();
-    await this.ensureModelManagementAgent();
-  }
 }

@@ -121,6 +121,13 @@ enum ParticipantRole {
 - Agent 入场时自动 catch-up：获取最近5条消息并生成入场发言
 - 会议结束时生成 AI 总结（含摘要、行动项、决策）
 
+#### 1.3.6 消息发送交互保护
+
+- 输入框在 IME 组合输入期间（如拼音）按 Enter 不触发发送，避免误发送。
+- 人类消息（由专属助理代理）在未收到 Agent 回复前支持“暂停回复”。
+- 处于“已暂停回复”的消息支持撤回；撤回后消息会从会议消息流移除。
+- 若消息已产生回复（`metadata.relatedMessageId` 命中），则不可再暂停或撤回。
+
 ### 1.4 API（backend/src/modules/meetings/）
 
 | 方法 | 路径 | 功能 |
@@ -140,6 +147,8 @@ enum ParticipantRole {
 | POST | `/meetings/:id/join` | 加入会议 |
 | POST | `/meetings/:id/leave` | 离开会议 |
 | POST | `/meetings/:id/messages` | 发送消息 |
+| POST | `/meetings/:id/messages/:messageId/pause` | 暂停指定消息的待回复流程 |
+| POST | `/meetings/:id/messages/:messageId/revoke` | 撤回已暂停且未被回复的消息 |
 | POST | `/meetings/:id/archive` | 归档会议 |
 | DELETE | `/meetings/:id` | 删除会议 |
 | POST | `/meetings/:id/invite` | 邀请参与者 |
@@ -167,6 +176,7 @@ enum ParticipantRole {
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志语义收敛计划 |
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控计划 |
 | `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复计划 |
+| `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -180,6 +190,7 @@ enum ParticipantRole {
 | `AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md` | 聊天工具查询路由与日志前端优化开发总结 |
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控开发总结 |
 | `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复开发总结 |
+| `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发开发总结 |
 
 ### 技术文档 (docs/technical/)
 
@@ -264,7 +275,8 @@ enum ParticipantRole {
 
 #### 实现方式
 
-- 在 `SchedulerService` 启动时自动创建内置定时计划 `system-meeting-monitor`
+- Meeting Monitor 改为手动 seed：通过运维 seed 脚本按需创建/修正内置定时计划 `system-meeting-monitor`
+- 手动 seed 时会幂等创建系统内置 plan（`metadata.systemKey=system-meeting-monitor`），并与该 schedule 绑定，保证计划编排页可见
 - 定时计划类型为 `interval`，默认每 5 分钟执行一次
 - 执行时统一走 `OrchestrationService.executeStandaloneTask`，由 meeting-assistant 通过 MCP 工具完成巡检与处置
 

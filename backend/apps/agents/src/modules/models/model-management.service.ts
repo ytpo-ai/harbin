@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, ConflictException, BadRequestException, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
@@ -26,7 +26,7 @@ export interface AddModelResult {
 }
 
 @Injectable()
-export class ModelManagementService implements OnModuleInit {
+export class ModelManagementService {
   private readonly logger = new Logger(ModelManagementService.name);
 
   private settings: ModelSettings = {
@@ -45,10 +45,6 @@ export class ModelManagementService implements OnModuleInit {
     @InjectModel(ModelRegistry.name)
     private readonly modelRegistryModel: Model<ModelRegistryDocument>,
   ) {}
-
-  async onModuleInit(): Promise<void> {
-    await this.seedDefaultModels();
-  }
 
   async getAvailableModels(): Promise<AIModel[]> {
     const docs = await this.modelRegistryModel.find().sort({ provider: 1, model: 1 }).lean().exec();
@@ -92,6 +88,9 @@ export class ModelManagementService implements OnModuleInit {
     const normalizedProvider = this.normalizeProvider(modelWithoutId.provider);
     const normalizedModel = String(modelWithoutId.model || '').trim().toLowerCase();
     const normalizedName = String(modelWithoutId.name || normalizedModel || id || 'Custom Model').trim();
+    const normalizedDescription = this.normalizeOptionalText(modelWithoutId.description);
+    const normalizedAvailability = this.normalizeOptionalText(modelWithoutId.availability);
+    const deprecated = Boolean(modelWithoutId.deprecated);
 
     if (!normalizedProvider || !normalizedModel) {
       throw new BadRequestException('provider and model are required');
@@ -126,6 +125,9 @@ export class ModelManagementService implements OnModuleInit {
 
     const payload: AIModel = {
       name: normalizedName,
+      description: normalizedDescription,
+      availability: normalizedAvailability,
+      deprecated,
       provider: normalizedProvider as AIModel['provider'],
       model: normalizedModel,
       id: modelId,
@@ -188,6 +190,9 @@ export class ModelManagementService implements OnModuleInit {
       provider: updateData.provider ? (this.normalizeProvider(updateData.provider) as AIModel['provider']) : undefined,
       model: updateData.model ? String(updateData.model).trim().toLowerCase() : undefined,
       name: updateData.name?.trim(),
+      description: updateData.description === undefined ? undefined : this.normalizeOptionalText(updateData.description),
+      availability: updateData.availability === undefined ? undefined : this.normalizeOptionalText(updateData.availability),
+      deprecated: updateData.deprecated === undefined ? undefined : Boolean(updateData.deprecated),
       reasoning:
         updateData.reasoning === undefined
           ? undefined
@@ -313,6 +318,9 @@ export class ModelManagementService implements OnModuleInit {
     return {
       id: String(doc.id || ''),
       name: String(doc.name || ''),
+      description: this.normalizeOptionalText(doc.description),
+      availability: this.normalizeOptionalText(doc.availability),
+      deprecated: Boolean(doc.deprecated),
       provider: this.normalizeProvider(String(doc.provider || 'custom')) as AIModel['provider'],
       model: String(doc.model || ''),
       maxTokens: Number(doc.maxTokens || this.settings.defaultMaxTokens),
@@ -348,7 +356,12 @@ export class ModelManagementService implements OnModuleInit {
     return Number(err?.code) === 11000;
   }
 
-  private async seedDefaultModels(): Promise<void> {
+  private normalizeOptionalText(value?: string): string | undefined {
+    const normalized = String(value || '').trim();
+    return normalized.length > 0 ? normalized : undefined;
+  }
+
+  async seedDefaultModels(): Promise<void> {
     let insertedCount = 0;
     for (const baseModel of AVAILABLE_MODELS) {
       const normalizedProvider = this.normalizeProvider(baseModel.provider);
@@ -361,6 +374,9 @@ export class ModelManagementService implements OnModuleInit {
       const payload: AIModel = {
         id: modelId,
         name: String(baseModel.name || normalizedModel).trim(),
+        description: this.normalizeOptionalText(baseModel.description),
+        availability: this.normalizeOptionalText(baseModel.availability),
+        deprecated: Boolean(baseModel.deprecated),
         provider: normalizedProvider as AIModel['provider'],
         model: normalizedModel,
         maxTokens: Number(baseModel.maxTokens || this.settings.defaultMaxTokens),

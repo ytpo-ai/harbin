@@ -120,8 +120,10 @@ export class ToolService {
     private webToolsService: WebToolsService,
     private modelManagementService: ModelManagementService,
     private memoService: MemoService,
-  ) {
-    void this.initializeBuiltinTools();
+  ) {}
+
+  async seedBuiltinTools(): Promise<void> {
+    await this.initializeBuiltinTools();
   }
 
   private inferProviderFromToolId(toolId: string): string {
@@ -792,6 +794,26 @@ export class ToolService {
         },
       },
       {
+        id: 'builtin.sys-mg.mcp.orchestration.update-plan',
+        name: 'Orchestration Update Plan',
+        description: 'Update orchestration plan in meeting workflow',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            planId: 'string',
+            title: 'string',
+            prompt: 'string',
+            mode: 'string',
+            plannerAgentId: 'string',
+            metadata: 'object',
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.mcp.orchestration.run-plan',
         name: 'Orchestration Run Plan',
         description: 'Run an orchestration plan in meeting workflow',
@@ -870,6 +892,64 @@ export class ToolService {
             summary: 'string',
             output: 'string',
             confirm: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'builtin.sys-mg.mcp.orchestration.create-schedule',
+        name: 'Orchestration Create Schedule',
+        description: 'Create orchestration scheduler plan in meeting workflow',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 6,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            planId: 'string',
+            scheduleType: 'string',
+            expression: 'string',
+            intervalMs: 'number',
+            timezone: 'string',
+            enabled: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'builtin.sys-mg.mcp.orchestration.update-schedule',
+        name: 'Orchestration Update Schedule',
+        description: 'Update orchestration scheduler plan in meeting workflow',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 5,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            scheduleId: 'string',
+            scheduleType: 'string',
+            expression: 'string',
+            intervalMs: 'number',
+            timezone: 'string',
+            enabled: 'boolean',
+          },
+        },
+      },
+      {
+        id: 'builtin.sys-mg.mcp.orchestration.debug-task',
+        name: 'Orchestration Debug Task',
+        description: 'Debug-run a single orchestration task with optional draft edits',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 5,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            taskId: 'string',
+            title: 'string',
+            description: 'string',
+            resetResult: 'boolean',
           },
         },
       },
@@ -957,11 +1037,15 @@ export class ToolService {
       'memo_mcp_append',
       'human_operation_log_mcp_list',
       'orchestration_create_plan',
+      'orchestration_update_plan',
       'orchestration_run_plan',
       'orchestration_get_plan',
       'orchestration_list_plans',
       'orchestration_reassign_task',
       'orchestration_complete_human_task',
+      'orchestration_create_schedule',
+      'orchestration_update_schedule',
+      'orchestration_debug_task',
     ];
 
     await this.toolModel.deleteMany({ id: { $in: virtualToolIds } }).exec();
@@ -1477,6 +1561,8 @@ export class ToolService {
         return this.appendMemoMemory(parameters, agentId);
       case 'builtin.sys-mg.mcp.orchestration.create-plan':
         return this.createOrchestrationPlan(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.update-plan':
+        return this.updateOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.run-plan':
         return this.runOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.get-plan':
@@ -1487,6 +1573,12 @@ export class ToolService {
         return this.reassignOrchestrationTask(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.complete-human-task':
         return this.completeOrchestrationHumanTask(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.create-schedule':
+        return this.createOrchestrationSchedule(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.update-schedule':
+        return this.updateOrchestrationSchedule(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.debug-task':
+        return this.debugOrchestrationTask(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.meeting.list-meetings':
         return this.listMeetings(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.meeting.send-message':
@@ -1516,11 +1608,15 @@ export class ToolService {
       'builtin.sys-mg.internal.memory.search-memo',
       'builtin.sys-mg.internal.memory.append-memo',
       'builtin.sys-mg.mcp.orchestration.create-plan',
+      'builtin.sys-mg.mcp.orchestration.update-plan',
       'builtin.sys-mg.mcp.orchestration.run-plan',
       'builtin.sys-mg.mcp.orchestration.get-plan',
       'builtin.sys-mg.mcp.orchestration.list-plans',
       'builtin.sys-mg.mcp.orchestration.reassign-task',
       'builtin.sys-mg.mcp.orchestration.complete-human-task',
+      'builtin.sys-mg.mcp.orchestration.create-schedule',
+      'builtin.sys-mg.mcp.orchestration.update-schedule',
+      'builtin.sys-mg.mcp.orchestration.debug-task',
       'builtin.sys-mg.mcp.meeting.list-meetings',
       'builtin.sys-mg.mcp.meeting.send-message',
       'builtin.sys-mg.mcp.meeting.update-status',
@@ -1663,20 +1759,55 @@ export class ToolService {
   }
 
   private async callOrchestrationApi(
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH',
     endpoint: string,
     body: any,
   ): Promise<any> {
     const url = `${this.orchestrationBaseUrl}/orchestration${endpoint}`;
     const headers = this.buildSignedHeaders();
-    const response = await axios.request({
-      method,
-      url,
-      headers,
-      data: body,
-      timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
-    });
-    return response.data;
+    try {
+      const response = await axios.request({
+        method,
+        url,
+        headers,
+        data: body,
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const statusText = error.response?.statusText;
+        const responseSummary = this.summarizeApiErrorBody(error.response?.data);
+        this.logger.error(
+          `Orchestration API request failed: ${method} ${endpoint}, status=${status || 'unknown'}${
+            statusText ? ` ${statusText}` : ''
+          }, response=${responseSummary}`,
+        );
+        throw new Error(
+          `orchestration_api_request_failed: ${method} ${endpoint} returned ${status || 'unknown'}; response=${responseSummary}`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  private summarizeApiErrorBody(body: unknown): string {
+    if (body === undefined || body === null) {
+      return 'empty';
+    }
+    const MAX_LEN = 800;
+    let text: string;
+    if (typeof body === 'string') {
+      text = body;
+    } else {
+      try {
+        text = JSON.stringify(body);
+      } catch {
+        text = String(body);
+      }
+    }
+    return text.length > MAX_LEN ? `${text.slice(0, MAX_LEN)}...` : text;
   }
 
   private async callMeetingApi(
@@ -1711,9 +1842,29 @@ export class ToolService {
     if (!params?.prompt?.trim()) {
       throw new Error('orchestration_create_plan requires prompt');
     }
+    const prompt = params.prompt.trim();
+    const promptMaxLength = 4000;
+    if (prompt.length > promptMaxLength) {
+      throw new Error(
+        `orchestration_create_plan prompt too long: ${prompt.length} characters (max ${promptMaxLength})`,
+      );
+    }
+    const title = params.title?.trim();
+    const titleMaxLength = 200;
+    if (title && title.length > titleMaxLength) {
+      throw new Error(
+        `orchestration_create_plan title too long: ${title.length} characters (max ${titleMaxLength})`,
+      );
+    }
+    const validModes: Array<'sequential' | 'parallel' | 'hybrid'> = ['sequential', 'parallel', 'hybrid'];
+    if (params.mode && !validModes.includes(params.mode)) {
+      throw new Error(
+        `orchestration_create_plan invalid mode: ${params.mode}. allowed=${validModes.join('|')}`,
+      );
+    }
     const payload = {
-      prompt: params.prompt.trim(),
-      title: params.title?.trim(),
+      prompt,
+      title,
       mode: params.mode,
       plannerAgentId: params.plannerAgentId,
       autoRun: params.autoRun === true,
@@ -1744,6 +1895,73 @@ export class ToolService {
     );
     return {
       action: 'run_plan',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async updateOrchestrationPlan(
+    params: {
+      planId?: string;
+      title?: string;
+      prompt?: string;
+      mode?: 'sequential' | 'parallel' | 'hybrid';
+      plannerAgentId?: string;
+      metadata?: Record<string, any>;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    const planId = String(params?.planId || '').trim();
+    if (!planId) {
+      throw new Error('orchestration_update_plan requires planId');
+    }
+
+    const payload: Record<string, any> = {};
+    const title = params?.title?.trim();
+    if (title !== undefined && title.length > 0) {
+      if (title.length > 200) {
+        throw new Error('orchestration_update_plan title too long: max 200 characters');
+      }
+      payload.title = title;
+    }
+
+    const sourcePrompt = params?.prompt?.trim();
+    if (sourcePrompt !== undefined && sourcePrompt.length > 0) {
+      if (sourcePrompt.length > 4000) {
+        throw new Error('orchestration_update_plan prompt too long: max 4000 characters');
+      }
+      payload.sourcePrompt = sourcePrompt;
+    }
+
+    const validModes: Array<'sequential' | 'parallel' | 'hybrid'> = ['sequential', 'parallel', 'hybrid'];
+    if (params?.mode !== undefined) {
+      if (!validModes.includes(params.mode)) {
+        throw new Error(`orchestration_update_plan invalid mode: ${params.mode}. allowed=${validModes.join('|')}`);
+      }
+      payload.mode = params.mode;
+    }
+
+    if (params?.plannerAgentId !== undefined) {
+      payload.plannerAgentId = String(params.plannerAgentId || '').trim();
+    }
+
+    if (params?.metadata !== undefined) {
+      if (!params.metadata || typeof params.metadata !== 'object' || Array.isArray(params.metadata)) {
+        throw new Error('orchestration_update_plan metadata must be an object');
+      }
+      payload.metadata = params.metadata;
+    }
+
+    if (!Object.keys(payload).length) {
+      throw new Error('orchestration_update_plan requires at least one field to update');
+    }
+
+    const result = await this.callOrchestrationApi('PATCH', `/plans/${planId}`, payload);
+    return {
+      action: 'update_plan',
       meetingId: meeting.meetingId,
       initiatorAgentId: agentId,
       result,
@@ -1841,6 +2059,258 @@ export class ToolService {
       action: 'complete_human_task',
       meetingId: meeting.meetingId,
       initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async getOrchestrationPlanForSchedule(planId: string): Promise<any> {
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) {
+      throw new Error('planId is required');
+    }
+    const plan = await this.callOrchestrationApi('GET', `/plans/${normalizedPlanId}`, undefined);
+    if (!plan || typeof plan !== 'object') {
+      throw new Error('plan not found');
+    }
+    return plan;
+  }
+
+  private resolvePlanExecutorId(plan: any): string {
+    const plannerAgentId = String(plan?.strategy?.plannerAgentId || '').trim();
+    if (plannerAgentId) {
+      return plannerAgentId;
+    }
+
+    const taskAssignments = Array.isArray(plan?.tasks)
+      ? plan.tasks
+          .map((task: any) => ({
+            executorType: String(task?.assignment?.executorType || ''),
+            executorId: String(task?.assignment?.executorId || '').trim(),
+          }))
+          .filter((assignment: any) => assignment.executorType === 'agent' && assignment.executorId)
+      : [];
+    if (taskAssignments.length) {
+      return taskAssignments[0].executorId;
+    }
+
+    throw new Error('plan has no executable agent context, please set plannerAgentId first');
+  }
+
+  private buildScheduleConfig(params: {
+    scheduleType?: 'cron' | 'interval';
+    expression?: string;
+    intervalMs?: number;
+    timezone?: string;
+  }): { type: 'cron' | 'interval'; expression?: string; intervalMs?: number; timezone?: string } {
+    const scheduleType = params?.scheduleType;
+    if (scheduleType !== 'cron' && scheduleType !== 'interval') {
+      throw new Error('scheduleType must be cron or interval');
+    }
+    if (scheduleType === 'cron' && !String(params?.expression || '').trim()) {
+      throw new Error('expression is required when scheduleType=cron');
+    }
+    if (scheduleType === 'interval') {
+      const intervalMs = Number(params?.intervalMs || 0);
+      if (!Number.isFinite(intervalMs) || intervalMs < 60_000) {
+        throw new Error('intervalMs must be >= 60000 when scheduleType=interval');
+      }
+    }
+
+    return {
+      type: scheduleType,
+      expression: scheduleType === 'cron' ? String(params?.expression || '').trim() : undefined,
+      intervalMs: scheduleType === 'interval' ? Number(params?.intervalMs) : undefined,
+      timezone: String(params?.timezone || '').trim() || undefined,
+    };
+  }
+
+  private buildScheduleUpdateConfig(params: {
+    scheduleType?: 'cron' | 'interval';
+    expression?: string;
+    intervalMs?: number;
+    timezone?: string;
+  }): { schedule?: { type: 'cron' | 'interval'; expression?: string; intervalMs?: number; timezone?: string } } {
+    const hasSchedulePatch =
+      params?.scheduleType !== undefined ||
+      params?.expression !== undefined ||
+      params?.intervalMs !== undefined ||
+      params?.timezone !== undefined;
+    if (!hasSchedulePatch) {
+      return {};
+    }
+
+    return {
+      schedule: this.buildScheduleConfig({
+        scheduleType: params.scheduleType,
+        expression: params.expression,
+        intervalMs: params.intervalMs,
+        timezone: params.timezone,
+      }),
+    };
+  }
+
+  private async createOrchestrationSchedule(
+    params: {
+      planId?: string;
+      scheduleType?: 'cron' | 'interval';
+      expression?: string;
+      intervalMs?: number;
+      timezone?: string;
+      enabled?: boolean;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    const planId = String(params?.planId || '').trim();
+    if (!planId) {
+      throw new Error('orchestration_create_schedule requires planId');
+    }
+
+    const plan = await this.getOrchestrationPlanForSchedule(planId);
+    const targetAgentId = this.resolvePlanExecutorId(plan);
+    const planTitle = String(plan?.title || '').trim();
+    const planPrompt = String(plan?.sourcePrompt || '').trim();
+
+    const payload = {
+      name: `plan-schedule:${planTitle || planId}`,
+      description: `Schedule for orchestration plan ${planId}`,
+      schedule: this.buildScheduleConfig({
+        scheduleType: params.scheduleType,
+        expression: params.expression,
+        intervalMs: params.intervalMs,
+        timezone: params.timezone,
+      }),
+      target: {
+        executorType: 'agent' as const,
+        executorId: targetAgentId,
+      },
+      input: {
+        prompt: planPrompt || undefined,
+        payload: {
+          planId,
+          source: 'mcp.orchestration.createSchedule',
+        },
+      },
+      enabled: params?.enabled,
+    };
+
+    const result = await this.callOrchestrationApi('POST', '/schedules', payload);
+    return {
+      action: 'create_schedule',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      planId,
+      result,
+    };
+  }
+
+  private async updateOrchestrationSchedule(
+    params: {
+      scheduleId?: string;
+      scheduleType?: 'cron' | 'interval';
+      expression?: string;
+      intervalMs?: number;
+      timezone?: string;
+      enabled?: boolean;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    const scheduleId = String(params?.scheduleId || '').trim();
+    if (!scheduleId) {
+      throw new Error('orchestration_update_schedule requires scheduleId');
+    }
+
+    const schedulePatch = this.buildScheduleUpdateConfig({
+      scheduleType: params.scheduleType,
+      expression: params.expression,
+      intervalMs: params.intervalMs,
+      timezone: params.timezone,
+    });
+
+    const payload: Record<string, unknown> = {
+      ...schedulePatch,
+    };
+    if (params?.enabled !== undefined) {
+      payload.enabled = params.enabled === true;
+    }
+
+    if (!Object.keys(payload).length) {
+      throw new Error('orchestration_update_schedule requires at least one field to update');
+    }
+
+    const result = await this.callOrchestrationApi('PUT', `/schedules/${scheduleId}`, payload);
+    return {
+      action: 'update_schedule',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      result,
+    };
+  }
+
+  private async debugOrchestrationTask(
+    params: {
+      taskId?: string;
+      title?: string;
+      description?: string;
+      resetResult?: boolean;
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const meeting = this.assertMeetingContext(executionContext);
+    const taskId = String(params?.taskId || '').trim();
+    if (!taskId) {
+      throw new Error('orchestration_debug_task requires taskId');
+    }
+
+    const payload: Record<string, unknown> = {};
+    if (params?.title !== undefined) {
+      const title = String(params.title || '').trim();
+      if (title.length > 200) {
+        throw new Error('orchestration_debug_task title too long: max 200 characters');
+      }
+      payload.title = title;
+    }
+    if (params?.description !== undefined) {
+      const description = String(params.description || '').trim();
+      if (description.length > 4000) {
+        throw new Error('orchestration_debug_task description too long: max 4000 characters');
+      }
+      payload.description = description;
+    }
+    if (params?.resetResult !== undefined) {
+      payload.resetResult = params.resetResult === true;
+    }
+
+    const result = await this.callOrchestrationApi('POST', `/tasks/${taskId}/debug-run`, payload);
+    const execution = result?.execution || {};
+    const task = result?.task || {};
+    const recentLogs = Array.isArray(task?.runLogs) ? task.runLogs.slice(-5) : [];
+    const debug = {
+      status: execution?.status || task?.status || 'unknown',
+      error: execution?.error || null,
+      resultSnippet:
+        typeof execution?.result === 'string' ? execution.result.slice(0, 800) : execution?.result ? JSON.stringify(execution.result).slice(0, 800) : null,
+      recentLogs,
+      suggestedNextAction:
+        execution?.status === 'failed'
+          ? 'Inspect error and dependency context, then retry debug with updated draft'
+          : execution?.status === 'waiting_human'
+            ? 'Hand off to human or complete manually via complete-human-task'
+            : execution?.status === 'completed'
+              ? 'Continue with downstream dependent tasks'
+              : 'Review task status and decide next operation',
+    };
+
+    return {
+      action: 'debug_task',
+      meetingId: meeting.meetingId,
+      initiatorAgentId: agentId,
+      taskId,
+      debug,
       result,
     };
   }

@@ -20,6 +20,10 @@ import {
   OrchestrationTaskDocument,
   OrchestrationTaskStatus,
 } from '../../../shared/schemas/orchestration-task.schema';
+import {
+  OrchestrationPlan,
+  OrchestrationPlanDocument,
+} from '../../../shared/schemas/orchestration-plan.schema';
 import { OrchestrationService } from '../orchestration.service';
 import {
   CreateScheduleDto,
@@ -32,12 +36,16 @@ type TriggerType = 'auto' | 'manual';
 export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SchedulerService.name);
   private readonly runLocks = new Set<string>();
+  private readonly systemMeetingMonitorScheduleName = 'system-meeting-monitor';
+  private readonly systemMeetingMonitorPlanKey = 'system-meeting-monitor';
 
   constructor(
     @InjectModel(OrchestrationSchedule.name)
     private readonly scheduleModel: Model<OrchestrationScheduleDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly taskModel: Model<OrchestrationTaskDocument>,
+    @InjectModel(OrchestrationPlan.name)
+    private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -47,12 +55,17 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     const enabledSchedules = await this.scheduleModel.find({ enabled: true }).exec();
     await Promise.all(enabledSchedules.map((schedule) => this.registerSchedule(schedule)));
+  }
 
+  async seedMeetingMonitorSchedule(): Promise<void> {
     await this.ensureMeetingMonitorSchedule();
   }
 
   private async ensureMeetingMonitorSchedule(): Promise<void> {
-    const existing = await this.scheduleModel.findOne({ name: 'system-meeting-monitor' }).exec();
+    const plan = await this.ensureMeetingMonitorPlan();
+    const planId = this.getEntityId(plan as unknown as Record<string, unknown>);
+
+    const existing = await this.scheduleModel.findOne({ name: this.systemMeetingMonitorScheduleName }).exec();
     const intervalMs = Number(process.env.MEETING_ASSISTANT_INTERVAL_MS || 300000);
     if (intervalMs < 300000) {
       this.logger.warn('MEETING_ASSISTANT_INTERVAL_MS must be at least 5 minutes, skipping meeting monitor');
@@ -68,17 +81,26 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
             $set: {
               input: monitorInput,
               'schedule.intervalMs': intervalMs,
+              planId,
             },
           },
         )
         .exec();
+
+      if (existing.enabled) {
+        const refreshed = await this.scheduleModel.findOne({ _id: this.getEntityId(existing as unknown as Record<string, unknown>) }).exec();
+        if (refreshed) {
+          await this.registerSchedule(refreshed);
+        }
+      }
       return;
     }
 
     try {
       const schedule = await new this.scheduleModel({
-        name: 'system-meeting-monitor',
+        name: this.systemMeetingMonitorScheduleName,
         description: '系统内置：监控进行中的会议，在会议长时间未活动时发送提醒并自动结束',
+        planId,
         schedule: {
           type: 'interval',
           intervalMs,
@@ -108,6 +130,48 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async ensureMeetingMonitorPlan(): Promise<OrchestrationPlanDocument> {
+    const prompt = '系统内置计划：监控 active 会议空闲状态，在超时阈值触发提醒并自动结束会议';
+    const title = '系统会议监控计划';
+
+    const plan = await this.orchestrationPlanModel
+      .findOneAndUpdate(
+        { 'metadata.systemKey': this.systemMeetingMonitorPlanKey },
+        {
+          $set: {
+            title,
+            sourcePrompt: prompt,
+            status: 'planned',
+            strategy: {
+              plannerAgentId: 'meeting-assistant',
+              mode: 'hybrid',
+            },
+            createdBy: 'system',
+            'metadata.system': true,
+            'metadata.systemKey': this.systemMeetingMonitorPlanKey,
+            'metadata.linkedScheduleName': this.systemMeetingMonitorScheduleName,
+          },
+          $setOnInsert: {
+            taskIds: [],
+            stats: {
+              totalTasks: 0,
+              completedTasks: 0,
+              failedTasks: 0,
+              waitingHumanTasks: 0,
+            },
+          },
+        },
+        { new: true, upsert: true },
+      )
+      .exec();
+
+    if (!plan) {
+      throw new Error('Failed to ensure system meeting monitor plan');
+    }
+
+    return plan;
+  }
+
   onModuleDestroy(): void {
     for (const key of this.schedulerRegistry.getCronJobs().keys()) {
       if (key.startsWith('orch-schedule-cron:')) {
@@ -125,9 +189,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     await this.validateScheduleDto(dto.schedule);
     const agent = await this.ensureAgentExists(dto.target.executorId);
     const now = new Date();
+    const linkedPlanId = this.resolveLinkedPlanId(dto.input);
     const schedule = await new this.scheduleModel({
       name: dto.name.trim(),
       description: dto.description?.trim(),
+      planId: linkedPlanId,
       schedule: {
         ...dto.schedule,
         timezone: dto.schedule.timezone || 'Asia/Shanghai',
@@ -177,6 +243,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
     const nextTargetId = dto.target?.executorId || existing.target.executorId;
     const agent = await this.ensureAgentExists(nextTargetId);
+    const linkedPlanId = dto.input !== undefined ? this.resolveLinkedPlanId(dto.input) : undefined;
 
     const updated = await this.scheduleModel
       .findOneAndUpdate(
@@ -203,6 +270,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
                 }
               : {}),
             ...(dto.input !== undefined ? { input: dto.input } : {}),
+            ...(linkedPlanId !== undefined ? { planId: linkedPlanId } : {}),
             ...(dto.enabled !== undefined
               ? {
                   enabled: dto.enabled,
@@ -406,6 +474,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       const task = await new this.taskModel({
         mode: 'schedule',
         scheduleId,
+        planId: schedule.planId,
         title: schedule.name,
         description: this.buildTaskDescription(schedule),
         priority: 'medium',
@@ -567,6 +636,19 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       'Structured payload:',
       JSON.stringify(payload, null, 2),
     ].join('\n\n');
+  }
+
+  private resolveLinkedPlanId(input?: { prompt?: string; payload?: Record<string, unknown> }): string | undefined {
+    const payload = input?.payload;
+    if (!payload || typeof payload !== 'object') {
+      return undefined;
+    }
+    const planId = payload.planId;
+    if (typeof planId !== 'string') {
+      return undefined;
+    }
+    const normalized = planId.trim();
+    return normalized || undefined;
   }
 
   private getEntityId(entity: Record<string, unknown>): string {
