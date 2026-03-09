@@ -26,6 +26,7 @@ import {
   WrenchScrewdriverIcon,
   ChatBubbleLeftRightIcon,
   EyeIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/outline';
 
 const normalizeProvider = (provider?: string): string => {
@@ -55,6 +56,16 @@ const getRoleDisplayName = (role?: AgentBusinessRole): string => {
   return role.name || role.code || role.id;
 };
 
+const NAMESPACE_DISPLAY_MAP: Record<string, string> = {
+  'builtin': 'builtin',
+  'composio': 'composio',
+  'sys-mg': '系统管理',
+  'communication': '通讯工具',
+  'web-retrieval': 'WEB信息检索收集',
+  'data-analysis': '数据分析',
+  'other': '其他',
+};
+
 const getToolKey = (tool?: any): string => {
   return String(tool?.toolId || tool?.id || '').trim();
 };
@@ -62,11 +73,36 @@ const getToolKey = (tool?: any): string => {
 const getToolNamespace = (tool?: any): string => {
   if (tool?.namespace) return String(tool.namespace).trim();
   const key = getToolKey(tool);
-  return key.includes('.') ? key.split('.')[0] : 'other';
+  if (!key.includes('.')) return 'other';
+  
+  const parts = key.split('.');
+  if (parts.length >= 2) {
+    const candidate = parts[1];
+    if (['sys-mg', 'communication', 'web-retrieval', 'data-analysis', 'other'].includes(candidate)) {
+      return candidate;
+    }
+  }
+  return parts[0] || 'other';
+};
+
+const getToolNamespaceDisplay = (toolNamespace: string): string => {
+  return NAMESPACE_DISPLAY_MAP[toolNamespace] || toolNamespace;
 };
 
 const getToolProvider = (tool?: any): string => {
   return String(tool?.provider || 'unknown').trim();
+};
+
+const getAgentAvatarUrl = (agent: Agent): string => {
+  const withAvatar = agent as Agent & {
+    avatar?: string;
+    avatarUrl?: string;
+    profileImage?: string;
+    image?: string;
+  };
+
+  const candidates = [withAvatar.avatar, withAvatar.avatarUrl, withAvatar.profileImage, withAvatar.image];
+  return String(candidates.find((value) => typeof value === 'string' && value.trim()) || '').trim();
 };
 
 const Agents: React.FC = () => {
@@ -76,8 +112,7 @@ const Agents: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [startingChatAgentId, setStartingChatAgentId] = useState<string>('');
-  const [editingPermissionSet, setEditingPermissionSet] = useState<AgentToolPermissionSet | null>(null);
-  const [managementTab, setManagementTab] = useState<'agents' | 'permissionSets'>('agents');
+  const [avatarLoadErrors, setAvatarLoadErrors] = useState<Record<string, boolean>>({});
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;
@@ -132,27 +167,6 @@ const Agents: React.FC = () => {
       },
     }
   );
-
-  const upsertPermissionSetMutation = useMutation(
-    ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'> }) =>
-      agentService.upsertToolPermissionSet(roleCode, updates),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('agentToolPermissionSets');
-        setEditingPermissionSet(null);
-      },
-    },
-  );
-
-  const resetPermissionSetMutation = useMutation(agentService.resetToolPermissionSetsBySystemRoles, {
-    onSuccess: (result) => {
-      queryClient.invalidateQueries('agentToolPermissionSets');
-      const missing = (result.missingRoleCodes || []).length
-        ? `\n缺失角色: ${(result.missingRoleCodes || []).join(', ')}`
-        : '';
-      alert(`已按系统角色重置工具权限集。\n重置数量: ${result.resetCount}/${result.totalRoles}${missing}`);
-    },
-  });
 
   const handleDelete = (agent: Agent) => {
     const id = getAgentId(agent);
@@ -260,33 +274,6 @@ const Agents: React.FC = () => {
         </button>
       </div>
 
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-6">
-          <button
-            onClick={() => setManagementTab('agents')}
-            className={`py-2 text-sm font-medium border-b-2 ${
-              managementTab === 'agents'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Agent 管理
-          </button>
-          <button
-            onClick={() => setManagementTab('permissionSets')}
-            className={`py-2 text-sm font-medium border-b-2 ${
-              managementTab === 'permissionSets'
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            工具权限集管理
-          </button>
-        </nav>
-      </div>
-
-      {managementTab === 'agents' && (
-        <>
       {/* 创始人模型配置区域 */}
       <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
         <div className="flex items-center mb-4">
@@ -329,96 +316,120 @@ const Agents: React.FC = () => {
       </div>
 
       {/* Agent列表 */}
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <ul className="divide-y divide-gray-200">
-          {agents?.map((agent) => (
-            <li key={getAgentId(agent) || agent.name}>
-              <div className="px-4 py-4 flex items-center sm:px-6">
-                <div className="min-w-0 flex-1 sm:flex sm:items-center sm:justify-between">
-                  <div>
-                    <div className="flex items-center text-sm">
-                      <p className="font-medium text-gray-900 truncate">{agent.name}</p>
-                      {isFounder(agent) && (
-                        <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          getFounderRole(agent) === 'CEO' 
-                            ? 'bg-blue-100 text-blue-800' 
-                            : 'bg-purple-100 text-purple-800'
-                        }`}>
-                          {getFounderRole(agent)}
-                        </span>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {agents?.map((agent) => {
+            const agentId = getAgentId(agent) || agent.name;
+            const avatarUrl = getAgentAvatarUrl(agent);
+            const showAvatarImage = !!avatarUrl && !avatarLoadErrors[agentId];
+
+            return (
+              <div
+                key={agentId}
+                className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="h-12 w-12 overflow-hidden rounded-full bg-gray-100">
+                      {showAvatarImage ? (
+                        <img
+                          src={avatarUrl}
+                          alt={`${agent.name} 头像`}
+                          className="h-full w-full object-cover"
+                          onError={() => {
+                            setAvatarLoadErrors((prev) => ({ ...prev, [agentId]: true }));
+                          }}
+                        />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center text-gray-500">
+                          <UserCircleIcon className="h-8 w-8" />
+                        </div>
                       )}
-                      <span className={`ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        agent.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {agent.isActive ? '活跃' : '非活跃'}
-                      </span>
                     </div>
-                    <div className="mt-2 flex items-center text-sm text-gray-500">
-                      <p className="truncate">{agent.description}</p>
-                    </div>
-                    <div className="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-                      <span>角色: {getRoleDisplayName(roleMap.get(agent.roleId))}</span>
-                      <span className="flex items-center">
-                        <CpuChipIcon className="h-3 w-3 mr-1" />
-                        {agent.model?.name}
-                      </span>
-                      <span>能力: {agent.capabilities?.slice(0, 3).join(', ')}{agent.capabilities?.length > 3 ? '...' : ''}</span>
-                      <span className="flex items-center">
-                        <WrenchScrewdriverIcon className="h-3 w-3 mr-1" />
-                        工具: {agent.tools?.length || 0}
-                      </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold text-gray-900">{agent.name}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{getRoleDisplayName(roleMap.get(agent.roleId))}</p>
                     </div>
                   </div>
-                  <div className="mt-4 flex-shrink-0 sm:mt-0 sm:ml-5">
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleStartChat(agent)}
-                        disabled={startingChatAgentId === getAgentId(agent)}
-                        className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
-                        title="开始聊天"
-                      >
-                        <ChatBubbleLeftRightIcon className="h-3.5 w-3.5 mr-1" />
-                        {startingChatAgentId === getAgentId(agent) ? '进入中...' : '开始聊天'}
-                      </button>
-                      <button
-                        onClick={() => handleViewDetail(agent)}
-                        className="inline-flex items-center px-3 py-1.5 border border-gray-200 text-xs font-medium rounded text-gray-700 bg-gray-50 hover:bg-gray-100"
-                        title="查看详情"
-                      >
-                        <EyeIcon className="h-3.5 w-3.5 mr-1" />
-                        详情
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(agent)}
-                        className="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                        title={agent.isActive ? '停用' : '启用'}
-                      >
-                        <PowerIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => handleEditAgent(agent)}
-                        className="p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                        title="编辑"
-                      >
-                        <PencilIcon className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(agent)}
-                        className="p-2 rounded-md text-red-400 hover:text-red-600 hover:bg-red-50"
-                        title="删除"
-                      >
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    agent.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {agent.isActive ? '活跃' : '非活跃'}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {isFounder(agent) && (
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                      getFounderRole(agent) === 'CEO' ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
+                    }`}>
+                      {getFounderRole(agent)}
+                    </span>
+                  )}
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                    <CpuChipIcon className="mr-1 h-3 w-3" />
+                    {agent.model?.name || '-'}
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
+                    <WrenchScrewdriverIcon className="mr-1 h-3 w-3" />
+                    工具 {agent.tools?.length || 0}
+                  </span>
+                </div>
+
+                <p className="mt-3 line-clamp-2 min-h-[2.5rem] text-sm text-gray-600">{agent.description || '暂无描述'}</p>
+
+                <p className="mt-2 text-xs text-gray-500">
+                  能力: {agent.capabilities?.length ? `${agent.capabilities.slice(0, 3).join('、')}${agent.capabilities.length > 3 ? '...' : ''}` : '未配置'}
+                </p>
+
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleStartChat(agent)}
+                    disabled={startingChatAgentId === getAgentId(agent)}
+                    className="inline-flex items-center justify-center rounded-md border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-100 disabled:opacity-50"
+                    title="开始聊天"
+                  >
+                    <ChatBubbleLeftRightIcon className="mr-1 h-3.5 w-3.5" />
+                    {startingChatAgentId === getAgentId(agent) ? '进入中...' : '开始聊天'}
+                  </button>
+                  <button
+                    onClick={() => handleViewDetail(agent)}
+                    className="inline-flex items-center justify-center rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                    title="查看详情"
+                  >
+                    <EyeIcon className="mr-1 h-3.5 w-3.5" />
+                    详情
+                  </button>
+                </div>
+
+                <div className="mt-2 flex items-center justify-end gap-1 border-t border-gray-100 pt-2">
+                  <button
+                    onClick={() => handleToggleActive(agent)}
+                    className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title={agent.isActive ? '停用' : '启用'}
+                  >
+                    <PowerIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleEditAgent(agent)}
+                    className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                    title="编辑"
+                  >
+                    <PencilIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(agent)}
+                    className="rounded-md p-2 text-red-400 hover:bg-red-50 hover:text-red-600"
+                    title="删除"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
-            </li>
-          ))}
-        </ul>
-        
+            );
+          })}
+
         {agents?.length === 0 && (
-          <div className="text-center py-12">
+          <div className="col-span-full py-12 text-center">
             <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">没有Agent</h3>
             <p className="mt-1 text-sm text-gray-500">开始创建你的第一个AI Agent</p>
@@ -434,78 +445,6 @@ const Agents: React.FC = () => {
           </div>
         )}
       </div>
-      </>
-      )}
-
-      {managementTab === 'permissionSets' && (
-      <div className="bg-white shadow overflow-hidden sm:rounded-md">
-        <div className="px-4 py-4 border-b border-gray-200 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">工具权限集管理</h2>
-            <p className="mt-1 text-sm text-gray-500">按系统角色管理工具白名单与能力集合</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500">共 {toolPermissionSets?.length || 0} 个权限集</span>
-            <button
-              onClick={() => resetPermissionSetMutation.mutate()}
-              disabled={resetPermissionSetMutation.isLoading}
-              className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
-            >
-              {resetPermissionSetMutation.isLoading ? '重置中...' : '按系统角色重置数据'}
-            </button>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">系统角色</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Role Code</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Exposed</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
-                <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
-                <th className="px-4 py-3 text-right font-medium text-gray-600">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(toolPermissionSets || []).map((set) => (
-                <tr key={set.roleCode}>
-                  <td className="px-4 py-3 font-medium text-gray-900">{set.roleName || '-'}</td>
-                  <td className="px-4 py-3 text-gray-700">{set.roleCode || '-'}</td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        set.exposed ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {set.exposed ? '是' : '否'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-700">{set.tools?.length || 0}</td>
-                  <td className="px-4 py-3 text-gray-700">{set.capabilities?.length || 0}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      onClick={() => setEditingPermissionSet(set)}
-                      className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
-                    >
-                      <PencilIcon className="h-3 w-3 mr-1" />
-                      编辑权限集
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {(toolPermissionSets || []).length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                    暂无工具权限集
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      )}
 
       {/* 创建Agent模态框 */}
       {isCreateModalOpen && (
@@ -545,20 +484,6 @@ const Agents: React.FC = () => {
         />
       )}
 
-      {editingPermissionSet && (
-        <EditToolPermissionSetModal
-          permissionSet={editingPermissionSet}
-          availableTools={availableTools || []}
-          onClose={() => setEditingPermissionSet(null)}
-          onSave={(updates) => {
-            upsertPermissionSetMutation.mutate({
-              roleCode: editingPermissionSet.roleCode,
-              updates,
-            });
-          }}
-          isSaving={upsertPermissionSetMutation.isLoading}
-        />
-      )}
     </div>
   );
 };
@@ -701,76 +626,6 @@ const CreateAgentModal: React.FC<{
         <div>
           <h3 className="text-xl font-semibold text-gray-900 mb-6">创建新Agent</h3>
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* 模型选择 - 放在最前面 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <CpuChipIcon className="h-4 w-4 inline mr-1" />
-                选择AI模型 <span className="text-red-500">*</span>
-              </label>
-              <select
-                required
-                value={formData.modelId}
-                onChange={(e) => setFormData({ ...formData, modelId: e.target.value, apiKeyId: '' })}
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              >
-                <option value="">请选择模型...</option>
-                {availableModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name} ({model.provider})
-                  </option>
-                ))}
-              </select>
-              {selectedModel && (
-                <div className="mt-2 p-3 bg-gray-50 rounded-md text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Max Tokens:</span>
-                    <span className="font-medium">{selectedModel.maxTokens.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between mt-1">
-                    <span className="text-gray-600">Temperature:</span>
-                    <span className="font-medium">{selectedModel.temperature}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* API Key选择 */}
-            {selectedModel && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <LockClosedIcon className="h-4 w-4 inline mr-1" />
-                  选择API密钥
-                  <span className="text-xs text-gray-500 ml-1">(可选，使用环境变量作为默认)</span>
-                </label>
-                <select
-                  value={formData.apiKeyId}
-                  onChange={(e) => setFormData({ ...formData, apiKeyId: e.target.value })}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                >
-                  <option value="">使用系统默认密钥</option>
-                  {filteredApiKeys.map((key) => {
-                    const keyId = key.id || key._id;
-                    const masked = key.keyMasked || '****';
-                    return (
-                      <option key={keyId} value={keyId}>
-                        {masked} ({key.provider})
-                      </option>
-                    );
-                  })}
-                </select>
-                {filteredApiKeys.length === 0 && selectedModel && (
-                  <p className="mt-2 text-sm text-amber-600">
-                    未找到 {selectedModel.provider} 的活跃API密钥，将使用系统默认配置
-                  </p>
-                )}
-                {filteredApiKeys.length > 0 && !formData.apiKeyId && (
-                  <p className="mt-2 text-sm text-blue-600">
-                    已配置 {filteredApiKeys.length} 个 {selectedModel.provider} API密钥可供选择
-                  </p>
-                )}
-              </div>
-            )}
-
             <div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">名称 <span className="text-red-500">*</span></label>
@@ -837,7 +692,75 @@ const CreateAgentModal: React.FC<{
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">可用工具</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <CpuChipIcon className="h-4 w-4 inline mr-1" />
+                模型设置 <span className="text-red-500">*</span>
+              </label>
+              <select
+                required
+                value={formData.modelId}
+                onChange={(e) => setFormData({ ...formData, modelId: e.target.value, apiKeyId: '' })}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">请选择模型...</option>
+                {availableModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.name} ({model.provider})
+                  </option>
+                ))}
+              </select>
+              {selectedModel && (
+                <div className="mt-2 rounded-md bg-gray-50 p-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Max Tokens:</span>
+                    <span className="font-medium">{selectedModel.maxTokens.toLocaleString()}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-gray-600">Temperature:</span>
+                    <span className="font-medium">{selectedModel.temperature}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {selectedModel && (
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
+                  <LockClosedIcon className="mr-1 inline h-4 w-4" />
+                  选择API密钥
+                  <span className="ml-1 text-xs text-gray-500">(可选，使用环境变量作为默认)</span>
+                </label>
+                <select
+                  value={formData.apiKeyId}
+                  onChange={(e) => setFormData({ ...formData, apiKeyId: e.target.value })}
+                  className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                >
+                  <option value="">使用系统默认密钥</option>
+                  {filteredApiKeys.map((key) => {
+                    const keyId = key.id || key._id;
+                    const masked = key.keyMasked || '****';
+                    return (
+                      <option key={keyId} value={keyId}>
+                        {masked} ({key.provider})
+                      </option>
+                    );
+                  })}
+                </select>
+                {filteredApiKeys.length === 0 && selectedModel && (
+                  <p className="mt-2 text-sm text-amber-600">
+                    未找到 {selectedModel.provider} 的活跃API密钥，将使用系统默认配置
+                  </p>
+                )}
+                {filteredApiKeys.length > 0 && !formData.apiKeyId && (
+                  <p className="mt-2 text-sm text-blue-600">
+                    已配置 {filteredApiKeys.length} 个 {selectedModel.provider} API密钥可供选择
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">工具设置</label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                 <select
                   value={toolProviderFilter}
@@ -856,14 +779,14 @@ const CreateAgentModal: React.FC<{
                 >
                   <option value="">全部 Namespace</option>
                   {createToolNamespaceOptions.map((namespace) => (
-                    <option key={namespace} value={namespace}>{namespace}</option>
+                    <option key={namespace} value={namespace}>{getToolNamespaceDisplay(namespace)}</option>
                   ))}
                 </select>
               </div>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
                 {groupedAllowedTools.map((group) => (
                   <div key={group.namespace} className="space-y-1">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{getToolNamespaceDisplay(group.namespace)}</p>
                     {group.items.map((tool) => {
                       const toolId = getToolKey(tool);
                       const checked = formData.selectedTools.includes(toolId);
@@ -1383,14 +1306,14 @@ const EditAgentModal: React.FC<{
               >
                 <option value="">全部 Namespace</option>
                 {editToolNamespaceOptions.map((namespace) => (
-                  <option key={namespace} value={namespace}>{namespace}</option>
+                  <option key={namespace} value={namespace}>{getToolNamespaceDisplay(namespace)}</option>
                 ))}
               </select>
             </div>
             <div className="max-h-[58vh] overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
             {groupedAllowedTools.map((group) => (
               <div key={group.namespace} className="space-y-1">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{getToolNamespaceDisplay(group.namespace)}</p>
                 {group.items.map((tool) => {
                   const toolId = getToolKey(tool);
                   const checked = selectedTools.includes(toolId);
@@ -1499,188 +1422,6 @@ const EditAgentModal: React.FC<{
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
           >
             {isLoading ? '保存中...' : '保存变更'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const EditToolPermissionSetModal: React.FC<{
-  permissionSet: AgentToolPermissionSet;
-  availableTools: Array<{ id: string; toolId?: string; name: string; provider?: string; namespace?: string; enabled?: boolean }>;
-  onClose: () => void;
-  onSave: (updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'>) => void;
-  isSaving: boolean;
-}> = ({ permissionSet, availableTools, onClose, onSave, isSaving }) => {
-  const [description, setDescription] = useState(permissionSet.description || '');
-  const [tools, setTools] = useState<string[]>(permissionSet.tools || []);
-  const [capabilitiesText, setCapabilitiesText] = useState((permissionSet.capabilities || []).join(', '));
-  const [exposed, setExposed] = useState(permissionSet.exposed === true);
-  const [providerFilter, setProviderFilter] = useState('');
-  const [namespaceFilter, setNamespaceFilter] = useState('');
-
-  const toggleTool = (toolId: string, checked: boolean) => {
-    setTools((prev) => (checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)));
-  };
-
-  const capabilities = capabilitiesText
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const providerOptions = useMemo(() => {
-    return Array.from(
-      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => getToolProvider(tool)).filter(Boolean)),
-    ).sort();
-  }, [availableTools]);
-
-  const namespaceOptions = useMemo(() => {
-    return Array.from(
-      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => getToolNamespace(tool)).filter(Boolean)),
-    ).sort();
-  }, [availableTools]);
-
-  const groupedTools = useMemo(() => {
-    const filtered = availableTools
-      .filter((tool) => tool.enabled !== false)
-      .filter((tool) => !providerFilter || getToolProvider(tool) === providerFilter)
-      .filter((tool) => !namespaceFilter || getToolNamespace(tool) === namespaceFilter);
-
-    const grouped = new Map<string, typeof filtered>();
-    for (const tool of filtered) {
-      const namespace = getToolNamespace(tool);
-      if (!grouped.has(namespace)) grouped.set(namespace, []);
-      grouped.get(namespace)!.push(tool);
-    }
-
-    return Array.from(grouped.entries())
-      .map(([namespace, items]) => ({
-        namespace,
-        items: items.sort((a, b) => getToolKey(a).localeCompare(getToolKey(b))),
-      }))
-      .sort((a, b) => a.namespace.localeCompare(b.namespace));
-  }, [availableTools, providerFilter, namespaceFilter]);
-
-  return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-10 mx-auto p-6 border w-[720px] shadow-lg rounded-lg bg-white max-h-[90vh] overflow-y-auto">
-        <h3 className="text-xl font-semibold text-gray-900 mb-2">编辑工具权限集</h3>
-        <p className="text-sm text-gray-500 mb-5">
-          系统角色: <span className="font-medium text-gray-900">{permissionSet.roleName}</span>
-          <span className="ml-2 text-xs text-gray-400">({permissionSet.roleCode})</span>
-        </p>
-
-        <div className="space-y-4">
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Capabilities（逗号分隔）</label>
-            <input
-              type="text"
-              value={capabilitiesText}
-              onChange={(e) => setCapabilitiesText(e.target.value)}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          <div className="flex items-center">
-            <input
-              id="mcp-exposed"
-              type="checkbox"
-              checked={exposed}
-              onChange={(e) => setExposed(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            <label htmlFor="mcp-exposed" className="ml-2 text-sm text-gray-700">
-              Exposed（在 MCP 可见列表中展示）
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tools</label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
-              <select
-                value={providerFilter}
-                onChange={(e) => setProviderFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-              >
-                <option value="">全部 Provider</option>
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>{provider}</option>
-                ))}
-              </select>
-              <select
-                value={namespaceFilter}
-                onChange={(e) => setNamespaceFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-              >
-                <option value="">全部 Namespace</option>
-                {namespaceOptions.map((namespace) => (
-                  <option key={namespace} value={namespace}>{namespace}</option>
-                ))}
-              </select>
-            </div>
-            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-              {groupedTools.map((group) => (
-                <div key={group.namespace} className="space-y-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{group.namespace}</p>
-                  {group.items.map((tool) => {
-                    const toolId = getToolKey(tool);
-                    const checked = tools.includes(toolId);
-                    return (
-                      <label key={toolId} className="flex items-center justify-between text-sm text-gray-700 pl-1">
-                        <span>
-                          {tool.name}
-                          <span className="ml-2 text-xs text-gray-400">{toolId}</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => toggleTool(toolId, e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-              ))}
-              {groupedTools.length === 0 && (
-                <p className="text-xs text-gray-500">当前筛选条件下暂无可配置工具</p>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-          >
-            取消
-          </button>
-          <button
-            onClick={() =>
-              onSave({
-                tools,
-                capabilities,
-                exposed,
-                description: description.trim(),
-              })
-            }
-            disabled={isSaving}
-            className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
-          >
-            {isSaving ? '保存中...' : '保存 Profile'}
           </button>
         </div>
       </div>

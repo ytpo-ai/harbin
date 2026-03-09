@@ -30,7 +30,7 @@
 2. 工具执行：通过 `POST /tools/:id/execute` 触发工具调用，写入执行日志。
 3. 统一发现：通过 `/tools/registry` 输出统一 `Tool` 视图，并支持按 provider/namespace 过滤。
 4. 兼容映射：通过 `/tools/registry/mappings` 维护 legacy 与 unified tool id 映射。
-5. Provider 接入：Composio 通过 `composio.service.ts` 对接第三方工具。
+5. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
 6. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
 7. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
 
@@ -46,6 +46,7 @@
 | `TOOLING_UNIFICATION_TOOL_MIGRATION_CHECKLIST.md` | 工具存量迁移映射与下线清单 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理与工具白名单计划 |
 | `AGENT_TOOL_MANAGEMENT_UI_OPTIMIZATION_PLAN.md` | 工具管理页与调用日志 Tab 展示优化计划 |
+| `TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_PLAN.md` | Tool ID 命名层级与 namespace 优化计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -61,6 +62,7 @@
 |------|------|
 | `technical/TOOLING_UNIFICATION_ARCHITECTURE_DESIGN.md` | 工具系统统一化技术设计 |
 | `technical/MCP_PROFILE_GOVERNANCE_TECHNICAL.md` | Agent 工具白名单治理技术设计 |
+| `technical/TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_DESIGN.md` | Tool ID 五段式命名与 namespace 分类设计 |
 | `api/agents-api.md` | Tools/Agent/MCP 相关接口清单 |
 
 ---
@@ -73,7 +75,9 @@
 |------|------|
 | `tool.module.ts` | Tools 模块装配与依赖注入 |
 | `tool.controller.ts` | 工具列表、执行、执行统计接口 |
-| `tool.service.ts` | 工具注册、执行编排、结果封装 |
+| `tool.service.ts` | 工具注册、执行编排、结果封装（含统一分发） |
+| `web-tools.service.ts` | Web Search/Web Fetch/Content Extract 内置工具实现 |
+| `exa.service.ts` | Exa 搜索接入（默认 web search provider） |
 | `composio.service.ts` | Composio 工具包接入与调用封装 |
 | `gh-repo-docs-reader-mcp.util.ts` | 文档检索类工具实现 |
 | `gh-repo-updates-mcp.util.ts` | 更新摘要类工具实现 |
@@ -96,5 +100,5 @@
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Tools.tsx` | 工具管理页（工具/调用日志 Tab、工具展示、执行日志展示、手动执行入口） |
+| `pages/Tools.tsx` | 工具管理页（工具/调用日志/工具权限集管理 Tab、按 provider/namespace/toolkit 筛选、工具模糊搜索、执行日志展示、手动执行入口） |
 | `services/toolService.ts` | 工具注册表、执行历史、执行统计、工具执行接口封装 |
