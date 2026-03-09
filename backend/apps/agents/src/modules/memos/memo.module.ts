@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
+import { Tool, ToolSchema } from '../../../../../src/shared/schemas/tool.schema';
 import { AgentMemo, AgentMemoSchema } from '../../schemas/agent-memo.schema';
 import { AgentMemoVersion, AgentMemoVersionSchema } from '../../schemas/agent-memo-version.schema';
 import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
@@ -22,6 +23,7 @@ import { EvaluationAggregationService } from './evaluation-aggregation.service';
       { name: AgentMemo.name, schema: AgentMemoSchema },
       { name: AgentMemoVersion.name, schema: AgentMemoVersionSchema },
       { name: Agent.name, schema: AgentSchema },
+      { name: Tool.name, schema: ToolSchema },
       { name: AgentSkill.name, schema: AgentSkillSchema },
       { name: Skill.name, schema: SkillSchema },
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },

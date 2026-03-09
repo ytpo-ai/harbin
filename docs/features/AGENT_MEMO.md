@@ -57,9 +57,9 @@ type MemoType = 'knowledge' | 'standard';
 - **数据源**：Agent 表、AgentSkill 表、Skill 表、OrchestrationTask 表
 - **更新触发**：`agent.updated`、`agent.skill_changed`、定时任务
 - **内容模板**：
-  - Agent Profile（角色、历史类型、描述）
+  - Agent Profile（Agent 名称、角色、历史类型、描述）
   - 技能矩阵（绑定技能、熟练度、统计）
-  - 能力域（工具集、模型能力）
+  - 能力域（工具集、工具描述、模型能力）
   - 工作风格（人格特质、学习能力）
   - 任务履历（近30天统计、最近完成任务）
 

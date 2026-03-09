@@ -1,16 +1,26 @@
 # Agent Identity Memo Missing Plan
 
 ## Scope
-- Fix missing identity memo on agent detail page after agent profile updates.
-- Validate identity aggregation triggers and memo retrieval for agent detail view.
+- Complete missing fields in Agent identity memo: `agent name`, `工具描述`.
+- Tool permission display is deferred for now.
 
 ## Plan
-1. Review agent detail memo tab data flow and rendering logic. (frontend)
-2. Verify identity memo aggregation is triggered on agent updates and written to memo storage. (backend)
-3. Check memo API filtering and response mapping for memoKind=identity. (backend)
-4. Adjust frontend memo tab to display identity memo when available. (frontend)
-5. Add/update tests and update docs if behavior changes. (test/docs)
+1. Inspect identity aggregation pipeline and confirm available data sources for agent info, tool metadata, and role tool permission set. (backend)
+2. Update identity memo template and mapping to include explicit `agent name` in Agent Profile section. (backend)
+3. Add tool capability section details:
+   - `工具描述`: resolve from tool registry metadata (fallback to default message). (backend)
+4. Update identity memo payload/source markers to reflect added dependency (`tool_registry`). (backend)
+5. Add unit tests for identity content rendering to cover:
+   - normal case with tool metadata,
+   - fallback case when tool metadata is missing,
+   - empty tool scenarios. (test)
+6. Update `docs/features/AGENT_MEMO.md` identity template description for the new fields and run targeted test validation. (docs/test)
+
+## Key Impact
+- Backend: `modules/memos/identity-aggregation.service.ts`
+- Data source: `Tool` collection
+- Test: identity aggregation unit tests
+- Docs: `docs/features/AGENT_MEMO.md`
 
 ## Risks / Dependencies
-- Missing aggregation events or cached memo refresh can delay identity visibility.
-- Existing filters may hide identity memos on detail view.
+- Tool description consistency depends on registry completeness; missing items require graceful fallback text.

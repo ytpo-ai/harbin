@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
 import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
@@ -10,6 +11,7 @@ import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 interface IdentityData {
   agent: AgentBasicInfo;
   skills: SkillInfo[];
+  tools: ToolDescriptor[];
 }
 
 interface AgentBasicInfo {
@@ -39,12 +41,18 @@ interface SkillInfo {
   category: string;
 }
 
+interface ToolDescriptor {
+  id: string;
+  description: string;
+}
+
 @Injectable()
 export class IdentityAggregationService {
   private readonly logger = new Logger(IdentityAggregationService.name);
 
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
+    @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
     @InjectModel(AgentSkill.name) private readonly agentSkillModel: Model<AgentSkillDocument>,
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
@@ -54,19 +62,21 @@ export class IdentityAggregationService {
     this.logger.log(`Starting identity aggregation for agent: ${agentId}`);
 
     try {
-      const [agentBasic, skills] = await Promise.all([
+      const [agentBasic, skills, tools] = await Promise.all([
         this.getAgentBasicInfo(agentId),
         this.getAgentSkills(agentId),
+        this.getTools(agentId),
       ]);
 
       const content = this.buildIdentityContent({
         agent: agentBasic,
         skills,
+        tools,
       });
 
       await this.updateIdentityMemo(agentId, content, {
         lastAggregatedAt: new Date().toISOString(),
-        sources: ['agent', 'agent_skills'],
+        sources: ['agent', 'agent_skills', 'tool_registry'],
       });
 
       this.logger.log(`Identity aggregation completed for agent: ${agentId}`);
@@ -78,10 +88,7 @@ export class IdentityAggregationService {
   }
 
   private async getAgentBasicInfo(agentId: string): Promise<AgentBasicInfo> {
-    let agent = await this.agentModel.findById(agentId).exec();
-    if (!agent) {
-      agent = await this.agentModel.findOne({ id: agentId }).exec();
-    }
+    const agent = await this.getAgentDocument(agentId);
     if (!agent) {
       throw new Error(`Agent not found: ${agentId}`);
     }
@@ -106,6 +113,14 @@ export class IdentityAggregationService {
     };
   }
 
+  private async getAgentDocument(agentId: string): Promise<AgentDocument | null> {
+    let agent = await this.agentModel.findById(agentId).exec();
+    if (!agent) {
+      agent = await this.agentModel.findOne({ id: agentId }).exec();
+    }
+    return agent;
+  }
+
   private async getAgentSkills(agentId: string): Promise<SkillInfo[]> {
     const assignments = await this.agentSkillModel.find({ agentId, enabled: true }).exec();
     if (assignments.length === 0) {
@@ -128,13 +143,78 @@ export class IdentityAggregationService {
     });
   }
 
+  private normalizeToolId(toolId: string): string {
+    return String(toolId || '').trim();
+  }
+
+  private uniqueToolIds(...groups: string[][]): string[] {
+    const merged = groups
+      .flat()
+      .map((item) => this.normalizeToolId(item))
+      .filter(Boolean);
+    return Array.from(new Set(merged));
+  }
+
+  private async getTools(agentId: string): Promise<ToolDescriptor[]> {
+    const agent = await this.getAgentDocument(agentId);
+    if (!agent) {
+      return [];
+    }
+
+    const toolIds = this.uniqueToolIds(agent.tools || []);
+    if (!toolIds.length) {
+      return [];
+    }
+
+    const tools = await this.toolModel
+      .find({
+        $or: [
+          { id: { $in: toolIds } },
+          { canonicalId: { $in: toolIds } },
+          { aliases: { $in: toolIds } },
+        ],
+      })
+      .exec();
+
+    const toolMap = new Map<string, { description: string }>();
+    for (const tool of tools) {
+      const normalizedId = this.normalizeToolId((tool as any).id);
+      const canonicalId = this.normalizeToolId((tool as any).canonicalId);
+      const descriptor = {
+        description: (tool as any).description || 'Tool metadata not found in registry',
+      };
+      if (normalizedId) {
+        toolMap.set(normalizedId, descriptor);
+      }
+      if (canonicalId) {
+        toolMap.set(canonicalId, descriptor);
+      }
+      const aliases = Array.isArray((tool as any).aliases) ? (tool as any).aliases : [];
+      for (const alias of aliases) {
+        const normalizedAlias = this.normalizeToolId(alias);
+        if (normalizedAlias) {
+          toolMap.set(normalizedAlias, descriptor);
+        }
+      }
+    }
+
+    return toolIds.map((toolId) => {
+      const metadata = toolMap.get(toolId);
+      return {
+        id: toolId,
+        description: metadata?.description || 'Tool metadata not found in registry',
+      };
+    });
+  }
+
   private buildIdentityContent(data: IdentityData): string {
-    const { agent, skills } = data;
+    const { agent, skills, tools } = data;
 
     const lines: string[] = [];
 
     lines.push('# 身份与职责', '');
     lines.push('## Agent Profile', '');
+    lines.push(`- **Agent 名称**：${agent.name || '待补充'}`);
     lines.push(`- **角色ID**：${agent.roleId || '待补充'}`);
     lines.push(`- **历史类型**：${agent.type || '未设置'}`);
     lines.push(`- **描述**：${agent.description || '待补充'}`);
@@ -168,11 +248,21 @@ export class IdentityAggregationService {
 
     lines.push('## 能力域', '');
     lines.push(`- **主要领域**：${this.extractDomains(skills)}`);
-    lines.push(`- **工具集**：${agent.tools.length > 0 ? agent.tools.join(', ') : '待补充'}`);
+    lines.push(`- **工具集**：${tools.length > 0 ? tools.map((tool) => tool.id).join(', ') : '待补充'}`);
     lines.push(
       `- **模型能力**：${agent.capabilities.length > 0 ? agent.capabilities.join(', ') : '待补充'}`,
       '',
     );
+
+    if (tools.length > 0) {
+      lines.push('### 工具描述', '');
+      lines.push('| 工具ID | 描述 |');
+      lines.push('|--------|------|');
+      for (const tool of tools) {
+        lines.push(`| ${tool.id} | ${tool.description} |`);
+      }
+      lines.push('');
+    }
 
     lines.push('## 工作风格', '');
     lines.push(`- 工作伦理：${agent.personality.workEthic}/100`);
@@ -184,7 +274,7 @@ export class IdentityAggregationService {
     lines.push('## 元信息', '');
     lines.push(`- version: ${Date.now()}`);
     lines.push(`- lastAggregatedAt: ${new Date().toISOString()}`);
-    lines.push(`- sources: [agent, agent_skills]`);
+    lines.push(`- sources: [agent, agent_skills, tool_registry]`);
 
     return lines.join('\n');
   }
