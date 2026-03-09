@@ -189,14 +189,19 @@ export class SkillService {
       .findOneAndUpdate(
         { agentId, skillId },
         {
-          agentId,
-          skillId,
-          proficiencyLevel: payload?.proficiencyLevel || 'beginner',
-          assignedBy: payload?.assignedBy || 'AgentSkillManager',
-          enabled: payload?.enabled ?? true,
-          note: payload?.note,
+          $set: {
+            proficiencyLevel: payload?.proficiencyLevel || 'beginner',
+            assignedBy: payload?.assignedBy || 'AgentSkillManager',
+            enabled: payload?.enabled ?? true,
+            note: payload?.note,
+          },
+          $setOnInsert: {
+            id: uuidv4(),
+            agentId,
+            skillId,
+          },
         },
-        { upsert: true, new: true },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
       )
       .exec();
 
