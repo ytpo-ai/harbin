@@ -125,6 +125,7 @@ Profile 字段说明：
 - `gh-repo-docs-reader-mcp`
 - `gh-repo-updates-mcp`
 - `orchestration_create_plan`
+- `orchestration_update_plan`
 - `orchestration_run_plan`
 - `orchestration_get_plan`
 - `orchestration_list_plans`
@@ -132,6 +133,18 @@ Profile 字段说明：
 - `orchestration_complete_human_task`
 - `orchestration_create_schedule`
 - `orchestration_update_schedule`
+- `orchestration_debug_task`
+- `builtin.sys-mg.mcp.skill-master.list-skills`
+- `builtin.sys-mg.mcp.skill-master.create-skill`
+
+Skill Master MCP 参数约定：
+
+- `builtin.sys-mg.mcp.skill-master.list-skills`
+  - 支持 `title` 模糊检索（映射到 skill name search）
+  - 可选参数：`status`、`category`、`limit`、`page`
+- `builtin.sys-mg.mcp.skill-master.create-skill`
+  - 必填：`title`（或 `name`）、`description`
+  - 可选：`category`、`tags`、`sourceType`、`sourceUrl`、`provider`、`version`、`status`、`confidenceScore`、`metadata`
 
 会议编排 MCP 说明：
 
@@ -140,12 +153,19 @@ Profile 字段说明：
   - `orchestration_run_plan` 需要 `confirm: true`
   - `orchestration_reassign_task` 需要 `confirm: true`
   - `orchestration_complete_human_task` 需要 `confirm: true`
+- 计划更新 MCP：
+  - `orchestration_update_plan` -> `PATCH /orchestration/plans/:id`
+  - 参数语义：`planId` 必填；支持按需更新 `title`、`prompt`（映射 `sourcePrompt`）、`mode`、`plannerAgentId`、`metadata`
 - 定时计划相关 MCP（创建/更新）通过 Scheduler 接口落地：
   - `orchestration_create_schedule` -> `POST /orchestration/schedules`
   - `orchestration_update_schedule` -> `PUT /orchestration/schedules/:id`
   - 参数语义：
     - `orchestration_create_schedule`：必须传 `planId` + `scheduleType(cron|interval)` + 调度表达式参数（`expression` 或 `intervalMs`）
     - `orchestration_update_schedule`：用于更新 schedule 调度信息（如 `enabled`、cron/interval 配置），不再要求传执行 target/input
+- 任务调试 MCP：
+  - `orchestration_debug_task` -> `POST /orchestration/tasks/:id/debug-run`
+  - 参数语义：`taskId` 必填；支持可选 `title`、`description`、`resetResult`
+  - 返回语义：包含 `task` 与 `execution`，并附加调试摘要字段（状态、错误、最近日志、建议动作）供 Agent 连续决策
 
 ## Models（`/models`）
 

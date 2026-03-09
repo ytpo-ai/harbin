@@ -22,6 +22,7 @@ import { ModelManagementService } from '../models/model-management.service';
 import { codeDocsReader } from './local-repo-docs-reader.util';
 import { codeUpdatesReader } from './local-repo-updates-reader.util';
 import { MemoService } from '../memos/memo.service';
+import { SkillService } from '../skills/skill.service';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -120,6 +121,7 @@ export class ToolService {
     private webToolsService: WebToolsService,
     private modelManagementService: ModelManagementService,
     private memoService: MemoService,
+    private skillService: SkillService,
   ) {}
 
   async seedBuiltinTools(): Promise<void> {
@@ -749,6 +751,51 @@ export class ToolService {
             memoId: 'string',
             taskId: 'string',
             tags: 'string[]',
+          },
+        },
+      },
+      {
+        id: 'builtin.sys-mg.mcp.skill-master.list-skills',
+        name: 'Skill MCP List Skills',
+        description: 'List system skills with optional title fuzzy search',
+        type: 'data_analysis' as const,
+        category: 'Skill',
+        requiredPermissions: [{ id: 'skill_read', name: 'Skill Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            title: 'string',
+            status: 'string',
+            category: 'string',
+            limit: 'number',
+            page: 'number',
+          },
+        },
+      },
+      {
+        id: 'builtin.sys-mg.mcp.skill-master.create-skill',
+        name: 'Skill MCP Create Skill',
+        description: 'Create a new skill in system skill library',
+        type: 'api_call' as const,
+        category: 'Skill',
+        requiredPermissions: [{ id: 'skill_write', name: 'Skill Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            title: 'string',
+            name: 'string',
+            description: 'string',
+            category: 'string',
+            tags: 'string[]',
+            sourceType: 'string',
+            sourceUrl: 'string',
+            provider: 'string',
+            version: 'string',
+            status: 'string',
+            confidenceScore: 'number',
+            metadata: 'object',
           },
         },
       },
@@ -1559,6 +1606,10 @@ export class ToolService {
         return this.searchMemoMemory(parameters, agentId);
       case 'builtin.sys-mg.internal.memory.append-memo':
         return this.appendMemoMemory(parameters, agentId);
+      case 'builtin.sys-mg.mcp.skill-master.list-skills':
+        return this.listSkillsByTitle(parameters);
+      case 'builtin.sys-mg.mcp.skill-master.create-skill':
+        return this.createSkillByMcp(parameters);
       case 'builtin.sys-mg.mcp.orchestration.create-plan':
         return this.createOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.update-plan':
@@ -1607,6 +1658,8 @@ export class ToolService {
       'builtin.sys-mg.mcp.audit.list-human-operation-log',
       'builtin.sys-mg.internal.memory.search-memo',
       'builtin.sys-mg.internal.memory.append-memo',
+      'builtin.sys-mg.mcp.skill-master.list-skills',
+      'builtin.sys-mg.mcp.skill-master.create-skill',
       'builtin.sys-mg.mcp.orchestration.create-plan',
       'builtin.sys-mg.mcp.orchestration.update-plan',
       'builtin.sys-mg.mcp.orchestration.run-plan',
@@ -2397,6 +2450,115 @@ export class ToolService {
 
   private escapeRegex(value: string): string {
     return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private async listSkillsByTitle(params: {
+    title?: string;
+    search?: string;
+    status?: string;
+    category?: string;
+    limit?: number;
+    page?: number;
+  }): Promise<any> {
+    const title = String(params?.title || '').trim();
+    const search = String(params?.search || title).trim();
+    const status = String(params?.status || '').trim();
+    const category = String(params?.category || '').trim();
+    const page = Math.max(1, Math.min(Number(params?.page || 1), 1000));
+    const pageSize = Math.max(1, Math.min(Number(params?.limit || 20), 100));
+
+    const result = await this.skillService.getSkillsPaged({
+      status: (status || undefined) as any,
+      category: category || undefined,
+      search: search || undefined,
+      page,
+      pageSize,
+    });
+
+    return {
+      total: result.total,
+      page: result.page,
+      limit: result.pageSize,
+      totalPages: result.totalPages,
+      keyword: search || undefined,
+      status: status || undefined,
+      category: category || undefined,
+      items: result.items.map((skill: any) => ({
+        id: skill.id,
+        title: skill.name,
+        name: skill.name,
+        description: skill.description,
+        category: skill.category,
+        status: skill.status,
+        tags: Array.isArray(skill.tags) ? skill.tags : [],
+        provider: skill.provider,
+        version: skill.version,
+        confidenceScore: skill.confidenceScore,
+        updatedAt: skill.updatedAt,
+      })),
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async createSkillByMcp(params: {
+    title?: string;
+    name?: string;
+    description?: string;
+    category?: string;
+    tags?: string[];
+    sourceType?: string;
+    sourceUrl?: string;
+    provider?: string;
+    version?: string;
+    status?: string;
+    confidenceScore?: number;
+    metadata?: Record<string, any>;
+  }): Promise<any> {
+    const name = String(params?.title || params?.name || '').trim();
+    if (!name) {
+      throw new Error('skill_master_create_skill requires title or name');
+    }
+    const description = String(params?.description || '').trim();
+    if (!description) {
+      throw new Error('skill_master_create_skill requires description');
+    }
+
+    const tags = Array.isArray(params?.tags)
+      ? params.tags.map((tag) => String(tag || '').trim()).filter(Boolean)
+      : [];
+
+    const created = await this.skillService.createSkill({
+      name,
+      description,
+      category: params?.category,
+      tags,
+      sourceType: params?.sourceType as any,
+      sourceUrl: params?.sourceUrl,
+      provider: params?.provider,
+      version: params?.version,
+      status: params?.status as any,
+      confidenceScore: params?.confidenceScore,
+      discoveredBy: 'SkillMasterMCP',
+      metadata: params?.metadata,
+    });
+
+    return {
+      created: true,
+      skill: {
+        id: (created as any).id,
+        title: (created as any).name,
+        name: (created as any).name,
+        description: (created as any).description,
+        category: (created as any).category,
+        status: (created as any).status,
+        tags: Array.isArray((created as any).tags) ? (created as any).tags : [],
+        provider: (created as any).provider,
+        version: (created as any).version,
+        confidenceScore: (created as any).confidenceScore,
+        createdAt: (created as any).createdAt,
+      },
+      createdAt: new Date().toISOString(),
+    };
   }
 
   private parseDateOrThrow(raw?: string, fieldName?: string): Date | undefined {

@@ -11,14 +11,18 @@ import { OperationLog, OperationLogSchema } from '../../../../../src/shared/sche
 import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';
+import { ExaService } from './exa.service';
+import { WebToolsService } from './web-tools.service';
 import { ModelModule } from '../models/model.module';
 import { MemoModule } from '../memos/memo.module';
+import { SkillModule } from '../skills/skill.module';
 
 @Module({
   imports: [
     ConfigModule,
     ModelModule,
     MemoModule,
+    SkillModule,
     MongooseModule.forFeature([
       { name: Tool.name, schema: ToolSchema },
       { name: Toolkit.name, schema: ToolkitSchema },
@@ -30,7 +34,7 @@ import { MemoModule } from '../memos/memo.module';
     ])
   ],
   controllers: [ToolController],
-  providers: [ToolService, ComposioService],
-  exports: [ToolService, ComposioService],
+  providers: [ToolService, ComposioService, ExaService, WebToolsService],
+  exports: [ToolService, ComposioService, ExaService, WebToolsService],
 })
 export class ToolModule {}

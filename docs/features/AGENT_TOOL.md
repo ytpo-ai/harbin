@@ -28,11 +28,14 @@
 
 1. 工具发现：通过 `/tools` 提供工具列表，供 Agent 与管理端选择。
 2. 工具执行：通过 `POST /tools/:id/execute` 触发工具调用，写入执行日志。
+   - 运行时工具事件日志统一记录 `toolName/toolId/params`，用于系统进程日志与任务 Agent 日志对齐观测。
 3. 统一发现：通过 `/tools/registry` 输出统一 `Tool` 视图，并支持按 provider/namespace 过滤。
 4. 兼容映射：通过 `/tools/registry/mappings` 维护 legacy 与 unified tool id 映射。
 5. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
-6. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
-7. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
+6. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
+7. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
+8. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
+9. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
 
 ---
 
