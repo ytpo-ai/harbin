@@ -109,6 +109,13 @@ Profile 字段说明：
 - `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`，并包含 `executionChannel`。
 - `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
 
+搜索工具说明：
+
+- `builtin.internal.web.search.exa`：显式 Exa 搜索工具（`type=auto` + `highlights` 紧凑内容）。
+- `composio.mcp.web.search.serp`：显式 Composio SERP 搜索工具。
+- 兼容映射：`internal.web.search` 与 `builtin.internal.web.search` 会迁移到 `composio.mcp.web.search.serp`。
+- 搜索执行结果中的 `data.provider` 标识实际命中的后端（如 `exa/auto`、`composio/serpapi`）。
+
 常用 MCP 工具执行端点（均为 `POST /tools/:id/execute`）：
 
 - `model_mcp_list_models`
@@ -123,6 +130,8 @@ Profile 字段说明：
 - `orchestration_list_plans`
 - `orchestration_reassign_task`
 - `orchestration_complete_human_task`
+- `orchestration_create_schedule`
+- `orchestration_update_schedule`
 
 会议编排 MCP 说明：
 
@@ -131,6 +140,12 @@ Profile 字段说明：
   - `orchestration_run_plan` 需要 `confirm: true`
   - `orchestration_reassign_task` 需要 `confirm: true`
   - `orchestration_complete_human_task` 需要 `confirm: true`
+- 定时计划相关 MCP（创建/更新）通过 Scheduler 接口落地：
+  - `orchestration_create_schedule` -> `POST /orchestration/schedules`
+  - `orchestration_update_schedule` -> `PUT /orchestration/schedules/:id`
+  - 参数语义：
+    - `orchestration_create_schedule`：必须传 `planId` + `scheduleType(cron|interval)` + 调度表达式参数（`expression` 或 `intervalMs`）
+    - `orchestration_update_schedule`：用于更新 schedule 调度信息（如 `enabled`、cron/interval 配置），不再要求传执行 target/input
 
 ## Models（`/models`）
 

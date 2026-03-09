@@ -38,6 +38,7 @@
 3. 执行复用 `OrchestrationService` 现有执行能力（Agent 调用、状态流转、结果落库）。
 4. 回写 `schedule.lastRun/stats/nextRunAt`。
 5. 支持手动触发、启停、删除与执行历史查询。
+6. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
 
 ### 1.4 API 接口
 
