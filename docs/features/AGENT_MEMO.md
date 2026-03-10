@@ -60,13 +60,15 @@ type MemoType = 'knowledge' | 'standard';
 | **标准** | `custom` | standard | 自定义 |
 | **主题** | `topic` | knowledge | 主题知识积累（按主题归类的运行时事件聚合） |
 
-> 注：`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation`, `achievement`, `criticism` 时，系统自动设置 `memoType = 'standard'`。
+> 注：`memoKind = topic` 时系统强制 `memoType = 'knowledge'`；`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation`, `achievement`, `criticism` 时系统自动设置 `memoType = 'standard'`。
 
 #### Achievement / Criticism 写入规则
 
 - `achievement`：仅高管 / 人类专属助理 / HR 可记录，agent 自身禁止写入。
 - `criticism`：高管 / 人类专属助理 / HR / agent 自身均可记录。
 - 规则在 memo create/update 链路统一执行，基于调用方用户上下文角色与来源字段进行校验。
+- 每个 agent 的 `achievement` 与 `criticism` 各维护一个文档，新增记录追加到文档末尾，不覆盖历史。
+- 追加时若文档已有内容，先插入分割线 `—`，再追加本次记录。
 
 #### Identity（简历）
 
@@ -123,6 +125,7 @@ type MemoType = 'knowledge' | 'standard';
 | PUT | `/api/memos/todos/:id/status` | 更新 TODO 状态 |
 | POST | `/api/memos/events/flush` | 触发 Redis 聚合入库 |
 | GET | `/api/memos/aggregation/status` | 查看聚合状态 |
+| POST | `/api/memos/aggregation/full` | 手动触发全量聚合（Identity + Evaluation） |
 | POST | `/api/memos/identity/aggregate` | 手动触发 Identity 聚合 |
 | POST | `/api/memos/evaluation/aggregate` | 手动触发 Evaluation 聚合 |
 | POST | `/api/memos/docs/rebuild` | 重建 Markdown 索引 |
@@ -132,6 +135,13 @@ type MemoType = 'knowledge' | 'standard';
 - `memo_mcp_search`：检索记忆（可返回摘要或全文）
 - `memo_mcp_append`：追加记忆条目（新建或追加到已有 memo）
 
+`memo_mcp_append` 提示词约束：
+- 写入目标必须是目标 agent 的备忘录。
+- `topic` 必须使用 `memoType=knowledge`。
+- `achievement/criticism` 必须使用 `memoType=standard`，并按追加模式写入，已有内容前插入 `—` 分割线。
+- 传入 `memoType=standard` 时必须显式提供 `memoKind`，避免回退默认 topic。
+- `achievement/criticism` 建议显式传 `targetAgentId`（或等效 agentId 参数）确保不会误写到调用者自身。
+
 ### 1.6 聚合机制
 
 #### 事件驱动
@@ -139,7 +149,11 @@ type MemoType = 'knowledge' | 'standard';
 - Redis key：`memo:event:{agentId}`
 - Redis 缓存 key：`memo:{agentId}:{memoKind}`
 - Redis 刷新队列 key：`memo:refresh:queue:{agentId}`
-- 定时器：`MemoAggregationService` 每 `MEMO_AGGREGATION_INTERVAL_MS`（默认 60s）聚合
+- `MemoAggregationService` 负责事件监听与聚合能力编排，不再内置定时器
+- 定时触发由编排调度模块统一承接：
+  - 事件队列 flush 周期：`MEMO_AGGREGATION_INTERVAL_MS`（默认 60s）
+  - 全量聚合周期：`MEMO_FULL_AGGREGATION_INTERVAL_MS`（默认 24h）
+  - 总开关：`MEMO_SCHEDULER_ENABLED`（`false` 时关闭该组定时任务）
 
 #### TODO/History 聚合边界
 
@@ -227,9 +241,17 @@ type MemoType = 'knowledge' | 'standard';
 
 | 文件 | 功能 |
 |------|------|
-| `modules/memos/memo-aggregation.service.ts` | 聚合调度服务，管理定时/事件触发聚合 |
+| `modules/memos/memo-aggregation.service.ts` | 聚合编排服务，管理事件触发与全量聚合入口 |
 | `modules/memos/identity-aggregation.service.ts` | Identity 简历聚合，从 Agent/Skill/Task 表聚合 |
 | `modules/memos/evaluation-aggregation.service.ts` | Evaluation 工作评估聚合，从 AgentRun/AgentPart 表聚合 |
+
+### 调度承接（backend/src/）
+
+| 文件 | 功能 |
+|------|------|
+| `modules/orchestration/scheduler/scheduler.service.ts` | 统一承接 memo 定时聚合触发（flush + full） |
+| `modules/orchestration/scheduler/scheduler.module.ts` | 注入 scheduler 依赖与 AgentClient 模块 |
+| `modules/agents-client/agent-client.service.ts` | 调用 agents 服务 memo 聚合接口（`/events/flush`、`/aggregation/full`） |
 
 #### 辅助服务
 

@@ -396,6 +396,42 @@ export class AgentClientService {
     }
   }
 
+  async flushMemoEvents(agentId?: string): Promise<{ agents: number; events: number; topics: number } | null> {
+    try {
+      const response = await axios.post<{ agents: number; events: number; topics: number }>(
+        `${this.baseUrl}/api/memos/events/flush`,
+        agentId ? { agentId } : {},
+        {
+          headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+          timeout: this.timeout,
+        },
+      );
+      return response.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`Failed to flush memo events: ${message}`);
+      return null;
+    }
+  }
+
+  async triggerMemoFullAggregation(): Promise<{ success: boolean; type: string } | null> {
+    try {
+      const response = await axios.post<{ success: boolean; type: string }>(
+        `${this.baseUrl}/api/memos/aggregation/full`,
+        {},
+        {
+          headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+          timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+        },
+      );
+      return response.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`Failed to trigger full memo aggregation: ${message}`);
+      return null;
+    }
+  }
+
   async getSession(sessionId: string): Promise<any> {
     try {
       const response = await axios.get(`${this.baseUrl}/api/agents/runtime/sessions/${sessionId}`, {

@@ -5,6 +5,7 @@ import { MemoKind, MemoType } from '../../schemas/agent-memo.schema';
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
 import { EvaluationAggregationService } from './evaluation-aggregation.service';
+import { MemoAggregationService } from './memo-aggregation.service';
 
 type TaskSourceType = 'orchestration_task' | 'meeting_chat' | 'runtime_note';
 type TodoStatus =
@@ -22,6 +23,7 @@ type TodoStatus =
 export class MemoController {
   constructor(
     private readonly memoService: MemoService,
+    private readonly memoAggregationService: MemoAggregationService,
     private readonly identityAggregationService: IdentityAggregationService,
     private readonly evaluationAggregationService: EvaluationAggregationService,
   ) {}
@@ -186,6 +188,12 @@ export class MemoController {
   async aggregateEvaluation(@Body() body: { agentId: string }) {
     await this.evaluationAggregationService.aggregateEvaluation(body.agentId);
     return { success: true, agentId: body.agentId, type: 'evaluation' };
+  }
+
+  @Post('aggregation/full')
+  async aggregateFull() {
+    await this.memoAggregationService.triggerFullAggregation();
+    return { success: true, type: 'full' };
   }
 
   @Get(':id')

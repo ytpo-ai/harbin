@@ -10,8 +10,6 @@ import { EvaluationAggregationService } from './evaluation-aggregation.service';
 @Injectable()
 export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(MemoAggregationService.name);
-  private timer?: NodeJS.Timeout;
-  private scheduledTimer?: NodeJS.Timeout;
   private running = false;
   private readonly listeners: Array<{ name: MemoDomainEventName; handler: (event: MemoDomainEvent) => void }> = [];
 
@@ -25,29 +23,11 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     this.bindEventBusListeners();
-    const intervalMs = Math.max(10_000, Number(process.env.MEMO_AGGREGATION_INTERVAL_MS || 60_000));
-    this.timer = setInterval(() => {
-      void this.runAggregation();
-    }, intervalMs);
-
-    const scheduledIntervalMs = Number(process.env.MEMO_FULL_AGGREGATION_INTERVAL_MS || 24 * 60 * 60 * 1000);
-    this.scheduledTimer = setInterval(() => {
-      void this.handleScheduledFullAggregation();
-    }, scheduledIntervalMs);
-
-    void this.runAggregation();
-    this.logger.log(`Memo aggregation scheduler started, interval=${intervalMs}ms`);
-    this.logger.log(`Scheduled full aggregation interval=${scheduledIntervalMs}ms`);
+    this.logger.log('Memo aggregation internal scheduler disabled; waiting for external scheduler module');
   }
 
   onModuleDestroy(): void {
     this.unbindEventBusListeners();
-    if (this.timer) {
-      clearInterval(this.timer);
-    }
-    if (this.scheduledTimer) {
-      clearInterval(this.scheduledTimer);
-    }
   }
 
   async triggerFullAggregation(): Promise<void> {

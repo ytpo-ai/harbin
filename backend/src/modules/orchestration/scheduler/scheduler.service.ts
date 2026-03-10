@@ -29,6 +29,7 @@ import {
   CreateScheduleDto,
   UpdateScheduleDto,
 } from './dto';
+import { AgentClientService } from '../../agents-client/agent-client.service';
 
 type TriggerType = 'auto' | 'manual';
 
@@ -38,6 +39,8 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly runLocks = new Set<string>();
   private readonly systemMeetingMonitorScheduleName = 'system-meeting-monitor';
   private readonly systemMeetingMonitorPlanKey = 'system-meeting-monitor';
+  private memoEventAggregationTimer?: NodeJS.Timeout;
+  private memoFullAggregationTimer?: NodeJS.Timeout;
 
   constructor(
     @InjectModel(OrchestrationSchedule.name)
@@ -50,11 +53,13 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly agentModel: Model<AgentDocument>,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly orchestrationService: OrchestrationService,
+    private readonly agentClientService: AgentClientService,
   ) {}
 
   async onModuleInit(): Promise<void> {
     const enabledSchedules = await this.scheduleModel.find({ enabled: true }).exec();
     await Promise.all(enabledSchedules.map((schedule) => this.registerSchedule(schedule)));
+    this.startMemoAggregationTimers();
   }
 
   async seedMeetingMonitorSchedule(): Promise<void> {
@@ -173,6 +178,13 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleDestroy(): void {
+    if (this.memoEventAggregationTimer) {
+      clearInterval(this.memoEventAggregationTimer);
+    }
+    if (this.memoFullAggregationTimer) {
+      clearInterval(this.memoFullAggregationTimer);
+    }
+
     for (const key of this.schedulerRegistry.getCronJobs().keys()) {
       if (key.startsWith('orch-schedule-cron:')) {
         this.schedulerRegistry.deleteCronJob(key);
@@ -627,6 +639,37 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         },
       },
     };
+  }
+
+  private startMemoAggregationTimers(): void {
+    const enabled = String(process.env.MEMO_SCHEDULER_ENABLED || 'true').toLowerCase() !== 'false';
+    if (!enabled) {
+      this.logger.log('Memo scheduler disabled by MEMO_SCHEDULER_ENABLED=false');
+      return;
+    }
+
+    const eventIntervalMs = Math.max(10_000, Number(process.env.MEMO_AGGREGATION_INTERVAL_MS || 60_000));
+    this.memoEventAggregationTimer = setInterval(() => {
+      this.agentClientService.flushMemoEvents().catch((error) => {
+        this.logger.warn(`Periodic memo event flush failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }, eventIntervalMs);
+
+    const fullIntervalMs = Math.max(
+      60_000,
+      Number(process.env.MEMO_FULL_AGGREGATION_INTERVAL_MS || 24 * 60 * 60 * 1000),
+    );
+    this.memoFullAggregationTimer = setInterval(() => {
+      this.agentClientService.triggerMemoFullAggregation().catch((error) => {
+        this.logger.warn(
+          `Periodic full memo aggregation failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+    }, fullIntervalMs);
+
+    void this.agentClientService.flushMemoEvents();
+    this.logger.log(`Memo event flush scheduler started, interval=${eventIntervalMs}ms`);
+    this.logger.log(`Memo full aggregation scheduler started, interval=${fullIntervalMs}ms`);
   }
 
   private buildTaskDescription(schedule: OrchestrationSchedule): string {
