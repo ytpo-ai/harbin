@@ -58,7 +58,7 @@
 ### 6. 网关模块 (gateway)
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
-| `gateway/api_management` | API 管理 | (待完善) |
+| `gateway/api_management` | API 管理 | `docs/features/GATEWAY_API_MANAGEMENT.md` |
 | `gateway/auth` | 认证授权 | (待完善) |
 
 ---
@@ -70,6 +70,7 @@
 | 文件 | 覆盖的 2级功能 |
 |------|---------------|
 | `docs/features/AGENT_MEMO.md` | memo/memo_mcp, memo/memo_identity, memo/memo_evaluation, memo/memo_todo, memo/memo_topic |
+| `docs/features/AGENT_MG.md` | agent/agent_mg |
 | `docs/features/AGENT_MCP.md` | agent/agent_mcp |
 | `docs/features/AGENT_MODEL.md` | agent/model |
 | `docs/features/AGENT_SESSION.md` | agent/session |

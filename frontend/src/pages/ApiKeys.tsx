@@ -227,14 +227,26 @@ const ApiKeys: React.FC = () => {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span 
-                      className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
-                      style={{ backgroundColor: provider.color }}
-                    >
-                      {provider.name}
-                    </span>
-                  </td>
+                   <td className="px-6 py-4 whitespace-nowrap">
+                     <div className="flex items-center gap-2">
+                       <span 
+                         className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                         style={{ backgroundColor: provider.color }}
+                       >
+                         {provider.name}
+                       </span>
+                       {apiKey.isDefault && (
+                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                           默认
+                         </span>
+                       )}
+                       {apiKey.isDeprecated && (
+                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                           已弃用
+                         </span>
+                       )}
+                     </div>
+                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
@@ -348,13 +360,15 @@ const ApiKeyModal: React.FC<{
   onSave: (data: any) => void;
   isLoading: boolean;
 }> = ({ apiKey, onClose, onSave, isLoading }) => {
-  const [formData, setFormData] = useState({
-    name: apiKey?.name || '',
-    provider: apiKey?.provider || 'openai',
-    key: '',
-    description: apiKey?.description || '',
-    isActive: apiKey?.isActive ?? true,
-  });
+   const [formData, setFormData] = useState({
+     name: apiKey?.name || '',
+     provider: apiKey?.provider || 'openai',
+     key: '',
+     description: apiKey?.description || '',
+     isActive: apiKey?.isActive ?? true,
+     isDefault: apiKey?.isDefault ?? false,
+     isDeprecated: apiKey?.isDeprecated ?? false,
+   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -394,7 +408,6 @@ const ApiKeyModal: React.FC<{
               value={formData.provider}
               onChange={(e) => setFormData({ ...formData, provider: e.target.value })}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              disabled={!!apiKey}
             >
               {PROVIDERS.map((provider) => (
                 <option key={provider.id} value={provider.id}>
@@ -402,9 +415,7 @@ const ApiKeyModal: React.FC<{
                 </option>
               ))}
             </select>
-            {apiKey && (
-              <p className="mt-1 text-xs text-gray-500">提供商创建后不可修改</p>
-            )}
+            <p className="mt-1 text-xs text-gray-500">修改提供商将影响默认归属</p>
           </div>
 
           <div>
@@ -421,7 +432,7 @@ const ApiKeyModal: React.FC<{
             />
             <p className="mt-1 text-xs text-gray-500">
               {apiKey 
-                ? '如需修改 API Key，请删除后重新创建' 
+                ? '留空表示不修改，填写将重新加密保存'
                 : '请输入完整的 API Key，将被安全存储'}
             </p>
           </div>
@@ -449,6 +460,32 @@ const ApiKeyModal: React.FC<{
             />
             <label htmlFor="isActive" className="ml-2 block text-sm text-gray-900">
               启用此 API Key
+            </label>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="isDefault"
+              checked={formData.isDefault}
+              onChange={(e) => setFormData({ ...formData, isDefault: e.target.checked })}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <label htmlFor="isDefault" className="ml-2 block text-sm text-gray-900">
+              设为该提供商默认 API Key
+            </label>
+          </div>
+
+          <div className="flex items-center">
+            <input
+              type="checkbox"
+              id="isDeprecated"
+              checked={formData.isDeprecated}
+              onChange={(e) => setFormData({ ...formData, isDeprecated: e.target.checked })}
+              className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+            />
+            <label htmlFor="isDeprecated" className="ml-2 block text-sm text-gray-900">
+              标记为已弃用
             </label>
           </div>
 

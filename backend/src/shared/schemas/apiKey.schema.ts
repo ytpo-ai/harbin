@@ -34,6 +34,12 @@ export class ApiKey {
   @Prop()
   expiresAt?: Date;
 
+  @Prop({ default: false })
+  isDefault: boolean;
+
+  @Prop({ default: false })
+  isDeprecated: boolean;
+
   @Prop()
   createdAt?: Date;
 
@@ -87,3 +93,4 @@ ApiKeySchema.methods.getDecryptedKey = function(): string {
 ApiKeySchema.index({ provider: 1 });
 ApiKeySchema.index({ isActive: 1 });
 ApiKeySchema.index({ id: 1 });
+ApiKeySchema.index({ provider: 1, isDefault: 1 });

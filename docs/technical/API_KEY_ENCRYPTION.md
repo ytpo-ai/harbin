@@ -62,6 +62,8 @@ ENCRYPTION_KEY=your_strong_encryption_key_here_min_32_chars
   "provider": "openai",
   "keyEncrypted": "base64(iv):base64(authTag):base64(encryptedData)",
   "isActive": true,
+  "isDefault": false,
+  "isDeprecated": false,
   "useCount": 42
 }
 ```
@@ -75,6 +77,8 @@ ENCRYPTION_KEY=your_strong_encryption_key_here_min_32_chars
   "provider": "openai",
   "keyMasked": "aGVsbG8****d29ybGQ=",
   "isActive": true,
+  "isDefault": false,
+  "isDeprecated": false,
   "useCount": 42
 }
 ```

@@ -515,7 +515,7 @@ const CreateAgentModal: React.FC<{
   const selectedModel = availableModels.find(m => m.id === formData.modelId);
   const filteredApiKeys = (apiKeys || []).filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
-    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive;
+    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive && !key.isDeprecated;
   });
 
   const createAgentMutation = useMutation(agentService.createAgent, {

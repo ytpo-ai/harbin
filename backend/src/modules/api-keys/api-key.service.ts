@@ -12,6 +12,8 @@ export interface CreateApiKeyDto {
   description?: string;
   isActive?: boolean;
   expiresAt?: Date;
+  isDefault?: boolean;
+  isDeprecated?: boolean;
 }
 
 export interface UpdateApiKeyDto {
@@ -21,6 +23,8 @@ export interface UpdateApiKeyDto {
   description?: string;
   isActive?: boolean;
   expiresAt?: Date;
+  isDefault?: boolean;
+  isDeprecated?: boolean;
 }
 
 export interface ApiKeyResponse {
@@ -34,6 +38,8 @@ export interface ApiKeyResponse {
   lastUsedAt?: Date;
   useCount: number;
   expiresAt?: Date;
+  isDefault: boolean;
+  isDeprecated: boolean;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -63,6 +69,14 @@ export class ApiKeyService {
       throw new ConflictException(`API Key with name "${apiKeyData.name}" already exists for provider ${apiKeyData.provider}`);
     }
 
+    // 如果设置为默认，先清除同provider的其他默认key
+    if (apiKeyData.isDefault) {
+      await this.apiKeyModel.updateMany(
+        { provider: normalizedProvider, isDefault: true },
+        { $set: { isDefault: false, updatedAt: new Date() } }
+      ).exec();
+    }
+
     // 加密API Key
     const encryptedKey = EncryptionUtil.encrypt(normalizedKey);
 
@@ -74,6 +88,8 @@ export class ApiKeyService {
       description: apiKeyData.description,
       isActive: apiKeyData.isActive ?? true,
       expiresAt: apiKeyData.expiresAt,
+      isDefault: apiKeyData.isDefault ?? false,
+      isDeprecated: apiKeyData.isDeprecated ?? false,
       useCount: 0,
     });
 
@@ -111,6 +127,12 @@ export class ApiKeyService {
    * 更新API Key
    */
   async updateApiKey(id: string, updates: UpdateApiKeyDto): Promise<ApiKeyResponse | null> {
+    // 先获取当前API Key
+    const currentKey = await this.apiKeyModel.findOne({ id }).exec();
+    if (!currentKey) {
+      return null;
+    }
+
     const updateData: any = {
       ...updates,
       updatedAt: new Date()
@@ -124,6 +146,23 @@ export class ApiKeyService {
     if (updates.key) {
       updateData.keyEncrypted = EncryptionUtil.encrypt(updates.key.trim());
       delete updateData.key; // 删除明文key字段
+    }
+
+    // 处理默认状态变更
+    const providerForDefault = updateData.provider || currentKey.provider;
+    const willBeDefault = updates.isDefault !== undefined ? updates.isDefault : currentKey.isDefault;
+    const providerChanged = providerForDefault !== currentKey.provider;
+
+    if (willBeDefault && (updates.isDefault || providerChanged)) {
+      // 如果设置为默认，或默认key切换provider，先清除同provider的其他默认key
+      await this.apiKeyModel.updateMany(
+        {
+          provider: providerForDefault,
+          isDefault: true,
+          id: { $ne: id } // 排除当前key
+        },
+        { $set: { isDefault: false, updatedAt: new Date() } }
+      ).exec();
     }
 
     const updated = await this.apiKeyModel.findOneAndUpdate(
@@ -223,6 +262,8 @@ export class ApiKeyService {
       lastUsedAt: apiKey.lastUsedAt,
       useCount: apiKey.useCount,
       expiresAt: apiKey.expiresAt,
+      isDefault: apiKey.isDefault ?? false,
+      isDeprecated: apiKey.isDeprecated ?? false,
       createdAt: apiKey.createdAt,
       updatedAt: apiKey.updatedAt,
     };

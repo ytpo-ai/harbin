@@ -9,6 +9,8 @@ export interface ApiKey {
   description?: string;
   isActive: boolean;
   useCount: number;
+  isDefault: boolean;
+  isDeprecated: boolean;
   lastUsedAt?: string;
   expiresAt?: string;
   createdAt?: string;
@@ -33,6 +35,8 @@ export interface CreateApiKeyDto {
   description?: string;
   isActive?: boolean;
   expiresAt?: string;
+  isDefault?: boolean;
+  isDeprecated?: boolean;
 }
 
 export interface UpdateApiKeyDto {
@@ -42,6 +46,8 @@ export interface UpdateApiKeyDto {
   description?: string;
   isActive?: boolean;
   expiresAt?: string;
+  isDefault?: boolean;
+  isDeprecated?: boolean;
 }
 
 class ApiKeyService {
