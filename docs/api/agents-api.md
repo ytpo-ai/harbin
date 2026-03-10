@@ -151,14 +151,23 @@ Skill 渐进式加载（DB + Redis）契约：
 - `orchestration_create_schedule`
 - `orchestration_update_schedule`
 - `orchestration_debug_task`
+- `builtin.sys-mg.internal.agent-master.list-agents`
+- `builtin.sys-mg.internal.agent-master.create-agent`
 - `builtin.sys-mg.mcp.skill-master.list-skills`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
 
-`builtin.sys-mg.internal.agent-admin.list-agents` 响应说明：
+`builtin.sys-mg.internal.agent-master.list-agents` 响应说明：
 
 - 顶层字段：`total`、`visible`、`includeHidden`、`agents`、`fetchedAt`
 - `agents[]` 字段：`id`、`name`、`role`、`capabilitySet`、`exposed`、`isActive`、`identify`
 - `identify` 来源于 `agentId + memoKind(identity)` 的第一条 memo 内容，缺失时返回空字符串。
+
+`builtin.sys-mg.internal.agent-master.create-agent` 参数约定：
+
+- 必填：`name`、`roleId`、`model.id`（或 `modelId`）
+- 可选：`type`、`description`、`systemPrompt`、`model.*`、`capabilities`、`tools`、`permissions`、`learningAbility`、`isActive`、`apiKeyId`
+- `provider` 为 API Key 选择策略参数：默认 `default`（回退到模型 provider）
+- 未显式传入 `apiKeyId` 时，系统会按 provider 选择 `isDefault=true && isActive=true` 的 key；若不存在则回退系统默认 key 策略
 
 Skill Master MCP 参数约定：
 

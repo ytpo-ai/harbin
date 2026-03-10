@@ -67,21 +67,21 @@ async function run(): Promise<void> {
   );
   const needsLegacyApp = selectedSeeds.includes('meeting-monitor');
 
-  const [{ AgentsAppModule }, { AgentService }, { ToolService }, { ModelManagementService }] = needsAgentsApp
-    ? await Promise.all([
-        import('../apps/agents/src/app.module'),
-        import('../apps/agents/src/modules/agents/agent.service'),
-        import('../apps/agents/src/modules/tools/tool.service'),
-        import('../apps/agents/src/modules/models/model-management.service'),
-      ])
-    : [{ AgentsAppModule: null }, { AgentService: null }, { ToolService: null }, { ModelManagementService: null }];
+  const { AgentsAppModule, AgentService, ToolService, ModelManagementService } = needsAgentsApp
+    ? {
+        AgentsAppModule: require('../apps/agents/src/app.module').AgentsAppModule,
+        AgentService: require('../apps/agents/src/modules/agents/agent.service').AgentService,
+        ToolService: require('../apps/agents/src/modules/tools/tool.service').ToolService,
+        ModelManagementService: require('../apps/agents/src/modules/models/model-management.service').ModelManagementService,
+      }
+    : { AgentsAppModule: null, AgentService: null, ToolService: null, ModelManagementService: null };
 
-  const [{ AppModule }, { SchedulerService }] = needsLegacyApp
-    ? await Promise.all([
-        import('../src/app.module'),
-        import('../src/modules/orchestration/scheduler/scheduler.service'),
-      ])
-    : [{ AppModule: null }, { SchedulerService: null }];
+  const { AppModule, SchedulerService } = needsLegacyApp
+    ? {
+        AppModule: require('../src/app.module').AppModule,
+        SchedulerService: require('../src/modules/orchestration/scheduler/scheduler.service').SchedulerService,
+      }
+    : { AppModule: null, SchedulerService: null };
 
   const agentsApp = needsAgentsApp ? await NestFactory.createApplicationContext(AgentsAppModule) : null;
   const legacyApp = needsLegacyApp ? await NestFactory.createApplicationContext(AppModule) : null;

@@ -34,8 +34,9 @@
 5. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
 6. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
 7. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
-8. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
-9. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
+8. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。
+9. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
+10. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
 
 ---
 

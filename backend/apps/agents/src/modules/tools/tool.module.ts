@@ -8,6 +8,7 @@ import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.sche
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
+import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/apiKey.schema';
 import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';
@@ -31,6 +32,7 @@ import { SkillModule } from '../skills/skill.module';
       { name: AgentProfile.name, schema: AgentProfileSchema },
       { name: Employee.name, schema: EmployeeSchema },
       { name: OperationLog.name, schema: OperationLogSchema },
+      { name: ApiKey.name, schema: ApiKeySchema },
     ])
   ],
   controllers: [ToolController],

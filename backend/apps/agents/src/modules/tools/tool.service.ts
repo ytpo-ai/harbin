@@ -14,6 +14,7 @@ import { Toolkit, ToolkitDocument } from '../../../../../src/shared/schemas/tool
 import { ToolExecution, ToolExecutionDocument } from '../../../../../src/shared/schemas/toolExecution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { ApiKey, ApiKeyDocument } from '../../../../../src/shared/schemas/apiKey.schema';
 import { Employee, EmployeeDocument, EmployeeType } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogDocument } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ComposioService } from './composio.service';
@@ -30,6 +31,10 @@ const DEFAULT_PROFILE = {
   capabilities: [],
   exposed: false,
 };
+
+const AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-master.list-agents';
+const LEGACY_AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-admin.list-agents';
+const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create-agent';
 
 const execFileAsync = promisify(execFile);
 
@@ -115,6 +120,7 @@ export class ToolService {
     @InjectModel(ToolExecution.name) private executionModel: Model<ToolExecutionDocument>,
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
+    @InjectModel(ApiKey.name) private apiKeyModel: Model<ApiKeyDocument>,
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
     @InjectModel(OperationLog.name) private operationLogModel: Model<OperationLogDocument>,
     private composioService: ComposioService,
@@ -665,7 +671,7 @@ export class ToolService {
         },
       },
       {
-        id: 'builtin.sys-mg.internal.agent-admin.list-agents',
+        id: AGENT_LIST_TOOL_ID,
         name: 'Agents MCP List',
         description: 'List current agents, roles, and capability summaries from MCP visibility rules',
         type: 'data_analysis' as const,
@@ -675,6 +681,34 @@ export class ToolService {
         implementation: {
           type: 'built_in' as const,
           parameters: { includeHidden: 'boolean', limit: 'number' },
+        },
+      },
+      {
+        id: AGENT_CREATE_TOOL_ID,
+        name: 'Agents MCP Create Agent',
+        description: 'Create a new agent via MCP with provider default api-key fallback',
+        type: 'data_analysis' as const,
+        category: 'System Intelligence',
+        requiredPermissions: [{ id: 'agent_registry_write', name: 'Agent Registry Write', level: 'admin' }],
+        tokenCost: 6,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            name: 'string',
+            roleId: 'string',
+            type: 'string',
+            description: 'string',
+            systemPrompt: 'string',
+            model: 'object',
+            modelId: 'string',
+            provider: 'string',
+            apiKeyId: 'string',
+            capabilities: 'string[]',
+            tools: 'string[]',
+            permissions: 'string[]',
+            learningAbility: 'number',
+            isActive: 'boolean',
+          },
         },
       },
       {
@@ -768,6 +802,7 @@ export class ToolService {
             title: 'string',
             status: 'string',
             category: 'string',
+            includeMetadata: 'boolean',
             limit: 'number',
             page: 'number',
           },
@@ -796,6 +831,8 @@ export class ToolService {
             status: 'string',
             confidenceScore: 'number',
             metadata: 'object',
+            content: 'string',
+            contentType: 'string',
           },
         },
       },
@@ -1590,8 +1627,11 @@ export class ToolService {
         return this.sendGmail(parameters, agentId);
       case 'builtin.sys-mg.internal.rd-related.repo-read':
         return this.executeRepoRead(parameters);
-      case 'builtin.sys-mg.internal.agent-admin.list-agents':
+      case AGENT_LIST_TOOL_ID:
+      case LEGACY_AGENT_LIST_TOOL_ID:
         return this.getAgentsMcpList(parameters);
+      case AGENT_CREATE_TOOL_ID:
+        return this.createAgentByMcp(parameters);
       case 'builtin.sys-mg.internal.rd-related.docs-read':
         return this.getCodeDocsReader(parameters);
       case 'builtin.sys-mg.internal.rd-related.updates-read':
@@ -1650,7 +1690,9 @@ export class ToolService {
       'composio.communication.mcp.slack.send-message',
       'composio.communication.mcp.gmail.send-email',
       'builtin.sys-mg.internal.rd-related.repo-read',
-      'builtin.sys-mg.internal.agent-admin.list-agents',
+      AGENT_LIST_TOOL_ID,
+      LEGACY_AGENT_LIST_TOOL_ID,
+      AGENT_CREATE_TOOL_ID,
       'builtin.sys-mg.internal.rd-related.docs-read',
       'builtin.sys-mg.internal.rd-related.updates-read',
       'builtin.sys-mg.mcp.model-admin.list-models',
@@ -2457,6 +2499,7 @@ export class ToolService {
     search?: string;
     status?: string;
     category?: string;
+    includeMetadata?: boolean;
     limit?: number;
     page?: number;
   }): Promise<any> {
@@ -2464,6 +2507,7 @@ export class ToolService {
     const search = String(params?.search || title).trim();
     const status = String(params?.status || '').trim();
     const category = String(params?.category || '').trim();
+    const includeMetadata = params?.includeMetadata === true;
     const page = Math.max(1, Math.min(Number(params?.page || 1), 1000));
     const pageSize = Math.max(1, Math.min(Number(params?.limit || 20), 100));
 
@@ -2473,6 +2517,8 @@ export class ToolService {
       search: search || undefined,
       page,
       pageSize,
+    }, {
+      includeMetadata,
     });
 
     return {
@@ -2494,6 +2540,7 @@ export class ToolService {
         provider: skill.provider,
         version: skill.version,
         confidenceScore: skill.confidenceScore,
+        metadata: includeMetadata ? (skill.metadata || {}) : undefined,
         updatedAt: skill.updatedAt,
       })),
       fetchedAt: new Date().toISOString(),
@@ -2513,6 +2560,8 @@ export class ToolService {
     status?: string;
     confidenceScore?: number;
     metadata?: Record<string, any>;
+    content?: string;
+    contentType?: string;
   }): Promise<any> {
     const name = String(params?.title || params?.name || '').trim();
     if (!name) {
@@ -2540,6 +2589,8 @@ export class ToolService {
       confidenceScore: params?.confidenceScore,
       discoveredBy: 'SkillMasterMCP',
       metadata: params?.metadata,
+      content: params?.content,
+      contentType: params?.contentType,
     });
 
     return {
@@ -2692,6 +2743,146 @@ export class ToolService {
     };
   }
 
+  private normalizeStringArray(items?: unknown[]): string[] {
+    return Array.from(
+      new Set(
+        (Array.isArray(items) ? items : [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    );
+  }
+
+  private async resolveDefaultApiKeyId(provider?: string): Promise<string | undefined> {
+    const normalizedProvider = this.normalizeProvider(provider);
+    if (!normalizedProvider) {
+      return undefined;
+    }
+
+    const apiKey = await this.apiKeyModel
+      .findOne({
+        provider: normalizedProvider,
+        isDefault: true,
+        isActive: true,
+        isDeprecated: { $ne: true },
+      })
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+
+    return apiKey?.id ? String(apiKey.id).trim() : undefined;
+  }
+
+  private async createAgentByMcp(params: {
+    name?: string;
+    roleId?: string;
+    type?: string;
+    description?: string;
+    systemPrompt?: string;
+    model?: {
+      id?: string;
+      name?: string;
+      provider?: string;
+      model?: string;
+      maxTokens?: number;
+      temperature?: number;
+      topP?: number;
+      reasoning?: {
+        enabled?: boolean;
+        effort?: string;
+        verbosity?: string;
+      };
+    };
+    modelId?: string;
+    provider?: string;
+    apiKeyId?: string;
+    capabilities?: string[];
+    tools?: string[];
+    permissions?: string[];
+    learningAbility?: number;
+    isActive?: boolean;
+  }): Promise<any> {
+    const name = String(params?.name || '').trim();
+    const roleId = String(params?.roleId || '').trim();
+    if (!name) {
+      throw new Error('agent_master_create_agent requires name');
+    }
+    if (!roleId) {
+      throw new Error('agent_master_create_agent requires roleId');
+    }
+
+    const modelId = String(params?.model?.id || params?.modelId || '').trim();
+    if (!modelId) {
+      throw new Error('agent_master_create_agent requires model.id or modelId');
+    }
+
+    const modelFromRegistry = await this.modelManagementService.getModelById(modelId);
+    const modelProvider = this.normalizeProvider(params?.model?.provider) || this.normalizeProvider(modelFromRegistry?.provider);
+    if (!modelProvider) {
+      throw new Error(`agent_master_create_agent could not resolve provider for model: ${modelId}`);
+    }
+
+    const selectedApiKeyId = String(params?.apiKeyId || '').trim();
+    const providerHint = this.normalizeProvider(params?.provider || 'default');
+    const apiKeyProvider = providerHint && providerHint !== 'default' ? providerHint : modelProvider;
+    const fallbackApiKeyId = selectedApiKeyId ? undefined : await this.resolveDefaultApiKeyId(apiKeyProvider);
+
+    const payload = {
+      name,
+      roleId,
+      ...(params?.type?.trim() ? { type: params.type.trim() } : {}),
+      ...(params?.description?.trim() ? { description: params.description.trim() } : {}),
+      ...(params?.systemPrompt?.trim() ? { systemPrompt: params.systemPrompt.trim() } : {}),
+      model: {
+        id: modelId,
+        name: String(params?.model?.name || modelFromRegistry?.name || modelId).trim(),
+        provider: modelProvider,
+        model: String(params?.model?.model || modelFromRegistry?.model || modelId).trim(),
+        maxTokens: Number(params?.model?.maxTokens || modelFromRegistry?.maxTokens || 4096),
+        temperature: params?.model?.temperature ?? modelFromRegistry?.temperature ?? 0.7,
+        ...(params?.model?.topP !== undefined || modelFromRegistry?.topP !== undefined
+          ? { topP: params?.model?.topP ?? modelFromRegistry?.topP }
+          : {}),
+        ...(params?.model?.reasoning || modelFromRegistry?.reasoning
+          ? {
+              reasoning: {
+                ...(modelFromRegistry?.reasoning || {}),
+                ...(params?.model?.reasoning || {}),
+              },
+            }
+          : {}),
+      },
+      capabilities: this.normalizeStringArray(params?.capabilities),
+      tools: this.normalizeStringArray(params?.tools),
+      permissions: this.normalizeStringArray(params?.permissions),
+      ...(params?.learningAbility !== undefined ? { learningAbility: Number(params.learningAbility) } : {}),
+      ...(params?.isActive !== undefined ? { isActive: Boolean(params.isActive) } : {}),
+      ...(selectedApiKeyId || fallbackApiKeyId ? { apiKeyId: selectedApiKeyId || fallbackApiKeyId } : {}),
+    };
+
+    const response = await axios.post(`${this.backendBaseUrl}/agents`, payload, {
+      timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
+    });
+
+    const agent = response?.data || {};
+    return {
+      action: 'create_agent',
+      created: true,
+      provider: modelProvider,
+      apiKeyProvider,
+      apiKeySource: selectedApiKeyId ? 'explicit' : fallbackApiKeyId ? 'provider-default' : 'system-default',
+      usedApiKeyId: selectedApiKeyId || fallbackApiKeyId || '',
+      agent: {
+        id: String(agent.id || agent._id || '').trim(),
+        name: String(agent.name || name).trim(),
+        roleId: String(agent.roleId || roleId).trim(),
+        isActive: Boolean(agent.isActive ?? payload.isActive ?? true),
+        model: agent.model || payload.model,
+      },
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   private async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number }): Promise<any> {
     const includeHidden = params?.includeHidden === true;
     const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
@@ -2712,8 +2903,6 @@ export class ToolService {
       return {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
-        type: plain.type,
-        roleId: plain.roleId,
         role: roleNameMap.get(String(plain.roleId || '').trim()) || profile.role,
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...(profile.capabilities || [])])).slice(0, 12),
         exposed: profile.exposed === true,
@@ -2722,12 +2911,20 @@ export class ToolService {
     });
 
     const visibleAgents = mapped.filter((item) => includeHidden || item.exposed).slice(0, limit);
+    const identifyMap = await this.memoService.getFirstMemoContentMapByKind(
+      visibleAgents.map((item) => String(item.id || '').trim()),
+      'identity',
+    );
+    const agentsWithIdentify = visibleAgents.map((item) => ({
+      ...item,
+      identify: identifyMap.get(String(item.id || '').trim()) || '',
+    }));
 
     return {
       total: mapped.length,
-      visible: visibleAgents.length,
+      visible: agentsWithIdentify.length,
       includeHidden,
-      agents: visibleAgents,
+      agents: agentsWithIdentify,
       fetchedAt: new Date().toISOString(),
     };
   }

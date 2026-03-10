@@ -1,4 +1,5 @@
 import { ToolService } from './tool.service';
+import axios from 'axios';
 
 describe('ToolService orchestration debug task', () => {
   const buildService = () => {
@@ -143,6 +144,74 @@ describe('ToolService skill master mcp', () => {
 
     await expect(service['createSkillByMcp']({ title: 'No Desc' })).rejects.toThrow(
       'skill_master_create_skill requires description',
+    );
+  });
+});
+
+describe('ToolService agent master create agent mcp', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('creates agent with provider default api-key fallback', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.modelManagementService = {
+      getModelById: jest.fn().mockResolvedValue({
+        id: 'openai-gpt-4o-mini',
+        name: 'GPT-4o Mini',
+        provider: 'openai',
+        model: 'gpt-4o-mini',
+        maxTokens: 8192,
+        temperature: 0.2,
+      }),
+    };
+    service.apiKeyModel = {
+      findOne: jest.fn().mockReturnValue({
+        sort: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({ id: 'default-openai-key' }),
+          }),
+        }),
+      }),
+    };
+    service.backendBaseUrl = 'http://localhost:3001/api';
+
+    const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({
+      data: {
+        id: 'agent-001',
+        name: 'Nina',
+        roleId: 'role-product-manager',
+        isActive: true,
+      },
+    } as any);
+
+    const result = await service['createAgentByMcp']({
+      name: 'Nina',
+      roleId: 'role-product-manager',
+      modelId: 'openai-gpt-4o-mini',
+    });
+
+    expect(service.apiKeyModel.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'openai', isDefault: true, isActive: true }),
+    );
+    expect(postSpy).toHaveBeenCalledWith(
+      'http://localhost:3001/api/agents',
+      expect.objectContaining({
+        name: 'Nina',
+        roleId: 'role-product-manager',
+        apiKeyId: 'default-openai-key',
+        model: expect.objectContaining({ provider: 'openai' }),
+      }),
+      expect.any(Object),
+    );
+    expect(result.created).toBe(true);
+    expect(result.apiKeySource).toBe('provider-default');
+  });
+
+  it('throws when name is missing', async () => {
+    const service = Object.create(ToolService.prototype);
+    await expect(service['createAgentByMcp']({ roleId: 'role-1', modelId: 'm1' })).rejects.toThrow(
+      'agent_master_create_agent requires name',
     );
   });
 });

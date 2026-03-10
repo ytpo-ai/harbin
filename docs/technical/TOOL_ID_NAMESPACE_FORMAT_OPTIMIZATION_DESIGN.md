@@ -69,7 +69,7 @@
 | `builtin.internal.repo.read` | builtin | internal | rd | Repo Read With Bash | `builtin.sys-mg.internal.rd-related.repo-read` |
 | `builtin.internal.docs.read` | builtin | internal | rd | Repo Docs Read | `builtin.sys-mg.internal.rd-related.repo-docs-read` |
 | `builtin.internal.updates.read` | builtin | internal | rd | Repo Git Log Read | `builtin.sys-mg.internal.rd-related.repo-git-log-read` |
-| `builtin.internal.agents.list` | builtin | internal | agent-admin | List Agents | `builtin.sys-mg.internal.agent-admin.list-agents` |
+| `builtin.internal.agents.list` | builtin | internal | agent-master | List Agents | `builtin.sys-mg.internal.agent-master.list-agents` |
 | `builtin.mcp.model.list` | builtin | mcp | model-admin | List LLM Models | `builtin.sys-mg.mcp.model-admin.list-llm-models` |
 | `builtin.mcp.model.add` | builtin | mcp | model-admin | Add LLM Model | `builtin.sys-mg.mcp.model-admin.add-llm-model` |
 | `builtin.internal.memo.search` | builtin | internal | memory | Search Memo | `builtin.sys-mg.internal.memory.search-memo` |
