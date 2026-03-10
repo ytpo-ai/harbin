@@ -51,6 +51,7 @@
 ## Orchestration（`/orchestration`）
 
 - `POST /orchestration/plans/from-prompt`：通过提示词创建计划
+- `PATCH /orchestration/plans/:id`：更新计划基础信息（标题/提示词/策略/元数据）
 - `GET /orchestration/plans`：计划列表
 - `GET /orchestration/plans/:id`：计划详情
 - `POST /orchestration/plans/:id/run`：执行计划
@@ -67,6 +68,7 @@
 - `POST /orchestration/sessions/:id/messages/batch`：批量追加会话消息
 - `POST /orchestration/sessions/:id/archive`：归档会话
 - `POST /orchestration/sessions/:id/resume`：恢复会话
+- `GET /orchestration/schedules/by-plan/:planId`：查询计划关联的定时服务
 
 会话详情/列表返回中新增可选字段：
 

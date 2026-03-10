@@ -361,6 +361,10 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       .exec();
   }
 
+  async findSchedulesByPlanId(planId: string): Promise<OrchestrationSchedule[]> {
+    return this.scheduleModel.find({ planId }).exec();
+  }
+
   private async registerSchedule(schedule: OrchestrationScheduleDocument | OrchestrationSchedule): Promise<void> {
     const scheduleId = this.getEntityId(schedule as unknown as Record<string, unknown>);
     if (!scheduleId || !schedule.enabled) {

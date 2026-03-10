@@ -20,6 +20,10 @@ import {
   EmployeeType,
 } from '../../shared/schemas/employee.schema';
 import { PlanSession, PlanSessionDocument } from '../../shared/schemas/plan-session.schema';
+import {
+  OrchestrationSchedule,
+  OrchestrationScheduleDocument,
+} from '../../shared/schemas/orchestration-schedule.schema';
 import { Task } from '../../shared/types';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { PlannerService } from './planner.service';
@@ -27,8 +31,10 @@ import {
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
   DebugTaskStepDto,
+  ReplanPlanDto,
   ReassignTaskDto,
   RunPlanDto,
+  UpdatePlanDto,
   UpdateTaskDraftDto,
 } from './dto';
 
@@ -49,6 +55,8 @@ export class OrchestrationService {
     private readonly employeeModel: Model<EmployeeDocument>,
     @InjectModel(PlanSession.name)
     private readonly planSessionModel: Model<PlanSessionDocument>,
+    @InjectModel(OrchestrationSchedule.name)
+    private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     private readonly plannerService: PlannerService,
     private readonly agentClientService: AgentClientService,
   ) {}
@@ -176,10 +184,219 @@ export class OrchestrationService {
     return this.orchestrationPlanModel.find({}).sort({ createdAt: -1 }).exec();
   }
 
+  async replanPlan(planId: string, dto: ReplanPlanDto): Promise<any> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    if (plan.status === 'running') {
+      throw new BadRequestException('Plan is running and cannot be replanned');
+    }
+
+    const prompt = dto.prompt?.trim();
+    if (!prompt) {
+      throw new BadRequestException('prompt is required');
+    }
+
+    const plannerAgentId = dto.plannerAgentId?.trim();
+    const title = dto.title?.trim() || plan.title || this.derivePlanTitle(prompt);
+    const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
+
+    const planningResult = await this.plannerService.planFromPrompt({
+      prompt,
+      mode: fallbackMode,
+      plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
+    });
+
+    if (!planningResult.tasks?.length) {
+      throw new BadRequestException('Planner did not produce any tasks');
+    }
+
+    await this.orchestrationTaskModel.deleteMany({ planId }).exec();
+
+    const tasksToCreate = [] as Partial<OrchestrationTask>[];
+    for (let i = 0; i < planningResult.tasks.length; i++) {
+      const task = planningResult.tasks[i];
+      const assignment = await this.selectExecutor(task.title, task.description);
+      tasksToCreate.push({
+        mode: 'plan',
+        planId,
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
+        order: i,
+        dependencyTaskIds: [],
+        assignment,
+        runLogs: [{
+          timestamp: new Date(),
+          level: 'info',
+          message: `Task replanned and assigned to ${assignment.executorType}`,
+          metadata: {
+            executorId: assignment.executorId,
+            reason: assignment.reason,
+          },
+        }],
+      });
+    }
+
+    const createdTasks = await this.orchestrationTaskModel.insertMany(tasksToCreate);
+    const idByIndex = createdTasks.map((task) => task._id.toString());
+
+    await Promise.all(
+      createdTasks.map((task, index) => {
+        const deps = planningResult.tasks[index].dependencies
+          .map((depIndex) => idByIndex[depIndex])
+          .filter(Boolean);
+        return this.orchestrationTaskModel
+          .updateOne({ _id: task._id }, { $set: { dependencyTaskIds: deps } })
+          .exec();
+      }),
+    );
+
+    await this.orchestrationPlanModel
+      .updateOne(
+        { _id: planId },
+        {
+          $set: {
+            title,
+            sourcePrompt: prompt,
+            status: 'planned',
+            strategy: {
+              plannerAgentId: planningResult.plannerAgentId,
+              mode: planningResult.mode,
+            },
+            stats: {
+              totalTasks: createdTasks.length,
+              completedTasks: 0,
+              failedTasks: 0,
+              waitingHumanTasks: 0,
+            },
+            taskIds: idByIndex,
+            metadata: {
+              ...(plan.metadata || {}),
+              strategyNote: planningResult.strategyNote,
+              replannedAt: new Date().toISOString(),
+            },
+          },
+        },
+      )
+      .exec();
+
+    await this.planSessionModel
+      .updateOne(
+        { planId },
+        {
+          $set: {
+            planId,
+            title,
+            status: 'active',
+            tasks: createdTasks.map((createdTask, index) => ({
+              taskId: createdTask._id.toString(),
+              order: createdTask.order,
+              title: createdTask.title,
+              status: createdTask.status,
+              input: planningResult.tasks[index]?.description || createdTask.description,
+              executorType: createdTask.assignment?.executorType,
+              executorId: createdTask.assignment?.executorId,
+              updatedAt: new Date(),
+            })),
+          },
+        },
+        { upsert: true },
+      )
+      .exec();
+
+    const latestPlan = await this.getPlanById(planId);
+    if (dto.autoRun) {
+      await this.runPlan(planId, { continueOnFailure: true });
+      return this.getPlanById(planId);
+    }
+
+    return latestPlan;
+  }
+
+  async updatePlan(planId: string, dto: UpdatePlanDto): Promise<any> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    if (plan.status === 'running') {
+      throw new BadRequestException('Plan is running and cannot be edited');
+    }
+
+    const title = dto.title?.trim();
+    const sourcePrompt = dto.sourcePrompt?.trim();
+    const plannerAgentId = dto.plannerAgentId?.trim();
+    const updatePayload: Record<string, any> = {};
+    const unsetPayload: Record<string, any> = {};
+
+    if (title) {
+      updatePayload.title = title;
+    }
+    if (sourcePrompt) {
+      updatePayload.sourcePrompt = sourcePrompt;
+    }
+    if (dto.mode) {
+      updatePayload['strategy.mode'] = dto.mode;
+    }
+    if (dto.plannerAgentId !== undefined) {
+      if (plannerAgentId) {
+        updatePayload['strategy.plannerAgentId'] = plannerAgentId;
+      } else {
+        unsetPayload['strategy.plannerAgentId'] = 1;
+      }
+    }
+    if (dto.metadata && typeof dto.metadata === 'object' && !Array.isArray(dto.metadata)) {
+      updatePayload.metadata = {
+        ...(plan.metadata || {}),
+        ...dto.metadata,
+      };
+    }
+
+    if (!Object.keys(updatePayload).length && !Object.keys(unsetPayload).length) {
+      throw new BadRequestException('At least one updatable field is required');
+    }
+
+    await this.orchestrationPlanModel
+      .updateOne(
+        { _id: planId },
+        {
+          ...(Object.keys(updatePayload).length ? { $set: updatePayload } : {}),
+          ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
+        },
+      )
+      .exec();
+
+    if (updatePayload.title) {
+      await this.planSessionModel
+        .updateOne(
+          { planId },
+          {
+            $set: {
+              title: updatePayload.title,
+            },
+          },
+        )
+        .exec();
+    }
+
+    return this.getPlanById(planId);
+  }
+
   async deletePlan(planId: string): Promise<{ success: boolean; deletedTasks: number }> {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {
       throw new NotFoundException('Plan not found');
+    }
+
+    const linkedSchedules = await this.orchestrationScheduleModel
+      .find({ planId: plan._id.toString() })
+      .exec();
+    if (linkedSchedules.length > 0) {
+      throw new BadRequestException(
+        `该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先删除关联的定时服务后再试。`,
+      );
     }
 
     const taskDeleteResult = await this.orchestrationTaskModel

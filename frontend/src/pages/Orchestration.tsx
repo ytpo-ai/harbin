@@ -20,6 +20,7 @@ import {
   OrchestrationPlan,
   PlanMode,
 } from '../services/orchestrationService';
+import { schedulerService } from '../services/schedulerService';
 
 type DrawerTab = 'debug' | 'session';
 
@@ -40,6 +41,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const TERMINAL_PLAN_STATUS = new Set(['completed', 'failed']);
 const ACTIVE_PLAN_STATUS = new Set(['running', 'paused']);
+const PLAN_PROMPT_DRAFT_STORAGE_KEY = 'orchestration-plan-prompt-drafts';
 
 const formatDateTime = (value?: string) => {
   if (!value) return '-';
@@ -67,6 +69,8 @@ const Orchestration: React.FC = () => {
   const [debugSessionId, setDebugSessionId] = useState('');
   const [debugAgentId, setDebugAgentId] = useState('');
   const [activeDrawerTab, setActiveDrawerTab] = useState<DrawerTab>('debug');
+  const [promptDrafts, setPromptDrafts] = useState<Record<string, string>>({});
+  const [planHint, setPlanHint] = useState('');
 
   const { data: plans = [], isLoading: plansLoading } = useQuery<OrchestrationPlan[]>(
     'orchestration-plans',
@@ -117,6 +121,19 @@ const Orchestration: React.FC = () => {
   const { data: employees = [] } = useQuery('orchestration-employees', () => employeeService.getEmployees());
 
   useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PLAN_PROMPT_DRAFT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, string>;
+      if (parsed && typeof parsed === 'object') {
+        setPromptDrafts(parsed);
+      }
+    } catch {
+      // ignore invalid local storage payload
+    }
+  }, []);
+
+  useEffect(() => {
     if (!selectedPlanId && plans.length > 0) {
       setSelectedPlanId(plans[0]._id);
     }
@@ -145,7 +162,25 @@ const Orchestration: React.FC = () => {
     setDebugAgentId('');
     setActiveDrawerTab('debug');
     setDebugHint('');
+    setPlanHint('');
   }, [selectedPlanId]);
+
+  useEffect(() => {
+    if (!planDetail?._id) {
+      return;
+    }
+    setPromptDrafts((prev) => {
+      if (Object.prototype.hasOwnProperty.call(prev, planDetail._id)) {
+        return prev;
+      }
+      const next = {
+        ...prev,
+        [planDetail._id]: planDetail.sourcePrompt || '',
+      };
+      window.localStorage.setItem(PLAN_PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, [planDetail?._id, planDetail?.sourcePrompt]);
 
   const createPlanMutation = useMutation(orchestrationService.createPlanFromPrompt, {
     onSuccess: async (created) => {
@@ -169,6 +204,68 @@ const Orchestration: React.FC = () => {
           queryClient.invalidateQueries('orchestration-plans'),
           queryClient.invalidateQueries(['orchestration-plan', vars.planId]),
         ]);
+      },
+    },
+  );
+
+  const savePlanPromptMutation = useMutation(
+    ({ planId, sourcePrompt }: { planId: string; sourcePrompt: string }) =>
+      orchestrationService.updatePlan(planId, { sourcePrompt }),
+    {
+      onSuccess: async (updated) => {
+        setPlanHint('Prompt 已保存');
+        if (updated?._id) {
+          setPromptDrafts((prev) => {
+            const next = {
+              ...prev,
+              [updated._id]: updated.sourcePrompt || '',
+            };
+            window.localStorage.setItem(PLAN_PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(next));
+            return next;
+          });
+        }
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]),
+        ]);
+      },
+      onError: () => {
+        setPlanHint('保存失败，请稍后重试');
+      },
+    },
+  );
+
+  const replanPlanMutation = useMutation(
+    ({ planId, prompt: nextPrompt }: { planId: string; prompt: string }) =>
+      orchestrationService.replanPlan(planId, {
+        prompt: nextPrompt,
+        mode: planDetail?.strategy?.mode,
+        plannerAgentId: planDetail?.strategy?.plannerAgentId,
+      }),
+    {
+      onSuccess: async (updated) => {
+        setPlanHint('重新编排已完成，任务结构已覆盖更新');
+        if (updated?._id) {
+          setPromptDrafts((prev) => {
+            const next = {
+              ...prev,
+              [updated._id]: updated.sourcePrompt || '',
+            };
+            window.localStorage.setItem(PLAN_PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(next));
+            return next;
+          });
+        }
+        setDebugDrawerOpen(false);
+        setDebugTaskId('');
+        setDebugHint('');
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', selectedPlanId]),
+        ]);
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : '重新编排失败，请稍后重试';
+        setPlanHint(message);
       },
     },
   );
@@ -283,16 +380,22 @@ const Orchestration: React.FC = () => {
     setIsCreateModalOpen(true);
   };
 
-  const openPlanDetail = (planId: string) => {
-    setSelectedPlanId(planId);
-    setIsDetailDrawerOpen(true);
-  };
-
   const openDebugDrawer = (taskId: string, tab: DrawerTab = 'debug') => {
     setDebugTaskId(taskId);
     setActiveDrawerTab(tab);
     setDebugDrawerOpen(true);
     setDebugHint('');
+  };
+
+  const updatePromptDraft = (planId: string, value: string) => {
+    setPromptDrafts((prev) => {
+      const next = {
+        ...prev,
+        [planId]: value,
+      };
+      window.localStorage.setItem(PLAN_PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const handleDebugRun = async () => {
@@ -325,6 +428,10 @@ const Orchestration: React.FC = () => {
       setDebugHint(message);
     }
   };
+
+  const currentPromptDraft = planDetail?._id
+    ? (promptDrafts[planDetail._id] ?? planDetail.sourcePrompt ?? '')
+    : '';
 
   return (
     <div className="space-y-4">
@@ -399,7 +506,7 @@ const Orchestration: React.FC = () => {
                     <td className="px-4 py-3 text-slate-700">{formatDateTime(plan.updatedAt)}</td>
                     <td className="px-4 py-3">
                       <button
-                        onClick={() => openPlanDetail(plan._id)}
+                        onClick={() => window.open(`/orchestration/plans/${plan._id}`, '_blank')}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
                         title="查看详情"
                         aria-label="查看详情"
@@ -536,6 +643,44 @@ const Orchestration: React.FC = () => {
                 <>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      onClick={() => {
+                        if (!selectedPlanId) return;
+                        const nextPrompt = currentPromptDraft.trim();
+                        if (!nextPrompt) {
+                          setPlanHint('Prompt 不能为空');
+                          return;
+                        }
+                        savePlanPromptMutation.mutate({
+                          planId: selectedPlanId,
+                          sourcePrompt: nextPrompt,
+                        });
+                      }}
+                      disabled={!selectedPlanId || savePlanPromptMutation.isLoading}
+                      className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      <PencilSquareIcon className="h-3.5 w-3.5" /> 保存 Prompt
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (!selectedPlanId) return;
+                        const nextPrompt = currentPromptDraft.trim();
+                        if (!nextPrompt) {
+                          setPlanHint('Prompt 不能为空');
+                          return;
+                        }
+                        const ok = window.confirm('确认覆盖当前计划任务并重新编排？旧任务执行轨迹将被替换。');
+                        if (!ok) return;
+                        replanPlanMutation.mutate({
+                          planId: selectedPlanId,
+                          prompt: nextPrompt,
+                        });
+                      }}
+                      disabled={!selectedPlanId || replanPlanMutation.isLoading || runPlanMutation.isLoading}
+                      className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                    >
+                      <ArrowPathIcon className="h-3.5 w-3.5" /> 重新编排
+                    </button>
+                    <button
                       onClick={() => copyPlanToForm(planDetail)}
                       className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                     >
@@ -551,8 +696,17 @@ const Orchestration: React.FC = () => {
                       <PlayIcon className="h-3.5 w-3.5" /> 运行计划
                     </button>
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!selectedPlanId) return;
+                        try {
+                          const linkedSchedules = await schedulerService.findSchedulesByPlanId(selectedPlanId);
+                          if (linkedSchedules.length > 0) {
+                            alert(`该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先在定时服务管理中删除关联的定时服务。`);
+                            return;
+                          }
+                        } catch (error) {
+                          console.error('检查关联定时服务失败:', error);
+                        }
                         const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
                         if (!ok) return;
                         deletePlanMutation.mutate(selectedPlanId);
@@ -569,11 +723,20 @@ const Orchestration: React.FC = () => {
                       <span className="font-medium">Planner Agent:</span> {planDetail.strategy?.plannerAgentId || '默认'}
                     </p>
                     <div className="mt-2">
-                      <p className="mb-1 font-medium">原始 Prompt</p>
-                      <pre className="whitespace-pre-wrap rounded border border-slate-200 bg-white p-2 text-xs text-slate-600">
-                        {planDetail.sourcePrompt || '-'}
-                      </pre>
+                      <p className="mb-1 font-medium">Prompt（支持编辑与保持）</p>
+                      <textarea
+                        value={currentPromptDraft}
+                        onChange={(event) => {
+                          if (!planDetail?._id) return;
+                          updatePromptDraft(planDetail._id, event.target.value);
+                          if (planHint) {
+                            setPlanHint('');
+                          }
+                        }}
+                        className="min-h-[120px] w-full rounded border border-slate-200 bg-white p-2 text-xs text-slate-600"
+                      />
                     </div>
+                    {planHint && <p className="mt-2 text-xs text-indigo-700">{planHint}</p>}
                   </div>
 
                   <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs text-slate-700 md:grid-cols-4">

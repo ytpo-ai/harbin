@@ -7,6 +7,7 @@ export interface OrchestrationSchedule {
   _id: string;
   name: string;
   description?: string;
+  planId?: string;
   schedule: {
     type: ScheduleType;
     expression?: string;
@@ -130,6 +131,11 @@ export const schedulerService = {
         limit,
       },
     });
+    return response.data;
+  },
+
+  async findSchedulesByPlanId(planId: string): Promise<OrchestrationSchedule[]> {
+    const response = await api.get(`/orchestration/schedules/by-plan/${planId}`);
     return response.data;
   },
 };

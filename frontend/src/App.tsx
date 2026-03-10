@@ -14,6 +14,7 @@ import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import EngineeringIntelligence from './pages/EngineeringIntelligence';
 import Orchestration from './pages/Orchestration';
+import PlanDetail from './pages/PlanDetail';
 import Scheduler from './pages/Scheduler';
 import Skills from './pages/Skills';
 import OperationLogs from './pages/OperationLogs';
@@ -69,6 +70,7 @@ function App() {
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
+            <Route path="/orchestration/plans/:id" element={<ProtectedRoute><PlanDetail /></ProtectedRoute>} />
             <Route path="/scheduler" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />

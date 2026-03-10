@@ -4,7 +4,9 @@ import {
   ArrowPathIcon,
   BoltIcon,
   ClockIcon,
+  EyeIcon,
   PlayIcon,
+  PencilSquareIcon,
   PlusIcon,
   PowerIcon,
   TrashIcon,
@@ -13,10 +15,13 @@ import {
 import { agentService } from '../services/agentService';
 import {
   schedulerService,
+  CreateSchedulePayload,
   OrchestrationSchedule,
   ScheduleTaskHistory,
   ScheduleType,
 } from '../services/schedulerService';
+
+type IntervalUnit = 'minute' | 'hour';
 
 const formatDateTime = (value?: string) => {
   if (!value) return '-';
@@ -28,26 +33,69 @@ const formatDateTime = (value?: string) => {
 const formatScheduleRule = (schedule?: OrchestrationSchedule['schedule']) => {
   if (!schedule) return '-';
   if (schedule.type === 'interval') {
-    const hours = ((schedule.intervalMs || 0) / (60 * 60 * 1000)).toFixed(2);
-    return `每 ${hours} 小时`;
+    const intervalMs = schedule.intervalMs || 0;
+    const hourMs = 60 * 60 * 1000;
+    const minuteMs = 60 * 1000;
+
+    if (intervalMs > 0 && intervalMs % hourMs === 0) {
+      return `每 ${intervalMs / hourMs} 小时`;
+    }
+    if (intervalMs > 0 && intervalMs % minuteMs === 0) {
+      return `每 ${intervalMs / minuteMs} 分钟`;
+    }
+
+    return `每 ${intervalMs} 毫秒`;
   }
 
   return schedule.expression || '-';
+};
+
+const toIntervalMs = (value: string, unit: IntervalUnit) => {
+  const amount = Math.max(Number(value || 0), 1);
+  if (unit === 'minute') {
+    return amount * 60 * 1000;
+  }
+
+  return amount * 60 * 60 * 1000;
+};
+
+const parseIntervalForForm = (intervalMs?: number): { value: string; unit: IntervalUnit } => {
+  const safeInterval = Math.max(intervalMs || 0, 60 * 1000);
+  const hourMs = 60 * 60 * 1000;
+  const minuteMs = 60 * 1000;
+
+  if (safeInterval % hourMs === 0) {
+    return { value: String(safeInterval / hourMs), unit: 'hour' };
+  }
+
+  return { value: String(Math.max(Math.round(safeInterval / minuteMs), 1)), unit: 'minute' };
 };
 
 const Scheduler: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [scheduleType, setScheduleType] = useState<ScheduleType>('interval');
-  const [intervalHours, setIntervalHours] = useState('2');
+  const [intervalValue, setIntervalValue] = useState('2');
+  const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>('hour');
   const [cronExpression, setCronExpression] = useState('0 */2 * * *');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [executorId, setExecutorId] = useState('');
   const [prompt, setPrompt] = useState('请检查关键状态并给出结构化结论。');
+  const [editingScheduleId, setEditingScheduleId] = useState('');
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editScheduleType, setEditScheduleType] = useState<ScheduleType>('interval');
+  const [editIntervalValue, setEditIntervalValue] = useState('2');
+  const [editIntervalUnit, setEditIntervalUnit] = useState<IntervalUnit>('hour');
+  const [editCronExpression, setEditCronExpression] = useState('0 */2 * * *');
+  const [editTimezone, setEditTimezone] = useState('Asia/Shanghai');
+  const [editExecutorId, setEditExecutorId] = useState('');
+  const [editPrompt, setEditPrompt] = useState('');
 
   const { data: agents = [] } = useQuery('scheduler-agents', () => agentService.getAgents());
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<OrchestrationSchedule[]>(
@@ -65,15 +113,6 @@ const Scheduler: React.FC = () => {
     },
   );
 
-  const { data: history = [], isFetching: historyLoading } = useQuery<ScheduleTaskHistory[]>(
-    ['orchestration-schedule-history', selectedScheduleId],
-    () => schedulerService.getScheduleHistory(selectedScheduleId, 15),
-    {
-      enabled: Boolean(selectedScheduleId) && isDetailDrawerOpen,
-      refetchInterval: selectedScheduleId && isDetailDrawerOpen ? 5000 : false,
-    },
-  );
-
   useEffect(() => {
     if (!executorId && agents.length) {
       setExecutorId(agents[0].id);
@@ -84,7 +123,8 @@ const Scheduler: React.FC = () => {
     setName('');
     setDescription('');
     setScheduleType('interval');
-    setIntervalHours('2');
+    setIntervalValue('2');
+    setIntervalUnit('hour');
     setCronExpression('0 */2 * * *');
     setTimezone('Asia/Shanghai');
     setPrompt('请检查关键状态并给出结构化结论。');
@@ -131,6 +171,10 @@ const Scheduler: React.FC = () => {
   const deleteMutation = useMutation((scheduleId: string) => schedulerService.deleteSchedule(scheduleId), {
     onSuccess: async (_, scheduleId) => {
       await queryClient.invalidateQueries('orchestration-schedules');
+      if (scheduleId === editingScheduleId) {
+        setIsEditModalOpen(false);
+        setEditingScheduleId('');
+      }
       if (scheduleId === selectedScheduleId) {
         setSelectedScheduleId('');
         setIsDetailDrawerOpen(false);
@@ -138,10 +182,47 @@ const Scheduler: React.FC = () => {
     },
   });
 
+  const updateMutation = useMutation(
+    ({ scheduleId, payload }: { scheduleId: string; payload: Partial<CreateSchedulePayload> }) =>
+      schedulerService.updateSchedule(scheduleId, payload),
+    {
+      onSuccess: async (updated) => {
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-schedules'),
+          queryClient.invalidateQueries(['orchestration-schedule', updated._id]),
+        ]);
+        setSelectedScheduleId(updated._id);
+        setIsDetailDrawerOpen(true);
+        setIsEditModalOpen(false);
+        setEditingScheduleId('');
+      },
+    },
+  );
+
   const selectedSchedule = useMemo(
     () => schedules.find((item) => item._id === selectedScheduleId),
     [schedules, selectedScheduleId],
   );
+
+  const historyLimit = scheduleDetail?.planId || selectedSchedule?.planId ? 1 : 15;
+
+  const { data: history = [], isFetching: historyLoading } = useQuery<ScheduleTaskHistory[]>(
+    ['orchestration-schedule-history', selectedScheduleId, historyLimit],
+    () => schedulerService.getScheduleHistory(selectedScheduleId, historyLimit),
+    {
+      enabled: Boolean(selectedScheduleId) && isDetailDrawerOpen,
+      refetchInterval: selectedScheduleId && isDetailDrawerOpen ? 5000 : false,
+    },
+  );
+
+  const editingSchedule = useMemo(() => {
+    if (!editingScheduleId) return undefined;
+    if (scheduleDetail && scheduleDetail._id === editingScheduleId) {
+      return scheduleDetail;
+    }
+
+    return schedules.find((item) => item._id === editingScheduleId);
+  }, [editingScheduleId, scheduleDetail, schedules]);
 
   const selectedScheduleName = scheduleDetail?.name || selectedSchedule?.name || '定时计划详情';
   const scheduleSummary = formatScheduleRule(scheduleDetail?.schedule || selectedSchedule?.schedule);
@@ -154,7 +235,7 @@ const Scheduler: React.FC = () => {
         scheduleType === 'interval'
           ? {
               type: 'interval',
-              intervalMs: Math.max(Number(intervalHours || 0), 1) * 60 * 60 * 1000,
+              intervalMs: toIntervalMs(intervalValue, intervalUnit),
               timezone,
             }
           : {
@@ -176,6 +257,65 @@ const Scheduler: React.FC = () => {
   const openScheduleDetail = (scheduleId: string) => {
     setSelectedScheduleId(scheduleId);
     setIsDetailDrawerOpen(true);
+  };
+
+  const openEditModal = (scheduleId: string) => {
+    const schedule =
+      scheduleDetail && scheduleDetail._id === scheduleId
+        ? scheduleDetail
+        : schedules.find((item) => item._id === scheduleId);
+
+    if (!schedule) return;
+
+    setEditingScheduleId(scheduleId);
+    setEditName(schedule.name || '');
+    setEditDescription(schedule.description || '');
+    setEditScheduleType(schedule.schedule?.type || 'interval');
+    const parsedInterval = parseIntervalForForm(schedule.schedule?.intervalMs);
+    setEditIntervalValue(parsedInterval.value);
+    setEditIntervalUnit(parsedInterval.unit);
+    setEditCronExpression(schedule.schedule?.expression || '0 */2 * * *');
+    setEditTimezone(schedule.schedule?.timezone || 'Asia/Shanghai');
+    setEditExecutorId(schedule.target?.executorId || '');
+    setEditPrompt(schedule.input?.prompt || '');
+    setIsEditModalOpen(true);
+  };
+
+  const deleteSchedule = (scheduleId: string) => {
+    if (!window.confirm('确认删除该定时计划？')) return;
+    deleteMutation.mutate(scheduleId);
+  };
+
+  const submitEdit = () => {
+    if (!editingScheduleId) return;
+
+    updateMutation.mutate({
+      scheduleId: editingScheduleId,
+      payload: {
+        name: editName.trim(),
+        description: editDescription.trim() || undefined,
+        schedule:
+          editScheduleType === 'interval'
+            ? {
+                type: 'interval',
+                intervalMs: toIntervalMs(editIntervalValue, editIntervalUnit),
+                timezone: editTimezone,
+              }
+            : {
+                type: 'cron',
+                expression: editCronExpression.trim(),
+                timezone: editTimezone,
+              },
+        target: {
+          executorType: 'agent',
+          executorId: editExecutorId,
+        },
+        input: {
+          prompt: editPrompt.trim() || undefined,
+        },
+        enabled: editingSchedule?.enabled,
+      },
+    });
   };
 
   return (
@@ -247,12 +387,43 @@ const Scheduler: React.FC = () => {
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatDateTime(item.nextRunAt)}</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => openScheduleDetail(item._id)}
-                        className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
-                      >
-                        查看详情
-                      </button>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => openScheduleDetail(item._id)}
+                          title="查看详情"
+                          aria-label="查看详情"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                        >
+                          <EyeIcon className="h-4 w-4" />
+                        </button>
+                        {item.planId && (
+                          <button
+                            onClick={() => window.open(`/orchestration/plans/${item.planId}`, '_blank')}
+                            title="查看关联计划"
+                            aria-label="查看关联计划"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-cyan-200 text-cyan-700 hover:bg-cyan-50"
+                          >
+                            <PlayIcon className="h-4 w-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => openEditModal(item._id)}
+                          title="编辑"
+                          aria-label="编辑"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 text-amber-700 hover:bg-amber-50"
+                        >
+                          <PencilSquareIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteSchedule(item._id)}
+                          disabled={deleteMutation.isLoading}
+                          title="删除"
+                          aria-label="删除"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -325,13 +496,18 @@ const Scheduler: React.FC = () => {
                   <input
                     type="number"
                     min={1}
-                    value={intervalHours}
-                    onChange={(event) => setIntervalHours(event.target.value)}
+                    value={intervalValue}
+                    onChange={(event) => setIntervalValue(event.target.value)}
                     className="rounded-md border border-slate-300 px-2 py-2 text-sm"
                   />
-                  <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-slate-600">
-                    单位：小时
-                  </div>
+                  <select
+                    value={intervalUnit}
+                    onChange={(event) => setIntervalUnit(event.target.value as IntervalUnit)}
+                    className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  >
+                    <option value="minute">分钟</option>
+                    <option value="hour">小时</option>
+                  </select>
                 </div>
               ) : (
                 <input
@@ -413,6 +589,13 @@ const Scheduler: React.FC = () => {
                 <>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
+                      onClick={() => selectedScheduleId && openEditModal(selectedScheduleId)}
+                      disabled={!selectedScheduleId}
+                      className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-3 py-1.5 text-xs text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      <PencilSquareIcon className="h-3.5 w-3.5" /> 编辑
+                    </button>
+                    <button
                       onClick={() => selectedScheduleId && triggerMutation.mutate(selectedScheduleId)}
                       disabled={!selectedScheduleId || triggerMutation.isLoading}
                       className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
@@ -439,11 +622,7 @@ const Scheduler: React.FC = () => {
                     )}
 
                     <button
-                      onClick={() => {
-                        if (!selectedScheduleId) return;
-                        if (!window.confirm('确认删除该定时计划？')) return;
-                        deleteMutation.mutate(selectedScheduleId);
-                      }}
+                      onClick={() => selectedScheduleId && deleteSchedule(selectedScheduleId)}
                       disabled={!selectedScheduleId || deleteMutation.isLoading}
                       className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                     >
@@ -523,6 +702,127 @@ const Scheduler: React.FC = () => {
               )}
             </div>
           </aside>
+        </div>
+      )}
+
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">编辑定时计划</p>
+              <button
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditingScheduleId('');
+                }}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="关闭编辑弹窗"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-4">
+              <input
+                value={editName}
+                onChange={(event) => setEditName(event.target.value)}
+                placeholder="任务名称，例如：Agent状态巡检"
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+
+              <textarea
+                value={editDescription}
+                onChange={(event) => setEditDescription(event.target.value)}
+                placeholder="任务描述（可选）"
+                className="min-h-[80px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                <select
+                  value={editScheduleType}
+                  onChange={(event) => setEditScheduleType(event.target.value as ScheduleType)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="interval">固定间隔</option>
+                  <option value="cron">Cron</option>
+                </select>
+                <select
+                  value={editExecutorId}
+                  onChange={(event) => setEditExecutorId(event.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="">选择 Agent</option>
+                  {agents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {editScheduleType === 'interval' ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="number"
+                    min={1}
+                    value={editIntervalValue}
+                    onChange={(event) => setEditIntervalValue(event.target.value)}
+                    className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  />
+                  <select
+                    value={editIntervalUnit}
+                    onChange={(event) => setEditIntervalUnit(event.target.value as IntervalUnit)}
+                    className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  >
+                    <option value="minute">分钟</option>
+                    <option value="hour">小时</option>
+                  </select>
+                </div>
+              ) : (
+                <input
+                  value={editCronExpression}
+                  onChange={(event) => setEditCronExpression(event.target.value)}
+                  className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+                  placeholder="0 */2 * * *"
+                />
+              )}
+
+              <input
+                value={editTimezone}
+                onChange={(event) => setEditTimezone(event.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+                placeholder="Asia/Shanghai"
+              />
+
+              <textarea
+                value={editPrompt}
+                onChange={(event) => setEditPrompt(event.target.value)}
+                className="min-h-[100px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+                placeholder="触发后给 Agent 的执行指令"
+              />
+
+              {updateMutation.isError && <p className="text-xs text-rose-600">修改失败，请稍后重试。</p>}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                onClick={() => {
+                  setIsEditModalOpen(false);
+                  setEditingScheduleId('');
+                }}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={submitEdit}
+                disabled={!editName.trim() || !editExecutorId || updateMutation.isLoading}
+                className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white disabled:bg-slate-300"
+              >
+                <PencilSquareIcon className="h-4 w-4" /> 保存修改
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

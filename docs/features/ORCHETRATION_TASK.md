@@ -51,6 +51,11 @@
 5. 解析任务依赖关系
 6. 智能选择执行者（Agent/Employee）
 
+#### 计划管理约束
+
+- 删除计划前会检查是否存在关联定时服务（`planId` 绑定的 schedule），存在则禁止删除。
+- 计划详情页面使用独立路由 `/orchestration/plans/:id`，支持从计划列表或定时服务列表跳转。
+
 #### 执行模式
 
 - **sequential**：按依赖顺序串行执行
@@ -65,6 +70,12 @@
    - `employee`：标记为 waiting_human，等待人工完成
    - `unassigned`：标记失败或等待人工
 3. 任务完成后更新 Plan 统计
+
+#### 任务调试 MCP
+
+- 新增 `orchestration_debug_task`（`builtin.sys-mg.mcp.orchestration.debug-task`）供 Agent 在会议编排上下文中直接调试单个任务。
+- MCP 工具调用后会透传到 `POST /orchestration/tasks/:id/debug-run`，支持带草稿修改（`title/description`）与 `resetResult`。
+- 返回结构包含执行状态、错误信息、最近日志与建议下一步动作，便于 Agent 自主继续编排。
 
 #### 智能分配策略
 
@@ -96,6 +107,7 @@
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行主计划 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理主计划 |
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
+| `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
 
 ### 开发总结 (docs/development/)
 
@@ -104,6 +116,7 @@
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行开发沉淀 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理开发沉淀 |
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化开发沉淀 |
+| `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -141,6 +154,7 @@
 | 文件 | 功能 |
 |------|------|
 | `services/orchestrationService.ts` | API 调用服务与类型定义 |
+| `pages/PlanDetail.tsx` | 计划详情独立页面 |
 
 ### Agent 集成 (backend/apps/agents/src/modules/agents/)
 
@@ -155,6 +169,8 @@
 | 方法 | 路径 | 功能 |
 |------|------|------|
 | POST | `/orchestration/plans/from-prompt` | 从自然语言创建计划 |
+| PATCH | `/orchestration/plans/:id` | 更新计划基础信息（标题/提示词/策略/元数据） |
+| POST | `/orchestration/plans/:id/replan` | 覆盖当前计划任务并基于当前 prompt 重新编排 |
 | GET | `/orchestration/plans` | 获取计划列表 |
 | GET | `/orchestration/plans/:id` | 获取计划详情（含任务与 PlanSession） |
 | DELETE | `/orchestration/plans/:id` | 删除计划 |

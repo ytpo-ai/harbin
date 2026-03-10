@@ -14,12 +14,13 @@
 
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
-| `orchestration_schedules` | `orchestration-schedule.schema.ts` | 定时计划定义（cron/interval、目标 agent、启停、最近执行状态） |
+| `orchestration_schedules` | `orchestration-schedule.schema.ts` | 定时计划定义（cron/interval、目标 agent、关联 planId、启停、最近执行状态） |
 | `orchestration_tasks` | `orchestration-task.schema.ts` | 执行记录；新增 `mode=plan|schedule` 与 `scheduleId` |
 
 #### OrchestrationSchedule 核心字段
 
 - `name/description`: 计划基本信息
+- `planId`: 关联的编排计划 ID（用于计划页可见性与执行追踪）
 - `schedule`: 调度配置（`type=cron|interval`，`expression|intervalMs`，`timezone`）
 - `target`: 执行目标（当前固定 `executorType=agent`）
 - `input`: 执行输入（`prompt/payload`）
@@ -38,7 +39,9 @@
 3. 执行复用 `OrchestrationService` 现有执行能力（Agent 调用、状态流转、结果落库）。
 4. 回写 `schedule.lastRun/stats/nextRunAt`。
 5. 支持手动触发、启停、删除与执行历史查询。
-6. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
+6. 计划绑定的 schedule 会标记 `planId`，计划删除前需先解绑或删除相关 schedule。
+7. 关联计划的定时服务在详情页仅展示最近一次执行记录。
+8. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
 
 ### 1.4 API 接口
 
@@ -53,6 +56,7 @@
 | POST | `/orchestration/schedules/:id/disable` | 停用计划 |
 | POST | `/orchestration/schedules/:id/trigger` | 手动触发 |
 | GET | `/orchestration/schedules/:id/history` | 查询执行历史 |
+| GET | `/orchestration/schedules/by-plan/:planId` | 查询计划关联的定时服务 |
 
 ---
 
@@ -63,6 +67,14 @@
 | 文件 | 说明 |
 |------|------|
 | `ORCHESTRATION_SCHEDULER_MODULE_PLAN.md` | Scheduler 模块实施计划 |
+| `SYSTEM_MEETING_MONITOR_PLAN_BINDING_PLAN.md` | 系统会议监控补齐 plan 关联计划 |
+| `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
+
+### 开发总结 (docs/development/)
+
+| 文件 | 说明 |
+|------|------|
+| `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
 
 ### 技术文档 (docs/technical/)
 

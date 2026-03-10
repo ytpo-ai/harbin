@@ -145,4 +145,15 @@ export class SchedulerController {
     const user = await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.getScheduleHistory(scheduleId, query.limit || 20);
   }
+
+  @Get('by-plan/:planId')
+  async findByPlanId(
+    @Param('planId') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.schedulerService.findSchedulesByPlanId(planId);
+  }
 }
