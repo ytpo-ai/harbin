@@ -14,10 +14,14 @@ export class SkillController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('includeContent') includeContent?: string,
+    @Query('includeMetadata') includeMetadata?: string,
   ) {
     const numericPage = page ? Number(page) : undefined;
     const numericPageSize = pageSize ? Number(pageSize) : undefined;
     const shouldUsePaged = Boolean(search?.trim()) || Number.isFinite(numericPage) || Number.isFinite(numericPageSize);
+    const shouldIncludeContent = includeContent === 'true' || includeContent === '1';
+    const shouldIncludeMetadata = includeMetadata === 'true' || includeMetadata === '1';
 
     if (shouldUsePaged) {
       return this.skillService.getSkillsPaged({
@@ -26,10 +30,16 @@ export class SkillController {
         search,
         page: numericPage,
         pageSize: numericPageSize,
+      }, {
+        includeContent: shouldIncludeContent,
+        includeMetadata: shouldIncludeMetadata,
       });
     }
 
-    return this.skillService.getAllSkills({ status, category, search });
+    return this.skillService.getAllSkills(
+      { status, category, search },
+      { includeContent: shouldIncludeContent, includeMetadata: shouldIncludeMetadata },
+    );
   }
 
   @Post()
@@ -49,9 +59,16 @@ export class SkillController {
       confidenceScore?: number;
       discoveredBy?: string;
       metadata?: Record<string, any>;
+      content?: string;
+      contentType?: string;
     },
   ) {
     return this.skillService.createSkill(body);
+  }
+
+  @Get(':id/content')
+  async getSkillContent(@Param('id') id: string) {
+    return this.skillService.getSkillContentById(id);
   }
 
   @Get('agents/:agentId')
@@ -118,8 +135,9 @@ export class SkillController {
   }
 
   @Get(':id')
-  async getSkill(@Param('id') id: string) {
-    return this.skillService.getSkillById(id);
+  async getSkill(@Param('id') id: string, @Query('includeContent') includeContent?: string) {
+    const shouldIncludeContent = includeContent === 'true' || includeContent === '1';
+    return this.skillService.getSkillById(id, { includeContent: shouldIncludeContent });
   }
 
   @Put(':id')

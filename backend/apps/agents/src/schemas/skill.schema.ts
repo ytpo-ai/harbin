@@ -61,6 +61,24 @@ export class Skill {
 
   @Prop({ type: Object })
   metadata?: Record<string, any>;
+
+  @Prop()
+  content?: string;
+
+  @Prop({ default: 'text/markdown' })
+  contentType?: string;
+
+  @Prop()
+  contentHash?: string;
+
+  @Prop({ default: 0 })
+  contentSize?: number;
+
+  @Prop()
+  contentUpdatedAt?: Date;
+
+  @Prop()
+  metadataUpdatedAt?: Date;
 }
 
 export const SkillSchema = SchemaFactory.createForClass(Skill);

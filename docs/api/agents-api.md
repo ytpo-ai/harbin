@@ -80,6 +80,23 @@ Profile 字段说明：
 - `GET /skills/suggestions/agents/:agentId`：查询建议记录
 - `PUT /skills/suggestions/:id`：审核建议
 - `POST /skills/docs/rebuild`：重建技能文档（默认 `docs/skills`，配置 `AGENT_DATA_ROOT` 后写入 `$AGENT_DATA_ROOT/skills`）
+- `GET /skills/:id/content`：按需读取技能正文（渐进式加载）
+
+Skill 渐进式加载（DB + Redis）契约：
+
+- 目标：列表链路仅返回元数据，正文按需加载。
+- `GET /skills`
+  - 默认不返回 `content` 大字段。
+  - 可选参数：`includeMetadata=true` 返回完整元数据。
+- `GET /skills/:id`
+  - 默认不返回 `content`。
+  - 可选参数：`includeContent=true` 时返回正文。
+- 可选扩展端点：`GET /skills/:id/content`
+  - 仅返回技能正文与正文相关元信息（`contentType/contentHash/contentUpdatedAt`）。
+
+说明：
+
+- 以上契约用于支持“Skill 索引元数据常驻 + 技能正文按命中加载”的运行模式。
 
 ## Tools（`/tools`）
 
@@ -137,14 +154,20 @@ Profile 字段说明：
 - `builtin.sys-mg.mcp.skill-master.list-skills`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
 
+`builtin.sys-mg.internal.agent-admin.list-agents` 响应说明：
+
+- 顶层字段：`total`、`visible`、`includeHidden`、`agents`、`fetchedAt`
+- `agents[]` 字段：`id`、`name`、`role`、`capabilitySet`、`exposed`、`isActive`、`identify`
+- `identify` 来源于 `agentId + memoKind(identity)` 的第一条 memo 内容，缺失时返回空字符串。
+
 Skill Master MCP 参数约定：
 
 - `builtin.sys-mg.mcp.skill-master.list-skills`
   - 支持 `title` 模糊检索（映射到 skill name search）
-  - 可选参数：`status`、`category`、`limit`、`page`
+  - 可选参数：`status`、`category`、`includeMetadata`、`limit`、`page`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
   - 必填：`title`（或 `name`）、`description`
-  - 可选：`category`、`tags`、`sourceType`、`sourceUrl`、`provider`、`version`、`status`、`confidenceScore`、`metadata`
+  - 可选：`category`、`tags`、`sourceType`、`sourceUrl`、`provider`、`version`、`status`、`confidenceScore`、`metadata`、`content`、`contentType`
 
 会议编排 MCP 说明：
 

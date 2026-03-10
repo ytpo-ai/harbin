@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { createHash } from 'crypto';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentSkill, AgentSkillDocument, SkillProficiency } from '../../schemas/agent-skill.schema';
 import {
@@ -19,6 +20,7 @@ import {
 } from '../../schemas/skill-suggestion.schema';
 import { SkillDocSyncService } from './skill-doc-sync.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
+import { RedisService } from '@libs/infra';
 
 interface CreateSkillInput {
   name: string;
@@ -34,6 +36,13 @@ interface CreateSkillInput {
   confidenceScore?: number;
   discoveredBy?: string;
   metadata?: Record<string, any>;
+  content?: string;
+  contentType?: string;
+}
+
+interface SkillReadOptions {
+  includeContent?: boolean;
+  includeMetadata?: boolean;
 }
 
 interface AssignSkillInput {
@@ -60,6 +69,9 @@ interface SkillPagedResult {
 @Injectable()
 export class SkillService {
   private readonly logger = new Logger(SkillService.name);
+  private readonly skillIndexCacheTtlSeconds = Math.max(60, Number(process.env.SKILL_INDEX_CACHE_TTL_SECONDS || 1800));
+  private readonly skillDetailCacheTtlSeconds = Math.max(60, Number(process.env.SKILL_DETAIL_CACHE_TTL_SECONDS || 900));
+  private readonly skillContentCacheTtlSeconds = Math.max(60, Number(process.env.SKILL_CONTENT_CACHE_TTL_SECONDS || 900));
 
   constructor(
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
@@ -68,6 +80,7 @@ export class SkillService {
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly skillDocSyncService: SkillDocSyncService,
     private readonly memoEventBus: MemoEventBusService,
+    private readonly redisService: RedisService,
   ) {}
 
   async createSkill(payload: CreateSkillInput): Promise<Skill> {
@@ -80,6 +93,8 @@ export class SkillService {
 
     const normalizedName = payload.name.trim();
     const slug = this.normalizeSlug(payload.slug || normalizedName);
+    const normalizedContent = this.normalizeOptionalContent(payload.content);
+    const contentHash = normalizedContent ? this.computeContentHash(normalizedContent) : undefined;
     const skill = await this.skillModel.create({
       id: uuidv4(),
       name: normalizedName,
@@ -95,26 +110,55 @@ export class SkillService {
       confidenceScore: this.normalizeScore(payload.confidenceScore ?? 60),
       discoveredBy: payload.discoveredBy || 'AgentSkillManager',
       metadata: payload.metadata || {},
+      metadataUpdatedAt: new Date(),
+      content: normalizedContent,
+      contentType: payload.contentType?.trim() || 'text/markdown',
+      contentHash,
+      contentSize: normalizedContent ? Buffer.byteLength(normalizedContent, 'utf8') : 0,
+      contentUpdatedAt: normalizedContent ? new Date() : undefined,
       lastVerifiedAt: new Date(),
     });
+
+    await this.cacheSkillIndex(skill as unknown as Skill);
+    await this.cacheSkillDetail(skill as unknown as Skill, false);
+    if (normalizedContent && contentHash) {
+      await this.cacheSkillContent(skill.id, contentHash, {
+        content: normalizedContent,
+        contentType: (skill as any).contentType || 'text/markdown',
+        contentHash,
+        contentUpdatedAt: (skill as any).contentUpdatedAt,
+        contentSize: (skill as any).contentSize || Buffer.byteLength(normalizedContent, 'utf8'),
+      });
+    }
 
     await this.syncSkillDocsSafely(skill as unknown as Skill);
     return skill;
   }
 
-  async getAllSkills(filters?: SkillListFilters): Promise<Skill[]> {
+  async getAllSkills(filters?: SkillListFilters, options?: SkillReadOptions): Promise<Skill[]> {
     const query = this.buildSkillsQuery(filters);
-    return this.skillModel.find(query).sort({ updatedAt: -1 }).exec();
+    const projection = this.buildSkillProjection({
+      includeContent: options?.includeContent,
+      includeMetadata: options?.includeMetadata !== false,
+    });
+    return this.skillModel.find(query, projection).sort({ updatedAt: -1 }).exec();
   }
 
-  async getSkillsPaged(filters?: SkillListFilters & { page?: number; pageSize?: number }): Promise<SkillPagedResult> {
+  async getSkillsPaged(
+    filters?: SkillListFilters & { page?: number; pageSize?: number },
+    options?: SkillReadOptions,
+  ): Promise<SkillPagedResult> {
     const query = this.buildSkillsQuery(filters);
     const page = Math.max(1, Number(filters?.page || 1));
     const pageSize = Math.max(1, Math.min(100, Number(filters?.pageSize || 10)));
     const skip = (page - 1) * pageSize;
+    const projection = this.buildSkillProjection({
+      includeContent: options?.includeContent,
+      includeMetadata: options?.includeMetadata !== false,
+    });
 
     const [items, total] = await Promise.all([
-      this.skillModel.find(query).sort({ updatedAt: -1 }).skip(skip).limit(pageSize).exec(),
+      this.skillModel.find(query, projection).sort({ updatedAt: -1 }).skip(skip).limit(pageSize).exec(),
       this.skillModel.countDocuments(query).exec(),
     ]);
 
@@ -127,14 +171,77 @@ export class SkillService {
     };
   }
 
-  async getSkillById(skillId: string): Promise<Skill> {
-    const skill = await this.skillModel.findOne({ id: skillId }).exec();
+  async getSkillById(skillId: string, options?: SkillReadOptions): Promise<Skill> {
+    const includeContent = options?.includeContent === true;
+    if (!includeContent) {
+      const cached = await this.loadSkillDetailFromCache(skillId);
+      if (cached) return cached as Skill;
+    }
+
+    const projection = this.buildSkillProjection({
+      includeContent,
+      includeMetadata: options?.includeMetadata !== false,
+    });
+    const skill = await this.skillModel.findOne({ id: skillId }, projection).exec();
     if (!skill) throw new NotFoundException(`Skill not found: ${skillId}`);
+    await this.cacheSkillIndex(skill as unknown as Skill);
+    await this.cacheSkillDetail(skill as unknown as Skill, includeContent);
     return skill;
   }
 
+  async getSkillContentById(skillId: string): Promise<{
+    id: string;
+    content: string;
+    contentType: string;
+    contentHash: string;
+    contentSize: number;
+    contentUpdatedAt?: Date;
+  }> {
+    const latestHash = await this.redisService.get(this.skillContentLatestKey(skillId));
+    if (latestHash) {
+      const cached = await this.redisService.get(this.skillContentCacheKey(skillId, latestHash));
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed?.contentHash && typeof parsed.content === 'string') {
+            return {
+              id: skillId,
+              content: parsed.content,
+              contentType: parsed.contentType || 'text/markdown',
+              contentHash: parsed.contentHash,
+              contentSize: Number(parsed.contentSize || 0),
+              contentUpdatedAt: parsed.contentUpdatedAt ? new Date(parsed.contentUpdatedAt) : undefined,
+            };
+          }
+        } catch {
+          // ignore cache parse error and fallback to DB
+        }
+      }
+    }
+
+    const skill = await this.skillModel
+      .findOne({ id: skillId }, { id: 1, content: 1, contentType: 1, contentHash: 1, contentSize: 1, contentUpdatedAt: 1 })
+      .exec();
+    if (!skill) throw new NotFoundException(`Skill not found: ${skillId}`);
+    const content = this.normalizeOptionalContent((skill as any).content);
+    if (!content) {
+      throw new NotFoundException(`Skill content not found: ${skillId}`);
+    }
+    const contentHash = String((skill as any).contentHash || this.computeContentHash(content));
+    const result = {
+      id: skillId,
+      content,
+      contentType: String((skill as any).contentType || 'text/markdown'),
+      contentHash,
+      contentSize: Number((skill as any).contentSize || Buffer.byteLength(content, 'utf8')),
+      contentUpdatedAt: (skill as any).contentUpdatedAt,
+    };
+    await this.cacheSkillContent(skillId, contentHash, result);
+    return result;
+  }
+
   async updateSkill(skillId: string, updates: Partial<CreateSkillInput>): Promise<Skill> {
-    const existed = await this.getSkillById(skillId);
+    const existed = await this.getSkillById(skillId, { includeContent: true });
     const updatePayload: Record<string, any> = {
       ...updates,
       updatedAt: new Date(),
@@ -151,6 +258,20 @@ export class SkillService {
     if (updates.tags) {
       updatePayload.tags = this.uniqueStrings(updates.tags);
     }
+    if (Object.prototype.hasOwnProperty.call(updates, 'metadata')) {
+      updatePayload.metadata = updates.metadata || {};
+      updatePayload.metadataUpdatedAt = new Date();
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'content')) {
+      const normalizedContent = this.normalizeOptionalContent(updates.content);
+      updatePayload.content = normalizedContent;
+      updatePayload.contentType = updates.contentType?.trim() || (existed as any).contentType || 'text/markdown';
+      updatePayload.contentHash = normalizedContent ? this.computeContentHash(normalizedContent) : undefined;
+      updatePayload.contentSize = normalizedContent ? Buffer.byteLength(normalizedContent, 'utf8') : 0;
+      updatePayload.contentUpdatedAt = new Date();
+    } else if (Object.prototype.hasOwnProperty.call(updates, 'contentType') && updates.contentType?.trim()) {
+      updatePayload.contentType = updates.contentType.trim();
+    }
     if (typeof updates.confidenceScore === 'number') {
       updatePayload.confidenceScore = this.normalizeScore(updates.confidenceScore);
     }
@@ -163,13 +284,30 @@ export class SkillService {
     if (existed.slug !== skill.slug) {
       await this.removeSkillDocSafely(existed.slug);
     }
+    await this.invalidateSkillCaches(existed as unknown as Skill);
+    await this.cacheSkillIndex(skill as unknown as Skill);
+    await this.cacheSkillDetail(skill as unknown as Skill, false);
+    const nextContent = this.normalizeOptionalContent((skill as any).content);
+    const nextHash = String((skill as any).contentHash || '');
+    if (nextContent && nextHash) {
+      await this.cacheSkillContent(skill.id, nextHash, {
+        content: nextContent,
+        contentType: String((skill as any).contentType || 'text/markdown'),
+        contentHash: nextHash,
+        contentSize: Number((skill as any).contentSize || Buffer.byteLength(nextContent, 'utf8')),
+        contentUpdatedAt: (skill as any).contentUpdatedAt,
+      });
+    }
     await this.syncSkillDocsSafely(skill as unknown as Skill);
+    await this.invalidateEnabledSkillCacheBySkillIds([skillId]);
     return skill;
   }
 
   async deleteSkill(skillId: string): Promise<boolean> {
     const existed = await this.skillModel.findOne({ id: skillId }).exec();
     if (!existed) return false;
+    await this.invalidateEnabledSkillCacheBySkillIds([skillId]);
+    await this.invalidateSkillCaches(existed as unknown as Skill);
     await this.skillModel.deleteOne({ id: skillId }).exec();
     await this.agentSkillModel.deleteMany({ skillId }).exec();
     await this.suggestionModel.deleteMany({ skillId }).exec();
@@ -216,6 +354,7 @@ export class SkillService {
       agentId,
       memoKinds: ['identity', 'custom'],
     });
+    await this.invalidateEnabledSkillCacheByAgentIds([agentId]);
     await this.rebuildIndexSafely();
     return assigned;
   }
@@ -308,6 +447,8 @@ export class SkillService {
         const created = await this.skillModel.create({ id: uuidv4(), ...candidate, lastVerifiedAt: new Date() });
         materialized.push(created as unknown as Skill);
         added += 1;
+        await this.cacheSkillIndex(created as unknown as Skill);
+        await this.cacheSkillDetail(created as unknown as Skill, false);
         await this.syncSkillDocsSafely(created as unknown as Skill);
       } else {
         existed.description = candidate.description;
@@ -321,6 +462,8 @@ export class SkillService {
         await existed.save();
         materialized.push(existed as unknown as Skill);
         updated += 1;
+        await this.cacheSkillIndex(existed as unknown as Skill);
+        await this.cacheSkillDetail(existed as unknown as Skill, false);
         await this.syncSkillDocsSafely(existed as unknown as Skill);
       }
     }
@@ -536,6 +679,146 @@ export class SkillService {
   private uniqueStrings(items: string[]): string[] {
     const normalized = items.map((item) => String(item || '').trim()).filter(Boolean);
     return Array.from(new Set(normalized));
+  }
+
+  private buildSkillProjection(options?: SkillReadOptions): Record<string, 0> | undefined {
+    const projection: Record<string, 0> = {};
+    if (options?.includeContent !== true) {
+      projection.content = 0;
+    }
+    if (options?.includeMetadata !== true) {
+      projection.metadata = 0;
+    }
+    return Object.keys(projection).length ? projection : undefined;
+  }
+
+  private normalizeOptionalContent(content?: string): string | undefined {
+    if (typeof content !== 'string') return undefined;
+    const normalized = content.trim();
+    return normalized.length ? normalized : undefined;
+  }
+
+  private computeContentHash(content: string): string {
+    return createHash('sha256').update(content).digest('hex');
+  }
+
+  private skillIndexCacheKey(slug: string): string {
+    return `skill:index:${slug}`;
+  }
+
+  private skillDetailCacheKey(skillId: string): string {
+    return `skill:detail:${skillId}`;
+  }
+
+  private skillContentLatestKey(skillId: string): string {
+    return `skill:content:latest:${skillId}`;
+  }
+
+  private skillContentCacheKey(skillId: string, contentHash: string): string {
+    return `skill:content:${skillId}:${contentHash}`;
+  }
+
+  private async cacheSkillIndex(skill: Skill): Promise<void> {
+    const payload = {
+      id: skill.id,
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+      status: skill.status,
+      category: skill.category,
+      tags: skill.tags || [],
+      provider: skill.provider,
+      version: skill.version,
+      metadata: skill.metadata || {},
+      updatedAt: (skill as any).updatedAt,
+    };
+    await this.redisService.set(this.skillIndexCacheKey(skill.slug), JSON.stringify(payload), this.skillIndexCacheTtlSeconds);
+  }
+
+  private async cacheSkillDetail(skill: Skill, includeContent: boolean): Promise<void> {
+    const payload: Record<string, any> = this.toPlainSkill(skill);
+    if (!includeContent) {
+      delete payload.content;
+    }
+    await this.redisService.set(this.skillDetailCacheKey(skill.id), JSON.stringify(payload), this.skillDetailCacheTtlSeconds);
+  }
+
+  private async loadSkillDetailFromCache(skillId: string): Promise<Skill | null> {
+    const cached = await this.redisService.get(this.skillDetailCacheKey(skillId));
+    if (!cached) return null;
+    try {
+      return JSON.parse(cached) as Skill;
+    } catch {
+      return null;
+    }
+  }
+
+  private async cacheSkillContent(
+    skillId: string,
+    contentHash: string,
+    payload: {
+      content: string;
+      contentType: string;
+      contentHash: string;
+      contentSize: number;
+      contentUpdatedAt?: Date;
+    },
+  ): Promise<void> {
+    await this.redisService.set(
+      this.skillContentCacheKey(skillId, contentHash),
+      JSON.stringify(payload),
+      this.skillContentCacheTtlSeconds,
+    );
+    await this.redisService.set(this.skillContentLatestKey(skillId), contentHash, this.skillContentCacheTtlSeconds);
+  }
+
+  private async invalidateSkillContentCache(skillId: string, oldHash?: string): Promise<void> {
+    if (oldHash?.trim()) {
+      await this.redisService.del(this.skillContentCacheKey(skillId, oldHash.trim()));
+    }
+    const latestHash = await this.redisService.get(this.skillContentLatestKey(skillId));
+    if (latestHash?.trim()) {
+      await this.redisService.del(this.skillContentCacheKey(skillId, latestHash.trim()));
+    }
+    await this.redisService.del(this.skillContentLatestKey(skillId));
+  }
+
+  private async invalidateSkillCaches(skill: Skill): Promise<void> {
+    await this.redisService.del(this.skillIndexCacheKey(skill.slug));
+    await this.redisService.del(this.skillDetailCacheKey(skill.id));
+    await this.invalidateSkillContentCache(skill.id, (skill as any).contentHash);
+  }
+
+  private toPlainSkill(skill: Skill): Record<string, any> {
+    const doc = skill as any;
+    if (typeof doc?.toObject === 'function') {
+      return doc.toObject();
+    }
+    return { ...doc };
+  }
+
+  private async invalidateEnabledSkillCacheBySkillIds(skillIds: string[]): Promise<void> {
+    const normalizedSkillIds = this.uniqueStrings(skillIds || []);
+    if (!normalizedSkillIds.length) return;
+    const assignments = await this.agentSkillModel
+      .find({ skillId: { $in: normalizedSkillIds } })
+      .select({ agentId: 1 })
+      .lean()
+      .exec();
+    const agentIds = assignments.map((item: any) => String(item.agentId || '').trim()).filter(Boolean);
+    await this.invalidateEnabledSkillCacheByAgentIds(agentIds);
+  }
+
+  private async invalidateEnabledSkillCacheByAgentIds(agentIds: string[]): Promise<void> {
+    const normalizedAgentIds = this.uniqueStrings(agentIds || []);
+    if (!normalizedAgentIds.length) return;
+    await Promise.all(
+      normalizedAgentIds.map((agentId) => this.redisService.del(this.enabledSkillCacheKey(agentId))),
+    );
+  }
+
+  private enabledSkillCacheKey(agentId: string): string {
+    return `agent:enabled-skills:${agentId}`;
   }
 
   private buildSkillsQuery(filters?: SkillListFilters): Record<string, any> {

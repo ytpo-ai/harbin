@@ -15,6 +15,7 @@ import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 import { MemoService } from '../memos/memo.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
+import { RedisService } from '@libs/infra';
 
 export interface AgentContext {
   task: Task;
@@ -105,6 +106,7 @@ const REPO_READ_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-read';
 const MEMO_MCP_SEARCH_TOOL_ID = 'builtin.sys-mg.internal.memory.search-memo';
 const MEMO_MCP_APPEND_TOOL_ID = 'builtin.sys-mg.internal.memory.append-memo';
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
+const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 mcp.model.list 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 mcp.model.add。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -291,6 +293,7 @@ export class AgentService {
     private readonly memoService: MemoService,
     private readonly memoEventBus: MemoEventBusService,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
+    private readonly redisService: RedisService,
   ) {}
 
   async seedMcpProfileSeeds(): Promise<void> {
@@ -1354,6 +1357,19 @@ export class AgentService {
       return [];
     }
 
+    for (const candidateAgentId of candidateAgentIds) {
+      const cached = await this.redisService.get(this.agentEnabledSkillCacheKey(candidateAgentId));
+      if (!cached) continue;
+      try {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed?.items)) {
+          return parsed.items as EnabledAgentSkillContext[];
+        }
+      } catch {
+        // ignore cache parse error and fallback to DB
+      }
+    }
+
     const assignments = await this.agentSkillModel
       .find({ agentId: { $in: candidateAgentIds }, enabled: true })
       .exec();
@@ -1382,7 +1398,27 @@ export class AgentService {
         proficiencyLevel: assignment.proficiencyLevel,
       });
     }
+
+    const payload = JSON.stringify({
+      agentIds: candidateAgentIds,
+      items: contexts,
+      updatedAt: new Date().toISOString(),
+    });
+    await Promise.all(
+      candidateAgentIds.map((candidateAgentId) =>
+        this.redisService.set(
+          this.agentEnabledSkillCacheKey(candidateAgentId),
+          payload,
+          AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS,
+        ),
+      ),
+    );
+
     return contexts;
+  }
+
+  private agentEnabledSkillCacheKey(agentId: string): string {
+    return `agent:enabled-skills:${agentId}`;
   }
 
   private async executeWithToolCalling(
