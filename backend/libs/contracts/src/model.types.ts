@@ -1,6 +1,9 @@
 export interface AIModel {
   id: string;
   name: string;
+  description?: string;
+  availability?: string;
+  deprecated?: boolean;
   provider:
     | 'openai'
     | 'anthropic'

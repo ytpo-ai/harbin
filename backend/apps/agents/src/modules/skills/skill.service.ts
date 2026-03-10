@@ -374,6 +374,43 @@ export class SkillService {
     }));
   }
 
+  async getSkillAgents(skillId: string): Promise<Array<{ assignment: AgentSkill; agent: { id: string; name: string } | null }>> {
+    const assignments = await this.agentSkillModel.find({ skillId }).sort({ updatedAt: -1 }).exec();
+    const agentIds = [...new Set(assignments.map((a) => a.agentId))];
+    const agentDocs = await this.agentModel.find({ id: { $in: agentIds } }).exec();
+    const agentMap = new Map<string, { id: string; name: string }>();
+    for (const agent of agentDocs) {
+      agentMap.set(agent.id, { id: agent.id, name: agent.name });
+    }
+
+    return assignments.map((assignment) => ({
+      assignment,
+      agent: agentMap.get(assignment.agentId) || null,
+    }));
+  }
+
+  async getAllSkillAgents(): Promise<Record<string, Array<{ agentId: string; agentName: string }>>> {
+    const assignments = await this.agentSkillModel.find({}).exec();
+    const agentIds = [...new Set(assignments.map((a) => a.agentId))];
+    const agentDocs = await this.agentModel.find({ id: { $in: agentIds } }).exec();
+    const agentMap = new Map<string, string>();
+    for (const agent of agentDocs) {
+      agentMap.set(agent.id, agent.name);
+    }
+
+    const result: Record<string, Array<{ agentId: string; agentName: string }>> = {};
+    for (const assignment of assignments) {
+      if (!result[assignment.skillId]) {
+        result[assignment.skillId] = [];
+      }
+      result[assignment.skillId].push({
+        agentId: assignment.agentId,
+        agentName: agentMap.get(assignment.agentId) || assignment.agentId,
+      });
+    }
+    return result;
+  }
+
   async discoverSkillsFromInternet(payload: {
     query: string;
     maxResults?: number;

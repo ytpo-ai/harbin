@@ -76,6 +76,16 @@ export class SkillController {
     return this.skillService.getAgentSkills(agentId);
   }
 
+  @Get('skills/:skillId/agents')
+  async getSkillAgents(@Param('skillId') skillId: string) {
+    return this.skillService.getSkillAgents(skillId);
+  }
+
+  @Get('all-skill-agents')
+  async getAllSkillAgents() {
+    return this.skillService.getAllSkillAgents();
+  }
+
   @Post('assign')
   async assignSkillToAgent(
     @Body()

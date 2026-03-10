@@ -205,4 +205,141 @@ describe('MemoService', () => {
     expect(mergeSpy).not.toHaveBeenCalled();
     expect(redisService.del).toHaveBeenCalledWith('memo:event:agent-1');
   });
+
+  it('forces topic memoType to knowledge on create', async () => {
+    const { service, memoModel } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+    memoModel.findOne.mockReturnValue(queryResult(null));
+
+    await expect(
+      service.createMemo({
+        agentId: 'agent-1',
+        title: 'Topic memo',
+        content: 'hello',
+        memoKind: 'topic',
+        memoType: 'standard',
+        payload: { topic: 'runtime' },
+      }),
+    ).rejects.toThrow('create: memoKind=topic requires memoType=knowledge');
+  });
+
+  it('forces topic memoType to knowledge on update', async () => {
+    const { service, memoModel } = createService();
+    memoModel.findOne.mockReturnValue(
+      queryResult({
+        id: 'memo-topic-1',
+        agentId: 'agent-1',
+        memoKind: 'topic',
+        memoType: 'knowledge',
+        title: 'Topic memo',
+        slug: 'topic-runtime',
+        content: 'hello',
+        payload: { topic: 'runtime' },
+        tags: [],
+        contextKeywords: [],
+        version: 1,
+      }),
+    );
+    await expect(
+      service.updateMemo('memo-topic-1', {
+        memoType: 'standard',
+        content: 'updated',
+      }),
+    ).rejects.toThrow('update: memoKind=topic requires memoType=knowledge');
+  });
+
+  it('rejects standard memoType when memoKind is missing on create', async () => {
+    const { service } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+
+    await expect(
+      service.createMemo({
+        agentId: 'agent-1',
+        title: 'Standard without kind',
+        content: 'invalid',
+        memoType: 'standard',
+      }),
+    ).rejects.toThrow('create: memoKind=topic requires memoType=knowledge');
+  });
+
+  it('rejects achievement with knowledge memoType on create', async () => {
+    const { service } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+
+    await expect(
+      service.createMemo(
+        {
+          agentId: 'agent-1',
+          title: 'Wrong type achievement',
+          content: 'invalid',
+          memoKind: 'achievement',
+          memoType: 'knowledge',
+        },
+        {
+          actor: {
+            employeeId: 'u1',
+            role: 'executive',
+          },
+        },
+      ),
+    ).rejects.toThrow('create: memoKind=achievement requires memoType=standard');
+  });
+
+  it('appends achievement content with divider instead of overriding', async () => {
+    const { service, memoModel } = createService();
+    jest.spyOn(service, 'ensureCoreDocuments').mockResolvedValue(undefined);
+    memoModel.findOne.mockReturnValue(
+      queryResult({
+        id: 'memo-achievement-1',
+        agentId: 'agent-1',
+        memoKind: 'achievement',
+        memoType: 'standard',
+        title: 'Achievement Log',
+        slug: 'achievement-log',
+        content: 'old entry',
+        payload: { topic: 'achievement' },
+        tags: ['achievement'],
+        contextKeywords: ['achievement'],
+      }),
+    );
+
+    const updateSpy = jest.spyOn(service, 'updateMemo').mockResolvedValue({
+      id: 'memo-achievement-1',
+      agentId: 'agent-1',
+      memoKind: 'achievement',
+      memoType: 'standard',
+      title: 'Achievement Log',
+      slug: 'achievement-log',
+      content: 'old entry\n\n—\n\nnew entry',
+      payload: { topic: 'achievement' },
+      tags: ['achievement'],
+      contextKeywords: ['achievement'],
+    } as any);
+
+    await service.createMemo(
+      {
+        agentId: 'agent-1',
+        title: 'new achievement',
+        content: 'new entry',
+        memoKind: 'achievement',
+        memoType: 'standard',
+      },
+      {
+        actor: {
+          employeeId: 'u1',
+          role: 'executive',
+        },
+      },
+    );
+
+    expect(updateSpy).toHaveBeenCalledWith(
+      'memo-achievement-1',
+      expect.objectContaining({
+        content: 'old entry\n\n—\n\nnew entry',
+      }),
+      expect.objectContaining({
+        actor: expect.objectContaining({ role: 'executive' }),
+      }),
+    );
+  });
 });

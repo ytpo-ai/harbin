@@ -73,7 +73,9 @@ export class RuntimeActionLogSyncService {
       return compactPayload;
     }
 
+    const toolFields = this.extractToolFields(compactPayload);
     return {
+      ...toolFields,
       payloadTruncated: true,
       payloadOriginalSize: compactPayloadText.length,
       payloadPreview: compactPayloadText.slice(0, this.previewChars),
@@ -111,6 +113,36 @@ export class RuntimeActionLogSyncService {
       // fallback below
     }
     return String(value);
+  }
+
+  private extractToolFields(payload: Record<string, unknown>): Record<string, unknown> {
+    const toolId = typeof payload.toolId === 'string' ? payload.toolId : undefined;
+    const toolName = typeof payload.toolName === 'string' ? payload.toolName : undefined;
+    const params = payload.params !== undefined ? payload.params : payload.input;
+
+    if (params === undefined) {
+      return {
+        ...(toolId ? { toolId } : {}),
+        ...(toolName ? { toolName } : {}),
+      };
+    }
+
+    const paramsText = this.safeStringify(params);
+    if (paramsText.length <= this.previewChars) {
+      return {
+        ...(toolId ? { toolId } : {}),
+        ...(toolName ? { toolName } : {}),
+        params,
+      };
+    }
+
+    return {
+      ...(toolId ? { toolId } : {}),
+      ...(toolName ? { toolName } : {}),
+      paramsTruncated: true,
+      paramsSize: paramsText.length,
+      paramsPreview: paramsText.slice(0, this.previewChars),
+    };
   }
 
   private buildSignedHeaders(event: RuntimeEvent): Record<string, string> {

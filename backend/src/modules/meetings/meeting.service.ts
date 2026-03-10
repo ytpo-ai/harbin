@@ -84,6 +84,11 @@ export class MeetingService {
   private readonly meetingAgentStateTtlSeconds = 90;
   private readonly responseDedupWindowMs = 15000;
   private readonly recentResponseKeys = new Map<string, number>();
+  private readonly latestModelSearchPhrases = ['搜索最新openai模型', 'search latest openai models'];
+  private readonly modelListPhrases = ['当前有哪些模型', 'list models'];
+  private readonly memoRecordPhrases = ['记录到备忘录', 'append to memo'];
+  private readonly operationLogPhrases = ['查看操作日志', 'operation log'];
+  private readonly agentListPhrases = ['查看agent列表', 'list agents'];
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
@@ -548,10 +553,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       }
 
       for (const token of tokens) {
-        if (
-          aliases.has(token) ||
-          Array.from(aliases).some((alias) => token.length >= 2 && alias.startsWith(token))
-        ) {
+        if (aliases.has(token)) {
           mentioned.add(agentId);
         }
       }
@@ -561,39 +563,15 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   }
 
   private isLatestModelSearchIntent(content: string): boolean {
-    const text = String(content || '').toLowerCase().trim();
-    if (!text) return false;
-
-    const hasSearch =
-      text.includes('搜索') ||
-      text.includes('查一下') ||
-      text.includes('查询') ||
-      text.includes('search') ||
-      text.includes('find');
-    const hasLatest = text.includes('最新') || text.includes('latest') || text.includes('newest');
-    const hasModel = text.includes('模型') || text.includes('model');
-    const hasOpenAI = text.includes('openai') || text.includes('gpt');
-
-    return hasSearch && hasLatest && hasModel && hasOpenAI;
+    return this.hasBracketPhraseIntent(content, this.latestModelSearchPhrases);
   }
 
   private isModelListIntent(content: string): boolean {
-    const text = String(content || '').toLowerCase().trim();
-    if (!text) return false;
+    return this.hasBracketPhraseIntent(content, this.modelListPhrases);
+  }
 
-    const hasModel = text.includes('模型') || text.includes('model');
-    const asksList =
-      text.includes('有哪些') ||
-      text.includes('列表') ||
-      text.includes('清单') ||
-      text.includes('当前') ||
-      text.includes('现在') ||
-      text.includes('what models') ||
-      text.includes('which models') ||
-      text.includes('list models') ||
-      text.includes('available models');
-
-    return hasModel && asksList;
+  private isMemoRecordIntent(content: string): boolean {
+    return this.hasBracketPhraseIntent(content, this.memoRecordPhrases);
   }
 
   private isModelManagementIntent(content: string): boolean {
@@ -601,42 +579,46 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   }
 
   private isOperationLogIntent(content: string): boolean {
-    const text = String(content || '').toLowerCase().trim();
-    if (!text) return false;
-
-    const hasLogKeyword =
-      text.includes('操作日志') ||
-      text.includes('系统日志') ||
-      text.includes('audit log') ||
-      text.includes('operation log') ||
-      text.includes('日志');
-    const hasActionKeyword =
-      text.includes('我做了什么') ||
-      text.includes('做了哪些操作') ||
-      text.includes('我的操作') ||
-      text.includes('what did i do') ||
-      text.includes('my actions');
-
-    return hasLogKeyword || hasActionKeyword;
+    return this.hasBracketPhraseIntent(content, this.operationLogPhrases);
   }
 
   private isAgentListIntent(content: string): boolean {
-    const text = String(content || '').toLowerCase().trim();
-    if (!text) return false;
+    return this.hasBracketPhraseIntent(content, this.agentListPhrases);
+  }
 
-    const hasAgentKeyword = text.includes('agent') || text.includes('智能体') || text.includes('助手');
-    const asksList =
-      text.includes('有哪些') ||
-      text.includes('列表') ||
-      text.includes('清单') ||
-      text.includes('当前') ||
-      text.includes('现在') ||
-      text.includes('what agents') ||
-      text.includes('which agents') ||
-      text.includes('list agents') ||
-      text.includes('available agents');
+  private hasBracketPhraseIntent(content: string, phrases: string[]): boolean {
+    const commands = this.extractBracketCommands(content);
+    if (!commands.length) {
+      return false;
+    }
 
-    return hasAgentKeyword && asksList;
+    const phraseSet = new Set(phrases.map((phrase) => this.normalizeIntentPhrase(phrase)));
+    return commands.some((command) => phraseSet.has(command));
+  }
+
+  private extractBracketCommands(content: string): string[] {
+    const text = String(content || '');
+    if (!text) {
+      return [];
+    }
+
+    const matches = text.matchAll(/[\[【]([^\]】\n]{1,120})[\]】]/g);
+    const commands = new Set<string>();
+    for (const match of matches) {
+      const raw = String(match?.[1] || '');
+      const normalized = this.normalizeIntentPhrase(raw);
+      if (normalized) {
+        commands.add(normalized);
+      }
+    }
+    return Array.from(commands);
+  }
+
+  private normalizeIntentPhrase(value: string): string {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   private formatOperationLogResponse(result: any): string {
@@ -782,15 +764,11 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     }
 
     const normalizedName = String(agent.name || '').toLowerCase().trim();
-    const normalizedType = String(agent.type || '').toLowerCase().trim();
     if (normalizedName === this.modelManagementAgentName) {
       return true;
     }
 
-    return (
-      normalizedType === 'ai-system-builtin' &&
-      normalizedName === this.modelManagementAgentName
-    );
+    return false;
   }
 
   private getExpandedMeetingTitle(originalTitle: string): string {
@@ -1366,7 +1344,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       (meeting.hostType as 'employee' | 'agent') === effectiveSenderType;
 
     // Find participant in the meeting
-    let participant = isSystemMessage
+    const participant = isSystemMessage
       ? undefined
       : meeting.participants.find(
           p => p.participantId === effectiveSenderId && p.participantType === effectiveSenderType,
@@ -1732,11 +1710,12 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     );
     const regularAgentParticipants = presentAgents.filter(
       (participant) =>
-        !Boolean((participant as MeetingParticipantRecord).isExclusiveAssistant) &&
+        !(participant as MeetingParticipantRecord).isExclusiveAssistant &&
         participant.participantId !== triggerMessage.senderId,
     );
 
-    const routeToModelManagementAgent = this.isModelManagementIntent(triggerMessage.content || '');
+    const isMemoRecord = this.isMemoRecordIntent(triggerMessage.content || '');
+    const routeToModelManagementAgent = this.isModelManagementIntent(triggerMessage.content || '') && !isMemoRecord;
     if (routeToModelManagementAgent) {
       const modelAgentId = await this.pickModelManagementResponder(regularAgentParticipants);
       if (modelAgentId) {
@@ -1963,21 +1942,22 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const isLatestSearch = this.isLatestModelSearchIntent(triggerMessage.content || '');
     const isModelList = this.isModelListIntent(triggerMessage.content || '');
+    const isMemoRecord = this.isMemoRecordIntent(triggerMessage.content || '');
 
-    if (isLatestSearch) {
+    if (isLatestSearch && !isMemoRecord) {
       messages.push({
         role: 'system',
         content:
-          '当前用户意图是“搜索最新 OpenAI 模型”。请优先联网搜索并返回候选模型与来源，并在结尾明确询问“是否需要添加到系统？”；未收到明确确认前不要执行模型入库。',
+          '当前用户命中了显式短语命令“[搜索最新openai模型]”。请优先联网搜索并返回候选模型与来源，并在结尾明确询问“是否需要添加到系统？”；未收到明确确认前不要执行模型入库。',
         timestamp: new Date(),
       });
     }
 
-    if (isModelList) {
+    if (isModelList && !isMemoRecord) {
       messages.push({
         role: 'system',
         content:
-          '当前用户意图是“查询系统模型列表”。请先调用模型列表工具获取实时数据，再按 name/provider/model/maxTokens 结构回答，不要返回 Agent 列表。',
+          '当前用户命中了显式短语命令“[当前有哪些模型]”。请先调用模型列表工具获取实时数据，再按 name/provider/model/maxTokens 结构回答，不要返回 Agent 列表。',
         timestamp: new Date(),
       });
     }
@@ -2201,19 +2181,19 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     });
   }
 
-  private getMessageById(meeting: MeetingDocument, messageId: string): MeetingMessage | null {
+  private getMessageById(meeting: MeetingDocument, messageId: string): MeetingDocument['messages'][number] | null {
     const target = (meeting.messages || []).find((item) => item.id === messageId);
     return target || null;
   }
 
-  private assertMessageController(message: MeetingMessage, employeeId: string): void {
+  private assertMessageController(message: MeetingDocument['messages'][number], employeeId: string): void {
     const controllerId = (message.metadata || {}).proxyForEmployeeId;
     if (!controllerId || controllerId !== employeeId) {
       throw new ConflictException('Only the original sender can control this message');
     }
   }
 
-  async pauseMessageResponse(meetingId: string, messageId: string, employeeId: string): Promise<MeetingMessage> {
+  async pauseMessageResponse(meetingId: string, messageId: string, employeeId: string): Promise<MeetingDocument['messages'][number]> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) {
       throw new NotFoundException(`Meeting not found: ${meetingId}`);

@@ -49,7 +49,7 @@
 ### 文档
 
 - `docs/plan/AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md`
-- `docs/features/MEETING_CHAT.md`
+- `docs/feature/MEETING_CHAT.md`
 - `docs/api/agent-action-logs-api.md`
 - `docs/development/AGENT_CHAT_TOOL_QUERY_ROUTING_PLAN.md`
 

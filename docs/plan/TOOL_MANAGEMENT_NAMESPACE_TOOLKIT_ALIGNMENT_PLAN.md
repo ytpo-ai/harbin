@@ -14,7 +14,7 @@
 
 - 前端页面：`frontend/src/pages/Tools.tsx`
 - 前端服务：`frontend/src/services/toolService.ts`（按需）
-- 功能文档：`docs/features/AGENT_TOOL.md`（按需）
+- 功能文档：`docs/feature/AGENT_TOOL.md`（按需）
 
 ## 风险与依赖
 

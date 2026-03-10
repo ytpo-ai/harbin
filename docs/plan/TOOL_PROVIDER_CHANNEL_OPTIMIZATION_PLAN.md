@@ -106,7 +106,7 @@
 ### 3.6 文档与测试
 
 - [ ] **API 文档更新**：`docs/api/agents-api.md`
-- [ ] **功能文档更新**：`docs/features/AGENT_TOOL.md`
+- [ ] **功能文档更新**：`docs/feature/AGENT_TOOL.md`
 - [ ] **回归测试**：registry 查询、filter 筛选、执行链路、stats 聚合
 
 ---

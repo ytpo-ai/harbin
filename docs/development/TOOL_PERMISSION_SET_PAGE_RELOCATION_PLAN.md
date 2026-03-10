@@ -19,8 +19,8 @@
    - 保留 Agent 创建/编辑所需权限集数据读取，不影响白名单模式约束。
 
 4. 功能文档同步页面归属。
-   - `docs/features/AGENT_MG.md`
-   - `docs/features/AGENT_TOOL.md`
+   - `docs/feature/AGENT_MG.md`
+   - `docs/feature/AGENT_TOOL.md`
 
 ## 验证
 

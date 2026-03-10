@@ -37,5 +37,5 @@
 
 ## 关联文档
 - 规划文档：`docs/plan/ORCHESTRATION_OPTIMIZATION_PLAN.md`
-- 功能文档：`docs/features/ORCHETRATION_TASK.md`、`docs/features/ORCHETRATION_SCHEDULER.md`
+- 功能文档：`docs/feature/ORCHETRATION_TASK.md`、`docs/feature/ORCHETRATION_SCHEDULER.md`
 - API 文档：`docs/api/legacy-api.md`

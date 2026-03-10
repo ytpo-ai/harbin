@@ -81,6 +81,8 @@ const memoKindOptions: Array<NonNullable<AgentMemo['memoKind']>> = [
   'draft',
   'custom',
   'evaluation',
+  'achievement',
+  'criticism',
 ];
 
 const standardMemoKinds: Array<NonNullable<AgentMemo['memoKind']>> = [
@@ -90,6 +92,8 @@ const standardMemoKinds: Array<NonNullable<AgentMemo['memoKind']>> = [
   'draft',
   'custom',
   'evaluation',
+  'achievement',
+  'criticism',
 ];
 
 const memoTypeOptions: Array<NonNullable<AgentMemo['memoType']>> = ['knowledge', 'standard'];
@@ -602,6 +606,8 @@ const AgentDetail: React.FC = () => {
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
                             memo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600 ring-1 ring-blue-200/60' :
                             memo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600 ring-1 ring-amber-200/60' :
+                            memo.memoKind === 'achievement' ? 'bg-emerald-50 text-emerald-600 ring-1 ring-emerald-200/60' :
+                            memo.memoKind === 'criticism' ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-200/60' :
                             memo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600 ring-1 ring-purple-200/60' :
                             'bg-slate-50 text-slate-600 ring-1 ring-slate-200/60'
                           }`}>
@@ -1218,6 +1224,8 @@ const AgentDetail: React.FC = () => {
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider mr-2 ${
                     selectedMemo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600' :
                     selectedMemo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600' :
+                    selectedMemo.memoKind === 'achievement' ? 'bg-emerald-50 text-emerald-600' :
+                    selectedMemo.memoKind === 'criticism' ? 'bg-rose-50 text-rose-600' :
                     selectedMemo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600' :
                     'bg-slate-100 text-slate-600'
                   }`}>

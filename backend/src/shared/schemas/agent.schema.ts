@@ -16,9 +16,6 @@ export class Agent {
   @Prop({ required: true })
   name: string;
 
-  @Prop()
-  type?: string;
-
   @Prop({ required: true, trim: true })
   roleId: string;
 

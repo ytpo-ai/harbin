@@ -17,6 +17,9 @@ export class OrchestrationSchedule {
   @Prop()
   description?: string;
 
+  @Prop()
+  planId?: string;
+
   @Prop(raw({
     type: { type: String, enum: ['cron', 'interval'], required: true },
     expression: { type: String },
@@ -100,3 +103,4 @@ export const OrchestrationScheduleSchema = SchemaFactory.createForClass(Orchestr
 OrchestrationScheduleSchema.index({ enabled: 1, updatedAt: -1 });
 OrchestrationScheduleSchema.index({ nextRunAt: 1 });
 OrchestrationScheduleSchema.index({ 'target.executorId': 1, enabled: 1 });
+OrchestrationScheduleSchema.index({ planId: 1, updatedAt: -1 });

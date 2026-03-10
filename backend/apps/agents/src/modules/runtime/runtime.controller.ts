@@ -84,13 +84,6 @@ export class RuntimeController {
     };
   }
 
-  private resolveOrganizationScope(
-    context: GatewayUserContext,
-    
-  ): string | undefined {
-    return undefined;
-  }
-
   @Get('runs/:runId')
   async getRun(@Param('runId') runId: string, @Req() req: Request & { userContext?: GatewayUserContext }) {
     const context = this.getUserContext(req);
@@ -194,7 +187,6 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const query = RuntimeDeadLetterQuerySchema.parse(rawQuery || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const rows = await this.persistence.findDeadLetterEvents({
       limit: query.limit || 200,
       
@@ -235,13 +227,12 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const body = RuntimeDeadLetterRequeueBodySchema.parse(rawBody || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const batchId = `requeue-${Date.now()}`;
 
     let requeued = 0;
     let matched = 0;
     if (body.eventIds?.length) {
-      const rows = await this.persistence.findDeadLetterEventsByEventIds(body.eventIds, scopedOrganizationId);
+      const rows = await this.persistence.findDeadLetterEventsByEventIds(body.eventIds);
       const eventIds = rows.map((row) => row.eventId);
       matched = eventIds.length;
       if (!body.dryRun) {
@@ -302,7 +293,6 @@ export class RuntimeController {
     const context = this.getUserContext(req);
     this.assertRuntimeControlPermission(context);
     const query = RuntimeMaintenanceAuditQuerySchema.parse(rawQuery || {});
-    const scopedOrganizationId = this.resolveOrganizationScope(context);
     const rows = await this.persistence.listMaintenanceAudits({
       limit: query.limit || 50,
       action: query.action,

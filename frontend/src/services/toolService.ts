@@ -42,6 +42,15 @@ export const toolService = {
     return response.data;
   },
 
+  // 弃用工具
+  async deprecateTool(id: string): Promise<Tool> {
+    const response = await api.put(`/tools/${id}`, {
+      status: 'deprecated',
+      enabled: false,
+    });
+    return response.data;
+  },
+
   // 删除工具
   async deleteTool(id: string): Promise<boolean> {
     await api.delete(`/tools/${id}`);

@@ -1,6 +1,9 @@
 export interface AIModel {
   id: string;
   name: string;
+  description?: string;
+  availability?: string;
+  deprecated?: boolean;
   provider: 'openai' | 'anthropic' | 'google' | 'local';
   model: string;
   maxTokens: number;
@@ -23,7 +26,6 @@ export interface ChatMessage {
 export interface Agent {
   id: string;
   name: string;
-  type?: string;
   roleId: string;
   description: string;
   model: AIModel;
@@ -113,6 +115,7 @@ export interface Tool {
   status?: 'active' | 'hidden' | 'deprecated';
   name: string;
   description: string;
+  prompt?: string;
   type: 'code_execution' | 'web_search' | 'file_operation' | 'data_analysis' | 'video_editing' | 'api_call' | 'custom';
   category: string;
   enabled: boolean;
@@ -144,7 +147,14 @@ export interface Skill {
   confidenceScore: number;
   usageCount?: number;
   discoveredBy?: string;
+  lastVerifiedAt?: string;
   metadata?: Record<string, any>;
+  content?: string;
+  contentType?: string;
+  contentHash?: string;
+  contentSize?: number;
+  contentUpdatedAt?: string;
+  metadataUpdatedAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -185,7 +195,7 @@ export interface AgentMemo {
   slug: string;
   content: string;
   version?: number;
-  memoKind?: 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
+  memoKind?: 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation' | 'achievement' | 'criticism';
   memoType?: 'knowledge' | 'standard';
   payload?: Record<string, any>;
   topic?: string;

@@ -6,7 +6,7 @@
 
 ## 执行步骤
 
-1. 扫描 `README.md`、`FEATURES.md` 与 `docs/**/*.md`，定位涉及股权、期权、股份分配、创始团队持股等表述。
+1. 扫描 `README.md`、`feature.md` 与 `docs/**/*.md`，定位涉及股权、期权、股份分配、创始团队持股等表述。
 2. 按上下文区分处理方式：
    - 直接删除仅用于股权/期权说明的段落；
    - 对仍有价值的功能描述改写为中性表达（如角色、权限、协作流程）。
@@ -16,7 +16,7 @@
 
 ## 关键影响点
 
-- 文档层：`README.md`、`FEATURES.md`、`docs/features`、`docs/overview`、`docs/guide`、`docs/development`。
+- 文档层：`README.md`、`feature.md`、`docs/feature`、`docs/overview`、`docs/guide`、`docs/development`。
 - 可能影响：历史记录类文档中的叙述完整性（需在“保留历史”与“去除敏感表述”间平衡）。
 
 ## 风险与依赖

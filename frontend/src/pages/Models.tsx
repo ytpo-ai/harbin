@@ -24,6 +24,9 @@ const Models: React.FC = () => {
   const [formData, setFormData] = useState<Partial<AIModel>>({
     id: '',
     name: '',
+    description: '',
+    availability: '',
+    deprecated: false,
     provider: 'openai',
     model: '',
     maxTokens: 4096,
@@ -79,6 +82,9 @@ const Models: React.FC = () => {
       setFormData({
         id: '',
         name: '',
+        description: '',
+        availability: '',
+        deprecated: false,
         provider: 'openai',
         model: '',
         maxTokens: 4096,
@@ -304,6 +310,21 @@ const Models: React.FC = () => {
                     </span>
                   </div>
 
+                  {model.description && <p className="mb-3 text-xs text-gray-600 leading-relaxed">{model.description}</p>}
+
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    {model.availability && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200">
+                        {model.availability}
+                      </span>
+                    )}
+                    {model.deprecated && (
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-50 text-rose-700 border border-rose-200">
+                        Deprecated
+                      </span>
+                    )}
+                  </div>
+
                   {model.reasoning?.enabled && (
                     <div className="mb-3 flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
@@ -427,6 +448,41 @@ const Models: React.FC = () => {
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all duration-300"
                     placeholder="GPT-4 Turbo"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Description</label>
+                <textarea
+                  value={formData.description || ''}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all duration-300"
+                  placeholder="模型定位、特点与适用场景"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Availability</label>
+                  <input
+                    type="text"
+                    value={formData.availability || ''}
+                    onChange={(e) => setFormData({ ...formData, availability: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 placeholder-gray-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all duration-300"
+                    placeholder="API and ChatGPT, released March 2026"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.deprecated)}
+                      onChange={(e) => setFormData({ ...formData, deprecated: e.target.checked })}
+                      className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    标记为 Deprecated
+                  </label>
                 </div>
               </div>
 

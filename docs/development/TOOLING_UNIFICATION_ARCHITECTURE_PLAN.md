@@ -62,7 +62,7 @@
 
 ## 4. 文档同步更新
 
-- 功能文档：`docs/features/AGENT_TOOL.md`
+- 功能文档：`docs/feature/AGENT_TOOL.md`
 - 计划文档：`docs/plan/TOOLING_UNIFICATION_ARCHITECTURE_PLAN.md`
 - 迁移清单：`docs/plan/TOOLING_UNIFICATION_TOOL_MIGRATION_CHECKLIST.md`
 - 技术文档：`docs/technical/TOOLING_UNIFICATION_ARCHITECTURE_DESIGN.md`

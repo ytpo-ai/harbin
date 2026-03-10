@@ -36,5 +36,5 @@
 
 ## 产出物
 
-- `docs/features/AGENT_MEMO.md`：更新 TODO/History 的职责与聚合口径。
+- `docs/feature/AGENT_MEMO.md`：更新 TODO/History 的职责与聚合口径。
 - `docs/technical/TODO_HISTORY_MEMO_AGGREGATION_DESIGN.md`：新增详细技术方案。

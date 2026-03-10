@@ -42,7 +42,7 @@
 > 状态：已完成
 
 1. `local-repo-docs-reader` 增加 focus 分词匹配（中英文关键词 OR 命中），避免整句 focus 导致 0 命中。
-2. 无命中时不再直接报 `FOCUS_NO_MATCH`，自动回退到高优先级文档列表（README/features/architecture/api）。
+2. 无命中时不再直接报 `FOCUS_NO_MATCH`，自动回退到高优先级文档列表（README/feature/architecture/api）。
 3. 输出增强：增加 `fallbackApplied`、`retryCount`、`attemptedKeywords`，便于 Agent 解释读取路径。
 4. 在 `tool.service.ts` 透传上述字段，保证上层对失败/回退可观测。
 5. 在 `agent.service.ts` 提示词中约束：遇到 0 命中必须自动重试或切换 repo-read，不向用户发起二选一追问。

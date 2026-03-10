@@ -18,7 +18,7 @@
 
 - 前端页面：`frontend/src/pages/Agents.tsx`、`frontend/src/pages/Tools.tsx`
 - 前端服务：`frontend/src/services/agentService.ts`（仅复用，无协议变更）
-- 文档：`docs/features/AGENT_MG.md`、`docs/features/AGENT_TOOL.md`
+- 文档：`docs/feature/AGENT_MG.md`、`docs/feature/AGENT_TOOL.md`
 
 ## 风险与依赖
 

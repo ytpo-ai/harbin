@@ -35,6 +35,9 @@ export class Tool {
   @Prop({ required: true })
   description: string;
 
+  @Prop()
+  prompt?: string;
+
   @Prop({ 
     required: true, 
     enum: ['code_execution', 'web_search', 'file_operation', 'data_analysis', 'video_editing', 'api_call', 'custom'] 

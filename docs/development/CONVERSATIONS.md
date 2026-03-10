@@ -323,7 +323,7 @@ docs/
 │   └── README.md            # 项目概览
 ├── architecture/
 │   └── ARCHITECTURE.md      # 架构设计
-├── features/
+├── feature/
 │   └── FUNCTIONS.md         # 功能清单
 ├── api/
 │   └── API.md              # API文档

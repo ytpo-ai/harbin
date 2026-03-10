@@ -21,7 +21,7 @@
 4. 建立调度执行器：触发时创建 `mode=schedule` 的 task，并复用既有任务执行流程。
 5. 增加并发与幂等保护：同一 schedule 在运行中禁止重入，可配置是否跳过或排队。
 6. 新增前端“定时服务管理”页面与服务层，支持列表、创建、启停、手动触发、执行历史查看。
-7. 补齐文档索引与 API 文档映射，确保 `features/plan/technical/api` 四层一致。
+7. 补齐文档索引与 API 文档映射，确保 `feature/plan/technical/api` 四层一致。
 8. 完成质量验证：后端 lint/typecheck，前端 lint/build，关键服务单测。
 
 ## 关键影响点
@@ -67,8 +67,8 @@
 ### 文档新增/修改
 
 - `docs/technical/ORCHESTRATION_SCHEDULER_TECHNICAL_DESIGN.md`
-- `docs/features/ORCHETRATION_SCHEDULER.md`（按现有命名风格）
-- `docs/features/INDEX.md`
+- `docs/feature/ORCHETRATION_SCHEDULER.md`（按现有命名风格）
+- `docs/feature/INDEX.md`
 - `docs/api/agents-api.md`（补充 scheduler API）
 
 ## 风险与依赖

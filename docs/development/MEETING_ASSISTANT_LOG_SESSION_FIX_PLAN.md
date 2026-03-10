@@ -43,7 +43,7 @@
 - 在相关文档索引中补充本次计划与开发总结链接。
 
 对应文件：
-- `docs/features/MEETING_CHAT.md`
+- `docs/feature/MEETING_CHAT.md`
 - `docs/plan/MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md`
 
 ## 4. 验证结果

@@ -38,7 +38,7 @@
 - `docs/plan/SKILL_MASTER_MCP_PLAN.md`
   - 记录需求计划与影响范围。
 
-- `docs/features/AGENT_TOOL.md`
+- `docs/feature/AGENT_TOOL.md`
   - 增补 `skill-master` 工具能力说明。
 
 - `docs/api/agents-api.md`

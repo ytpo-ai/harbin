@@ -29,6 +29,7 @@
     "dev:all": "npm run start:gateway:dev",
     "seed:manual": "ts-node -r tsconfig-paths/register scripts/manual-seed.ts",
     "migrate:skill-content": "ts-node -r tsconfig-paths/register scripts/migrate-skill-content-to-db.ts",
+    "migrate:tool-prompts": "ts-node -r tsconfig-paths/register scripts/backfill-tool-prompts.ts",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",

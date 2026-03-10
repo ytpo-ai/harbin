@@ -29,7 +29,7 @@
 - 后端/API：新增 memo 全量聚合接口。
 - 调度模块：新增 memo 聚合定时触发。
 - 配置：新增/启用 `MEMO_SCHEDULER_ENABLED`，并复用两个 memo 聚合周期配置。
-- 文档：`docs/features/AGENT_MEMO.md`、`docs/daily_logs/`。
+- 文档：`docs/feature/AGENT_MEMO.md`、`docs/dailylog/`。
 
 ## 风险与回滚
 

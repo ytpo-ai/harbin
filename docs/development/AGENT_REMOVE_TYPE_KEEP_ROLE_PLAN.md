@@ -32,7 +32,7 @@
 
 5. Memo 与功能文档同步
    - Identity 聚合内容改为“角色ID + 历史类型”：`backend/apps/agents/src/modules/memos/identity-aggregation.service.ts`。
-   - 功能文档描述同步：`docs/features/AGENT_MEMO.md`。
+   - 功能文档描述同步：`docs/feature/AGENT_MEMO.md`。
    - 计划文档：`docs/plan/AGENT_REMOVE_TYPE_KEEP_ROLE_PLAN.md`。
 
 ## 验证

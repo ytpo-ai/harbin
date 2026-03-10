@@ -235,46 +235,18 @@ export class RolesService {
       };
     }
 
-    const seedByType = new Map(AGENT_TYPE_ROLE_SEEDS.map((seed) => [seed.agentType, seed]));
     const agents = await this.agentModel.find({}).exec();
-    let backfilled = 0;
-    let alreadyBound = 0;
-    const missingMappingSet = new Set<string>();
-    const missingRoleForCodeSet = new Set<string>();
-
-    for (const agent of agents) {
-      const agentType = String(agent.type || '').trim();
-      const seed = seedByType.get(agentType);
-      if (!seed) {
-        missingMappingSet.add(agentType || '<empty-type>');
-        continue;
-      }
-
-      const role = roleByCode.get(seed.roleCode);
-      if (!role) {
-        missingRoleForCodeSet.add(seed.roleCode);
-        continue;
-      }
-
-      if (String(agent.roleId || '').trim() === role.id) {
-        alreadyBound += 1;
-        continue;
-      }
-
-      agent.roleId = role.id;
-      await agent.save();
-      backfilled += 1;
-    }
+    const alreadyBound = agents.filter((agent) => String(agent.roleId || '').trim()).length;
 
     return {
       seedCount: AGENT_TYPE_ROLE_SEEDS.length,
       roles: { created: createdRoleIds.length, updated: updatedRoleIds.length, createdRoleIds, updatedRoleIds },
       agents: {
         scanned: agents.length,
-        backfilled,
+        backfilled: 0,
         alreadyBound,
-        missingMapping: Array.from(missingMappingSet),
-        missingRoleForCode: Array.from(missingRoleForCodeSet),
+        missingMapping: [],
+        missingRoleForCode: [],
       },
     };
   }

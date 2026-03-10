@@ -2,13 +2,13 @@
 
 - id: `82153728-1a5d-4d75-b185-6fae461feca0`
 - agentId: `699f40ad709a628508681e4d`
-- version: 12
+- version: 13
 - type: knowledge
 - kind: topic
 - source: redis-aggregator
-- tags: task_complete, discussion, topic, task-complete
-- contextKeywords: task, complete, 参与会议讨论, ceo助理, 小武, 的1对1聊天, 我这边用, repo, read, 触发, git, log, 失败了, 报错是, enoent, 找不到, 可执行文件, 当前环境不可用, 所以暂时拉不出, 近期提交, 列表, 为尽快推进, 我建议两条路并行, 你选其一即可, 确认, 环境是否具备, 我可以继续用, task-complete, 24, 小时, 内共有, 个提交, code, updates, reader, 拉取, limit, 50, 我按, 影响面, 可汇报点, 做了快速归类, 便于你在, 里同步, 模型调用, 路由能力, 核心变更, 6833c58, feat, model, add, ai, sdk, v2, 收到, 我会按, 业务视角, 会议, 协作, 研发智能, 来组织能力清单, 并已把该结构与待办更新到我的, memo, docs, 证据路径与下一步补齐项, 用于后续对齐口径与对外输出, 我这边下一步会, legacy, api, 里把会议, 讨论, 编排相关端点逐条抽取, 补齐, 入口, 字段, 结合编排设计文档, 提炼, 会议结论, 任务落地
-- updatedAt: 2026-03-07T17:39:01.051Z
+- tags: task_complete, discussion, topic, task-complete, orchestration
+- contextKeywords: task, complete, 参与会议讨论, ceo助理, 小武, 的1对1聊天, 我这边用, repo, read, 触发, git, log, 失败了, 报错是, enoent, 找不到, 可执行文件, 当前环境不可用, 所以暂时拉不出, 近期提交, 列表, 为尽快推进, 我建议两条路并行, 你选其一即可, 确认, 环境是否具备, 我可以继续用, task-complete, 24, 小时, 内共有, 个提交, code, updates, reader, 拉取, limit, 50, 我按, 影响面, 可汇报点, 做了快速归类, 便于你在, 里同步, 模型调用, 路由能力, 核心变更, 6833c58, feat, model, add, ai, sdk, v2, 收到, 我会按, 业务视角, 会议, 协作, 研发智能, 来组织能力清单, 并已把该结构与待办更新到我的, memo, docs, 证据路径与下一步补齐项, 用于后续对齐口径与对外输出, 我这边下一步会, legacy, api, 里把会议, 讨论, 编排相关端点逐条抽取, 补齐, 入口, 字段, 结合编排设计文档, 提炼, 会议结论, 任务落地, proof补全, 非阻塞, exa优先检索发布, 弃用依据链接, findings, rank, title, openai, models, documentation, official, capabilities, entry, point, summary, provider, 的模型变更, 新增, 能力, 上下文窗口等, 优先引用此官方, 文档入口, 针对, diff, 中的具体, id
+- updatedAt: 2026-03-09T16:10:31.550Z
 
 ## Payload
 
@@ -88,3 +88,8 @@
 
 - [event:acfc545e-c0e1-4316-b3d8-034ff862c239] task_complete | task=task-a9e8862d-ab7a-4f9b-983f-40eb7cbdbca1 | title=Task complete: 参与会议讨论: 与 CEO助理-小武 的1对1聊天 | tags=task_complete,discussion
   - detail: 收到，我会按**业务视角**（会议/协作/研发智能）来组织能力清单，并已把该结构与待办更新到我的 memo（带 docs 证据路径与下一步补齐项），用于后续对齐口径与对外输出。 我这边下一步会： 1) 从 `legacy-api` 里把会议/讨论/编排相关端点逐条抽取，补齐“入口/API”字段； 2) 结合编排设计文档，提炼“会议结论 → 任务落地”的业务链路与边界，形成 1 页版清单。
+
+## Update 2026-03-09T16:10:31.538Z
+
+- [event:6185d9e1-c0d7-4bc0-81c3-1c6b2edb7c7d] task_complete | task=task-b033a888-50af-40c9-a15c-156649fa7252 | title=Task complete: Proof补全（非阻塞）：Exa优先检索发布/弃用依据链接 | tags=task_complete,orchestration
+  - detail: {"findings":[{"rank":1,"title":"OpenAI Models documentation (official models/capabilities entry point)","summary":"OpenAI provider 的模型变更（新增/能力/上下文窗口等）优先引用此官方 Models 文档入口；针对 diff 中的具体 model_id，可用“openai + model_id + context window/token limit/deprecated”等在同域...

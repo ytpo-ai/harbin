@@ -78,6 +78,7 @@ interface MemoActorContext {
 interface MemoMutationOptions {
   skipEnsureCoreDocs?: boolean;
   actor?: MemoActorContext;
+  skipRolePermissionCheck?: boolean;
 }
 
 interface ListMemoFilters {
@@ -119,6 +120,8 @@ export class MemoService {
 
   private readonly criticismAllowedRoles = [...this.achievementAllowedRoles, 'agent'];
 
+  private readonly appendOnlyMemoKinds: MemoKind[] = ['achievement', 'criticism'];
+
   constructor(
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
     @InjectModel(AgentMemoVersion.name) private readonly memoVersionModel: Model<AgentMemoVersionDocument>,
@@ -132,14 +135,18 @@ export class MemoService {
     if (!payload?.content?.trim()) throw new BadRequestException('content is required');
 
     const agentId = payload.agentId.trim();
+    this.assertMemoTypeKindCompatibility(payload.memoKind, payload.memoType, 'create');
     const defaults = this.resolveMemoDefaults(payload.memoKind, payload.memoType);
-    this.assertMemoWritePermission(defaults.memoKind, agentId, payload.source, options?.actor);
+    if (!options?.skipRolePermissionCheck) {
+      this.assertMemoWritePermission(defaults.memoKind, agentId, payload.source, options?.actor);
+    }
     if (!options?.skipEnsureCoreDocs) {
       await this.ensureCoreDocuments(agentId);
     }
 
     const nextPayload = payload.payload || {};
     const resolvedTopic = typeof nextPayload.topic === 'string' ? nextPayload.topic : undefined;
+    const resolvedTitle = this.resolveCanonicalMemoTitle(defaults.memoKind, payload.title);
     const slug = payload.slug?.trim() || this.buildStableSlug(payload.memoKind || 'topic', payload.title, resolvedTopic);
     const nextTags = this.uniqueStrings(payload.tags || []);
     const nextKeywords = this.uniqueStrings(payload.contextKeywords || []);
@@ -147,6 +154,26 @@ export class MemoService {
     const upsertFilter = this.buildUpsertFilter(agentId, defaults.memoKind, slug);
     const existed = await this.memoModel.findOne(upsertFilter).exec();
     if (existed) {
+      if (this.isAppendOnlyMemoKind(defaults.memoKind)) {
+        return this.updateMemo(
+          existed.id,
+          {
+            ...payload,
+            title: existed.title,
+            memoKind: defaults.memoKind,
+            memoType: defaults.memoType,
+            slug: existed.slug,
+            content: this.appendWithDivider(existed.content, payload.content),
+            payload: {
+              ...((existed.payload as Record<string, any>) || {}),
+              ...(nextPayload || {}),
+            },
+            tags: this.uniqueStrings([...(existed.tags || []), ...nextTags]),
+            contextKeywords: this.uniqueStrings([...(existed.contextKeywords || []), ...nextKeywords]),
+          },
+          options,
+        );
+      }
       return this.updateMemo(existed.id, {
         ...payload,
         memoKind: defaults.memoKind,
@@ -161,7 +188,7 @@ export class MemoService {
         {
           $set: {
             agentId,
-            title: payload.title.trim(),
+            title: resolvedTitle,
             slug,
             content: payload.content.trim(),
             version: 1,
@@ -227,10 +254,21 @@ export class MemoService {
     const existing = await this.memoModel.findOne({ id }).exec();
     if (!existing) throw new NotFoundException(`Memo not found: ${id}`);
 
-    const memoKind = (updates.memoKind || existing.memoKind || 'topic') as MemoKind;
-    const memoType = (updates.memoType || existing.memoType || 'knowledge') as MemoType;
-    this.assertMemoWritePermission(memoKind, existing.agentId, updates.source || existing.source, options?.actor);
-    const nextTitle = updates.title?.trim() || existing.title;
+    this.assertMemoTypeKindCompatibility(
+      (updates.memoKind || existing.memoKind || 'topic') as MemoKind,
+      updates.memoType,
+      'update',
+    );
+    const defaults = this.resolveMemoDefaults(
+      (updates.memoKind || existing.memoKind || 'topic') as MemoKind,
+      (updates.memoType || existing.memoType || 'knowledge') as MemoType,
+    );
+    const memoKind = defaults.memoKind;
+    const memoType = defaults.memoType;
+    if (!options?.skipRolePermissionCheck) {
+      this.assertMemoWritePermission(memoKind, existing.agentId, updates.source || existing.source, options?.actor);
+    }
+    const nextTitle = this.resolveCanonicalMemoTitle(memoKind, updates.title?.trim() || existing.title);
     const mergedPayload = this.toNormalizedPayload(
       memoKind,
       {
@@ -937,7 +975,7 @@ export class MemoService {
   }
 
   private buildUpsertFilter(agentId: string, memoKind: MemoKind, slug: string): Record<string, any> {
-    if (memoKind === 'identity' || memoKind === 'todo') {
+    if (memoKind === 'identity' || memoKind === 'todo' || this.isAppendOnlyMemoKind(memoKind)) {
       return { agentId, memoKind };
     }
     return { agentId, slug };
@@ -1414,6 +1452,9 @@ export class MemoService {
 
   private resolveMemoDefaults(memoKind?: MemoKind, memoType?: MemoType): { memoKind: MemoKind; memoType: MemoType } {
     const resolvedKind = memoKind || 'topic';
+    if (resolvedKind === 'topic') {
+      return { memoKind: resolvedKind, memoType: 'knowledge' };
+    }
     const standardMemoKinds: MemoKind[] = [
       'identity',
       'todo',
@@ -1430,17 +1471,48 @@ export class MemoService {
     return { memoKind: resolvedKind, memoType: memoType || 'knowledge' };
   }
 
+  private assertMemoTypeKindCompatibility(memoKind: MemoKind | undefined, memoType: MemoType | undefined, phase: 'create' | 'update'): void {
+    if (!memoType) return;
+
+    const resolvedKind = (memoKind || 'topic') as MemoKind;
+    if (resolvedKind === 'topic' && memoType !== 'knowledge') {
+      throw new BadRequestException(`${phase}: memoKind=topic requires memoType=knowledge`);
+    }
+
+    const standardMemoKinds: MemoKind[] = [
+      'identity',
+      'todo',
+      'history',
+      'draft',
+      'custom',
+      'evaluation',
+      'achievement',
+      'criticism',
+    ];
+    if (standardMemoKinds.includes(resolvedKind) && memoType !== 'standard') {
+      throw new BadRequestException(`${phase}: memoKind=${resolvedKind} requires memoType=standard`);
+    }
+  }
+
   private buildStableSlug(kind: MemoKind, title: string, topic?: string): string {
     if (kind === 'identity') return 'identity-and-responsibilities';
     if (kind === 'todo') return 'todo-list';
     if (kind === 'history') return 'history-log';
     if (kind === 'draft') return 'draft-buffer';
+    if (kind === 'achievement') return 'achievement-log';
+    if (kind === 'criticism') return 'criticism-log';
     if (kind === 'custom') {
       const customBase = this.normalizeTopic(topic || title || 'custom');
       return `custom-${customBase}`;
     }
     const base = this.normalizeTopic(topic || title || kind || 'general');
     return `${kind}-${base}`;
+  }
+
+  private resolveCanonicalMemoTitle(kind: MemoKind, inputTitle: string): string {
+    if (kind === 'achievement') return 'Achievement';
+    if (kind === 'criticism') return 'Criticism';
+    return String(inputTitle || '').trim();
   }
 
   private normalizeTopic(value: string): string {
@@ -1523,9 +1595,21 @@ export class MemoService {
   }
 
   private uniqueMemoKinds(kinds: MemoKind[]): MemoKind[] {
-    const allowed: MemoKind[] = ['identity', 'todo', 'topic', 'history', 'draft', 'custom'];
+    const allowed: MemoKind[] = ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation', 'achievement', 'criticism'];
     const normalized = Array.from(new Set((kinds || []).map((item) => String(item || '').trim() as MemoKind).filter(Boolean)));
     return normalized.filter((item) => allowed.includes(item));
+  }
+
+  private isAppendOnlyMemoKind(memoKind: MemoKind): boolean {
+    return this.appendOnlyMemoKinds.includes(memoKind);
+  }
+
+  private appendWithDivider(origin: string, incoming: string): string {
+    const base = String(origin || '').trim();
+    const next = String(incoming || '').trim();
+    if (!next) return base;
+    if (!base) return next;
+    return `${base}\n\n—\n\n${next}`;
   }
 
   private async loadMemoKindCache(agentId: string, memoKind: MemoKind): Promise<Array<Record<string, any>>> {

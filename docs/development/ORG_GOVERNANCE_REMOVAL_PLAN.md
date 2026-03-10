@@ -52,7 +52,7 @@
 
 - `README.md`：标注组织管理/公司治理已下线
 - `docs/api/API.md`：将组织管理与公司治理 API 标记为已下线并移除调试接口说明
-- `docs/features/FUNCTIONS.md`：对应功能改为已下线待重构
+- `docs/feature/FUNCTIONS.md`：对应功能改为已下线待重构
 - `docs/guide/USER_GUIDE.md`：流程与场景中移除提案/投票依赖描述
 - `docs/README.md`：更新文档导航中的模块说明
 
@@ -125,7 +125,7 @@
 - 前端：路由注册、导航菜单、页面组件、API 调用层、类型声明
 - 后端：Nest 模块装配、控制器与服务、数据模型与 DTO、接口文档
 - 权限与配置：权限 key、菜单可见性、常量枚举
-- 文档：README、docs/features、docs/api、用户指南
+- 文档：README、docs/feature、docs/api、用户指南
 
 ## 风险与依赖
 

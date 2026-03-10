@@ -17,7 +17,7 @@
 
 ### 2.2 功能文档更新
 
-- 更新：`docs/features/AGENT_MEMO.md`
+- 更新：`docs/feature/AGENT_MEMO.md`
 - 关键变更：
   - 明确 `todo` 仅接收 `orchestration_task`，拒绝 `meeting_chat`。
   - 新增 `history` 的执行态/终态归档职责。
@@ -59,5 +59,5 @@
 ## 5. 关联文档
 
 - 计划文档：`docs/plan/TODO_HISTORY_MEMO_AGGREGATION_OPTIMIZATION_PLAN.md`
-- 功能文档：`docs/features/AGENT_MEMO.md`
+- 功能文档：`docs/feature/AGENT_MEMO.md`
 - 技术文档：`docs/technical/TODO_HISTORY_MEMO_AGGREGATION_DESIGN.md`

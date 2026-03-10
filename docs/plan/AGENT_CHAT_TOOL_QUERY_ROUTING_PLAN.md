@@ -40,7 +40,7 @@
 - API: 内部上下文/DTO 字段（`executionMode`）
 - Observability: 日志事件类型与字段扩展
 - Tests: 聊天查询与任务执行分流回归
-- Docs: `docs/features/`、`docs/api/` 对应条目更新
+- Docs: `docs/feature/`、`docs/api/` 对应条目更新
 
 ## Risks / Dependencies
 

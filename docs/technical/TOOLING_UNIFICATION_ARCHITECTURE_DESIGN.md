@@ -292,5 +292,5 @@ interface ToolAdapter {
 
 - 方案计划：`docs/plan/TOOLING_UNIFICATION_ARCHITECTURE_PLAN.md`
 - 迁移清单：`docs/plan/TOOLING_UNIFICATION_TOOL_MIGRATION_CHECKLIST.md`
-- 功能文档：`docs/features/AGENT_TOOL.md`
+- 功能文档：`docs/feature/AGENT_TOOL.md`
 - API 文档：`docs/api/agents-api.md`

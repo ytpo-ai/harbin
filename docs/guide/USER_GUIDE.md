@@ -391,7 +391,7 @@ settings: {
 ## 📚 相关文档
 
 - [项目概览](../overview/README.md)
-- [功能清单](../features/FUNCTIONS.md)
+- [功能清单](../feature/FUNCTIONS.md)
 - [架构设计](../architecture/ARCHITECTURE.md)
 - [API文档](../api/API.md)
 - [开发日志](../development/CHANGELOG.md)

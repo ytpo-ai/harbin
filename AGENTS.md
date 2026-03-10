@@ -13,6 +13,9 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 ## 功能文档维护规范及协议
 具体规范及约束请阅读 `docs/features/RULES.md` 中的说明。
 
+## 日常进度记录规范及协议
+具体规范及约束请阅读 `docs/dailylog/RULES.md` 中的说明。
+
 ## 需求处理流程协议
 
 当用户提出具体开发需求时，先梳理功能当前的设计方案，必须先输出执行计划（plan），并等待用户明确同意后才可开始编码。
@@ -46,6 +49,9 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 - [ ] 一个 session 尽量维护一个 plan 文档（避免拆分为多个零散文档）
 - [ ] 文档文件名应稳定、可追踪，并在后续开发总结中复用同名文件名
 
+### Daily Log 记录要求
+- [ ] `docs/dailylog`下文档不应该被其他功能文档引用（仅供记录当天工作内容和影响范围）
+
 ### 例外情况
 - 纯咨询类问题（无代码改动）可直接回答，无需 plan 确认
 - 用户明确说明“直接改/跳过 plan”时，可直接执行
@@ -62,6 +68,7 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 - [ ] 根据功能文档维护规范及协议 docs/features/RULES.md 中的要求，更新相关功能文档
 - [ ] 如果创建了新的API端点，更新API文档
 - [ ] 如果修改了数据模型，更新数据模型文档
+- [ ] 根据日常进度记录规范及协议 docs/dailylog/RULES.md 中的要求，记录当天的工作内容和影响范围
 - [ ] 如果添加了环境变量，更新 `.env.example` 和配置文档
 
 #### 文档更新优先级：

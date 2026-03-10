@@ -7,7 +7,7 @@
 
 ## 执行步骤
 
-1. 确认补充区间与信息源（`git log` 最近提交 + `docs/features`/`docs/plan`/`docs/development`）。
+1. 确认补充区间与信息源（`git log` 最近提交 + `docs/feature`/`docs/plan`/`docs/development`）。
 2. 按日期聚合近期提交主题，提炼为“完成事项”，避免逐条 commit 罗列。
 3. 为每个日期补充“影响范围”，覆盖后端/API/前端/数据模型/文档等关键影响点。
 4. 为每个日期补充“关联文档”，优先引用已存在且可追溯的计划/功能/开发文档。

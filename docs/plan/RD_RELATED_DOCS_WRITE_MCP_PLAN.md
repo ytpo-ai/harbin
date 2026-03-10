@@ -19,9 +19,9 @@
 
 - 后端：`backend/apps/agents/src/modules/tools/tool.service.ts`
 - 测试：`backend/apps/agents/src/modules/tools/tool.service.spec.ts`
-- 功能文档：`docs/features/AGENT_TOOL.md`
+- 功能文档：`docs/feature/AGENT_TOOL.md`
 - API 文档：`docs/api/agents-api.md`
-- 日常进度：`docs/daily_logs/day/2026-03-11.md`
+- 日常进度：`docs/dailylog/day/2026-03-11.md`
 
 ## 4. 风险与依赖
 

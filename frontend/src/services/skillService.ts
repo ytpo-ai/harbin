@@ -36,6 +36,15 @@ export const skillService = {
     return response.data;
   },
 
+  async getSkillById(skillId: string, options?: { includeContent?: boolean }): Promise<Skill> {
+    const response = await api.get(`/skills/${skillId}`, {
+      params: {
+        includeContent: options?.includeContent ? 'true' : undefined,
+      },
+    });
+    return response.data;
+  },
+
   async deleteSkill(skillId: string): Promise<boolean> {
     await api.delete(`/skills/${skillId}`);
     return true;
@@ -55,6 +64,16 @@ export const skillService = {
 
   async getAgentSkills(agentId: string): Promise<Array<{ assignment: AgentSkill; skill: Skill | null }>> {
     const response = await api.get(`/skills/agents/${agentId}`);
+    return response.data;
+  },
+
+  async getSkillAgents(skillId: string): Promise<Array<{ assignment: AgentSkill; agent: { id: string; name: string } | null }>> {
+    const response = await api.get(`/skills/skills/${skillId}/agents`);
+    return response.data;
+  },
+
+  async getAllSkillAgents(): Promise<Record<string, Array<{ agentId: string; agentName: string }>>> {
+    const response = await api.get('/skills/all-skill-agents');
     return response.data;
   },
 

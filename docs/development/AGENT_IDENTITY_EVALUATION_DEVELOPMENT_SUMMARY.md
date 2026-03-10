@@ -173,7 +173,7 @@ curl -X POST http://localhost:3003/api/memos/evaluation/aggregate \
 
 - `docs/technical/AGENT_IDENTITY_EVALUATION_DESIGN.md` - 技术设计文档
 - `docs/plan/AGENT_IDENTITY_EVALUATION_DEVELOPMENT_PLAN.md` - 开发计划
-- `docs/features/AGENT_MEMO.md` - 功能文档更新
+- `docs/feature/AGENT_MEMO.md` - 功能文档更新
 
 ---
 
@@ -264,7 +264,7 @@ curl -X POST http://localhost:3003/api/memos/evaluation/aggregate \
 
 ## 阶段七：文档与测试
 
-- [x] 19. 更新功能文档 `docs/features/AGENT_MEMO.md`
+- [x] 19. 更新功能文档 `docs/feature/AGENT_MEMO.md`
   - 新增 Identity 和 Evaluation 描述
 
 - [x] 20. 运行 lint 检查

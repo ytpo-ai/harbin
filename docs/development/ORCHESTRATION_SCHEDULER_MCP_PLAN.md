@@ -3,7 +3,7 @@
 ## 关联主文档索引
 
 - 计划主文档：`docs/plan/ORCHESTRATION_SCHEDULER_MCP_PLAN.md`
-- 功能文档：`docs/features/ORCHETRATION_SCHEDULER.md`
+- 功能文档：`docs/feature/ORCHETRATION_SCHEDULER.md`
 - API 文档：`docs/api/agents-api.md`
 
 ## 本次目标
@@ -34,7 +34,7 @@
 - `backend/apps/agents/src/modules/tools/tool.service.ts`
 - `backend/apps/agents/src/modules/agents/agent.service.ts`
 - `docs/api/agents-api.md`
-- `docs/features/ORCHETRATION_SCHEDULER.md`
+- `docs/feature/ORCHETRATION_SCHEDULER.md`
 - `docs/plan/ORCHESTRATION_SCHEDULER_MCP_PLAN.md`
 
 ## 验证结果

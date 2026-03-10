@@ -2,6 +2,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -36,6 +37,53 @@ export class RunPlanDto {
   @IsOptional()
   @IsBoolean()
   continueOnFailure?: boolean;
+}
+
+export class ReplanPlanDto {
+  @IsString()
+  @MaxLength(4000)
+  prompt: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  plannerAgentId?: string;
+
+  @IsOptional()
+  @IsEnum(['sequential', 'parallel', 'hybrid'])
+  mode?: 'sequential' | 'parallel' | 'hybrid';
+
+  @IsOptional()
+  @IsBoolean()
+  autoRun?: boolean;
+}
+
+export class UpdatePlanDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  sourcePrompt?: string;
+
+  @IsOptional()
+  @IsEnum(['sequential', 'parallel', 'hybrid'])
+  mode?: 'sequential' | 'parallel' | 'hybrid';
+
+  @IsOptional()
+  @IsString()
+  plannerAgentId?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
 }
 
 export class ReassignTaskDto {

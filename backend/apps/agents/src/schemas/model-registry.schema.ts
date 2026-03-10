@@ -11,6 +11,15 @@ export class ModelRegistry {
   @Prop({ required: true, trim: true })
   name: string;
 
+  @Prop({ trim: true })
+  description?: string;
+
+  @Prop({ trim: true })
+  availability?: string;
+
+  @Prop({ type: Boolean, default: false })
+  deprecated?: boolean;
+
   @Prop({ required: true, lowercase: true, trim: true })
   provider: string;
 

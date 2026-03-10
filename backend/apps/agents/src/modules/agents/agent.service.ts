@@ -20,6 +20,10 @@ import { RedisService } from '@libs/infra';
 export interface AgentContext {
   task: Task;
   teamContext?: any;
+  actor?: {
+    employeeId?: string;
+    role?: string;
+  };
   previousMessages: ChatMessage[];
   workingMemory: Map<string, any>;
 }
@@ -41,7 +45,6 @@ export interface AgentMcpToolSummary {
 export interface AgentMcpProfile {
   id: string;
   name: string;
-  type?: string;
   description: string;
   roleId?: string;
   role: string;
@@ -94,25 +97,60 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
   tools: [],
   capabilities: [],
   exposed: false,
-  description: 'No MCP profile found for this agent type',
+  description: 'No MCP profile found for this role',
 };
 
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_ROLE_ID = 'system-model-management-role';
-const MODEL_MANAGEMENT_AGENT_TOOLS = ['builtin.sys-mg.mcp.model-admin.list-models', 'builtin.sys-mg.mcp.model-admin.add-model'];
+const MODEL_LIST_TOOL_ID = 'builtin.sys-mg.mcp.model-admin.list-models';
+const MODEL_ADD_TOOL_ID = 'builtin.sys-mg.mcp.model-admin.add-model';
+const MODEL_MANAGEMENT_AGENT_TOOLS = [MODEL_LIST_TOOL_ID, MODEL_ADD_TOOL_ID];
 const CODE_DOCS_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-read';
 const CODE_UPDATES_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.updates-read';
 const REPO_READ_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-read';
 const MEMO_MCP_SEARCH_TOOL_ID = 'builtin.sys-mg.internal.memory.search-memo';
 const MEMO_MCP_APPEND_TOOL_ID = 'builtin.sys-mg.internal.memory.append-memo';
+const ORCHESTRATION_TOOL_IDS = {
+  createPlan: 'builtin.sys-mg.mcp.orchestration.create-plan',
+  updatePlan: 'builtin.sys-mg.mcp.orchestration.update-plan',
+  runPlan: 'builtin.sys-mg.mcp.orchestration.run-plan',
+  getPlan: 'builtin.sys-mg.mcp.orchestration.get-plan',
+  listPlans: 'builtin.sys-mg.mcp.orchestration.list-plans',
+  reassignTask: 'builtin.sys-mg.mcp.orchestration.reassign-task',
+  completeHumanTask: 'builtin.sys-mg.mcp.orchestration.complete-human-task',
+  createSchedule: 'builtin.sys-mg.mcp.orchestration.create-schedule',
+  updateSchedule: 'builtin.sys-mg.mcp.orchestration.update-schedule',
+  debugTask: 'builtin.sys-mg.mcp.orchestration.debug-task',
+} as const;
+const ORCHESTRATION_TOOL_ID_SET = new Set<string>(Object.values(ORCHESTRATION_TOOL_IDS));
+const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
+  'mcp.orchestration.createPlan': ORCHESTRATION_TOOL_IDS.createPlan,
+  'mcp.orchestration.updatePlan': ORCHESTRATION_TOOL_IDS.updatePlan,
+  'mcp.orchestration.runPlan': ORCHESTRATION_TOOL_IDS.runPlan,
+  'mcp.orchestration.getPlan': ORCHESTRATION_TOOL_IDS.getPlan,
+  'mcp.orchestration.listPlans': ORCHESTRATION_TOOL_IDS.listPlans,
+  'mcp.orchestration.reassignTask': ORCHESTRATION_TOOL_IDS.reassignTask,
+  'mcp.orchestration.completeHumanTask': ORCHESTRATION_TOOL_IDS.completeHumanTask,
+  'mcp.orchestration.createSchedule': ORCHESTRATION_TOOL_IDS.createSchedule,
+  'mcp.orchestration.updateSchedule': ORCHESTRATION_TOOL_IDS.updateSchedule,
+  'mcp.orchestration.debugTask': ORCHESTRATION_TOOL_IDS.debugTask,
+  'mcp.model.list': MODEL_LIST_TOOL_ID,
+  'mcp.model.add': MODEL_ADD_TOOL_ID,
+  'mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
+  'builtin.sys-mg.mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
+  'internal.agents.list': 'builtin.sys-mg.internal.agent-master.list-agents',
+  'internal.content.extract': 'builtin.data-analysis.internal.content-analysis.extract',
+  'internal.web.search': 'builtin.web-retrieval.internal.web-search.exa',
+  'internal.web.fetch': 'builtin.web-retrieval.internal.web-fetch.fetch',
+};
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
 const MODEL_MANAGEMENT_AGENT_PROMPT =
-  '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 mcp.model.list 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 mcp.model.add。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
+  '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
 const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
   {
-    agentType: 'ai-executive',
+    roleCode: 'executive-lead',
     role: 'executive-lead',
     tools: [
       'builtin.web-retrieval.internal.web-search.exa',
@@ -135,28 +173,28 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责战略规划、关键决策与跨团队协同。',
   },
   {
-    agentType: 'ai-management-assistant',
+    roleCode: 'management-assistant',
     role: 'management-assistant',
     tools: [
       'builtin.web-retrieval.internal.web-search.exa',
       'builtin.web-retrieval.internal.web-fetch.fetch',
       'builtin.data-analysis.internal.content-analysis.extract',
       'builtin.sys-mg.internal.agent-master.list-agents',
-      'mcp.orchestration.createPlan',
-      'mcp.orchestration.updatePlan',
-      'mcp.orchestration.runPlan',
-      'mcp.orchestration.getPlan',
-      'mcp.orchestration.listPlans',
-      'mcp.orchestration.createSchedule',
-      'mcp.orchestration.updateSchedule',
-      'mcp.orchestration.debugTask',
+      ORCHESTRATION_TOOL_IDS.createPlan,
+      ORCHESTRATION_TOOL_IDS.updatePlan,
+      ORCHESTRATION_TOOL_IDS.runPlan,
+      ORCHESTRATION_TOOL_IDS.getPlan,
+      ORCHESTRATION_TOOL_IDS.listPlans,
+      ORCHESTRATION_TOOL_IDS.createSchedule,
+      ORCHESTRATION_TOOL_IDS.updateSchedule,
+      ORCHESTRATION_TOOL_IDS.debugTask,
     ],
     capabilities: ['schedule_management', 'meeting_followup', 'information_synthesis'],
     exposed: true,
     description: '负责高管日程管理、会议纪要与事项跟进。',
   },
   {
-    agentType: 'ai-technical-expert',
+    roleCode: 'technical-architect',
     role: 'technical-architect',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'builtin.data-analysis.internal.content-analysis.extract', 'internal.agents.list'],
     capabilities: ['system_design', 'technical_planning', 'risk_assessment'],
@@ -164,7 +202,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责技术架构、方案评审与技术风险控制。',
   },
   {
-    agentType: 'ai-fullstack-engineer',
+    roleCode: 'fullstack-engineer',
     role: 'fullstack-engineer',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
@@ -172,7 +210,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责前后端实现、联调测试与工程交付。',
   },
   {
-    agentType: 'ai-devops-engineer',
+    roleCode: 'devops-engineer',
     role: 'devops-engineer',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['deployment_automation', 'monitoring_alerting', 'incident_response'],
@@ -180,7 +218,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责部署发布、监控告警与系统稳定性保障。',
   },
   {
-    agentType: 'ai-data-analyst',
+    roleCode: 'data-analyst',
     role: 'data-analyst',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['data_analysis', 'insight_generation', 'reporting'],
@@ -188,26 +226,26 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责数据分析、结论提炼与报告输出。',
   },
   {
-    agentType: 'ai-product-manager',
+    roleCode: 'product-manager',
     role: 'product-manager',
     tools: [
       'builtin.web-retrieval.internal.web-search.exa',
       'builtin.web-retrieval.internal.web-fetch.fetch',
-      'mcp.orchestration.createPlan',
-      'mcp.orchestration.updatePlan',
-      'mcp.orchestration.runPlan',
-      'mcp.orchestration.getPlan',
-      'mcp.orchestration.listPlans',
-      'mcp.orchestration.createSchedule',
-      'mcp.orchestration.updateSchedule',
-      'mcp.orchestration.debugTask',
+      ORCHESTRATION_TOOL_IDS.createPlan,
+      ORCHESTRATION_TOOL_IDS.updatePlan,
+      ORCHESTRATION_TOOL_IDS.runPlan,
+      ORCHESTRATION_TOOL_IDS.getPlan,
+      ORCHESTRATION_TOOL_IDS.listPlans,
+      ORCHESTRATION_TOOL_IDS.createSchedule,
+      ORCHESTRATION_TOOL_IDS.updateSchedule,
+      ORCHESTRATION_TOOL_IDS.debugTask,
     ],
     capabilities: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
     exposed: true,
     description: '负责产品规划、优先级管理与跨团队推进。',
   },
   {
-    agentType: 'ai-hr',
+    roleCode: 'human-resources-manager',
     role: 'human-resources-manager',
     tools: ['internal.web.search'],
     capabilities: ['talent_acquisition', 'performance_management', 'organization_development'],
@@ -215,7 +253,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责招聘、绩效管理与组织人才发展。',
   },
   {
-    agentType: 'ai-admin-assistant',
+    roleCode: 'administrative-assistant',
     role: 'administrative-assistant',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'internal.web.fetch'],
     capabilities: ['administrative_coordination', 'meeting_support', 'document_management'],
@@ -223,7 +261,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责行政事务、会议支持与流程协同。',
   },
   {
-    agentType: 'ai-marketing-expert',
+    roleCode: 'marketing-strategist',
     role: 'marketing-strategist',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
     capabilities: ['campaign_planning', 'brand_communication', 'growth_optimization'],
@@ -231,15 +269,20 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '负责市场策略、活动策划与增长转化。',
   },
   {
-    agentType: 'ai-human-exclusive-assistant',
+    roleCode: 'human-exclusive-assistant',
     role: 'human-exclusive-assistant',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'builtin.data-analysis.internal.content-analysis.extract', 'mcp.humanOperationLog.list'],
+    tools: [
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'builtin.data-analysis.internal.content-analysis.extract',
+      'builtin.sys-mg.mcp.audit.list-human-operation-log',
+    ],
     capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
     exposed: true,
     description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
   },
   {
-    agentType: 'ai-system-builtin',
+    roleCode: 'system-builtin-agent',
     role: 'system-builtin-agent',
     tools: [
       'builtin.web-retrieval.internal.web-search.exa',
@@ -263,7 +306,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     description: '系统内置类型，用于平台默认流程与系统任务协同。',
   },
   {
-    agentType: 'ai-meeting-assistant',
+    roleCode: 'meeting-assistant',
     role: 'meeting-assistant',
     tools: [
       'builtin.sys-mg.mcp.meeting.list-meetings',
@@ -324,7 +367,6 @@ export class AgentService {
 
     const normalizedData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
       ...agentData,
-      type: String(agentData.type || '').trim() || undefined,
       roleId: agentData.roleId.trim(),
       description: agentData.description?.trim() || `${agentData.name} Agent`,
       systemPrompt: agentData.systemPrompt?.trim() || `You are ${agentData.name}, a helpful AI assistant.`,
@@ -350,7 +392,6 @@ export class AgentService {
       normalizedData.roleId,
       normalizedData.tools || [],
       'create',
-      normalizedData.type,
     );
 
     try {
@@ -403,24 +444,6 @@ export class AgentService {
       updatedAt: new Date(),
     };
 
-    const hasTypeField = Object.prototype.hasOwnProperty.call(updates, 'type');
-    if (hasTypeField) {
-      const normalizedType = typeof updates.type === 'string' ? updates.type.trim() : '';
-      if (!normalizedType) {
-        delete normalizedUpdates.type;
-        normalizedUpdates.$unset = {
-          ...(normalizedUpdates.$unset || {}),
-          type: 1,
-        };
-      } else {
-        normalizedUpdates.type = normalizedType;
-      }
-    }
-
-    const targetType = hasTypeField
-      ? normalizedUpdates.type
-      : (existingAgent.type || '').trim();
-
     const hasRoleIdField = Object.prototype.hasOwnProperty.call(updates, 'roleId');
     if (hasRoleIdField) {
       const normalizedRoleId = typeof updates.roleId === 'string' ? updates.roleId.trim() : '';
@@ -436,7 +459,7 @@ export class AgentService {
     const targetRoleId = hasRoleIdField ? normalizedUpdates.roleId : String(existingAgent.roleId || '').trim();
 
     const hasToolsField = Object.prototype.hasOwnProperty.call(updates, 'tools');
-    if (hasToolsField || hasTypeField || hasRoleIdField) {
+    if (hasToolsField || hasRoleIdField) {
       const candidateTools = hasToolsField
         ? Array.isArray(updates.tools)
           ? updates.tools
@@ -448,7 +471,6 @@ export class AgentService {
         targetRoleId,
         candidateTools,
         'update',
-        targetType,
       );
     }
 
@@ -487,7 +509,6 @@ export class AgentService {
     roleId: string,
     tools: string[],
     action: 'create' | 'update',
-    fallbackAgentType?: string,
   ): Promise<string[]> {
     const normalizedRoleId = String(roleId || '').trim();
     if (!normalizedRoleId) {
@@ -495,7 +516,7 @@ export class AgentService {
     }
 
     const role = await this.assertRoleExists(normalizedRoleId);
-    const profile = await this.getMcpProfileByRoleCodeOrType(role.code, fallbackAgentType);
+    const profile = await this.getMcpProfileByRoleCode(role.code);
     const whitelist = new Set(this.normalizeToolIds(profile.tools || []));
     const normalizedTools = this.normalizeToolIds(tools || []);
     const invalid = normalizedTools.filter((toolId) => !whitelist.has(toolId));
@@ -602,7 +623,7 @@ export class AgentService {
     ];
 
     const runModelTest = async (customApiKey?: string) => {
-      this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+      this.modelService.registerProvider(modelConfig, customApiKey);
       const startTime = Date.now();
       const response = await Promise.race([
         this.modelService.chat(modelConfig.id, messages, {
@@ -624,7 +645,9 @@ export class AgentService {
       return (
         (lower.includes('not_found_error') && lower.includes('model')) ||
         lower.includes('not found the model') ||
-        lower.includes('model not found')
+        lower.includes('model not found') ||
+        lower === 'not found' ||
+        lower.includes('not found (alibaba endpoint=')
       );
     };
 
@@ -907,6 +930,7 @@ export class AgentService {
         runtimeContext,
         {
           teamContext: context?.teamContext,
+          actor: context?.actor,
           taskType: task.type,
           teamId: task.teamId,
         },
@@ -1259,51 +1283,15 @@ export class AgentService {
         content: `你可以调用以下工具（仅限这些）:\n${JSON.stringify(toolSpecs)}\n\n当你需要调用工具时，必须只输出以下格式，不要添加任何额外文本:\n<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>\n\n工具结果会作为系统消息返回给你，收到后继续完成最终回答。`,
         timestamp: new Date(),
       });
-    }
 
-    if (allowedToolIds.includes('internal.agents.list')) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 internal.agents.list 工具获取实时名单，再基于工具结果回答。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes('mcp.model.list')) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问“系统里有哪些模型/当前有哪些模型/模型列表”时，请优先调用 mcp.model.list 获取实时模型清单，再回答。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes(CODE_DOCS_READER_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 internal.docs.read 读取文档。若 internal.docs.read 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 internal.repo.read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes(CODE_UPDATES_READER_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 internal.repo.read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 internal.updates.read。必须基于实际提交内容回答，不得臆测。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (allowedToolIds.includes(REPO_READ_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '你拥有 internal.repo.read 工具，可执行只读 bash 命令（如 git log、cat、ls、grep 等）来读取本地仓库文件。当你需要了解代码或文档内容时，请优先使用 internal.repo.read 直接读取。',
-        timestamp: new Date(),
-      });
+      const toolPromptMessages = this.buildToolPromptMessages(assignedTools);
+      for (const promptContent of toolPromptMessages) {
+        messages.push({
+          role: 'system',
+          content: promptContent,
+          timestamp: new Date(),
+        });
+      }
     }
 
     const memoryContext = await this.memoService.getTaskMemoryContext(
@@ -1315,7 +1303,7 @@ export class AgentService {
         role: 'system',
         content:
           `以下是从备忘录中按需检索到的相关记忆（渐进加载摘要）:\n${memoryContext}\n\n` +
-          '请优先参考这些记忆，并在必要时调用 internal.memo.search 获取更完整上下文；若有新结论可调用 internal.memo.append 追加沉淀。',
+          '请优先参考这些记忆，并在必要时调用 builtin.sys-mg.internal.memory.search-memo 获取更完整上下文；若有新结论可调用 builtin.sys-mg.internal.memory.append-memo 追加沉淀。',
         timestamp: new Date(),
       });
     }
@@ -1336,19 +1324,34 @@ export class AgentService {
       });
     }
 
-    if (allowedToolIds.includes(MEMO_MCP_SEARCH_TOOL_ID) && allowedToolIds.includes(MEMO_MCP_APPEND_TOOL_ID)) {
-      messages.push({
-        role: 'system',
-        content:
-          '在处理任务时，优先调用 internal.memo.search 检索相关历史备忘录；当形成关键结论或后续动作时，调用 internal.memo.append 将知识、行为或TODO追加到备忘录。',
-        timestamp: new Date(),
-      });
-    }
-
     // 历史消息
     messages.push(...context.previousMessages);
 
     return messages;
+  }
+
+  private buildToolPromptMessages(
+    assignedTools: Array<{
+      id?: string;
+      canonicalId?: string;
+      prompt?: string;
+    }>,
+  ): string[] {
+    const seen = new Set<string>();
+    return assignedTools
+      .map((tool) => {
+        const toolId = String(tool.canonicalId || tool.id || '').trim();
+        const prompt = String(tool.prompt || '').trim();
+        return { toolId, prompt };
+      })
+      .filter((item) => item.toolId && item.prompt)
+      .sort((a, b) => a.toolId.localeCompare(b.toolId))
+      .map((item) => `工具使用策略（${item.toolId}）:\n${item.prompt}`)
+      .filter((message) => {
+        if (seen.has(message)) return false;
+        seen.add(message);
+        return true;
+      });
   }
 
   private async getEnabledSkillsForAgent(agent: Agent, agentId: string): Promise<EnabledAgentSkillContext[]> {
@@ -1427,7 +1430,15 @@ export class AgentService {
     initialMessages: ChatMessage[],
     modelConfig: AIModel,
     runtimeContext?: RuntimeRunContext,
-    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
+    executionContext?: {
+      teamContext?: any;
+      actor?: {
+        employeeId?: string;
+        role?: string;
+      };
+      taskType?: string;
+      teamId?: string;
+    },
   ): Promise<string> {
     const maxToolRounds = this.getMaxToolRounds();
     const messages = [...initialMessages];
@@ -1453,20 +1464,9 @@ export class AgentService {
       executionContext,
     );
     if (!forcedOrchestrationAction && this.hasMeetingOrchestrationIntent(task, messages, executionContext)) {
-      const hasAnyOrchestrationTool = [
-        'mcp.orchestration.createPlan',
-        'mcp.orchestration.updatePlan',
-        'mcp.orchestration.runPlan',
-        'mcp.orchestration.getPlan',
-        'mcp.orchestration.listPlans',
-        'mcp.orchestration.reassignTask',
-        'mcp.orchestration.completeHumanTask',
-        'mcp.orchestration.createSchedule',
-        'mcp.orchestration.updateSchedule',
-        'mcp.orchestration.debugTask',
-      ].some((toolId) => assignedToolIds.has(toolId));
+      const hasAnyOrchestrationTool = Array.from(assignedToolIds).some((toolId) => ORCHESTRATION_TOOL_ID_SET.has(toolId));
       if (!hasAnyOrchestrationTool) {
-        return '我识别到你希望执行计划编排，但当前这个 Agent 未分配 mcp.orchestration.* 工具。请在 Agent 管理中为其绑定对应 MCP Profile 工具后重试。';
+        return '我识别到你希望执行计划编排，但当前这个 Agent 未分配 builtin.sys-mg.mcp.orchestration.* 工具。请在 Agent 管理中为其绑定对应 MCP Profile 工具后重试。';
       }
     }
     if (forcedOrchestrationAction) {
@@ -1526,7 +1526,7 @@ export class AgentService {
           messages.push({
             role: 'system',
             content:
-              '你正在处理模型管理请求。禁止在未调用并拿到工具结果时声称“已添加成功/已完成添加”。请立即调用 mcp.model.add 执行写入，并调用 mcp.model.list 验证后再回答。若工具失败，请明确说明失败原因。',
+                '你正在处理模型管理请求。禁止在未调用并拿到工具结果时声称“已添加成功/已完成添加”。请立即调用 builtin.sys-mg.mcp.model-admin.add-model 执行写入，并调用 builtin.sys-mg.mcp.model-admin.list-models 验证后再回答。若工具失败，请明确说明失败原因。',
             timestamp: new Date(),
           });
           continue;
@@ -1795,7 +1795,11 @@ export class AgentService {
   }
 
   private normalizeToolId(toolId: string): string {
-    return String(toolId || '').trim();
+    const normalized = String(toolId || '').trim();
+    if (!normalized) {
+      return '';
+    }
+    return LEGACY_TOOL_ID_ALIASES[normalized] || normalized;
   }
 
   private normalizeToolIds(toolIds: string[]): string[] {
@@ -1865,8 +1869,8 @@ export class AgentService {
       userText.includes('yes, add') ||
       userText.includes('yes add');
 
-    const addExecuted = executedToolIds.has('mcp.model.add');
-    const listExecuted = executedToolIds.has('mcp.model.list');
+    const addExecuted = executedToolIds.has(MODEL_ADD_TOOL_ID);
+    const listExecuted = executedToolIds.has(MODEL_LIST_TOOL_ID);
 
     if (claimsAddSuccess && (!addExecuted || !listExecuted)) {
       return true;
@@ -1921,10 +1925,10 @@ export class AgentService {
       return '我已收到添加请求，但没有识别到明确的模型 ID（例如 gpt-5.3-codex）。请提供要添加的模型 ID，我将立即执行并回传结果。';
     }
 
-    if (asksAddStatus && assignedToolIds.has('mcp.model.list')) {
+    if (asksAddStatus && assignedToolIds.has(MODEL_LIST_TOOL_ID)) {
       try {
         const listExecution = await this.toolService.executeTool(
-          'builtin.sys-mg.mcp.model-admin.list-models',
+          MODEL_LIST_TOOL_ID,
           agentRuntimeId,
           { limit: 500 },
           task.id,
@@ -1951,7 +1955,7 @@ export class AgentService {
       }
     }
 
-    if (!isConfirmAdd || !assignedToolIds.has('mcp.model.add')) {
+    if (!isConfirmAdd || !assignedToolIds.has(MODEL_ADD_TOOL_ID)) {
       return null;
     }
 
@@ -1960,7 +1964,7 @@ export class AgentService {
       const provider = this.inferProviderFromModelId(model);
       try {
         const addExecution = await this.toolService.executeTool(
-          'builtin.sys-mg.mcp.model-admin.add-model',
+          MODEL_ADD_TOOL_ID,
           agentRuntimeId,
           {
             provider,
@@ -1986,14 +1990,14 @@ export class AgentService {
       }
     }
 
-    if (!assignedToolIds.has('mcp.model.list')) {
+    if (!assignedToolIds.has(MODEL_LIST_TOOL_ID)) {
       const lines = addResults.map((item) => `- ${item.model}: ${item.created ? '已添加' : `失败（${item.message}）`}`);
       return `已执行模型添加请求，结果如下：\n${lines.join('\n')}`;
     }
 
     try {
       const listExecution = await this.toolService.executeTool(
-        'builtin.sys-mg.mcp.model-admin.list-models',
+        MODEL_LIST_TOOL_ID,
         agentRuntimeId,
         { limit: 500 },
         task.id,
@@ -2062,15 +2066,15 @@ export class AgentService {
   ):
     | {
         tool:
-          | 'mcp.orchestration.createPlan'
-          | 'mcp.orchestration.runPlan'
-          | 'mcp.orchestration.getPlan'
-          | 'mcp.orchestration.listPlans'
-          | 'mcp.orchestration.reassignTask'
-          | 'mcp.orchestration.completeHumanTask'
-          | 'mcp.orchestration.createSchedule'
-          | 'mcp.orchestration.updateSchedule'
-          | 'mcp.orchestration.debugTask';
+          | 'builtin.sys-mg.mcp.orchestration.create-plan'
+          | 'builtin.sys-mg.mcp.orchestration.run-plan'
+          | 'builtin.sys-mg.mcp.orchestration.get-plan'
+          | 'builtin.sys-mg.mcp.orchestration.list-plans'
+          | 'builtin.sys-mg.mcp.orchestration.reassign-task'
+          | 'builtin.sys-mg.mcp.orchestration.complete-human-task'
+          | 'builtin.sys-mg.mcp.orchestration.create-schedule'
+          | 'builtin.sys-mg.mcp.orchestration.update-schedule'
+          | 'builtin.sys-mg.mcp.orchestration.debug-task';
         parameters: Record<string, any>;
         reason: string;
       }
@@ -2091,20 +2095,23 @@ export class AgentService {
       return null;
     }
     const lower = latestUser.toLowerCase();
+    if (this.hasOrchestrationNegationIntent(lower)) {
+      return null;
+    }
 
     const planId = this.extractEntityIdFromText(latestUser, 'plan');
     const taskId = this.extractEntityIdFromText(latestUser, 'task');
     const recoveredPlanId = this.extractRecentPlanIdFromConversation(task, messages);
-    const shortRunConfirmIntent = this.isShortRunConfirmIntent(lower);
+    const shortRunConfirmIntent = this.isShortRunConfirmIntent(lower) && Boolean(recoveredPlanId);
 
     const includesAny = (patterns: string[]) => patterns.some((item) => lower.includes(item.toLowerCase()));
 
     if (
-      assignedToolIds.has('mcp.orchestration.createPlan') &&
-      includesAny(['创建计划', '生成计划', '拆解计划', '编排计划', 'create plan', 'mcp.orchestration.createPlan'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.createPlan) &&
+      includesAny(['创建计划', '生成计划', '拆解计划', '编排计划', 'create plan'])
     ) {
       return {
-        tool: 'mcp.orchestration.createPlan',
+        tool: ORCHESTRATION_TOOL_IDS.createPlan,
         parameters: {
           prompt: latestUser,
           title: task.title || '会议编排计划',
@@ -2116,22 +2123,22 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.createSchedule') &&
-      includesAny(['创建定时计划', '新增定时计划', '创建调度计划', 'create schedule', 'mcp.orchestration.createSchedule'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.createSchedule) &&
+      includesAny(['创建定时计划', '新增定时计划', '创建调度计划', 'create schedule'])
     ) {
       const selectedPlanId = planId || recoveredPlanId;
       if (!selectedPlanId) {
-        if (!assignedToolIds.has('mcp.orchestration.listPlans')) {
+        if (!assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans)) {
           return null;
         }
         return {
-          tool: 'mcp.orchestration.listPlans',
+          tool: ORCHESTRATION_TOOL_IDS.listPlans,
           parameters: {},
           reason: 'meeting_orchestration_create_schedule_missing_planid_fallback_list',
         };
       }
       return {
-        tool: 'mcp.orchestration.createSchedule',
+        tool: ORCHESTRATION_TOOL_IDS.createSchedule,
         parameters: {
           planId: selectedPlanId,
           scheduleType: 'cron',
@@ -2144,8 +2151,8 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.updateSchedule') &&
-      includesAny(['修改定时计划', '更新定时计划', '调整定时计划', 'update schedule', 'mcp.orchestration.updateSchedule'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.updateSchedule) &&
+      includesAny(['修改定时计划', '更新定时计划', '调整定时计划', 'update schedule'])
     ) {
       const scheduleId = this.extractEntityIdFromText(latestUser, 'schedule');
       if (!scheduleId) {
@@ -2156,7 +2163,7 @@ export class AgentService {
         return null;
       }
       return {
-        tool: 'mcp.orchestration.updateSchedule',
+        tool: ORCHESTRATION_TOOL_IDS.updateSchedule,
         parameters: {
           scheduleId,
           enabled: enabledSignal,
@@ -2166,22 +2173,22 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.runPlan') &&
-      (includesAny(['执行计划', '运行计划', '开始执行计划', 'run plan', 'mcp.orchestration.runPlan']) || shortRunConfirmIntent)
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.runPlan) &&
+      (includesAny(['执行计划', '运行计划', '开始执行计划', 'run plan']) || shortRunConfirmIntent)
     ) {
       const selectedPlanId = planId || recoveredPlanId;
       if (!selectedPlanId) {
-        if (!assignedToolIds.has('mcp.orchestration.listPlans')) {
+        if (!assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans)) {
           return null;
         }
         return {
-          tool: 'mcp.orchestration.listPlans',
+          tool: ORCHESTRATION_TOOL_IDS.listPlans,
           parameters: {},
           reason: 'meeting_orchestration_run_missing_planid_fallback_list',
         };
       }
       return {
-        tool: 'mcp.orchestration.runPlan',
+        tool: ORCHESTRATION_TOOL_IDS.runPlan,
         parameters: {
           planId: selectedPlanId,
           continueOnFailure: true,
@@ -2192,14 +2199,14 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.getPlan') &&
-      includesAny(['查看计划', '计划详情', '查询计划', 'get plan', 'mcp.orchestration.getPlan'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.getPlan) &&
+      includesAny(['查看计划', '计划详情', '查询计划', 'get plan'])
     ) {
       if (!planId) {
         return null;
       }
       return {
-        tool: 'mcp.orchestration.getPlan',
+        tool: ORCHESTRATION_TOOL_IDS.getPlan,
         parameters: {
           planId,
         },
@@ -2208,25 +2215,25 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.listPlans') &&
-      includesAny(['计划列表', '所有计划', 'list plans', 'mcp.orchestration.listPlans'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans) &&
+      includesAny(['计划列表', '所有计划', 'list plans'])
     ) {
       return {
-        tool: 'mcp.orchestration.listPlans',
+        tool: ORCHESTRATION_TOOL_IDS.listPlans,
         parameters: {},
         reason: 'meeting_orchestration_list',
       };
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.reassignTask') &&
-      includesAny(['改派任务', '重新分配任务', 'reassign task', 'mcp.orchestration.reassignTask'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.reassignTask) &&
+      includesAny(['改派任务', '重新分配任务', 'reassign task'])
     ) {
       if (!taskId) {
         return null;
       }
       return {
-        tool: 'mcp.orchestration.reassignTask',
+        tool: ORCHESTRATION_TOOL_IDS.reassignTask,
         parameters: {
           taskId,
           executorType: 'agent',
@@ -2238,14 +2245,14 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.completeHumanTask') &&
-      includesAny(['人工完成任务', '完成人工任务', 'complete human task', 'mcp.orchestration.completeHumanTask'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.completeHumanTask) &&
+      includesAny(['人工完成任务', '完成人工任务', 'complete human task'])
     ) {
       if (!taskId) {
         return null;
       }
       return {
-        tool: 'mcp.orchestration.completeHumanTask',
+        tool: ORCHESTRATION_TOOL_IDS.completeHumanTask,
         parameters: {
           taskId,
           summary: '会议中确认人工任务完成',
@@ -2257,14 +2264,14 @@ export class AgentService {
     }
 
     if (
-      assignedToolIds.has('mcp.orchestration.debugTask') &&
-      includesAny(['调试任务', '任务调试', 'debug task', 'debug-run', 'mcp.orchestration.debugTask'])
+      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.debugTask) &&
+      includesAny(['调试任务', '任务调试', 'debug task', 'debug-run'])
     ) {
       if (!taskId) {
         return null;
       }
       return {
-        tool: 'mcp.orchestration.debugTask',
+        tool: ORCHESTRATION_TOOL_IDS.debugTask,
         parameters: {
           taskId,
           resetResult: true,
@@ -2295,6 +2302,9 @@ export class AgentService {
     if (!lower) {
       return false;
     }
+    if (this.hasOrchestrationNegationIntent(lower)) {
+      return false;
+    }
     return [
       '创建计划',
       '生成计划',
@@ -2315,11 +2325,29 @@ export class AgentService {
       'debug-run',
       '定时计划',
       '调度计划',
-      '执行',
-      '继续',
-      '开始',
       'orchestration_',
     ].some((item) => lower.includes(item));
+  }
+
+  private hasOrchestrationNegationIntent(latestUserLower: string): boolean {
+    const normalized = String(latestUserLower || '').trim();
+    if (!normalized) {
+      return false;
+    }
+
+    return [
+      '不要执行计划',
+      '不执行计划',
+      '不是编排',
+      '无需编排',
+      '不需要编排',
+      '取消编排',
+      '不要计划编排',
+      '不要run plan',
+      "don't run plan",
+      'not orchestration',
+      'no orchestration',
+    ].some((item) => normalized.includes(item));
   }
 
   private isShortRunConfirmIntent(latestUserLower: string): boolean {
@@ -2382,18 +2410,18 @@ export class AgentService {
     parameters: Record<string, any>,
   ): string {
     const payload = result?.result || result || {};
-    if (tool === 'mcp.orchestration.createPlan') {
+    if (tool === ORCHESTRATION_TOOL_IDS.createPlan) {
       const planId = payload?.id || payload?._id || payload?.planId || 'unknown';
       const taskCount = Array.isArray(payload?.tasks) ? payload.tasks.length : 0;
       return `已触发计划创建，planId=${planId}，任务数=${taskCount}。如需继续执行，请回复“执行计划 planId:${planId}”。`;
     }
-    if (tool === 'mcp.orchestration.updatePlan') {
+    if (tool === ORCHESTRATION_TOOL_IDS.updatePlan) {
       return `已提交计划更新（planId=${parameters.planId || 'unknown'}）。`;
     }
-    if (tool === 'mcp.orchestration.runPlan') {
+    if (tool === ORCHESTRATION_TOOL_IDS.runPlan) {
       return `已触发计划执行（planId=${parameters.planId}，continueOnFailure=${parameters.continueOnFailure === true ? 'true' : 'false'}）。可继续让我查询执行进度。`;
     }
-    if (tool === 'mcp.orchestration.getPlan') {
+    if (tool === ORCHESTRATION_TOOL_IDS.getPlan) {
       const status = payload?.status || 'unknown';
       const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
       const completed = tasks.filter((item: any) => item?.status === 'completed').length;
@@ -2401,25 +2429,25 @@ export class AgentService {
       const waitingHuman = tasks.filter((item: any) => item?.status === 'waiting_human').length;
       return `计划状态：${status}。任务统计：completed=${completed}，failed=${failed}，waiting_human=${waitingHuman}，total=${tasks.length}。`;
     }
-    if (tool === 'mcp.orchestration.listPlans') {
+    if (tool === ORCHESTRATION_TOOL_IDS.listPlans) {
       const plans = Array.isArray(payload) ? payload : Array.isArray(payload?.plans) ? payload.plans : [];
       return `已查询计划列表，当前可见计划数量=${plans.length}。如需执行请提供 planId（例如：执行计划 planId:xxx）。`;
     }
-    if (tool === 'mcp.orchestration.reassignTask') {
+    if (tool === ORCHESTRATION_TOOL_IDS.reassignTask) {
       return `已提交任务改派请求（taskId=${parameters.taskId}）。`;
     }
-    if (tool === 'mcp.orchestration.completeHumanTask') {
+    if (tool === ORCHESTRATION_TOOL_IDS.completeHumanTask) {
       return `已提交人工任务完成回填（taskId=${parameters.taskId}）。`;
     }
-    if (tool === 'mcp.orchestration.createSchedule') {
+    if (tool === ORCHESTRATION_TOOL_IDS.createSchedule) {
       const scheduleId = payload?.id || payload?._id || payload?.scheduleId || 'unknown';
       const nextRunAt = payload?.nextRunAt || payload?.schedule?.nextRunAt || 'unknown';
       return `已创建定时计划，scheduleId=${scheduleId}，nextRunAt=${nextRunAt}。`;
     }
-    if (tool === 'mcp.orchestration.updateSchedule') {
+    if (tool === ORCHESTRATION_TOOL_IDS.updateSchedule) {
       return `已提交定时计划更新（scheduleId=${parameters.scheduleId}）。`;
     }
-    if (tool === 'mcp.orchestration.debugTask') {
+    if (tool === ORCHESTRATION_TOOL_IDS.debugTask) {
       const status = payload?.execution?.status || payload?.task?.status || payload?.debug?.status || 'unknown';
       const error = payload?.execution?.error || payload?.debug?.error;
       return error
@@ -2431,7 +2459,7 @@ export class AgentService {
 
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
     const role = await this.getRoleById(agent.roleId);
-    const profile = await this.getMcpProfileByRoleCodeOrType(role?.code, (agent.type || '').trim());
+    const profile = await this.getMcpProfileByRoleCode(role?.code);
     const merged = this
       .uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID])
       .map((toolId) => this.normalizeToolId(toolId));
@@ -2448,7 +2476,7 @@ export class AgentService {
   }
 
   private isCtoAgent(agent: Agent): boolean {
-    const signal = `${agent.name || ''} ${agent.type || ''} ${agent.roleId || ''} ${agent.description || ''}`.toLowerCase();
+    const signal = `${agent.name || ''} ${agent.roleId || ''} ${agent.description || ''}`.toLowerCase();
     return [
       'cto',
       'chief-technology-officer',
@@ -2507,7 +2535,7 @@ export class AgentService {
     const profiles = await this.agentProfileModel.find().exec();
     const record: Record<string, AgentMcpMapProfile> = {};
     for (const profile of profiles) {
-      record[profile.agentType] = {
+      record[profile.roleCode] = {
         role: profile.role,
         tools: this.normalizeToolIds(profile.tools || []),
         capabilities: profile.capabilities || [],
@@ -2528,7 +2556,7 @@ export class AgentService {
     const normalizedAgents = agents.map((agent) => this.normalizeAgentEntity(agent));
     const roleMap = await this.getRoleMapByIds(normalizedAgents.map((agent) => agent.roleId));
     const profileKeys = normalizedAgents.map((agent) => this.resolveProfileLookupKey(agent, roleMap.get(agent.roleId)));
-    const profileMap = await this.getMcpProfilesByAgentTypes(profileKeys);
+    const profileMap = await this.getMcpProfilesByRoleCodes(profileKeys);
     const toolMap = await this.buildToolSummaryMap(normalizedAgents, profileMap, roleMap);
 
     const mapped = normalizedAgents.map((agent) => {
@@ -2556,7 +2584,7 @@ export class AgentService {
     const normalized = this.normalizeAgentEntity(agent);
     const role = await this.getRoleById(normalized.roleId);
     const mapKey = this.resolveProfileLookupKey(normalized, role || undefined);
-    const mapProfile = await this.getMcpProfileByRoleCodeOrType(role?.code, mapKey);
+    const mapProfile = await this.getMcpProfileByRoleCode(role?.code);
     const roleMap = new Map<string, AgentBusinessRole>();
     if (role) {
       roleMap.set(normalized.roleId, role);
@@ -2630,10 +2658,10 @@ export class AgentService {
     return Array.from(new Set(merged));
   }
 
-  private resolveProfileLookupKey(agent: Agent, role?: AgentBusinessRole): string {
+  private resolveProfileLookupKey(_agent: Agent, role?: AgentBusinessRole): string {
     const roleCode = String(role?.code || '').trim();
     if (roleCode) return roleCode;
-    return String(agent.type || '').trim();
+    return '';
   }
 
   private async buildToolSummaryMap(
@@ -2691,7 +2719,6 @@ export class AgentService {
     return {
       id: agent.id || '',
       name: agent.name,
-      type: agent.type,
       description: agent.description || profile.description || '',
       roleId: agent.roleId,
       role: role?.name || role?.code || profile.role,
@@ -2705,8 +2732,8 @@ export class AgentService {
   async getToolPermissionSets(): Promise<AgentToolPermissionSet[]> {
     const roles = await this.getAvailableRoles();
     const roleCodes = Array.from(new Set(roles.map((role) => String(role.code || '').trim()).filter(Boolean)));
-    const profiles = await this.agentProfileModel.find({ agentType: { $in: roleCodes } }).exec();
-    const profileMap = new Map(profiles.map((profile) => [String(profile.agentType || '').trim(), profile]));
+    const profiles = await this.agentProfileModel.find({ roleCode: { $in: roleCodes } }).exec();
+    const profileMap = new Map(profiles.map((profile) => [String(profile.roleCode || '').trim(), profile]));
 
     return roles.map((role) => {
       const roleCode = String(role.code || '').trim();
@@ -2748,7 +2775,7 @@ export class AgentService {
     };
 
     const profile = await this.agentProfileModel
-      .findOneAndUpdate({ agentType: normalizedRoleCode }, { ...payload, agentType: normalizedRoleCode }, { new: true, upsert: true })
+      .findOneAndUpdate({ roleCode: normalizedRoleCode }, { ...payload, roleCode: normalizedRoleCode }, { new: true, upsert: true })
       .exec();
 
     return {
@@ -2805,9 +2832,9 @@ export class AgentService {
 
       await this.agentProfileModel
         .findOneAndUpdate(
-          { agentType: roleCode },
+          { roleCode },
           {
-            agentType: roleCode,
+            roleCode,
             role: roleCode,
             tools: this.normalizeToolIds(seed.tools || []),
             capabilities: seed.capabilities || [],
@@ -2828,7 +2855,7 @@ export class AgentService {
   }
 
   async getMcpProfiles(): Promise<AgentProfile[]> {
-    const profiles = await this.agentProfileModel.find().sort({ agentType: 1 }).exec();
+    const profiles = await this.agentProfileModel.find().sort({ roleCode: 1 }).exec();
     return profiles.map((profile) => {
       const plain = profile?.toObject ? profile.toObject() : profile;
       return {
@@ -2838,8 +2865,8 @@ export class AgentService {
     });
   }
 
-  async getMcpProfile(agentType: string): Promise<AgentProfile | null> {
-    const profile = await this.agentProfileModel.findOne({ agentType: agentType.trim() }).exec();
+  async getMcpProfile(roleCode: string): Promise<AgentProfile | null> {
+    const profile = await this.agentProfileModel.findOne({ roleCode: roleCode.trim() }).exec();
     if (!profile) return null;
     const plain = profile?.toObject ? profile.toObject() : profile;
     return {
@@ -2849,12 +2876,12 @@ export class AgentService {
   }
 
   async upsertMcpProfile(
-    agentType: string,
+    roleCode: string,
     updates: Partial<AgentMcpMapProfile>,
   ): Promise<AgentProfile> {
-    const normalizedType = agentType.trim();
-    if (!normalizedType) {
-      throw new BadRequestException('agentType is required');
+    const normalizedRoleCode = roleCode.trim();
+    if (!normalizedRoleCode) {
+      throw new BadRequestException('roleCode is required');
     }
 
     const payload: Partial<AgentProfile> = {
@@ -2865,21 +2892,26 @@ export class AgentService {
       description: updates.description || '',
     };
 
-    return this.agentProfileModel
-      .findOneAndUpdate({ agentType: normalizedType }, { ...payload, agentType: normalizedType }, { new: true, upsert: true })
+    const profile = await this.agentProfileModel
+      .findOneAndUpdate({ roleCode: normalizedRoleCode }, { ...payload, roleCode: normalizedRoleCode }, { new: true, upsert: true })
       .exec();
+    const plain = profile?.toObject ? profile.toObject() : profile;
+    return {
+      ...plain,
+      tools: this.normalizeToolIds(plain?.tools || []),
+    } as AgentProfile;
   }
 
-  private async getMcpProfilesByAgentTypes(agentTypes: string[]): Promise<Map<string, AgentMcpMapProfile>> {
-    const uniqueTypes = Array.from(new Set(agentTypes.map((item) => item.trim()).filter(Boolean)));
-    if (!uniqueTypes.length) {
+  private async getMcpProfilesByRoleCodes(roleCodes: string[]): Promise<Map<string, AgentMcpMapProfile>> {
+    const uniqueRoleCodes = Array.from(new Set(roleCodes.map((item) => item.trim()).filter(Boolean)));
+    if (!uniqueRoleCodes.length) {
       return new Map();
     }
 
-    const profiles = await this.agentProfileModel.find({ agentType: { $in: uniqueTypes } }).exec();
+    const profiles = await this.agentProfileModel.find({ roleCode: { $in: uniqueRoleCodes } }).exec();
     const map = new Map<string, AgentMcpMapProfile>();
     for (const profile of profiles) {
-      map.set(profile.agentType, {
+      map.set(profile.roleCode, {
         role: profile.role,
         tools: this.normalizeToolIds(profile.tools || []),
         capabilities: profile.capabilities || [],
@@ -2890,62 +2922,32 @@ export class AgentService {
     return map;
   }
 
-  private async getMcpProfileByRoleCodeOrType(roleCode?: string, agentType?: string): Promise<AgentMcpMapProfile> {
+  private async getMcpProfileByRoleCode(roleCode?: string): Promise<AgentMcpMapProfile> {
     const normalizedRoleCode = String(roleCode || '').trim();
-    if (normalizedRoleCode) {
-      const roleProfile = await this.agentProfileModel.findOne({ agentType: normalizedRoleCode }).exec();
-      if (roleProfile) {
-        return {
-          role: roleProfile.role,
-          tools: this.normalizeToolIds(roleProfile.tools || []),
-          capabilities: roleProfile.capabilities || [],
-          exposed: roleProfile.exposed === true,
-          description: roleProfile.description || '',
-        };
-      }
-    }
-
-    const normalizedType = String(agentType || '').trim();
-    if (!normalizedType) {
+    if (!normalizedRoleCode) {
       return DEFAULT_MCP_PROFILE;
     }
 
-    const typeProfile = await this.agentProfileModel.findOne({ agentType: normalizedType }).exec();
-    if (!typeProfile) {
+    const roleProfile = await this.agentProfileModel.findOne({ roleCode: normalizedRoleCode }).exec();
+    if (!roleProfile) {
       return DEFAULT_MCP_PROFILE;
     }
     return {
-      role: typeProfile.role,
-      tools: this.normalizeToolIds(typeProfile.tools || []),
-      capabilities: typeProfile.capabilities || [],
-      exposed: typeProfile.exposed === true,
-      description: typeProfile.description || '',
-    };
-  }
-
-  private async getMcpProfileByAgentType(agentType: string): Promise<AgentMcpMapProfile> {
-    if (!agentType) return DEFAULT_MCP_PROFILE;
-    const profile = await this.agentProfileModel.findOne({ agentType }).exec();
-    if (!profile) {
-      return DEFAULT_MCP_PROFILE;
-    }
-    return {
-      role: profile.role,
-      tools: this.normalizeToolIds(profile.tools || []),
-      capabilities: profile.capabilities || [],
-      exposed: profile.exposed === true,
-      description: profile.description || '',
+      role: roleProfile.role,
+      tools: this.normalizeToolIds(roleProfile.tools || []),
+      capabilities: roleProfile.capabilities || [],
+      exposed: roleProfile.exposed === true,
+      description: roleProfile.description || '',
     };
   }
 
   private async ensureMcpProfileSeeds(): Promise<void> {
     try {
-      const activeTypes = MCP_PROFILE_SEEDS.map((seed) => seed.agentType);
       for (const seed of MCP_PROFILE_SEEDS) {
         const normalizedSeedTools = this.normalizeToolIds(seed.tools || []);
         await this.agentProfileModel
           .updateOne(
-            { agentType: seed.agentType },
+            { roleCode: seed.roleCode },
             {
               $setOnInsert: {
                 role: seed.role,
@@ -2971,16 +2973,15 @@ export class AgentService {
 
       await this.agentProfileModel
         .updateOne(
-          { agentType: 'ai-human-exclusive-assistant' },
+          { roleCode: 'human-exclusive-assistant' },
           {
             $addToSet: {
-              tools: 'builtin.sys-mg.mcp.humanOperationLog.list',
+              tools: 'builtin.sys-mg.mcp.audit.list-human-operation-log',
             },
           },
         )
         .exec();
       // 移除删除操作：禁止后端重启时删除用户自定义的 agent profile
-      // await this.agentProfileModel.deleteMany({ agentType: { $nin: activeTypes } }).exec();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to seed MCP profiles';
       this.logger.warn(`MCP profile seed skipped: ${message}`);
@@ -3014,7 +3015,6 @@ export class AgentService {
               $set: {
                 isActive: true,
                 roleId: MODEL_MANAGEMENT_ROLE_ID,
-                type: 'ai-system-builtin',
                 description: '系统内置模型管理Agent，可联网检索最新模型并添加到系统模型列表。',
                 systemPrompt: MODEL_MANAGEMENT_AGENT_PROMPT,
               },
@@ -3027,7 +3027,6 @@ export class AgentService {
       const model = this.pickDefaultModel();
       const document = new this.agentModel({
         name: MODEL_MANAGEMENT_AGENT_NAME,
-        type: 'ai-system-builtin',
         roleId: MODEL_MANAGEMENT_ROLE_ID,
         description: '系统内置模型管理Agent，可联网检索最新模型并添加到系统模型列表。',
         model: {
@@ -3059,25 +3058,6 @@ export class AgentService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to bootstrap model management agent';
       this.logger.warn(`Model management agent bootstrap skipped: ${message}`);
-    }
-  }
-
-  private async migrateAllAgentsToSystemBuiltin(): Promise<void> {
-    try {
-      await this.agentModel
-        .updateMany(
-          { type: { $ne: 'ai-system-builtin' } },
-          {
-            $set: {
-              type: 'ai-system-builtin',
-            },
-            $currentDate: { updatedAt: true },
-          },
-        )
-        .exec();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to migrate agent types';
-      this.logger.warn(`Agent type migration skipped: ${message}`);
     }
   }
 

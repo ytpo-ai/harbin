@@ -31,7 +31,7 @@
    - `backend/package.json` 增加：`npm run seed:manual -- --all`
 
 5. 文档同步
-   - `docs/features/MEETING_CHAT.md` 中 Meeting Monitor 说明改为“手动 seed”。
+   - `docs/feature/MEETING_CHAT.md` 中 Meeting Monitor 说明改为“手动 seed”。
 
 ## 结果
 

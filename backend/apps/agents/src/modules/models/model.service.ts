@@ -53,13 +53,17 @@ export class ModelService {
   }
 
   private shouldUseAIV2Provider(model: AIModel): boolean {
+    const provider = String(model.provider || '').toLowerCase().trim();
+    const modelName = String(model.model || '').toLowerCase().trim();
+
+    if (provider === 'alibaba' || provider === 'qwen') {
+      return true;
+    }
+
     const enabled = String(process.env.LLM_PROVIDER_V2_ENABLED || '').toLowerCase();
     if (!['1', 'true', 'yes', 'on'].includes(enabled)) {
       return false;
     }
-
-    const provider = String(model.provider || '').toLowerCase().trim();
-    const modelName = String(model.model || '').toLowerCase().trim();
 
     const providerAllowlist = this.parseCsvEnv('LLM_PROVIDER_V2_PROVIDERS');
     const modelAllowlist = this.parseCsvEnv('LLM_PROVIDER_V2_MODELS');

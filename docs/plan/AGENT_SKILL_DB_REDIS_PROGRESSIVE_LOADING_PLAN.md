@@ -61,7 +61,7 @@
 - database：`skills` 结构演进与历史数据回填。
 - cache：Redis key 规范与失效策略。
 - api：skills 读取契约变化（includeContent）。
-- docs：features/technical/api 文档同步更新。
+- docs：feature/technical/api 文档同步更新。
 
 ## 6. 风险与应对
 

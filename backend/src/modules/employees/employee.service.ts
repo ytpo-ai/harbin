@@ -130,14 +130,19 @@ export class EmployeeService implements OnModuleInit {
       return employees.map((employee) => employee.toObject());
     }
 
-    const allAgents = await this.agentClientService.getAllAgents();
     const nameById = new Map<string, string>();
-    for (const agent of allAgents || []) {
-      const id = String((agent as Agent).id || '').trim();
-      if (!id) {
-        continue;
+    try {
+      const allAgents = await this.agentClientService.getAllAgents();
+      for (const agent of allAgents || []) {
+        const id = String((agent as Agent).id || '').trim();
+        if (!id) {
+          continue;
+        }
+        nameById.set(id, String(agent.name || '').trim());
       }
-      nameById.set(id, String(agent.name || '').trim());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`Failed to resolve assistant names from agents service: ${message}`);
     }
 
     return employees.map((employee) => {
@@ -542,7 +547,6 @@ export class EmployeeService implements OnModuleInit {
 
     const createdAssistant = await this.agentClientService.createAgent({
       name: assistantName,
-      type: 'ai-human-exclusive-assistant',
       roleId: assistantRoleId,
       description: `人类成员 ${ownerDisplayName} 的专属助理`,
       model,

@@ -128,6 +128,22 @@ export interface RunPlanAcceptedResponse {
   alreadyRunning?: boolean;
 }
 
+export interface UpdatePlanDto {
+  title?: string;
+  sourcePrompt?: string;
+  plannerAgentId?: string;
+  mode?: PlanMode;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ReplanPlanDto {
+  prompt: string;
+  title?: string;
+  plannerAgentId?: string;
+  mode?: PlanMode;
+  autoRun?: boolean;
+}
+
 export const orchestrationService = {
   async createPlanFromPrompt(payload: CreatePlanFromPromptDto): Promise<OrchestrationPlan> {
     const response = await api.post('/orchestration/plans/from-prompt', payload);
@@ -141,6 +157,16 @@ export const orchestrationService = {
 
   async getPlanById(planId: string): Promise<OrchestrationPlan> {
     const response = await api.get(`/orchestration/plans/${planId}`);
+    return response.data;
+  },
+
+  async updatePlan(planId: string, payload: UpdatePlanDto): Promise<OrchestrationPlan> {
+    const response = await api.patch(`/orchestration/plans/${planId}`, payload);
+    return response.data;
+  },
+
+  async replanPlan(planId: string, payload: ReplanPlanDto): Promise<OrchestrationPlan> {
+    const response = await api.post(`/orchestration/plans/${planId}/replan`, payload);
     return response.data;
   },
 

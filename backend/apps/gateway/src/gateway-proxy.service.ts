@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { BadGatewayException, GatewayTimeoutException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import axios, { AxiosRequestConfig } from 'axios';
 import { encodeUserContext, signEncodedContext } from '@libs/auth';
@@ -16,6 +16,8 @@ export class GatewayProxyService {
   private readonly engineeringIntelligenceBaseUrl =
     process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3201';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
+  private readonly defaultProxyTimeoutMs = this.parseTimeout(process.env.GATEWAY_PROXY_TIMEOUT_MS, 30000);
+  private readonly debugRunTimeoutMs = this.parseTimeout(process.env.GATEWAY_DEBUG_RUN_TIMEOUT_MS, 180000);
   private readonly sensitiveKeyPattern = /password|passwd|secret|token|authorization|cookie|api[-_]?key/i;
 
   constructor(
@@ -160,6 +162,21 @@ export class GatewayProxyService {
     return null;
   }
 
+  private parseTimeout(value: string | undefined, fallback: number): number {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return fallback;
+    }
+    return parsed;
+  }
+
+  private resolveTimeoutMs(path: string): number {
+    if (/^\/api\/orchestration\/tasks\/[^/]+\/debug-run$/.test(path)) {
+      return this.debugRunTimeoutMs;
+    }
+    return this.defaultProxyTimeoutMs;
+  }
+
   buildSignedHeaders(userContext?: GatewayUserContext): Record<string, string> {
     if (!userContext) return {};
     const encoded = encodeUserContext(userContext);
@@ -191,6 +208,7 @@ export class GatewayProxyService {
 
     Object.assign(headers, this.buildSignedHeaders(req.userContext));
 
+    const timeoutMs = this.resolveTimeoutMs(pathOnly);
     const config: AxiosRequestConfig = {
       url: targetUrl,
       method: req.method,
@@ -198,7 +216,7 @@ export class GatewayProxyService {
       params: req.query,
       data: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
       validateStatus: () => true,
-      timeout: Number(process.env.GATEWAY_PROXY_TIMEOUT_MS || 30000),
+      timeout: timeoutMs,
       responseType: 'arraybuffer',
     };
 
@@ -261,7 +279,11 @@ export class GatewayProxyService {
         this.logger.warn(`requestId=${requestId} operation log skipped: ${logMessage}`);
       });
 
-      throw new InternalServerErrorException('Gateway proxy failed');
+      if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+        throw new GatewayTimeoutException('Gateway proxy timeout');
+      }
+
+      throw new BadGatewayException('Gateway proxy failed');
     }
   }
 }

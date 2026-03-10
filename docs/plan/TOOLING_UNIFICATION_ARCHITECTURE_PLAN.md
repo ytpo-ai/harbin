@@ -137,7 +137,7 @@
 - API：`/tools` 发现与执行接口的兼容升级。
 - 数据：工具元数据与版本状态管理。
 - 运行时：错误归一化、限流、熔断、重试策略。
-- 文档：features/plan/technical/api 联动更新。
+- 文档：feature/plan/technical/api 联动更新。
 
 ## 6. 验收标准
 
@@ -193,5 +193,5 @@
 
 - 技术设计：`docs/technical/TOOLING_UNIFICATION_ARCHITECTURE_DESIGN.md`
 - 迁移清单：`docs/plan/TOOLING_UNIFICATION_TOOL_MIGRATION_CHECKLIST.md`
-- 功能文档：`docs/features/AGENT_TOOL.md`
+- 功能文档：`docs/feature/AGENT_TOOL.md`
 - API 文档：`docs/api/agents-api.md`

@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Param,
+  Patch,
   Post,
   Query,
   UnauthorizedException,
@@ -17,6 +18,7 @@ import {
   ArchiveSessionDto,
   BatchAppendMessagesDto,
   DebugTaskStepDto,
+  ReplanPlanDto,
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
   CreateSessionDto,
@@ -24,6 +26,7 @@ import {
   RunPlanDto,
   SessionMessageDto,
   SessionQueryDto,
+  UpdatePlanDto,
   UpdateTaskDraftDto,
 } from './dto';
 import { SessionManagerService } from './session-manager.service';
@@ -111,6 +114,18 @@ export class OrchestrationController {
     return this.orchestrationService.getPlanById(planId);
   }
 
+  @Patch('plans/:id')
+  async updatePlan(
+    @Param('id') planId: string,
+    @Body() dto: UpdatePlanDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.updatePlan(planId, dto);
+  }
+
   @Delete('plans/:id')
   async deletePlan(@Param('id') planId: string, @Headers('authorization') authHeader: string) {
     const user = await this.getUserFromAuthHeader(authHeader);
@@ -133,6 +148,18 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.runPlanAsync(planId, dto || {});
+  }
+
+  @Post('plans/:id/replan')
+  async replanPlan(
+    @Param('id') planId: string,
+    @Body() dto: ReplanPlanDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.replanPlan(planId, dto);
   }
 
   @Post('tasks/:id/reassign')
@@ -180,8 +207,10 @@ export class OrchestrationController {
     @Param('id') taskId: string,
     @Body() dto: DebugTaskStepDto,
     @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.debugTaskStep(taskId, dto);
   }
 

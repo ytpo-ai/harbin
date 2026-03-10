@@ -5,7 +5,6 @@ export type { AIModel, ChatMessage };
 export interface Agent {
 	id?: string;
 	name: string;
-	type?: string;
 	roleId: string;
 	description: string;
 	model: AIModel;
@@ -92,6 +91,7 @@ export interface Tool {
 	action?: string;
 	name: string;
 	description: string;
+	prompt?: string;
 	type: 'code_execution' | 'web_search' | 'file_operation' | 'data_analysis' | 'video_editing' | 'api_call' | 'custom';
 	category: string;
 	capabilitySet?: string[];

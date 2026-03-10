@@ -38,6 +38,8 @@ const MEETING_TYPES = [
   { id: MeetingType.EMERGENCY, name: '紧急会议', color: 'bg-red-100 text-red-800', icon: '🚨' },
 ];
 
+const CREATE_MODAL_MEETING_TYPES = MEETING_TYPES.filter((type) => type.id !== MeetingType.DEPARTMENT);
+
 interface MeetingRealtimeEvent {
   type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed' | 'agent_state_changed';
   meetingId: string;
@@ -51,6 +53,25 @@ interface MentionCandidate {
   name: string;
 }
 
+interface PhraseSuggestion {
+  key: 'model_list' | 'model_search' | 'memo_record' | 'operation_log' | 'agent_list';
+  label: string;
+  command: string;
+}
+
+const MEETING_PHRASE_SUGGESTIONS: PhraseSuggestion[] = [
+  { key: 'model_list', label: '查询模型列表 (ZH)', command: '[当前有哪些模型]' },
+  { key: 'model_list', label: 'List models (EN)', command: '[list models]' },
+  { key: 'model_search', label: '搜索最新模型 (ZH)', command: '[搜索最新openai模型]' },
+  { key: 'model_search', label: 'Search latest models (EN)', command: '[search latest openai models]' },
+  { key: 'memo_record', label: '记录到备忘录 (ZH)', command: '[记录到备忘录]' },
+  { key: 'memo_record', label: 'Append to memo (EN)', command: '[append to memo]' },
+  { key: 'operation_log', label: '查看操作日志 (ZH)', command: '[查看操作日志]' },
+  { key: 'operation_log', label: 'Operation log (EN)', command: '[operation log]' },
+  { key: 'agent_list', label: '查看Agent列表 (ZH)', command: '[查看agent列表]' },
+  { key: 'agent_list', label: 'List agents (EN)', command: '[list agents]' },
+];
+
 const Meetings: React.FC = () => {
   const queryClient = useQueryClient();
   const { meetingId: meetingIdFromPath } = useParams<{ meetingId?: string }>();
@@ -61,6 +82,9 @@ const Meetings: React.FC = () => {
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [phraseStart, setPhraseStart] = useState<number | null>(null);
+  const [phraseQuery, setPhraseQuery] = useState('');
+  const [phraseActiveIndex, setPhraseActiveIndex] = useState(0);
   const [isComposing, setIsComposing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [selectedCandidateKey, setSelectedCandidateKey] = useState('');
@@ -100,8 +124,17 @@ const Meetings: React.FC = () => {
     if (!currentUser?.id || !employees) {
       return null;
     }
-    return (employees as Employee[]).find((employee) => employee.id === currentUser.id) || null;
-  }, [currentUser?.id, employees]);
+    const employeeList = employees as Employee[];
+    const normalizedEmail = String(currentUser?.email || '').trim().toLowerCase();
+    return (
+      employeeList.find((employee) => employee.id === currentUser.id) ||
+      employeeList.find((employee) => employee.userId === currentUser.id) ||
+      employeeList.find(
+        (employee) => normalizedEmail && String(employee.email || '').trim().toLowerCase() === normalizedEmail,
+      ) ||
+      null
+    );
+  }, [currentUser?.email, currentUser?.id, employees]);
   const hasExclusiveAssistant = Boolean(currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
   const currentExclusiveAssistantName = useMemo(() => {
     const assistantAgentId = currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId;
@@ -194,6 +227,21 @@ const Meetings: React.FC = () => {
     });
   }, [mentionCandidates, mentionQuery, mentionStart]);
 
+  const filteredPhraseSuggestions = useMemo(() => {
+    if (phraseStart === null) {
+      return [];
+    }
+
+    const normalizedQuery = phraseQuery.trim().toLowerCase();
+    return MEETING_PHRASE_SUGGESTIONS.filter((item) => {
+      if (!normalizedQuery) {
+        return true;
+      }
+      const searchText = `${item.label} ${item.command}`.toLowerCase();
+      return searchText.includes(normalizedQuery);
+    });
+  }, [phraseQuery, phraseStart]);
+
   const sentMessageHistory = useMemo(() => {
     if (!selectedMeeting || !currentUser?.id) {
       return [];
@@ -211,6 +259,17 @@ const Meetings: React.FC = () => {
       .map((message) => message.content?.trim() || '')
       .filter((content) => Boolean(content));
   }, [currentUser?.id, selectedMeeting]);
+
+  const repliedMessageIds = useMemo(() => {
+    const replied = new Set<string>();
+    (selectedMeeting?.messages || []).forEach((message) => {
+      const relatedMessageId = message.metadata?.relatedMessageId;
+      if (message.senderType === 'agent' && relatedMessageId) {
+        replied.add(relatedMessageId);
+      }
+    });
+    return replied;
+  }, [selectedMeeting?.messages]);
 
   const managementCandidates = useMemo(() => {
     if (!selectedMeeting) {
@@ -350,6 +409,19 @@ const Meetings: React.FC = () => {
       setMentionActiveIndex(0);
     }
   }, [filteredMentionCandidates.length, mentionActiveIndex, mentionStart]);
+
+  useEffect(() => {
+    if (phraseStart === null) {
+      return;
+    }
+    if (filteredPhraseSuggestions.length === 0) {
+      setPhraseActiveIndex(0);
+      return;
+    }
+    if (phraseActiveIndex >= filteredPhraseSuggestions.length) {
+      setPhraseActiveIndex(0);
+    }
+  }, [filteredPhraseSuggestions.length, phraseActiveIndex, phraseStart]);
 
   const createMutation = useMutation(meetingService.createMeeting, {
     onSuccess: (data) => {
@@ -534,6 +606,49 @@ const Meetings: React.FC = () => {
         }, 500);
       },
     }
+  );
+
+  const pauseMessageResponseMutation = useMutation(
+    ({ id, messageId, employeeId }: { id: string; messageId: string; employeeId: string }) =>
+      meetingService.pauseMessageResponse(id, messageId, employeeId),
+    {
+      onSuccess: (updatedMessage) => {
+        setSelectedMeeting((current) => {
+          if (!current) {
+            return current;
+          }
+          return {
+            ...current,
+            messages: (current.messages || []).map((message) =>
+              message.id === updatedMessage.id ? updatedMessage : message,
+            ),
+          };
+        });
+      },
+    },
+  );
+
+  const revokePausedMessageMutation = useMutation(
+    ({ id, messageId, employeeId }: { id: string; messageId: string; employeeId: string }) =>
+      meetingService.revokePausedMessage(id, messageId, employeeId),
+    {
+      onSuccess: (updatedMeeting) => {
+        setSelectedMeeting((current) => {
+          if (!current || current.id !== updatedMeeting.id) {
+            return updatedMeeting;
+          }
+          return {
+            ...current,
+            ...updatedMeeting,
+            messages: updatedMeeting.messages || [],
+            messageCount: updatedMeeting.messageCount ?? (updatedMeeting.messages || []).length,
+          };
+        });
+        setTimeout(() => {
+          queryClient.invalidateQueries('meetings');
+        }, 300);
+      },
+    },
   );
 
   const inviteMutation = useMutation(
@@ -749,6 +864,12 @@ const Meetings: React.FC = () => {
     setMentionActiveIndex(0);
   };
 
+  const resetPhrase = () => {
+    setPhraseStart(null);
+    setPhraseQuery('');
+    setPhraseActiveIndex(0);
+  };
+
   const updateMentionState = (value: string, caretPosition: number | null) => {
     if (caretPosition === null || caretPosition < 0) {
       resetMention();
@@ -779,6 +900,30 @@ const Meetings: React.FC = () => {
     setMentionActiveIndex(0);
   };
 
+  const updatePhraseState = (value: string, caretPosition: number | null) => {
+    if (caretPosition === null || caretPosition < 0) {
+      resetPhrase();
+      return;
+    }
+
+    const textBeforeCaret = value.slice(0, caretPosition);
+    const leftBracketIndex = Math.max(textBeforeCaret.lastIndexOf('['), textBeforeCaret.lastIndexOf('【'));
+    if (leftBracketIndex === -1) {
+      resetPhrase();
+      return;
+    }
+
+    const textAfterBracket = textBeforeCaret.slice(leftBracketIndex + 1);
+    if (textAfterBracket.includes(']') || textAfterBracket.includes('】') || /\n/.test(textAfterBracket)) {
+      resetPhrase();
+      return;
+    }
+
+    setPhraseStart(leftBracketIndex);
+    setPhraseQuery(textAfterBracket);
+    setPhraseActiveIndex(0);
+  };
+
   const applyMentionCandidate = (candidate: MentionCandidate) => {
     if (!messageInputRef.current || mentionStart === null) {
       return;
@@ -794,6 +939,28 @@ const Meetings: React.FC = () => {
 
     setNewMessage(nextMessage);
     resetMention();
+
+    requestAnimationFrame(() => {
+      input.focus();
+      input.setSelectionRange(nextCaret, nextCaret);
+    });
+  };
+
+  const applyPhraseSuggestion = (suggestion: PhraseSuggestion) => {
+    if (!messageInputRef.current || phraseStart === null) {
+      return;
+    }
+
+    const input = messageInputRef.current;
+    const caretPosition = input.selectionStart ?? newMessage.length;
+    const before = newMessage.slice(0, phraseStart);
+    const after = newMessage.slice(caretPosition);
+    const phraseText = `${suggestion.command} `;
+    const nextMessage = `${before}${phraseText}${after}`;
+    const nextCaret = before.length + phraseText.length;
+
+    setNewMessage(nextMessage);
+    resetPhrase();
 
     requestAnimationFrame(() => {
       input.focus();
@@ -869,7 +1036,7 @@ const Meetings: React.FC = () => {
             </div>
           )}
 
-          {!hasExclusiveAssistant && (
+          {currentEmployee && !hasExclusiveAssistant && (
             <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
               您还未绑定专属助理，当前账号不可发起或参与会议。
             </div>
@@ -1392,6 +1559,20 @@ const Meetings: React.FC = () => {
                         message.senderType === 'agent' &&
                         senderId === (currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
                       const isUser = message.senderType === 'employee' || isCurrentUsersAssistantMessage;
+                      const isCurrentUsersProxyMessage =
+                        message.senderType === 'agent' &&
+                        message.metadata?.proxyForEmployeeId === currentUser?.id;
+                      const isPausedPendingResponse = Boolean(message.metadata?.pendingResponsePaused);
+                      const canPausePendingResponse =
+                        isCurrentUsersProxyMessage &&
+                        selectedMeeting.status === MeetingStatus.ACTIVE &&
+                        !isPausedPendingResponse &&
+                        !repliedMessageIds.has(message.id);
+                      const canRevokePausedMessage =
+                        isCurrentUsersProxyMessage &&
+                        selectedMeeting.status === MeetingStatus.ACTIVE &&
+                        isPausedPendingResponse &&
+                        !repliedMessageIds.has(message.id);
 
                       return (
                         <div
@@ -1430,6 +1611,49 @@ const Meetings: React.FC = () => {
                               <div className={`text-xs mt-1 ${isUser ? 'text-primary-200' : 'text-gray-400'}`}>
                                 {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </div>
+                              {(canPausePendingResponse || canRevokePausedMessage) && (
+                                <div className="mt-2 flex items-center gap-2">
+                                  {canPausePendingResponse && (
+                                    <button
+                                      onClick={() => {
+                                        if (!currentUser?.id) {
+                                          return;
+                                        }
+                                        pauseMessageResponseMutation.mutate({
+                                          id: selectedMeeting.id,
+                                          messageId: message.id,
+                                          employeeId: currentUser.id,
+                                        });
+                                      }}
+                                      disabled={pauseMessageResponseMutation.isLoading}
+                                      className="inline-flex items-center rounded border border-primary-300 px-2 py-0.5 text-xs text-primary-700 hover:bg-primary-50 disabled:opacity-50"
+                                    >
+                                      暂停回复
+                                    </button>
+                                  )}
+                                  {canRevokePausedMessage && (
+                                    <>
+                                      <span className="text-xs text-amber-300">已暂停</span>
+                                      <button
+                                        onClick={() => {
+                                          if (!currentUser?.id) {
+                                            return;
+                                          }
+                                          revokePausedMessageMutation.mutate({
+                                            id: selectedMeeting.id,
+                                            messageId: message.id,
+                                            employeeId: currentUser.id,
+                                          });
+                                        }}
+                                        disabled={revokePausedMessageMutation.isLoading}
+                                        className="inline-flex items-center rounded border border-red-300 px-2 py-0.5 text-xs text-red-100 hover:bg-red-500/20 disabled:opacity-50"
+                                      >
+                                        撤回
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -1480,20 +1704,49 @@ const Meetings: React.FC = () => {
                                 setNewMessage(event.target.value);
                                 if (!isComposing) {
                                   updateMentionState(event.target.value, event.target.selectionStart);
+                                  updatePhraseState(event.target.value, event.target.selectionStart);
                                 }
                               }}
-                              onClick={(event) => updateMentionState(newMessage, event.currentTarget.selectionStart)}
+                              onClick={(event) => {
+                                updateMentionState(newMessage, event.currentTarget.selectionStart);
+                                updatePhraseState(newMessage, event.currentTarget.selectionStart);
+                              }}
                               onKeyUp={(event) => {
                                 if (!isComposing) {
                                   updateMentionState(newMessage, event.currentTarget.selectionStart);
+                                  updatePhraseState(newMessage, event.currentTarget.selectionStart);
                                 }
                               }}
                               onCompositionStart={() => setIsComposing(true)}
                               onCompositionEnd={(event) => {
                                 setIsComposing(false);
                                 updateMentionState(event.currentTarget.value, event.currentTarget.selectionStart);
+                                updatePhraseState(event.currentTarget.value, event.currentTarget.selectionStart);
                               }}
                               onKeyDown={(event) => {
+                                if (phraseStart !== null && filteredPhraseSuggestions.length > 0) {
+                                  if (event.key === 'ArrowDown') {
+                                    event.preventDefault();
+                                    setPhraseActiveIndex((prev) => (prev + 1) % filteredPhraseSuggestions.length);
+                                    return;
+                                  }
+                                  if (event.key === 'ArrowUp') {
+                                    event.preventDefault();
+                                    setPhraseActiveIndex((prev) => (prev - 1 + filteredPhraseSuggestions.length) % filteredPhraseSuggestions.length);
+                                    return;
+                                  }
+                                  if (event.key === 'Enter' || event.key === 'Tab') {
+                                    event.preventDefault();
+                                    applyPhraseSuggestion(filteredPhraseSuggestions[phraseActiveIndex]);
+                                    return;
+                                  }
+                                  if (event.key === 'Escape') {
+                                    event.preventDefault();
+                                    resetPhrase();
+                                    return;
+                                  }
+                                }
+
                                 if (mentionStart !== null && filteredMentionCandidates.length > 0) {
                                   if (event.key === 'ArrowDown') {
                                     event.preventDefault();
@@ -1529,6 +1782,7 @@ const Meetings: React.FC = () => {
                                   const nextContent = sentMessageHistory[nextIndex] || '';
                                   setNewMessage(nextContent);
                                   resetMention();
+                                  resetPhrase();
                                   requestAnimationFrame(() => {
                                     const input = messageInputRef.current;
                                     if (!input) {
@@ -1548,6 +1802,7 @@ const Meetings: React.FC = () => {
                                     setMessageHistoryIndex(nextIndex);
                                     setNewMessage(nextContent);
                                     resetMention();
+                                    resetPhrase();
                                     requestAnimationFrame(() => {
                                       const input = messageInputRef.current;
                                       if (!input) {
@@ -1563,6 +1818,7 @@ const Meetings: React.FC = () => {
                                   setNewMessage(messageHistoryDraft);
                                   setMessageHistoryDraft('');
                                   resetMention();
+                                  resetPhrase();
                                   requestAnimationFrame(() => {
                                     const input = messageInputRef.current;
                                     if (!input) {
@@ -1574,13 +1830,14 @@ const Meetings: React.FC = () => {
                                   return;
                                 }
 
-                                if (event.key === 'Enter' && !event.shiftKey && newMessage.trim()) {
+                                if (event.key === 'Enter' && !event.shiftKey && !isComposing && newMessage.trim()) {
                                   event.preventDefault();
                                   sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
                                   resetMention();
+                                  resetPhrase();
                                 }
                               }}
-                              placeholder="输入消息（输入 @ 可快速点名参会成员）..."
+                              placeholder="输入消息（输入 @ 点名；输入 [ 或 【 选择短语命令）..."
                               rows={2}
                               disabled={!hasExclusiveAssistant}
                               className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
@@ -1590,6 +1847,7 @@ const Meetings: React.FC = () => {
                                 if (newMessage.trim()) {
                                   sendMessageMutation.mutate({ id: selectedMeeting.id, content: newMessage });
                                   resetMention();
+                                  resetPhrase();
                                 }
                               }}
                               disabled={sendMessageMutation.isLoading || !newMessage.trim() || !hasExclusiveAssistant}
@@ -1598,6 +1856,24 @@ const Meetings: React.FC = () => {
                               <PaperAirplaneIcon className="h-5 w-5" />
                             </button>
                           </div>
+
+                          {phraseStart !== null && filteredPhraseSuggestions.length > 0 && (
+                            <div className="absolute z-20 bottom-full mb-2 left-0 w-80 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                              {filteredPhraseSuggestions.map((item, index) => (
+                                <button
+                                  key={`${item.key}:${item.command}`}
+                                  onMouseDown={(event) => {
+                                    event.preventDefault();
+                                    applyPhraseSuggestion(item);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm ${index === phraseActiveIndex ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-50 text-gray-700'}`}
+                                >
+                                  <div className="font-medium truncate">{item.label}</div>
+                                  <div className="text-xs text-gray-500 mt-0.5 truncate">{item.command}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
 
                           {mentionStart !== null && filteredMentionCandidates.length > 0 && (
                             <div className="absolute z-20 bottom-full mb-2 left-0 w-72 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
@@ -1876,7 +2152,7 @@ const CreateMeetingModal: React.FC<{
                 会议类型 <span className="text-red-500">*</span>
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {MEETING_TYPES.map((type) => (
+                {CREATE_MODAL_MEETING_TYPES.map((type) => (
                   <button
                     key={type.id}
                     type="button"

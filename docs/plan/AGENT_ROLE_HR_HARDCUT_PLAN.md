@@ -54,7 +54,7 @@
 - 后端（agents）：Agent 契约变更为 `roleId` 必填，新增跨服务依赖。
 - 前端：HR 与 Agent 页面表单、类型与 API 调整。
 - 数据库：角色新集合；Agent 字段结构变化。
-- 文档：features/api 需同步硬切换说明。
+- 文档：feature/api 需同步硬切换说明。
 
 ## 6. 风险与应对
 

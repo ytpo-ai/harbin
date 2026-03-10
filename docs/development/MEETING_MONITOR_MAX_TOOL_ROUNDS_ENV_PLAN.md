@@ -19,7 +19,7 @@
   - 将 `executeWithToolCalling` 内 `maxToolRounds` 改为动态读取
 - `backend/.env.example`
   - 新增 `MAX_TOOL_ROUNDS=30`
-- `docs/features/MEETING_CHAT.md`
+- `docs/feature/MEETING_CHAT.md`
   - 配置项表新增 `MAX_TOOL_ROUNDS` 说明
 
 ## 验证结果

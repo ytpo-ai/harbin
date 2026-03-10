@@ -16,7 +16,7 @@ export interface ChatMessage {
 export interface Agent {
     id?: string;
     name: string;
-    type: string;
+    roleId: string;
     description: string;
     model: AIModel;
     capabilities: string[];

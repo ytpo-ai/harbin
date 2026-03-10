@@ -61,3 +61,19 @@
 - 历史 topic 文档保持可读，不会被删除。
 - 如后续需要恢复 topic 自动聚合，可通过 `MEMO_TOPIC_AGGREGATION_ENABLED=true` 启用。
 - 若后续角色体系有新增，建议统一在 memo 权限匹配函数中补充映射，保持行为一致。
+
+## 5. 后续补充（追加规则与类型约束）
+
+- 强化类型约束：`memoKind=topic` 时，系统强制 `memoType=knowledge`。
+- `achievement`/`criticism` 按单文档累积写入，不再覆盖历史内容。
+- 新增记录时若已有历史内容，使用分割线 `—` 隔开后再追加。
+- `memo_mcp_append` 工具提示词同步加入上述规则（topic 类型约束 + 追加分割线）。
+
+## 6. 目标对象纠偏（targetAgentId）
+
+- 修复 `append-memo` 目标写入参数：支持显式 `targetAgentId`（或参数中的 `agentId`），创建时按目标对象写入。
+- 增加严格校验：
+  - `memoType=standard` 必须显式带 `memoKind`。
+  - `memoKind=topic` 时拒绝 `memoType!=knowledge`。
+  - `memoKind=achievement|criticism` 时拒绝 `memoType!=standard`。
+- 当传入 `memoId` 更新时，若 `memoId` 所属 agent 与 `targetAgentId` 不一致直接拒绝，防止串写。

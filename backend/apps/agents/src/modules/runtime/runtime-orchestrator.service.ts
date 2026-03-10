@@ -539,10 +539,12 @@ export class RuntimeOrchestratorService {
       toolCallId: input.toolCallId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
-      payload: {
+      payload: this.buildToolEventPayload({
         toolId: input.toolId,
-        input: input.input,
-      },
+        toolName: input.toolName,
+        params: input.input,
+        includeInputAlias: true,
+      }),
     });
 
     return part.id;
@@ -571,9 +573,12 @@ export class RuntimeOrchestratorService {
       toolCallId: input.toolCallId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
-      payload: {
+      payload: this.buildToolEventPayload({
         toolId: input.toolId,
-      },
+        toolName: input.toolName,
+        params: input.input,
+        includeInputAlias: true,
+      }),
     });
   }
 
@@ -603,7 +608,12 @@ export class RuntimeOrchestratorService {
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: {
-        toolId: input.toolId,
+        ...this.buildToolEventPayload({
+          toolId: input.toolId,
+          toolName: input.toolName,
+          params: input.input,
+          includeInputAlias: true,
+        }),
         output: input.output,
       },
     });
@@ -640,10 +650,79 @@ export class RuntimeOrchestratorService {
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: {
-        toolId: input.toolId,
+        ...this.buildToolEventPayload({
+          toolId: input.toolId,
+          toolName: input.toolName,
+          params: input.input,
+          includeInputAlias: true,
+        }),
         error: input.error,
       },
     });
+  }
+
+  private buildToolEventPayload(input: {
+    toolId: string;
+    toolName?: string;
+    params?: unknown;
+    includeInputAlias?: boolean;
+  }): Record<string, unknown> {
+    const safeParams = this.sanitizeToolParams(input.params);
+    const payload: Record<string, unknown> = {
+      toolId: input.toolId,
+      toolName: input.toolName || input.toolId,
+      params: safeParams,
+    };
+
+    if (input.includeInputAlias) {
+      payload.input = safeParams;
+    }
+
+    return payload;
+  }
+
+  private sanitizeToolParams(value: unknown): unknown {
+    return this.sanitizeToolParamsInner(value, 0);
+  }
+
+  private sanitizeToolParamsInner(value: unknown, depth: number): unknown {
+    if (depth > 6) {
+      return '[Truncated]';
+    }
+
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitizeToolParamsInner(item, depth + 1));
+    }
+
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+
+    const rawObject = value as Record<string, unknown>;
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(rawObject)) {
+      if (this.shouldMaskParamKey(key)) {
+        sanitized[key] = '[REDACTED]';
+        continue;
+      }
+      sanitized[key] = this.sanitizeToolParamsInner(nested, depth + 1);
+    }
+    return sanitized;
+  }
+
+  private shouldMaskParamKey(key: string): boolean {
+    const normalized = String(key || '').toLowerCase();
+    if (!normalized) return false;
+    return (
+      normalized.includes('password') ||
+      normalized.includes('secret') ||
+      normalized.includes('token') ||
+      normalized.includes('apikey') ||
+      normalized.includes('api_key') ||
+      normalized.includes('authorization') ||
+      normalized.includes('cookie') ||
+      normalized.includes('credential')
+    );
   }
 
   private getLockKey(agentId: string, sessionId?: string, taskId?: string): string {

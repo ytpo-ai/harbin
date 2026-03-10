@@ -10,7 +10,7 @@
 - Backend tools execution（ToolService 内置实现）
 - Skills domain service（查询/创建复用与入参兼容）
 - 测试（ToolService 单测）
-- 文档（features/api 相关更新）
+- 文档（feature/api 相关更新）
 
 ## Steps
 1. 梳理当前 tools/skills 模块边界，确定 `skill-master` 的 canonical tool id、namespace、executionChannel 与 toolkit 映射。
@@ -23,7 +23,7 @@
 ## Impacts
 - Backend: `modules/tools`, `modules/skills`
 - API/MCP: tools registry 与工具执行入口
-- Docs: `docs/features/AGENT_TOOL.md`、`docs/api/agents-api.md`
+- Docs: `docs/feature/AGENT_TOOL.md`、`docs/api/agents-api.md`
 
 ## Risks/Dependencies
 - `title` 为调用侧术语，Skill 实体为 `name` 字段，需做明确映射避免语义歧义。

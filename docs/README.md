@@ -16,7 +16,7 @@
 
 ---
 
-### 📋 [功能清单](./features/FUNCTIONS.md)
+### 📋 [功能清单](./feature/FUNCTIONS.md)
 查看完整的60+功能点详细清单。
 
 **内容包括**:
@@ -98,7 +98,7 @@
 ### 新用户?
 1. 📖 先阅读 [项目概览](./overview/README.md)
 2. 🚀 然后查看 [使用指南](./guide/USER_GUIDE.md) 的"快速开始"
-3. 📋 了解 [功能清单](./features/FUNCTIONS.md)
+3. 📋 了解 [功能清单](./feature/FUNCTIONS.md)
 
 ### 开发者?
 1. 🏗️ 查看 [架构设计](./architecture/ARCHITECTURE.md)

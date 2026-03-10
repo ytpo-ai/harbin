@@ -3,6 +3,7 @@ import {
   MeetingService, 
   CreateMeetingDto, 
   MeetingMessageDto,
+  ControlMeetingMessageDto,
   ParticipantIdentity,
   MeetingSpeakingMode,
 } from './meeting.service';
@@ -184,6 +185,34 @@ export class MeetingController {
       success: true,
       data: message,
       message: '消息已发送',
+    };
+  }
+
+  @Post(':id/messages/:messageId/pause')
+  async pauseMessageResponse(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: ControlMeetingMessageDto,
+  ) {
+    const message = await this.meetingService.pauseMessageResponse(id, messageId, dto.employeeId);
+    return {
+      success: true,
+      data: message,
+      message: '消息回复已暂停',
+    };
+  }
+
+  @Post(':id/messages/:messageId/revoke')
+  async revokePausedMessage(
+    @Param('id') id: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: ControlMeetingMessageDto,
+  ) {
+    const meeting = await this.meetingService.revokePausedMessage(id, messageId, dto.employeeId);
+    return {
+      success: true,
+      data: meeting,
+      message: '消息已撤回',
     };
   }
 

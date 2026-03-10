@@ -6,7 +6,7 @@ export type AgentProfileDocument = AgentProfile & Document;
 @Schema({ timestamps: true })
 export class AgentProfile {
   @Prop({ required: true, unique: true })
-  agentType: string;
+  roleCode: string;
 
   @Prop({ required: true })
   role: string;

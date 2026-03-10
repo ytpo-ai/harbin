@@ -6,7 +6,14 @@ import { memoService } from '../services/memoService';
 import { AgentMemo } from '../types';
 
 const memoTypeOptions: Array<AgentMemo['memoType']> = ['knowledge', 'standard'];
-const memoKindOptions: Array<NonNullable<AgentMemo['memoKind']>> = ['identity', 'todo', 'topic', 'evaluation'];
+const memoKindOptions: Array<NonNullable<AgentMemo['memoKind']>> = [
+  'identity',
+  'todo',
+  'topic',
+  'evaluation',
+  'achievement',
+  'criticism',
+];
 
 type TestMessage = {
   id: string;
@@ -119,6 +126,8 @@ const Memos: React.FC = () => {
       identity: memos.filter((item) => item.memoKind === 'identity'),
       todo: memos.filter((item) => item.memoKind === 'todo'),
       topic: memos.filter((item) => item.memoKind === 'topic' || !item.memoKind),
+      achievement: memos.filter((item) => item.memoKind === 'achievement'),
+      criticism: memos.filter((item) => item.memoKind === 'criticism'),
     };
   }, [memos]);
 
@@ -129,7 +138,7 @@ const Memos: React.FC = () => {
         <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">备忘录管理</h1>
-            <p className="mt-1.5 text-sm text-slate-500">只读查询 Agent 长期记忆文档（identity / todo / topic）</p>
+            <p className="mt-1.5 text-sm text-slate-500">只读查询 Agent 长期记忆文档（identity / todo / achievement / criticism / topic）</p>
           </div>
           <button
             onClick={() => {
@@ -196,13 +205,15 @@ const Memos: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-8">
-            {(['identity', 'todo', 'topic'] as const).map((section) => (
+            {(['identity', 'todo', 'achievement', 'criticism', 'topic'] as const).map((section) => (
               <div key={section}>
                 <div className="mb-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <h2 className={`text-sm font-bold uppercase tracking-widest ${
                       section === 'identity' ? 'text-blue-600' :
                       section === 'todo' ? 'text-amber-600' :
+                      section === 'achievement' ? 'text-emerald-600' :
+                      section === 'criticism' ? 'text-rose-600' :
                       'text-purple-600'
                     }`}>
                       {section}
@@ -210,6 +221,8 @@ const Memos: React.FC = () => {
                     <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
                       section === 'identity' ? 'bg-blue-50 text-blue-600' :
                       section === 'todo' ? 'bg-amber-50 text-amber-600' :
+                      section === 'achievement' ? 'bg-emerald-50 text-emerald-600' :
+                      section === 'criticism' ? 'bg-rose-50 text-rose-600' :
                       'bg-purple-50 text-purple-600'
                     }`}>
                       {groupedMemos[section].length}
@@ -252,6 +265,8 @@ const Memos: React.FC = () => {
                             <span className={`inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium mr-1.5 ${
                               memo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600' :
                               memo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600' :
+                              memo.memoKind === 'achievement' ? 'bg-emerald-50 text-emerald-600' :
+                              memo.memoKind === 'criticism' ? 'bg-rose-50 text-rose-600' :
                               memo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600' :
                               'bg-slate-100 text-slate-600'
                             }`}>
@@ -417,6 +432,8 @@ const Memos: React.FC = () => {
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
                             memo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600' :
                             memo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600' :
+                            memo.memoKind === 'achievement' ? 'bg-emerald-50 text-emerald-600' :
+                            memo.memoKind === 'criticism' ? 'bg-rose-50 text-rose-600' :
                             memo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600' :
                             'bg-slate-50 text-slate-600'
                           }`}>
@@ -454,6 +471,8 @@ const Memos: React.FC = () => {
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider mr-2 ${
                     selectedMemo.memoKind === 'identity' ? 'bg-blue-50 text-blue-600' :
                     selectedMemo.memoKind === 'todo' ? 'bg-amber-50 text-amber-600' :
+                    selectedMemo.memoKind === 'achievement' ? 'bg-emerald-50 text-emerald-600' :
+                    selectedMemo.memoKind === 'criticism' ? 'bg-rose-50 text-rose-600' :
                     selectedMemo.memoKind === 'topic' ? 'bg-purple-50 text-purple-600' :
                     'bg-slate-100 text-slate-600'
                   }`}>

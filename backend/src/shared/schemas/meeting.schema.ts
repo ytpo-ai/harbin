@@ -92,6 +92,8 @@ export class MeetingMessage {
     confidence?: number;           // AI置信度
     isAIProxy?: boolean;          // 是否AI代理发送的消息（人类员工的代理）
     proxyForEmployeeId?: string;   // 如果是AI代理，代理哪个员工
+    pendingResponsePaused?: boolean; // 是否暂停等待回复
+    pendingResponsePausedAt?: string; // 暂停时间
   };
 }
 

@@ -16,7 +16,6 @@ interface IdentityData {
 
 interface AgentBasicInfo {
   name: string;
-  type?: string;
   roleId?: string;
   description: string;
   systemPromptSummary: string;
@@ -95,7 +94,6 @@ export class IdentityAggregationService {
 
     return {
       name: agent.name,
-      type: agent.type,
       roleId: agent.roleId,
       description: agent.description,
       systemPromptSummary: agent.systemPrompt?.slice(0, 200) || '',
@@ -216,7 +214,6 @@ export class IdentityAggregationService {
     lines.push('## Agent Profile', '');
     lines.push(`- **Agent 名称**：${agent.name || '待补充'}`);
     lines.push(`- **角色ID**：${agent.roleId || '待补充'}`);
-    lines.push(`- **历史类型**：${agent.type || '未设置'}`);
     lines.push(`- **描述**：${agent.description || '待补充'}`);
     lines.push(`- **系统提示词摘要**：${agent.systemPromptSummary || '待补充'}`);
     lines.push(

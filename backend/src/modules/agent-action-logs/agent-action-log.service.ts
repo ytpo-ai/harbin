@@ -100,6 +100,9 @@ export class AgentActionLogService {
     const status = this.runtimeStatusMap[event.eventType] || 'unknown';
     const context = this.resolveRuntimeContext(event);
     const payload = event.payload && typeof event.payload === 'object' ? event.payload : {};
+    const toolId = this.extractString(payload, 'toolId');
+    const toolName = this.extractString(payload, 'toolName');
+    const params = this.extractUnknown(payload, 'params') ?? this.extractUnknown(payload, 'input');
 
     await this.record({
       agentId: event.agentId,
@@ -117,6 +120,9 @@ export class AgentActionLogService {
         messageId: event.messageId,
         partId: event.partId,
         toolCallId: event.toolCallId,
+        toolId,
+        toolName,
+        params,
         sequence: event.sequence,
         traceId: event.traceId,
         eventTimestamp: event.timestamp,
@@ -172,6 +178,13 @@ export class AgentActionLogService {
   private extractString(payload: Record<string, unknown>, key: string): string | undefined {
     const value = payload[key];
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  }
+
+  private extractUnknown(payload: Record<string, unknown>, key: string): unknown {
+    if (!Object.prototype.hasOwnProperty.call(payload, key)) {
+      return undefined;
+    }
+    return payload[key];
   }
 
   private isDuplicateKeyError(error: unknown): boolean {

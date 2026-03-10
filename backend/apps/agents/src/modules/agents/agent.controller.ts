@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Put, Query, Req } from '@nestjs/common';
+import { Request } from 'express';
+import { GatewayUserContext } from '@libs/contracts';
 import { AgentService } from './agent.service';
 import { Agent, Task, AIModel } from '../../../../../src/shared/types';
 
@@ -47,7 +49,7 @@ export class AgentController {
       agents: agents.map(a => ({
         id: a.id,
         name: a.name,
-        type: a.type,
+        roleId: a.roleId,
         isActive: a.isActive,
         model: a.model?.name,
         modelProvider: a.model?.provider
@@ -66,17 +68,17 @@ export class AgentController {
     return this.agentService.getMcpProfiles();
   }
 
-  @Get('mcp/profiles/:agentType')
-  async getMcpProfile(@Param('agentType') agentType: string) {
-    return this.agentService.getMcpProfile(agentType);
+  @Get('mcp/profiles/:roleCode')
+  async getMcpProfile(@Param('roleCode') roleCode: string) {
+    return this.agentService.getMcpProfile(roleCode);
   }
 
-  @Put('mcp/profiles/:agentType')
+  @Put('mcp/profiles/:roleCode')
   async upsertMcpProfile(
-    @Param('agentType') agentType: string,
+    @Param('roleCode') roleCode: string,
     @Body() body: { role?: string; tools?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
   ) {
-    return this.agentService.upsertMcpProfile(agentType, body);
+    return this.agentService.upsertMcpProfile(roleCode, body);
   }
 
   @Get('tool-permission-sets')
@@ -140,8 +142,20 @@ export class AgentController {
   }
 
   @Post(':id/execute')
-  async executeTask(@Param('id') id: string, @Body() body: { task: Task, context?: any }) {
-    const result = await this.agentService.executeTaskDetailed(id, body.task, body.context);
+  async executeTask(
+    @Param('id') id: string,
+    @Body() body: { task: Task; context?: any },
+    @Req() req: Request & { userContext?: GatewayUserContext },
+  ) {
+    const actor = {
+      employeeId: req.userContext?.employeeId,
+      role: req.userContext?.role,
+    };
+    const context = {
+      ...(body.context || {}),
+      actor,
+    };
+    const result = await this.agentService.executeTaskDetailed(id, body.task, context);
     return result;
   }
 

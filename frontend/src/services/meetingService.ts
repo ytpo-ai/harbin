@@ -55,6 +55,8 @@ export interface MeetingMessage {
     confidence?: number;
     isAIProxy?: boolean;
     proxyForEmployeeId?: string;
+    pendingResponsePaused?: boolean;
+    pendingResponsePausedAt?: string;
   };
 }
 
@@ -290,6 +292,16 @@ class MeetingService {
 
   async sendMessage(id: string, data: MeetingMessageDto): Promise<MeetingMessage> {
     const response = await api.post(`/meetings/${id}/messages`, data);
+    return response.data.data;
+  }
+
+  async pauseMessageResponse(id: string, messageId: string, employeeId: string): Promise<MeetingMessage> {
+    const response = await api.post(`/meetings/${id}/messages/${messageId}/pause`, { employeeId });
+    return response.data.data;
+  }
+
+  async revokePausedMessage(id: string, messageId: string, employeeId: string): Promise<Meeting> {
+    const response = await api.post(`/meetings/${id}/messages/${messageId}/revoke`, { employeeId });
     return response.data.data;
   }
 

@@ -45,7 +45,7 @@
 
 ## 4. 文档同步
 
-- `docs/features/AGENT_MEMO.md`
+- `docs/feature/AGENT_MEMO.md`
   - Identity 模板更新为：`能力域（工具集、工具描述、模型能力）`。
 
 ## 5. 验证结果

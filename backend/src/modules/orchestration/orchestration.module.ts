@@ -13,6 +13,10 @@ import {
   OrchestrationTaskSchema,
 } from '../../shared/schemas/orchestration-task.schema';
 import { Tool, ToolSchema } from '../../shared/schemas/tool.schema';
+import {
+  OrchestrationSchedule,
+  OrchestrationScheduleSchema,
+} from '../../shared/schemas/orchestration-schedule.schema';
 import { OrchestrationController } from './orchestration.controller';
 import { OrchestrationService } from './orchestration.service';
 import { PlannerService } from './planner.service';
@@ -32,6 +36,7 @@ import { SessionManagerService } from './session-manager.service';
       { name: Agent.name, schema: AgentSchema },
       { name: Tool.name, schema: ToolSchema },
       { name: Employee.name, schema: EmployeeSchema },
+      { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
     ]),
   ],
   controllers: [OrchestrationController],

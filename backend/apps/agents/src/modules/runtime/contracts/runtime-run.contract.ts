@@ -17,6 +17,7 @@ export const RuntimeToolEventInputSchema = z.object({
   sessionId: z.string().min(1).optional(),
   taskId: z.string().min(1).optional(),
   toolId: z.string().min(1),
+  toolName: z.string().min(1).optional(),
   toolCallId: z.string().min(1),
   input: z.unknown().optional(),
   output: z.unknown().optional(),

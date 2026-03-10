@@ -106,7 +106,7 @@
 ## 4. 文档与计划同步
 
 - 新增计划文档：`docs/plan/AGENT_MEMO_REDESIGN_PLAN.md`
-- 更新功能文档：`docs/features/AGENT_MEMO.md`
+- 更新功能文档：`docs/feature/AGENT_MEMO.md`
 
 ## 5. 验证结果
 

@@ -2,7 +2,7 @@ import api from './api';
 import { Agent, AIModel } from '../types';
 
 export interface AgentMcpProfile {
-  agentType: string;
+  roleCode: string;
   role: string;
   tools: string[];
   capabilities: string[];
@@ -175,16 +175,16 @@ export const agentService = {
     return response.data;
   },
 
-  async getMcpProfile(agentType: string): Promise<AgentMcpProfile> {
-    const response = await api.get(`/agents/mcp/profiles/${encodeURIComponent(agentType)}`);
+  async getMcpProfile(roleCode: string): Promise<AgentMcpProfile> {
+    const response = await api.get(`/agents/mcp/profiles/${encodeURIComponent(roleCode)}`);
     return response.data;
   },
 
   async upsertMcpProfile(
-    agentType: string,
+    roleCode: string,
     updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>,
   ): Promise<AgentMcpProfile> {
-    const response = await api.put(`/agents/mcp/profiles/${encodeURIComponent(agentType)}`, updates);
+    const response = await api.put(`/agents/mcp/profiles/${encodeURIComponent(roleCode)}`, updates);
     return response.data;
   },
 

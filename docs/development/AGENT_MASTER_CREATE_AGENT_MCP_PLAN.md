@@ -6,6 +6,7 @@
 - 已将 Agent 列表工具主 ID 升级为 `builtin.sys-mg.internal.agent-master.list-agents`。
 - 已保留旧 ID `builtin.sys-mg.internal.agent-admin.list-agents` 执行兼容，避免历史配置失效。
 - 创建流程支持默认 API Key 策略：未传 `apiKeyId` 时按 provider 选取默认 key。
+- `create-agent` 已兼容 role code 入参：可传 role `id` 或 role `code`。
 
 ## 2. 代码改动
 
@@ -17,6 +18,7 @@
   - 执行分发新增 `createAgentByMcp`，并为旧 `agent-admin.list-agents` 保留兼容分支。
   - 新增默认 key 解析：`resolveDefaultApiKeyId`（`provider + isDefault + isActive`）。
   - 新增参数规范化：`normalizeStringArray`。
+  - 新增角色解析：`resolveRoleIdForCreate`（先按 id，再按 code 解析并映射到 role id）。
 
 - `backend/apps/agents/src/modules/tools/tool.module.ts`
   - 注入 `ApiKey` schema，供 ToolService 查询默认 API Key。
@@ -41,8 +43,8 @@
 ## 3. 文档同步
 
 - `docs/plan/AGENT_MASTER_CREATE_AGENT_MCP_PLAN.md`
-- `docs/features/AGENT_MCP.md`
-- `docs/features/AGENT_TOOL.md`
+- `docs/feature/AGENT_MCP.md`
+- `docs/feature/AGENT_TOOL.md`
 - `docs/api/agents-api.md`
 - `docs/technical/TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_DESIGN.md`
 

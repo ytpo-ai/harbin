@@ -14,13 +14,13 @@
    - normal case with tool metadata,
    - fallback case when tool metadata is missing,
    - empty tool scenarios. (test)
-6. Update `docs/features/AGENT_MEMO.md` identity template description for the new fields and run targeted test validation. (docs/test)
+6. Update `docs/feature/AGENT_MEMO.md` identity template description for the new fields and run targeted test validation. (docs/test)
 
 ## Key Impact
 - Backend: `modules/memos/identity-aggregation.service.ts`
 - Data source: `Tool` collection
 - Test: identity aggregation unit tests
-- Docs: `docs/features/AGENT_MEMO.md`
+- Docs: `docs/feature/AGENT_MEMO.md`
 
 ## Risks / Dependencies
 - Tool description consistency depends on registry completeness; missing items require graceful fallback text.

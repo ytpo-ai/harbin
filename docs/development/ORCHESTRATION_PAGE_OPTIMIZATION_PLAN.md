@@ -49,7 +49,7 @@
 - 更新功能文档索引，补充本次规划文档引用。
 
 对应文件：
-- `docs/features/ORCHETRATION_TASK.md`
+- `docs/feature/ORCHETRATION_TASK.md`
 
 ## 4. 验证结果
 

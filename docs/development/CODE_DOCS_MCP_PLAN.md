@@ -63,7 +63,7 @@
 ### 2) focus 匹配与自动兜底
 
 - `focus` 从“整句包含”升级为“关键词分词 OR 命中”（路径优先、内容次之）。
-- 当路径和内容均未命中时，不再直接中断，而是自动回退读取高优先级文档（README/features/architecture/api）。
+- 当路径和内容均未命中时，不再直接中断，而是自动回退读取高优先级文档（README/feature/architecture/api）。
 - 新增观测字段：`matchMode`、`focusMatchedCount`、`fallbackApplied`、`retryCount`、`attemptedKeywords`、`suggestions`。
 
 ### 3) Agent 提示词约束修正
@@ -98,8 +98,8 @@
 ### 原版：gh-repo-docs-reader-mcp
 
 1. 新增内置工具 `gh-repo-docs-reader-mcp`
-   - 入参支持 `query/focus/maxFeatures/maxEvidencePerFeature`
-   - 输出包含 `coreFeatures`、`analyzedFiles`、`unknownBoundary`
+   - 入参支持 `query/focus/maxfeature/maxEvidencePerFeature`
+   - 输出包含 `corefeature`、`analyzedFiles`、`unknownBoundary`
 
 2. 新增 docs 功能抽取与聚合逻辑
    - 从文档提取候选功能并聚合为核心能力分组
@@ -136,7 +136,7 @@
 - 后端（engineering-intelligence）：复用或扩展 docs 读取能力作为数据来源。
 - API：新增或扩展工具调用能力的返回结构。
 - 测试：新增工具行为与问答链路相关测试。
-- 文档：README、`docs/features/FUNCTIONS.md`、`docs/api/API.md` 需要同步。
+- 文档：README、`docs/feature/FUNCTIONS.md`、`docs/api/API.md` 需要同步。
 
 ## 风险与依赖
 
