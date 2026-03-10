@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
-import { access } from 'fs/promises';
+import { access, appendFile, mkdir, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -35,6 +35,7 @@ const DEFAULT_PROFILE = {
 const AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-master.list-agents';
 const LEGACY_AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-admin.list-agents';
 const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create-agent';
+const RD_DOCS_WRITE_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-write';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +45,10 @@ interface ToolExecutionContext {
   teamId?: string;
   taskId?: string;
   idempotencyKey?: string;
+  actor?: {
+    employeeId?: string;
+    role?: string;
+  };
 }
 
 interface ToolRouterQuery {
@@ -110,6 +115,7 @@ export class ToolService {
   private readonly logger = new Logger(ToolService.name);
   private readonly orchestrationBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly backendBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
+  private readonly agentsBaseUrl = process.env.AGENTS_SERVICE_URL || 'http://localhost:3002/api';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly rateLimitHits = new Map<string, number[]>();
   private readonly circuitBreakers = new Map<string, CircuitState>();
@@ -627,6 +633,8 @@ export class ToolService {
         id: 'builtin.sys-mg.internal.rd-related.repo-read',
         name: 'Repo Read',
         description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
+        prompt:
+          '你拥有 builtin.sys-mg.internal.rd-related.repo-read 工具，可执行只读 bash 命令（如 git log、cat、ls、grep 等）来读取本地仓库文件。当你需要了解代码或文档内容时，请优先使用 builtin.sys-mg.internal.rd-related.repo-read 直接读取。',
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_read', name: 'Repository Read', level: 'basic' }],
@@ -642,6 +650,8 @@ export class ToolService {
         id: 'builtin.sys-mg.internal.rd-related.docs-read',
         name: 'Code Docs Reader',
         description: 'Read raw documentation files from docs/ directory',
+        prompt:
+          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 builtin.sys-mg.internal.rd-related.repo-read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 builtin.sys-mg.internal.rd-related.docs-read 读取文档。若 builtin.sys-mg.internal.rd-related.docs-read 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 builtin.sys-mg.internal.rd-related.repo-read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
@@ -655,9 +665,31 @@ export class ToolService {
         },
       },
       {
+        id: RD_DOCS_WRITE_TOOL_ID,
+        name: 'Code Docs Writer',
+        description: 'Write markdown docs into docs/ directory with strict path and extension guard',
+        prompt:
+          '当你需要新增或更新研发文档时，调用 builtin.sys-mg.internal.rd-related.docs-write；仅写 docs/** 下的 .md 文件，优先使用 create/update/append 明确意图，避免覆盖不相关内容。',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_docs_write', name: 'Repository Docs Write', level: 'admin' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            filePath: 'string',
+            content: 'string',
+            mode: 'string',
+            overwrite: 'boolean',
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.internal.rd-related.updates-read',
         name: 'Code Updates Reader',
         description: 'Read raw git commit history from repository',
+        prompt:
+          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 builtin.sys-mg.internal.rd-related.repo-read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 builtin.sys-mg.internal.rd-related.updates-read。必须基于实际提交内容回答，不得臆测。',
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
@@ -674,6 +706,8 @@ export class ToolService {
         id: AGENT_LIST_TOOL_ID,
         name: 'Agents MCP List',
         description: 'List current agents, roles, and capability summaries from MCP visibility rules',
+        prompt:
+          '当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 builtin.sys-mg.internal.agent-master.list-agents 工具获取实时名单，再基于工具结果回答。',
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'data_access', name: 'Agent Registry Read', level: 'basic' }],
@@ -696,7 +730,6 @@ export class ToolService {
           parameters: {
             name: 'string',
             roleId: 'string',
-            type: 'string',
             description: 'string',
             systemPrompt: 'string',
             model: 'object',
@@ -715,6 +748,8 @@ export class ToolService {
         id: 'builtin.sys-mg.mcp.model-admin.list-models',
         name: 'Model MCP List Models',
         description: 'List models currently available in system registry',
+        prompt:
+          '当用户询问“系统里有哪些模型/当前有哪些模型/模型列表”时，请优先调用 builtin.sys-mg.mcp.model-admin.list-models 获取实时模型清单，再回答。',
         type: 'data_analysis' as const,
         category: 'Model Management',
         requiredPermissions: [{ id: 'model_registry_read', name: 'Model Registry Read', level: 'basic' }],
@@ -752,6 +787,7 @@ export class ToolService {
         id: 'builtin.sys-mg.internal.memory.search-memo',
         name: 'Memo MCP Search',
         description: 'Search agent memo memory with progressive loading summaries',
+        prompt: '在处理任务时，优先调用 builtin.sys-mg.internal.memory.search-memo 检索相关历史备忘录。',
         type: 'data_analysis' as const,
         category: 'Memory',
         requiredPermissions: [{ id: 'memo_read', name: 'Agent Memo Read', level: 'basic' }],
@@ -771,6 +807,8 @@ export class ToolService {
         id: 'builtin.sys-mg.internal.memory.append-memo',
         name: 'Memo MCP Append',
         description: 'Append or create memo entries for long-term memory',
+        prompt:
+          '当形成关键结论或后续动作时，调用 builtin.sys-mg.internal.memory.append-memo 追加到目标Agent备忘录。必须显式传 targetAgentId（或 agentId）写入目标对象；topic 必须 memoType=knowledge；achievement/criticism 必须 memoType=standard 且按追加模式写入，已有内容前先插入分割线“—”再追加新记录，禁止覆盖历史。',
         type: 'data_analysis' as const,
         category: 'Memory',
         requiredPermissions: [{ id: 'memo_write', name: 'Agent Memo Write', level: 'basic' }],
@@ -782,8 +820,11 @@ export class ToolService {
             content: 'string',
             category: 'string',
             memoType: 'string',
+            memoKind: 'string',
+            targetAgentId: 'string',
             memoId: 'string',
             taskId: 'string',
+            topic: 'string',
             tags: 'string[]',
           },
         },
@@ -1165,6 +1206,7 @@ export class ToolService {
               ...metadata,
               name: toolData.name,
               description: toolData.description,
+              prompt: toolData.prompt,
               type: toolData.type,
               category: toolData.category,
               requiredPermissions: toolData.requiredPermissions,
@@ -1245,6 +1287,7 @@ export class ToolService {
       toolId: string;
       name: string;
       description: string;
+      prompt?: string;
       category: string;
       provider: string;
       executionChannel?: string;
@@ -1279,6 +1322,7 @@ export class ToolService {
           toolId,
           name: tool.name,
           description: tool.description,
+          prompt: typeof tool.prompt === 'string' ? tool.prompt : undefined,
           category: tool.category,
           provider: identity.provider,
           executionChannel: identity.executionChannel,
@@ -1634,6 +1678,8 @@ export class ToolService {
         return this.createAgentByMcp(parameters);
       case 'builtin.sys-mg.internal.rd-related.docs-read':
         return this.getCodeDocsReader(parameters);
+      case RD_DOCS_WRITE_TOOL_ID:
+        return this.executeDocsWrite(parameters);
       case 'builtin.sys-mg.internal.rd-related.updates-read':
         return this.getCodeUpdatesReader(parameters);
       case 'builtin.sys-mg.mcp.model-admin.list-models':
@@ -1645,7 +1691,7 @@ export class ToolService {
       case 'builtin.sys-mg.internal.memory.search-memo':
         return this.searchMemoMemory(parameters, agentId);
       case 'builtin.sys-mg.internal.memory.append-memo':
-        return this.appendMemoMemory(parameters, agentId);
+        return this.appendMemoMemory(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.skill-master.list-skills':
         return this.listSkillsByTitle(parameters);
       case 'builtin.sys-mg.mcp.skill-master.create-skill':
@@ -1694,6 +1740,7 @@ export class ToolService {
       LEGACY_AGENT_LIST_TOOL_ID,
       AGENT_CREATE_TOOL_ID,
       'builtin.sys-mg.internal.rd-related.docs-read',
+      RD_DOCS_WRITE_TOOL_ID,
       'builtin.sys-mg.internal.rd-related.updates-read',
       'builtin.sys-mg.mcp.model-admin.list-models',
       'builtin.sys-mg.mcp.model-admin.add-model',
@@ -1745,15 +1792,19 @@ export class ToolService {
 
   private async appendMemoMemory(
     params: {
+      targetAgentId?: string;
+      agentId?: string;
       memoId?: string;
       title?: string;
       content?: string;
+      memoKind?: 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation' | 'achievement' | 'criticism';
       memoType?: 'knowledge' | 'standard';
       taskId?: string;
       topic?: string;
       tags?: string[];
     },
     agentId?: string,
+    executionContext?: ToolExecutionContext,
   ): Promise<any> {
     if (!agentId) {
       throw new Error('memo_mcp_append requires agentId');
@@ -1762,11 +1813,47 @@ export class ToolService {
       throw new Error('memo_mcp_append requires content');
     }
 
+    const resolvedTargetAgentId = String(params.targetAgentId || params.agentId || '').trim() || agentId;
+    const requestedKind = params.memoKind;
+    const requestedType = params.memoType;
+
+    if ((requestedKind === 'achievement' || requestedKind === 'criticism') && !String(params.targetAgentId || params.agentId || '').trim()) {
+      throw new Error('memo_mcp_append requires targetAgentId for achievement/criticism');
+    }
+
+    if (requestedType === 'standard' && !requestedKind) {
+      throw new Error('memo_mcp_append requires memoKind when memoType=standard');
+    }
+
+    if (requestedKind === 'topic' && requestedType && requestedType !== 'knowledge') {
+      throw new Error('memo_mcp_append requires memoType=knowledge when memoKind=topic');
+    }
+
+    if ((requestedKind === 'achievement' || requestedKind === 'criticism') && requestedType && requestedType !== 'standard') {
+      throw new Error(`memo_mcp_append requires memoType=standard when memoKind=${requestedKind}`);
+    }
+
+    const actor = this.resolveMemoActorContext(executionContext);
+
     if (params.memoId) {
       const existing = await this.memoService.getMemoById(params.memoId);
+      if (existing.agentId !== resolvedTargetAgentId) {
+        throw new Error('memo_mcp_append memoId owner mismatch with targetAgentId');
+      }
+      const useDivider = existing.memoKind === 'achievement' || existing.memoKind === 'criticism';
+      const existingContent = String(existing.content || '').trim();
+      const nextContent = params.content.trim();
       const updated = await this.memoService.updateMemo(existing.id, {
-        content: `${existing.content}\n\n${params.content.trim()}`,
+        content: useDivider
+          ? existingContent
+            ? `${existingContent}\n\n—\n\n${nextContent}`
+            : nextContent
+          : `${existing.content}\n\n${nextContent}`,
         tags: Array.from(new Set([...(existing.tags || []), ...((params.tags || []).filter(Boolean))])),
+      },
+      {
+        actor,
+        skipRolePermissionCheck: true,
       });
       return {
         action: 'updated',
@@ -1775,9 +1862,10 @@ export class ToolService {
     }
 
     const created = await this.memoService.createMemo({
-      agentId,
+      agentId: resolvedTargetAgentId,
       title: params.title?.trim() || 'Runtime memo',
       content: params.content.trim(),
+      memoKind: params.memoKind,
       memoType: params.memoType || 'knowledge',
       payload: {
         taskId: params.taskId,
@@ -1785,11 +1873,49 @@ export class ToolService {
       },
       tags: params.tags || [],
       source: 'memo_mcp_append',
+    },
+    {
+      actor,
+      skipRolePermissionCheck: true,
     });
 
     return {
       action: 'created',
       memo: created,
+    };
+  }
+
+  private resolveMemoActorContext(
+    executionContext?: ToolExecutionContext,
+  ): {
+    employeeId?: string;
+    role?: string;
+  } | undefined {
+    const teamContext = executionContext?.teamContext || {};
+    const employeeId = String(
+      executionContext?.actor?.employeeId ||
+        teamContext.employeeId ||
+        teamContext.initiatorId ||
+        teamContext.triggeredBy ||
+        teamContext.userId ||
+        '',
+    ).trim();
+    const role = String(
+      executionContext?.actor?.role ||
+        teamContext.role ||
+        teamContext.actorRole ||
+        teamContext.initiatorRole ||
+        teamContext.userRole ||
+        '',
+    ).trim();
+
+    if (!employeeId && !role) {
+      return undefined;
+    }
+
+    return {
+      ...(employeeId ? { employeeId } : {}),
+      ...(role ? { role } : {}),
     };
   }
 
@@ -1920,6 +2046,40 @@ export class ToolService {
       timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
     });
     return response.data;
+  }
+
+  private async callAgentsApi(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    endpoint: string,
+    body?: any,
+  ): Promise<any> {
+    const url = `${this.agentsBaseUrl}${endpoint}`;
+    const headers = this.buildSignedHeaders();
+    try {
+      const response = await axios.request({
+        method,
+        url,
+        headers,
+        data: body,
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      });
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const statusText = error.response?.statusText;
+        const responseSummary = this.summarizeApiErrorBody(error.response?.data);
+        this.logger.error(
+          `Agents API request failed: ${method} ${endpoint}, status=${status || 'unknown'}${
+            statusText ? ` ${statusText}` : ''
+          }, response=${responseSummary}`,
+        );
+        throw new Error(
+          `agents_api_request_failed: ${method} ${endpoint} returned ${status || 'unknown'}; response=${responseSummary}`,
+        );
+      }
+      throw error;
+    }
   }
 
   private async createOrchestrationPlan(
@@ -2773,10 +2933,59 @@ export class ToolService {
     return apiKey?.id ? String(apiKey.id).trim() : undefined;
   }
 
+  private async resolveRoleIdForCreate(roleInput: string): Promise<{ roleId: string; matchedBy: 'id' | 'code' }> {
+    const normalized = String(roleInput || '').trim();
+    if (!normalized) {
+      throw new Error('agent_master_create_agent requires roleId');
+    }
+
+    const headers = this.buildSignedHeaders();
+    const timeout = Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000);
+
+    try {
+      const byIdResponse = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(normalized)}`, {
+        headers,
+        timeout,
+      });
+      const role = byIdResponse?.data || {};
+      const id = String(role.id || '').trim();
+      if (id) {
+        return { roleId: id, matchedBy: 'id' };
+      }
+    } catch {
+      // ignore and fallback to role code resolution
+    }
+
+    let roles: Array<{ id: string; code: string; name?: string }> = [];
+    try {
+      const rolesResponse = await axios.get(`${this.backendBaseUrl}/roles`, {
+        headers,
+        timeout,
+        params: { status: 'active' },
+      });
+      roles = Array.isArray(rolesResponse?.data) ? rolesResponse.data : [];
+    } catch {
+      roles = [];
+    }
+
+    const roleByCode = roles.find((item) => String(item?.code || '').trim() === normalized);
+    if (roleByCode?.id) {
+      return { roleId: String(roleByCode.id).trim(), matchedBy: 'code' };
+    }
+
+    const examples = roles
+      .slice(0, 8)
+      .map((item) => `${String(item?.code || '').trim()}=>${String(item?.id || '').trim()}`)
+      .filter(Boolean)
+      .join(', ');
+    throw new Error(
+      `agent_master_create_agent invalid roleId or roleCode: ${normalized}${examples ? `; examples=${examples}` : ''}`,
+    );
+  }
+
   private async createAgentByMcp(params: {
     name?: string;
     roleId?: string;
-    type?: string;
     description?: string;
     systemPrompt?: string;
     model?: {
@@ -2803,13 +3012,16 @@ export class ToolService {
     isActive?: boolean;
   }): Promise<any> {
     const name = String(params?.name || '').trim();
-    const roleId = String(params?.roleId || '').trim();
+    const requestedRole = String(params?.roleId || '').trim();
     if (!name) {
       throw new Error('agent_master_create_agent requires name');
     }
-    if (!roleId) {
+    if (!requestedRole) {
       throw new Error('agent_master_create_agent requires roleId');
     }
+
+    const resolvedRole = await this.resolveRoleIdForCreate(requestedRole);
+    const roleId = resolvedRole.roleId;
 
     const modelId = String(params?.model?.id || params?.modelId || '').trim();
     if (!modelId) {
@@ -2830,7 +3042,6 @@ export class ToolService {
     const payload = {
       name,
       roleId,
-      ...(params?.type?.trim() ? { type: params.type.trim() } : {}),
       ...(params?.description?.trim() ? { description: params.description.trim() } : {}),
       ...(params?.systemPrompt?.trim() ? { systemPrompt: params.systemPrompt.trim() } : {}),
       model: {
@@ -2860,11 +3071,7 @@ export class ToolService {
       ...(selectedApiKeyId || fallbackApiKeyId ? { apiKeyId: selectedApiKeyId || fallbackApiKeyId } : {}),
     };
 
-    const response = await axios.post(`${this.backendBaseUrl}/agents`, payload, {
-      timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
-    });
-
-    const agent = response?.data || {};
+    const agent = (await this.callAgentsApi('POST', '/agents', payload)) || {};
     return {
       action: 'create_agent',
       created: true,
@@ -2879,6 +3086,7 @@ export class ToolService {
         isActive: Boolean(agent.isActive ?? payload.isActive ?? true),
         model: agent.model || payload.model,
       },
+      roleResolvedBy: resolvedRole.matchedBy,
       createdAt: new Date().toISOString(),
     };
   }
@@ -2887,23 +3095,24 @@ export class ToolService {
     const includeHidden = params?.includeHidden === true;
     const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
     const agents = await this.agentModel.find().exec();
-    const agentTypes = Array.from(new Set(agents.map((agent: any) => String(agent.type || '').trim()).filter(Boolean)));
-    const profiles = await this.agentProfileModel.find({ agentType: { $in: agentTypes } }).exec();
     const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
-    const roleNameMap = await this.getRoleNameMapByIds(roleIds);
+    const roleMap = await this.getRoleMapByIds(roleIds);
+    const roleCodes = Array.from(new Set(Array.from(roleMap.values()).map((role) => role.code).filter(Boolean)));
+    const profiles = await this.agentProfileModel.find({ roleCode: { $in: roleCodes } }).exec();
     const profileMap = new Map<string, AgentProfile>();
     for (const profile of profiles) {
-      profileMap.set(profile.agentType, profile);
+      profileMap.set(profile.roleCode, profile);
     }
 
     const mapped = agents.map((agent) => {
       const plain = agent?.toObject ? agent.toObject() : agent;
-      const type = (plain.type || '').trim();
-      const profile = profileMap.get(type) || DEFAULT_PROFILE;
+      const roleId = String(plain.roleId || '').trim();
+      const role = roleMap.get(roleId);
+      const profile = role?.code ? profileMap.get(role.code) || DEFAULT_PROFILE : DEFAULT_PROFILE;
       return {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
-        role: roleNameMap.get(String(plain.roleId || '').trim()) || profile.role,
+        role: role?.name || profile.role,
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...(profile.capabilities || [])])).slice(0, 12),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
@@ -2929,9 +3138,9 @@ export class ToolService {
     };
   }
 
-  private async getRoleNameMapByIds(roleIds: string[]): Promise<Map<string, string>> {
+  private async getRoleMapByIds(roleIds: string[]): Promise<Map<string, { name: string; code: string }>> {
     const uniqueRoleIds = Array.from(new Set((roleIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
-    const map = new Map<string, string>();
+    const map = new Map<string, { name: string; code: string }>();
     if (!uniqueRoleIds.length) {
       return map;
     }
@@ -2943,9 +3152,10 @@ export class ToolService {
             timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
           });
           const role = response.data || {};
-          const displayName = String(role.name || role.code || '').trim();
-          if (displayName) {
-            map.set(roleId, displayName);
+          const code = String(role.code || '').trim();
+          const name = String(role.name || role.code || '').trim();
+          if (code) {
+            map.set(roleId, { name, code });
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'unknown role fetch error';
@@ -3048,6 +3258,89 @@ export class ToolService {
       totalCommits: result.totalCommits,
       commits: result.commits,
       generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private async executeDocsWrite(params: {
+    filePath?: string;
+    content?: string;
+    mode?: 'create' | 'update' | 'append';
+    overwrite?: boolean;
+  }): Promise<any> {
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const rawFilePath = String(params?.filePath || '').trim();
+    const content = String(params?.content || '');
+    const requestedMode = String(params?.mode || 'create').trim().toLowerCase();
+    const overwrite = params?.overwrite === true;
+
+    if (!rawFilePath) {
+      throw new Error('docs_write requires filePath');
+    }
+
+    if (!content.trim()) {
+      throw new Error('docs_write requires content');
+    }
+
+    if (path.isAbsolute(rawFilePath)) {
+      throw new Error('docs_write filePath must be relative path under docs/');
+    }
+
+    const normalizedRelPath = path.posix
+      .normalize(rawFilePath.replace(/\\/g, '/'))
+      .replace(/^\.\//, '');
+
+    if (normalizedRelPath.includes('..')) {
+      throw new Error('docs_write does not allow path traversal');
+    }
+
+    if (!normalizedRelPath.startsWith('docs/')) {
+      throw new Error('docs_write only supports docs/** paths');
+    }
+
+    if (!normalizedRelPath.endsWith('.md')) {
+      throw new Error('docs_write only supports .md files');
+    }
+
+    if (!['create', 'update', 'append'].includes(requestedMode)) {
+      throw new Error('docs_write mode must be one of: create, update, append');
+    }
+
+    const docsRoot = path.resolve(workspaceRoot, 'docs');
+    const targetPath = path.resolve(workspaceRoot, normalizedRelPath);
+    if (!(targetPath === docsRoot || targetPath.startsWith(`${docsRoot}${path.sep}`))) {
+      throw new Error('docs_write target path is outside docs directory');
+    }
+
+    const existedBefore = await this.fileExists(targetPath);
+    if (requestedMode === 'create' && existedBefore && !overwrite) {
+      throw new Error('docs_write create mode conflict: file exists, set overwrite=true to replace it');
+    }
+    if (requestedMode === 'update' && !existedBefore) {
+      throw new Error('docs_write update mode requires an existing file');
+    }
+    if (requestedMode === 'append' && !existedBefore) {
+      throw new Error('docs_write append mode requires an existing file');
+    }
+
+    const parentDir = path.dirname(targetPath);
+    await mkdir(parentDir, { recursive: true });
+
+    if (requestedMode === 'append') {
+      await appendFile(targetPath, content, 'utf8');
+    } else {
+      await writeFile(targetPath, content, 'utf8');
+    }
+
+    return {
+      success: true,
+      toolId: RD_DOCS_WRITE_TOOL_ID,
+      workspaceRoot,
+      filePath: normalizedRelPath,
+      mode: requestedMode,
+      overwrite,
+      existedBefore,
+      bytesWritten: Buffer.byteLength(content, 'utf8'),
+      writtenAt: new Date().toISOString(),
     };
   }
 

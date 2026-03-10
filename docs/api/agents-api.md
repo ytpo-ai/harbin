@@ -10,7 +10,7 @@
 
 - `GET /agents`：获取 Agent 列表
 - `POST /agents`：创建 Agent
-- `PUT /agents/:id`：更新 Agent（支持 `type`、`roleId`）
+- `PUT /agents/:id`：更新 Agent（支持 `roleId`）
 - `DELETE /agents/:id`：删除 Agent
 - `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
@@ -22,7 +22,7 @@
 
 工具白名单约束：
 
-- `Agent.tools` 必须满足：`Agent.tools ⊆ MCPProfile.tools(agent.type)`。
+- `Agent.tools` 必须满足：`Agent.tools ⊆ MCPProfile.tools(role.code)`。
 - 若创建/更新时提交超出白名单的工具，后端返回 `400 Bad Request`。
 
 ## Agent MCP（`/agents/mcp`）
@@ -31,8 +31,8 @@
 - `GET /agents/mcp`：获取可见 MCP Agent 列表
 - `GET /agents/mcp/:id`：获取单个 MCP Agent 详情
 - `GET /agents/mcp/profiles`：获取 MCP Profiles
-- `GET /agents/mcp/profiles/:agentType`：获取单个 Profile
-- `PUT /agents/mcp/profiles/:agentType`：创建/更新 Profile
+- `GET /agents/mcp/profiles/:roleCode`：获取单个 Profile
+- `PUT /agents/mcp/profiles/:roleCode`：创建/更新 Profile
 - `POST /agents/mcp/migrate-tool-ids`：批量将 Agent/AgentProfile 中 legacy tool id 迁移为 canonical toolId
 
 Profile 字段说明：
@@ -56,7 +56,7 @@ Profile 字段说明：
 说明：
 
 - 工具白名单校验优先按 `agent.roleId -> role.code` 读取权限集。
-- 若角色权限集不存在，服务端回退到历史 `agent.type` profile 读取（兼容旧数据）。
+- 若角色权限集不存在，服务端使用默认 profile（`exposed=false`）。
 
 ## Agent Roles Proxy（`/agents/roles`）
 
@@ -101,10 +101,13 @@ Skill 渐进式加载（DB + Redis）契约：
 ## Tools（`/tools`）
 
 - `GET /tools`：获取工具列表
+- `GET /tools/:id`：获取单个工具
 - `GET /tools/registry`：按统一工具模型查询（支持 `provider/executionChannel/toolkitId/namespace/resource/action/category/capability/enabled` 过滤）
 - `GET /tools/toolkits`：查询 Toolkit 实体列表（支持 `provider/executionChannel/namespace/status` 过滤）
 - `GET /tools/toolkits/:id`：查询单个 Toolkit 实体
 - `GET /tools/router/topk`：工具路由 Top-K（支持 `provider/domain/namespace/resource/action/capability/limit`）
+- `PUT /tools/:id`：更新工具元数据（如 `name/description/category/type/enabled/status/prompt`）
+- `DELETE /tools/:id`：删除工具
 
 分类说明：
 
@@ -121,10 +124,12 @@ Skill 渐进式加载（DB + Redis）契约：
 执行兼容说明：
 
 - `GET /tools` 与 `GET /tools/:id` 响应包含统一字段：`toolId`、`legacyToolId`、`provider`、`executionChannel`、`namespace`、`capabilitySet`。
+- `GET /tools` 与 `GET /tools/:id` 额外返回 `prompt`（可选），用于 Agent 运行时按已授权工具注入 system 策略提示。
 - `POST /tools/:id/execute` 仅面向 canonical tool id；执行链路内统一记录 `requestedToolId/resolvedToolId/traceId`。
 - 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`、`executionChannel`。
 - `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`，并包含 `executionChannel`。
 - `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
+- 管理端“弃用工具”推荐通过 `PUT /tools/:id` 设置 `status=deprecated` 且 `enabled=false`，以保留工具记录并阻止继续执行。
 
 搜索工具说明：
 
@@ -153,6 +158,7 @@ Skill 渐进式加载（DB + Redis）契约：
 - `orchestration_debug_task`
 - `builtin.sys-mg.internal.agent-master.list-agents`
 - `builtin.sys-mg.internal.agent-master.create-agent`
+- `builtin.sys-mg.internal.rd-related.docs-write`
 - `builtin.sys-mg.mcp.skill-master.list-skills`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
 
@@ -165,9 +171,20 @@ Skill 渐进式加载（DB + Redis）契约：
 `builtin.sys-mg.internal.agent-master.create-agent` 参数约定：
 
 - 必填：`name`、`roleId`、`model.id`（或 `modelId`）
-- 可选：`type`、`description`、`systemPrompt`、`model.*`、`capabilities`、`tools`、`permissions`、`learningAbility`、`isActive`、`apiKeyId`
+- `roleId` 兼容传 role `id` 或 role `code`（推荐传 `id`，传 `code` 时会在创建前自动解析）
+- 可选：`description`、`systemPrompt`、`model.*`、`capabilities`、`tools`、`permissions`、`learningAbility`、`isActive`、`apiKeyId`
 - `provider` 为 API Key 选择策略参数：默认 `default`（回退到模型 provider）
 - 未显式传入 `apiKeyId` 时，系统会按 provider 选择 `isDefault=true && isActive=true` 的 key；若不存在则回退系统默认 key 策略
+
+`builtin.sys-mg.internal.rd-related.docs-write` 参数约定：
+
+- 必填：`filePath`、`content`
+- 可选：`mode`（`create|update|append`，默认 `create`）、`overwrite`（默认 `false`）
+- 安全约束：仅允许写入 `docs/**` 下 `.md` 文件；禁止绝对路径与 `..` 路径穿越
+- 行为约束：
+  - `create`：目标文件已存在且未显式 `overwrite=true` 时拒绝写入
+  - `update`：目标文件不存在时拒绝写入
+  - `append`：目标文件不存在时拒绝写入
 
 Skill Master MCP 参数约定：
 
@@ -216,8 +233,7 @@ Skill Master MCP 参数约定：
 
 ## 备注
 
-- Agent 类型规范：`docs/agent_type.md`
-- 当前类型配置来源：`frontend/src/config/agentType.json`
+- Agent 权限与可见性以角色为准：`agent.roleId -> role.code -> MCP profile`。
 
 ## Runtime Hooks（内部能力）
 

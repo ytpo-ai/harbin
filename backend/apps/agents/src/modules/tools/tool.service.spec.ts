@@ -1,5 +1,8 @@
 import { ToolService } from './tool.service';
 import axios from 'axios';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
 
 describe('ToolService orchestration debug task', () => {
   const buildService = () => {
@@ -93,13 +96,18 @@ describe('ToolService skill master mcp', () => {
 
     const result = await service['listSkillsByTitle']({ title: 'script', limit: 5, page: 1 });
 
-    expect(service.skillService.getSkillsPaged).toHaveBeenCalledWith({
-      status: undefined,
-      category: undefined,
-      search: 'script',
-      page: 1,
-      pageSize: 5,
-    });
+    expect(service.skillService.getSkillsPaged).toHaveBeenCalledWith(
+      {
+        status: undefined,
+        category: undefined,
+        search: 'script',
+        page: 1,
+        pageSize: 5,
+      },
+      {
+        includeMetadata: false,
+      },
+    );
     expect(result.items[0].title).toBe('TypeScript Expert');
   });
 
@@ -148,12 +156,48 @@ describe('ToolService skill master mcp', () => {
   });
 });
 
+describe('ToolService getToolRegistry prompt field', () => {
+  it('includes prompt in registry item when tool has prompt', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.getAllTools = jest.fn().mockResolvedValue([
+      {
+        id: 'memo_mcp_append',
+        canonicalId: 'builtin.sys-mg.internal.memory.append-memo',
+        name: 'Memo MCP Append',
+        description: 'Append memo entry',
+        prompt: '请将输入追加到目标 agent 的 memo。',
+        category: 'memory',
+        enabled: true,
+        type: 'custom',
+        requiredPermissions: [],
+        capabilitySet: [],
+        tokenCost: 0,
+      },
+    ]);
+    service.parseToolIdentity = jest.fn().mockReturnValue({
+      provider: 'builtin',
+      executionChannel: 'sys-mg',
+      toolkitId: 'memory',
+      namespace: 'sys-mg',
+      resource: 'memory',
+      action: 'append-memo',
+    });
+    service.normalizeBooleanQuery = jest.fn().mockReturnValue(undefined);
+
+    const result = await service.getToolRegistry({});
+
+    expect(result).toHaveLength(1);
+    expect(result[0].toolId).toBe('builtin.sys-mg.internal.memory.append-memo');
+    expect(result[0].prompt).toBe('请将输入追加到目标 agent 的 memo。');
+  });
+});
+
 describe('ToolService agent master create agent mcp', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it('creates agent with provider default api-key fallback', async () => {
+  it('creates agent with role code and provider default api-key fallback', async () => {
     const service = Object.create(ToolService.prototype);
     service.modelManagementService = {
       getModelById: jest.fn().mockResolvedValue({
@@ -175,37 +219,51 @@ describe('ToolService agent master create agent mcp', () => {
       }),
     };
     service.backendBaseUrl = 'http://localhost:3001/api';
+    service.agentsBaseUrl = 'http://localhost:3002/api';
+    service.contextSecret = 'test-secret';
 
-    const postSpy = jest.spyOn(axios, 'post').mockResolvedValue({
+    const getSpy = jest
+      .spyOn(axios, 'get')
+      .mockRejectedValueOnce(new Error('role id not found'))
+      .mockResolvedValueOnce({
+        data: [{ id: '71e69181-bcb1-4355-8dc4-691f29ea49ad', code: 'role-zero-hours-worker', name: '临时工' }],
+      } as any);
+
+    const requestSpy = jest.spyOn(axios, 'request').mockResolvedValue({
       data: {
         id: 'agent-001',
         name: 'Nina',
-        roleId: 'role-product-manager',
+        roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
         isActive: true,
       },
     } as any);
 
     const result = await service['createAgentByMcp']({
       name: 'Nina',
-      roleId: 'role-product-manager',
+      roleId: 'role-zero-hours-worker',
       modelId: 'openai-gpt-4o-mini',
     });
+
+    expect(getSpy).toHaveBeenCalledTimes(2);
 
     expect(service.apiKeyModel.findOne).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'openai', isDefault: true, isActive: true }),
     );
-    expect(postSpy).toHaveBeenCalledWith(
-      'http://localhost:3001/api/agents',
+    expect(requestSpy).toHaveBeenCalledWith(
       expect.objectContaining({
-        name: 'Nina',
-        roleId: 'role-product-manager',
-        apiKeyId: 'default-openai-key',
-        model: expect.objectContaining({ provider: 'openai' }),
+        method: 'POST',
+        url: 'http://localhost:3002/api/agents',
+        data: expect.objectContaining({
+          name: 'Nina',
+          roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
+          apiKeyId: 'default-openai-key',
+          model: expect.objectContaining({ provider: 'openai' }),
+        }),
       }),
-      expect.any(Object),
     );
     expect(result.created).toBe(true);
     expect(result.apiKeySource).toBe('provider-default');
+    expect(result.roleResolvedBy).toBe('code');
   });
 
   it('throws when name is missing', async () => {
@@ -213,5 +271,74 @@ describe('ToolService agent master create agent mcp', () => {
     await expect(service['createAgentByMcp']({ roleId: 'role-1', modelId: 'm1' })).rejects.toThrow(
       'agent_master_create_agent requires name',
     );
+  });
+});
+
+describe('ToolService rd-related docs-write mcp', () => {
+  it('creates markdown file under docs path', async () => {
+    const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'tool-service-docs-write-'));
+    const service = Object.create(ToolService.prototype);
+    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+
+    const result = await service['executeDocsWrite']({
+      filePath: 'docs/plan/test-doc.md',
+      content: '# test\n',
+      mode: 'create',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.filePath).toBe('docs/plan/test-doc.md');
+    expect(result.mode).toBe('create');
+
+    const content = await readFile(path.join(tmpRoot, 'docs/plan/test-doc.md'), 'utf8');
+    expect(content).toBe('# test\n');
+
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('rejects non-docs path', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+
+    await expect(
+      service['executeDocsWrite']({
+        filePath: 'backend/notes.md',
+        content: 'x',
+        mode: 'create',
+      }),
+    ).rejects.toThrow('docs_write only supports docs/** paths');
+  });
+
+  it('rejects non-markdown extension', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+
+    await expect(
+      service['executeDocsWrite']({
+        filePath: 'docs/plan/test-doc.txt',
+        content: 'x',
+        mode: 'create',
+      }),
+    ).rejects.toThrow('docs_write only supports .md files');
+  });
+
+  it('rejects create conflict when file exists and overwrite is false', async () => {
+    const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'tool-service-docs-write-'));
+    const target = path.join(tmpRoot, 'docs/plan/conflict.md');
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(target, 'old', 'utf8');
+
+    const service = Object.create(ToolService.prototype);
+    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+
+    await expect(
+      service['executeDocsWrite']({
+        filePath: 'docs/plan/conflict.md',
+        content: 'new',
+        mode: 'create',
+      }),
+    ).rejects.toThrow('docs_write create mode conflict: file exists, set overwrite=true to replace it');
+
+    await rm(tmpRoot, { recursive: true, force: true });
   });
 });

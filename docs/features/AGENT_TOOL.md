@@ -31,12 +31,15 @@
    - 运行时工具事件日志统一记录 `toolName/toolId/params`，用于系统进程日志与任务 Agent 日志对齐观测。
 3. 统一发现：通过 `/tools/registry` 输出统一 `Tool` 视图，并支持按 provider/namespace 过滤。
 4. 兼容映射：通过 `/tools/registry/mappings` 维护 legacy 与 unified tool id 映射。
-5. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
-6. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
-7. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
-8. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。
-9. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
-10. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
+5. 工具管理：前端通过右侧抽屉统一承载“执行/修改”Tab；修改页支持编辑（名称/描述/分类/状态/启用开关/prompt）并提供弃用入口（标记 `status=deprecated` 且 `enabled=false`）。`/tools/registry` 返回 `prompt` 字段，工具列表“有提示词/无提示词”与修改页回填均基于统一字段。
+6. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
+7. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
+8. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
+9. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。
+10. RD 文档工具：`builtin.sys-mg.internal.rd-related.docs-write` 支持在 `docs/**` 下写入 `.md` 文档（`create/update/append`），并内置路径穿越与后缀白名单防护。
+11. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
+12. 工具级 Prompt：`tools` 支持 `prompt` 字段，Agent 运行时会按已授权工具自动注入对应 system 提示，不再依赖角色硬编码。
+13. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
 
 ---
 
@@ -51,6 +54,7 @@
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理与工具白名单计划 |
 | `AGENT_TOOL_MANAGEMENT_UI_OPTIMIZATION_PLAN.md` | 工具管理页与调用日志 Tab 展示优化计划 |
 | `TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_PLAN.md` | Tool ID 命名层级与 namespace 优化计划 |
+| `RD_RELATED_DOCS_WRITE_MCP_PLAN.md` | RD 文档写入 MCP（docs-write）接入计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -59,6 +63,7 @@
 | `TOOLING_UNIFICATION_ARCHITECTURE_PLAN.md` | 工具系统统一化架构改造开发总结 |
 | `AGENTS_TOOLS_MIGRATION_PLAN.md` | agents/tools 模块迁移与边界收敛总结 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | 工具白名单治理开发沉淀 |
+| `TOOL_PROMPT_INJECTION_PLAN.md` | 工具级 prompt 注入与历史数据回填总结 |
 
 ### 技术文档 (docs/technical/, docs/api/)
 
@@ -104,5 +109,5 @@
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Tools.tsx` | 工具管理页（工具/调用日志/工具权限集管理 Tab、按 provider/namespace/toolkit 筛选、工具模糊搜索、执行日志展示、手动执行入口） |
-| `services/toolService.ts` | 工具注册表、执行历史、执行统计、工具执行接口封装 |
+| `pages/Tools.tsx` | 工具管理页（工具/调用日志/工具权限集管理 Tab、按 provider/namespace/toolkit 筛选、工具模糊搜索、列表仅保留编辑入口、右侧抽屉执行/修改 Tab、修改内置弃用、列表精简字段、提示词标识、ID快捷复制、执行日志展示） |
+| `services/toolService.ts` | 工具注册表、更新/弃用、执行历史、执行统计、工具执行接口封装 |
