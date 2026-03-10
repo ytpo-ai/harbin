@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { RedisService } from '@libs/infra';
 import { Model } from 'mongoose';
@@ -70,6 +70,16 @@ interface CreateMemoInput {
   source?: string;
 }
 
+interface MemoActorContext {
+  employeeId?: string;
+  role?: string;
+}
+
+interface MemoMutationOptions {
+  skipEnsureCoreDocs?: boolean;
+  actor?: MemoActorContext;
+}
+
 interface ListMemoFilters {
   agentId?: string;
   memoType?: MemoType;
@@ -95,6 +105,19 @@ interface MemoryEvent {
 @Injectable()
 export class MemoService {
   private readonly logger = new Logger(MemoService.name);
+  private readonly topicAggregationEnabled = String(process.env.MEMO_TOPIC_AGGREGATION_ENABLED || 'false').toLowerCase() === 'true';
+
+  private readonly achievementAllowedRoles = [
+    'executive',
+    'executive-lead',
+    'management-assistant',
+    'human-exclusive-assistant',
+    'hr',
+    'human-resources',
+    'human-resources-manager',
+  ];
+
+  private readonly criticismAllowedRoles = [...this.achievementAllowedRoles, 'agent'];
 
   constructor(
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
@@ -103,12 +126,14 @@ export class MemoService {
     private readonly redisService: RedisService,
   ) {}
 
-  async createMemo(payload: CreateMemoInput, options?: { skipEnsureCoreDocs?: boolean }): Promise<AgentMemo> {
+  async createMemo(payload: CreateMemoInput, options?: MemoMutationOptions): Promise<AgentMemo> {
     if (!payload?.agentId?.trim()) throw new BadRequestException('agentId is required');
     if (!payload?.title?.trim()) throw new BadRequestException('title is required');
     if (!payload?.content?.trim()) throw new BadRequestException('content is required');
 
     const agentId = payload.agentId.trim();
+    const defaults = this.resolveMemoDefaults(payload.memoKind, payload.memoType);
+    this.assertMemoWritePermission(defaults.memoKind, agentId, payload.source, options?.actor);
     if (!options?.skipEnsureCoreDocs) {
       await this.ensureCoreDocuments(agentId);
     }
@@ -116,7 +141,6 @@ export class MemoService {
     const nextPayload = payload.payload || {};
     const resolvedTopic = typeof nextPayload.topic === 'string' ? nextPayload.topic : undefined;
     const slug = payload.slug?.trim() || this.buildStableSlug(payload.memoKind || 'topic', payload.title, resolvedTopic);
-    const defaults = this.resolveMemoDefaults(payload.memoKind, payload.memoType);
     const nextTags = this.uniqueStrings(payload.tags || []);
     const nextKeywords = this.uniqueStrings(payload.contextKeywords || []);
 
@@ -128,7 +152,7 @@ export class MemoService {
         memoKind: defaults.memoKind,
         memoType: defaults.memoType,
         slug,
-      });
+      }, options);
     }
 
     const updated = await this.memoModel
@@ -199,12 +223,13 @@ export class MemoService {
     return memo as unknown as AgentMemo;
   }
 
-  async updateMemo(id: string, updates: Partial<CreateMemoInput>): Promise<AgentMemo> {
+  async updateMemo(id: string, updates: Partial<CreateMemoInput>, options?: MemoMutationOptions): Promise<AgentMemo> {
     const existing = await this.memoModel.findOne({ id }).exec();
     if (!existing) throw new NotFoundException(`Memo not found: ${id}`);
 
     const memoKind = (updates.memoKind || existing.memoKind || 'topic') as MemoKind;
     const memoType = (updates.memoType || existing.memoType || 'knowledge') as MemoType;
+    this.assertMemoWritePermission(memoKind, existing.agentId, updates.source || existing.source, options?.actor);
     const nextTitle = updates.title?.trim() || existing.title;
     const mergedPayload = this.toNormalizedPayload(
       memoKind,
@@ -606,6 +631,30 @@ export class MemoService {
       .exec()) as unknown as AgentMemo[];
   }
 
+  async getFirstMemoContentMapByKind(agentIds: string[], memoKind: MemoKind): Promise<Map<string, string>> {
+    const normalizedAgentIds = Array.from(new Set((agentIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
+    const result = new Map<string, string>();
+    if (!normalizedAgentIds.length) {
+      return result;
+    }
+
+    const docs = await this.memoModel
+      .find({
+        agentId: { $in: normalizedAgentIds },
+        memoKind,
+      })
+      .sort({ updatedAt: -1, createdAt: -1 })
+      .exec();
+
+    for (const doc of docs) {
+      const agentId = String((doc as any)?.agentId || '').trim();
+      if (!agentId || result.has(agentId)) continue;
+      result.set(agentId, String((doc as any)?.content || ''));
+    }
+
+    return result;
+  }
+
   async enqueueRefreshTask(payload: {
     agentId: string;
     memoKinds?: MemoKind[];
@@ -680,6 +729,34 @@ export class MemoService {
   async flushEventQueue(agentId?: string): Promise<{ agents: number; events: number; topics: number }> {
     const keys = agentId ? [`${EVENT_KEY_PREFIX}${agentId}`] : await this.redisService.keys(`${EVENT_KEY_PREFIX}*`);
     if (!keys.length) return { agents: 0, events: 0, topics: 0 };
+
+    if (!this.topicAggregationEnabled) {
+      let discardedEvents = 0;
+      const touchedAgents = new Set<string>();
+      for (const key of keys) {
+        const rows = await this.redisService.lrange(key, 0, -1);
+        if (!rows.length) {
+          await this.redisService.del(key);
+          continue;
+        }
+        const events = rows
+          .map((row) => this.parseEvent(row))
+          .filter((item): item is MemoryEvent => !!item);
+        for (const event of events) {
+          touchedAgents.add(event.agentId);
+        }
+        discardedEvents += events.length;
+        await this.redisService.del(key);
+      }
+      if (discardedEvents > 0) {
+        this.logger.log(`Topic aggregation paused, discarded events=${discardedEvents}, agents=${touchedAgents.size}`);
+      }
+      return {
+        agents: touchedAgents.size,
+        events: discardedEvents,
+        topics: 0,
+      };
+    }
 
     let totalEvents = 0;
     let topicWrites = 0;
@@ -1271,6 +1348,57 @@ export class MemoService {
     return 'general';
   }
 
+  private assertMemoWritePermission(
+    memoKind: MemoKind,
+    agentId: string,
+    source?: string,
+    actor?: MemoActorContext,
+  ): void {
+    if (memoKind !== 'achievement' && memoKind !== 'criticism') {
+      return;
+    }
+
+    const normalizedRole = this.normalizeActorValue(actor?.role);
+    const normalizedSource = this.normalizeActorValue(source);
+    const normalizedEmployeeId = this.normalizeActorValue(actor?.employeeId);
+    const normalizedAgentId = this.normalizeActorValue(agentId);
+    const isAgentSelf = normalizedRole === 'agent' && normalizedEmployeeId && normalizedEmployeeId === normalizedAgentId;
+    const matchedAchievementRole = this.achievementAllowedRoles.some((role) => this.roleMatches(normalizedRole, role));
+
+    if (memoKind === 'achievement') {
+      if (isAgentSelf || this.roleMatches(normalizedSource, 'agent')) {
+        throw new ForbiddenException('achievement memo can only be recorded by executive/human-exclusive-assistant/hr');
+      }
+      if (!matchedAchievementRole) {
+        throw new ForbiddenException('achievement memo requires executive/human-exclusive-assistant/hr role');
+      }
+      return;
+    }
+
+    const matchedCriticismRole = this.criticismAllowedRoles.some((role) => this.roleMatches(normalizedRole, role));
+    if (isAgentSelf || this.roleMatches(normalizedSource, 'agent') || matchedCriticismRole) {
+      return;
+    }
+
+    throw new ForbiddenException('criticism memo requires executive/human-exclusive-assistant/hr/agent role');
+  }
+
+  private normalizeActorValue(value?: string): string {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  private roleMatches(normalizedValue: string, expected: string): boolean {
+    if (!normalizedValue) return false;
+    if (normalizedValue === expected) return true;
+    if (normalizedValue.includes(expected)) return true;
+    if (expected === 'executive' && normalizedValue.includes('high-management')) return true;
+    if (expected === 'human-exclusive-assistant' && normalizedValue.includes('exclusive-assistant')) return true;
+    if (expected === 'hr' && (normalizedValue.includes('human-resource') || normalizedValue.includes('human-resources'))) {
+      return true;
+    }
+    return false;
+  }
+
   private buildQuery(filters?: ListMemoFilters): Record<string, any> {
     const query: Record<string, any> = {};
     if (filters?.agentId?.trim()) query.agentId = filters.agentId.trim();
@@ -1286,7 +1414,16 @@ export class MemoService {
 
   private resolveMemoDefaults(memoKind?: MemoKind, memoType?: MemoType): { memoKind: MemoKind; memoType: MemoType } {
     const resolvedKind = memoKind || 'topic';
-    const standardMemoKinds: MemoKind[] = ['identity', 'todo', 'history', 'draft', 'custom', 'evaluation'];
+    const standardMemoKinds: MemoKind[] = [
+      'identity',
+      'todo',
+      'history',
+      'draft',
+      'custom',
+      'evaluation',
+      'achievement',
+      'criticism',
+    ];
     if (standardMemoKinds.includes(resolvedKind)) {
       return { memoKind: resolvedKind, memoType: 'standard' };
     }

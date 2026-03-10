@@ -1,4 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req } from '@nestjs/common';
+import { Request } from 'express';
+import { GatewayUserContext } from '@libs/contracts';
 import { MemoKind, MemoType } from '../../schemas/agent-memo.schema';
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
@@ -23,6 +25,14 @@ export class MemoController {
     private readonly identityAggregationService: IdentityAggregationService,
     private readonly evaluationAggregationService: EvaluationAggregationService,
   ) {}
+
+  private getActorContext(req: Request & { userContext?: GatewayUserContext }): { employeeId?: string; role?: string } {
+    const context = req.userContext;
+    return {
+      employeeId: context?.employeeId,
+      role: context?.role,
+    };
+  }
 
   @Get()
   async listMemos(
@@ -71,6 +81,7 @@ export class MemoController {
 
   @Post()
   async createMemo(
+    @Req() req: Request & { userContext?: GatewayUserContext },
     @Body()
     body: {
       agentId: string;
@@ -84,7 +95,7 @@ export class MemoController {
       source?: string;
     },
   ) {
-    return this.memoService.createMemo(body);
+    return this.memoService.createMemo(body, { actor: this.getActorContext(req) });
   }
 
   @Post('behavior')
@@ -183,8 +194,12 @@ export class MemoController {
   }
 
   @Put(':id')
-  async updateMemo(@Param('id') id: string, @Body() updates: Record<string, any>) {
-    return this.memoService.updateMemo(id, updates);
+  async updateMemo(
+    @Param('id') id: string,
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Body() updates: Record<string, any>,
+  ) {
+    return this.memoService.updateMemo(id, updates, { actor: this.getActorContext(req) });
   }
 
   @Delete(':id')

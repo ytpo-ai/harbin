@@ -14,7 +14,16 @@
 
 ```typescript
 // Schema 定义: backend/apps/agents/src/schemas/agent-memo.schema.ts
-type MemoKind = 'identity' | 'todo' | 'topic' | 'history' | 'draft' | 'custom' | 'evaluation';
+type MemoKind =
+  | 'identity'
+  | 'todo'
+  | 'topic'
+  | 'history'
+  | 'draft'
+  | 'custom'
+  | 'evaluation'
+  | 'achievement'
+  | 'criticism';
 type MemoType = 'knowledge' | 'standard';
 ```
 
@@ -46,10 +55,18 @@ type MemoType = 'knowledge' | 'standard';
 | **标准** | `history` | standard | 历史任务记录 |
 | **标准** | `draft` | standard | 草稿 |
 | **标准** | `evaluation` | standard | 工作绩效评估（工具使用、SLA指标） |
+| **标准** | `achievement` | standard | 成绩备忘录（记录做得很好的事情） |
+| **标准** | `criticism` | standard | 批评备忘录（记录做得不好的事情） |
 | **标准** | `custom` | standard | 自定义 |
 | **主题** | `topic` | knowledge | 主题知识积累（按主题归类的运行时事件聚合） |
 
-> 注：`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation` 时，系统自动设置 `memoType = 'standard'`。
+> 注：`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation`, `achievement`, `criticism` 时，系统自动设置 `memoType = 'standard'`。
+
+#### Achievement / Criticism 写入规则
+
+- `achievement`：仅高管 / 人类专属助理 / HR 可记录，agent 自身禁止写入。
+- `criticism`：高管 / 人类专属助理 / HR / agent 自身均可记录。
+- 规则在 memo create/update 链路统一执行，基于调用方用户上下文角色与来源字段进行校验。
 
 #### Identity（简历）
 
@@ -57,7 +74,7 @@ type MemoType = 'knowledge' | 'standard';
 - **数据源**：Agent 表、AgentSkill 表、Skill 表、OrchestrationTask 表
 - **更新触发**：`agent.updated`、`agent.skill_changed`、定时任务
 - **内容模板**：
-  - Agent Profile（Agent 名称、角色、历史类型、描述）
+  - Agent Profile（Agent 名称、角色、描述）
   - 技能矩阵（绑定技能、熟练度、统计）
   - 能力域（工具集、工具描述、模型能力）
   - 工作风格（人格特质、学习能力）
@@ -87,8 +104,9 @@ type MemoType = 'knowledge' | 'standard';
 
 #### Topic（主题积累）
 
-- 按主题归类的运行时事件聚合
-- 自动从 Redis 事件流聚合
+- 按主题归类的运行时事件聚合。
+- 当前已暂停自动聚合写入（事件仍可进入队列并在 flush 时丢弃，不再落库为 topic memo）。
+- 历史 topic 文档保留可读，后续可按质量方案恢复聚合。
 
 ### 1.4 API（agents service）
 
@@ -144,6 +162,8 @@ type MemoType = 'knowledge' | 'standard';
 - Identity：`$AGENT_DATA_ROOT/memos/<agentId>/identity/identity-and-responsibilities.md`（未配置时回退 `docs/memos/...`）
 - Evaluation：`$AGENT_DATA_ROOT/memos/<agentId>/evaluation/evaluation-<period>.md`（未配置时回退 `docs/memos/...`）
 - Topic：按 `agent + topic` 归并到 `topic-*.md`
+
+> 当前状态：`topic` 自动聚合已暂停，不再新增 topic 聚合文档。
 
 #### 文档落盘
 
