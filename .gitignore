@@ -1,3 +1,7 @@
 */node_modules
 node_modules
 */dist
+
+# .gitignore 至少包含
+backend/.env
+backend/.env.development
