@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    allowedHosts: ['designbyme.cn', 'www.designbyme.cn'],
     proxy: {
       '/api': {
         target: 'http://localhost:3100',
