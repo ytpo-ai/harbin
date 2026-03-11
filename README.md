@@ -25,6 +25,7 @@
 
 - Node.js >= 18.0.0
 - MongoDB >= 5.0
+- Redis >= 7.0
 - 内存 >= 4GB (推荐)
 - 磁盘空间 >= 2GB
 
@@ -41,27 +42,59 @@ cd ai-agent-team-platform
 npm run install:all
 ```
 
-3. **配置API密钥**
+3. **配置环境变量**
 ```bash
-cp backend/.env.example backend/.env.development
-# 编辑 backend/.env.development，填入你的AI模型API密钥
+cp backend/.env.example backend/.env
+# 编辑 backend/.env，配置数据库密码和AI模型API密钥
 ```
 
-4. **启动MongoDB**
+4. **启动数据库服务**
 ```bash
-# 确保MongoDB服务正在运行
+# 方式一：使用 Docker Compose（推荐）
+docker-compose up -d
+
+# 方式二：手动启动
 mongod
+redis-server
 ```
 
 5. **启动项目**
 ```bash
-./backend/start.sh development
+# 方式一：使用启动脚本（推荐）
+./start.sh development
+
+# 方式二：手动逐个启动
+cd backend
+pnpm run start:dev       # legacy (3001)
+pnpm run start:gateway:dev  # gateway (3100)
+pnpm run start:agents:dev   # agents (3002)
+pnpm run start:ws:dev       # ws (3003)
+pnpm run start:ei:dev       # engineering-intelligence (3201)
+
+cd ../frontend
+pnpm dev  # frontend (3000)
 ```
 
 6. **访问应用**
 - 前端界面: http://localhost:3000
 - 后端API: http://localhost:3001
-- API文档: http://localhost:3001/api/docs
+
+### 服务端口一览
+
+| 服务 | 端口 | 说明 | 启动命令 |
+|------|------|------|----------|
+| Frontend | 3000 | 前端界面 | `cd frontend && pnpm dev` |
+| Legacy | 3001 | 主服务（未拆分模块） | `cd backend && pnpm run start:dev` |
+| Agents | 3002 | Agent管理服务 | `cd backend && pnpm run start:agents:dev` |
+| WS | 3003 | WebSocket服务 | `cd backend && pnpm run start:ws:dev` |
+| Gateway | 3100 | API网关入口 | `cd backend && pnpm run start:gateway:dev` |
+| Engineering Intelligence | 3201 | 研发智能服务 | `cd backend && pnpm run start:ei:dev` |
+| MongoDB | 27017 | 数据库 | `docker-compose up -d mongodb` |
+| Redis | 6379 | 缓存 | `docker-compose up -d redis` |
+
+**注意**：
+- 前端通过 Gateway (3100) 访问后端API
+- WebSocket 连接地址: `ws://localhost:3003/ws`
 
 ## 🏗️ 技术架构
 
@@ -112,14 +145,20 @@ API 已按微服务拆分，详细接口请查看：
 
 ### 开发命令
 ```bash
-# 开发环境启动
-npm run dev
+# 开发环境启动（使用脚本，推荐）
+./start.sh development
 
-# 仅启动后端
-npm run dev:backend
+# 手动启动所有后端服务
+cd backend
+pnpm run start:dev        # legacy (3001)
+pnpm run start:gateway:dev # gateway (3100)
+pnpm run start:agents:dev  # agents (3002)
+pnpm run start:ws:dev      # ws (3003)
+pnpm run start:ei:dev      # engineering-intelligence (3201)
 
-# 仅启动前端
-npm run dev:frontend
+# 启动前端
+cd ../frontend
+pnpm dev  # 端口 3000
 
 # 构建项目
 npm run build
@@ -130,20 +169,26 @@ npm run test
 
 ### 环境变量配置
 
-#### 微服务启动（平滑迁移）
+#### 微服务启动
 
 ```bash
-# 终端1：legacy monolith（未迁移模块）
-npm run start:dev
+# 终端1：legacy monolith（未迁移模块）- 端口 3001
+cd backend && pnpm run start:dev
 
-# 终端2：agents service（已拆分）
-npm run start:agents:dev
+# 终端2：agents service（已拆分）- 端口 3002
+cd backend && pnpm run start:agents:dev
 
-# 终端3：gateway（统一入口）
-npm run start:gateway:dev
+# 终端3：gateway（统一入口）- 端口 3100
+cd backend && pnpm run start:gateway:dev
 
-# 终端4：ws service（流式推送）
-npm run start:ws:dev
+# 终端4：ws service（流式推送）- 端口 3003
+cd backend && pnpm run start:ws:dev
+
+# 终端5：engineering-intelligence（研发智能）- 端口 3201
+cd backend && pnpm run start:ei:dev
+
+# 终端6：frontend - 端口 3000
+cd frontend && pnpm dev
 ```
 
 - 前端 HTTP 统一走 Gateway: `http://localhost:3100/api`
@@ -171,13 +216,36 @@ npm run start:ws:dev
 
 ## 🚀 部署指南
 
-### Docker部署
-```bash
-# 构建镜像
-docker-compose build
+详细部署流程请参考：[生产环境部署指南](docs/deployment/PRODUCTION_DEPLOYMENT.md)
 
-# 启动服务
+### Docker部署（推荐）
+```bash
+# 启动数据库服务（MongoDB + Redis）
 docker-compose up -d
+
+# 构建并启动所有服务
+docker-compose up -d --build
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+### 手动部署
+```bash
+# 启动 MongoDB
+mongod --dbpath /data/db
+
+# 启动 Redis
+redis-server
+
+# 启动后端服务
+cd backend && pnpm run start:prod
+
+# 启动前端
+cd frontend && pnpm build && pnpm preview
 ```
 
 ### 生产环境配置
