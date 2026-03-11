@@ -216,7 +216,7 @@ cd frontend && pnpm dev
 
 ## 🚀 部署指南
 
-详细部署流程请参考：[生产环境部署指南](docs/deployment/PRODUCTION_DEPLOYMENT.md)
+详细部署流程请参考：[生产环境部署指南](docs/PRODUCTION_DEPLOYMENT.md)
 
 ### Docker部署（推荐）
 ```bash
