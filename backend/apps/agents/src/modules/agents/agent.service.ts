@@ -108,6 +108,7 @@ interface OpenCodeModelBinding {
 
 interface OpenCodeExecutionConfig {
   provider: 'opencode';
+  projectDirectory?: string;
   modelPolicy: {
     bound?: OpenCodeModelBinding;
     fallback: OpenCodeModelBinding[];
@@ -173,7 +174,11 @@ const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
 };
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
-const OPENCODE_ALLOWED_ROLE_CODES = new Set(['engineering', 'operations', 'technical-expert']);
+const OPENCODE_ALLOWED_ROLE_CODES = new Set([
+  'devops-engineer',
+  'fullstack-engineer',
+  'technical-architect',
+]);
 const OPENCODE_BUDGET_PERIOD_SET = new Set(['day', 'week', 'month']);
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
@@ -592,7 +597,7 @@ export class AgentService {
     const roleCode = String(role.code || '').trim();
     if (!OPENCODE_ALLOWED_ROLE_CODES.has(roleCode)) {
       throw new BadRequestException(
-        `OpenCode execution role not allowed: ${roleCode || 'unknown'}. Allowed roles: engineering, operations, technical-expert`,
+        `OpenCode execution role not allowed: ${roleCode || 'unknown'}. Allowed roles: devops-engineer, fullstack-engineer, technical-architect`,
       );
     }
 
@@ -625,6 +630,15 @@ export class AgentService {
       return null;
     }
 
+    const projectDirectoryRaw = (execution as Record<string, unknown>).projectDirectory;
+    if (projectDirectoryRaw !== undefined && projectDirectoryRaw !== null && typeof projectDirectoryRaw !== 'string') {
+      throw new BadRequestException('agent.config.execution.projectDirectory must be a string');
+    }
+    const projectDirectory =
+      typeof projectDirectoryRaw === 'string' && projectDirectoryRaw.trim().length > 0
+        ? projectDirectoryRaw.trim()
+        : undefined;
+
     const modelPolicyRaw = (execution as Record<string, unknown>).modelPolicy;
     if (modelPolicyRaw !== undefined && !this.isPlainObject(modelPolicyRaw)) {
       throw new BadRequestException('agent.config.execution.modelPolicy must be a JSON object');
@@ -654,6 +668,7 @@ export class AgentService {
 
     return {
       provider: 'opencode',
+      projectDirectory,
       modelPolicy: {
         bound,
         fallback,
@@ -1203,6 +1218,8 @@ export class AgentService {
       model: agent.model?.model,
       openCode: {
         enabled: Boolean(openCodeExecutionConfig),
+        strictExecution: Boolean(openCodeExecutionConfig),
+        projectDirectory: openCodeExecutionConfig?.projectDirectory,
         modelPolicy: openCodeExecutionConfig?.modelPolicy,
       },
     };
@@ -1280,19 +1297,25 @@ export class AgentService {
       }
 
       if (openCodeExecutionConfig) {
+        const sessionConfig: Record<string, unknown> = {
+          metadata: {
+            taskId,
+            agentId: runtimeAgentId,
+            source: 'agents-runtime',
+          },
+        };
+        if (openCodeExecutionConfig.projectDirectory) {
+          sessionConfig.directory = openCodeExecutionConfig.projectDirectory;
+          sessionConfig.projectPath = openCodeExecutionConfig.projectDirectory;
+        }
+
         const openCodeResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
           runtimeContext,
           agentId: runtimeAgentId,
           taskId,
           taskPrompt: this.resolveLatestUserContent(task, messages),
           title: task.title,
-          sessionConfig: {
-            metadata: {
-              taskId,
-              agentId: runtimeAgentId,
-              source: 'agents-runtime',
-            },
-          },
+          sessionConfig,
           model: {
             providerID: modelConfig.provider,
             modelID: modelConfig.model,
@@ -1466,6 +1489,8 @@ export class AgentService {
       model: agent.model?.model,
       openCode: {
         enabled: Boolean(openCodeExecutionConfig),
+        strictExecution: Boolean(openCodeExecutionConfig),
+        projectDirectory: openCodeExecutionConfig?.projectDirectory,
         modelPolicy: openCodeExecutionConfig?.modelPolicy,
       },
     };
@@ -1505,31 +1530,6 @@ export class AgentService {
       }
     }
 
-    // 获取自定义API Key（如果配置了）
-    let customApiKey: string | undefined;
-    if (agent.apiKeyId) {
-      customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
-      if (customApiKey) {
-        this.logger.log(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
-        await this.apiKeyService.recordUsage(agent.apiKeyId);
-      } else {
-        this.logger.warn(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
-      }
-    }
-
-    // 确保provider已注册（使用自定义key或默认key）
-    const modelConfig: AIModel = {
-      id: agent.model.id,
-      name: agent.model.name,
-      provider: agent.model.provider as AIModel['provider'],
-      model: agent.model.model,
-      maxTokens: agent.model.maxTokens || 4096,
-      temperature: agent.model.temperature || 0.7,
-      topP: agent.model.topP,
-      reasoning: agent.model.reasoning,
-    };
-    this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
-
     let fullResponse = '';
     let tokenChunks = 0;
     let streamSequence = 1;
@@ -1537,42 +1537,101 @@ export class AgentService {
     try {
       await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
-      await this.modelService.streamingChat(
-        agent.model.id,
-        messages,
-        (token) => {
-          if (runtimeInterrupted) {
-            throw new Error('Runtime run interrupted');
-          }
-          fullResponse += token;
-          tokenChunks += 1;
-          onToken(token);
-          if (tokenChunks % 20 === 0) {
-            void this.runtimeOrchestrator.assertRunnable(runtimeContext.runId).catch(() => {
-              runtimeInterrupted = true;
-            });
-          }
-          void this.runtimeOrchestrator
-            .recordLlmDelta({
-              runId: runtimeContext.runId,
-              agentId: runtimeAgentId,
-              messageId: runtimeContext.userMessageId,
-              traceId: runtimeContext.traceId,
-              sequence: streamSequence++,
-              delta: token,
-              sessionId: runtimeContext.sessionId,
-              taskId,
-            })
-            .catch((eventError) => {
-              const eventMessage = eventError instanceof Error ? eventError.message : String(eventError || 'unknown');
-              this.logger.warn(`[stream_llm_delta_event_failed] taskId=${taskId} error=${eventMessage}`);
-            });
-        },
-        {
-          temperature: agent.model.temperature,
-          maxTokens: agent.model.maxTokens,
+      if (openCodeExecutionConfig) {
+        const sessionConfig: Record<string, unknown> = {
+          metadata: {
+            taskId,
+            agentId: runtimeAgentId,
+            source: 'agents-runtime',
+            mode: 'streaming',
+          },
+        };
+        if (openCodeExecutionConfig.projectDirectory) {
+          sessionConfig.directory = openCodeExecutionConfig.projectDirectory;
+          sessionConfig.projectPath = openCodeExecutionConfig.projectDirectory;
         }
-      );
+
+        const openCodeResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
+          runtimeContext,
+          agentId: runtimeAgentId,
+          taskId,
+          taskPrompt: this.resolveLatestUserContent(task, messages),
+          title: task.title,
+          sessionConfig,
+          model: {
+            providerID: agent.model.provider,
+            modelID: agent.model.model,
+          },
+        });
+
+        fullResponse = openCodeResult.response || '';
+        if (fullResponse) {
+          tokenChunks = 1;
+          onToken(fullResponse);
+        }
+      } else {
+        // 获取自定义API Key（如果配置了）
+        let customApiKey: string | undefined;
+        if (agent.apiKeyId) {
+          customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
+          if (customApiKey) {
+            this.logger.log(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
+            await this.apiKeyService.recordUsage(agent.apiKeyId);
+          } else {
+            this.logger.warn(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
+          }
+        }
+
+        // 确保provider已注册（使用自定义key或默认key）
+        const modelConfig: AIModel = {
+          id: agent.model.id,
+          name: agent.model.name,
+          provider: agent.model.provider as AIModel['provider'],
+          model: agent.model.model,
+          maxTokens: agent.model.maxTokens || 4096,
+          temperature: agent.model.temperature || 0.7,
+          topP: agent.model.topP,
+          reasoning: agent.model.reasoning,
+        };
+        this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+
+        await this.modelService.streamingChat(
+          agent.model.id,
+          messages,
+          (token) => {
+            if (runtimeInterrupted) {
+              throw new Error('Runtime run interrupted');
+            }
+            fullResponse += token;
+            tokenChunks += 1;
+            onToken(token);
+            if (tokenChunks % 20 === 0) {
+              void this.runtimeOrchestrator.assertRunnable(runtimeContext.runId).catch(() => {
+                runtimeInterrupted = true;
+              });
+            }
+            void this.runtimeOrchestrator
+              .recordLlmDelta({
+                runId: runtimeContext.runId,
+                agentId: runtimeAgentId,
+                messageId: runtimeContext.userMessageId,
+                traceId: runtimeContext.traceId,
+                sequence: streamSequence++,
+                delta: token,
+                sessionId: runtimeContext.sessionId,
+                taskId,
+              })
+              .catch((eventError) => {
+                const eventMessage = eventError instanceof Error ? eventError.message : String(eventError || 'unknown');
+                this.logger.warn(`[stream_llm_delta_event_failed] taskId=${taskId} error=${eventMessage}`);
+              });
+          },
+          {
+            temperature: agent.model.temperature,
+            maxTokens: agent.model.maxTokens,
+          }
+        );
+      }
 
       await this.runtimeOrchestrator.completeRun({
         runId: runtimeContext.runId,

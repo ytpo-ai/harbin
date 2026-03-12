@@ -56,10 +56,12 @@
 #### OpenCode 执行门禁与扩展字段（已实现：第一阶段）
 
 - 执行前门禁：
-  - 角色准入仅允许 `engineering`、`operations`、`technical-expert`。
+- 角色准入仅允许 `devops-engineer`、`fullstack-engineer`、`technical-architect`。
   - 模型绑定匹配：请求模型需命中 Agent 绑定模型或显式 fallback 白名单。
   - 配额检测：按 `agent + period` 检测，超限触发 `permission.asked` 审批流并暂停 run。
+- 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，非流式与流式路径均强制走 OpenCode 执行桥接，不允许回落 native 模型通道。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
+- OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
 - `agent_runs` 扩展字段：
   - `executionChannel`（`native|opencode`）
   - `roleCode`
@@ -114,6 +116,7 @@
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），将备忘录摘要挂载到 session 侧缓存。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
+- 当 `agent.config.execution.provider=opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
 - 会议场景编排意图触发已收敛：移除“执行/继续/开始”单词级触发，新增“否定编排”阻断分支，减少误判。
 - 工具 ID 在运行时统一归一化到 canonical（如 `builtin.sys-mg.mcp.orchestration.*`），并兼容 legacy 别名映射，避免“已分配却被判定未分配”。

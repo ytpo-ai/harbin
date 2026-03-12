@@ -12,9 +12,10 @@
 
 - `agent` 模型新增 `config` JSON 字段，创建/更新/查询全链路打通，历史数据兼容默认 `{}`。
 - OpenCode 门禁落地：
-  - 角色准入：`engineering`、`operations`、`technical-expert`
+- 角色准入：`devops-engineer`、`fullstack-engineer`、`technical-architect`
   - 模型绑定匹配：`agent.config.execution.modelPolicy.bound`
   - 配额校验：`agent.config.budget`（`period+limit+unit=runCount`）
+- 执行通道强制：`agent.config.execution.provider=opencode` 时，非流式与流式执行统一走 OpenCode，流式路径不再回落 `streamingChat`。
 - 超限审批链路落地：触发 `permission.asked` 并暂停，审批通过后 `permission.replied` + 恢复执行。
 - Runtime 数据扩展：`agent_runs` 增加 `roleCode`、`executionChannel`、`executionData`、`sync` 对象。
 
@@ -55,6 +56,7 @@
 ## 4. 文档与口径收口
 
 - 已更新 feature/api/technical 文档口径，统一 `sync` 对象字段表达。
+- 已按主计划 `docs/plan/OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` 收敛执行口径，确保 OpenCode 通道在双执行模式下一致生效。
 - 已补齐工程智能 2 级功能文档与 feature 索引映射。
 - 已同步 OpenCode API 约束、验签头、补偿接口说明。
 
