@@ -105,6 +105,28 @@ const getAgentAvatarUrl = (agent: Agent): string => {
   return String(candidates.find((value) => typeof value === 'string' && value.trim()) || '').trim();
 };
 
+const prettyConfigText = (config?: Record<string, unknown>): string => {
+  return JSON.stringify(config || {}, null, 2);
+};
+
+const parseConfigText = (raw: string): { config?: Record<string, unknown>; error?: string } => {
+  const text = String(raw || '').trim();
+  if (!text) {
+    return { config: {} };
+  }
+
+  try {
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: 'config 必须是 JSON 对象' };
+    }
+    return { config: parsed as Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'JSON 解析失败';
+    return { error: `config JSON 解析失败: ${message}` };
+  }
+};
+
 const Agents: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -509,6 +531,7 @@ const CreateAgentModal: React.FC<{
     modelId: availableModels[0]?.id || '',
     apiKeyId: '',
     selectedTools: [] as string[],
+    configText: '{\n  "execution": {\n    "provider": "opencode"\n  }\n}',
   });
 
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
@@ -616,6 +639,14 @@ const CreateAgentModal: React.FC<{
       },
       learningAbility: 80
     };
+
+    const configParsed = parseConfigText(formData.configText);
+    if (configParsed.error) {
+      alert(configParsed.error);
+      return;
+    }
+
+    (agentData as any).config = configParsed.config || {};
 
     createAgentMutation.mutate(agentData as any);
   };
@@ -760,6 +791,18 @@ const CreateAgentModal: React.FC<{
             )}
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
+              <textarea
+                value={formData.configText}
+                onChange={(e) => setFormData({ ...formData, configText: e.target.value })}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-xs"
+                rows={8}
+                placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
+              />
+              <p className="mt-1 text-xs text-gray-500">仅支持 JSON 对象，创建时将原样传给后端 `config` 字段。</p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">工具设置</label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                 <select
@@ -862,6 +905,7 @@ const EditAgentModal: React.FC<{
   const [description, setDescription] = useState(agent.description || '');
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
   const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
+  const [configText, setConfigText] = useState(prettyConfigText(agent.config));
   const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
   const [testedModelId, setTestedModelId] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -932,7 +976,8 @@ const EditAgentModal: React.FC<{
     roleId.trim() !== (agent.roleId || '').trim() ||
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
-    !arraysEqual(parsedCapabilities, agent.capabilities || []);
+    !arraysEqual(parsedCapabilities, agent.capabilities || []) ||
+    configText.trim() !== prettyConfigText(agent.config).trim();
 
   useEffect(() => {
     setSelectedTools((prev) => prev.filter((toolId) => allowedToolIds.has(toolId)));
@@ -972,7 +1017,15 @@ const EditAgentModal: React.FC<{
       return;
     }
 
+    const configParsed = parseConfigText(configText);
+    if (configParsed.error) {
+      alert(configParsed.error);
+      setActiveTab('basic');
+      return;
+    }
+
     onSave({
+      config: configParsed.config || {},
       model: selectedModel,
       apiKeyId: selectedApiKeyId || undefined,
       tools: selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
@@ -1394,6 +1447,18 @@ const EditAgentModal: React.FC<{
                 rows={6}
                 placeholder="定义Agent的行为和角色..."
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
+              <textarea
+                value={configText}
+                onChange={(e) => setConfigText(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-xs"
+                rows={8}
+                placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
+              />
+              <p className="mt-1 text-xs text-gray-500">编辑并保存后将更新 Agent 的 `config` 字段。</p>
             </div>
 
             <div>

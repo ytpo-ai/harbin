@@ -16,9 +16,15 @@ export class AgentController {
   private normalizeAgent(agent: any) {
     const plain = agent?.toObject ? agent.toObject() : agent;
     const normalizedId = plain?.id || plain?._id?.toString?.() || plain?._id;
+    const rawConfig = plain?.config;
+    const normalizedConfig =
+      rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+        ? rawConfig
+        : {};
     return {
       ...plain,
       id: normalizedId,
+      config: normalizedConfig,
     };
   }
 

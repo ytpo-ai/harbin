@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
+import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { Skill, SkillSchema } from '../../schemas/skill.schema';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
@@ -11,6 +12,7 @@ import { ApiKeysModule } from '../../../../../src/modules/api-keys/api-keys.modu
 import { ToolModule } from '../tools/tool.module';
 import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
+import { OpenCodeModule } from '../opencode/opencode.module';
 
 @Module({
   imports: [
@@ -18,6 +20,7 @@ import { RuntimeModule } from '../runtime/runtime.module';
       { name: Agent.name, schema: AgentSchema },
       { name: AgentProfile.name, schema: AgentProfileSchema },
       { name: AgentSkill.name, schema: AgentSkillSchema },
+      { name: AgentRun.name, schema: AgentRunSchema },
       { name: Skill.name, schema: SkillSchema },
     ]),
     ModelModule,
@@ -25,6 +28,7 @@ import { RuntimeModule } from '../runtime/runtime.module';
     ToolModule,
     MemoModule,
     RuntimeModule,
+    OpenCodeModule,
   ],
   controllers: [AgentController],
   providers: [AgentService],

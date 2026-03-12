@@ -4,6 +4,7 @@ import { GatewayUserContext } from '@libs/contracts';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimePersistenceService } from './runtime-persistence.service';
+import { RuntimeEiSyncService } from './runtime-ei-sync.service';
 import {
   RuntimeControlBody,
   RuntimeControlBodySchema,
@@ -13,6 +14,10 @@ import {
   RuntimeDeadLetterRequeueBodySchema,
   RuntimeMaintenanceAuditQuery,
   RuntimeMaintenanceAuditQuerySchema,
+  RuntimeEiSyncDeadLetterQuery,
+  RuntimeEiSyncDeadLetterQuerySchema,
+  RuntimeEiSyncRequeueBody,
+  RuntimeEiSyncRequeueBodySchema,
   RuntimePurgeLegacyBody,
   RuntimePurgeLegacyBodySchema,
   RuntimeReplayBody,
@@ -25,6 +30,7 @@ export class RuntimeController {
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
     private readonly hookDispatcher: HookDispatcherService,
     private readonly persistence: RuntimePersistenceService,
+    private readonly runtimeEiSyncService: RuntimeEiSyncService,
   ) {}
 
   private getUserContext(req: Request & { userContext?: GatewayUserContext }): GatewayUserContext {
@@ -176,6 +182,62 @@ export class RuntimeController {
       runId,
       action: 'replayed',
       dispatched,
+    };
+  }
+
+  @Post('runs/:runId/sync-ei-replay')
+  async replayRunToEngineeringIntelligence(
+    @Param('runId') runId: string,
+    @Req() req: Request & { userContext?: GatewayUserContext },
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    await this.getAuthorizedRun(runId, context);
+    const result = await this.runtimeEiSyncService.syncRunNow(runId, { replay: true });
+    return {
+      success: result.success,
+      runId,
+      action: 'sync_ei_replay',
+      reason: result.reason,
+    };
+  }
+
+  @Get('sync-ei/dead-letter')
+  async getEngineeringIntelligenceDeadLetterRuns(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Query() rawQuery?: RuntimeEiSyncDeadLetterQuery,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    const query = RuntimeEiSyncDeadLetterQuerySchema.parse(rawQuery || {});
+    const rows = await this.runtimeEiSyncService.listDeadLetterRuns(query.limit || 100);
+    return {
+      success: true,
+      total: rows.length,
+      runs: rows.map((run) => ({
+        runId: run.id,
+        agentId: run.agentId,
+        status: run.status,
+        sync: run.sync,
+        updatedAt: (run as any).updatedAt,
+      })),
+    };
+  }
+
+  @Post('sync-ei/dead-letter/requeue')
+  async requeueEngineeringIntelligenceDeadLetterRuns(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Body() rawBody?: RuntimeEiSyncRequeueBody,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    const body = RuntimeEiSyncRequeueBodySchema.parse(rawBody || {});
+    const result = await this.runtimeEiSyncService.requeueDeadLetterRuns(body.runIds, body.limit || 100, Boolean(body.dryRun));
+    return {
+      success: true,
+      dryRun: Boolean(body.dryRun),
+      matched: result.matched,
+      requeued: result.requeued,
     };
   }
 

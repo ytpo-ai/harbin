@@ -115,6 +115,29 @@ export interface AgentRuntimeSessionListResponse {
   sessions: AgentRuntimeSession[];
 }
 
+export interface AgentRuntimeRun {
+  id: string;
+  status: string;
+  currentStep: number;
+  taskId?: string;
+  sessionId?: string;
+  roleCode?: string;
+  executionChannel?: 'native' | 'opencode';
+  executionData?: Record<string, unknown>;
+  sync?: {
+    state: 'pending' | 'synced' | 'failed';
+    lastSyncAt?: string;
+    retryCount: number;
+    nextRetryAt?: string;
+    lastError?: string;
+    deadLettered?: boolean;
+  };
+  agentId: string;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+}
+
 export const agentService = {
   // 获取所有agent
   async getAgents(): Promise<Agent[]> {
@@ -225,6 +248,25 @@ export const agentService = {
 
   async getAgentRuntimeSession(sessionId: string): Promise<AgentRuntimeSession> {
     const response = await api.get(`/agents/runtime/sessions/${encodeURIComponent(sessionId)}`);
+    return response.data;
+  },
+
+  async getRuntimeRun(runId: string): Promise<AgentRuntimeRun | null> {
+    const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}`);
+    return response.data?.run || null;
+  },
+
+  async resumeRuntimeRun(runId: string, reason?: string): Promise<{ success: boolean }> {
+    const response = await api.post(`/agents/runtime/runs/${encodeURIComponent(runId)}/resume`, {
+      reason: reason || 'manual_resume_from_ui',
+    });
+    return response.data;
+  },
+
+  async cancelRuntimeRun(runId: string, reason?: string): Promise<{ success: boolean }> {
+    const response = await api.post(`/agents/runtime/runs/${encodeURIComponent(runId)}/cancel`, {
+      reason: reason || 'manual_cancel_from_ui',
+    });
     return response.data;
   },
 

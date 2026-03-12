@@ -203,6 +203,14 @@ export class RuntimeOrchestratorService {
     currentStep: number;
     taskId?: string;
     sessionId?: string;
+    roleCode?: string;
+    executionChannel?: 'native' | 'opencode';
+    executionData?: Record<string, unknown>;
+    sync?: {
+      state: 'pending' | 'synced' | 'failed';
+      lastSyncAt?: Date;
+      retryCount: number;
+    };
     
     agentId: string;
     startedAt: Date;
@@ -217,6 +225,10 @@ export class RuntimeOrchestratorService {
       currentStep: run.currentStep,
       taskId: run.taskId,
       sessionId: run.sessionId,
+      roleCode: run.roleCode,
+      executionChannel: run.executionChannel,
+      executionData: run.executionData,
+      sync: run.sync,
       
       agentId: run.agentId,
       startedAt: run.startedAt,
@@ -353,6 +365,59 @@ export class RuntimeOrchestratorService {
         actorId: actor?.actorId || 'system',
         actorType: actor?.actorType || 'system',
       },
+    });
+  }
+
+  async recordPermissionAsked(input: {
+    runId: string;
+    agentId: string;
+    sessionId?: string;
+    taskId?: string;
+    traceId: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const run = await this.persistence.getRun(input.runId);
+    if (!run) {
+      throw new Error(`Runtime run not found: ${input.runId}`);
+    }
+
+    const sequence = await this.persistence.incrementRunStep(input.runId);
+    await this.emitEvent({
+      eventType: 'permission.asked',
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      taskId: input.taskId,
+      sequence,
+      traceId: input.traceId,
+      payload: input.payload,
+    });
+  }
+
+  async recordPermissionDecision(input: {
+    runId: string;
+    agentId: string;
+    sessionId?: string;
+    taskId?: string;
+    traceId: string;
+    approved: boolean;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const run = await this.persistence.getRun(input.runId);
+    if (!run) {
+      throw new Error(`Runtime run not found: ${input.runId}`);
+    }
+
+    const sequence = await this.persistence.incrementRunStep(input.runId);
+    await this.emitEvent({
+      eventType: input.approved ? 'permission.replied' : 'permission.denied',
+      agentId: input.agentId,
+      sessionId: input.sessionId,
+      runId: input.runId,
+      taskId: input.taskId,
+      sequence,
+      traceId: input.traceId,
+      payload: input.payload,
     });
   }
 

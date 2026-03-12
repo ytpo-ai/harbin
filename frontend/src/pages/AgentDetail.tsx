@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   agentService,
+  AgentRuntimeRun,
   AgentRuntimeSession,
   AgentRuntimeSessionMessage,
 } from '../services/agentService';
@@ -124,6 +125,7 @@ const AgentDetail: React.FC = () => {
   const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
   const [sessionCopyNotice, setSessionCopyNotice] = useState('');
   const [expandedLogIds, setExpandedLogIds] = useState<Record<string, boolean>>({});
+  const [handlingApprovalRunId, setHandlingApprovalRunId] = useState('');
 
   const { data: agent, isLoading: isAgentLoading } = useQuery(
     ['agent-detail', agentId],
@@ -231,6 +233,34 @@ const AgentDetail: React.FC = () => {
   const logs = logQuery.data?.logs || [];
   const sessions = sessionListQuery.data?.sessions || [];
   const totalSessionPages = sessionListQuery.data?.totalPages || 1;
+
+  const latestRunIdFromLogs = useMemo(() => {
+    for (const item of logs) {
+      const runId = item.details?.runId;
+      if (typeof runId === 'string' && runId.trim()) {
+        return runId.trim();
+      }
+    }
+    return '';
+  }, [logs]);
+
+  const approvalRunCandidates = useMemo(() => {
+    return logs
+      .filter((item) => item.details?.status === 'asked')
+      .map((item) => String(item.details?.runId || '').trim())
+      .filter(Boolean);
+  }, [logs]);
+
+  const approvalTargetRunId = approvalRunCandidates[0] || '';
+
+  const runtimeRunQuery = useQuery(
+    ['agent-runtime-run', latestRunIdFromLogs],
+    () => agentService.getRuntimeRun(latestRunIdFromLogs),
+    {
+      enabled: !!latestRunIdFromLogs,
+      retry: false,
+    },
+  );
 
   useEffect(() => {
     if (selectedSessionId) return;
@@ -434,6 +464,36 @@ const AgentDetail: React.FC = () => {
     const copied = await copyText(buildSessionClipboardText(session));
     setSessionCopyNotice(copied ? '会话内容已复制到剪贴板' : '复制失败，请检查浏览器剪贴板权限');
     window.setTimeout(() => setSessionCopyNotice(''), 2000);
+  };
+
+  const formatSyncState = (run?: AgentRuntimeRun | null): string => {
+    const state = run?.sync?.state;
+    if (state === 'synced') return '已同步';
+    if (state === 'failed') return '同步失败';
+    if (state === 'pending') return '待同步';
+    return '-';
+  };
+
+  const handleApprovalDecision = async (approved: boolean) => {
+    if (!approvalTargetRunId) {
+      alert('暂无可处理的授权请求');
+      return;
+    }
+
+    setHandlingApprovalRunId(approvalTargetRunId);
+    try {
+      if (approved) {
+        await agentService.resumeRuntimeRun(approvalTargetRunId, 'approved_from_agent_detail');
+      } else {
+        await agentService.cancelRuntimeRun(approvalTargetRunId, 'rejected_from_agent_detail');
+      }
+      await Promise.all([logQuery.refetch(), runtimeRunQuery.refetch()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '授权处理失败';
+      alert(message);
+    } finally {
+      setHandlingApprovalRunId('');
+    }
   };
 
   if (!agentId) {
@@ -753,6 +813,46 @@ const AgentDetail: React.FC = () => {
 
             <div className="mt-4 text-sm text-slate-500">
               当前共 <span className="font-semibold text-slate-700">{logQuery.data?.total || 0}</span> 条，页码 <span className="font-semibold text-slate-700">{logQuery.data?.page || 1}</span>/{Math.max(1, logQuery.data?.totalPages || 1)}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">运行状态</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{runtimeRunQuery.data?.status || '-'}</p>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">runId: {latestRunIdFromLogs || '-'}</p>
+              <p className="mt-1 text-xs text-slate-500">step: {runtimeRunQuery.data?.currentStep ?? '-'}</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">同步状态</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{formatSyncState(runtimeRunQuery.data)}</p>
+              <p className="mt-1 text-xs text-slate-500">重试次数: {runtimeRunQuery.data?.sync?.retryCount ?? '-'}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                最近同步: {runtimeRunQuery.data?.sync?.lastSyncAt ? new Date(runtimeRunQuery.data.sync.lastSyncAt).toLocaleString() : '-'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-medium uppercase tracking-wider text-slate-400">授权处理</p>
+              <p className="mt-2 text-sm font-semibold text-slate-900">待处理: {approvalRunCandidates.length}</p>
+              <p className="mt-1 break-all font-mono text-xs text-slate-500">runId: {approvalTargetRunId || '-'}</p>
+              <div className="mt-3 flex gap-2">
+                <button
+                  onClick={() => handleApprovalDecision(true)}
+                  disabled={!approvalTargetRunId || handlingApprovalRunId === approvalTargetRunId}
+                  className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 disabled:opacity-50"
+                >
+                  同意并恢复
+                </button>
+                <button
+                  onClick={() => handleApprovalDecision(false)}
+                  disabled={!approvalTargetRunId || handlingApprovalRunId === approvalTargetRunId}
+                  className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-50"
+                >
+                  拒绝并取消
+                </button>
+              </div>
             </div>
           </div>
 

@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
   Post,
   Put,
@@ -74,5 +75,23 @@ export class EngineeringIntelligenceController {
       path,
       limit ? Number(limit) : undefined,
     );
+  }
+
+  @Post('opencode/runs/sync')
+  async syncOpenCodeRun(@Body() payload: unknown) {
+    return this.engineeringIntelligenceService.syncOpenCodeRun(payload);
+  }
+
+  @Post('opencode/ingest/events')
+  async ingestOpenCodeEvents(
+    @Body() payload: unknown,
+    @Headers('x-ei-node-signature') signature?: string,
+    @Headers('x-ei-node-timestamp') timestamp?: string,
+  ) {
+    return this.engineeringIntelligenceService.ingestOpenCodeEvents({
+      payload,
+      signature,
+      timestamp,
+    });
   }
 }

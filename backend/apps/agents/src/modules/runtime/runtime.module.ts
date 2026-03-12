@@ -14,6 +14,7 @@ import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
 import { RuntimeActionLogSyncService } from './runtime-action-log-sync.service';
+import { RuntimeEiSyncService } from './runtime-ei-sync.service';
 import { RuntimeController } from './runtime.controller';
 import { MemoModule } from '../memos/memo.module';
 
@@ -31,7 +32,7 @@ import { MemoModule } from '../memos/memo.module';
     ]),
   ],
   controllers: [RuntimeController],
-  providers: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService],
-  exports: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService],
+  providers: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService, RuntimeEiSyncService],
+  exports: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService, RuntimeEiSyncService],
 })
 export class RuntimeModule {}

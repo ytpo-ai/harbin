@@ -15,6 +15,39 @@ export class AgentRun {
   agentName: string;
 
   @Prop()
+  roleCode?: string;
+
+  @Prop({ enum: ['native', 'opencode'], default: 'native' })
+  executionChannel?: 'native' | 'opencode';
+
+  @Prop({ type: Object })
+  executionData?: Record<string, unknown>;
+
+  @Prop({
+    type: {
+      state: { type: String, enum: ['pending', 'synced', 'failed'], default: 'pending' },
+      lastSyncAt: { type: Date, required: false },
+      retryCount: { type: Number, default: 0 },
+      nextRetryAt: { type: Date, required: false },
+      lastError: { type: String, required: false },
+      deadLettered: { type: Boolean, default: false },
+    },
+    default: {
+      state: 'pending',
+      retryCount: 0,
+      deadLettered: false,
+    },
+  })
+  sync?: {
+    state: 'pending' | 'synced' | 'failed';
+    lastSyncAt?: Date;
+    retryCount: number;
+    nextRetryAt?: Date;
+    lastError?: string;
+    deadLettered?: boolean;
+  };
+
+  @Prop()
   sessionId?: string;
 
   @Prop()
@@ -55,3 +88,4 @@ AgentRunSchema.index({ agentId: 1, createdAt: -1 });
 AgentRunSchema.index({ sessionId: 1, createdAt: -1 });
 AgentRunSchema.index({ taskId: 1, createdAt: -1 });
 AgentRunSchema.index({ status: 1, updatedAt: -1 });
+AgentRunSchema.index({ 'sync.state': 1, updatedAt: -1 });

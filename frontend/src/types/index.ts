@@ -29,6 +29,7 @@ export interface Agent {
   roleId: string;
   description: string;
   model: AIModel;
+  config?: Record<string, unknown>;
   capabilities: string[];
   systemPrompt: string;
   isActive: boolean;

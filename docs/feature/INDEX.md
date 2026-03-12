@@ -45,8 +45,8 @@
 ### 4. 工程智能模块 (engineering-intelligence)
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
-| `engineering-intelligence/code_self_awareness` | 自我感知 | (待完善) |
-| `engineering-intelligence/code_self_evolution` | 自动进化 | (待完善) |
+| `engineering-intelligence/code_self_awareness` | 自我感知 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
+| `engineering-intelligence/code_self_evolution` | 自动进化 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
 
 ### 5. HR 模块 (hr)
 
@@ -80,7 +80,7 @@
 | `docs/feature/ORCHETRATION.md` | orchestration |
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
-| `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence |
+| `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
 
 ### 待完善的功能文档
 

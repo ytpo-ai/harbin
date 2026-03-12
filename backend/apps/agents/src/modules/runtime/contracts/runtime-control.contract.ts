@@ -50,10 +50,22 @@ export const RuntimeMaintenanceAuditQuerySchema = z.object({
   batchId: z.string().min(1).max(120).optional(),
 });
 
+export const RuntimeEiSyncDeadLetterQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+});
+
+export const RuntimeEiSyncRequeueBodySchema = z.object({
+  runIds: z.array(z.string().min(1).max(120)).min(1).max(500).optional(),
+  limit: z.number().int().positive().max(500).optional(),
+  dryRun: z.boolean().optional(),
+});
+
 export type RuntimeDeadLetterQuery = z.infer<typeof RuntimeDeadLetterQuerySchema>;
 export type RuntimeDeadLetterRequeueBody = z.infer<typeof RuntimeDeadLetterRequeueBodySchema>;
 export type RuntimePurgeLegacyBody = z.infer<typeof RuntimePurgeLegacyBodySchema>;
 export type RuntimeMaintenanceAuditQuery = z.infer<typeof RuntimeMaintenanceAuditQuerySchema>;
+export type RuntimeEiSyncDeadLetterQuery = z.infer<typeof RuntimeEiSyncDeadLetterQuerySchema>;
+export type RuntimeEiSyncRequeueBody = z.infer<typeof RuntimeEiSyncRequeueBodySchema>;
 
 export type RuntimeControlBody = z.infer<typeof RuntimeControlBodySchema>;
 export type RuntimeReplayBody = z.infer<typeof RuntimeReplayBodySchema>;

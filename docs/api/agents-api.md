@@ -15,6 +15,20 @@
 - `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
 
+OpenCode 相关（规划中）：
+
+- Agent 实体增加 `config` JSON 字段（创建/更新/查询可读写，历史默认 `{}`）。
+- `POST /agents/:id/execute-with-opencode`：以 OpenCode 通道执行任务。
+  - 入参关键字段：`task`、`serveEndpoint`、`mode`、`context`、`approvalPolicy`。
+  - 执行前门禁：角色准入、模型匹配、`agent + period` 配额检测。
+  - 超限行为：触发 `permission.asked` 并暂停 run；带 `context.approval.approved=true` 重试时写入 `permission.replied` 并恢复执行。
+
+`Agent.config` 建议结构（当前实现支持 JSON 对象透传）：
+
+- `execution.provider`: `opencode` 时启用 OpenCode 通道。
+- `execution.modelPolicy.bound`: 绑定模型（`provider/model`）匹配校验。
+- `budget`: `period + limit + unit(runCount)` 配额策略。
+
 硬切换约束：
 
 - `roleId` 为必填字段（创建与更新均需满足）。
@@ -258,6 +272,7 @@ Skill Master MCP 参数约定：
 - 所有 Runtime Run Control 接口要求内部上下文角色为：`system/admin/owner`
 - 组织隔离：非 `system` 角色仅可操作与其 `organizationId` 相同的 run
 - `GET /agents/runtime/runs/:runId`：查询 run 状态
+  - 返回扩展字段：`roleCode`、`executionChannel`、`executionData`、`sync`。
 - `GET /agents/runtime/metrics`：查询 runtime hooks/outbox 指标（发布量、失败量、队列状态、死信摘要）
 - `GET /agents/runtime/sessions?ownerType=&ownerId=&status=&sessionType=&keyword=&page=&pageSize=`：分页查询 session（支持按 Agent 过滤）
 - `GET /agents/runtime/sessions/:id`：查询单个 session 详情（含消息轨迹）
@@ -269,6 +284,36 @@ Skill Master MCP 参数约定：
 - `POST /agents/runtime/runs/:runId/resume`：恢复 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/cancel`：取消 run（支持 body: `reason`、`actorId`、`actorType`）
 - `POST /agents/runtime/runs/:runId/replay`：重放 run 事件到 hook 通道（支持 body: `eventTypes`、`fromSequence`、`toSequence`、`channel`、`limit`）
+
+OpenCode 运行态查询（规划中）：
+
+- `GET /agents/runtime/runs/:runId/opencode-status`
+  - 返回建议字段：`phase/progress/currentStep/blockingReason/approvalState/lastEventAt`。
+
+OpenCode 审批接口（规划中）：
+
+- `GET /agents/runtime/permissions?status=&runId=`
+- `POST /agents/runtime/permissions/:id/approve`
+- `POST /agents/runtime/permissions/:id/reject`
+
+OpenCode EI 同步补偿（已实现骨架）：
+
+- `POST /agents/runtime/runs/:runId/sync-ei-replay`
+  - 作用：按 run 触发一次 EI 同步重放。
+- `GET /agents/runtime/sync-ei/dead-letter?limit=`
+  - 作用：查询 EI 同步死信 run 列表。
+- `POST /agents/runtime/sync-ei/dead-letter/requeue`
+  - 入参：`runIds?`、`limit?`、`dryRun?`
+  - 作用：将死信 run 重新入队，交由后台重试任务处理。
+
+`agent_runs.sync` 对象字段：
+
+- `state`: `pending|synced|failed`
+- `lastSyncAt`
+- `retryCount`
+- `nextRetryAt`
+- `lastError`
+- `deadLettered`
 
 ## Orchestration Scheduler（Legacy Backend）
 

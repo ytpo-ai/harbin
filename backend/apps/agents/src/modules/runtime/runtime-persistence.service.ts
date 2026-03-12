@@ -217,15 +217,36 @@ export class RuntimePersistenceService {
   async createRun(input: {
     agentId: string;
     agentName: string;
+    roleCode?: string;
+    executionChannel?: 'native' | 'opencode';
+    executionData?: Record<string, unknown>;
     sessionId?: string;
     taskId?: string;
     taskTitle: string;
     taskDescription: string;
     metadata?: Record<string, unknown>;
   }): Promise<AgentRun> {
+    const metadata = input.metadata || {};
+    const roleCodeFromMetadata = typeof metadata.roleCode === 'string' ? metadata.roleCode.trim() : undefined;
+    const executionChannelFromMetadata =
+      metadata.executionChannel === 'opencode' || metadata.executionChannel === 'native'
+        ? (metadata.executionChannel as 'native' | 'opencode')
+        : undefined;
+    const executionDataFromMetadata =
+      metadata.executionData && typeof metadata.executionData === 'object' && !Array.isArray(metadata.executionData)
+        ? (metadata.executionData as Record<string, unknown>)
+        : undefined;
+
     const run = new this.runModel({
       id: `run-${uuidv4()}`,
       ...input,
+      roleCode: input.roleCode || roleCodeFromMetadata,
+      executionChannel: input.executionChannel || executionChannelFromMetadata || 'native',
+      executionData: input.executionData || executionDataFromMetadata,
+      sync: {
+        state: 'pending',
+        retryCount: 0,
+      },
       status: 'running',
       currentStep: 0,
       startedAt: new Date(),

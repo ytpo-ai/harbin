@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
+import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { ModelService } from '../models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
@@ -15,6 +16,8 @@ import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 import { MemoService } from '../memos/memo.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
+import { RuntimeEiSyncService } from '../runtime/runtime-ei-sync.service';
+import { OpenCodeExecutionService } from '../opencode/opencode-execution.service';
 import { RedisService } from '@libs/infra';
 
 export interface AgentContext {
@@ -23,6 +26,12 @@ export interface AgentContext {
   actor?: {
     employeeId?: string;
     role?: string;
+  };
+  approval?: {
+    approved?: boolean;
+    approvalId?: string;
+    approverId?: string;
+    reason?: string;
   };
   previousMessages: ChatMessage[];
   workingMemory: Map<string, any>;
@@ -92,6 +101,25 @@ interface EnabledAgentSkillContext {
   proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }
 
+interface OpenCodeModelBinding {
+  provider: string;
+  model: string;
+}
+
+interface OpenCodeExecutionConfig {
+  provider: 'opencode';
+  modelPolicy: {
+    bound?: OpenCodeModelBinding;
+    fallback: OpenCodeModelBinding[];
+  };
+}
+
+interface AgentBudgetConfig {
+  period: 'day' | 'week' | 'month';
+  limit: number;
+  unit: 'runCount';
+}
+
 const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
   role: 'general-assistant',
   tools: [],
@@ -145,6 +173,8 @@ const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
 };
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
+const OPENCODE_ALLOWED_ROLE_CODES = new Set(['engineering', 'operations', 'technical-expert']);
+const OPENCODE_BUDGET_PERIOD_SET = new Set(['day', 'week', 'month']);
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -329,6 +359,7 @@ export class AgentService {
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(AgentSkill.name) private agentSkillModel: Model<AgentSkillDocument>,
+    @InjectModel(AgentRun.name) private agentRunModel: Model<AgentRunDocument>,
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
     private readonly apiKeyService: ApiKeyService,
@@ -336,6 +367,8 @@ export class AgentService {
     private readonly memoService: MemoService,
     private readonly memoEventBus: MemoEventBusService,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
+    private readonly runtimeEiSyncService: RuntimeEiSyncService,
+    private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -376,6 +409,7 @@ export class AgentService {
         temperature: agentData.model.temperature ?? 0.7,
       },
       capabilities: agentData.capabilities || [],
+      config: this.normalizeAgentConfig(agentData.config),
       tools: agentData.tools || [],
       permissions: agentData.permissions || [],
       personality: agentData.personality || {
@@ -443,6 +477,11 @@ export class AgentService {
       ...updates,
       updatedAt: new Date(),
     };
+
+    const hasConfigField = Object.prototype.hasOwnProperty.call(updates, 'config');
+    if (hasConfigField) {
+      normalizedUpdates.config = this.normalizeAgentConfig(updates.config);
+    }
 
     const hasRoleIdField = Object.prototype.hasOwnProperty.call(updates, 'roleId');
     if (hasRoleIdField) {
@@ -529,6 +568,300 @@ export class AgentService {
     }
 
     return normalizedTools;
+  }
+
+  private normalizeAgentConfig(config: unknown): Record<string, unknown> {
+    if (config === undefined || config === null) {
+      return {};
+    }
+
+    if (typeof config !== 'object' || Array.isArray(config)) {
+      throw new BadRequestException('config must be a JSON object');
+    }
+
+    return { ...(config as Record<string, unknown>) };
+  }
+
+  private async assertOpenCodeExecutionGate(agent: Agent): Promise<void> {
+    const executionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    if (!executionConfig) {
+      return;
+    }
+
+    const role = await this.assertRoleExists(agent.roleId);
+    const roleCode = String(role.code || '').trim();
+    if (!OPENCODE_ALLOWED_ROLE_CODES.has(roleCode)) {
+      throw new BadRequestException(
+        `OpenCode execution role not allowed: ${roleCode || 'unknown'}. Allowed roles: engineering, operations, technical-expert`,
+      );
+    }
+
+    const boundModel = executionConfig.modelPolicy.bound;
+    if (!boundModel) {
+      return;
+    }
+
+    const currentProvider = String(agent.model?.provider || '').trim();
+    const currentModel = String(agent.model?.model || '').trim();
+    if (!this.matchesModelBinding(boundModel, currentProvider, currentModel)) {
+      throw new BadRequestException(
+        `OpenCode model binding mismatch: expected ${boundModel.provider}/${boundModel.model}, got ${currentProvider}/${currentModel}`,
+      );
+    }
+  }
+
+  private parseOpenCodeExecutionConfig(config: unknown): OpenCodeExecutionConfig | null {
+    if (!this.isPlainObject(config)) {
+      return null;
+    }
+
+    const execution = (config as Record<string, unknown>).execution;
+    if (!this.isPlainObject(execution)) {
+      return null;
+    }
+
+    const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
+    if (provider !== 'opencode') {
+      return null;
+    }
+
+    const modelPolicyRaw = (execution as Record<string, unknown>).modelPolicy;
+    if (modelPolicyRaw !== undefined && !this.isPlainObject(modelPolicyRaw)) {
+      throw new BadRequestException('agent.config.execution.modelPolicy must be a JSON object');
+    }
+
+    const modelPolicy = this.isPlainObject(modelPolicyRaw)
+      ? (modelPolicyRaw as Record<string, unknown>)
+      : {};
+    const bound = this.parseModelBinding(modelPolicy.bound, 'agent.config.execution.modelPolicy.bound');
+
+    const fallbackRaw = modelPolicy.fallback;
+    const fallback: OpenCodeModelBinding[] = [];
+    if (fallbackRaw !== undefined) {
+      if (!Array.isArray(fallbackRaw)) {
+        throw new BadRequestException('agent.config.execution.modelPolicy.fallback must be an array');
+      }
+      for (let i = 0; i < fallbackRaw.length; i += 1) {
+        const binding = this.parseModelBinding(
+          fallbackRaw[i],
+          `agent.config.execution.modelPolicy.fallback[${i}]`,
+        );
+        if (binding) {
+          fallback.push(binding);
+        }
+      }
+    }
+
+    return {
+      provider: 'opencode',
+      modelPolicy: {
+        bound,
+        fallback,
+      },
+    };
+  }
+
+  private parseModelBinding(value: unknown, fieldPath: string): OpenCodeModelBinding | undefined {
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+
+    if (typeof value === 'string') {
+      const raw = value.trim();
+      if (!raw) {
+        return undefined;
+      }
+      const separator = raw.includes('/') ? '/' : ':';
+      const [provider, model] = raw.split(separator);
+      if (!provider || !model) {
+        throw new BadRequestException(`${fieldPath} must be "provider/model" or an object`);
+      }
+      return {
+        provider: provider.trim(),
+        model: model.trim(),
+      };
+    }
+
+    if (!this.isPlainObject(value)) {
+      throw new BadRequestException(`${fieldPath} must be a JSON object`);
+    }
+
+    const provider = String((value as Record<string, unknown>).provider || '').trim();
+    const model = String((value as Record<string, unknown>).model || '').trim();
+    if (!provider || !model) {
+      throw new BadRequestException(`${fieldPath} must include provider and model`);
+    }
+    return { provider, model };
+  }
+
+  private matchesModelBinding(binding: OpenCodeModelBinding, provider: string, model: string): boolean {
+    return binding.provider === provider && binding.model === model;
+  }
+
+  private isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private async applyAgentBudgetGate(
+    agent: Agent,
+    runtimeAgentId: string,
+    task: Task,
+    runtimeContext: RuntimeRunContext,
+    context?: Partial<AgentContext>,
+  ): Promise<void> {
+    const budgetConfig = this.parseAgentBudgetConfig(agent.config);
+    if (!budgetConfig) {
+      return;
+    }
+
+    const usage = await this.evaluateAgentBudgetUsage(
+      runtimeAgentId,
+      budgetConfig,
+      runtimeContext.resumed,
+    );
+
+    if (!usage.exceeded) {
+      return;
+    }
+
+    const approval = context?.approval;
+    const approved = approval?.approved === true;
+    const quotaPayload = {
+      gate: 'agent_budget',
+      period: budgetConfig.period,
+      unit: budgetConfig.unit,
+      limit: budgetConfig.limit,
+      usedBefore: usage.usedBefore,
+      usedAfter: usage.usedAfter,
+      periodStart: usage.periodStart.toISOString(),
+      periodEnd: usage.periodEnd.toISOString(),
+    };
+
+    if (approved) {
+      const approverId = approval?.approverId || context?.actor?.employeeId;
+      await this.runtimeOrchestrator.resumeRunWithActor(runtimeContext.runId, {
+        actorId: approverId || 'approval-system',
+        actorType: approverId ? 'employee' : 'system',
+        reason: approval?.reason || 'quota approval granted',
+      });
+      await this.runtimeOrchestrator.recordPermissionDecision({
+        runId: runtimeContext.runId,
+        agentId: runtimeAgentId,
+        sessionId: runtimeContext.sessionId,
+        taskId: task.id,
+        traceId: runtimeContext.traceId,
+        approved: true,
+        payload: {
+          ...quotaPayload,
+          approvalId: approval?.approvalId,
+          approverId,
+          reason: approval?.reason || 'quota approval granted',
+        },
+      });
+      return;
+    }
+
+    await this.runtimeOrchestrator.pauseRunWithActor(runtimeContext.runId, {
+      actorId: context?.actor?.employeeId || 'system',
+      actorType: context?.actor?.employeeId ? 'employee' : 'system',
+      reason: 'quota exceeded, approval required',
+    });
+    await this.runtimeOrchestrator.recordPermissionAsked({
+      runId: runtimeContext.runId,
+      agentId: runtimeAgentId,
+      sessionId: runtimeContext.sessionId,
+      taskId: task.id,
+      traceId: runtimeContext.traceId,
+      payload: {
+        ...quotaPayload,
+        requestType: 'quota.exceeded',
+        message: 'Agent quota exceeded and approval is required to continue execution',
+      },
+    });
+
+    throw new BadRequestException(
+      `Agent quota exceeded and run paused for approval. period=${budgetConfig.period}, limit=${budgetConfig.limit}, used=${usage.usedAfter}`,
+    );
+  }
+
+  private parseAgentBudgetConfig(config: unknown): AgentBudgetConfig | null {
+    if (!this.isPlainObject(config)) {
+      return null;
+    }
+
+    const budget = (config as Record<string, unknown>).budget;
+    if (budget === undefined || budget === null) {
+      return null;
+    }
+    if (!this.isPlainObject(budget)) {
+      throw new BadRequestException('agent.config.budget must be a JSON object');
+    }
+
+    const periodRaw = String((budget as Record<string, unknown>).period || '').trim().toLowerCase();
+    const limitRaw = Number((budget as Record<string, unknown>).limit);
+    const unitRaw = String((budget as Record<string, unknown>).unit || 'runCount').trim();
+
+    if (!periodRaw || !OPENCODE_BUDGET_PERIOD_SET.has(periodRaw)) {
+      throw new BadRequestException('agent.config.budget.period must be one of day/week/month');
+    }
+    if (!Number.isFinite(limitRaw) || limitRaw < 0) {
+      throw new BadRequestException('agent.config.budget.limit must be a non-negative number');
+    }
+    if (unitRaw !== 'runCount') {
+      throw new BadRequestException('agent.config.budget.unit currently only supports runCount');
+    }
+
+    return {
+      period: periodRaw as AgentBudgetConfig['period'],
+      limit: Math.floor(limitRaw),
+      unit: 'runCount',
+    };
+  }
+
+  private async evaluateAgentBudgetUsage(
+    agentId: string,
+    budgetConfig: AgentBudgetConfig,
+    resumedRun: boolean,
+  ): Promise<{
+    usedBefore: number;
+    usedAfter: number;
+    exceeded: boolean;
+    periodStart: Date;
+    periodEnd: Date;
+  }> {
+    const periodStart = this.resolveBudgetPeriodStart(budgetConfig.period);
+    const periodEnd = new Date();
+    const usedAfter = await this.agentRunModel
+      .countDocuments({
+        agentId,
+        startedAt: {
+          $gte: periodStart,
+          $lte: periodEnd,
+        },
+      })
+      .exec();
+    const usedBefore = resumedRun ? usedAfter : Math.max(0, usedAfter - 1);
+
+    return {
+      usedBefore,
+      usedAfter,
+      exceeded: usedAfter > budgetConfig.limit,
+      periodStart,
+      periodEnd,
+    };
+  }
+
+  private resolveBudgetPeriodStart(period: AgentBudgetConfig['period']): Date {
+    const now = new Date();
+    if (period === 'day') {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+    if (period === 'week') {
+      const day = now.getDay();
+      const diffToMonday = (day + 6) % 7;
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
+    }
+    return new Date(now.getFullYear(), now.getMonth(), 1);
   }
 
   async migrateAllToolIdsToCanonical(): Promise<{
@@ -811,6 +1144,8 @@ export class AgentService {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
 
+    await this.assertOpenCodeExecutionGate(agent);
+
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
     const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || agentId;
@@ -857,6 +1192,21 @@ export class AgentService {
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
     this.logger.log(`[task_messages] taskId=${taskId} compiledMessages=${messages.length}`);
 
+    const openCodeExecutionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    const role = await this.getRoleById(agent.roleId);
+    const roleCode = role?.code ? String(role.code).trim() : undefined;
+    const executionChannel: 'native' | 'opencode' = openCodeExecutionConfig ? 'opencode' : 'native';
+    const executionData: Record<string, unknown> = {
+      modelProvider: agent.model?.provider,
+      modelId: agent.model?.id,
+      modelName: agent.model?.name,
+      model: agent.model?.model,
+      openCode: {
+        enabled: Boolean(openCodeExecutionConfig),
+        modelPolicy: openCodeExecutionConfig?.modelPolicy,
+      },
+    };
+
     const runtimeContext = await this.runtimeOrchestrator.startRun({
       agentId: runtimeAgentId,
       agentName: agent.name,
@@ -868,6 +1218,13 @@ export class AgentService {
       metadata: {
         taskType: task.type,
         taskPriority: task.priority,
+        roleCode,
+        executionChannel,
+        executionData,
+        sync: {
+          state: 'pending',
+          retryCount: 0,
+        },
         ...(context?.teamContext?.meetingId
           ? {
               meetingContext: {
@@ -894,6 +1251,9 @@ export class AgentService {
     }
 
     try {
+      await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
+      let response = '';
+
       // 确保模型已注册 - 类型转换
       const modelConfig: AIModel = {
         id: agent.model.id,
@@ -919,22 +1279,45 @@ export class AgentService {
         }
       }
 
-      // 注册provider（使用自定义key或默认key）
-      this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+      if (openCodeExecutionConfig) {
+        const openCodeResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
+          runtimeContext,
+          agentId: runtimeAgentId,
+          taskId,
+          taskPrompt: this.resolveLatestUserContent(task, messages),
+          title: task.title,
+          sessionConfig: {
+            metadata: {
+              taskId,
+              agentId: runtimeAgentId,
+              source: 'agents-runtime',
+            },
+          },
+          model: {
+            providerID: modelConfig.provider,
+            modelID: modelConfig.model,
+          },
+        });
 
-      const response = await this.executeWithToolCalling(
-        agent,
-        task,
-        messages,
-        modelConfig,
-        runtimeContext,
-        {
-          teamContext: context?.teamContext,
-          actor: context?.actor,
-          taskType: task.type,
-          teamId: task.teamId,
-        },
-      );
+        response = openCodeResult.response;
+      } else {
+        // 注册provider（使用自定义key或默认key）
+        this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
+
+        response = await this.executeWithToolCalling(
+          agent,
+          task,
+          messages,
+          modelConfig,
+          runtimeContext,
+          {
+            teamContext: context?.teamContext,
+            actor: context?.actor,
+            taskType: task.type,
+            teamId: task.teamId,
+          },
+        );
+      }
 
       this.logger.log(
         `[task_success] agent=${agent.name} taskId=${taskId} responseLength=${response.length} durationMs=${Date.now() - taskStartAt}`,
@@ -987,6 +1370,7 @@ export class AgentService {
         assistantContent: response,
         traceId: runtimeContext.traceId,
       });
+      await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
 
       return {
         response,
@@ -1031,6 +1415,7 @@ export class AgentService {
           error: logError.message,
           traceId: runtimeContext.traceId,
         });
+        await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {
@@ -1048,6 +1433,8 @@ export class AgentService {
     if (!agent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
+
+    await this.assertOpenCodeExecutionGate(agent);
 
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
@@ -1067,6 +1454,22 @@ export class AgentService {
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
 
+    const openCodeExecutionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    const role = await this.getRoleById(agent.roleId);
+    const roleCode = role?.code ? String(role.code).trim() : undefined;
+    const executionChannel: 'native' | 'opencode' = openCodeExecutionConfig ? 'opencode' : 'native';
+    const executionData: Record<string, unknown> = {
+      mode: 'streaming',
+      modelProvider: agent.model?.provider,
+      modelId: agent.model?.id,
+      modelName: agent.model?.name,
+      model: agent.model?.model,
+      openCode: {
+        enabled: Boolean(openCodeExecutionConfig),
+        modelPolicy: openCodeExecutionConfig?.modelPolicy,
+      },
+    };
+
     const runtimeContext = await this.runtimeOrchestrator.startRun({
       agentId: runtimeAgentId,
       agentName: agent.name,
@@ -1079,6 +1482,13 @@ export class AgentService {
         taskType: task.type,
         taskPriority: task.priority,
         mode: 'streaming',
+        roleCode,
+        executionChannel,
+        executionData,
+        sync: {
+          state: 'pending',
+          retryCount: 0,
+        },
       },
     });
 
@@ -1125,6 +1535,7 @@ export class AgentService {
     let streamSequence = 1;
     let runtimeInterrupted = false;
     try {
+      await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       await this.modelService.streamingChat(
         agent.model.id,
@@ -1171,6 +1582,7 @@ export class AgentService {
         assistantContent: fullResponse,
         traceId: runtimeContext.traceId,
       });
+      await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
     } catch (error) {
       const logError = this.toLogError(error);
       this.logger.error(
@@ -1191,6 +1603,7 @@ export class AgentService {
           error: logError.message,
           traceId: runtimeContext.traceId,
         });
+        await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {

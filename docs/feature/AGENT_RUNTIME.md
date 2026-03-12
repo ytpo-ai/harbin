@@ -53,6 +53,20 @@
 - 结束：成功写入 `run.completed`；异常写入 `run.failed`；控制面打断写入 `run.paused/run.resumed/run.cancelled`。
 - 可执行性守卫：`assertRunnable` 在执行过程中阻断 `paused/cancelled/failed/completed` run 继续运行。
 
+#### OpenCode 执行门禁与扩展字段（已实现：第一阶段）
+
+- 执行前门禁：
+  - 角色准入仅允许 `engineering`、`operations`、`technical-expert`。
+  - 模型绑定匹配：请求模型需命中 Agent 绑定模型或显式 fallback 白名单。
+  - 配额检测：按 `agent + period` 检测，超限触发 `permission.asked` 审批流并暂停 run。
+- `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
+- `agent_runs` 扩展字段：
+  - `executionChannel`（`native|opencode`）
+  - `roleCode`
+  - `executionData`（含模型快照、OpenCode 开关、同步诊断信息）
+  - `sync`（对象）：`state/lastSyncAt/retryCount/nextRetryAt/lastError/deadLettered`
+- 同步策略：run 终态后触发 EI 异步同步，失败进入自动重试，超限进入死信，可通过 run 级 replay 与 dead-letter requeue 补齐。
+
 #### 工具调用状态机（part 级）
 
 - 迁移规则：`pending -> running -> completed`，失败允许 `pending|running -> error`。
@@ -81,6 +95,7 @@
 内部 API 前缀：`/agents/runtime`
 
 - run 控制：`GET runs/:runId`、`POST runs/:runId/pause|resume|cancel|replay`
+- EI 同步补偿：`POST runs/:runId/sync-ei-replay`、`GET sync-ei/dead-letter`、`POST sync-ei/dead-letter/requeue`
 - 运行观测：`GET metrics`
 - session 查询：`GET sessions`、`GET sessions/:id`
 - 死信治理：`GET outbox/dead-letter`、`POST outbox/dead-letter/requeue`
@@ -113,6 +128,8 @@
 |------|------|
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构规划入口（已合并到开发沉淀） |
 | `AGENT_RUNTIME_FEATURE_DOC_PLAN.md` | Runtime 功能文档沉淀计划（本次） |
+| `OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 交互主计划与角色/预算约束 |
+| `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -120,6 +137,7 @@
 |------|------|
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构落地说明、能力边界与 commit 映射 |
 | `AGENT_MESSAGE_CONTENT_VALIDATION_PLAN.md` | AgentMessage content 必填校验修复与写入链路一致性说明 |
+| `OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1（config/门禁/同步/补偿）开发总结 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -127,6 +145,8 @@
 |------|------|
 | `technical/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
 | `technical/AGENT_RUNTIME_WORKFLOW_TECHNICAL_DESIGN.md` | Runtime 工作流技术设计 |
+| `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | OpenCode 执行事实层与 EI 分析层分层设计 |
+| `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | local/ecds 多环境协同与 ingest 同步设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |
 
 ---

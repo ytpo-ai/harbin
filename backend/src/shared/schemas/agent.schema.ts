@@ -62,6 +62,9 @@ export class Agent {
   @Prop({ default: true })
   isActive: boolean;
 
+  @Prop({ type: Object, default: {} })
+  config?: Record<string, unknown>;
+
   @Prop({ type: [String], default: [] })
   tools: string[]; // 可使用的工具ID列表
 
