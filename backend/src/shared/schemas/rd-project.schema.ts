@@ -10,7 +10,7 @@ export enum RdProjectStatus {
   ARCHIVED = 'archived',
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'ei_projects' })
 export class RdProject {
   @Prop({ required: true })
   name: string;
@@ -34,6 +34,15 @@ export class RdProject {
   @Prop()
   opencodeSessionId: string;
 
+  @Prop()
+  opencodeProjectId: string;
+
+  @Prop()
+  syncedFromAgentId: string;
+
+  @Prop({ default: true })
+  createdBySync: boolean;
+
   @Prop({ type: Object })
   opencodeConfig: Record<string, any>;
 
@@ -54,3 +63,6 @@ export class RdProject {
 }
 
 export const RdProjectSchema = SchemaFactory.createForClass(RdProject);
+
+RdProjectSchema.index({ syncedFromAgentId: 1, opencodeProjectPath: 1 }, { unique: true, sparse: true });
+RdProjectSchema.index({ syncedFromAgentId: 1, opencodeProjectId: 1 }, { unique: true, sparse: true });

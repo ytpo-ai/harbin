@@ -5,8 +5,9 @@ import { basename } from 'path';
 import { RdTask, RdTaskDocument, RdTaskStatus } from '../../shared/schemas/rd-task.schema';
 import { RdProject, RdProjectDocument } from '../../shared/schemas/rd-project.schema';
 import { Employee, EmployeeDocument } from '../../shared/schemas/employee.schema';
+import { AgentClientService } from '../agents-client/agent-client.service';
 import { OpencodeService } from './opencode.service';
-import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, SyncOpencodeContextDto, ImportOpencodeProjectDto } from './dto';
+import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, SyncOpencodeContextDto, ImportOpencodeProjectDto, QueryRdProjectDto, SyncAgentOpencodeProjectsDto } from './dto';
 
 @Injectable()
 export class RdManagementService {
@@ -16,8 +17,99 @@ export class RdManagementService {
     @InjectModel(RdTask.name) private rdTaskModel: Model<RdTaskDocument>,
     @InjectModel(RdProject.name) private rdProjectModel: Model<RdProjectDocument>,
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
+    private agentClientService: AgentClientService,
     private opencodeService: OpencodeService,
   ) {}
+
+  private getProjectPath(project: any): string {
+    return String(project?.worktree || project?.path || project?.cwd || '').trim();
+  }
+
+  private getAgentOpenCodeEndpoint(agentConfig: unknown): string | undefined {
+    if (!agentConfig || typeof agentConfig !== 'object' || Array.isArray(agentConfig)) {
+      return undefined;
+    }
+
+    const execution = (agentConfig as Record<string, unknown>).execution;
+    if (!execution || typeof execution !== 'object' || Array.isArray(execution)) {
+      return undefined;
+    }
+
+    const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
+    if (provider !== 'opencode') {
+      return undefined;
+    }
+
+    const endpointRef = (execution as Record<string, unknown>).endpointRef;
+    if (typeof endpointRef !== 'string' || !endpointRef.trim()) {
+      return undefined;
+    }
+
+    return endpointRef.trim();
+  }
+
+  private normalizePath(input: string): string {
+    const trimmed = String(input || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (trimmed === '/') {
+      return '/';
+    }
+    return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+
+  private parseOpenCodeProjectScopes(agentConfig: unknown): string[] {
+    if (!agentConfig || typeof agentConfig !== 'object' || Array.isArray(agentConfig)) {
+      return [];
+    }
+
+    const execution = (agentConfig as Record<string, unknown>).execution;
+    if (!execution || typeof execution !== 'object' || Array.isArray(execution)) {
+      return [];
+    }
+
+    const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
+    if (provider !== 'opencode') {
+      return [];
+    }
+
+    const paths: string[] = [];
+    const pushPath = (input: unknown) => {
+      if (typeof input === 'string' && input.trim()) {
+        paths.push(input.trim());
+      }
+    };
+
+    const executionRecord = execution as Record<string, unknown>;
+    pushPath(executionRecord.projectDirectory);
+    pushPath(executionRecord.projectPath);
+
+    const projectDirectories = executionRecord.projectDirectories;
+    if (Array.isArray(projectDirectories)) {
+      projectDirectories.forEach((value) => pushPath(value));
+    }
+
+    return [...new Set(paths)];
+  }
+
+  private matchAgentProjectScope(projectPath: string, scopes: string[]): boolean {
+    if (!projectPath || scopes.length === 0) {
+      return scopes.length === 0;
+    }
+
+    const normalizedPath = this.normalizePath(projectPath);
+    return scopes.some((scope) => {
+      const normalizedScope = this.normalizePath(scope);
+      if (!normalizedScope) {
+        return false;
+      }
+      if (normalizedScope === '/') {
+        return normalizedPath === '/';
+      }
+      return normalizedPath === normalizedScope || normalizedPath.startsWith(`${normalizedScope}/`);
+    });
+  }
 
   private async resolveEmployeeObjectId(employeeId?: string): Promise<Types.ObjectId | undefined> {
     if (!employeeId) {
@@ -107,16 +199,18 @@ export class RdManagementService {
 
   // ========== 项目管理 ==========
 
-  async createProject(createDto: CreateRdProjectDto): Promise<RdProject> {
-    const project = new this.rdProjectModel({
-      ...createDto,
-    });
-    return project.save();
+  async createProject(_createDto: CreateRdProjectDto): Promise<RdProject> {
+    throw new BadRequestException('EI projects can only be created through OpenCode sync');
   }
 
-  async findAllProjects(): Promise<RdProject[]> {
+  async findAllProjects(filters?: QueryRdProjectDto): Promise<RdProject[]> {
+    const query: Record<string, any> = {};
+    if (filters?.syncedFromAgentId) {
+      query.syncedFromAgentId = filters.syncedFromAgentId;
+    }
+
     return this.rdProjectModel
-      .find({})
+      .find(query)
       .populate('manager', 'name email')
       .populate('members', 'name email')
       .sort({ createdAt: -1 })
@@ -285,7 +379,10 @@ export class RdManagementService {
     return this.opencodeService.listProjects();
   }
 
-  async listOpencodeSessions(): Promise<any[]> {
+  async listOpencodeSessions(directory?: string): Promise<any[]> {
+    if (directory?.trim()) {
+      return this.opencodeService.listSessionsByProject(directory.trim());
+    }
     return this.opencodeService.listSessions();
   }
 
@@ -318,10 +415,11 @@ export class RdManagementService {
   }
 
   async importOpencodeProject(payload: ImportOpencodeProjectDto): Promise<any> {
-    const projects = await this.opencodeService.listProjects();
+    const endpointRef = payload.endpointRef?.trim() || undefined;
+    const projects = await this.opencodeService.listProjects(endpointRef);
 
     const matched = projects.find((project) => {
-      const projectPath = project?.worktree || project?.path || project?.cwd;
+      const projectPath = this.getProjectPath(project);
       return (
         (payload.projectId && project?.id === payload.projectId) ||
         (payload.projectPath && projectPath === payload.projectPath)
@@ -332,30 +430,37 @@ export class RdManagementService {
       throw new BadRequestException('OpenCode project not found');
     }
 
-    const resolvedPath =
-      payload.projectPath ||
-      matched?.worktree ||
-      matched?.path ||
-      matched?.cwd;
-
+    const resolvedPath = payload.projectPath || this.getProjectPath(matched);
     if (!resolvedPath) {
       throw new BadRequestException('Invalid OpenCode project path');
     }
 
-    const sessions = await this.opencodeService.listSessionsByProject(resolvedPath);
+    const sessions = await this.opencodeService.listSessionsByProject(resolvedPath, endpointRef);
     const events = this.opencodeService.getRecentEvents(200, resolvedPath);
     const defaultName = basename(resolvedPath) || matched?.id || 'opencode-project';
     const projectName = payload.name?.trim() || defaultName;
+    const syncedFromAgentId = payload.agentId?.trim() || undefined;
 
-    const existing = await this.rdProjectModel
-      .findOne({ opencodeProjectPath: resolvedPath })
-      .exec();
+    const existingQuery: Record<string, any> = {
+      $or: [
+        { opencodeProjectPath: resolvedPath },
+        ...(matched?.id ? [{ opencodeProjectId: matched.id }] : []),
+      ],
+    };
+    if (syncedFromAgentId) {
+      existingQuery.syncedFromAgentId = syncedFromAgentId;
+    }
+
+    const existing = await this.rdProjectModel.findOne(existingQuery).exec();
 
     const updatePayload = {
       name: projectName,
-      description: `Imported from OpenCode (${resolvedPath})`,
+      description: `Synced from OpenCode (${resolvedPath})`,
+      opencodeProjectId: matched?.id,
       opencodeProjectPath: resolvedPath,
       opencodeSessionId: sessions?.[0]?.id || existing?.opencodeSessionId,
+      createdBySync: true,
+      ...(syncedFromAgentId ? { syncedFromAgentId } : {}),
       metadata: {
         ...(existing?.metadata || {}),
         opencodeImport: {
@@ -383,6 +488,91 @@ export class RdManagementService {
       project,
       importedSessions: sessions.length,
       importedEvents: events.length,
+      syncedFromAgentId,
+      endpointRef: endpointRef || null,
+    };
+  }
+
+  async syncAgentOpencodeProjects(agentId: string, syncDto: SyncAgentOpencodeProjectsDto): Promise<any> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) {
+      throw new BadRequestException('agentId is required');
+    }
+
+    const agent = await this.agentClientService.getAgent(normalizedAgentId);
+
+    if (!agent) {
+      throw new NotFoundException('Agent not found');
+    }
+
+    const configuredScopes = this.parseOpenCodeProjectScopes(agent.config);
+    const requestedScopes = Array.isArray(syncDto.projectPaths)
+      ? syncDto.projectPaths.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+    const finalScopes = requestedScopes.length > 0 ? requestedScopes : configuredScopes;
+
+    const endpointRef = this.getAgentOpenCodeEndpoint(agent.config);
+    let opencodeProjects: any[] = [];
+    try {
+      opencodeProjects = await this.opencodeService.listProjects(endpointRef, { throwOnError: Boolean(endpointRef) });
+    } catch (error: any) {
+      throw new BadRequestException(
+        `Failed to query OpenCode endpoint ${endpointRef}: ${error?.message || error}`,
+      );
+    }
+    const candidates = opencodeProjects.filter((item) => {
+      const path = this.getProjectPath(item);
+      return this.matchAgentProjectScope(path, finalScopes);
+    });
+
+    const stats = {
+      totalCandidates: candidates.length,
+      created: 0,
+      updated: 0,
+      skipped: 0,
+    };
+
+    const syncedProjects: any[] = [];
+
+    for (const project of candidates) {
+      const path = this.getProjectPath(project);
+      if (!path) {
+        stats.skipped += 1;
+        continue;
+      }
+
+      const existing = await this.rdProjectModel
+        .findOne({
+          syncedFromAgentId: normalizedAgentId,
+          $or: [
+            { opencodeProjectPath: path },
+            ...(project?.id ? [{ opencodeProjectId: project.id }] : []),
+          ],
+        })
+        .exec();
+
+      const importResult = await this.importOpencodeProject({
+        projectId: project?.id,
+        projectPath: path,
+        name: basename(path) || project?.id,
+        agentId: normalizedAgentId,
+        endpointRef,
+      });
+
+      if (existing) {
+        stats.updated += 1;
+      } else {
+        stats.created += 1;
+      }
+      syncedProjects.push(importResult.project);
+    }
+
+    return {
+      agentId: normalizedAgentId,
+      endpointRef: endpointRef || null,
+      scopes: finalScopes,
+      stats,
+      projects: syncedProjects,
     };
   }
 

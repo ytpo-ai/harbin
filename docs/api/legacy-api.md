@@ -82,9 +82,14 @@
 
 ## RD Management（`/rd-management`）
 
+> OpenCode Serve（`4098`）直连参数规范与 `directory` 约束见：`docs/api/opencode-api.md`
+>
+> 项目记录集合为 `ei_projects`，并且仅支持同步创建（不支持前端手工创建）。
+
 - `GET /rd-management/opencode/current`
 - `GET /rd-management/opencode/projects`
 - `POST /rd-management/opencode/projects/import`
+- `POST /rd-management/agents/:agentId/opencode/projects/sync`
 - `GET /rd-management/opencode/sessions`
 - `GET /rd-management/opencode/sessions/:id`
 - `GET /rd-management/opencode/sessions/:id/messages`

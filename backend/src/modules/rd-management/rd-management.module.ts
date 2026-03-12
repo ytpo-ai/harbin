@@ -7,10 +7,12 @@ import { RdTask, RdTaskSchema } from '../../shared/schemas/rd-task.schema';
 import { RdProject, RdProjectSchema } from '../../shared/schemas/rd-project.schema';
 import { AuthModule } from '../auth/auth.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
+import { AgentClientModule } from '../agents-client/agent-client.module';
 
 @Module({
   imports: [
     AuthModule,
+    AgentClientModule,
     MongooseModule.forFeature([
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },

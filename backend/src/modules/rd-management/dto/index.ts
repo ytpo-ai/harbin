@@ -151,6 +151,21 @@ export class ImportOpencodeProjectDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  agentId?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+}
+
+export class SyncAgentOpencodeProjectsDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  projectPaths?: string[];
 }
 
 export class CreateRdProjectDto {
@@ -262,4 +277,10 @@ export class QueryRdTaskDto {
   @IsOptional()
   @IsMongoId()
   projectId?: string;
+}
+
+export class QueryRdProjectDto {
+  @IsOptional()
+  @IsString()
+  syncedFromAgentId?: string;
 }

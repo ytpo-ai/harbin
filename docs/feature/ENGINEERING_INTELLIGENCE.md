@@ -47,6 +47,13 @@
 - 同一批次重复写入按幂等成功处理，不重复计算。
 - 边缘节点禁止直连中心分析核心库，只允许通过 Ingest/API 写入。
 
+### 1.7 研发管理项目同步（本轮）
+
+- 研发管理页面改为先选择研发 Agent，再触发 OpenCode projects 同步。
+- 项目记录集合统一为 `ei_projects`（复用原 `rdproject` 结构并扩展同步字段）。
+- `ei_projects` 仅允许通过同步链路创建（`POST /rd-management/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
+- 同步按 `agentId + opencodeProjectPath / opencodeProjectId` 幂等更新，返回 `created/updated/skipped` 统计。
+
 ---
 
 ## 2. 相关文档
@@ -56,6 +63,7 @@
 | 文件 | 说明 |
 |------|------|
 | `plan/OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 执行到分析的总体规划 |
+| `plan/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发管理页 EI 项目同步改造计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -70,6 +78,7 @@
 |------|------|
 | `development/OPENCODE_RD_WORKFLOW_DISCUSSION_TOPICS.md` | 研发流程议题与待决策项 |
 | `development/OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1 EI 同步与分析实现总结 |
+| `development/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发管理页 EI 项目同步实现与排障总结 |
 
 ### API 文档 (docs/api/)
 
@@ -87,6 +96,8 @@
 |------|------|
 | `backend/apps/engineering-intelligence/src/` | EI 服务主模块（同步接收、分析计算、查询接口） |
 | `backend/apps/agents/src/modules/runtime/` | Runtime 事件事实来源与同步触发链路 |
+| `backend/src/modules/rd-management/` | 研发管理页 OpenCode 项目同步与 EI 项目列表接口 |
+| `backend/src/shared/schemas/rd-project.schema.ts` | `ei_projects` 集合模型（同步来源、OpenCode 项目标识） |
 
 ### 前端入口（规划影响）
 

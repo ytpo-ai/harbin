@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import axios from 'axios';
 import * as path from 'path';
 import { pathToFileURL } from 'url';
 // import { createOpencode } from "@opencode-ai/sdk"
@@ -8,6 +9,7 @@ import { pathToFileURL } from 'url';
 export class OpencodeService {
   private readonly logger = new Logger(OpencodeService.name);
   private client: any;
+  private readonly endpointClients = new Map<string, any>();
   private recentEvents: Array<{ timestamp: string; event: any }> = [];
   private backgroundSubscribed = false;
 
@@ -16,9 +18,7 @@ export class OpencodeService {
       this.logger.error(`Failed to initialize OpenCode client: ${error?.message || error}`);
     });
   }
-  private async initializeClient(): Promise<void> {
-    const baseUrl = this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096';
-
+  private async buildClient(baseUrl: string): Promise<any> {
     try {
       let mod: any;
       try {
@@ -48,12 +48,41 @@ export class OpencodeService {
         throw new Error('createOpencode factory not found in @opencode-ai/sdk exports');
       }
 
-      this.client = createOpencodeClient({ baseUrl, password: this.configService.get<string>('OPENCODE_SERVER_PASSWORD') });
+      return createOpencodeClient({
+        baseUrl,
+        password: this.configService.get<string>('OPENCODE_SERVER_PASSWORD'),
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to build OpenCode client(${baseUrl}): ${error?.message || error}`);
+      throw error;
+    }
+  }
+
+  private async initializeClient(): Promise<void> {
+    const baseUrl = this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096';
+
+    try {
+      this.client = await this.buildClient(baseUrl);
       this.logger.log(`OpenCode client initialized with baseUrl: ${baseUrl}`);
       this.startBackgroundEventStream();
     } catch (error: any) {
       this.logger.error(`Failed to initialize OpenCode client: ${error?.message || error}`);
     }
+  }
+
+  private async getClientByEndpoint(baseUrl?: string): Promise<any> {
+    const normalizedBaseUrl = String(baseUrl || '').trim();
+    if (!normalizedBaseUrl) {
+      return this.requireClient();
+    }
+
+    if (this.endpointClients.has(normalizedBaseUrl)) {
+      return this.endpointClients.get(normalizedBaseUrl);
+    }
+
+    const client = await this.buildClient(normalizedBaseUrl);
+    this.endpointClients.set(normalizedBaseUrl, client);
+    return client;
   }
 
   private async startBackgroundEventStream(): Promise<void> {
@@ -121,6 +150,74 @@ export class OpencodeService {
       this.initializeClient();
     }
     return this.client;
+  }
+
+  private normalizeBaseUrl(baseUrl: string): string {
+    return String(baseUrl || '').trim().replace(/\/+$/, '');
+  }
+
+  private async listProjectsByHttp(baseUrl?: string): Promise<any[]> {
+    const normalizedBaseUrl = this.normalizeBaseUrl(
+      baseUrl || this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096',
+    );
+    const password = this.configService.get<string>('OPENCODE_SERVER_PASSWORD') || '';
+    if (!password) {
+      return [];
+    }
+
+    try {
+      const response = await axios.get(`${normalizedBaseUrl}/project`, {
+        auth: { username: 'opencode', password },
+        timeout: 8000,
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      this.logger.warn(`HTTP fallback listProjects failed (${normalizedBaseUrl}): ${error?.message || error}`);
+      return [];
+    }
+  }
+
+  private async listSessionsByHttp(baseUrl?: string, directory?: string): Promise<any[]> {
+    const normalizedBaseUrl = this.normalizeBaseUrl(
+      baseUrl || this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096',
+    );
+    const password = this.configService.get<string>('OPENCODE_SERVER_PASSWORD') || '';
+    if (!password) {
+      return [];
+    }
+
+    try {
+      const response = await axios.get(`${normalizedBaseUrl}/session`, {
+        auth: { username: 'opencode', password },
+        params: directory ? { directory } : undefined,
+        timeout: 8000,
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      this.logger.warn(`HTTP fallback listSessions failed (${normalizedBaseUrl}): ${error?.message || error}`);
+      return [];
+    }
+  }
+
+  private async getSessionByHttp(sessionId: string, baseUrl?: string): Promise<any | null> {
+    const normalizedBaseUrl = this.normalizeBaseUrl(
+      baseUrl || this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096',
+    );
+    const password = this.configService.get<string>('OPENCODE_SERVER_PASSWORD') || '';
+    if (!password) {
+      return null;
+    }
+
+    try {
+      const response = await axios.get(`${normalizedBaseUrl}/session/${encodeURIComponent(sessionId)}`, {
+        auth: { username: 'opencode', password },
+        timeout: 8000,
+      });
+      return response.data || null;
+    } catch (error: any) {
+      this.logger.warn(`HTTP fallback getSession failed (${normalizedBaseUrl}): ${error?.message || error}`);
+      return null;
+    }
   }
 
   private requireClient(): any {
@@ -206,13 +303,16 @@ export class OpencodeService {
     try {
       const client = this.requireClient();
       if (!client.session?.get) {
-        return null;
+        return this.getSessionByHttp(sessionId);
       }
       const session = await client.session.get({ path: { id: sessionId } });
-      return session.data || null;
+      if (session.data) {
+        return session.data;
+      }
+      return this.getSessionByHttp(sessionId);
     } catch (error) {
       this.logger.error(`Error getting session: ${error.message}`, error.stack);
-      return null;
+      return this.getSessionByHttp(sessionId);
     }
   }
 
@@ -248,25 +348,43 @@ export class OpencodeService {
     }
   }
 
-  async listSessions(): Promise<any[]> {
+  async listSessions(baseUrl?: string): Promise<any[]> {
     try {
-      const client = this.requireClient();
+      const client = await this.getClientByEndpoint(baseUrl);
+      if (!client.session?.list) {
+        return this.listSessionsByHttp(baseUrl);
+      }
       const sessions = await client.session.list();
-      return sessions.data || [];
+      const rows = sessions.data || [];
+      if (Array.isArray(rows) && rows.length > 0) {
+        return rows;
+      }
+
+      const fallbackRows = await this.listSessionsByHttp(baseUrl);
+      if (fallbackRows.length > 0) {
+        this.logger.warn('OpenCode SDK listSessions returned empty; fallback /session used');
+      }
+      return fallbackRows;
     } catch (error) {
       this.logger.error(`Error listing sessions: ${error.message}`, error.stack);
-      return [];
+      return this.listSessionsByHttp(baseUrl);
     }
   }
 
-  async listSessionsByProject(projectPath: string): Promise<any[]> {
-    const sessions = await this.listSessions();
+  async listSessionsByProject(projectPath: string, baseUrl?: string): Promise<any[]> {
     if (!projectPath) {
-      return sessions;
+      return this.listSessions(baseUrl);
     }
 
+    const byDirectory = await this.listSessionsByHttp(baseUrl, projectPath);
+    if (byDirectory.length > 0) {
+      return byDirectory;
+    }
+
+    const sessions = await this.listSessions(baseUrl);
+
     const filtered = sessions.filter((session) => this.matchesProjectPath(session, projectPath));
-    return filtered.length > 0 ? filtered : sessions;
+    return filtered;
   }
 
   getRecentEvents(limit = 200, projectPath?: string): any[] {
@@ -284,17 +402,29 @@ export class OpencodeService {
     }));
   }
 
-  async listProjects(): Promise<any[]> {
+  async listProjects(baseUrl?: string, options?: { throwOnError?: boolean }): Promise<any[]> {
     try {
-      const client = this.requireClient();
+      const client = await this.getClientByEndpoint(baseUrl);
       if (!client.project?.list) {
-        return [];
+        return this.listProjectsByHttp(baseUrl);
       }
       const projects = await client.project.list();
-      return projects.data || [];
+      const rows = projects.data || [];
+      if (Array.isArray(rows) && rows.length > 0) {
+        return rows;
+      }
+
+      const fallbackRows = await this.listProjectsByHttp(baseUrl);
+      if (fallbackRows.length > 0) {
+        this.logger.warn(`OpenCode SDK listProjects returned empty; fallback /project used for ${baseUrl || 'default endpoint'}`);
+      }
+      return fallbackRows;
     } catch (error) {
       this.logger.error(`Error listing projects: ${error.message}`, error.stack);
-      return [];
+      if (options?.throwOnError) {
+        throw error;
+      }
+      return this.listProjectsByHttp(baseUrl);
     }
   }
 

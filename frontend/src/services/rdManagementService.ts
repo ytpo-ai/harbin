@@ -50,7 +50,10 @@ export interface RdProject {
     email: string;
   };
   opencodeProjectPath?: string;
+  opencodeProjectId?: string;
   opencodeSessionId?: string;
+  syncedFromAgentId?: string;
+  createdBySync?: boolean;
   opencodeConfig?: Record<string, any>;
   repositoryUrl?: string;
   branch?: string;
@@ -84,6 +87,11 @@ export interface ImportOpencodeProjectDto {
   projectId?: string;
   projectPath?: string;
   name?: string;
+  agentId?: string;
+}
+
+export interface SyncAgentOpencodeProjectsDto {
+  projectPaths?: string[];
 }
 
 export interface CreateRdTaskDto {
@@ -183,8 +191,11 @@ class RdManagementService {
 
   // ========== 项目管理 ==========
 
-  async getProjects(): Promise<RdProject[]> {
-    const response = await axios.get(`${API_URL}/rd-management/projects`, this.getAuthHeaders());
+  async getProjects(filters?: { syncedFromAgentId?: string }): Promise<RdProject[]> {
+    const response = await axios.get(`${API_URL}/rd-management/projects`, {
+      ...this.getAuthHeaders(),
+      params: filters,
+    });
     return response.data;
   }
 
@@ -251,8 +262,20 @@ class RdManagementService {
     return response.data;
   }
 
-  async getOpencodeSessions(): Promise<any[]> {
-    const response = await axios.get(`${API_URL}/rd-management/opencode/sessions`, this.getAuthHeaders());
+  async syncAgentOpencodeProjects(agentId: string, payload?: SyncAgentOpencodeProjectsDto): Promise<any> {
+    const response = await axios.post(
+      `${API_URL}/rd-management/agents/${encodeURIComponent(agentId)}/opencode/projects/sync`,
+      payload || {},
+      this.getAuthHeaders(),
+    );
+    return response.data;
+  }
+
+  async getOpencodeSessions(directory?: string): Promise<any[]> {
+    const response = await axios.get(`${API_URL}/rd-management/opencode/sessions`, {
+      ...this.getAuthHeaders(),
+      params: directory ? { directory } : undefined,
+    });
     return response.data;
   }
 
@@ -262,6 +285,9 @@ class RdManagementService {
   }
 
   async getOpencodeSessionMessages(sessionId: string): Promise<any[]> {
+    if (!sessionId?.trim()) {
+      return [];
+    }
     const response = await axios.get(`${API_URL}/rd-management/opencode/sessions/${sessionId}/messages`, this.getAuthHeaders());
     return response.data;
   }

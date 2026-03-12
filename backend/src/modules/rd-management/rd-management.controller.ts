@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, Headers, UnauthorizedException, MessageEvent, Sse } from '@nestjs/common';
 import { RdManagementService } from './rd-management.service';
-import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, QueryRdTaskDto, SyncOpencodeContextDto, CreateOpencodeSessionDto, PromptOpencodeSessionDto, ImportOpencodeProjectDto } from './dto';
+import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, QueryRdTaskDto, SyncOpencodeContextDto, CreateOpencodeSessionDto, PromptOpencodeSessionDto, ImportOpencodeProjectDto, QueryRdProjectDto, SyncAgentOpencodeProjectsDto } from './dto';
 import { AuthService } from '../auth/auth.service';
 import { Observable } from 'rxjs';
 
@@ -87,9 +87,16 @@ export class RdManagementController {
   }
 
   @Get('projects')
-  async findAllProjects(@Headers('authorization') authHeader: string) {
+  async findAllProjects(
+    @Query() query: QueryRdProjectDto,
+    @Headers('authorization') authHeader: string,
+    @Query('syncedFromAgentId') syncedFromAgentId?: string,
+  ) {
     const user = await this.getUserFromAuthHeader(authHeader);
-    return this.rdManagementService.findAllProjects();
+    return this.rdManagementService.findAllProjects({
+      ...query,
+      ...(syncedFromAgentId ? { syncedFromAgentId } : {}),
+    });
   }
 
   @Get('projects/:id')
@@ -171,10 +178,23 @@ export class RdManagementController {
     return this.rdManagementService.importOpencodeProject(dto);
   }
 
-  @Get('opencode/sessions')
-  async getOpencodeSessions(@Headers('authorization') authHeader: string) {
+  @Post('agents/:agentId/opencode/projects/sync')
+  async syncAgentOpencodeProjects(
+    @Param('agentId') agentId: string,
+    @Body() dto: SyncAgentOpencodeProjectsDto,
+    @Headers('authorization') authHeader: string,
+  ) {
     await this.getUserFromAuthHeader(authHeader);
-    return this.rdManagementService.listOpencodeSessions();
+    return this.rdManagementService.syncAgentOpencodeProjects(agentId, dto || {});
+  }
+
+  @Get('opencode/sessions')
+  async getOpencodeSessions(
+    @Query('directory') directory: string | undefined,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.listOpencodeSessions(directory);
   }
 
   @Get('opencode/sessions/:id')
