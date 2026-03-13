@@ -14,6 +14,9 @@ import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import EngineeringIntelligence from './pages/EngineeringIntelligence';
 import EngineeringStatistics from './pages/EngineeringStatistics';
+import EngineeringRequirements from './pages/EngineeringRequirements';
+import EngineeringRequirementDetail from './pages/EngineeringRequirementDetail';
+import EngineeringBoard from './pages/EngineeringBoard';
 import Orchestration from './pages/Orchestration';
 import PlanDetail from './pages/PlanDetail';
 import Scheduler from './pages/Scheduler';
@@ -80,6 +83,9 @@ function App() {
             <Route path="/message-center" element={<ProtectedRoute><MessageCenter /></ProtectedRoute>} />
             <Route path="/engineering-intelligence" element={<ProtectedRoute><EngineeringIntelligence /></ProtectedRoute>} />
             <Route path="/engineering-intelligence/statistics" element={<ProtectedRoute><EngineeringStatistics /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence/requirements" element={<ProtectedRoute><EngineeringRequirements /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence/requirements/:requirementId" element={<ProtectedRoute><EngineeringRequirementDetail /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence/board" element={<ProtectedRoute><EngineeringBoard /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

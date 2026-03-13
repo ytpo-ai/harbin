@@ -77,6 +77,42 @@
 
 - `ei_project_statistics_snapshots`
 
+## 研发需求管理（新增）
+
+- `POST /engineering-intelligence/requirements`
+  - 作用：创建需求条目，初始状态为 `todo`。
+  - 请求体：`title`、`description?`、`priority?`、`labels?`、`createdBy*?`。
+
+- `GET /engineering-intelligence/requirements`
+  - 作用：需求列表查询。
+  - 查询参数：`status?`、`assigneeAgentId?`、`search?`、`limit?`。
+
+- `GET /engineering-intelligence/requirements/:requirementId`
+  - 作用：获取需求详情（讨论、分发、状态轨迹、GitHub 映射）。
+
+- `POST /engineering-intelligence/requirements/:requirementId/comments`
+  - 作用：追加讨论消息。
+  - 请求体：`content`、`authorId?`、`authorName?`、`authorType?`。
+
+- `POST /engineering-intelligence/requirements/:requirementId/assign`
+  - 作用：将需求分发给研发 Agent，并将状态推进到 `assigned`。
+  - 请求体：`toAgentId`、`toAgentName?`、`assignedBy*?`、`reason?`。
+
+- `POST /engineering-intelligence/requirements/:requirementId/status`
+  - 作用：更新需求状态并记录状态轨迹。
+  - 请求体：`status(todo/assigned/in_progress/review/done/blocked)`、`changedBy*?`、`note?`。
+
+- `GET /engineering-intelligence/requirements/board`
+  - 作用：按状态泳道返回看板数据。
+
+- `POST /engineering-intelligence/requirements/:requirementId/github/sync`
+  - 作用：一键创建 GitHub Issue 并回写映射关系。
+  - 请求体：`owner`、`repo`、`labels?`、`metadata?`。
+
+落库集合（新增）：
+
+- `ei_requirements`
+
 ## 说明
 
 - 历史兼容路径 `/api/cto-docs/*` 已移除。

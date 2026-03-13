@@ -15,6 +15,12 @@ import {
   EiOpenCodeRunAnalytics,
   EiOpenCodeRunAnalyticsSchema,
 } from '../../schemas/ei-opencode-run-analytics.schema';
+import {
+  EiProjectStatisticsSnapshot,
+  EiProjectStatisticsSnapshotSchema,
+} from '../../schemas/ei-project-statistics-snapshot.schema';
+import { EiRequirement, EiRequirementSchema } from '../../schemas/ei-requirement.schema';
+import { RdProject, RdProjectSchema } from '../../../../../src/shared/schemas/rd-project.schema';
 
 @Module({
   imports: [
@@ -23,6 +29,9 @@ import {
       { name: EiOpenCodeRunSyncBatch.name, schema: EiOpenCodeRunSyncBatchSchema },
       { name: EiOpenCodeEventFact.name, schema: EiOpenCodeEventFactSchema },
       { name: EiOpenCodeRunAnalytics.name, schema: EiOpenCodeRunAnalyticsSchema },
+      { name: EiProjectStatisticsSnapshot.name, schema: EiProjectStatisticsSnapshotSchema },
+      { name: EiRequirement.name, schema: EiRequirementSchema },
+      { name: RdProject.name, schema: RdProjectSchema },
     ]),
   ],
   controllers: [EngineeringIntelligenceController],

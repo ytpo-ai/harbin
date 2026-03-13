@@ -11,7 +11,17 @@ import {
   Query,
 } from '@nestjs/common';
 import { EngineeringIntelligenceService } from './engineering-intelligence.service';
-import { CreateEngineeringRepositoryDto, UpdateEngineeringRepositoryDto } from './dto';
+import {
+  AddRequirementCommentDto,
+  AssignRequirementDto,
+  CreateEngineeringRepositoryDto,
+  CreateRequirementDto,
+  CreateStatisticsSnapshotDto,
+  ListRequirementsDto,
+  SyncRequirementToGithubDto,
+  UpdateEngineeringRepositoryDto,
+  UpdateRequirementStatusDto,
+} from './dto';
 
 @Controller('engineering-intelligence')
 export class EngineeringIntelligenceController {
@@ -93,5 +103,77 @@ export class EngineeringIntelligenceController {
       signature,
       timestamp,
     });
+  }
+
+  @Post('statistics/snapshots')
+  async createStatisticsSnapshot(@Body() payload: CreateStatisticsSnapshotDto) {
+    return this.engineeringIntelligenceService.createStatisticsSnapshot(payload || {});
+  }
+
+  @Get('statistics/snapshots/latest')
+  async getLatestStatisticsSnapshot() {
+    return this.engineeringIntelligenceService.getLatestStatisticsSnapshot();
+  }
+
+  @Get('statistics/snapshots/:snapshotId')
+  async getStatisticsSnapshotById(@Param('snapshotId') snapshotId: string) {
+    return this.engineeringIntelligenceService.getStatisticsSnapshotById(snapshotId);
+  }
+
+  @Get('statistics/snapshots')
+  async listStatisticsSnapshots(@Query('limit') limit?: string) {
+    return this.engineeringIntelligenceService.listStatisticsSnapshots(limit ? Number(limit) : 20);
+  }
+
+  @Post('requirements')
+  async createRequirement(@Body() payload: CreateRequirementDto) {
+    return this.engineeringIntelligenceService.createRequirement(payload);
+  }
+
+  @Get('requirements')
+  async listRequirements(@Query() query: ListRequirementsDto) {
+    return this.engineeringIntelligenceService.listRequirements(query);
+  }
+
+  @Get('requirements/board')
+  async getRequirementBoard() {
+    return this.engineeringIntelligenceService.getRequirementBoard();
+  }
+
+  @Get('requirements/:requirementId')
+  async getRequirementById(@Param('requirementId') requirementId: string) {
+    return this.engineeringIntelligenceService.getRequirementById(requirementId);
+  }
+
+  @Post('requirements/:requirementId/comments')
+  async addRequirementComment(
+    @Param('requirementId') requirementId: string,
+    @Body() payload: AddRequirementCommentDto,
+  ) {
+    return this.engineeringIntelligenceService.addRequirementComment(requirementId, payload);
+  }
+
+  @Post('requirements/:requirementId/assign')
+  async assignRequirement(
+    @Param('requirementId') requirementId: string,
+    @Body() payload: AssignRequirementDto,
+  ) {
+    return this.engineeringIntelligenceService.assignRequirement(requirementId, payload);
+  }
+
+  @Post('requirements/:requirementId/status')
+  async updateRequirementStatus(
+    @Param('requirementId') requirementId: string,
+    @Body() payload: UpdateRequirementStatusDto,
+  ) {
+    return this.engineeringIntelligenceService.updateRequirementStatus(requirementId, payload);
+  }
+
+  @Post('requirements/:requirementId/github/sync')
+  async syncRequirementToGithub(
+    @Param('requirementId') requirementId: string,
+    @Body() payload: SyncRequirementToGithubDto,
+  ) {
+    return this.engineeringIntelligenceService.syncRequirementToGithub(requirementId, payload);
   }
 }

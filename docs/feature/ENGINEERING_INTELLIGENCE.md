@@ -62,12 +62,24 @@
 
 - 前端在 `研发智能` 分组下新增二级菜单 `工程统计`。
 - 页面支持一键触发统计计划执行：覆盖 `docs`、`frontend`、`backend` 维度。
+- `backend` 维度细化为 `backend/src` + `backend/apps/<app>` 各子应用独立统计行。
 - 统计结果按“项目明细 + 汇总”返回，并落库到 `ei_project_statistics_snapshots`。
 - 快照状态机：`running/success/failed`，支持查询 latest/detail/history。
 - 统计能力对外暴露为 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run`。
+
+### 1.9 研发需求管理（本轮新增）
+
+- 前端在 `研发智能` 分组下新增二级菜单 `需求管理` 与 `智能研发看板`。
+- 新增需求领域模型 `ei_requirements`，承接 Agent 与人类讨论后的需求条目。
+- 需求状态机：`todo -> assigned -> in_progress -> review -> done`，并支持 `blocked`。
+- 支持需求讨论追加、CTO/负责人分发到研发 Agent、状态流转记录与审计轨迹。
+- 看板接口按状态泳道聚合需求，前端定时刷新以实现近实时状态感知。
+- 支持一键同步到 GitHub Issues，回写 `owner/repo/issueNumber/issueUrl/state/syncedAt` 映射信息。
 - 系统默认创建定时计划 `system-engineering-statistics`，按钮触发本质为触发该计划一次执行。
 - 计划执行完成后通过消息中心 Hook 发送提醒，前端可在消息中心查看并跳转快照。
 - 统计快照创建接口支持可选 `receiverId`，用于在统计完成/失败后触发 legacy 消息中心通知落库。
+- 通过系统调度触发时，`receiverId` 会默认回填为当前登录用户，保障前端按钮触发后可收到消息中心通知。
+- 前端 `工程统计` 页面按钮触发时会显式透传当前登录用户 `receiverId`，避免跨服务链路中上下文丢失导致通知静默。
 
 ### 1.9 消息中心联动（本轮新增）
 
@@ -86,6 +98,7 @@
 | `plan/OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 执行到分析的总体规划 |
 | `plan/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发管理页 EI 项目同步改造计划 |
 | `plan/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
+| `plan/ENGINEERING_INTELLIGENCE_REQUIREMENT_MANAGEMENT_PLAN.md` | 研发智能需求管理（Issue 协作）计划 |
 
 ### 技术文档 (docs/technical/)
 

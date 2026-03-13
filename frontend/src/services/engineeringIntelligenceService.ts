@@ -86,6 +86,78 @@ export interface EngineeringStatisticsSnapshot {
   updatedAt?: string;
 }
 
+export type RequirementStatus = 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
+export type RequirementPriority = 'low' | 'medium' | 'high' | 'critical';
+export type RequirementActorType = 'human' | 'agent' | 'system';
+
+export interface RequirementComment {
+  commentId: string;
+  content: string;
+  authorId?: string;
+  authorName?: string;
+  authorType: RequirementActorType;
+  createdAt: string;
+}
+
+export interface RequirementAssignment {
+  assignmentId: string;
+  toAgentId: string;
+  toAgentName?: string;
+  assignedById?: string;
+  assignedByName?: string;
+  reason?: string;
+  assignedAt: string;
+}
+
+export interface RequirementStatusEvent {
+  eventId: string;
+  fromStatus: RequirementStatus;
+  toStatus: RequirementStatus;
+  changedById?: string;
+  changedByName?: string;
+  changedByType: RequirementActorType;
+  note?: string;
+  changedAt: string;
+}
+
+export interface RequirementGithubLink {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  issueId: number;
+  issueUrl: string;
+  issueState: 'open' | 'closed';
+  syncedAt: string;
+  lastError?: string;
+}
+
+export interface RequirementItem {
+  requirementId: string;
+  title: string;
+  description: string;
+  status: RequirementStatus;
+  priority: RequirementPriority;
+  labels: string[];
+  currentAssigneeAgentId?: string;
+  currentAssigneeAgentName?: string;
+  createdById?: string;
+  createdByName?: string;
+  createdByType: RequirementActorType;
+  comments: RequirementComment[];
+  assignments: RequirementAssignment[];
+  statusHistory: RequirementStatusEvent[];
+  githubLink?: RequirementGithubLink;
+  lastBoardEventAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface RequirementBoardResult {
+  updatedAt: string;
+  total: number;
+  columns: Record<RequirementStatus, RequirementItem[]>;
+}
+
 export const engineeringIntelligenceService = {
   async listRepositories(): Promise<EngineeringRepository[]> {
     const response = await api.get('/engineering-intelligence/repositories');
@@ -146,6 +218,83 @@ export const engineeringIntelligenceService = {
     const response = await api.get('/engineering-intelligence/statistics/snapshots', {
       params: { limit },
     });
+    return response.data;
+  },
+
+  async createRequirement(payload: {
+    title: string;
+    description?: string;
+    priority?: RequirementPriority;
+    labels?: string[];
+    createdById?: string;
+    createdByName?: string;
+    createdByType?: RequirementActorType;
+  }): Promise<RequirementItem> {
+    const response = await api.post('/engineering-intelligence/requirements', payload);
+    return response.data;
+  },
+
+  async listRequirements(params?: {
+    status?: RequirementStatus;
+    assigneeAgentId?: string;
+    search?: string;
+    limit?: number;
+  }): Promise<RequirementItem[]> {
+    const response = await api.get('/engineering-intelligence/requirements', { params });
+    return response.data;
+  },
+
+  async getRequirementById(requirementId: string): Promise<RequirementItem> {
+    const response = await api.get(`/engineering-intelligence/requirements/${requirementId}`);
+    return response.data;
+  },
+
+  async addRequirementComment(
+    requirementId: string,
+    payload: { content: string; authorId?: string; authorName?: string; authorType?: RequirementActorType },
+  ): Promise<RequirementItem> {
+    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/comments`, payload);
+    return response.data;
+  },
+
+  async assignRequirement(
+    requirementId: string,
+    payload: {
+      toAgentId: string;
+      toAgentName?: string;
+      assignedById?: string;
+      assignedByName?: string;
+      reason?: string;
+    },
+  ): Promise<RequirementItem> {
+    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/assign`, payload);
+    return response.data;
+  },
+
+  async updateRequirementStatus(
+    requirementId: string,
+    payload: {
+      status: RequirementStatus;
+      changedById?: string;
+      changedByName?: string;
+      changedByType?: RequirementActorType;
+      note?: string;
+    },
+  ): Promise<RequirementItem> {
+    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/status`, payload);
+    return response.data;
+  },
+
+  async getRequirementBoard(): Promise<RequirementBoardResult> {
+    const response = await api.get('/engineering-intelligence/requirements/board');
+    return response.data;
+  },
+
+  async syncRequirementToGithub(
+    requirementId: string,
+    payload: { owner: string; repo: string; labels?: string[]; metadata?: Record<string, unknown> },
+  ): Promise<{ success: boolean; requirementId: string; githubLink?: RequirementGithubLink }> {
+    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/github/sync`, payload);
     return response.data;
   },
 };

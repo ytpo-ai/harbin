@@ -1,5 +1,6 @@
 import { IsOptional, IsString, Matches } from 'class-validator';
 export * from './statistics.dto';
+export * from './requirement.dto';
 
 export class CreateEngineeringRepositoryDto {
   @IsString()

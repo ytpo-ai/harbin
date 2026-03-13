@@ -22,7 +22,11 @@ import {
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
 import { employeeService, EmployeeType } from '../services/employeeService';
-import { messageCenterService, MessageCenterItem } from '../services/messageCenterService';
+import {
+  messageCenterService,
+  MessageCenterItem,
+  MESSAGE_CENTER_UPDATED_EVENT,
+} from '../services/messageCenterService';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -101,11 +105,20 @@ const Layout: React.FC = () => {
       void refreshUnreadCount();
     };
 
+    const onMessageCenterUpdated = () => {
+      void refreshUnreadCount();
+      if (isMessageDrawerOpen) {
+        void loadRecentMessages();
+      }
+    };
+
     window.addEventListener('focus', onFocus);
+    window.addEventListener(MESSAGE_CENTER_UPDATED_EVENT, onMessageCenterUpdated);
     return () => {
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener(MESSAGE_CENTER_UPDATED_EVENT, onMessageCenterUpdated);
     };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, isMessageDrawerOpen]);
 
   useEffect(() => {
     if (isMessageDrawerOpen) {
@@ -197,6 +210,8 @@ const Layout: React.FC = () => {
       items: [
         { name: '研发智能', href: '/engineering-intelligence', icon: SparklesIcon },
         { name: '工程统计', href: '/engineering-intelligence/statistics', icon: ChartBarIcon },
+        { name: '需求管理', href: '/engineering-intelligence/requirements', icon: DocumentTextIcon },
+        { name: '智能研发看板', href: '/engineering-intelligence/board', icon: ChartBarIcon },
         { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
       ],
     },
