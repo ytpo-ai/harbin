@@ -61,6 +61,11 @@
 | `gateway/api_management` | API 管理 | `docs/feature/GATEWAY_API_MANAGEMENT.md` |
 | `gateway/auth` | 认证授权 | (待完善) |
 
+### 7. 消息中心模块 (message-center)
+| 2级功能 | 说明 | 功能文档 |
+|---------|------|----------|
+| `message-center/system_notifications` | 系统通知中心 | `docs/feature/MESSAGE_CENTER.md` |
+
 ---
 
 ## 功能文档清单
@@ -81,6 +86,7 @@
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
+| `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |
 
 ### 待完善的功能文档
 

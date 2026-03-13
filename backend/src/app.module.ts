@@ -19,6 +19,7 @@ import { ModelClientModule } from './modules/models-client/model-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { AgentActionLogModule } from './modules/agent-action-logs/agent-action-log.module';
+import { MessageCenterModule } from './modules/message-center/message-center.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -48,6 +49,7 @@ import jwtConfig from './config/jwt.config';
     OperationLogModule,
     AgentActionLogModule,
     MessagesModule,
+    MessageCenterModule,
     AgentClientModule,
     ToolClientModule,
     TaskModule,

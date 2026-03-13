@@ -80,6 +80,14 @@
 
 - `GET /messages`：按 `sceneType + sceneId` 分页查询统一消息
 
+## Message Center（`/message-center`）
+
+- `GET /message-center/messages`：查询当前登录用户消息列表（支持 `page/pageSize/isRead/type`）
+- `GET /message-center/unread-count`：查询当前登录用户未读数
+- `PATCH /message-center/messages/:messageId/read`：单条消息标记已读
+- `PATCH /message-center/messages/read-all`：全部消息标记已读
+- `POST /message-center/hooks/engineering-statistics`：工程统计通知写入 Hook（EI 调用，通知落库在 legacy）
+
 ## RD Management（`/rd-management`）
 
 > OpenCode Serve（`4098`）直连参数规范与 `directory` 约束见：`docs/api/opencode-api.md`
@@ -94,7 +102,9 @@
 - `GET /rd-management/opencode/sessions/:id`
 - `GET /rd-management/opencode/sessions/:id/messages`
 - `POST /rd-management/opencode/sessions`
+- `POST /rd-management/opencode/sessions` 请求体支持 `agentId` 与 `model`（`providerID/modelID`），用于新建 session 时对齐 Agent 模型。
 - `POST /rd-management/opencode/sessions/:id/prompt`
+- `POST /rd-management/opencode/sessions/:id/prompt` 当传入 `model` 且 OpenCode 未配置该模型时，返回 400 并给出明确错误提示。
 - `GET /rd-management/opencode/events`
 - `POST /rd-management/tasks/:id/opencode/sync-current`
 - `POST /rd-management/projects/:id/opencode/sync-current`

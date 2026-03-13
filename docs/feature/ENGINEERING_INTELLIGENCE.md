@@ -53,6 +53,25 @@
 - 项目记录集合统一为 `ei_projects`（复用原 `rdproject` 结构并扩展同步字段）。
 - `ei_projects` 仅允许通过同步链路创建（`POST /rd-management/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
 - 同步按 `agentId + opencodeProjectPath / opencodeProjectId` 幂等更新，返回 `created/updated/skipped` 统计。
+- RD 管理 OpenCode 集成侧已移除 SDK，项目/会话/事件查询统一通过 OpenCode HTTP API 直连。
+- RD 管理页恢复“新建 Session”能力：创建时优先对齐所选 Agent 绑定模型（`providerID/modelID`）并透传到 OpenCode session。
+- RD 管理发送前会进行 OpenCode 模型能力校验；若目标模型未配置，接口返回明确错误（不自动改写 OpenCode 全局配置）。
+- RD 管理 events 面板按当前选中 `sessionId` 过滤，保障会话视角下事件信息同步一致。
+
+### 1.8 工程统计（本轮新增）
+
+- 前端在 `研发智能` 分组下新增二级菜单 `工程统计`。
+- 页面支持一键触发统计：覆盖 `docs`、`frontend`、`backend` 维度。
+- 统计结果按“项目明细 + 汇总”返回，并落库到 `ei_project_statistics_snapshots`。
+- 快照状态机：`running/success/failed`，支持查询 latest/detail/history。
+- 统计能力对外暴露为 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run`。
+- 统计快照创建接口支持可选 `receiverId`，用于在统计完成/失败后触发 legacy 消息中心通知落库。
+
+### 1.9 消息中心联动（本轮新增）
+
+- 消息中心能力归属 legacy 主 backend（`backend/src/modules/message-center`），不落在 EI 独立服务中。
+- EI 仅负责在统计完成后通过 Hook 调用 legacy：`POST /api/message-center/hooks/engineering-statistics`。
+- 前端消息入口位于主站 Header 右上角，支持最近消息抽屉与完整消息中心页。
 
 ---
 
@@ -64,6 +83,7 @@
 |------|------|
 | `plan/OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 执行到分析的总体规划 |
 | `plan/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发管理页 EI 项目同步改造计划 |
+| `plan/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -79,6 +99,7 @@
 | `development/OPENCODE_RD_WORKFLOW_DISCUSSION_TOPICS.md` | 研发流程议题与待决策项 |
 | `development/OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1 EI 同步与分析实现总结 |
 | `development/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发管理页 EI 项目同步实现与排障总结 |
+| `development/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
 
 ### API 文档 (docs/api/)
 
@@ -96,6 +117,7 @@
 |------|------|
 | `backend/apps/engineering-intelligence/src/` | EI 服务主模块（同步接收、分析计算、查询接口） |
 | `backend/apps/agents/src/modules/runtime/` | Runtime 事件事实来源与同步触发链路 |
+| `backend/apps/agents/src/modules/tools/` | 工程统计 MCP 工具定义与执行入口 |
 | `backend/src/modules/rd-management/` | 研发管理页 OpenCode 项目同步与 EI 项目列表接口 |
 | `backend/src/shared/schemas/rd-project.schema.ts` | `ei_projects` 集合模型（同步来源、OpenCode 项目标识） |
 

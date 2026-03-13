@@ -49,6 +49,25 @@
 - `POST /engineering-intelligence/opencode/runs/:runId/recompute-metrics`
   - 作用：按 run 重算指标，支持口径演进后的回放计算。
 
+## 工程统计（新增）
+
+- `POST /engineering-intelligence/statistics/snapshots`
+  - 作用：触发一次工程统计并创建快照。
+  - 请求体：`scope(all/docs/frontend/backend)`、`tokenMode(estimate/exact)`、`projectIds[]`、`triggeredBy`、`receiverId`（可选，传入后将通过 legacy message-center 写入通知）。
+
+- `GET /engineering-intelligence/statistics/snapshots/latest`
+  - 作用：获取最近一次统计快照。
+
+- `GET /engineering-intelligence/statistics/snapshots/:snapshotId`
+  - 作用：获取指定快照详情（项目明细 + 汇总 + 错误列表）。
+
+- `GET /engineering-intelligence/statistics/snapshots?limit=20`
+  - 作用：分页获取统计历史（按时间倒序）。
+
+落库集合（新增）：
+
+- `ei_project_statistics_snapshots`
+
 ## 说明
 
 - 历史兼容路径 `/api/cto-docs/*` 已移除。

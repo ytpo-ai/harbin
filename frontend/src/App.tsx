@@ -13,12 +13,14 @@ import HRManagement from './pages/HRManagement';
 import Meetings from './pages/Meetings';
 import RdManagement from './pages/RdManagement';
 import EngineeringIntelligence from './pages/EngineeringIntelligence';
+import EngineeringStatistics from './pages/EngineeringStatistics';
 import Orchestration from './pages/Orchestration';
 import PlanDetail from './pages/PlanDetail';
 import Scheduler from './pages/Scheduler';
 import Skills from './pages/Skills';
 import OperationLogs from './pages/OperationLogs';
 import Memos from './pages/Memos';
+import MessageCenter from './pages/MessageCenter';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -75,7 +77,9 @@ function App() {
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
             <Route path="/memos" element={<ProtectedRoute><Memos /></ProtectedRoute>} />
+            <Route path="/message-center" element={<ProtectedRoute><MessageCenter /></ProtectedRoute>} />
             <Route path="/engineering-intelligence" element={<ProtectedRoute><EngineeringIntelligence /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence/statistics" element={<ProtectedRoute><EngineeringStatistics /></ProtectedRoute>} />
           </Route>
         </Routes>
       </Router>

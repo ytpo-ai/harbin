@@ -1,6 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { createHmac, timingSafeEqual } from 'crypto';
+import axios from 'axios';
+import { Dirent } from 'fs';
+import { readdir, readFile } from 'fs/promises';
+import * as path from 'path';
 import { Model, Types } from 'mongoose';
 import { EngineeringRepository, EngineeringRepositoryDocument } from '../../schemas/engineering-repository.schema';
 import {
@@ -15,7 +19,18 @@ import {
   EiOpenCodeRunAnalytics,
   EiOpenCodeRunAnalyticsDocument,
 } from '../../schemas/ei-opencode-run-analytics.schema';
-import { CreateEngineeringRepositoryDto, UpdateEngineeringRepositoryDto } from './dto';
+import {
+  EiProjectStatisticsSnapshot,
+  EiProjectStatisticsSnapshotDocument,
+  EiStatisticsProjectRow,
+  EiStatisticsSummary,
+} from '../../schemas/ei-project-statistics-snapshot.schema';
+import { RdProject, RdProjectDocument } from '../../../../../src/shared/schemas/rd-project.schema';
+import {
+  CreateEngineeringRepositoryDto,
+  CreateStatisticsSnapshotDto,
+  UpdateEngineeringRepositoryDto,
+} from './dto';
 
 type GitHubContentItem = {
   type: 'file' | 'dir';
@@ -77,12 +92,24 @@ type OpenCodeRunSyncPayload = {
   events: OpenCodeRunSyncEvent[];
 };
 
+type FileMetrics = {
+  fileCount: number;
+  bytes: number;
+  lines: number;
+  tsCount: number;
+  tsxCount: number;
+  testFileCount: number;
+  tokens: number;
+};
+
 @Injectable()
 export class EngineeringIntelligenceService {
+  private readonly workspaceRoot = process.env.EI_WORKSPACE_ROOT || path.resolve(process.cwd(), '..', '..', '..', '..');
   private readonly githubApiBase = 'https://api.github.com';
   private readonly maxFilesPerSummary = 20;
   private readonly maxCharsPerFile = 12000;
   private readonly nodeIdentityPattern = /^[a-zA-Z0-9._-]{2,64}$/;
+  private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001';
 
   constructor(
     @InjectModel(EngineeringRepository.name) private repositoryModel: Model<EngineeringRepositoryDocument>,
@@ -92,6 +119,10 @@ export class EngineeringIntelligenceService {
     private eventFactModel: Model<EiOpenCodeEventFactDocument>,
     @InjectModel(EiOpenCodeRunAnalytics.name)
     private runAnalyticsModel: Model<EiOpenCodeRunAnalyticsDocument>,
+    @InjectModel(EiProjectStatisticsSnapshot.name)
+    private readonly statisticsSnapshotModel: Model<EiProjectStatisticsSnapshotDocument>,
+    @InjectModel(RdProject.name)
+    private readonly rdProjectModel: Model<RdProjectDocument>,
   ) {}
 
   private ensureContinuousSequence(events: OpenCodeRunSyncEvent[]): void {
@@ -733,7 +764,355 @@ export class EngineeringIntelligenceService {
           : stackSignals.length === 0
             ? ['文档中技术栈信号较少，建议补充架构与部署说明']
             : [],
+      };
+  }
+
+  private resolveWorkspacePath(relativePath: string): string {
+    const normalized = String(relativePath || '').trim().replace(/\\/g, '/');
+    const absPath = path.resolve(this.workspaceRoot, normalized);
+    const normalizedRoot = path.resolve(this.workspaceRoot);
+    if (!absPath.startsWith(normalizedRoot)) {
+      throw new BadRequestException(`invalid project path: ${relativePath}`);
+    }
+    return absPath;
+  }
+
+  private shouldSkipDir(name: string): boolean {
+    return ['node_modules', '.git', 'dist', 'build', '.next', 'coverage', '.turbo', '.cache'].includes(name);
+  }
+
+  private shouldIncludeFile(fileName: string): boolean {
+    const lower = fileName.toLowerCase();
+    return !['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.pdf', '.zip', '.gz', '.mp4', '.mov'].some((ext) =>
+      lower.endsWith(ext),
+    );
+  }
+
+  private countLinesFromText(text: string): number {
+    if (!text) return 0;
+    return text.split('\n').length;
+  }
+
+  private estimateTokensByChars(text: string): number {
+    return Math.round((text || '').length / 4);
+  }
+
+  private async scanDirectoryMetrics(absRootPath: string): Promise<FileMetrics> {
+    const metrics: FileMetrics = {
+      fileCount: 0,
+      bytes: 0,
+      lines: 0,
+      tsCount: 0,
+      tsxCount: 0,
+      testFileCount: 0,
+      tokens: 0,
     };
+
+    const walk = async (current: string): Promise<void> => {
+      const entries = await readdir(current, { withFileTypes: true });
+      for (const entry of entries as Dirent[]) {
+        const fullPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          if (this.shouldSkipDir(entry.name)) {
+            continue;
+          }
+          await walk(fullPath);
+          continue;
+        }
+        if (!entry.isFile()) {
+          continue;
+        }
+        if (!this.shouldIncludeFile(entry.name)) {
+          continue;
+        }
+
+        const content = await readFile(fullPath, 'utf-8').catch(() => '');
+        const bytes = Buffer.byteLength(content, 'utf-8');
+        const lower = entry.name.toLowerCase();
+
+        metrics.fileCount += 1;
+        metrics.bytes += bytes;
+        metrics.lines += this.countLinesFromText(content);
+        metrics.tokens += this.estimateTokensByChars(content);
+
+        if (lower.endsWith('.ts')) {
+          metrics.tsCount += 1;
+        }
+        if (lower.endsWith('.tsx')) {
+          metrics.tsxCount += 1;
+        }
+        if (lower.endsWith('.spec.ts') || lower.endsWith('.test.ts') || lower.endsWith('.spec.tsx') || lower.endsWith('.test.tsx')) {
+          metrics.testFileCount += 1;
+        }
+      }
+    };
+
+    await walk(absRootPath);
+    return metrics;
+  }
+
+  private buildSummary(rows: EiStatisticsProjectRow[]): EiStatisticsSummary {
+    const totalDocsBytes = rows.filter((item) => item.metricType === 'docs').reduce((sum, item) => sum + item.bytes, 0);
+    const totalDocsTokens = rows.filter((item) => item.metricType === 'docs').reduce((sum, item) => sum + (item.tokens || 0), 0);
+    const totalFrontendBytes = rows
+      .filter((item) => item.metricType === 'frontend')
+      .reduce((sum, item) => sum + item.bytes, 0);
+    const totalBackendBytes = rows.filter((item) => item.metricType === 'backend').reduce((sum, item) => sum + item.bytes, 0);
+    const failureCount = rows.filter((item) => Boolean(item.error)).length;
+    const successCount = rows.length - failureCount;
+
+    return {
+      totalDocsBytes,
+      totalDocsTokens,
+      totalFrontendBytes,
+      totalBackendBytes,
+      grandTotalBytes: totalDocsBytes + totalFrontendBytes + totalBackendBytes,
+      projectCount: rows.length,
+      successCount,
+      failureCount,
+    };
+  }
+
+  private async buildStatisticsRows(input: {
+    scope: 'all' | 'docs' | 'frontend' | 'backend';
+    requestedProjectIds: string[];
+  }): Promise<EiStatisticsProjectRow[]> {
+    const rows: EiStatisticsProjectRow[] = [];
+    const baseProjects: Array<{
+      projectId: string;
+      projectName: string;
+      source: 'workspace' | 'ei_project';
+      metricType: 'docs' | 'frontend' | 'backend';
+      rootPath: string;
+    }> = [];
+
+    if (input.scope === 'all' || input.scope === 'docs') {
+      baseProjects.push({
+        projectId: 'workspace-docs',
+        projectName: 'Workspace Docs',
+        source: 'workspace',
+        metricType: 'docs',
+        rootPath: 'docs',
+      });
+    }
+
+    if (input.scope === 'all' || input.scope === 'frontend') {
+      baseProjects.push({
+        projectId: 'workspace-frontend',
+        projectName: 'Workspace Frontend',
+        source: 'workspace',
+        metricType: 'frontend',
+        rootPath: 'frontend/src',
+      });
+    }
+
+    if (input.scope === 'all' || input.scope === 'backend') {
+      baseProjects.push({
+        projectId: 'workspace-backend',
+        projectName: 'Workspace Backend',
+        source: 'workspace',
+        metricType: 'backend',
+        rootPath: 'backend/src',
+      });
+    }
+
+    const projectFilter = input.requestedProjectIds.length
+      ? {
+          $or: [
+            { _id: { $in: input.requestedProjectIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)) } },
+            { id: { $in: input.requestedProjectIds } },
+          ],
+        }
+      : {};
+
+    const eiProjects = await this.rdProjectModel
+      .find({
+        ...projectFilter,
+        opencodeProjectPath: { $exists: true, $ne: '' },
+      })
+      .lean()
+      .exec();
+
+    for (const project of eiProjects as Array<Record<string, any>>) {
+      const projectId = String(project.id || project._id || '');
+      const projectName = String(project.name || project.opencodeProjectPath || projectId);
+      const projectPath = String(project.opencodeProjectPath || '').trim();
+      const metricType = projectPath.includes('frontend') ? 'frontend' : projectPath.includes('backend') ? 'backend' : 'docs';
+      if (input.scope !== 'all' && input.scope !== metricType) {
+        continue;
+      }
+      baseProjects.push({
+        projectId,
+        projectName,
+        source: 'ei_project',
+        metricType,
+        rootPath: projectPath,
+      });
+    }
+
+    for (const item of baseProjects) {
+      try {
+        const abs = this.resolveWorkspacePath(item.rootPath);
+        const metrics = await this.scanDirectoryMetrics(abs);
+        rows.push({
+          projectId: item.projectId,
+          projectName: item.projectName,
+          source: item.source,
+          metricType: item.metricType,
+          rootPath: item.rootPath,
+          fileCount: metrics.fileCount,
+          bytes: metrics.bytes,
+          lines: metrics.lines,
+          tokens: item.metricType === 'docs' ? metrics.tokens : undefined,
+          tsCount: metrics.tsCount,
+          tsxCount: metrics.tsxCount,
+          testFileCount: metrics.testFileCount,
+        });
+      } catch (error) {
+        rows.push({
+          projectId: item.projectId,
+          projectName: item.projectName,
+          source: item.source,
+          metricType: item.metricType,
+          rootPath: item.rootPath,
+          fileCount: 0,
+          bytes: 0,
+          lines: 0,
+          tokens: 0,
+          tsCount: 0,
+          tsxCount: 0,
+          testFileCount: 0,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return rows;
+  }
+
+  private async emitStatisticsMessage(input: {
+    receiverId?: string;
+    snapshotId: string;
+    status: 'success' | 'failed';
+    summary?: EiStatisticsSummary;
+    error?: string;
+  }): Promise<void> {
+    const receiverId = String(input.receiverId || '').trim();
+    if (!receiverId) {
+      return;
+    }
+
+    await axios.post(
+      `${this.legacyBaseUrl}/api/message-center/hooks/engineering-statistics`,
+      {
+        receiverId,
+        snapshotId: input.snapshotId,
+        status: input.status,
+        summary: input.summary,
+        error: input.error,
+      },
+      {
+        timeout: 10000,
+      },
+    );
+  }
+
+  async createStatisticsSnapshot(payload: CreateStatisticsSnapshotDto) {
+    const now = new Date();
+    const scope = payload.scope || 'all';
+    const tokenMode = payload.tokenMode || 'estimate';
+    const requestedProjectIds = (payload.projectIds || []).map((item) => String(item || '').trim()).filter(Boolean);
+    const snapshotId = `ei-stats-${now.getTime()}`;
+
+    await this.statisticsSnapshotModel.create({
+      snapshotId,
+      status: 'running',
+      scope,
+      tokenMode,
+      requestedProjectIds,
+      triggeredBy: payload.triggeredBy || 'manual',
+      startedAt: now,
+      projects: [],
+      summary: {
+        totalDocsBytes: 0,
+        totalDocsTokens: 0,
+        totalFrontendBytes: 0,
+        totalBackendBytes: 0,
+        grandTotalBytes: 0,
+        projectCount: 0,
+        successCount: 0,
+        failureCount: 0,
+      },
+      errors: [],
+    });
+
+    try {
+      const rows = await this.buildStatisticsRows({
+        scope,
+        requestedProjectIds,
+      });
+      const summary = this.buildSummary(rows);
+      const errors = rows.filter((item) => item.error).map((item) => `${item.projectName}: ${item.error}`);
+      const status: 'success' | 'failed' = errors.length === rows.length && rows.length > 0 ? 'failed' : 'success';
+
+      await this.statisticsSnapshotModel.updateOne(
+        { snapshotId },
+        {
+          $set: {
+            status,
+            completedAt: new Date(),
+            projects: rows,
+            summary,
+            errors,
+          },
+        },
+      );
+
+      await this.emitStatisticsMessage({
+        receiverId: payload.receiverId,
+        snapshotId,
+        status,
+        summary,
+        error: errors.join('; ') || undefined,
+      });
+    } catch (error) {
+      await this.statisticsSnapshotModel.updateOne(
+        { snapshotId },
+        {
+          $set: {
+            status: 'failed',
+            completedAt: new Date(),
+            errors: [error instanceof Error ? error.message : String(error)],
+          },
+        },
+      );
+
+      await this.emitStatisticsMessage({
+        receiverId: payload.receiverId,
+        snapshotId,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    return this.getStatisticsSnapshotById(snapshotId);
+  }
+
+  async getLatestStatisticsSnapshot() {
+    return this.statisticsSnapshotModel.findOne({}).sort({ createdAt: -1 }).lean().exec();
+  }
+
+  async getStatisticsSnapshotById(snapshotId: string) {
+    const snapshot = await this.statisticsSnapshotModel.findOne({ snapshotId }).lean().exec();
+    if (!snapshot) {
+      throw new NotFoundException('Statistics snapshot not found');
+    }
+    return snapshot;
+  }
+
+  async listStatisticsSnapshots(limit = 20) {
+    const normalizedLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+    return this.statisticsSnapshotModel.find({}).sort({ createdAt: -1 }).limit(normalizedLimit).lean().exec();
   }
 
   async createRepository(payload: CreateEngineeringRepositoryDto) {

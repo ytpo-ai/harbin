@@ -14,11 +14,15 @@ import {
   DocumentTextIcon,
   BookOpenIcon,
   ClockIcon,
+  ChartBarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  BellIcon,
+  EnvelopeOpenIcon,
 } from '@heroicons/react/24/outline';
 import { authService } from '../services/authService';
 import { employeeService, EmployeeType } from '../services/employeeService';
+import { messageCenterService, MessageCenterItem } from '../services/messageCenterService';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -29,6 +33,11 @@ const Layout: React.FC = () => {
   const [creatingAssistant, setCreatingAssistant] = useState(false);
   const [assistantError, setAssistantError] = useState('');
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isMessageDrawerOpen, setIsMessageDrawerOpen] = useState(false);
+  const [recentMessages, setRecentMessages] = useState<MessageCenterItem[]>([]);
+  const [loadingRecentMessages, setLoadingRecentMessages] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   useEffect(() => {
     const loadCurrentUserAndEmployee = async () => {
@@ -53,6 +62,82 @@ const Layout: React.FC = () => {
 
     void loadCurrentUserAndEmployee();
   }, []);
+
+  const refreshUnreadCount = async () => {
+    if (!currentUser?.id) {
+      setUnreadCount(0);
+      return;
+    }
+
+    try {
+      const count = await messageCenterService.getUnreadCount();
+      setUnreadCount(count);
+    } catch {
+      setUnreadCount(0);
+    }
+  };
+
+  const loadRecentMessages = async () => {
+    setLoadingRecentMessages(true);
+    try {
+      const result = await messageCenterService.listMessages({ page: 1, pageSize: 8 });
+      setRecentMessages(result.items || []);
+      setUnreadCount(result.unreadCount || 0);
+    } catch {
+      setRecentMessages([]);
+    } finally {
+      setLoadingRecentMessages(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!currentUser?.id) {
+      return;
+    }
+
+    void refreshUnreadCount();
+
+    const onFocus = () => {
+      void refreshUnreadCount();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (isMessageDrawerOpen) {
+      void loadRecentMessages();
+    }
+  }, [isMessageDrawerOpen]);
+
+  const openMessageCenterPage = () => {
+    setIsMessageDrawerOpen(false);
+    navigate('/message-center');
+  };
+
+  const handleMarkRecentMessageRead = async (messageId: string) => {
+    try {
+      await messageCenterService.markAsRead(messageId);
+      await loadRecentMessages();
+    } catch {
+      // ignore
+    }
+  };
+
+  const openRecentMessage = async (item: MessageCenterItem) => {
+    if (!item.isRead) {
+      await handleMarkRecentMessageRead(item.messageId);
+    }
+
+    const redirectPath = String(item.payload?.redirectPath || '').trim();
+    if (redirectPath) {
+      setIsMessageDrawerOpen(false);
+      navigate(redirectPath);
+    }
+  };
 
   const requiresAssistantBinding =
     !!currentUser &&
@@ -111,6 +196,7 @@ const Layout: React.FC = () => {
       icon: SparklesIcon,
       items: [
         { name: '研发智能', href: '/engineering-intelligence', icon: SparklesIcon },
+        { name: '工程统计', href: '/engineering-intelligence/statistics', icon: ChartBarIcon },
         { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
       ],
     },
@@ -126,6 +212,7 @@ const Layout: React.FC = () => {
       name: '系统管理',
       icon: KeyIcon,
       items: [
+        { name: '消息中心', href: '/message-center', icon: BellIcon },
         { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
         { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
         { name: '人力资源', href: '/hr', icon: UserGroupIcon },
@@ -135,7 +222,11 @@ const Layout: React.FC = () => {
   ];
 
   const isItemActive = (href: string) =>
-    href === '/' ? location.pathname === '/' : location.pathname.startsWith(href);
+    href === '/'
+      ? location.pathname === '/'
+      : href === '/engineering-intelligence'
+        ? location.pathname === '/engineering-intelligence'
+        : location.pathname.startsWith(href);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -304,12 +395,113 @@ const Layout: React.FC = () => {
 
       {/* 主内容区域 */}
       <div className={`transition-all duration-200 ${isSidebarExpanded ? 'pl-64' : 'pl-16'}`}>
+        <header className="sticky top-0 z-40 bg-white border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setIsMessageDrawerOpen((prev) => !prev)}
+              className="relative inline-flex items-center justify-center h-9 w-9 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
+              title="消息中心"
+            >
+              <BellIcon className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px]">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+
+            {currentUser && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-2 pl-2 border-l border-gray-200"
+                >
+                  <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium">
+                    {(currentUser.name || currentUser.email || '?').substring(0, 1).toUpperCase()}
+                  </div>
+                  <span className="text-sm text-gray-700 hidden sm:inline">{currentUser.name || currentUser.email}</span>
+                </button>
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg p-1 z-20">
+                    <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">{currentUser.email}</div>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded"
+                    >
+                      退出登录
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </header>
+
         <main className="py-6">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <Outlet />
           </div>
         </main>
       </div>
+
+      {isMessageDrawerOpen && (
+        <div className="fixed inset-0 z-[65]">
+          <div className="absolute inset-0 bg-black/30" onClick={() => setIsMessageDrawerOpen(false)} />
+          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl border-l border-gray-200 flex flex-col">
+            <div className="px-4 h-14 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-gray-900">消息中心</h2>
+              <button
+                type="button"
+                onClick={openMessageCenterPage}
+                className="text-xs text-primary-600 hover:text-primary-700"
+              >
+                查看全部
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {loadingRecentMessages ? (
+                <div className="p-4 text-sm text-gray-500">加载中...</div>
+              ) : recentMessages.length === 0 ? (
+                <div className="p-6 text-sm text-gray-400">暂无消息</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {recentMessages.map((item) => (
+                    <div key={item.messageId} className="p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openRecentMessage(item)}
+                            className="text-sm font-medium text-left text-gray-900 hover:text-primary-700"
+                          >
+                            {item.title}
+                          </button>
+                          <p className="mt-1 text-xs text-gray-600">{item.content}</p>
+                          <p className="mt-1 text-[11px] text-gray-400">{new Date(item.createdAt).toLocaleString()}</p>
+                        </div>
+                        {!item.isRead && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkRecentMessageRead(item.messageId)}
+                            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
+                          >
+                            <EnvelopeOpenIcon className="h-3.5 w-3.5" />
+                            已读
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {requiresAssistantBinding && (
         <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">

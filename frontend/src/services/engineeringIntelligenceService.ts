@@ -43,6 +43,49 @@ export interface EngineeringDocHistoryResult {
   }>;
 }
 
+export interface EngineeringStatisticsProjectRow {
+  projectId: string;
+  projectName: string;
+  source: 'workspace' | 'ei_project';
+  metricType: 'docs' | 'frontend' | 'backend';
+  rootPath: string;
+  fileCount: number;
+  bytes: number;
+  lines: number;
+  tokens?: number;
+  tsCount?: number;
+  tsxCount?: number;
+  testFileCount?: number;
+  error?: string;
+}
+
+export interface EngineeringStatisticsSummary {
+  totalDocsBytes: number;
+  totalDocsTokens: number;
+  totalFrontendBytes: number;
+  totalBackendBytes: number;
+  grandTotalBytes: number;
+  projectCount: number;
+  successCount: number;
+  failureCount: number;
+}
+
+export interface EngineeringStatisticsSnapshot {
+  snapshotId: string;
+  status: 'running' | 'success' | 'failed';
+  scope: 'all' | 'docs' | 'frontend' | 'backend';
+  tokenMode: 'estimate' | 'exact';
+  requestedProjectIds: string[];
+  triggeredBy?: string;
+  startedAt: string;
+  completedAt?: string;
+  projects: EngineeringStatisticsProjectRow[];
+  summary: EngineeringStatisticsSummary;
+  errors: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const engineeringIntelligenceService = {
   async listRepositories(): Promise<EngineeringRepository[]> {
     const response = await api.get('/engineering-intelligence/repositories');
@@ -74,6 +117,34 @@ export const engineeringIntelligenceService = {
   async getDocHistory(id: string, path: string, limit = 20): Promise<EngineeringDocHistoryResult> {
     const response = await api.get(`/engineering-intelligence/repositories/${id}/docs/history`, {
       params: { path, limit },
+    });
+    return response.data;
+  },
+
+  async createStatisticsSnapshot(payload?: {
+    scope?: 'all' | 'docs' | 'frontend' | 'backend';
+    tokenMode?: 'estimate' | 'exact';
+    projectIds?: string[];
+    triggeredBy?: string;
+    receiverId?: string;
+  }): Promise<EngineeringStatisticsSnapshot> {
+    const response = await api.post('/engineering-intelligence/statistics/snapshots', payload || {});
+    return response.data;
+  },
+
+  async getLatestStatisticsSnapshot(): Promise<EngineeringStatisticsSnapshot | null> {
+    const response = await api.get('/engineering-intelligence/statistics/snapshots/latest');
+    return response.data;
+  },
+
+  async getStatisticsSnapshotById(snapshotId: string): Promise<EngineeringStatisticsSnapshot> {
+    const response = await api.get(`/engineering-intelligence/statistics/snapshots/${snapshotId}`);
+    return response.data;
+  },
+
+  async listStatisticsSnapshots(limit = 20): Promise<EngineeringStatisticsSnapshot[]> {
+    const response = await api.get('/engineering-intelligence/statistics/snapshots', {
+      params: { limit },
     });
     return response.data;
   },
