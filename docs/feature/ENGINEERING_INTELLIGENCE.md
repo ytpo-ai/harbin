@@ -61,10 +61,12 @@
 ### 1.8 工程统计（本轮新增）
 
 - 前端在 `研发智能` 分组下新增二级菜单 `工程统计`。
-- 页面支持一键触发统计：覆盖 `docs`、`frontend`、`backend` 维度。
+- 页面支持一键触发统计计划执行：覆盖 `docs`、`frontend`、`backend` 维度。
 - 统计结果按“项目明细 + 汇总”返回，并落库到 `ei_project_statistics_snapshots`。
 - 快照状态机：`running/success/failed`，支持查询 latest/detail/history。
 - 统计能力对外暴露为 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run`。
+- 系统默认创建定时计划 `system-engineering-statistics`，按钮触发本质为触发该计划一次执行。
+- 计划执行完成后通过消息中心 Hook 发送提醒，前端可在消息中心查看并跳转快照。
 - 统计快照创建接口支持可选 `receiverId`，用于在统计完成/失败后触发 legacy 消息中心通知落库。
 
 ### 1.9 消息中心联动（本轮新增）

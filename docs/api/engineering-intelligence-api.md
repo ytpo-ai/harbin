@@ -52,7 +52,7 @@
 ## 工程统计（新增）
 
 - `POST /engineering-intelligence/statistics/snapshots`
-  - 作用：触发一次工程统计并创建快照。
+  - 作用：由统计计划或工具触发一次工程统计并创建快照。
   - 请求体：`scope(all/docs/frontend/backend)`、`tokenMode(estimate/exact)`、`projectIds[]`、`triggeredBy`、`receiverId`（可选，传入后将通过 legacy message-center 写入通知）。
 
 - `GET /engineering-intelligence/statistics/snapshots/latest`
@@ -63,6 +63,15 @@
 
 - `GET /engineering-intelligence/statistics/snapshots?limit=20`
   - 作用：分页获取统计历史（按时间倒序）。
+
+## 编排调度入口（按钮触发）
+
+- `GET /orchestration/schedules/system/engineering-statistics`
+  - 作用：获取（或确保存在）系统默认工程统计计划。
+
+- `POST /orchestration/schedules/system/engineering-statistics/trigger`
+  - 作用：触发系统工程统计计划执行一次。
+  - 请求体：`receiverId`、`scope`、`tokenMode`、`projectIds[]`、`triggeredBy`。
 
 落库集合（新增）：
 
