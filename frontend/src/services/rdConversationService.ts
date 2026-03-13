@@ -51,11 +51,20 @@ export interface RdProject {
   };
   opencodeProjectPath?: string;
   opencodeProjectId?: string;
+  opencodeEndpointRef?: string;
   opencodeSessionId?: string;
   syncedFromAgentId?: string;
   createdBySync?: boolean;
+  sourceType?: 'local' | 'opencode' | 'github';
+  localPath?: string;
+  bindingLocalProjectId?: string;
+  opencodeBindingIds?: Array<string | Partial<RdProject>>;
+  githubBindingId?: string | Partial<RdProject>;
   opencodeConfig?: Record<string, any>;
   repositoryUrl?: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  githubApiKeyId?: string;
   branch?: string;
   startDate?: string;
   endDate?: string;
@@ -79,8 +88,10 @@ export interface OpencodeEventPayload {
 
 export interface CreateOpencodeSessionDto {
   projectPath: string;
+  agentId?: string;
   title?: string;
   config?: Record<string, any>;
+  model?: { providerID: string; modelID: string };
 }
 
 export interface ImportOpencodeProjectDto {
@@ -88,10 +99,39 @@ export interface ImportOpencodeProjectDto {
   projectPath?: string;
   name?: string;
   agentId?: string;
+  endpointRef?: string;
 }
 
 export interface SyncAgentOpencodeProjectsDto {
   projectPaths?: string[];
+}
+
+export interface CreateLocalRdProjectDto {
+  name: string;
+  localPath: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface BindOpencodeProjectDto {
+  localProjectId: string;
+  projectId?: string;
+  projectPath?: string;
+  endpointRef?: string;
+  agentId?: string;
+  name?: string;
+}
+
+export interface BindGithubProjectDto {
+  localProjectId: string;
+  repositoryUrl: string;
+  owner: string;
+  repo: string;
+  githubApiKeyId: string;
+  branch?: string;
+  name?: string;
+  description?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface CreateRdTaskDto {
@@ -149,7 +189,7 @@ export interface UpdateRdProjectDto {
   metadata?: Record<string, any>;
 }
 
-class RdManagementService {
+class RdConversationService {
   private getAuthHeaders() {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     return {
@@ -191,7 +231,7 @@ class RdManagementService {
 
   // ========== 项目管理 ==========
 
-  async getProjects(filters?: { syncedFromAgentId?: string }): Promise<RdProject[]> {
+  async getProjects(filters?: { syncedFromAgentId?: string; sourceType?: 'local' | 'opencode' | 'github'; bindingLocalProjectId?: string }): Promise<RdProject[]> {
     const response = await axios.get(`${API_URL}/rd-management/projects`, {
       ...this.getAuthHeaders(),
       params: filters,
@@ -216,6 +256,21 @@ class RdManagementService {
 
   async deleteProject(projectId: string): Promise<boolean> {
     const response = await axios.delete(`${API_URL}/rd-management/projects/${projectId}`, this.getAuthHeaders());
+    return response.data;
+  }
+
+  async createLocalProject(data: CreateLocalRdProjectDto): Promise<RdProject> {
+    const response = await axios.post(`${API_URL}/rd-management/projects/local`, data, this.getAuthHeaders());
+    return response.data;
+  }
+
+  async bindOpencodeProject(data: BindOpencodeProjectDto): Promise<RdProject> {
+    const response = await axios.post(`${API_URL}/rd-management/projects/bind/opencode`, data, this.getAuthHeaders());
+    return response.data;
+  }
+
+  async bindGithubProject(data: BindGithubProjectDto): Promise<RdProject> {
+    const response = await axios.post(`${API_URL}/rd-management/projects/bind/github`, data, this.getAuthHeaders());
     return response.data;
   }
 
@@ -355,4 +410,4 @@ class RdManagementService {
   }
 }
 
-export const rdManagementService = new RdManagementService();
+export const rdConversationService = new RdConversationService();

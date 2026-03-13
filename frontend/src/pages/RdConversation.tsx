@@ -6,7 +6,7 @@ import {
   SparklesIcon,
   SignalIcon,
 } from '@heroicons/react/24/outline';
-import { rdManagementService, OpencodeCurrentContext, OpencodeEventPayload, RdProject } from '../services/rdManagementService';
+import { rdConversationService, OpencodeCurrentContext, OpencodeEventPayload, RdProject } from '../services/rdConversationService';
 import { agentService } from '../services/agentService';
 import { Agent } from '../types';
 
@@ -42,7 +42,60 @@ function getEventGroup(type?: string): 'tool' | 'prompt' | 'command' | 'error' |
   return 'other';
 }
 
-const RdManagement: React.FC = () => {
+function resolveEventSessionId(event: OpencodeEventPayload): string {
+  const candidates = [
+    event?.sessionId,
+    event?.sessionID,
+    event?.session_id,
+    event?.path?.id,
+    event?.meta?.sessionId,
+    event?.metadata?.sessionId,
+    event?.properties?.sessionId,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '';
+}
+
+function resolveEventProjectPath(event: OpencodeEventPayload): string {
+  const candidates = [
+    event?.path,
+    event?.projectPath,
+    event?.worktree,
+    event?.cwd,
+    event?.root,
+    event?.directory,
+    event?.project?.path,
+    event?.properties?.path,
+    event?.properties?.projectPath,
+    event?.properties?.directory,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim().toLowerCase();
+    }
+  }
+  return '';
+}
+
+function extractRequestErrorMessage(error: any): string {
+  const candidates = [
+    error?.response?.data?.message,
+    error?.response?.data?.error,
+    error?.message,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '请求失败，请稍后重试';
+}
+
+const RdConversation: React.FC = () => {
   const [viewTab, setViewTab] = useState<ViewTab>('chat');
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [selectedProjectPath, setSelectedProjectPath] = useState('');
@@ -50,23 +103,24 @@ const RdManagement: React.FC = () => {
   const [promptText, setPromptText] = useState('');
   const [events, setEvents] = useState<OpencodeEventPayload[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState('');
+  const [newSessionTitle, setNewSessionTitle] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: currentContext, refetch: refetchContext } = useQuery<OpencodeCurrentContext>(
     'rd-opencode-current',
-    () => rdManagementService.getCurrentOpencodeContext(),
+    () => rdConversationService.getCurrentOpencodeContext(),
     { refetchInterval: 15000, retry: false }
   );
 
   const { data: sessions = [], refetch: refetchSessions } = useQuery(
     ['rd-opencode-sessions', selectedProjectPath],
-    () => rdManagementService.getOpencodeSessions(selectedProjectPath || undefined),
+    () => rdConversationService.getOpencodeSessions(selectedProjectPath || undefined),
     { enabled: !!selectedProjectPath, refetchInterval: 10000, retry: false }
   );
 
   const { data: localProjects = [], refetch: refetchLocalProjects } = useQuery<RdProject[]>(
     ['rd-local-projects', selectedAgentId],
-    () => rdManagementService.getProjects({ syncedFromAgentId: selectedAgentId || undefined }),
+    () => rdConversationService.getProjects({ syncedFromAgentId: selectedAgentId || undefined }),
     { retry: false }
   );
 
@@ -97,29 +151,42 @@ const RdManagement: React.FC = () => {
 
   const { data: sessionDetail } = useQuery(
     ['rd-opencode-session-detail', selectedSessionId],
-    () => rdManagementService.getOpencodeSession(selectedSessionId),
+    () => rdConversationService.getOpencodeSession(selectedSessionId),
     { enabled: !!selectedSessionId, retry: false }
   );
 
   const { data: sessionMessages = [], refetch: refetchMessages, isLoading: messagesLoading } = useQuery(
     ['rd-opencode-session-messages', selectedSessionId],
-    () => rdManagementService.getOpencodeSessionMessages(selectedSessionId),
+    () => rdConversationService.getOpencodeSessionMessages(selectedSessionId),
     { enabled: !!selectedSessionId, refetchInterval: 4000, retry: false }
   );
 
   const promptMutation = useMutation(
-    () => rdManagementService.promptOpencodeSession(selectedSessionId, promptText),
+    () =>
+      rdConversationService.promptOpencodeSession(
+        selectedSessionId,
+        promptText,
+        selectedAgent?.model?.provider && selectedAgent?.model?.model
+          ? {
+              providerID: selectedAgent.model.provider,
+              modelID: selectedAgent.model.model,
+            }
+          : undefined,
+      ),
     {
       onSuccess: async () => {
         setPromptText('');
         await refetchMessages();
         await refetchSessions();
       },
+      onError: (error) => {
+        alert(extractRequestErrorMessage(error));
+      },
     }
   );
 
   const syncAgentProjectsMutation = useMutation(
-    () => rdManagementService.syncAgentOpencodeProjects(selectedAgentId),
+    () => rdConversationService.syncAgentOpencodeProjects(selectedAgentId),
     {
       onSuccess: async () => {
         await refetchLocalProjects();
@@ -137,8 +204,42 @@ const RdManagement: React.FC = () => {
     [agents],
   );
 
+  const selectedAgent = useMemo(
+    () => rdAgents.find((agent) => agent.id === selectedAgentId),
+    [rdAgents, selectedAgentId],
+  );
+
+  const createSessionMutation = useMutation(
+    () =>
+      rdConversationService.createOpencodeSession({
+        projectPath: selectedProjectPath,
+        agentId: selectedAgentId || undefined,
+        title: newSessionTitle.trim() || undefined,
+        model:
+          selectedAgent?.model?.provider && selectedAgent?.model?.model
+            ? {
+                providerID: selectedAgent.model.provider,
+                modelID: selectedAgent.model.model,
+              }
+            : undefined,
+      }),
+    {
+      onSuccess: async (createdSession) => {
+        const createdSessionId = createdSession?.id || createdSession?._id || '';
+        if (createdSessionId) {
+          setSelectedSessionId(createdSessionId);
+        }
+        setNewSessionTitle('');
+        await Promise.all([refetchSessions(), refetchContext(), refetchMessages()]);
+      },
+      onError: (error) => {
+        alert(extractRequestErrorMessage(error));
+      },
+    },
+  );
+
   useEffect(() => {
-    const source = rdManagementService.subscribeOpencodeEvents((event) => {
+    const source = rdConversationService.subscribeOpencodeEvents((event) => {
       setEvents((prev) => [event, ...prev].slice(0, 200));
     });
     return () => source.close();
@@ -178,12 +279,28 @@ const RdManagement: React.FC = () => {
   }, [selectedEiProjectId, localProjects, currentContext, selectedProjectPath]);
 
   const groupedEvents = useMemo(() => {
+    const normalizedPath = selectedProjectPath.trim().toLowerCase();
+    const filteredEvents = events.filter((event) => {
+      const eventSessionId = resolveEventSessionId(event);
+      if (selectedSessionId) {
+        return eventSessionId === selectedSessionId;
+      }
+      if (!normalizedPath) {
+        return true;
+      }
+      const eventPath = resolveEventProjectPath(event);
+      if (!eventPath) {
+        return true;
+      }
+      return eventPath.includes(normalizedPath) || normalizedPath.includes(eventPath);
+    });
+
     const groups: Record<string, OpencodeEventPayload[]> = { tool: [], prompt: [], command: [], error: [], other: [] };
-    events.forEach((event) => {
+    filteredEvents.forEach((event) => {
       groups[getEventGroup(event.type)].push(event);
     });
     return groups;
-  }, [events]);
+  }, [events, selectedSessionId, selectedProjectPath]);
 
   const refreshAll = async () => {
     await Promise.all([refetchContext(), refetchSessions(), refetchMessages(), refetchLocalProjects()]);
@@ -202,6 +319,9 @@ const RdManagement: React.FC = () => {
             <option key={agent.id} value={agent.id}>{agent.name}</option>
           ))}
         </select>
+        <div className="px-2 py-1 text-xs rounded border border-gray-200 bg-gray-50 text-gray-700 min-w-[260px]">
+          Model: {selectedAgent?.model?.name || selectedAgent?.model?.id || selectedAgent?.model?.model || '-'}
+        </div>
         <select
           value={selectedEiProjectId}
           onChange={(e) => setSelectedEiProjectId(e.target.value)}
@@ -229,6 +349,22 @@ const RdManagement: React.FC = () => {
       <aside className="lg:col-span-3 bg-white border border-gray-200 rounded-lg flex flex-col min-h-0">
         <div className="p-3 border-b border-gray-200 flex items-center justify-between">
           <p className="text-sm font-semibold text-gray-900">OpenCode Sessions</p>
+        </div>
+
+        <div className="px-3 py-2 border-b border-gray-200 space-y-2">
+          <input
+            value={newSessionTitle}
+            onChange={(e) => setNewSessionTitle(e.target.value)}
+            placeholder="新建 Session 标题（可选）"
+            className="w-full px-2 py-1 text-xs rounded border border-gray-300"
+          />
+          <button
+            onClick={() => createSessionMutation.mutate()}
+            disabled={!selectedProjectPath || !selectedAgentId || createSessionMutation.isLoading}
+            className="w-full text-xs rounded border border-primary-200 bg-primary-50 text-primary-700 px-2 py-1 disabled:text-gray-400 disabled:bg-gray-50 disabled:border-gray-200"
+          >
+            新建 Session
+          </button>
         </div>
 
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -348,4 +484,4 @@ const RdManagement: React.FC = () => {
   );
 };
 
-export default RdManagement;
+export default RdConversation;

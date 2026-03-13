@@ -4,7 +4,7 @@
 
 - 服务地址（直连）：`http://localhost:3001/api`
 - 经 Gateway 访问：`http://localhost:3100/api`
-- 负责域：会议、讨论、人力资源、操作日志、任务编排、统一消息、研发管理等未拆分模块
+- 负责域：会议、讨论、人力资源、操作日志、任务编排、统一消息、研发会话等未拆分模块
 
 ## Meetings（`/meetings`）
 
@@ -92,12 +92,17 @@
 
 > OpenCode Serve（`4098`）直连参数规范与 `directory` 约束见：`docs/api/opencode-api.md`
 >
-> 项目记录集合为 `ei_projects`，并且仅支持同步创建（不支持前端手工创建）。
+> 项目记录集合为 `ei_projects`，支持三类来源：`local` / `opencode` / `github`。
+> 绑定约束：一个 local 项目可绑定多个 opencode 项目，但最多一个 github 仓库。
+> GitHub token 通过 `githubApiKeyId` 引用 API Key，不通过项目接口返回明文。
 
 - `GET /rd-management/opencode/current`
 - `GET /rd-management/opencode/projects`
 - `POST /rd-management/opencode/projects/import`
 - `POST /rd-management/agents/:agentId/opencode/projects/sync`
+- `POST /rd-management/projects/local`
+- `POST /rd-management/projects/bind/opencode`
+- `POST /rd-management/projects/bind/github`
 - `GET /rd-management/opencode/sessions`
 - `GET /rd-management/opencode/sessions/:id`
 - `GET /rd-management/opencode/sessions/:id/messages`

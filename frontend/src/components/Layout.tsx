@@ -26,7 +26,9 @@ import {
   messageCenterService,
   MessageCenterItem,
   MESSAGE_CENTER_UPDATED_EVENT,
+  MessageCenterUpdatedDetail,
 } from '../services/messageCenterService';
+import { wsService } from '../services/wsService';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -39,8 +41,8 @@ const Layout: React.FC = () => {
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMessageDrawerOpen, setIsMessageDrawerOpen] = useState(false);
-  const [recentMessages, setRecentMessages] = useState<MessageCenterItem[]>([]);
-  const [loadingRecentMessages, setLoadingRecentMessages] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState<MessageCenterItem[]>([]);
+  const [loadingUnreadMessages, setLoadingUnreadMessages] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -81,16 +83,16 @@ const Layout: React.FC = () => {
     }
   };
 
-  const loadRecentMessages = async () => {
-    setLoadingRecentMessages(true);
+  const loadUnreadMessages = async () => {
+    setLoadingUnreadMessages(true);
     try {
-      const result = await messageCenterService.listMessages({ page: 1, pageSize: 8 });
-      setRecentMessages(result.items || []);
+      const result = await messageCenterService.listMessages({ page: 1, pageSize: 100, isRead: false });
+      setUnreadMessages(result.items || []);
       setUnreadCount(result.unreadCount || 0);
     } catch {
-      setRecentMessages([]);
+      setUnreadMessages([]);
     } finally {
-      setLoadingRecentMessages(false);
+      setLoadingUnreadMessages(false);
     }
   };
 
@@ -105,10 +107,15 @@ const Layout: React.FC = () => {
       void refreshUnreadCount();
     };
 
-    const onMessageCenterUpdated = () => {
-      void refreshUnreadCount();
+    const onMessageCenterUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<MessageCenterUpdatedDetail>;
+      if (typeof customEvent?.detail?.unreadCount === 'number') {
+        setUnreadCount(customEvent.detail.unreadCount);
+      } else {
+        void refreshUnreadCount();
+      }
       if (isMessageDrawerOpen) {
-        void loadRecentMessages();
+        void loadUnreadMessages();
       }
     };
 
@@ -121,10 +128,59 @@ const Layout: React.FC = () => {
   }, [currentUser?.id, isMessageDrawerOpen]);
 
   useEffect(() => {
+    if (!currentUser?.id) {
+      return;
+    }
+
+    const unsubscribe = wsService.subscribe(`ws:user:${currentUser.id}`, (raw) => {
+      try {
+        const envelope = JSON.parse(raw) as {
+          protocol?: string;
+          event?: string;
+          data?: { unreadCount?: number };
+        };
+
+        if (envelope?.protocol !== 'harbin.ws.v1') {
+          return;
+        }
+        if (envelope?.event !== 'message-center.message.created') {
+          return;
+        }
+
+        if (typeof envelope?.data?.unreadCount === 'number') {
+          setUnreadCount(envelope.data.unreadCount);
+        } else {
+          void refreshUnreadCount();
+        }
+
+        if (isMessageDrawerOpen) {
+          void loadUnreadMessages();
+        }
+      } catch {
+        // ignore invalid websocket payload
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentUser?.id, isMessageDrawerOpen]);
+
+  useEffect(() => {
     if (isMessageDrawerOpen) {
-      void loadRecentMessages();
+      void loadUnreadMessages();
     }
   }, [isMessageDrawerOpen]);
+
+  const toggleMessageDrawer = () => {
+    setIsMessageDrawerOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        void loadUnreadMessages();
+      }
+      return next;
+    });
+  };
 
   const openMessageCenterPage = () => {
     setIsMessageDrawerOpen(false);
@@ -134,7 +190,20 @@ const Layout: React.FC = () => {
   const handleMarkRecentMessageRead = async (messageId: string) => {
     try {
       await messageCenterService.markAsRead(messageId);
-      await loadRecentMessages();
+      setUnreadMessages((prev) => prev.filter((item) => item.messageId !== messageId));
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+      await loadUnreadMessages();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleMarkAllUnreadMessagesRead = async () => {
+    try {
+      await messageCenterService.markAllAsRead();
+      setUnreadMessages([]);
+      setUnreadCount(0);
+      await loadUnreadMessages();
     } catch {
       // ignore
     }
@@ -145,11 +214,8 @@ const Layout: React.FC = () => {
       await handleMarkRecentMessageRead(item.messageId);
     }
 
-    const redirectPath = String(item.payload?.redirectPath || '').trim();
-    if (redirectPath) {
-      setIsMessageDrawerOpen(false);
-      navigate(redirectPath);
-    }
+    setIsMessageDrawerOpen(false);
+    navigate(`/message-center?messageId=${encodeURIComponent(item.messageId)}`);
   };
 
   const requiresAssistantBinding =
@@ -212,7 +278,7 @@ const Layout: React.FC = () => {
         { name: '工程统计', href: '/engineering-intelligence/statistics', icon: ChartBarIcon },
         { name: '需求管理', href: '/engineering-intelligence/requirements', icon: DocumentTextIcon },
         { name: '智能研发看板', href: '/engineering-intelligence/board', icon: ChartBarIcon },
-        { name: '研发管理', href: '/rd-management', icon: CodeBracketIcon },
+        { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
       ],
     },
     {
@@ -414,7 +480,7 @@ const Layout: React.FC = () => {
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={() => setIsMessageDrawerOpen((prev) => !prev)}
+              onClick={toggleMessageDrawer}
               className="relative inline-flex items-center justify-center h-9 w-9 rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50"
               title="消息中心"
             >
@@ -465,29 +531,39 @@ const Layout: React.FC = () => {
       {isMessageDrawerOpen && (
         <div className="fixed inset-0 z-[65]">
           <div className="absolute inset-0 bg-black/30" onClick={() => setIsMessageDrawerOpen(false)} />
-          <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl border-l border-gray-200 flex flex-col">
-            <div className="px-4 h-14 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-900">消息中心</h2>
-              <button
-                type="button"
-                onClick={openMessageCenterPage}
-                className="text-xs text-primary-600 hover:text-primary-700"
-              >
-                查看全部
-              </button>
-            </div>
+            <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white shadow-xl border-l border-gray-200 flex flex-col">
+              <div className="px-4 h-14 border-b border-gray-200 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-gray-900">消息中心</h2>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleMarkAllUnreadMessagesRead}
+                    disabled={unreadCount === 0}
+                    className="text-xs text-gray-600 hover:text-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    全部已读
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openMessageCenterPage}
+                    className="text-xs text-primary-600 hover:text-primary-700"
+                  >
+                    查看全部
+                  </button>
+                </div>
+              </div>
 
-            <div className="flex-1 overflow-y-auto">
-              {loadingRecentMessages ? (
-                <div className="p-4 text-sm text-gray-500">加载中...</div>
-              ) : recentMessages.length === 0 ? (
-                <div className="p-6 text-sm text-gray-400">暂无消息</div>
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {recentMessages.map((item) => (
-                    <div key={item.messageId} className="p-4">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
+              <div className="flex-1 overflow-y-auto">
+                {loadingUnreadMessages ? (
+                  <div className="p-4 text-sm text-gray-500">加载中...</div>
+                ) : unreadMessages.length === 0 ? (
+                  <div className="p-6 text-sm text-gray-400">暂无未读消息</div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {unreadMessages.map((item) => (
+                      <div key={item.messageId} className="p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
                           <button
                             type="button"
                             onClick={() => openRecentMessage(item)}
@@ -499,15 +575,15 @@ const Layout: React.FC = () => {
                           <p className="mt-1 text-[11px] text-gray-400">{new Date(item.createdAt).toLocaleString()}</p>
                         </div>
                         {!item.isRead && (
-                          <button
-                            type="button"
-                            onClick={() => handleMarkRecentMessageRead(item.messageId)}
-                            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
-                          >
-                            <EnvelopeOpenIcon className="h-3.5 w-3.5" />
-                            已读
-                          </button>
-                        )}
+                            <button
+                              type="button"
+                              onClick={() => handleMarkRecentMessageRead(item.messageId)}
+                              className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
+                            >
+                              <EnvelopeOpenIcon className="h-3.5 w-3.5" />
+                              标记已读
+                            </button>
+                          )}
                       </div>
                     </div>
                   ))}

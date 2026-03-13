@@ -2,7 +2,7 @@
 
 ## 1. 背景
 
-本次研发管理页改造目标是统一“Agent -> OpenCode 项目 -> EI 项目”的同步主链路，避免前端手工建项目导致数据源不一致。
+本次研发会话页改造目标是统一“Agent -> OpenCode 项目 -> EI 项目”的同步主链路，避免前端手工建项目导致数据源不一致。
 
 ## 2. 主要实现
 
@@ -70,8 +70,8 @@
   - `backend/src/modules/rd-management/dto/index.ts`
   - `backend/src/shared/schemas/rd-project.schema.ts`
 - 前端：
-  - `frontend/src/pages/RdManagement.tsx`
-  - `frontend/src/services/rdManagementService.ts`
+  - `frontend/src/pages/RdConversation.tsx`
+  - `frontend/src/services/rdConversationService.ts`
 
 ## 5. 验证结果
 

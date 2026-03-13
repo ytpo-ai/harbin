@@ -11,7 +11,7 @@ import ApiKeys from './pages/ApiKeys';
 import EmployeeManagement from './pages/EmployeeManagement';
 import HRManagement from './pages/HRManagement';
 import Meetings from './pages/Meetings';
-import RdManagement from './pages/RdManagement';
+import RdConversation from './pages/RdConversation';
 import EngineeringIntelligence from './pages/EngineeringIntelligence';
 import EngineeringStatistics from './pages/EngineeringStatistics';
 import EngineeringRequirements from './pages/EngineeringRequirements';
@@ -73,7 +73,7 @@ function App() {
             <Route path="/roles" element={<ProtectedRoute><HRManagement /></ProtectedRoute>} />
             <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
-            <Route path="/rd-management" element={<ProtectedRoute><RdManagement /></ProtectedRoute>} />
+            <Route path="/rd-conversation" element={<ProtectedRoute><RdConversation /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/orchestration/plans/:id" element={<ProtectedRoute><PlanDetail /></ProtectedRoute>} />
             <Route path="/scheduler" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
