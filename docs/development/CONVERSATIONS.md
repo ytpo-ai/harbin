@@ -1,4 +1,4 @@
-# 对话记录 - AI Agent Team Platform 开发过程
+# 对话记录 - ytpo-ai 开发过程
 
 ## 对话概述
 

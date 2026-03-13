@@ -18,7 +18,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = Number(process.env.ENGINEERING_INTELLIGENCE_PORT || 3201);
+  const port = Number(process.env.ENGINEERING_INTELLIGENCE_PORT || 3004);
   await app.listen(port);
   console.log(`Engineering Intelligence service running on http://localhost:${port}`);
 }

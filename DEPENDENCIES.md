@@ -1,4 +1,4 @@
-# AI Agent Team Platform - 项目依赖说明
+# ytpo-ai - 项目依赖说明
 
 ## 后端依赖包说明
 

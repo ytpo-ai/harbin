@@ -1,4 +1,4 @@
-# AI Agent Team Platform
+# ytpo-ai
 
 一个创新的AI Agent创业公司模拟平台，支持多模型接入的Agent团队协作管理，模拟真实组织架构、成本核算、人力资源和决策治理。
 
@@ -34,7 +34,7 @@
 1. **克隆项目**
 ```bash
 git clone <repository-url>
-cd ai-agent-team-platform
+cd ytpo-ai
 ```
 
 2. **安装依赖**
@@ -65,11 +65,11 @@ redis-server
 
 # 方式二：手动逐个启动
 cd backend
-pnpm run start:dev       # legacy (3001)
-pnpm run start:gateway:dev  # gateway (3100)
-pnpm run start:agents:dev   # agents (3002)
-pnpm run start:ws:dev       # ws (3003)
-pnpm run start:ei:dev       # engineering-intelligence (3201)
+pnpm run start:legacy -- --watch   # legacy (3001)
+pnpm run start:gateway -- --watch  # gateway (3100)
+pnpm run start:agents -- --watch   # agents (3002)
+pnpm run start:ws -- --watch       # ws (3003)
+pnpm run start:ei -- --watch       # ei (3004)
 
 cd ../frontend
 pnpm dev  # frontend (3000)
@@ -84,11 +84,11 @@ pnpm dev  # frontend (3000)
 | 服务 | 端口 | 说明 | 启动命令 |
 |------|------|------|----------|
 | Frontend | 3000 | 前端界面 | `cd frontend && pnpm dev` |
-| Legacy | 3001 | 主服务（未拆分模块） | `cd backend && pnpm run start:dev` |
-| Agents | 3002 | Agent管理服务 | `cd backend && pnpm run start:agents:dev` |
-| WS | 3003 | WebSocket服务 | `cd backend && pnpm run start:ws:dev` |
-| Gateway | 3100 | API网关入口 | `cd backend && pnpm run start:gateway:dev` |
-| Engineering Intelligence | 3201 | 研发智能服务 | `cd backend && pnpm run start:ei:dev` |
+| Legacy | 3001 | 主服务（未拆分模块） | `cd backend && pnpm run start:legacy -- --watch` |
+| Agents | 3002 | Agent管理服务 | `cd backend && pnpm run start:agents -- --watch` |
+| WS | 3003 | WebSocket服务 | `cd backend && pnpm run start:ws -- --watch` |
+| Gateway | 3100 | API网关入口 | `cd backend && pnpm run start:gateway -- --watch` |
+| EI | 3004 | 研发智能服务 | `cd backend && pnpm run start:ei -- --watch` |
 | MongoDB | 27017 | 数据库 | `docker-compose up -d mongodb` |
 | Redis | 6379 | 缓存 | `docker-compose up -d redis` |
 
@@ -150,11 +150,11 @@ API 已按微服务拆分，详细接口请查看：
 
 # 手动启动所有后端服务
 cd backend
-pnpm run start:dev        # legacy (3001)
-pnpm run start:gateway:dev # gateway (3100)
-pnpm run start:agents:dev  # agents (3002)
-pnpm run start:ws:dev      # ws (3003)
-pnpm run start:ei:dev      # engineering-intelligence (3201)
+pnpm run start:legacy -- --watch  # legacy (3001)
+pnpm run start:gateway -- --watch # gateway (3100)
+pnpm run start:agents -- --watch  # agents (3002)
+pnpm run start:ws -- --watch      # ws (3003)
+pnpm run start:ei -- --watch      # ei (3004)
 
 # 启动前端
 cd ../frontend
@@ -173,19 +173,19 @@ npm run test
 
 ```bash
 # 终端1：legacy monolith（未迁移模块）- 端口 3001
-cd backend && pnpm run start:dev
+cd backend && pnpm run start:legacy -- --watch
 
 # 终端2：agents service（已拆分）- 端口 3002
-cd backend && pnpm run start:agents:dev
+cd backend && pnpm run start:agents -- --watch
 
 # 终端3：gateway（统一入口）- 端口 3100
-cd backend && pnpm run start:gateway:dev
+cd backend && pnpm run start:gateway -- --watch
 
 # 终端4：ws service（流式推送）- 端口 3003
-cd backend && pnpm run start:ws:dev
+cd backend && pnpm run start:ws -- --watch
 
-# 终端5：engineering-intelligence（研发智能）- 端口 3201
-cd backend && pnpm run start:ei:dev
+# 终端5：ei（研发智能）- 端口 3004
+cd backend && pnpm run start:ei -- --watch
 
 # 终端6：frontend - 端口 3000
 cd frontend && pnpm dev
@@ -193,6 +193,7 @@ cd frontend && pnpm dev
 
 - 前端 HTTP 统一走 Gateway: `http://localhost:3100/api`
 - 前端 WS 连接: `ws://localhost:3003/ws`
+- 开发态下修改代码通常会自动生效，不用手动重启；仅在服务报错或进程异常时再重启对应服务。
 
 ## 🔧 扩展开发
 

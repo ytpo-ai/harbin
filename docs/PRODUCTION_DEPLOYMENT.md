@@ -25,7 +25,7 @@
 | Agents | 3002 | Agent管理服务 |
 | WS | 3003 | WebSocket服务 |
 | Gateway | 3100 | API网关入口 |
-| Engineering Intelligence | 3201 | 研发智能服务 |
+| Engineering Intelligence | 3004 | 研发智能服务 |
 | MongoDB | 27017 | 数据库 |
 | Redis | 6379 | 缓存 |
 
@@ -140,26 +140,26 @@ npm run install:all
 cd backend
 
 # Legacy (端口 3001)
-pnpm run start:dev &
+pnpm run start:legacy -- --watch &
 
 # Gateway (端口 3100)
-pnpm run start:gateway:dev &
+pnpm run start:gateway -- --watch &
 
 # Agents (端口 3002)
-pnpm run start:agents:dev &
+pnpm run start:agents -- --watch &
 
 # WS (端口 3003)
-pnpm run start:ws:dev &
+pnpm run start:ws -- --watch &
 
-# Engineering Intelligence (端口 3201)
-pnpm run start:ei:dev &
+# Engineering Intelligence (端口 3004)
+pnpm run start:ei -- --watch &
 ```
 
 ### 3.3 验证后端服务
 
 ```bash
 # 检查端口监听
-ss -tlnp | grep -E "3001|3002|3003|3100|3201"
+ss -tlnp | grep -E "3001|3002|3003|3004|3100"
 
 # 测试 API
 curl http://localhost:3100
@@ -304,11 +304,11 @@ sleep 5
 
 # 启动后端服务
 cd backend
-pnpm run start:dev &
-pnpm run start:gateway:dev &
-pnpm run start:agents:dev &
-pnpm run start:ws:dev &
-pnpm run start:ei:dev &
+pnpm run start:legacy -- --watch &
+pnpm run start:gateway -- --watch &
+pnpm run start:agents -- --watch &
+pnpm run start:ws -- --watch &
+pnpm run start:ei -- --watch &
 
 # 启动前端
 cd ../frontend
@@ -335,7 +335,7 @@ echo "所有服务已启动"
 
 ```bash
 # 查看所有运行中的服务端口
-ss -tlnp | grep -E "3000|3001|3002|3003|3100|3201"
+ss -tlnp | grep -E "3000|3001|3002|3003|3004|3100"
 
 # 查看 Docker 容器状态
 docker-compose ps

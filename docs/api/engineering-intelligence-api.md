@@ -2,7 +2,7 @@
 
 ## 基础信息
 
-- 服务地址（直连）：`http://localhost:3201/api`
+- 服务地址（直连）：`http://localhost:3004/api`
 - 经 Gateway 访问：`http://localhost:3100/api/engineering-intelligence`
 - 服务职责：仓库配置管理、docs 目录浏览、文档摘要与历史追踪
 

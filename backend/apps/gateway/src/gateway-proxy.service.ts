@@ -14,7 +14,7 @@ export class GatewayProxyService {
   private readonly agentsBaseUrl = process.env.AGENTS_SERVICE_URL || 'http://localhost:3002';
   private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001';
   private readonly engineeringIntelligenceBaseUrl =
-    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3201';
+    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly defaultProxyTimeoutMs = this.parseTimeout(process.env.GATEWAY_PROXY_TIMEOUT_MS, 30000);
   private readonly debugRunTimeoutMs = this.parseTimeout(process.env.GATEWAY_DEBUG_RUN_TIMEOUT_MS, 180000);

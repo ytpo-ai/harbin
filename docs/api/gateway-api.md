@@ -8,7 +8,7 @@
 
 ## 路由分发（当前）
 
-- `/api/engineering-intelligence/**` -> Engineering Intelligence 服务（3201）
+- `/api/engineering-intelligence/**` -> Engineering Intelligence 服务（3004）
 - `/api/agents/**` -> Agents 服务（3002）
 - `/api/tools/**` -> Agents 服务（3002）
 - `/api/skills/**` -> Agents 服务（3002）

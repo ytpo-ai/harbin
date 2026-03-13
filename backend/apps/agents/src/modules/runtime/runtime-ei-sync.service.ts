@@ -13,7 +13,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private flushing = false;
 
-  private readonly eiBaseUrl = process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3201';
+  private readonly eiBaseUrl = process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly maxRetry = Math.max(1, Number(process.env.RUNTIME_EI_SYNC_MAX_RETRY || 5));
   private readonly pollIntervalMs = Math.max(1000, Number(process.env.RUNTIME_EI_SYNC_POLL_INTERVAL_MS || 5000));

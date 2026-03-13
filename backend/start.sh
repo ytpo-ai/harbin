@@ -1,63 +1,89 @@
 #!/bin/bash
 
+set -e
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# AI Agent Team Platform - 启动脚本
+LOG_DIR="/tmp/harbin-logs"
+mkdir -p "$LOG_DIR"
 
-set -e
-
-echo "🤖 AI Agent Team Platform 启动脚本"
-echo "=================================="
-
-# 检查Node.js版本
-NODE_VERSION=$(node --version)
-echo "📦 Node.js版本: $NODE_VERSION"
-
-# 检查是否有MongoDB连接
-# echo "🔍 检查MongoDB连接..."
-# if ! command -v mongosh &> /dev/null && ! command -v mongo &> /dev/null; then
-#     echo "⚠️  警告: 未找到MongoDB客户端，请确保MongoDB正在运行"
-# else
-#     echo "✅ MongoDB客户端已安装"
-# fi
-
-# 选择环境
 ENV=${1:-development}
-echo "🌍 启动环境: $ENV"
 
-# 检查环境变量文件
-# if [ ! -f ".env.$ENV" ]; then
-#     echo "⚠️  警告: .env.$ENV 文件不存在，请复制 .env.example 并配置API密钥"
-#     echo "💡 提示: cp .env.example .env.$ENV"
-#     exit 1
-# fi
-
-# 复制环境变量文件
-# cp .env.$ENV .env
-# echo "✅ 环境变量已加载: .env"
-
-# 安装依赖
-if [ ! -d "node_modules" ]; then
-    echo "📦 安装后端依赖..."
-    npm install
-fi
-
-if [ ! -d "../frontend/node_modules" ]; then
-    echo "📦 安装前端依赖..."
-    cd ../frontend && npm install && cd ../backend
-fi
-
-# 构建项目
-echo "🔨 构建项目..."
-npm run build
-
-# 启动服务
-echo "🚀 启动服务..."
 if [ "$ENV" = "development" ]; then
-    echo "🔧 开发模式: 启动前后端服务"
-    npm run dev:all
+    WATCH_ARG="--watch"
+    echo "开发模式: 启动后端服务（watch 已开启）"
 else
-    echo "🏭 生产模式: 启动后端服务"
-    npm start
+    WATCH_ARG=""
+    echo "非开发模式: 启动后端服务（watch 未开启）"
 fi
+
+wait_for_service() {
+    local port=$1
+    local name=$2
+    local max_attempts=30
+    local attempt=1
+    echo "等待 $name (端口 $port) 启动..."
+    while ! lsof -i :$port > /dev/null 2>&1; do
+        sleep 1
+        attempt=$((attempt + 1))
+        if [ $attempt -gt $max_attempts ]; then
+            echo "警告: $name 启动超时"
+            return 1
+        fi
+    done
+    echo "$name 已启动 (端口 $port)"
+}
+
+echo "========================================"
+echo "1/5 启动 legacy 服务 (端口 3001)..."
+if [ -n "$WATCH_ARG" ]; then
+    nohup pnpm run start:legacy -- --watch > "$LOG_DIR/legacy-app.log" 2>&1 &
+else
+    nohup pnpm run start:legacy > "$LOG_DIR/legacy-app.log" 2>&1 &
+fi
+wait_for_service 3001 "legacy"
+
+echo "========================================"
+echo "2/5 启动 gateway 服务 (端口 3100)..."
+if [ -n "$WATCH_ARG" ]; then
+    nohup pnpm run start:gateway -- --watch > "$LOG_DIR/gateway-app.log" 2>&1 &
+else
+    nohup pnpm run start:gateway > "$LOG_DIR/gateway-app.log" 2>&1 &
+fi
+wait_for_service 3100 "gateway"
+
+echo "========================================"
+echo "3/5 启动 agents 服务 (端口 3002)..."
+if [ -n "$WATCH_ARG" ]; then
+    nohup pnpm run start:agents -- --watch > "$LOG_DIR/agents-app.log" 2>&1 &
+else
+    nohup pnpm run start:agents > "$LOG_DIR/agents-app.log" 2>&1 &
+fi
+wait_for_service 3002 "agents"
+
+echo "========================================"
+echo "4/5 启动 ws 服务 (端口 3003)..."
+if [ -n "$WATCH_ARG" ]; then
+    nohup pnpm run start:ws -- --watch > "$LOG_DIR/ws-app.log" 2>&1 &
+else
+    nohup pnpm run start:ws > "$LOG_DIR/ws-app.log" 2>&1 &
+fi
+wait_for_service 3003 "ws"
+
+echo "========================================"
+echo "5/5 启动 ei 服务 (端口 3004)..."
+if [ -n "$WATCH_ARG" ]; then
+    nohup pnpm run start:ei -- --watch > "$LOG_DIR/ei-app.log" 2>&1 &
+else
+    nohup pnpm run start:ei > "$LOG_DIR/ei-app.log" 2>&1 &
+fi
+wait_for_service 3004 "ei"
+
+echo "========================================"
+echo "后端服务已启动，日志文件位于: $LOG_DIR"
+echo "- $LOG_DIR/legacy-app.log"
+echo "- $LOG_DIR/gateway-app.log"
+echo "- $LOG_DIR/agents-app.log"
+echo "- $LOG_DIR/ws-app.log"
+echo "- $LOG_DIR/ei-app.log"

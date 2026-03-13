@@ -1,6 +1,6 @@
-# AI Agent Team Platform - 文档中心
+# ytpo-ai - 文档中心
 
-欢迎来到 AI Agent Team Platform 文档中心！这里包含了项目的所有文档资料。
+欢迎来到 ytpo-ai 文档中心！这里包含了项目的所有文档资料。
 
 ## 📚 文档导航
 

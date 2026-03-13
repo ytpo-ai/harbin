@@ -13,7 +13,7 @@
 - `agents`（3002）：Agent/Tools/Models/Skills 核心能力
 - `ws`（3003）：WebSocket 推送层（`/ws`）
 - `legacy`（3001）：未迁移模块
-- `engineering-intelligence`（3201）：研发智能独立后端
+- `engineering-intelligence`（3004）：研发智能独立后端
 
 ## Gateway 路由策略（当前生效）
 
@@ -69,11 +69,11 @@ Gateway 从登录上下文中提取用户身份并签名透传：
 在 `backend/` 目录按以下顺序启动：
 
 ```bash
-npm run start:dev
-npm run start:agents:dev
-npm run start:gateway:dev
-npm run start:ws:dev
-npm run start:ei:dev
+npm run start:legacy -- --watch
+npm run start:agents -- --watch
+npm run start:gateway -- --watch
+npm run start:ws -- --watch
+npm run start:ei -- --watch
 ```
 
 根目录可用：

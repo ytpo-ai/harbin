@@ -18,7 +18,7 @@
 
 ```bash
 # 1. 进入项目目录
-cd ai-agent-team-platform
+cd ytpo-ai
 
 # 2. 安装所有依赖
 npm run install:all
@@ -73,19 +73,21 @@ mongod
 
 # 终端2: 启动 legacy 服务（未迁移模块）
 cd backend
-npm run start:dev
+npm run start:legacy -- --watch
+
+# 说明：开发态修改代码后通常会自动生效，不用重启服务；仅在服务报错后再重启对应服务。
 
 # 终端3: 启动 agents 服务
 cd backend
-npm run start:agents:dev
+npm run start:agents -- --watch
 
 # 终端4: 启动 gateway 服务（前端统一入口）
 cd backend
-npm run start:gateway:dev
+npm run start:gateway -- --watch
 
 # 终端5: 启动 ws 服务（流式推送）
 cd backend
-npm run start:ws:dev
+npm run start:ws -- --watch
 
 # 终端6: 启动前端
 cd frontend
