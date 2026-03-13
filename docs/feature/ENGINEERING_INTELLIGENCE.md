@@ -66,6 +66,7 @@
 - 统计结果按“项目明细 + 汇总”返回，并落库到 `ei_project_statistics_snapshots`。
 - 快照状态机：`running/success/failed`，支持查询 latest/detail/history。
 - 统计能力对外暴露为 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run`。
+- 前端 `工程统计` 页面采用“历史列表主视图 + 详情抽屉”交互，支持按状态筛选、分页浏览历史快照，并查看指定快照的汇总/项目明细/异常信息。
 
 ### 1.9 研发需求管理（本轮新增）
 
