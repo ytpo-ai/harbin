@@ -35,14 +35,13 @@ export class RequirementToolHandler {
       limit?: number;
     },
     agentId?: string,
-    executionContext?: ToolExecutionContext,
+    _executionContext?: ToolExecutionContext,
   ): Promise<any> {
     const query = this.buildRequirementQuery(params || {});
     const result = await this.internalApiClient.callEiApi('GET', `/requirements${query}`);
     return {
       action: 'requirement_list',
       initiatorAgentId: agentId,
-      organizationId: (executionContext?.teamContext || {}).organizationId,
       total: Array.isArray(result) ? result.length : 0,
       requirements: result,
       fetchedAt: new Date().toISOString(),
@@ -52,7 +51,7 @@ export class RequirementToolHandler {
   async getRequirement(
     params: { requirementId?: string },
     agentId?: string,
-    executionContext?: ToolExecutionContext,
+    _executionContext?: ToolExecutionContext,
   ): Promise<any> {
     const requirementId = String(params?.requirementId || '').trim();
     if (!requirementId) {
@@ -62,7 +61,6 @@ export class RequirementToolHandler {
     return {
       action: 'requirement_get',
       initiatorAgentId: agentId,
-      organizationId: (executionContext?.teamContext || {}).organizationId,
       requirement: result,
     };
   }

@@ -167,6 +167,12 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 - 未经用户明确要求，不得新增独立前端工程或将研发智能前端代码迁出主前端。
 - 若需要独立部署，仅允许后端服务独立部署，前端继续复用主站。
 
+### Agents 生成规则（organizationId 禁止项）
+
+- `organizationId` 已下线，Agents 相关开发中禁止新增、恢复或透传 `organizationId` 字段。
+- 禁止系统生成包含 `organizationId` 的代码片段（含 DTO、Schema、接口返回、日志字段、上下文透传、Prompt 示例）。
+- 如发现历史残留 `organizationId`，应优先移除或替换为当前有效上下文字段，不得继续沿用。
+
 ### 本项目技术栈
 - **后端**: Nest.js + TypeScript + MongoDB
 - **前端**: React + TypeScript + Tailwind CSS
@@ -181,6 +187,9 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
   - 函数/变量：camelCase
   - 常量：UPPER_SNAKE_CASE
   - 文件：kebab-case
+
+### 前端设计规范
+遇到前端开发任务时，请先阅读 `docs/FRONTEND_GUIDELINE.md` 中的前端设计建议规范。
 
 ### 测试要求
 - 新功能必须包含测试
