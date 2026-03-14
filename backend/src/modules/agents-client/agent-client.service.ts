@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import { encodeUserContext, signEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
+import {
+  MEMO_AGGREGATION_COMMAND_QUEUE_KEY,
+  MemoAggregationCommandMessage,
+  MemoAggregationCommandType,
+} from '@libs/common';
+import { RedisService } from '@libs/infra';
+import { randomUUID } from 'crypto';
 import { Agent, Task, AIModel } from '../../shared/types';
 import { AgentActionLogService } from '../agent-action-logs/agent-action-log.service';
 import { AgentActionContextType } from '../../shared/schemas/agent-action-log.schema';
@@ -32,7 +39,10 @@ export class AgentClientService {
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly timeout = Number(process.env.AGENTS_CLIENT_TIMEOUT_MS || 20000);
 
-  constructor(private readonly agentActionLogService: AgentActionLogService) {}
+  constructor(
+    private readonly agentActionLogService: AgentActionLogService,
+    private readonly redisService: RedisService,
+  ) {}
 
   private buildSignedHeaders(extra?: Record<string, string>): Record<string, string> {
     const now = Date.now();
@@ -430,6 +440,35 @@ export class AgentClientService {
       this.logger.warn(`Failed to trigger full memo aggregation: ${message}`);
       return null;
     }
+  }
+
+  async enqueueMemoAggregationCommand(options: {
+    commandType: MemoAggregationCommandType;
+    scheduleId?: string;
+    taskId?: string;
+    agentId?: string;
+    triggeredBy?: string;
+    maxAttempts?: number;
+  }): Promise<{ accepted: boolean; queued: boolean; requestId: string }> {
+    const command: MemoAggregationCommandMessage = {
+      requestId: randomUUID(),
+      commandType: options.commandType,
+      scheduleId: options.scheduleId,
+      taskId: options.taskId,
+      agentId: options.agentId,
+      triggeredBy: options.triggeredBy || 'scheduler',
+      requestedAt: new Date().toISOString(),
+      attempt: 1,
+      maxAttempts: Math.max(1, Number(options.maxAttempts || process.env.MEMO_AGGREGATION_MAX_ATTEMPTS || 3)),
+    };
+
+    const queued = await this.redisService.lpush(MEMO_AGGREGATION_COMMAND_QUEUE_KEY, JSON.stringify(command));
+    if (!queued) {
+      this.logger.warn(`Failed to enqueue memo aggregation command ${command.requestId}: redis unavailable`);
+      return { accepted: false, queued: false, requestId: command.requestId };
+    }
+
+    return { accepted: true, queued: true, requestId: command.requestId };
   }
 
   async getSession(sessionId: string): Promise<any> {

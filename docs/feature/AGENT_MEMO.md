@@ -150,11 +150,15 @@ type MemoType = 'knowledge' | 'standard';
 - Redis key：`memo:event:{agentId}`
 - Redis 缓存 key：`memo:{agentId}:{memoKind}`
 - Redis 刷新队列 key：`memo:refresh:queue:{agentId}`
+- Redis 聚合命令队列 key：`queue:memo:aggregation:commands`
+- Redis 聚合命令死信 key：`queue:memo:aggregation:dead-letter`
+- Redis 聚合结果通道：`memo:aggregation:result`
 - `MemoAggregationService` 负责事件监听与聚合能力编排，不再内置定时器
-- 定时触发由编排调度模块统一承接：
+- 定时触发由编排调度模块统一承接（系统 schedule seed 数据驱动）：
   - 事件队列 flush 周期：`MEMO_AGGREGATION_INTERVAL_MS`（默认 60s）
   - 全量聚合周期：`MEMO_FULL_AGGREGATION_INTERVAL_MS`（默认 24h）
-  - 总开关：`MEMO_SCHEDULER_ENABLED`（`false` 时关闭该组定时任务）
+  - 启停开关：`orchestration_schedules.enabled`（`system-memo-event-flush` / `system-memo-full-aggregation`）
+- 调度触发链路采用异步消息：Scheduler 投递命令消息，Agents 消费后执行聚合并回传结果事件。
 
 #### TODO/History 聚合边界
 
@@ -199,6 +203,7 @@ type MemoType = 'knowledge' | 'standard';
 | `AGENT_DETAIL_TABS_MEMO_LOG_PLAN.md` | Agent详情页备忘录/日志Tab计划 |
 | `AGENTSESSION_MEMO_SNAPSHOT_PLAN.md` | AgentSession memo快照计划 |
 | `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_PLAN.md` | Identity/Evaluation开发计划 |
+| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -206,6 +211,7 @@ type MemoType = 'knowledge' | 'standard';
 |------|------|
 | `AGENT_MEMO_REDESIGN_PLAN.md` | 备忘录重构开发总结 |
 | `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_SUMMARY.md` | Identity/Evaluation开发总结 |
+| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发开发沉淀 |
 | `TODO_HISTORY_MEMO_AGGREGATION_OPTIMIZATION_PLAN.md` | TODO/History 内容与聚合优化开发总结 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Memo 一期拆分（MemoTaskTodoService/MemoTaskHistoryService）开发沉淀 |
 

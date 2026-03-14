@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { Model } from 'mongoose';
 import { CronJob } from 'cron';
+import axios from 'axios';
 import { Agent, AgentDocument } from '../../../shared/schemas/agent.schema';
 import {
   OrchestrationSchedule,
@@ -20,10 +21,6 @@ import {
   OrchestrationTaskDocument,
   OrchestrationTaskStatus,
 } from '../../../shared/schemas/orchestration-task.schema';
-import {
-  OrchestrationPlan,
-  OrchestrationPlanDocument,
-} from '../../../shared/schemas/orchestration-plan.schema';
 import { OrchestrationService } from '../orchestration.service';
 import {
   CreateScheduleDto,
@@ -37,18 +34,20 @@ type TriggerType = 'auto' | 'manual';
 export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SchedulerService.name);
   private readonly runLocks = new Set<string>();
-  private readonly systemMeetingMonitorScheduleName = 'system-meeting-monitor';
-  private readonly systemMeetingMonitorPlanKey = 'system-meeting-monitor';
-  private memoEventAggregationTimer?: NodeJS.Timeout;
-  private memoFullAggregationTimer?: NodeJS.Timeout;
+  private readonly schedulerAlertWebhookUrl = String(process.env.SCHEDULER_ALERT_WEBHOOK_URL || '').trim();
+  private readonly systemEngineeringStatisticsScheduleName = 'system-engineering-statistics';
+  private readonly systemScheduleNames = [
+    'system-meeting-monitor',
+    'system-engineering-statistics',
+    'system-memo-event-flush',
+    'system-memo-full-aggregation',
+  ];
 
   constructor(
     @InjectModel(OrchestrationSchedule.name)
     private readonly scheduleModel: Model<OrchestrationScheduleDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly taskModel: Model<OrchestrationTaskDocument>,
-    @InjectModel(OrchestrationPlan.name)
-    private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -59,132 +58,57 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     const enabledSchedules = await this.scheduleModel.find({ enabled: true }).exec();
     await Promise.all(enabledSchedules.map((schedule) => this.registerSchedule(schedule)));
-    this.startMemoAggregationTimers();
+    await this.logMissingSystemSchedules();
   }
 
-  async seedMeetingMonitorSchedule(): Promise<void> {
-    await this.ensureMeetingMonitorSchedule();
-  }
-
-  private async ensureMeetingMonitorSchedule(): Promise<void> {
-    const plan = await this.ensureMeetingMonitorPlan();
-    const planId = this.getEntityId(plan as unknown as Record<string, unknown>);
-
-    const existing = await this.scheduleModel.findOne({ name: this.systemMeetingMonitorScheduleName }).exec();
-    const intervalMs = Number(process.env.MEETING_ASSISTANT_INTERVAL_MS || 300000);
-    if (intervalMs < 300000) {
-      this.logger.warn('MEETING_ASSISTANT_INTERVAL_MS must be at least 5 minutes, skipping meeting monitor');
-      return;
+  async getOrCreateEngineeringStatisticsSchedule(): Promise<OrchestrationSchedule> {
+    const schedule = await this.scheduleModel.findOne({ name: this.systemEngineeringStatisticsScheduleName }).exec();
+    if (!schedule) {
+      throw new NotFoundException('Engineering statistics schedule is unavailable, run seed first');
     }
-
-    const monitorInput = this.buildMeetingMonitorInput();
-    if (existing) {
-      await this.scheduleModel
-        .updateOne(
-          { _id: this.getEntityId(existing as unknown as Record<string, unknown>) },
-          {
-            $set: {
-              input: monitorInput,
-              'schedule.intervalMs': intervalMs,
-              planId,
-            },
-          },
-        )
-        .exec();
-
-      if (existing.enabled) {
-        const refreshed = await this.scheduleModel.findOne({ _id: this.getEntityId(existing as unknown as Record<string, unknown>) }).exec();
-        if (refreshed) {
-          await this.registerSchedule(refreshed);
-        }
-      }
-      return;
-    }
-
-    try {
-      const schedule = await new this.scheduleModel({
-        name: this.systemMeetingMonitorScheduleName,
-        description: '系统内置：监控进行中的会议，在会议长时间未活动时发送提醒并自动结束',
-        planId,
-        schedule: {
-          type: 'interval',
-          intervalMs,
-        },
-        target: {
-          executorType: 'agent',
-          executorId: 'meeting-assistant',
-          executorName: '会议助理',
-        },
-        input: monitorInput,
-        enabled: true,
-        status: 'idle',
-        nextRunAt: new Date(Date.now() + intervalMs),
-        stats: {
-          totalRuns: 0,
-          successRuns: 0,
-          failedRuns: 0,
-          skippedRuns: 0,
-        },
-        createdBy: 'system',
-      }).save();
-
+    if (schedule.enabled) {
       await this.registerSchedule(schedule);
-      this.logger.log(`Created system meeting monitor schedule with interval=${intervalMs}ms`);
-    } catch (error) {
-      this.logger.error('Failed to create meeting monitor schedule', error);
     }
+    return this.getScheduleById(this.getEntityId(schedule as unknown as Record<string, unknown>));
   }
 
-  private async ensureMeetingMonitorPlan(): Promise<OrchestrationPlanDocument> {
-    const prompt = '系统内置计划：监控 active 会议空闲状态，在超时阈值触发提醒并自动结束会议';
-    const title = '系统会议监控计划';
+  async triggerSystemEngineeringStatistics(payload?: {
+    receiverId?: string;
+    scope?: 'all' | 'docs' | 'frontend' | 'backend';
+    tokenMode?: 'estimate' | 'exact';
+    projectIds?: string[];
+    triggeredBy?: string;
+  }): Promise<{ accepted: boolean; status: string; scheduleId: string }> {
+    const schedule = await this.scheduleModel.findOne({ name: this.systemEngineeringStatisticsScheduleName }).exec();
+    if (!schedule) {
+      throw new NotFoundException('Engineering statistics schedule is unavailable, run seed first');
+    }
+    const scheduleId = this.getEntityId(schedule as unknown as Record<string, unknown>);
+    const basePayload = (schedule.input?.payload || {}) as Record<string, unknown>;
+    const baseToolParameters =
+      basePayload.toolParameters && typeof basePayload.toolParameters === 'object'
+        ? (basePayload.toolParameters as Record<string, unknown>)
+        : {};
 
-    const plan = await this.orchestrationPlanModel
-      .findOneAndUpdate(
-        { 'metadata.systemKey': this.systemMeetingMonitorPlanKey },
-        {
-          $set: {
-            title,
-            sourcePrompt: prompt,
-            status: 'planned',
-            strategy: {
-              plannerAgentId: 'meeting-assistant',
-              mode: 'hybrid',
-            },
-            createdBy: 'system',
-            'metadata.system': true,
-            'metadata.systemKey': this.systemMeetingMonitorPlanKey,
-            'metadata.linkedScheduleName': this.systemMeetingMonitorScheduleName,
-          },
-          $setOnInsert: {
-            taskIds: [],
-            stats: {
-              totalTasks: 0,
-              completedTasks: 0,
-              failedTasks: 0,
-              waitingHumanTasks: 0,
-            },
+    await this.dispatchSchedule(schedule, 'manual', {
+      inputOverride: {
+        payload: {
+          ...basePayload,
+          toolParameters: {
+            ...baseToolParameters,
+            ...(payload?.receiverId ? { receiverId: payload.receiverId } : {}),
+            ...(payload?.scope ? { scope: payload.scope } : {}),
+            ...(payload?.tokenMode ? { tokenMode: payload.tokenMode } : {}),
+            ...(Array.isArray(payload?.projectIds) ? { projectIds: payload.projectIds } : {}),
+            triggeredBy: payload?.triggeredBy || 'frontend-trigger',
           },
         },
-        { new: true, upsert: true },
-      )
-      .exec();
-
-    if (!plan) {
-      throw new Error('Failed to ensure system meeting monitor plan');
-    }
-
-    return plan;
+      },
+    });
+    return { accepted: true, status: 'triggered', scheduleId };
   }
 
   onModuleDestroy(): void {
-    if (this.memoEventAggregationTimer) {
-      clearInterval(this.memoEventAggregationTimer);
-    }
-    if (this.memoFullAggregationTimer) {
-      clearInterval(this.memoFullAggregationTimer);
-    }
-
     for (const key of this.schedulerRegistry.getCronJobs().keys()) {
       if (key.startsWith('orch-schedule-cron:')) {
         this.schedulerRegistry.deleteCronJob(key);
@@ -445,12 +369,94 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private async dispatchSchedule(
     schedule: OrchestrationScheduleDocument | OrchestrationSchedule,
     triggerType: TriggerType,
+    options?: {
+      inputOverride?: {
+        prompt?: string;
+        payload?: Record<string, unknown>;
+      };
+    },
   ): Promise<void> {
     const scheduleId = this.getEntityId(schedule as unknown as Record<string, unknown>);
     if (!scheduleId) {
       return;
     }
 
+    const lockAcquired = await this.acquireRunLock(scheduleId);
+    if (!lockAcquired) {
+      return;
+    }
+
+    const startedAt = new Date();
+    const effectiveInput = {
+      prompt: options?.inputOverride?.prompt ?? schedule.input?.prompt,
+      payload: {
+        ...(schedule.input?.payload || {}),
+        ...(options?.inputOverride?.payload || {}),
+      },
+    };
+
+    try {
+      await this.markScheduleStarted(scheduleId, startedAt);
+      const executionResult = await this.executeWithRetry({
+        schedule,
+        scheduleId,
+        triggerType,
+        startedAt,
+        effectiveInput,
+      });
+      const completedAt = new Date();
+      const success = executionResult.executionStatus === 'completed';
+
+      if (!success) {
+        await this.recordDeadLetter({
+          scheduleId,
+          taskId: executionResult.taskId,
+          triggerType,
+          reason: executionResult.errorMessage || 'Schedule execution failed',
+          attempts: executionResult.attempts,
+        });
+        await this.notifyScheduleFailure({
+          scheduleId,
+          scheduleName: schedule.name,
+          triggerType,
+          attempts: executionResult.attempts,
+          taskId: executionResult.taskId,
+          errorMessage: executionResult.errorMessage,
+        });
+      }
+
+      await this.scheduleModel
+        .updateOne(
+          { _id: scheduleId },
+          {
+            $set: {
+              status: success ? 'idle' : 'error',
+              nextRunAt: this.computeNextRunAt(schedule.schedule, completedAt),
+              lastRun: {
+                startedAt,
+                completedAt,
+                success,
+                result: executionResult.result || undefined,
+                error: executionResult.errorMessage || undefined,
+                taskId: executionResult.taskId || undefined,
+                sessionId: executionResult.sessionId || undefined,
+                attempts: executionResult.attempts,
+              },
+            },
+            $inc: {
+              'stats.totalRuns': 1,
+              'stats.successRuns': success ? 1 : 0,
+              'stats.failedRuns': success ? 0 : 1,
+            },
+          },
+        )
+        .exec();
+    } finally {
+      this.runLocks.delete(scheduleId);
+    }
+  }
+
+  private async acquireRunLock(scheduleId: string): Promise<boolean> {
     if (this.runLocks.has(scheduleId)) {
       await this.scheduleModel
         .updateOne(
@@ -462,12 +468,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
           },
         )
         .exec();
-      return;
+      return false;
     }
 
     this.runLocks.add(scheduleId);
-    const startedAt = new Date();
+    return true;
+  }
 
+  private async markScheduleStarted(scheduleId: string, startedAt: Date): Promise<void> {
     await this.scheduleModel
       .updateOne(
         { _id: scheduleId },
@@ -479,12 +487,90 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         },
       )
       .exec();
+  }
 
-    let executionStatus: OrchestrationTaskStatus | null = null;
+  private async executeWithRetry(options: {
+    schedule: OrchestrationScheduleDocument | OrchestrationSchedule;
+    scheduleId: string;
+    triggerType: TriggerType;
+    startedAt: Date;
+    effectiveInput: {
+      prompt?: string;
+      payload?: Record<string, unknown>;
+    };
+  }): Promise<{
+    executionStatus: OrchestrationTaskStatus;
+    taskId: string;
+    sessionId: string;
+    errorMessage: string;
+    result: string;
+    attempts: number;
+  }> {
+    const retryConfig = this.resolveRetryConfig();
+    const maxAttempts = retryConfig.maxRetries + 1;
+
+    let lastResult: {
+      executionStatus: OrchestrationTaskStatus;
+      taskId: string;
+      sessionId: string;
+      errorMessage: string;
+      result: string;
+      attempts: number;
+    } = {
+      executionStatus: 'failed',
+      taskId: '',
+      sessionId: '',
+      errorMessage: 'Schedule execution failed',
+      result: '',
+      attempts: 0,
+    };
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      lastResult = await this.executeSingleAttempt({
+        ...options,
+        attempt,
+      });
+
+      if (lastResult.executionStatus === 'completed') {
+        return lastResult;
+      }
+
+      if (attempt < maxAttempts) {
+        const delayMs = this.computeBackoffDelayMs(attempt, retryConfig.baseDelayMs, retryConfig.maxDelayMs);
+        this.logger.warn(
+          `Schedule ${options.scheduleId} attempt ${attempt}/${maxAttempts} failed, retrying in ${delayMs}ms: ${lastResult.errorMessage}`,
+        );
+        await this.sleep(delayMs);
+      }
+    }
+
+    return lastResult;
+  }
+
+  private async executeSingleAttempt(options: {
+    schedule: OrchestrationScheduleDocument | OrchestrationSchedule;
+    scheduleId: string;
+    triggerType: TriggerType;
+    startedAt: Date;
+    effectiveInput: {
+      prompt?: string;
+      payload?: Record<string, unknown>;
+    };
+    attempt: number;
+  }): Promise<{
+    executionStatus: OrchestrationTaskStatus;
+    taskId: string;
+    sessionId: string;
+    errorMessage: string;
+    result: string;
+    attempts: number;
+  }> {
+    const { schedule, scheduleId, triggerType, startedAt, effectiveInput, attempt } = options;
     let taskId = '';
     let sessionId = '';
     let errorMessage = '';
     let result = '';
+    let executionStatus: OrchestrationTaskStatus = 'failed';
 
     try {
       const task = await new this.taskModel({
@@ -492,7 +578,10 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         scheduleId,
         planId: schedule.planId,
         title: schedule.name,
-        description: this.buildTaskDescription(schedule),
+        description: this.buildTaskDescription({
+          ...schedule,
+          input: effectiveInput,
+        } as OrchestrationSchedule),
         priority: 'medium',
         status: schedule.target.executorId ? 'assigned' : 'pending',
         order: 0,
@@ -510,13 +599,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
             metadata: {
               scheduleId,
               triggerType,
+              attempt,
             },
           },
         ],
       }).save();
 
       taskId = task._id.toString();
-      const execution = await this.orchestrationService.executeStandaloneTask(taskId);
+      const execution = await this.executeScheduleTaskByInput(taskId, schedule, effectiveInput);
       executionStatus = execution.status;
       result = execution.result || '';
 
@@ -526,38 +616,93 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       executionStatus = 'failed';
       errorMessage = error instanceof Error ? error.message : 'Schedule execution failed';
-      this.logger.error(`Schedule ${scheduleId} execution failed`, error instanceof Error ? error.stack : String(error));
-    } finally {
-      const completedAt = new Date();
-      const success = executionStatus === 'completed';
+      this.logger.error(`Schedule ${scheduleId} attempt ${attempt} failed`, error instanceof Error ? error.stack : String(error));
+    }
 
-      await this.scheduleModel
-        .updateOne(
-          { _id: scheduleId },
-          {
-            $set: {
-              status: success ? 'idle' : 'error',
-              nextRunAt: this.computeNextRunAt(schedule.schedule, completedAt),
-              lastRun: {
-                startedAt,
-                completedAt,
-                success,
-                result: result || undefined,
-                error: errorMessage || undefined,
-                taskId: taskId || undefined,
-                sessionId: sessionId || undefined,
-              },
-            },
-            $inc: {
-              'stats.totalRuns': 1,
-              'stats.successRuns': success ? 1 : 0,
-              'stats.failedRuns': success ? 0 : 1,
+    return {
+      executionStatus,
+      taskId,
+      sessionId,
+      errorMessage,
+      result,
+      attempts: attempt,
+    };
+  }
+
+  private resolveRetryConfig(): { maxRetries: number; baseDelayMs: number; maxDelayMs: number } {
+    const maxRetries = Math.max(0, Number(process.env.SCHEDULER_MAX_RETRIES || 2));
+    const baseDelayMs = Math.max(500, Number(process.env.SCHEDULER_RETRY_BASE_DELAY_MS || 1000));
+    const maxDelayMs = Math.max(baseDelayMs, Number(process.env.SCHEDULER_RETRY_MAX_DELAY_MS || 30000));
+    return { maxRetries, baseDelayMs, maxDelayMs };
+  }
+
+  private computeBackoffDelayMs(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+    const delay = baseDelayMs * Math.pow(2, Math.max(0, attempt - 1));
+    return Math.min(maxDelayMs, delay);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async recordDeadLetter(options: {
+    scheduleId: string;
+    taskId?: string;
+    triggerType: TriggerType;
+    reason: string;
+    attempts: number;
+  }): Promise<void> {
+    await this.scheduleModel
+      .updateOne(
+        { _id: options.scheduleId },
+        {
+          $push: {
+            deadLetters: {
+              failedAt: new Date(),
+              taskId: options.taskId || undefined,
+              triggerType: options.triggerType,
+              reason: options.reason,
+              attempts: options.attempts,
             },
           },
-        )
-        .exec();
+        },
+      )
+      .exec();
+  }
 
-      this.runLocks.delete(scheduleId);
+  private async notifyScheduleFailure(options: {
+    scheduleId: string;
+    scheduleName: string;
+    triggerType: TriggerType;
+    attempts: number;
+    taskId?: string;
+    errorMessage?: string;
+  }): Promise<void> {
+    const payload = {
+      event: 'scheduler.dead_letter',
+      scheduleId: options.scheduleId,
+      scheduleName: options.scheduleName,
+      triggerType: options.triggerType,
+      attempts: options.attempts,
+      taskId: options.taskId,
+      errorMessage: options.errorMessage,
+      timestamp: new Date().toISOString(),
+    };
+
+    this.logger.error(`Schedule moved to dead letter: ${JSON.stringify(payload)}`);
+
+    if (!this.schedulerAlertWebhookUrl) {
+      return;
+    }
+
+    try {
+      await axios.post(this.schedulerAlertWebhookUrl, payload, {
+        timeout: Number(process.env.SCHEDULER_ALERT_TIMEOUT_MS || 5000),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send scheduler dead-letter webhook: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -618,60 +763,6 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private buildMeetingMonitorInput(): { prompt: string; payload: Record<string, unknown> } {
-    return {
-      prompt: [
-        '你是会议助理。请通过可用的 meeting MCP 工具执行会议空闲巡检。',
-        '检查所有 active 会议的最后消息时间。',
-        '当会议超过1小时无消息时，发送提醒消息。',
-        '当会议超过2小时无消息时，先发送结束通知，再结束会议。',
-        '请避免重复提醒同一会议，并输出结构化执行摘要。',
-      ].join('\n'),
-      payload: {
-        action: 'meeting_monitor',
-        thresholds: {
-          warningMs: Number(process.env.MEETING_INACTIVE_WARNING_MS || 3600000),
-          endMs: Number(process.env.MEETING_INACTIVE_END_MS || 7200000),
-        },
-        messages: {
-          warning: '会议已超过1小时未有消息，将自动结束',
-          end: '会议已超过2小时未有消息，自动结束会议',
-        },
-      },
-    };
-  }
-
-  private startMemoAggregationTimers(): void {
-    const enabled = String(process.env.MEMO_SCHEDULER_ENABLED || 'true').toLowerCase() !== 'false';
-    if (!enabled) {
-      this.logger.log('Memo scheduler disabled by MEMO_SCHEDULER_ENABLED=false');
-      return;
-    }
-
-    const eventIntervalMs = Math.max(10_000, Number(process.env.MEMO_AGGREGATION_INTERVAL_MS || 60_000));
-    this.memoEventAggregationTimer = setInterval(() => {
-      this.agentClientService.flushMemoEvents().catch((error) => {
-        this.logger.warn(`Periodic memo event flush failed: ${error instanceof Error ? error.message : String(error)}`);
-      });
-    }, eventIntervalMs);
-
-    const fullIntervalMs = Math.max(
-      60_000,
-      Number(process.env.MEMO_FULL_AGGREGATION_INTERVAL_MS || 24 * 60 * 60 * 1000),
-    );
-    this.memoFullAggregationTimer = setInterval(() => {
-      this.agentClientService.triggerMemoFullAggregation().catch((error) => {
-        this.logger.warn(
-          `Periodic full memo aggregation failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      });
-    }, fullIntervalMs);
-
-    void this.agentClientService.flushMemoEvents();
-    this.logger.log(`Memo event flush scheduler started, interval=${eventIntervalMs}ms`);
-    this.logger.log(`Memo full aggregation scheduler started, interval=${fullIntervalMs}ms`);
-  }
-
   private buildTaskDescription(schedule: OrchestrationSchedule): string {
     const prompt = schedule.input?.prompt?.trim();
     const payload = schedule.input?.payload;
@@ -683,6 +774,175 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       'Structured payload:',
       JSON.stringify(payload, null, 2),
     ].join('\n\n');
+  }
+
+  private async executeScheduleTaskByInput(
+    taskId: string,
+    schedule: OrchestrationScheduleDocument | OrchestrationSchedule,
+    effectiveInput: {
+      prompt?: string;
+      payload?: Record<string, unknown>;
+    },
+  ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
+    const payload =
+      effectiveInput?.payload && typeof effectiveInput.payload === 'object'
+        ? (effectiveInput.payload as Record<string, unknown>)
+        : {};
+    const memoCommand = String(payload.memoCommand || '').trim();
+    if (memoCommand === 'flush_events' || memoCommand === 'full_aggregation') {
+      const enqueued = await this.agentClientService.enqueueMemoAggregationCommand({
+        commandType: memoCommand,
+        scheduleId: this.getEntityId(schedule as unknown as Record<string, unknown>),
+        taskId,
+        agentId: typeof payload.agentId === 'string' ? payload.agentId : undefined,
+        triggeredBy: typeof payload.triggeredBy === 'string' ? payload.triggeredBy : 'system-schedule',
+      });
+
+      if (!enqueued.accepted) {
+        return {
+          status: 'failed',
+          error: 'Failed to enqueue memo aggregation command',
+        };
+      }
+
+      const output = JSON.stringify(
+        {
+          accepted: true,
+          queued: enqueued.queued,
+          requestId: enqueued.requestId,
+          commandType: memoCommand,
+        },
+        null,
+        2,
+      );
+
+      await this.taskModel
+        .updateOne(
+          { _id: taskId },
+          {
+            $set: {
+              status: 'completed',
+              completedAt: new Date(),
+              result: {
+                summary: `Memo aggregation command queued: ${memoCommand}`,
+                output,
+              },
+            },
+            $push: {
+              runLogs: {
+                timestamp: new Date(),
+                level: 'info',
+                message: `Memo aggregation command queued: ${memoCommand}`,
+                metadata: {
+                  requestId: enqueued.requestId,
+                },
+              },
+            },
+          },
+        )
+        .exec();
+
+      return {
+        status: 'completed',
+        result: output,
+      };
+    }
+
+    const toolId = String(effectiveInput?.payload?.toolId || '').trim();
+    const toolParameters =
+      effectiveInput?.payload && typeof effectiveInput.payload.toolParameters === 'object'
+        ? (effectiveInput.payload.toolParameters as Record<string, unknown>)
+        : undefined;
+
+    if (toolId) {
+      try {
+        const execution = await this.agentClientService.executeTool(
+          toolId,
+          schedule.target.executorId,
+          {
+            ...(toolParameters || {}),
+          },
+          taskId,
+        );
+
+        const output = JSON.stringify((execution as any)?.result?.data || execution || {}, null, 2);
+        await this.taskModel
+          .updateOne(
+            { _id: taskId },
+            {
+              $set: {
+                status: 'completed',
+                completedAt: new Date(),
+                result: {
+                  summary: `Tool executed: ${toolId}`,
+                  output,
+                },
+              },
+              $push: {
+                runLogs: {
+                  timestamp: new Date(),
+                  level: 'info',
+                  message: `Tool execution completed: ${toolId}`,
+                },
+              },
+            },
+          )
+          .exec();
+
+        return {
+          status: 'completed',
+          result: output,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Tool execution failed';
+        await this.taskModel
+          .updateOne(
+            { _id: taskId },
+            {
+              $set: {
+                status: 'failed',
+                completedAt: new Date(),
+                result: {
+                  error: message,
+                },
+              },
+              $push: {
+                runLogs: {
+                  timestamp: new Date(),
+                  level: 'error',
+                  message: `Tool execution failed: ${toolId}`,
+                  metadata: {
+                    error: message,
+                  },
+                },
+              },
+            },
+          )
+          .exec();
+
+        return {
+          status: 'failed',
+          error: message,
+        };
+      }
+    }
+
+    return this.orchestrationService.executeStandaloneTask(taskId);
+  }
+
+  private async logMissingSystemSchedules(): Promise<void> {
+    const existing = await this.scheduleModel
+      .find({
+        name: { $in: this.systemScheduleNames },
+      })
+      .select({ name: 1 })
+      .lean()
+      .exec();
+    const existingNames = new Set(existing.map((item) => String((item as { name?: string }).name || '')));
+    const missing = this.systemScheduleNames.filter((name) => !existingNames.has(name));
+    if (missing.length) {
+      this.logger.warn(`System schedules missing: ${missing.join(', ')}. Run manual seed to initialize.`);
+    }
   }
 
   private resolveLinkedPlanId(input?: { prompt?: string; payload?: Record<string, unknown> }): string | undefined {

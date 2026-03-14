@@ -279,7 +279,7 @@ enum ParticipantRole {
 
 #### 实现方式
 
-- Meeting Monitor 改为手动 seed：通过运维 seed 脚本按需创建/修正内置定时计划 `system-meeting-monitor`
+- Meeting Monitor 改为手动 seed：通过运维 seed 脚本 `seed:manual --only=system-schedules` 按需创建/修正内置定时计划 `system-meeting-monitor`
 - 手动 seed 时会幂等创建系统内置 plan（`metadata.systemKey=system-meeting-monitor`），并与该 schedule 绑定，保证计划编排页可见
 - 定时计划类型为 `interval`，默认每 5 分钟执行一次
 - 执行时统一走 `OrchestrationService.executeStandaloneTask`，由 meeting-assistant 通过 MCP 工具完成巡检与处置

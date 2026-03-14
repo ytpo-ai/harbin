@@ -26,6 +26,7 @@
 - `input`: 执行输入（`prompt/payload`）
 - `enabled/status`: 启停与运行态（`idle/running/paused/error`）
 - `lastRun/nextRunAt/stats`: 最近执行、下次执行、统计信息
+- `deadLetters[]`: 执行失败死信记录（失败原因、触发类型、taskId、重试次数）
 
 #### OrchestrationTask 模式字段
 
@@ -42,6 +43,8 @@
 6. 计划绑定的 schedule 会标记 `planId`，计划删除前需先解绑或删除相关 schedule。
 7. 关联计划的定时服务在详情页仅展示最近一次执行记录。
 8. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
+9. 调度失败默认启用指数退避重试，超过最大重试后写入 `deadLetters[]`，并通过日志/可选 webhook 告警。
+10. 系统内置 schedule/plan 改为 seed 数据化管理：服务启动仅注册已有启用计划，不再自动写库；缺失项通过 `seed:manual --only=system-schedules` 补种。
 
 ### 1.4 API 接口
 
@@ -69,12 +72,16 @@
 | `ORCHESTRATION_SCHEDULER_MODULE_PLAN.md` | Scheduler 模块实施计划 |
 | `SYSTEM_MEETING_MONITOR_PLAN_BINDING_PLAN.md` | 系统会议监控补齐 plan 关联计划 |
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 调度职责边界与失败治理重构计划 |
+| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
 
 ### 开发总结 (docs/development/)
 
 | 文件 | 说明 |
 |------|------|
 | `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | Plan D 开发沉淀 |
+| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发开发沉淀 |
 
 ### 技术文档 (docs/technical/)
 
@@ -92,9 +99,11 @@
 |------|------|
 | `modules/orchestration/scheduler/scheduler.module.ts` | Scheduler 模块装配 |
 | `modules/orchestration/scheduler/scheduler.controller.ts` | Scheduler API 控制器 |
-| `modules/orchestration/scheduler/scheduler.service.ts` | 调度注册、触发、执行回写 |
+| `modules/orchestration/scheduler/scheduler.service.ts` | 调度注册、触发、执行回写、重试/死信/告警编排（含 memo 异步命令投递） |
+| `scripts/system-schedule-seed.ts` | 系统 schedule/plan seed 幂等写入入口 |
+| `scripts/manual-seed.ts` | 手动 seed 入口（支持 `system-schedules`、`meeting-monitor`） |
 | `modules/orchestration/scheduler/dto/index.ts` | Scheduler DTO |
-| `shared/schemas/orchestration-schedule.schema.ts` | 定时计划数据模型 |
+| `shared/schemas/orchestration-schedule.schema.ts` | 定时计划数据模型（含 attempts/deadLetters） |
 | `shared/schemas/orchestration-task.schema.ts` | task 新增 `mode/scheduleId` 字段 |
 | `modules/orchestration/orchestration.service.ts` | 暴露 standalone task 执行能力 |
 

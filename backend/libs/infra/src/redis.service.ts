@@ -8,6 +8,7 @@ type MessageListener = (message: string) => void;
 export class RedisService implements OnModuleDestroy {
   private readonly logger = createServiceLogger(RedisService.name);
   private readonly redisUrl = this.buildRedisUrl();
+  private readonly sanitizedRedisUrl = this.sanitizeRedisUrl(this.redisUrl);
   private readonly publisher: Redis;
   private readonly subscriber: Redis;
   private readonly listeners = new Map<string, Set<MessageListener>>();
@@ -74,11 +75,23 @@ export class RedisService implements OnModuleDestroy {
       await this.publisher.connect();
       await this.subscriber.connect();
       this.ready = true;
-      this.logger.log(`Redis connected: ${this.redisUrl}`);
+      this.logger.log(`Redis connected: ${this.sanitizedRedisUrl}`);
     } catch (error) {
       this.ready = false;
       const message = error instanceof Error ? error.message : 'Unknown redis connection error';
       this.logger.warn(`Redis disabled, falling back to no-op bus: ${message}`);
+    }
+  }
+
+  private sanitizeRedisUrl(url: string): string {
+    try {
+      const parsed = new URL(url);
+      if (parsed.password) {
+        parsed.password = '***';
+      }
+      return parsed.toString();
+    } catch {
+      return url.replace(/(redis:\/\/:)[^@]*@/, '$1***@');
     }
   }
 
@@ -136,6 +149,15 @@ export class RedisService implements OnModuleDestroy {
   async ltrim(key: string, start: number, stop: number): Promise<'OK' | null> {
     if (!this.ready) return null;
     return this.publisher.ltrim(key, start, stop);
+  }
+
+  async brpop(key: string, timeoutSeconds = 1): Promise<string | null> {
+    if (!this.ready) return null;
+    const response = await this.publisher.brpop(key, timeoutSeconds);
+    if (!response || response.length < 2) {
+      return null;
+    }
+    return response[1] || null;
   }
 
   async subscribe(channel: string, listener: MessageListener): Promise<void> {

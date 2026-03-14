@@ -5,6 +5,7 @@ type SeedName =
   | 'model-management-agent'
   | 'builtin-tools'
   | 'default-model-registry'
+  | 'system-schedules'
   | 'meeting-monitor';
 
 const ALL_SEEDS: SeedName[] = [
@@ -12,6 +13,7 @@ const ALL_SEEDS: SeedName[] = [
   'model-management-agent',
   'builtin-tools',
   'default-model-registry',
+  'system-schedules',
   'meeting-monitor',
 ];
 
@@ -65,7 +67,7 @@ async function run(): Promise<void> {
   const needsAgentsApp = selectedSeeds.some((seed) =>
     ['mcp-profiles', 'model-management-agent', 'builtin-tools', 'default-model-registry'].includes(seed),
   );
-  const needsLegacyApp = selectedSeeds.includes('meeting-monitor');
+  const needsLegacyApp = selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules'].includes(seed));
 
   const { AgentsAppModule, AgentService, ToolService, ModelManagementService } = needsAgentsApp
     ? {
@@ -76,12 +78,12 @@ async function run(): Promise<void> {
       }
     : { AgentsAppModule: null, AgentService: null, ToolService: null, ModelManagementService: null };
 
-  const { AppModule, SchedulerService } = needsLegacyApp
+  const { AppModule, seedSystemSchedules } = needsLegacyApp
     ? {
         AppModule: require('../src/app.module').AppModule,
-        SchedulerService: require('../src/modules/orchestration/scheduler/scheduler.service').SchedulerService,
+        seedSystemSchedules: require('./system-schedule-seed').seedSystemSchedules,
       }
-    : { AppModule: null, SchedulerService: null };
+    : { AppModule: null, seedSystemSchedules: null };
 
   const agentsApp = needsAgentsApp ? await NestFactory.createApplicationContext(AgentsAppModule) : null;
   const legacyApp = needsLegacyApp ? await NestFactory.createApplicationContext(AppModule) : null;
@@ -112,7 +114,12 @@ async function run(): Promise<void> {
 
       if (seed === 'meeting-monitor') {
         if (!legacyApp) throw new Error('Legacy app context not initialized');
-        await legacyApp.get(SchedulerService).seedMeetingMonitorSchedule();
+        await seedSystemSchedules(legacyApp, { only: ['meeting-monitor'] });
+      }
+
+      if (seed === 'system-schedules') {
+        if (!legacyApp) throw new Error('Legacy app context not initialized');
+        await seedSystemSchedules(legacyApp);
       }
 
       console.log(`[seed] done ${seed}`);
