@@ -922,6 +922,21 @@ export class ToolService {
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
+    const repoDispatch = this.dispatchRepoToolImplementation(tool.id, parameters);
+    if (repoDispatch) {
+      return repoDispatch;
+    }
+
+    const orchestrationDispatch = this.dispatchOrchestrationToolImplementation(tool.id, parameters, agentId, executionContext);
+    if (orchestrationDispatch) {
+      return orchestrationDispatch;
+    }
+
+    const requirementDispatch = this.dispatchRequirementToolImplementation(tool.id, parameters, agentId, executionContext);
+    if (requirementDispatch) {
+      return requirementDispatch;
+    }
+
     switch (tool.id) {
       case 'builtin.web-retrieval.internal.web-search.exa':
         return this.webToolsService.performWebSearchExa(parameters);
@@ -935,19 +950,11 @@ export class ToolService {
         return this.sendSlackMessage(parameters, agentId);
       case 'composio.communication.mcp.gmail.send-email':
         return this.sendGmail(parameters, agentId);
-      case 'builtin.sys-mg.internal.rd-related.repo-read':
-        return this.repoToolHandler.executeRepoRead(parameters);
       case AGENT_LIST_TOOL_ID:
       case LEGACY_AGENT_LIST_TOOL_ID:
         return this.getAgentsMcpList(parameters);
       case AGENT_CREATE_TOOL_ID:
         return this.createAgentByMcp(parameters);
-      case 'builtin.sys-mg.internal.rd-related.docs-read':
-        return this.repoToolHandler.getCodeDocsReader(parameters);
-      case RD_DOCS_WRITE_TOOL_ID:
-        return this.repoToolHandler.executeDocsWrite(parameters);
-      case 'builtin.sys-mg.internal.rd-related.updates-read':
-        return this.repoToolHandler.getCodeUpdatesReader(parameters);
       case 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run':
         return this.runEngineeringStatistics(parameters);
       case 'builtin.sys-mg.mcp.model-admin.list-models':
@@ -964,6 +971,39 @@ export class ToolService {
         return this.skillToolHandler.listSkillsByTitle(parameters);
       case 'builtin.sys-mg.mcp.skill-master.create-skill':
         return this.skillToolHandler.createSkillByMcp(parameters);
+      case 'builtin.sys-mg.mcp.meeting.list-meetings':
+        return this.meetingToolHandler.listMeetings(parameters);
+      case 'builtin.sys-mg.mcp.meeting.send-message':
+        return this.meetingToolHandler.sendMeetingMessage(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.meeting.update-status':
+        return this.meetingToolHandler.updateMeetingStatus(parameters);
+      default:
+        throw new Error(`Tool implementation not found: ${tool.id}`);
+    }
+  }
+
+  private dispatchRepoToolImplementation(toolId: string, parameters: any): Promise<any> | undefined {
+    switch (toolId) {
+      case 'builtin.sys-mg.internal.rd-related.repo-read':
+        return this.repoToolHandler.executeRepoRead(parameters);
+      case 'builtin.sys-mg.internal.rd-related.docs-read':
+        return this.repoToolHandler.getCodeDocsReader(parameters);
+      case RD_DOCS_WRITE_TOOL_ID:
+        return this.repoToolHandler.executeDocsWrite(parameters);
+      case 'builtin.sys-mg.internal.rd-related.updates-read':
+        return this.repoToolHandler.getCodeUpdatesReader(parameters);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchOrchestrationToolImplementation(
+    toolId: string,
+    parameters: any,
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> | undefined {
+    switch (toolId) {
       case 'builtin.sys-mg.mcp.orchestration.create-plan':
         return this.orchestrationToolHandler.createOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.update-plan':
@@ -984,6 +1024,18 @@ export class ToolService {
         return this.orchestrationToolHandler.updateOrchestrationSchedule(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.debug-task':
         return this.orchestrationToolHandler.debugOrchestrationTask(parameters, agentId, executionContext);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchRequirementToolImplementation(
+    toolId: string,
+    parameters: any,
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> | undefined {
+    switch (toolId) {
       case 'builtin.sys-mg.mcp.requirement.list':
         return this.requirementToolHandler.listRequirements(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.requirement.get':
@@ -1000,14 +1052,8 @@ export class ToolService {
         return this.requirementToolHandler.syncRequirementGithub(parameters, agentId);
       case 'builtin.sys-mg.mcp.requirement.board':
         return this.requirementToolHandler.getRequirementBoard(agentId);
-      case 'builtin.sys-mg.mcp.meeting.list-meetings':
-        return this.meetingToolHandler.listMeetings(parameters);
-      case 'builtin.sys-mg.mcp.meeting.send-message':
-        return this.meetingToolHandler.sendMeetingMessage(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.meeting.update-status':
-        return this.meetingToolHandler.updateMeetingStatus(parameters);
       default:
-        throw new Error(`Tool implementation not found: ${tool.id}`);
+        return undefined;
     }
   }
 
@@ -1242,28 +1288,6 @@ export class ToolService {
     throw new Error('This tool requires autonomous context (organizationId + agentId)');
   }
 
-  private assertMeetingContext(executionContext?: ToolExecutionContext): {
-    meetingId: string;
-    initiatorId?: string;
-  } {
-    const context = this.resolveMeetingContext(executionContext);
-    const meetingLike = context.taskType === 'discussion' || Boolean(context.meetingId);
-    if (!meetingLike) {
-      throw new Error('This orchestration MCP tool is only available in meeting context');
-    }
-    return {
-      meetingId: context.meetingId || 'unknown-meeting',
-      initiatorId: context.initiatorId,
-    };
-  }
-
-  private requireConfirm(params: any, action: string): void {
-    if (params?.confirm === true) {
-      return;
-    }
-    throw new Error(`${action} requires confirm=true`);
-  }
-
   private async runEngineeringStatistics(params: {
     receiverId?: string;
     scope?: 'all' | 'docs' | 'frontend' | 'backend';
@@ -1290,729 +1314,11 @@ export class ToolService {
     };
   }
 
-  private buildRequirementQuery(params: {
-    status?: string;
-    assigneeAgentId?: string;
-    localProjectId?: string;
-    search?: string;
-    limit?: number;
-  }): string {
-    const query = new URLSearchParams();
-    if (params?.status) query.append('status', String(params.status).trim());
-    if (params?.assigneeAgentId) query.append('assigneeAgentId', String(params.assigneeAgentId).trim());
-    if (params?.localProjectId) query.append('localProjectId', String(params.localProjectId).trim());
-    if (params?.search) query.append('search', String(params.search).trim());
-    if (params?.limit !== undefined) {
-      const limit = Math.max(1, Math.min(Number(params.limit || 50), 200));
-      query.append('limit', String(limit));
-    }
-    const text = query.toString();
-    return text ? `?${text}` : '';
-  }
-
-  private async listRequirements(
-    params: {
-      status?: string;
-      assigneeAgentId?: string;
-      localProjectId?: string;
-      search?: string;
-      limit?: number;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const query = this.buildRequirementQuery(params || {});
-    const result = await this.internalApiClient.callEiApi('GET', `/requirements${query}`);
-    return {
-      action: 'requirement_list',
-      initiatorAgentId: agentId,
-      organizationId: (executionContext?.teamContext || {}).organizationId,
-      total: Array.isArray(result) ? result.length : 0,
-      requirements: result,
-      fetchedAt: new Date().toISOString(),
-    };
-  }
-
-  private async getRequirement(
-    params: { requirementId?: string },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const requirementId = String(params?.requirementId || '').trim();
-    if (!requirementId) {
-      throw new Error('requirement_get requires requirementId');
-    }
-    const result = await this.internalApiClient.callEiApi('GET', `/requirements/${encodeURIComponent(requirementId)}`);
-    return {
-      action: 'requirement_get',
-      initiatorAgentId: agentId,
-      organizationId: (executionContext?.teamContext || {}).organizationId,
-      requirement: result,
-    };
-  }
-
-  private async createRequirement(
-    params: {
-      title?: string;
-      description?: string;
-      priority?: 'low' | 'medium' | 'high' | 'critical';
-      labels?: string[];
-      createdById?: string;
-      createdByName?: string;
-      createdByType?: 'human' | 'agent' | 'system';
-      localProjectId?: string;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const title = String(params?.title || '').trim();
-    if (!title) {
-      throw new Error('requirement_create requires title');
-    }
-    const result = await this.internalApiClient.callEiApi('POST', '/requirements', {
-      title,
-      description: String(params?.description || '').trim(),
-      priority: params?.priority,
-      labels: Array.isArray(params?.labels) ? params.labels : undefined,
-      createdById: String(params?.createdById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
-      createdByName: String(params?.createdByName || '').trim() || undefined,
-      createdByType: params?.createdByType || 'agent',
-      localProjectId: String(params?.localProjectId || '').trim() || undefined,
-    });
-    return {
-      action: 'requirement_create',
-      initiatorAgentId: agentId,
-      requirement: result,
-      createdAt: new Date().toISOString(),
-    };
-  }
-
-  private async updateRequirementStatus(
-    params: {
-      requirementId?: string;
-      status?: 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
-      changedById?: string;
-      changedByName?: string;
-      changedByType?: 'human' | 'agent' | 'system';
-      note?: string;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const requirementId = String(params?.requirementId || '').trim();
-    if (!requirementId) {
-      throw new Error('requirement_update_status requires requirementId');
-    }
-    if (!params?.status) {
-      throw new Error('requirement_update_status requires status');
-    }
-    const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/status`, {
-      status: params.status,
-      changedById: String(params?.changedById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
-      changedByName: String(params?.changedByName || '').trim() || undefined,
-      changedByType: params?.changedByType || 'agent',
-      note: String(params?.note || '').trim() || undefined,
-    });
-    return {
-      action: 'requirement_update_status',
-      initiatorAgentId: agentId,
-      requirementId,
-      status: params.status,
-      requirement: result,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async assignRequirement(
-    params: {
-      requirementId?: string;
-      toAgentId?: string;
-      toAgentName?: string;
-      assignedById?: string;
-      assignedByName?: string;
-      reason?: string;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const requirementId = String(params?.requirementId || '').trim();
-    if (!requirementId) {
-      throw new Error('requirement_assign requires requirementId');
-    }
-    const toAgentId = String(params?.toAgentId || '').trim();
-    if (!toAgentId) {
-      throw new Error('requirement_assign requires toAgentId');
-    }
-    const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/assign`, {
-      toAgentId,
-      toAgentName: String(params?.toAgentName || '').trim() || undefined,
-      assignedById: String(params?.assignedById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
-      assignedByName: String(params?.assignedByName || '').trim() || undefined,
-      reason: String(params?.reason || '').trim() || undefined,
-    });
-    return {
-      action: 'requirement_assign',
-      initiatorAgentId: agentId,
-      requirementId,
-      assigneeAgentId: toAgentId,
-      requirement: result,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async commentRequirement(
-    params: {
-      requirementId?: string;
-      content?: string;
-      authorId?: string;
-      authorName?: string;
-      authorType?: 'human' | 'agent' | 'system';
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const requirementId = String(params?.requirementId || '').trim();
-    if (!requirementId) {
-      throw new Error('requirement_comment requires requirementId');
-    }
-    const content = String(params?.content || '').trim();
-    if (!content) {
-      throw new Error('requirement_comment requires content');
-    }
-    const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/comments`, {
-      content,
-      authorId: String(params?.authorId || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
-      authorName: String(params?.authorName || '').trim() || undefined,
-      authorType: params?.authorType || 'agent',
-    });
-    return {
-      action: 'requirement_comment',
-      initiatorAgentId: agentId,
-      requirementId,
-      requirement: result,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async syncRequirementGithub(
-    params: {
-      requirementId?: string;
-      owner?: string;
-      repo?: string;
-      labels?: string[];
-    },
-    agentId?: string,
-    _executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const requirementId = String(params?.requirementId || '').trim();
-    if (!requirementId) {
-      throw new Error('requirement_sync_github requires requirementId');
-    }
-    const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/github/sync`, {
-      owner: String(params?.owner || '').trim() || undefined,
-      repo: String(params?.repo || '').trim() || undefined,
-      labels: Array.isArray(params?.labels) ? params.labels : undefined,
-    });
-    return {
-      action: 'requirement_sync_github',
-      initiatorAgentId: agentId,
-      requirementId,
-      result,
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  private async getRequirementBoard(
-    _params: Record<string, never>,
-    agentId?: string,
-    _executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const result = await this.internalApiClient.callEiApi('GET', '/requirements/board');
-    return {
-      action: 'requirement_board',
-      initiatorAgentId: agentId,
-      board: result,
-      fetchedAt: new Date().toISOString(),
-    };
-  }
-
-  private async createOrchestrationPlan(
-    params: {
-      prompt?: string;
-      title?: string;
-      mode?: 'sequential' | 'parallel' | 'hybrid';
-      plannerAgentId?: string;
-      autoRun?: boolean;
-      requirementId?: string;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    if (!params?.prompt?.trim()) {
-      throw new Error('orchestration_create_plan requires prompt');
-    }
-    const prompt = params.prompt.trim();
-    const promptMaxLength = 4000;
-    if (prompt.length > promptMaxLength) {
-      throw new Error(
-        `orchestration_create_plan prompt too long: ${prompt.length} characters (max ${promptMaxLength})`,
-      );
-    }
-    const title = params.title?.trim();
-    const titleMaxLength = 200;
-    if (title && title.length > titleMaxLength) {
-      throw new Error(
-        `orchestration_create_plan title too long: ${title.length} characters (max ${titleMaxLength})`,
-      );
-    }
-    const validModes: Array<'sequential' | 'parallel' | 'hybrid'> = ['sequential', 'parallel', 'hybrid'];
-    if (params.mode && !validModes.includes(params.mode)) {
-      throw new Error(
-        `orchestration_create_plan invalid mode: ${params.mode}. allowed=${validModes.join('|')}`,
-      );
-    }
-    const payload = {
-      prompt,
-      title,
-      mode: params.mode,
-      plannerAgentId: params.plannerAgentId,
-      autoRun: params.autoRun === true,
-      requirementId: params.requirementId,
-    };
-    const result = await this.internalApiClient.callOrchestrationApi('POST', '/plans/from-prompt', payload);
-    return {
-      action: 'create_plan',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async runOrchestrationPlan(
-    params: { planId?: string; continueOnFailure?: boolean; confirm?: boolean },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    if (!params?.planId?.trim()) {
-      throw new Error('orchestration_run_plan requires planId');
-    }
-    this.requireConfirm(params, 'orchestration_run_plan');
-    const result = await this.internalApiClient.callOrchestrationApi(
-      'POST',
-      `/plans/${params.planId.trim()}/run`,
-      { continueOnFailure: params.continueOnFailure === true },
-    );
-    return {
-      action: 'run_plan',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async updateOrchestrationPlan(
-    params: {
-      planId?: string;
-      title?: string;
-      prompt?: string;
-      mode?: 'sequential' | 'parallel' | 'hybrid';
-      plannerAgentId?: string;
-      metadata?: Record<string, any>;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    const planId = String(params?.planId || '').trim();
-    if (!planId) {
-      throw new Error('orchestration_update_plan requires planId');
-    }
-
-    const payload: Record<string, any> = {};
-    const title = params?.title?.trim();
-    if (title !== undefined && title.length > 0) {
-      if (title.length > 200) {
-        throw new Error('orchestration_update_plan title too long: max 200 characters');
-      }
-      payload.title = title;
-    }
-
-    const sourcePrompt = params?.prompt?.trim();
-    if (sourcePrompt !== undefined && sourcePrompt.length > 0) {
-      if (sourcePrompt.length > 4000) {
-        throw new Error('orchestration_update_plan prompt too long: max 4000 characters');
-      }
-      payload.sourcePrompt = sourcePrompt;
-    }
-
-    const validModes: Array<'sequential' | 'parallel' | 'hybrid'> = ['sequential', 'parallel', 'hybrid'];
-    if (params?.mode !== undefined) {
-      if (!validModes.includes(params.mode)) {
-        throw new Error(`orchestration_update_plan invalid mode: ${params.mode}. allowed=${validModes.join('|')}`);
-      }
-      payload.mode = params.mode;
-    }
-
-    if (params?.plannerAgentId !== undefined) {
-      payload.plannerAgentId = String(params.plannerAgentId || '').trim();
-    }
-
-    if (params?.metadata !== undefined) {
-      if (!params.metadata || typeof params.metadata !== 'object' || Array.isArray(params.metadata)) {
-        throw new Error('orchestration_update_plan metadata must be an object');
-      }
-      payload.metadata = params.metadata;
-    }
-
-    if (!Object.keys(payload).length) {
-      throw new Error('orchestration_update_plan requires at least one field to update');
-    }
-
-    const result = await this.internalApiClient.callOrchestrationApi('PATCH', `/plans/${planId}`, payload);
-    return {
-      action: 'update_plan',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async getOrchestrationPlan(
-    params: { planId?: string },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    if (!params?.planId?.trim()) {
-      throw new Error('orchestration_get_plan requires planId');
-    }
-    const result = await this.internalApiClient.callOrchestrationApi('GET', `/plans/${params.planId.trim()}`, undefined);
-    return {
-      action: 'get_plan',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async listOrchestrationPlans(
-    params: Record<string, never>,
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    const result = await this.internalApiClient.callOrchestrationApi('GET', '/plans', undefined);
-    return {
-      action: 'list_plans',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async reassignOrchestrationTask(
-    params: {
-      taskId?: string;
-      executorType?: 'agent' | 'employee' | 'unassigned';
-      executorId?: string;
-      reason?: string;
-      confirm?: boolean;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    if (!params?.taskId?.trim()) {
-      throw new Error('orchestration_reassign_task requires taskId');
-    }
-    if (!params?.executorType) {
-      throw new Error('orchestration_reassign_task requires executorType');
-    }
-    this.requireConfirm(params, 'orchestration_reassign_task');
-    const result = await this.internalApiClient.callOrchestrationApi(
-      'POST',
-      `/tasks/${params.taskId.trim()}/reassign`,
-      {
-        executorType: params.executorType,
-        executorId: params.executorId,
-        reason: params.reason,
-      },
-    );
-    return {
-      action: 'reassign_task',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async completeOrchestrationHumanTask(
-    params: { taskId?: string; summary?: string; output?: string; confirm?: boolean },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    if (!params?.taskId?.trim()) {
-      throw new Error('orchestration_complete_human_task requires taskId');
-    }
-    this.requireConfirm(params, 'orchestration_complete_human_task');
-    const result = await this.internalApiClient.callOrchestrationApi(
-      'POST',
-      `/tasks/${params.taskId.trim()}/complete-human`,
-      {
-        summary: params.summary,
-        output: params.output,
-      },
-    );
-    return {
-      action: 'complete_human_task',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
-  }
-
-  private async getOrchestrationPlanForSchedule(planId: string): Promise<any> {
-    const normalizedPlanId = String(planId || '').trim();
-    if (!normalizedPlanId) {
-      throw new Error('planId is required');
-    }
-    const plan = await this.internalApiClient.callOrchestrationApi('GET', `/plans/${normalizedPlanId}`, undefined);
-    if (!plan || typeof plan !== 'object') {
-      throw new Error('plan not found');
-    }
-    return plan;
-  }
-
-  private resolvePlanExecutorId(plan: any): string {
-    const plannerAgentId = String(plan?.strategy?.plannerAgentId || '').trim();
-    if (plannerAgentId) {
-      return plannerAgentId;
-    }
-
-    const taskAssignments = Array.isArray(plan?.tasks)
-      ? plan.tasks
-          .map((task: any) => ({
-            executorType: String(task?.assignment?.executorType || ''),
-            executorId: String(task?.assignment?.executorId || '').trim(),
-          }))
-          .filter((assignment: any) => assignment.executorType === 'agent' && assignment.executorId)
-      : [];
-    if (taskAssignments.length) {
-      return taskAssignments[0].executorId;
-    }
-
-    throw new Error('plan has no executable agent context, please set plannerAgentId first');
-  }
-
-  private buildScheduleConfig(params: {
-    scheduleType?: 'cron' | 'interval';
-    expression?: string;
-    intervalMs?: number;
-    timezone?: string;
-  }): { type: 'cron' | 'interval'; expression?: string; intervalMs?: number; timezone?: string } {
-    const scheduleType = params?.scheduleType;
-    if (scheduleType !== 'cron' && scheduleType !== 'interval') {
-      throw new Error('scheduleType must be cron or interval');
-    }
-    if (scheduleType === 'cron' && !String(params?.expression || '').trim()) {
-      throw new Error('expression is required when scheduleType=cron');
-    }
-    if (scheduleType === 'interval') {
-      const intervalMs = Number(params?.intervalMs || 0);
-      if (!Number.isFinite(intervalMs) || intervalMs < 60_000) {
-        throw new Error('intervalMs must be >= 60000 when scheduleType=interval');
-      }
-    }
-
-    return {
-      type: scheduleType,
-      expression: scheduleType === 'cron' ? String(params?.expression || '').trim() : undefined,
-      intervalMs: scheduleType === 'interval' ? Number(params?.intervalMs) : undefined,
-      timezone: String(params?.timezone || '').trim() || undefined,
-    };
-  }
-
-  private buildScheduleUpdateConfig(params: {
-    scheduleType?: 'cron' | 'interval';
-    expression?: string;
-    intervalMs?: number;
-    timezone?: string;
-  }): { schedule?: { type: 'cron' | 'interval'; expression?: string; intervalMs?: number; timezone?: string } } {
-    const hasSchedulePatch =
-      params?.scheduleType !== undefined ||
-      params?.expression !== undefined ||
-      params?.intervalMs !== undefined ||
-      params?.timezone !== undefined;
-    if (!hasSchedulePatch) {
-      return {};
-    }
-
-    return {
-      schedule: this.buildScheduleConfig({
-        scheduleType: params.scheduleType,
-        expression: params.expression,
-        intervalMs: params.intervalMs,
-        timezone: params.timezone,
-      }),
-    };
-  }
-
-  private async createOrchestrationSchedule(
-    params: {
-      planId?: string;
-      scheduleType?: 'cron' | 'interval';
-      expression?: string;
-      intervalMs?: number;
-      timezone?: string;
-      enabled?: boolean;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    const planId = String(params?.planId || '').trim();
-    if (!planId) {
-      throw new Error('orchestration_create_schedule requires planId');
-    }
-
-    const plan = await this.getOrchestrationPlanForSchedule(planId);
-    const targetAgentId = this.resolvePlanExecutorId(plan);
-    const planTitle = String(plan?.title || '').trim();
-    const planPrompt = String(plan?.sourcePrompt || '').trim();
-
-    const payload = {
-      name: `plan-schedule:${planTitle || planId}`,
-      description: `Schedule for orchestration plan ${planId}`,
-      schedule: this.buildScheduleConfig({
-        scheduleType: params.scheduleType,
-        expression: params.expression,
-        intervalMs: params.intervalMs,
-        timezone: params.timezone,
-      }),
-      target: {
-        executorType: 'agent' as const,
-        executorId: targetAgentId,
-      },
-      input: {
-        prompt: planPrompt || undefined,
-        payload: {
-          planId,
-          source: 'mcp.orchestration.createSchedule',
-        },
-      },
-      enabled: params?.enabled,
-    };
-
-    const result = await this.internalApiClient.callOrchestrationApi('POST', '/schedules', payload);
-    return {
-      action: 'create_schedule',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      planId,
-      result,
-    };
-  }
-
-  private async updateOrchestrationSchedule(
-    params: {
-      scheduleId?: string;
-      scheduleType?: 'cron' | 'interval';
-      expression?: string;
-      intervalMs?: number;
-      timezone?: string;
-      enabled?: boolean;
-    },
-    agentId?: string,
-    executionContext?: ToolExecutionContext,
-  ): Promise<any> {
-    const executionInfo = this.assertExecutionContext(executionContext, {
-      allowMeeting: true,
-      allowAutonomous: true,
-      fallbackAgentId: agentId,
-    });
-    const scheduleId = String(params?.scheduleId || '').trim();
-    if (!scheduleId) {
-      throw new Error('orchestration_update_schedule requires scheduleId');
-    }
-
-    const schedulePatch = this.buildScheduleUpdateConfig({
-      scheduleType: params.scheduleType,
-      expression: params.expression,
-      intervalMs: params.intervalMs,
-      timezone: params.timezone,
-    });
-
-    const payload: Record<string, unknown> = {
-      ...schedulePatch,
-    };
-    if (params?.enabled !== undefined) {
-      payload.enabled = params.enabled === true;
-    }
-
-    if (!Object.keys(payload).length) {
-      throw new Error('orchestration_update_schedule requires at least one field to update');
-    }
-
-    const result = await this.internalApiClient.callOrchestrationApi('PUT', `/schedules/${scheduleId}`, payload);
-    return {
-      action: 'update_schedule',
-      contextMode: executionInfo.mode,
-      meetingId: executionInfo.meetingId,
-      organizationId: executionInfo.organizationId,
-      initiatorAgentId: agentId,
-      result,
-    };
+  private normalizeProvider(provider?: string): string {
+    const value = String(provider || '').trim().toLowerCase();
+    if (value === 'kimi') return 'moonshot';
+    if (value === 'claude') return 'anthropic';
+    return value;
   }
 
   private async debugOrchestrationTask(
@@ -2062,7 +1368,11 @@ export class ToolService {
       status: execution?.status || task?.status || 'unknown',
       error: execution?.error || null,
       resultSnippet:
-        typeof execution?.result === 'string' ? execution.result.slice(0, 800) : execution?.result ? JSON.stringify(execution.result).slice(0, 800) : null,
+        typeof execution?.result === 'string'
+          ? execution.result.slice(0, 800)
+          : execution?.result
+            ? JSON.stringify(execution.result).slice(0, 800)
+            : null,
       recentLogs,
       suggestedNextAction:
         execution?.status === 'failed'
@@ -2084,29 +1394,6 @@ export class ToolService {
       debug,
       result,
     };
-  }
-
-  private normalizeProvider(provider?: string): string {
-    const value = String(provider || '').trim().toLowerCase();
-    if (value === 'kimi') return 'moonshot';
-    if (value === 'claude') return 'anthropic';
-    return value;
-  }
-
-  private async addModelToSystem(params: {
-    provider: string;
-    model: string;
-    name?: string;
-    id?: string;
-    maxTokens?: number;
-    temperature?: number;
-    topP?: number;
-  }): Promise<any> {
-    return this.modelToolHandler.addModelToSystem(params);
-  }
-
-  private async listSystemModels(params: { provider?: string; limit?: number }): Promise<any> {
-    return this.modelToolHandler.listSystemModels(params);
   }
 
   private async listSkillsByTitle(params: {
@@ -2138,22 +1425,6 @@ export class ToolService {
     contentType?: string;
   }): Promise<any> {
     return this.skillToolHandler.createSkillByMcp(params);
-  }
-
-  private async listHumanOperationLogs(
-    params: {
-      from?: string;
-      to?: string;
-      action?: string;
-      resourceKeyword?: string;
-      success?: boolean;
-      statusCode?: number;
-      page?: number;
-      pageSize?: number;
-    },
-    agentId?: string,
-  ): Promise<any> {
-    return this.auditToolHandler.listHumanOperationLogs(params, agentId);
   }
 
   private normalizeStringArray(items?: unknown[]): string[] {

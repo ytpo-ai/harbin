@@ -1257,34 +1257,16 @@ export class AgentService {
       },
     };
 
-    const runtimeContext = await this.runtimeOrchestrator.startRun({
-      agentId: runtimeAgentId,
+    const runtimeContext = await this.agentExecutionService.startRuntimeExecution({
+      runtimeAgentId,
       agentName: agent.name,
-      taskId,
-      sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
-      taskTitle: task.title,
-      taskDescription: task.description,
-      userContent: this.resolveLatestUserContent(task, messages),
-      metadata: {
-        taskType: task.type,
-        taskPriority: task.priority,
-        roleCode,
-        executionChannel,
-        executionData,
-        sync: {
-          state: 'pending',
-          retryCount: 0,
-        },
-        ...(context?.teamContext?.meetingId
-          ? {
-              meetingContext: {
-                meetingId: context.teamContext.meetingId,
-                agendaId: context.teamContext.agendaId,
-                latestSummary: context.teamContext.latestSummary,
-              },
-            }
-          : {}),
-      },
+      task,
+      messages,
+      mode: 'detailed',
+      roleCode,
+      executionChannel,
+      executionData,
+      teamContext: context?.teamContext,
     });
 
     await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
@@ -1297,17 +1279,7 @@ export class AgentService {
       const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
 
       // 获取自定义API Key（如果配置了）
-      let customApiKey: string | undefined;
-      if (agent.apiKeyId) {
-        customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
-        if (customApiKey) {
-          this.logger.log(`[task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
-          // 记录API Key使用情况
-          await this.apiKeyService.recordUsage(agent.apiKeyId);
-        } else {
-          this.logger.warn(`[task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
-        }
-      }
+      const customApiKey = await this.resolveCustomApiKey(agent, taskId, 'task');
 
       if (openCodeExecutionConfig) {
         const sessionConfig: Record<string, unknown> = {
@@ -1398,14 +1370,7 @@ export class AgentService {
         },
       });
 
-      await this.runtimeOrchestrator.completeRun({
-        runId: runtimeContext.runId,
-        agentId: runtimeAgentId,
-        sessionId: runtimeContext.sessionId,
-        taskId,
-        assistantContent: response,
-        traceId: runtimeContext.traceId,
-      });
+      await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, response);
       await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
 
       return {
@@ -1443,19 +1408,12 @@ export class AgentService {
         );
       });
       if (!controlInterrupted) {
-        await this.runtimeOrchestrator.failRun({
-          runId: runtimeContext.runId,
-          agentId: runtimeAgentId,
-          sessionId: runtimeContext.sessionId,
-          taskId,
-          error: logError.message,
-          traceId: runtimeContext.traceId,
-        });
+        await this.agentExecutionService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
         await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {
-      await this.runtimeOrchestrator.releaseRun(runtimeContext);
+      await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
     }
   }
 
@@ -1508,26 +1466,16 @@ export class AgentService {
       },
     };
 
-    const runtimeContext = await this.runtimeOrchestrator.startRun({
-      agentId: runtimeAgentId,
+    const runtimeContext = await this.agentExecutionService.startRuntimeExecution({
+      runtimeAgentId,
       agentName: agent.name,
-      taskId,
-      sessionId: typeof context?.teamContext?.sessionId === 'string' ? context.teamContext.sessionId : undefined,
-      taskTitle: task.title,
-      taskDescription: task.description,
-      userContent: this.resolveLatestUserContent(task, messages),
-      metadata: {
-        taskType: task.type,
-        taskPriority: task.priority,
-        mode: 'streaming',
-        roleCode,
-        executionChannel,
-        executionData,
-        sync: {
-          state: 'pending',
-          retryCount: 0,
-        },
-      },
+      task,
+      messages,
+      mode: 'streaming',
+      roleCode,
+      executionChannel,
+      executionData,
+      teamContext: context?.teamContext,
     });
 
     await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
@@ -1573,16 +1521,7 @@ export class AgentService {
         }
       } else {
         // 获取自定义API Key（如果配置了）
-        let customApiKey: string | undefined;
-        if (agent.apiKeyId) {
-          customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
-          if (customApiKey) {
-            this.logger.log(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
-            await this.apiKeyService.recordUsage(agent.apiKeyId);
-          } else {
-            this.logger.warn(`[stream_task_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
-          }
-        }
+        const customApiKey = await this.resolveCustomApiKey(agent, taskId, 'stream_task');
 
         // 确保provider已注册（使用自定义key或默认key）
         const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
@@ -1626,14 +1565,7 @@ export class AgentService {
         );
       }
 
-      await this.runtimeOrchestrator.completeRun({
-        runId: runtimeContext.runId,
-        agentId: runtimeAgentId,
-        sessionId: runtimeContext.sessionId,
-        taskId,
-        assistantContent: fullResponse,
-        traceId: runtimeContext.traceId,
-      });
+      await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, fullResponse);
       await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
     } catch (error) {
       const logError = this.toLogError(error);
@@ -1647,19 +1579,12 @@ export class AgentService {
         normalizedError.includes('paused') ||
         normalizedError.includes('already completed');
       if (!controlInterrupted) {
-        await this.runtimeOrchestrator.failRun({
-          runId: runtimeContext.runId,
-          agentId: runtimeAgentId,
-          sessionId: runtimeContext.sessionId,
-          taskId,
-          error: logError.message,
-          traceId: runtimeContext.traceId,
-        });
+        await this.agentExecutionService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
         await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {
-      await this.runtimeOrchestrator.releaseRun(runtimeContext);
+      await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
     }
 
     this.logger.log(
@@ -2277,6 +2202,26 @@ export class AgentService {
       return result.data;
     }
     return result || {};
+  }
+
+  private async resolveCustomApiKey(
+    agent: { apiKeyId?: string; name: string },
+    taskId: string,
+    logPrefix: 'task' | 'stream_task',
+  ): Promise<string | undefined> {
+    if (!agent.apiKeyId) {
+      return undefined;
+    }
+
+    const customApiKey = await this.apiKeyService.getDecryptedKey(agent.apiKeyId);
+    if (customApiKey) {
+      this.logger.log(`[${logPrefix}_api_key] taskId=${taskId} agent=${agent.name} source=custom`);
+      await this.apiKeyService.recordUsage(agent.apiKeyId);
+      return customApiKey;
+    }
+
+    this.logger.warn(`[${logPrefix}_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
+    return undefined;
   }
 
   private resolveLatestUserContent(task: Task, messages: ChatMessage[]): string {
