@@ -19,6 +19,7 @@ import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtim
 import { RuntimeEiSyncService } from '../runtime/runtime-ei-sync.service';
 import { OpenCodeExecutionService } from '../opencode/opencode-execution.service';
 import { RedisService } from '@libs/infra';
+import { AgentExecutionService } from './agent-execution.service';
 
 export interface AgentContext {
   task: Task;
@@ -406,6 +407,7 @@ export class AgentService {
     private readonly runtimeEiSyncService: RuntimeEiSyncService,
     private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
+    private readonly agentExecutionService: AgentExecutionService,
   ) {}
 
   async seedMcpProfileSeeds(): Promise<void> {
@@ -1194,7 +1196,7 @@ export class AgentService {
 
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
-    const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || agentId;
+    const runtimeAgentId = this.agentExecutionService.resolveRuntimeAgentId(agent as any, agentId);
     this.logger.log(
       `[task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${this.compactLogText(task.title)}" type=${task.type} priority=${task.priority} modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'} hasCustomApiKey=${Boolean(agent.apiKeyId)}`,
     );
@@ -1285,34 +1287,14 @@ export class AgentService {
       },
     });
 
-    if (runtimeContext.sessionId) {
-      const systemMessages = messages
-        .filter((msg) => msg.role === 'system')
-        .map((msg) => ({
-          role: 'system' as const,
-          content: msg.content,
-          metadata: { source: 'buildMessages', agentId: agent.id },
-        }));
-      if (systemMessages.length > 0) {
-        await this.runtimeOrchestrator.appendSystemMessagesToSession(runtimeContext.sessionId, systemMessages);
-      }
-    }
+    await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
 
     try {
       await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       let response = '';
 
       // 确保模型已注册 - 类型转换
-      const modelConfig: AIModel = {
-        id: agent.model.id,
-        name: agent.model.name,
-        provider: agent.model.provider as AIModel['provider'],
-        model: agent.model.model,
-        maxTokens: agent.model.maxTokens || 4096,
-        temperature: agent.model.temperature || 0.7,
-        topP: agent.model.topP,
-        reasoning: agent.model.reasoning,
-      };
+      const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
 
       // 获取自定义API Key（如果配置了）
       let customApiKey: string | undefined;
@@ -1492,7 +1474,7 @@ export class AgentService {
 
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
-    const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || agentId;
+    const runtimeAgentId = this.agentExecutionService.resolveRuntimeAgentId(agent as any, agentId);
     this.logger.log(
       `[stream_task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${this.compactLogText(task.title)}" modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'}`,
     );
@@ -1548,18 +1530,7 @@ export class AgentService {
       },
     });
 
-    if (runtimeContext.sessionId) {
-      const systemMessages = messages
-        .filter((msg) => msg.role === 'system')
-        .map((msg) => ({
-          role: 'system' as const,
-          content: msg.content,
-          metadata: { source: 'buildMessages', agentId: agent.id },
-        }));
-      if (systemMessages.length > 0) {
-        await this.runtimeOrchestrator.appendSystemMessagesToSession(runtimeContext.sessionId, systemMessages);
-      }
-    }
+    await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
 
     let fullResponse = '';
     let tokenChunks = 0;
@@ -1614,16 +1585,7 @@ export class AgentService {
         }
 
         // 确保provider已注册（使用自定义key或默认key）
-        const modelConfig: AIModel = {
-          id: agent.model.id,
-          name: agent.model.name,
-          provider: agent.model.provider as AIModel['provider'],
-          model: agent.model.model,
-          maxTokens: agent.model.maxTokens || 4096,
-          temperature: agent.model.temperature || 0.7,
-          topP: agent.model.topP,
-          reasoning: agent.model.reasoning,
-        };
+        const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
         this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
 
         await this.modelService.streamingChat(

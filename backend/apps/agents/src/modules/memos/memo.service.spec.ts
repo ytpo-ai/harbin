@@ -1,4 +1,6 @@
 import { MemoService } from './memo.service';
+import { MemoTaskHistoryService } from './memo-task-history.service';
+import { MemoTaskTodoService } from './memo-task-todo.service';
 
 const queryResult = (value) => ({
   exec: jest.fn().mockResolvedValue(value),
@@ -44,7 +46,16 @@ describe('MemoService', () => {
       isReady: jest.fn().mockReturnValue(true),
     };
 
-    const service = new MemoService(memoModel as any, memoVersionModel as any, memoDocSyncService as any, redisService as any);
+    const memoTaskHistoryService = new MemoTaskHistoryService();
+    const memoTaskTodoService = new MemoTaskTodoService(memoTaskHistoryService);
+    const service = new MemoService(
+      memoModel as any,
+      memoVersionModel as any,
+      memoDocSyncService as any,
+      redisService as any,
+      memoTaskTodoService,
+      memoTaskHistoryService,
+    );
     memoModel.find.mockReturnValue(queryResult([]));
     memoVersionModel.findOne.mockReturnValue(queryResult(null));
     memoVersionModel.find.mockReturnValue(queryResult([]));

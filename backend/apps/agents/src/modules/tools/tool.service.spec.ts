@@ -1,4 +1,5 @@
 import { ToolService } from './tool.service';
+import { RepoToolHandler } from './repo-tool-handler.service';
 import axios from 'axios';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import * as os from 'os';
@@ -7,8 +8,10 @@ import * as path from 'path';
 describe('ToolService orchestration debug task', () => {
   const buildService = () => {
     const service = Object.create(ToolService.prototype);
-    service.assertMeetingContext = jest.fn().mockReturnValue({ meetingId: 'meeting-1' });
-    service.callOrchestrationApi = jest.fn();
+    service.assertExecutionContext = jest.fn().mockReturnValue({ mode: 'meeting', meetingId: 'meeting-1' });
+    service.internalApiClient = {
+      callOrchestrationApi: jest.fn(),
+    };
     return service;
   };
 
@@ -21,7 +24,7 @@ describe('ToolService orchestration debug task', () => {
 
   it('calls debug-run endpoint and returns debug summary', async () => {
     const service = buildService();
-    service.callOrchestrationApi.mockResolvedValue({
+    service.internalApiClient.callOrchestrationApi.mockResolvedValue({
       task: {
         status: 'failed',
         runLogs: [{ message: 'log-1' }, { message: 'log-2' }],
@@ -44,7 +47,7 @@ describe('ToolService orchestration debug task', () => {
       {},
     );
 
-    expect(service.callOrchestrationApi).toHaveBeenCalledWith('POST', '/tasks/task-1/debug-run', {
+    expect(service.internalApiClient.callOrchestrationApi).toHaveBeenCalledWith('POST', '/tasks/task-1/debug-run', {
       title: 'Debug title',
       description: 'Debug description',
       resetResult: true,
@@ -57,7 +60,7 @@ describe('ToolService orchestration debug task', () => {
 
   it('returns completed next action hint', async () => {
     const service = buildService();
-    service.callOrchestrationApi.mockResolvedValue({
+    service.internalApiClient.callOrchestrationApi.mockResolvedValue({
       task: { status: 'completed', runLogs: [] },
       execution: { status: 'completed', result: 'ok' },
     });
@@ -71,8 +74,8 @@ describe('ToolService orchestration debug task', () => {
 describe('ToolService skill master mcp', () => {
   it('maps title fuzzy query to skills search', async () => {
     const service = Object.create(ToolService.prototype);
-    service.skillService = {
-      getSkillsPaged: jest.fn().mockResolvedValue({
+    service.skillToolHandler = {
+      listSkillsByTitle: jest.fn().mockResolvedValue({
         total: 1,
         page: 1,
         pageSize: 5,
@@ -80,6 +83,7 @@ describe('ToolService skill master mcp', () => {
         items: [
           {
             id: 'skill-1',
+            title: 'TypeScript Expert',
             name: 'TypeScript Expert',
             description: 'TypeScript engineering skill',
             category: 'engineering',
@@ -96,35 +100,19 @@ describe('ToolService skill master mcp', () => {
 
     const result = await service['listSkillsByTitle']({ title: 'script', limit: 5, page: 1 });
 
-    expect(service.skillService.getSkillsPaged).toHaveBeenCalledWith(
-      {
-        status: undefined,
-        category: undefined,
-        search: 'script',
-        page: 1,
-        pageSize: 5,
-      },
-      {
-        includeMetadata: false,
-      },
-    );
+    expect(service.skillToolHandler.listSkillsByTitle).toHaveBeenCalledWith({ title: 'script', limit: 5, page: 1 });
     expect(result.items[0].title).toBe('TypeScript Expert');
   });
 
   it('creates skill with title field', async () => {
     const service = Object.create(ToolService.prototype);
-    service.skillService = {
-      createSkill: jest.fn().mockResolvedValue({
-        id: 'skill-2',
-        name: 'Prompt Design',
-        description: 'Prompt design and optimization',
-        category: 'ai',
-        status: 'active',
-        tags: ['prompt'],
-        provider: 'system',
-        version: '1.0.0',
-        confidenceScore: 70,
-        createdAt: '2026-03-10T00:00:00.000Z',
+    service.skillToolHandler = {
+      createSkillByMcp: jest.fn().mockResolvedValue({
+        created: true,
+        skill: {
+          id: 'skill-2',
+          title: 'Prompt Design',
+        },
       }),
     };
 
@@ -134,21 +122,20 @@ describe('ToolService skill master mcp', () => {
       tags: ['prompt', '  '],
     });
 
-    expect(service.skillService.createSkill).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'Prompt Design',
-        description: 'Prompt design and optimization',
-        tags: ['prompt'],
-        discoveredBy: 'SkillMasterMCP',
-      }),
-    );
+    expect(service.skillToolHandler.createSkillByMcp).toHaveBeenCalledWith({
+      title: 'Prompt Design',
+      description: 'Prompt design and optimization',
+      tags: ['prompt', '  '],
+    });
     expect(result.created).toBe(true);
     expect(result.skill.title).toBe('Prompt Design');
   });
 
   it('throws when create skill missing description', async () => {
     const service = Object.create(ToolService.prototype);
-    service.skillService = { createSkill: jest.fn() };
+    service.skillToolHandler = {
+      createSkillByMcp: jest.fn().mockRejectedValue(new Error('skill_master_create_skill requires description')),
+    };
 
     await expect(service['createSkillByMcp']({ title: 'No Desc' })).rejects.toThrow(
       'skill_master_create_skill requires description',
@@ -219,8 +206,15 @@ describe('ToolService agent master create agent mcp', () => {
       }),
     };
     service.backendBaseUrl = 'http://localhost:3001/api';
-    service.agentsBaseUrl = 'http://localhost:3002/api';
-    service.contextSecret = 'test-secret';
+    service.internalApiClient = {
+      buildSignedHeaders: jest.fn().mockReturnValue({}),
+      callAgentsApi: jest.fn().mockResolvedValue({
+        id: 'agent-001',
+        name: 'Nina',
+        roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
+        isActive: true,
+      }),
+    };
 
     const getSpy = jest
       .spyOn(axios, 'get')
@@ -228,15 +222,6 @@ describe('ToolService agent master create agent mcp', () => {
       .mockResolvedValueOnce({
         data: [{ id: '71e69181-bcb1-4355-8dc4-691f29ea49ad', code: 'role-zero-hours-worker', name: '临时工' }],
       } as any);
-
-    const requestSpy = jest.spyOn(axios, 'request').mockResolvedValue({
-      data: {
-        id: 'agent-001',
-        name: 'Nina',
-        roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
-        isActive: true,
-      },
-    } as any);
 
     const result = await service['createAgentByMcp']({
       name: 'Nina',
@@ -249,16 +234,14 @@ describe('ToolService agent master create agent mcp', () => {
     expect(service.apiKeyModel.findOne).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'openai', isDefault: true, isActive: true }),
     );
-    expect(requestSpy).toHaveBeenCalledWith(
+    expect(service.internalApiClient.callAgentsApi).toHaveBeenCalledWith(
+      'POST',
+      '/agents',
       expect.objectContaining({
-        method: 'POST',
-        url: 'http://localhost:3002/api/agents',
-        data: expect.objectContaining({
-          name: 'Nina',
-          roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
-          apiKeyId: 'default-openai-key',
-          model: expect.objectContaining({ provider: 'openai' }),
-        }),
+        name: 'Nina',
+        roleId: '71e69181-bcb1-4355-8dc4-691f29ea49ad',
+        apiKeyId: 'default-openai-key',
+        model: expect.objectContaining({ provider: 'openai' }),
       }),
     );
     expect(result.created).toBe(true);
@@ -278,7 +261,9 @@ describe('ToolService rd-related docs-write mcp', () => {
   it('creates markdown file under docs path', async () => {
     const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'tool-service-docs-write-'));
     const service = Object.create(ToolService.prototype);
-    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+    const repoToolHandler = Object.create(RepoToolHandler.prototype);
+    repoToolHandler.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+    service.repoToolHandler = repoToolHandler;
 
     const result = await service['executeDocsWrite']({
       filePath: 'docs/plan/test-doc.md',
@@ -298,7 +283,9 @@ describe('ToolService rd-related docs-write mcp', () => {
 
   it('rejects non-docs path', async () => {
     const service = Object.create(ToolService.prototype);
-    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+    const repoToolHandler = Object.create(RepoToolHandler.prototype);
+    repoToolHandler.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+    service.repoToolHandler = repoToolHandler;
 
     await expect(
       service['executeDocsWrite']({
@@ -311,7 +298,9 @@ describe('ToolService rd-related docs-write mcp', () => {
 
   it('rejects non-markdown extension', async () => {
     const service = Object.create(ToolService.prototype);
-    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+    const repoToolHandler = Object.create(RepoToolHandler.prototype);
+    repoToolHandler.resolveWorkspaceRoot = jest.fn().mockResolvedValue('/tmp/workspace');
+    service.repoToolHandler = repoToolHandler;
 
     await expect(
       service['executeDocsWrite']({
@@ -329,7 +318,9 @@ describe('ToolService rd-related docs-write mcp', () => {
     await writeFile(target, 'old', 'utf8');
 
     const service = Object.create(ToolService.prototype);
-    service.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+    const repoToolHandler = Object.create(RepoToolHandler.prototype);
+    repoToolHandler.resolveWorkspaceRoot = jest.fn().mockResolvedValue(tmpRoot);
+    service.repoToolHandler = repoToolHandler;
 
     await expect(
       service['executeDocsWrite']({

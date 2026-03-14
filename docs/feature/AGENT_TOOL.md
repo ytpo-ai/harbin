@@ -42,6 +42,8 @@
 13. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
 14. 需求管理 MCP：新增 `requirement` toolkit（list/get/create/update-status/assign/comment/sync-github/board），统一代理 EI 需求 API。
 15. 编排上下文分级：Orchestration MCP 新增 `meeting/autonomous` 双上下文断言，允许 CTO 在非会议场景发起编排治理。
+16. 工具分发架构：`ToolService` 逐步转为编排层，具体域逻辑拆分至 `InternalApiClient`、`ToolGovernanceService` 及多类 handler（orchestration/requirement/repo/model/skill/audit/meeting）。
+17. 内置工具目录治理：`builtin-tool-catalog.ts` 承载内置工具清单，`builtin-tool-definitions.ts` 承载常量与清理列表，减少 `tool.service.ts` 静态数据耦合。
 
 ---
 
@@ -68,6 +70,7 @@
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | 工具白名单治理开发沉淀 |
 | `TOOL_PROMPT_INJECTION_PLAN.md` | 工具级 prompt 注入与历史数据回填总结 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agents/Tools 一期拆分（InternalApiClient + ToolGovernanceService）开发沉淀 |
 
 ### 技术文档 (docs/technical/, docs/api/)
 
@@ -89,6 +92,17 @@
 | `tool.module.ts` | Tools 模块装配与依赖注入 |
 | `tool.controller.ts` | 工具列表、执行、执行统计接口 |
 | `tool.service.ts` | 工具注册、执行编排、结果封装（含统一分发） |
+| `internal-api-client.service.ts` | 内部 HTTP 调用封装（签名头、超时、错误摘要） |
+| `tool-governance.service.ts` | 工具治理策略（限流/熔断/超时/重试/幂等） |
+| `builtin-tool-catalog.ts` | 内置工具清单与实现 ID 目录 |
+| `builtin-tool-definitions.ts` | Tool 常量、虚拟/废弃工具 ID 列表 |
+| `orchestration-tool-handler.service.ts` | 编排类工具处理器 |
+| `requirement-tool-handler.service.ts` | 需求类工具处理器 |
+| `repo-tool-handler.service.ts` | 仓库读取与文档写入处理器 |
+| `model-tool-handler.service.ts` | 模型管理类工具处理器 |
+| `skill-tool-handler.service.ts` | Skill 类工具处理器 |
+| `audit-tool-handler.service.ts` | 人工操作审计工具处理器 |
+| `meeting-tool-handler.service.ts` | 会议类工具处理器 |
 | `web-tools.service.ts` | Web Search/Web Fetch/Content Extract 内置工具实现 |
 | `exa.service.ts` | Exa 搜索接入（默认 web search provider） |
 | `composio.service.ts` | Composio 工具包接入与调用封装 |

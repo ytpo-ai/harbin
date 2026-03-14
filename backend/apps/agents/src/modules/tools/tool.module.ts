@@ -17,6 +17,15 @@ import { WebToolsService } from './web-tools.service';
 import { ModelModule } from '../models/model.module';
 import { MemoModule } from '../memos/memo.module';
 import { SkillModule } from '../skills/skill.module';
+import { InternalApiClient } from './internal-api-client.service';
+import { ToolGovernanceService } from './tool-governance.service';
+import { OrchestrationToolHandler } from './orchestration-tool-handler.service';
+import { RequirementToolHandler } from './requirement-tool-handler.service';
+import { RepoToolHandler } from './repo-tool-handler.service';
+import { ModelToolHandler } from './model-tool-handler.service';
+import { SkillToolHandler } from './skill-tool-handler.service';
+import { AuditToolHandler } from './audit-tool-handler.service';
+import { MeetingToolHandler } from './meeting-tool-handler.service';
 
 @Module({
   imports: [
@@ -36,7 +45,35 @@ import { SkillModule } from '../skills/skill.module';
     ])
   ],
   controllers: [ToolController],
-  providers: [ToolService, ComposioService, ExaService, WebToolsService],
-  exports: [ToolService, ComposioService, ExaService, WebToolsService],
+  providers: [
+    ToolService,
+    ComposioService,
+    ExaService,
+    WebToolsService,
+    InternalApiClient,
+    ToolGovernanceService,
+    OrchestrationToolHandler,
+    RequirementToolHandler,
+    RepoToolHandler,
+    ModelToolHandler,
+    SkillToolHandler,
+    AuditToolHandler,
+    MeetingToolHandler,
+  ],
+  exports: [
+    ToolService,
+    ComposioService,
+    ExaService,
+    WebToolsService,
+    InternalApiClient,
+    ToolGovernanceService,
+    OrchestrationToolHandler,
+    RequirementToolHandler,
+    RepoToolHandler,
+    ModelToolHandler,
+    SkillToolHandler,
+    AuditToolHandler,
+    MeetingToolHandler,
+  ],
 })
 export class ToolModule {}

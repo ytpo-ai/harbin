@@ -16,6 +16,8 @@ import { MemoEventBusService } from './memo-event-bus.service';
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
 import { EvaluationAggregationService } from './evaluation-aggregation.service';
+import { MemoTaskTodoService } from './memo-task-todo.service';
+import { MemoTaskHistoryService } from './memo-task-history.service';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { EvaluationAggregationService } from './evaluation-aggregation.service';
     MemoEventBusService,
     IdentityAggregationService,
     EvaluationAggregationService,
+    MemoTaskTodoService,
+    MemoTaskHistoryService,
   ],
   exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService],
 })

@@ -13,6 +13,7 @@ import { ToolModule } from '../tools/tool.module';
 import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { OpenCodeModule } from '../opencode/opencode.module';
+import { AgentExecutionService } from './agent-execution.service';
 
 @Module({
   imports: [
@@ -31,7 +32,7 @@ import { OpenCodeModule } from '../opencode/opencode.module';
     OpenCodeModule,
   ],
   controllers: [AgentController],
-  providers: [AgentService],
+  providers: [AgentService, AgentExecutionService],
   exports: [AgentService],
 })
 export class AgentModule {}
