@@ -15,12 +15,16 @@
 3. 创建时 API Key 策略：优先使用显式 `apiKeyId`；否则按 provider 选择默认 key。
 4. provider 策略参数默认为 `default`，会回退到模型 provider 查找默认 key。
 5. 为兼容历史数据，旧 id `builtin.sys-mg.internal.agent-admin.list-agents` 保留执行兼容。
+6. MCP Profile 授权字段统一为 `permissions`，并在工具集更新时自动聚合 `requiredPermissions` 写入 `permissionsDerived`。
+7. Agent 在创建/更新（角色或工具变更）时自动继承 role 对应 Profile 的 `permissions` 到 `agent.permissions`（补齐合并，不覆盖已有手工权限）。
 
 ### 1.3 状态与约束
 
 - `create-agent` 最小必填：`name`、`roleId`、`model.id`（或 `modelId`）；`roleId` 支持 role id 或 role code。
 - role 合法性由 Agent 创建接口校验（role 不存在会返回失败）。
 - 若 provider 对应默认 key 不存在，创建流程不阻断，回退系统默认 key 策略。
+- Profile 权限采用 `effectivePermissions = permissionsManual ∪ permissionsDerived`。
+- 迁移期保留 `capabilities` 双读兼容，写入主路径统一落到 `permissions`。
 
 ---
 
@@ -31,6 +35,7 @@
 | 文件 | 说明 |
 |------|------|
 | `AGENT_MASTER_CREATE_AGENT_MCP_PLAN.md` | agent-master toolkit 命名升级与 create-agent MCP 实施计划 |
+| `MCP_PROFILE_PERMISSIONS_ALIGNMENT_PLAN.md` | MCP Profile 权限模型统一与继承改造计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -60,3 +65,5 @@
 | 文件 | 功能 |
 |------|------|
 | `backend/apps/agents/src/modules/agents/agent.service.ts` | MCP Profile seed 中 Agent 管理工具引用维护 |
+| `backend/apps/agents/src/modules/agents/agent-mcp-profile.service.ts` | MCP Profile 读写、权限自动派生、role profile 能力聚合 |
+| `backend/src/shared/schemas/agent-profile.schema.ts` | MCP Profile 持久化结构（permissions/manual/derived 兼容字段） |

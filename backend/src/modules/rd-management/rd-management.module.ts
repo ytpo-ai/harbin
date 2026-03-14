@@ -8,11 +8,13 @@ import { RdProject, RdProjectSchema } from '../../shared/schemas/rd-project.sche
 import { AuthModule } from '../auth/auth.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 import { AgentClientModule } from '../agents-client/agent-client.module';
+import { ApiKeysModule } from '../api-keys/api-keys.module';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
+    ApiKeysModule,
     MongooseModule.forFeature([
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },

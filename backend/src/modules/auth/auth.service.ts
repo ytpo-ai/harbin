@@ -4,6 +4,10 @@ import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus } from '../../shared/schemas/employee.schema';
 import { InvitationService } from '../invitations/invitation.service';
 import * as crypto from 'crypto';
+import {
+  hashPassword as hashPasswordValue,
+  verifyPassword as verifyPasswordValue,
+} from '../../shared/utils/password.util';
 
 function createToken(payload: any, secret: string, expiresIn: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -222,12 +226,10 @@ export class AuthService {
   }
 
   private hashPassword(password: string): string {
-    const { hashPassword } = require('../../shared/utils/password.util');
-    return hashPassword(password);
+    return hashPasswordValue(password);
   }
 
   private verifyPassword(password: string, storedHash: string): boolean {
-    const { verifyPassword } = require('../../shared/utils/password.util');
-    return verifyPassword(password, storedHash);
+    return verifyPasswordValue(password, storedHash);
   }
 }

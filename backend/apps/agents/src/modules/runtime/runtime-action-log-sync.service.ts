@@ -7,7 +7,7 @@ import { RuntimeEvent } from './contracts/runtime-event.contract';
 @Injectable()
 export class RuntimeActionLogSyncService {
   private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
-  private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
+  private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
   private readonly timeout = Number(process.env.RUNTIME_ACTION_LOG_SYNC_TIMEOUT_MS || 8000);
   private readonly maxPayloadChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_PAYLOAD_CHARS || 12000);
   private readonly maxToolOutputChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_TOOL_OUTPUT_CHARS || 8000);
@@ -29,6 +29,12 @@ export class RuntimeActionLogSyncService {
     'permission.replied',
     'permission.denied',
   ]);
+
+  constructor() {
+    if (!this.contextSecret) {
+      throw new Error('INTERNAL_CONTEXT_SECRET is required');
+    }
+  }
 
   async syncRuntimeEvent(event: RuntimeEvent): Promise<void> {
     if (!this.allowedEventTypes.has(event.eventType)) {

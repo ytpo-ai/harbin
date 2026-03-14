@@ -84,6 +84,14 @@ export interface CreateSchedulePayload {
 
 export type UpdateSchedulePayload = Partial<CreateSchedulePayload>;
 
+export interface TriggerEngineeringStatisticsPayload {
+  receiverId?: string;
+  scope?: 'all' | 'docs' | 'frontend' | 'backend';
+  tokenMode?: 'estimate' | 'exact';
+  projectIds?: string[];
+  triggeredBy?: string;
+}
+
 export const schedulerService = {
   async createSchedule(payload: CreateSchedulePayload): Promise<OrchestrationSchedule> {
     const response = await api.post('/orchestration/schedules', payload);
@@ -122,6 +130,20 @@ export const schedulerService = {
 
   async triggerSchedule(scheduleId: string): Promise<{ accepted: boolean; status: string }> {
     const response = await api.post(`/orchestration/schedules/${scheduleId}/trigger`);
+    return response.data;
+  },
+
+  async getSystemEngineeringStatisticsSchedule(): Promise<OrchestrationSchedule> {
+    const response = await api.get('/orchestration/schedules/system/engineering-statistics');
+    return response.data;
+  },
+
+  async triggerSystemEngineeringStatistics(payload?: TriggerEngineeringStatisticsPayload): Promise<{
+    accepted: boolean;
+    status: string;
+    scheduleId: string;
+  }> {
+    const response = await api.post('/orchestration/schedules/system/engineering-statistics/trigger', payload || {});
     return response.data;
   },
 

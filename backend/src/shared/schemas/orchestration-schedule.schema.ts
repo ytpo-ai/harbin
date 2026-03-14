@@ -70,6 +70,7 @@ export class OrchestrationSchedule {
     error: { type: String },
     taskId: { type: String },
     sessionId: { type: String },
+    attempts: { type: Number },
   }))
   lastRun?: {
     startedAt?: Date;
@@ -79,7 +80,23 @@ export class OrchestrationSchedule {
     error?: string;
     taskId?: string;
     sessionId?: string;
+    attempts?: number;
   };
+
+  @Prop({ type: [{
+    failedAt: { type: Date, default: Date.now },
+    taskId: { type: String },
+    triggerType: { type: String, enum: ['auto', 'manual'], required: true },
+    reason: { type: String, required: true },
+    attempts: { type: Number, default: 1 },
+  }], default: [] })
+  deadLetters: {
+    failedAt: Date;
+    taskId?: string;
+    triggerType: 'auto' | 'manual';
+    reason: string;
+    attempts: number;
+  }[];
 
   @Prop(raw({
     totalRuns: { type: Number, default: 0 },

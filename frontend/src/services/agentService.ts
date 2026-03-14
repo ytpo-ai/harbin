@@ -5,7 +5,10 @@ export interface AgentMcpProfile {
   roleCode: string;
   role: string;
   tools: string[];
-  capabilities: string[];
+  permissions: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
+  capabilities?: string[];
   exposed: boolean;
   description?: string;
 }
@@ -27,7 +30,10 @@ export interface AgentToolPermissionSet {
   roleName: string;
   roleStatus: 'active' | 'inactive' | 'unknown';
   tools: string[];
-  capabilities: string[];
+  permissions: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
+  capabilities?: string[];
   exposed: boolean;
   description?: string;
 }
@@ -205,7 +211,7 @@ export const agentService = {
 
   async upsertMcpProfile(
     roleCode: string,
-    updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'capabilities' | 'exposed' | 'description'>,
+    updates: Pick<AgentMcpProfile, 'role' | 'tools' | 'permissions' | 'exposed' | 'description'>,
   ): Promise<AgentMcpProfile> {
     const response = await api.put(`/agents/mcp/profiles/${encodeURIComponent(roleCode)}`, updates);
     return response.data;
@@ -224,7 +230,7 @@ export const agentService = {
 
   async upsertToolPermissionSet(
     roleCode: string,
-    updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'>,
+    updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'>,
   ): Promise<AgentToolPermissionSet> {
     const response = await api.put(`/agents/tool-permission-sets/${encodeURIComponent(roleCode)}`, updates);
     return response.data;

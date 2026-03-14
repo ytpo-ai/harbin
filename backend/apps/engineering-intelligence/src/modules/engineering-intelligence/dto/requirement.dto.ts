@@ -30,6 +30,10 @@ export class CreateRequirementDto {
   @IsOptional()
   @IsIn(['human', 'agent', 'system'])
   createdByType?: 'human' | 'agent' | 'system';
+
+  @IsOptional()
+  @IsString()
+  localProjectId?: string;
 }
 
 export class ListRequirementsDto {
@@ -48,6 +52,10 @@ export class ListRequirementsDto {
   @IsOptional()
   @IsString()
   limit?: string;
+
+  @IsOptional()
+  @IsString()
+  localProjectId?: string;
 }
 
 export class AddRequirementCommentDto {

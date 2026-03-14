@@ -7,7 +7,7 @@ import { HealthController } from './health.controller';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env.development', '.env'],
     }),
     InfraModule,
   ],

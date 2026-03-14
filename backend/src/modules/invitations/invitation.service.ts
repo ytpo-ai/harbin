@@ -5,6 +5,10 @@ import { Invitation, InvitationDocument, InvitationStatus, InvitationRole } from
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus, EmployeeRole } from '../../shared/schemas/employee.schema';
 import { v4 as uuidv4 } from 'uuid';
 import * as crypto from 'crypto';
+import {
+  hashPassword as hashPasswordValue,
+  verifyPassword as verifyPasswordValue,
+} from '../../shared/utils/password.util';
 
 export interface CreateInvitationDto {
   invitedBy: string;
@@ -323,16 +327,14 @@ export class InvitationService {
    * 密码哈希
    */
   private hashPassword(password: string): string {
-    const { hashPassword } = require('../../shared/utils/password.util');
-    return hashPassword(password);
+    return hashPasswordValue(password);
   }
 
   /**
    * 验证密码
    */
   private verifyPassword(password: string, storedHash: string): boolean {
-    const { verifyPassword } = require('../../shared/utils/password.util');
-    return verifyPassword(password, storedHash);
+    return verifyPasswordValue(password, storedHash);
   }
 
   /**

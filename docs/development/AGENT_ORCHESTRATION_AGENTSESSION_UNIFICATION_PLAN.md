@@ -201,7 +201,7 @@
 
 修复实现（`backend/apps/agents/src/modules/agents/agent.service.ts`）：
 
-- 新增会议编排意图识别：在 `discussion` 上下文中识别 `创建计划/执行计划/查询计划/改派/人工完成` 等指令。
+- 新增会议编排意图识别：在会议上下文中识别 `创建计划/执行计划/查询计划/改派/人工完成` 等指令。
 - 命中后走确定性分支，直接触发对应 MCP 工具（`orchestration_*`），不依赖模型先输出 `<tool_call>`。
 - 执行成功后返回结构化摘要（planId、状态统计等）。
 - 执行失败时返回明确失败原因与补参建议（如缺失 planId/taskId）。

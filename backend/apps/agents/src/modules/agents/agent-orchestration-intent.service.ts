@@ -45,8 +45,8 @@ export class AgentOrchestrationIntentService {
     executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
   ): ForcedOrchestrationAction | null {
     const meetingLike =
-      task.type === 'discussion' ||
-      executionContext?.taskType === 'discussion' ||
+      task.type === 'meeting' ||
+      executionContext?.taskType === 'meeting' ||
       Boolean(executionContext?.teamContext?.meetingId);
     if (!meetingLike) {
       return null;
@@ -253,8 +253,8 @@ export class AgentOrchestrationIntentService {
     executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
   ): boolean {
     const meetingLike =
-      task.type === 'discussion' ||
-      executionContext?.taskType === 'discussion' ||
+      task.type === 'meeting' ||
+      executionContext?.taskType === 'meeting' ||
       Boolean(executionContext?.teamContext?.meetingId);
     if (!meetingLike) {
       return false;

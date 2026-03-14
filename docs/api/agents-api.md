@@ -53,13 +53,17 @@ Profile 字段说明：
 
 - `role`: MCP 角色标识
 - `tools`: 允许调用的工具 ID 列表
-- `capabilities`: 能力标签列表
+- `permissions`: Profile 有效权限集合（`permissionsManual ∪ permissionsDerived`）
+- `permissionsManual`: 手工维护权限集合
+- `permissionsDerived`: 基于 `tools.requiredPermissions` 自动推导的权限集合
+- `capabilities`: 兼容字段（deprecated，迁移期镜像 `permissions`）
 - `exposed`: 是否在 MCP 可见列表中展示
 - `description`: 描述信息
 
 兼容说明：
 
 - MCP profile 的 `tools` 读写统一使用 canonical toolId；若传入 legacy id，服务端会自动归一化。
+- `PUT /agents/mcp/profiles/:roleCode` 与 `PUT /agents/tool-permission-sets/:roleCode` 迁移期仍兼容传入 `capabilities`，服务端会映射为 `permissions`。
 
 ## 工具权限集（按系统角色）
 
@@ -71,6 +75,7 @@ Profile 字段说明：
 
 - 工具白名单校验优先按 `agent.roleId -> role.code` 读取权限集。
 - 若角色权限集不存在，服务端使用默认 profile（`exposed=false`）。
+- 更新 profile 工具集合时，服务端会自动重算并回填 `permissionsDerived`。
 
 ## Agent Roles Proxy（`/agents/roles`）
 
@@ -134,16 +139,54 @@ Skill 渐进式加载（DB + Redis）契约：
 - `POST /tools/:id/execute`：执行工具
 - `GET /tools/executions/history`：执行历史
 - `GET /tools/executions/stats`：执行统计
+- `POST /tools/auth/credentials`：创建 Agent 工具调用凭证（返回一次性 `agentSecret`）
+- `POST /tools/auth/credentials/revoke`：吊销 Agent 工具调用凭证
+- `POST /tools/auth/credentials/rotate`：轮换 Agent 工具调用凭证（旧凭证自动吊销）
+- `POST /tools/auth/agent-token`：使用 `agentKeyId + agentSecret` 交换短期 Bearer token
+- `POST /tools/auth/tokens/revoke`：按 `token` 或 `jti` 吊销已签发 token
 
 执行兼容说明：
 
 - `GET /tools` 与 `GET /tools/:id` 响应包含统一字段：`toolId`、`legacyToolId`、`provider`、`executionChannel`、`namespace`、`capabilitySet`。
 - `GET /tools` 与 `GET /tools/:id` 额外返回 `prompt`（可选），用于 Agent 运行时按已授权工具注入 system 策略提示。
 - `POST /tools/:id/execute` 仅面向 canonical tool id；执行链路内统一记录 `requestedToolId/resolvedToolId/traceId`。
+- `POST /tools/:id/execute` 支持 Bearer token（`TOOLS_AUTH_MODE=hybrid|jwt-strict`）与内部签名上下文混合模式。
 - 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`、`executionChannel`。
+- 执行审计字段：`authMode`、`tokenJti`、`originSessionId`（用于跨链路追踪 JWT 主体与会话）。
 - `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`，并包含 `executionChannel`。
 - `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
 - 管理端“弃用工具”推荐通过 `PUT /tools/:id` 设置 `status=deprecated` 且 `enabled=false`，以保留工具记录并阻止继续执行。
+
+Tools 鉴权模式（新增）：
+
+- `legacy`：沿用内部签名上下文（`x-user-context` + `x-user-signature`）。
+- `hybrid`：同时支持内部签名与 Bearer token。
+- `jwt-strict`：仅允许 Bearer token 调用工具执行接口。
+
+Agent token exchange（新增）示例：
+
+- `POST /tools/auth/agent-token`
+  - request
+
+```json
+{
+  "agentKeyId": "ak_live_xxx",
+  "agentSecret": "as_live_xxx",
+  "requestedScopes": ["tool:execute:builtin.sys-mg.internal.agent-master.list-agents"],
+  "originSessionId": "session-123"
+}
+```
+
+  - response
+
+```json
+{
+  "accessToken": "<jwt>",
+  "tokenType": "Bearer",
+  "expiresIn": 600,
+  "scope": "tool:execute:builtin.sys-mg.internal.agent-master.list-agents"
+}
+```
 
 搜索工具说明：
 

@@ -18,6 +18,8 @@
   - 研发智能独立服务接口（仓库管理、文档摘要、docs 浏览）
 - `docs/api/ws-api.md`
   - WebSocket 订阅协议、事件通道与消息格式
+- `docs/api/opencode-api.md`
+  - OpenCode Serve（4098）直连接口与 directory 参数规范
 
 ## 相关文档
 

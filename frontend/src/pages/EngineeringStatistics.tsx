@@ -11,6 +11,8 @@ import {
 import { engineeringIntelligenceService } from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
 import { schedulerService } from '../services/schedulerService';
+import { useToast } from '../hooks/useToast';
+import Toast from '../components/Toast';
 
 function formatBytes(value?: number): string {
   const bytes = Number(value || 0);
@@ -70,6 +72,7 @@ function tokenModeLabel(mode?: 'estimate' | 'exact') {
 
 const EngineeringStatistics: React.FC = () => {
   const queryClient = useQueryClient();
+  const { toast, showToast, clearToast } = useToast(4000);
   const [searchParams, setSearchParams] = useSearchParams();
   const snapshotId = (searchParams.get('snapshotId') || '').trim();
   const [statusFilter, setStatusFilter] = React.useState<SnapshotStatusFilter>('all');
@@ -123,10 +126,20 @@ const EngineeringStatistics: React.FC = () => {
     },
     {
       onSuccess: () => {
+        showToast('success', '工程统计任务已触发，请稍候查看结果');
         setTimeout(() => {
           queryClient.invalidateQueries('ei-statistics-latest');
           queryClient.invalidateQueries('ei-statistics-history');
         }, 1200);
+      },
+      onError: (error: any) => {
+        const candidates = [
+          error?.response?.data?.message,
+          error?.response?.data?.error,
+          error?.message,
+        ];
+        const message = candidates.find((item) => typeof item === 'string' && item.trim()) || '统计触发失败，请稍后重试';
+        showToast('error', String(message));
       },
     },
   );
@@ -536,6 +549,7 @@ const EngineeringStatistics: React.FC = () => {
           </aside>
         </div>
       )}
+      {toast ? <Toast toast={toast} onClose={clearToast} /> : null}
     </div>
   );
 };

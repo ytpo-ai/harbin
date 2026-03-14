@@ -9,6 +9,14 @@ import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/sche
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/apiKey.schema';
+import {
+  AgentToolCredential,
+  AgentToolCredentialSchema,
+} from '../../../../../src/shared/schemas/agent-tool-credential.schema';
+import {
+  AgentToolTokenRevocation,
+  AgentToolTokenRevocationSchema,
+} from '../../../../../src/shared/schemas/agent-tool-token-revocation.schema';
 import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';
@@ -26,6 +34,8 @@ import { ModelToolHandler } from './model-tool-handler.service';
 import { SkillToolHandler } from './skill-tool-handler.service';
 import { AuditToolHandler } from './audit-tool-handler.service';
 import { MeetingToolHandler } from './meeting-tool-handler.service';
+import { AgentToolAuthService } from './agent-tool-auth.service';
+import { AgentToolAuthGuard } from './agent-tool-auth.guard';
 
 @Module({
   imports: [
@@ -42,6 +52,8 @@ import { MeetingToolHandler } from './meeting-tool-handler.service';
       { name: Employee.name, schema: EmployeeSchema },
       { name: OperationLog.name, schema: OperationLogSchema },
       { name: ApiKey.name, schema: ApiKeySchema },
+      { name: AgentToolCredential.name, schema: AgentToolCredentialSchema },
+      { name: AgentToolTokenRevocation.name, schema: AgentToolTokenRevocationSchema },
     ])
   ],
   controllers: [ToolController],
@@ -59,6 +71,8 @@ import { MeetingToolHandler } from './meeting-tool-handler.service';
     SkillToolHandler,
     AuditToolHandler,
     MeetingToolHandler,
+    AgentToolAuthService,
+    AgentToolAuthGuard,
   ],
   exports: [
     ToolService,
@@ -74,6 +88,8 @@ import { MeetingToolHandler } from './meeting-tool-handler.service';
     SkillToolHandler,
     AuditToolHandler,
     MeetingToolHandler,
+    AgentToolAuthService,
+    AgentToolAuthGuard,
   ],
 })
 export class ToolModule {}

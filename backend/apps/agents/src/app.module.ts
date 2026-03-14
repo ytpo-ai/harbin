@@ -19,7 +19,7 @@ import { MemoModule } from './modules/memos/memo.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env.development', '.env'],
       load: [appConfig, databaseConfig, aiConfig, jwtConfig],
     }),
     MongooseModule.forRootAsync({

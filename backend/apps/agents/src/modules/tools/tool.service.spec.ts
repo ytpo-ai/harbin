@@ -257,6 +257,150 @@ describe('ToolService agent master create agent mcp', () => {
   });
 });
 
+describe('ToolService authorizeToolExecution auth checks', () => {
+  const buildService = (agentRecord: any) => {
+    const service = Object.create(ToolService.prototype);
+    const exec = jest.fn().mockResolvedValue(agentRecord);
+    const lean = jest.fn().mockReturnValue({ exec });
+    const select = jest.fn().mockReturnValue({ lean });
+    const findOne = jest.fn().mockReturnValue({ select });
+    service.agentModel = {
+      findOne,
+    };
+    service.resolveRoleAndProfilePermissions = jest.fn().mockResolvedValue([]);
+    return { service, select, findOne };
+  };
+
+  it('allows internal-context calls even when agent is inactive', async () => {
+    const toolId = 'builtin.sys-mg.internal.agent-master.list-agents';
+    const { service } = buildService({
+      id: 'agent-inactive',
+      roleId: 'role-1',
+      isActive: false,
+      tools: [toolId],
+      permissions: [],
+    });
+
+    await expect(
+      service['authorizeToolExecution'](
+        {
+          id: toolId,
+          canonicalId: toolId,
+          enabled: true,
+          requiredPermissions: [],
+        } as any,
+        'agent-inactive',
+        { auth: { mode: 'internal-context' } },
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('allows legacy/unspecified auth mode when agent is inactive', async () => {
+    const toolId = 'builtin.sys-mg.internal.agent-master.list-agents';
+    const { service } = buildService({
+      id: 'agent-inactive',
+      roleId: 'role-1',
+      isActive: false,
+      tools: [toolId],
+      permissions: [],
+    });
+
+    await expect(
+      service['authorizeToolExecution'](
+        {
+          id: toolId,
+          canonicalId: toolId,
+          enabled: true,
+          requiredPermissions: [],
+        } as any,
+        'agent-inactive',
+        {},
+      ),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps jwt mode strict for inactive agent', async () => {
+    const toolId = 'builtin.sys-mg.internal.agent-master.list-agents';
+    const { service } = buildService({
+      id: 'agent-inactive',
+      roleId: 'role-1',
+      isActive: false,
+      tools: [toolId],
+      permissions: [],
+    });
+
+    await expect(
+      service['authorizeToolExecution'](
+        {
+          id: toolId,
+          canonicalId: toolId,
+          enabled: true,
+          requiredPermissions: [],
+        } as any,
+        'agent-inactive',
+        { auth: { mode: 'jwt' } },
+      ),
+    ).rejects.toThrow('Agent not found or inactive: agent-inactive');
+  });
+
+  it('includes roleId projection for permission fallback checks', async () => {
+    const toolId = 'builtin.sys-mg.internal.agent-master.list-agents';
+    const { service, select } = buildService({
+      id: 'agent-1',
+      roleId: 'role-ceo-assistant',
+      isActive: true,
+      tools: [toolId],
+      permissions: [],
+    });
+    service.resolveRoleAndProfilePermissions = jest.fn().mockResolvedValue(['agent_master_read']);
+
+    await expect(
+      service['authorizeToolExecution'](
+        {
+          id: toolId,
+          canonicalId: toolId,
+          enabled: true,
+          requiredPermissions: [{ id: 'agent_master_read' }],
+        } as any,
+        'agent-1',
+        { auth: { mode: 'jwt', scopes: ['tool:execute:*'] } },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(select).toHaveBeenCalledWith(expect.objectContaining({ roleId: 1 }));
+    expect(service.resolveRoleAndProfilePermissions).toHaveBeenCalledWith('role-ceo-assistant');
+  });
+
+  it('supports mongo objectId lookup for agentId', async () => {
+    const toolId = 'builtin.sys-mg.internal.agent-master.list-agents';
+    const { service, findOne } = buildService({
+      id: undefined,
+      roleId: 'role-ceo-assistant',
+      isActive: true,
+      tools: [toolId],
+      permissions: [],
+    });
+
+    await expect(
+      service['authorizeToolExecution'](
+        {
+          id: toolId,
+          canonicalId: toolId,
+          enabled: true,
+          requiredPermissions: [],
+        } as any,
+        '699f40ad709a628508681e4d',
+        {},
+      ),
+    ).resolves.toBeUndefined();
+
+    const query = findOne.mock.calls[0][0];
+    expect(Array.isArray(query.$or)).toBe(true);
+    expect(query.$or).toHaveLength(2);
+    expect(query.$or[0]).toEqual({ id: '699f40ad709a628508681e4d' });
+  });
+});
+
 describe('ToolService rd-related docs-write mcp', () => {
   it('creates markdown file under docs path', async () => {
     const tmpRoot = await mkdtemp(path.join(os.tmpdir(), 'tool-service-docs-write-'));

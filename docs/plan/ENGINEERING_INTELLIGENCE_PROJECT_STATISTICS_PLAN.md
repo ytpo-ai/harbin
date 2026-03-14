@@ -38,3 +38,22 @@
 - 支持查询最新统计与历史统计。
 - Agent 可通过 MCP 工具触发统计并获取结果。
 - 相关文档按规范更新。
+
+## 6. 增量修复（backend/apps 维度补齐）
+
+### 6.1 背景
+
+- 已上线工程统计仅覆盖 `backend/src`，未对 `backend/apps/*` 各 app 进行独立统计，导致后端维度明细不完整。
+
+### 6.2 修复步骤
+
+1. 在 EI 统计构建逻辑中动态发现 `backend/apps/` 下一级 app 目录。
+2. 为每个 app 增加独立统计行（`metricType=backend`，`rootPath=backend/apps/<app>`）。
+3. 保持现有 `backend/src` 统计行，避免与 app 目录重叠计算。
+4. 校验 latest/detail/history 接口返回中包含各 app 明细。
+5. 同步更新工程智能功能文档与当日日志。
+
+### 6.3 完成判定
+
+- 在一次 `scope=all` 或 `scope=backend` 的统计结果中，可看到 `backend/apps/<app>` 的逐项统计数据。
+- 汇总 `totalBackendBytes` 包含 `backend/src` 与 `backend/apps/*` 的总量。

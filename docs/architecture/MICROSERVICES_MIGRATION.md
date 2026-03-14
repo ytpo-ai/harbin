@@ -41,7 +41,7 @@ Gateway 从登录上下文中提取用户身份并签名透传：
 
 1. 前端连接 `ws://localhost:3003/ws`
 2. 前端发送 `subscribe` / `unsubscribe` 消息订阅 channel
-3. Agents/Legacy 将事件发布到 Redis channel（如 `meeting:<id>`、`discussion:<id>`、`stream:<sessionId>`）
+3. Agents/Legacy 将事件发布到 Redis channel（如 `meeting:<id>`、`stream:<sessionId>`）
 4. WS 服务订阅 Redis 并向对应客户端推送
 5. WS 推送包中包含 `channel` 字段，支持前端单连接多路复用
 
@@ -50,7 +50,6 @@ Gateway 从登录上下文中提取用户身份并签名透传：
 - HTTP 统一走 `http://localhost:3100/api`
 - Agent 模型测试使用 `test-stream` + WS 流式显示
 - Meetings 页面基于 WS 接收消息、状态、总结事件
-- Discussions 页面通过 Gateway 调用 API 并订阅实时事件
 - 研发智能前端页面集成在主前端路由中，不独立拆前端项目
 
 ## 与 Legacy 的关系

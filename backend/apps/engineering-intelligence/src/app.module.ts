@@ -11,7 +11,7 @@ import jwtConfig from '../../../src/config/jwt.config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env.development', '.env'],
       load: [appConfig, databaseConfig, aiConfig, jwtConfig],
     }),
     MongooseModule.forRootAsync({

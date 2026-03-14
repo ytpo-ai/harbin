@@ -215,7 +215,6 @@ export class AgentClientService {
   private resolveContextId(context?: any, task?: Task): string | undefined {
     const teamContext = context?.teamContext;
     if (teamContext?.meetingId) return teamContext.meetingId;
-    if (teamContext?.discussionId) return teamContext.discussionId;
     if (teamContext?.planId) return teamContext.planId;
     if (teamContext?.taskId) return teamContext.taskId;
     if (teamContext?.orchestrationTaskId) return teamContext.orchestrationTaskId;
@@ -254,7 +253,6 @@ export class AgentClientService {
   private resolveChatTitle(context?: any): string | undefined {
     const candidates = [
       context?.teamContext?.meetingTitle,
-      context?.teamContext?.discussionTitle,
       context?.teamContext?.title,
     ];
     for (const value of candidates) {

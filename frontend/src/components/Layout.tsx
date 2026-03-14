@@ -274,7 +274,7 @@ const Layout: React.FC = () => {
       name: '研发智能',
       icon: SparklesIcon,
       items: [
-        { name: '研发智能', href: '/engineering-intelligence', icon: SparklesIcon },
+        { name: '项目管理', href: '/engineering-intelligence', icon: SparklesIcon },
         { name: '工程统计', href: '/engineering-intelligence/statistics', icon: ChartBarIcon },
         { name: '需求管理', href: '/engineering-intelligence/requirements', icon: DocumentTextIcon },
         { name: '智能研发看板', href: '/engineering-intelligence/board', icon: ChartBarIcon },

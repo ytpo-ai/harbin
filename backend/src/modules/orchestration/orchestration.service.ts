@@ -27,7 +27,11 @@ import {
 } from '../../shared/schemas/orchestration-schedule.schema';
 import { Task } from '../../shared/types';
 import { AgentClientService } from '../agents-client/agent-client.service';
+import { AgentMessagesService } from '../agent-messages/agent-messages.service';
 import { PlannerService } from './planner.service';
+import { ExecutorSelectionService } from './services/executor-selection.service';
+import { TaskClassificationService } from './services/task-classification.service';
+import { TaskOutputValidationService } from './services/task-output-validation.service';
 import {
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
@@ -62,6 +66,10 @@ export class OrchestrationService {
     private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     private readonly plannerService: PlannerService,
     private readonly agentClientService: AgentClientService,
+    private readonly agentMessagesService: AgentMessagesService,
+    private readonly executorSelectionService: ExecutorSelectionService,
+    private readonly taskClassificationService: TaskClassificationService,
+    private readonly taskOutputValidationService: TaskOutputValidationService,
   ) {}
 
   async createPlanFromPrompt(
@@ -103,46 +111,12 @@ export class OrchestrationService {
       createdBy,
     }).save();
 
-    const tasksToCreate = [] as Partial<OrchestrationTask>[];
-    for (let i = 0; i < planningResult.tasks.length; i++) {
-      const task = planningResult.tasks[i];
-      const assignment = await this.selectExecutor(task.title, task.description);
-      tasksToCreate.push({
-        mode: 'plan',
-        planId: plan._id.toString(),
-        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
-        order: i,
-        dependencyTaskIds: [],
-        assignment,
-        runLogs: [{
-          timestamp: new Date(),
-          level: 'info',
-          message: `Task created and assigned to ${assignment.executorType}`,
-          metadata: {
-            executorId: assignment.executorId,
-            reason: assignment.reason,
-          },
-        }],
-      });
-    }
-
-    const createdTasks = await this.orchestrationTaskModel.insertMany(tasksToCreate);
-
-    const idByIndex = createdTasks.map((task) => task._id.toString());
-    await Promise.all(
-      createdTasks.map((task, index) => {
-        const deps = planningResult.tasks[index].dependencies
-          .map((depIndex) => idByIndex[depIndex])
-          .filter(Boolean);
-        return this.orchestrationTaskModel
-          .updateOne({ _id: task._id }, { $set: { dependencyTaskIds: deps } })
-          .exec();
-      }),
-    );
+    const { createdTasks, idByIndex } = await this.createTasksFromPlanningResult({
+      planId: plan._id.toString(),
+      planningTasks: planningResult.tasks,
+      requirementObjectId,
+      logMessagePrefix: 'Task created and assigned to',
+    });
 
     await this.orchestrationPlanModel
       .updateOne(
@@ -225,46 +199,12 @@ export class OrchestrationService {
 
     await this.orchestrationTaskModel.deleteMany({ planId }).exec();
 
-    const tasksToCreate = [] as Partial<OrchestrationTask>[];
-    for (let i = 0; i < planningResult.tasks.length; i++) {
-      const task = planningResult.tasks[i];
-      const assignment = await this.selectExecutor(task.title, task.description);
-      tasksToCreate.push({
-        mode: 'plan',
-        planId,
-        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
-        order: i,
-        dependencyTaskIds: [],
-        assignment,
-        runLogs: [{
-          timestamp: new Date(),
-          level: 'info',
-          message: `Task replanned and assigned to ${assignment.executorType}`,
-          metadata: {
-            executorId: assignment.executorId,
-            reason: assignment.reason,
-          },
-        }],
-      });
-    }
-
-    const createdTasks = await this.orchestrationTaskModel.insertMany(tasksToCreate);
-    const idByIndex = createdTasks.map((task) => task._id.toString());
-
-    await Promise.all(
-      createdTasks.map((task, index) => {
-        const deps = planningResult.tasks[index].dependencies
-          .map((depIndex) => idByIndex[depIndex])
-          .filter(Boolean);
-        return this.orchestrationTaskModel
-          .updateOne({ _id: task._id }, { $set: { dependencyTaskIds: deps } })
-          .exec();
-      }),
-    );
+    const { createdTasks, idByIndex } = await this.createTasksFromPlanningResult({
+      planId,
+      planningTasks: planningResult.tasks,
+      requirementObjectId,
+      logMessagePrefix: 'Task replanned and assigned to',
+    });
 
     await this.orchestrationPlanModel
       .updateOne(
@@ -623,6 +563,18 @@ export class OrchestrationService {
         executorId: dto.executorId,
       });
     }
+
+    await this.emitTaskLifecycleEvent({
+      eventType: 'task.status.changed',
+      task: updated,
+      status: updated.status,
+      payload: {
+        previousStatus: task.status,
+        assignment: updated.assignment,
+        reason: dto.reason,
+      },
+    }).catch(() => undefined);
+
     return updated;
   }
 
@@ -673,6 +625,25 @@ export class OrchestrationService {
       });
       await this.refreshPlanStats(planId);
     }
+
+    await this.emitTaskLifecycleEvent({
+      eventType: 'task.status.changed',
+      task: updated,
+      status: 'completed',
+      payload: {
+        previousStatus: task.status,
+      },
+    }).catch(() => undefined);
+
+    await this.emitTaskLifecycleEvent({
+      eventType: 'task.completed',
+      task: updated,
+      status: 'completed',
+      payload: {
+        completedBy: 'human',
+      },
+    }).catch(() => undefined);
+
     return updated;
   }
 
@@ -725,6 +696,16 @@ export class OrchestrationService {
     });
 
     await this.refreshPlanStats(planId);
+    await this.emitTaskLifecycleEvent({
+      eventType: 'task.status.changed',
+      task: updatedTask,
+      status: nextStatus,
+      payload: {
+        previousStatus: task.status,
+        reason: 'manual_retry',
+      },
+    }).catch(() => undefined);
+
     const run = await this.runPlanAsync(planId, { continueOnFailure: true });
 
     return {
@@ -856,16 +837,86 @@ export class OrchestrationService {
     };
   }
 
+  private async createTasksFromPlanningResult(options: {
+    planId: string;
+    planningTasks: Array<{
+      title: string;
+      description: string;
+      priority: 'low' | 'medium' | 'high' | 'urgent';
+      dependencies: number[];
+    }>;
+    requirementObjectId?: Types.ObjectId;
+    logMessagePrefix: string;
+  }): Promise<{ createdTasks: OrchestrationTaskDocument[]; idByIndex: string[] }> {
+    const { planId, planningTasks, requirementObjectId, logMessagePrefix } = options;
+    const tasksToCreate: Partial<OrchestrationTask>[] = [];
+
+    for (let i = 0; i < planningTasks.length; i++) {
+      const task = planningTasks[i];
+      const assignment = await this.executorSelectionService.selectExecutor(task.title, task.description);
+      tasksToCreate.push({
+        mode: 'plan',
+        planId,
+        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
+        title: task.title,
+        description: task.description,
+        priority: task.priority,
+        status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
+        order: i,
+        dependencyTaskIds: [],
+        assignment,
+        runLogs: [{
+          timestamp: new Date(),
+          level: 'info',
+          message: `${logMessagePrefix} ${assignment.executorType}`,
+          metadata: {
+            executorId: assignment.executorId,
+            reason: assignment.reason,
+          },
+        }],
+      });
+    }
+
+    const createdTasks = await this.orchestrationTaskModel.insertMany(tasksToCreate) as any[];
+    const idByIndex = createdTasks.map((task) => task._id.toString());
+
+    await Promise.all(
+      createdTasks.map((task, index) => {
+        const deps = planningTasks[index].dependencies
+          .map((depIndex) => idByIndex[depIndex])
+          .filter(Boolean);
+        return this.orchestrationTaskModel
+          .updateOne({ _id: task._id }, { $set: { dependencyTaskIds: deps } })
+          .exec();
+      }),
+    );
+
+    await Promise.all(
+      createdTasks.map((task) =>
+        this.emitTaskLifecycleEvent({
+          eventType: 'task.created',
+          task,
+          status: task.status,
+          payload: {
+            assignment: task.assignment,
+          },
+        }).catch(() => undefined),
+      ),
+    );
+
+    return { createdTasks, idByIndex };
+  }
+
   private async executeTaskNode(
     planId: string,
     task: OrchestrationTask,
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const taskId = this.getEntityId(task as Record<string, any>);
     const assignment = task.assignment || { executorType: 'unassigned' as const };
-    const isExternalAction = this.isExternalActionTask(task.title, task.description);
-    const researchTaskKind = this.detectResearchTaskKind(task.title, task.description);
+    const isExternalAction = this.taskClassificationService.isExternalActionTask(task.title, task.description);
+    const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(task.title, task.description);
     const isResearchTask = Boolean(researchTaskKind);
-    const isReviewTask = this.isReviewTask(task.title, task.description);
+    const isReviewTask = this.taskClassificationService.isReviewTask(task.title, task.description);
     const dependencyContext = await this.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.getRetryFailureHint(task);
 
@@ -896,6 +947,16 @@ export class OrchestrationService {
       executorId: assignment.executorId,
     });
 
+    await this.emitTaskLifecycleEvent({
+      eventType: 'task.status.changed',
+      task,
+      status: 'in_progress',
+      payload: {
+        previousStatus: task.status,
+        assignment,
+      },
+    }).catch(() => undefined);
+
     if (assignment.executorType === 'employee') {
       await this.orchestrationTaskModel
         .updateOne(
@@ -919,6 +980,16 @@ export class OrchestrationService {
         status: 'waiting_human',
       });
 
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.status.changed',
+        task,
+        status: 'waiting_human',
+        payload: {
+          previousStatus: 'in_progress',
+          reason: 'waiting_human_assignee',
+        },
+      }).catch(() => undefined);
+
       return { status: 'waiting_human' };
     }
 
@@ -929,6 +1000,14 @@ export class OrchestrationService {
           status: 'waiting_human',
           error: 'External action requires manual handling',
         });
+        await this.emitTaskLifecycleEvent({
+          eventType: 'task.exception',
+          task,
+          status: 'waiting_human',
+          payload: {
+            reason: 'external_action_requires_manual_handling',
+          },
+        }).catch(() => undefined);
         return { status: 'waiting_human' };
       }
       await this.markTaskFailed(taskId, 'No agent assigned for execution');
@@ -936,18 +1015,33 @@ export class OrchestrationService {
         status: 'failed',
         error: 'No agent assigned for execution',
       });
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.failed',
+        task,
+        status: 'failed',
+        payload: {
+          reason: 'no_agent_assigned',
+        },
+      }).catch(() => undefined);
       return { status: 'failed', error: 'No agent assigned for execution' };
     }
 
     if (isExternalAction) {
-      const agent = await this.agentModel.findById(assignment.executorId).exec();
-      const hasEmailCapability = await this.hasEmailExecutionCapability(agent || null);
+      const hasEmailCapability = await this.executorSelectionService.hasEmailExecutionCapability(assignment.executorId);
       if (!hasEmailCapability) {
         await this.markTaskWaitingHuman(taskId, 'Agent lacks email tool capability, switched to human review');
         await this.updatePlanSessionTask(planId, taskId, {
           status: 'waiting_human',
           error: 'Agent lacks email tool capability, switched to human review',
         });
+        await this.emitTaskLifecycleEvent({
+          eventType: 'task.exception',
+          task,
+          status: 'waiting_human',
+          payload: {
+            reason: 'agent_lacks_email_capability',
+          },
+        }).catch(() => undefined);
         return { status: 'waiting_human' };
       }
     }
@@ -1006,7 +1100,7 @@ export class OrchestrationService {
       const output = execution.response;
 
       if (isResearchTask) {
-        const validation = this.validateResearchOutput(output, researchTaskKind!);
+        const validation = this.taskOutputValidationService.validateResearchOutput(output, researchTaskKind!);
         if (!validation.valid) {
           const detail = validation.missing?.length
             ? `; missing=${validation.missing.join(',')}`
@@ -1016,12 +1110,23 @@ export class OrchestrationService {
             status: 'failed',
             error: `Research output validation failed: ${validation.reason}${detail}`,
           });
+          await this.emitTaskLifecycleEvent({
+            eventType: 'task.failed',
+            task,
+            status: 'failed',
+            senderAgentId: assignment.executorId,
+            payload: {
+              reason: 'research_output_validation_failed',
+              error: validation.reason,
+              missing: validation.missing,
+            },
+          }).catch(() => undefined);
           return { status: 'failed', error: validation.reason };
         }
       }
 
       if (isReviewTask) {
-        const validation = this.validateReviewOutput(output);
+        const validation = this.taskOutputValidationService.validateReviewOutput(output);
         if (!validation.valid) {
           const detail = validation.missing?.length
             ? `; missing=${validation.missing.join(',')}`
@@ -1031,12 +1136,23 @@ export class OrchestrationService {
             status: 'failed',
             error: `Review output validation failed: ${validation.reason}${detail}`,
           });
+          await this.emitTaskLifecycleEvent({
+            eventType: 'task.failed',
+            task,
+            status: 'failed',
+            senderAgentId: assignment.executorId,
+            payload: {
+              reason: 'review_output_validation_failed',
+              error: validation.reason,
+              missing: validation.missing,
+            },
+          }).catch(() => undefined);
           return { status: 'failed', error: validation.reason };
         }
       }
 
       if (isExternalAction) {
-        const proof = this.extractEmailSendProof(output);
+        const proof = this.taskOutputValidationService.extractEmailSendProof(output);
         if (!proof.valid) {
           await this.markTaskWaitingHuman(
             taskId,
@@ -1048,11 +1164,20 @@ export class OrchestrationService {
             output,
             error: 'External action execution lacks verifiable proof, waiting for human confirmation',
           });
+          await this.emitTaskLifecycleEvent({
+            eventType: 'task.exception',
+            task,
+            status: 'waiting_human',
+            senderAgentId: assignment.executorId,
+            payload: {
+              reason: 'external_action_missing_proof',
+            },
+          }).catch(() => undefined);
           return { status: 'waiting_human' };
         }
       }
 
-      const codeValidation = this.validateCodeExecutionProof(task.title, task.description, output);
+      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(task.title, task.description, output);
       if (!codeValidation.valid) {
         await this.orchestrationTaskModel
           .updateOne(
@@ -1105,6 +1230,28 @@ export class OrchestrationService {
         agentRunId: execution.runId,
       });
 
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.status.changed',
+        task,
+        status: 'completed',
+        senderAgentId: assignment.executorId,
+        payload: {
+          previousStatus: 'in_progress',
+        },
+      }).catch(() => undefined);
+
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.completed',
+        task,
+        status: 'completed',
+        senderAgentId: assignment.executorId,
+        payload: {
+          output,
+          agentSessionId: execution.sessionId || requestedSessionId,
+          agentRunId: execution.runId,
+        },
+      }).catch(() => undefined);
+
       return { status: 'completed', result: output };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown execution error';
@@ -1113,6 +1260,34 @@ export class OrchestrationService {
         status: 'failed',
         error: message,
       });
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.status.changed',
+        task,
+        status: 'failed',
+        senderAgentId: assignment.executorId,
+        payload: {
+          previousStatus: 'in_progress',
+          error: message,
+        },
+      }).catch(() => undefined);
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.exception',
+        task,
+        status: 'failed',
+        senderAgentId: assignment.executorId,
+        payload: {
+          error: message,
+        },
+      }).catch(() => undefined);
+      await this.emitTaskLifecycleEvent({
+        eventType: 'task.failed',
+        task,
+        status: 'failed',
+        senderAgentId: assignment.executorId,
+        payload: {
+          error: message,
+        },
+      }).catch(() => undefined);
       return { status: 'failed', error: message };
     }
   }
@@ -1260,7 +1435,7 @@ export class OrchestrationService {
     }
     if (isResearchTask) {
       sections.push(
-        this.buildResearchOutputContract(researchTaskKind || 'generic_research'),
+        this.taskOutputValidationService.buildResearchOutputContract(researchTaskKind || 'generic_research'),
       );
     }
     if (isReviewTask) {
@@ -1470,6 +1645,38 @@ export class OrchestrationService {
         },
       )
       .exec();
+  }
+
+  private async emitTaskLifecycleEvent(input: {
+    eventType: string;
+    task: OrchestrationTask;
+    status?: OrchestrationTaskStatus;
+    senderAgentId?: string;
+    payload?: Record<string, any>;
+  }): Promise<void> {
+    const taskId = this.getEntityId(input.task as Record<string, any>);
+    if (!taskId) {
+      return;
+    }
+
+    await this.agentMessagesService.publishTaskEvent({
+      eventType: input.eventType,
+      taskId,
+      planId: input.task.planId,
+      status: input.status,
+      senderAgentId: input.senderAgentId || 'orchestration-system',
+      title: `${input.eventType}: ${input.task.title}`,
+      content: `Task ${input.task.title} event ${input.eventType}`,
+      payload: {
+        taskId,
+        planId: input.task.planId,
+        taskTitle: input.task.title,
+        taskDescription: input.task.description,
+        taskPriority: input.task.priority,
+        assignment: input.task.assignment,
+        ...(input.payload || {}),
+      },
+    });
   }
 
   private derivePlanTitle(prompt: string): string {

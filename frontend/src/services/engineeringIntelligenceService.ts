@@ -143,6 +143,7 @@ export interface RequirementItem {
   createdById?: string;
   createdByName?: string;
   createdByType: RequirementActorType;
+  localProjectId?: string;
   comments: RequirementComment[];
   assignments: RequirementAssignment[];
   statusHistory: RequirementStatusEvent[];
@@ -229,6 +230,7 @@ export const engineeringIntelligenceService = {
     createdById?: string;
     createdByName?: string;
     createdByType?: RequirementActorType;
+    localProjectId?: string;
   }): Promise<RequirementItem> {
     const response = await api.post('/engineering-intelligence/requirements', payload);
     return response.data;
@@ -239,6 +241,7 @@ export const engineeringIntelligenceService = {
     assigneeAgentId?: string;
     search?: string;
     limit?: number;
+    localProjectId?: string;
   }): Promise<RequirementItem[]> {
     const response = await api.get('/engineering-intelligence/requirements', { params });
     return response.data;
@@ -246,6 +249,11 @@ export const engineeringIntelligenceService = {
 
   async getRequirementById(requirementId: string): Promise<RequirementItem> {
     const response = await api.get(`/engineering-intelligence/requirements/${requirementId}`);
+    return response.data;
+  },
+
+  async deleteRequirement(requirementId: string): Promise<{ success: boolean; requirementId: string }> {
+    const response = await api.delete(`/engineering-intelligence/requirements/${requirementId}`);
     return response.data;
   },
 
@@ -292,7 +300,7 @@ export const engineeringIntelligenceService = {
 
   async syncRequirementToGithub(
     requirementId: string,
-    payload: { owner: string; repo: string; labels?: string[]; metadata?: Record<string, unknown> },
+    payload: { owner?: string; repo?: string; labels?: string[]; metadata?: Record<string, unknown> },
   ): Promise<{ success: boolean; requirementId: string; githubLink?: RequirementGithubLink }> {
     const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/github/sync`, payload);
     return response.data;

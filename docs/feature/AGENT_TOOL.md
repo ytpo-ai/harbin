@@ -44,6 +44,7 @@
 15. 编排上下文分级：Orchestration MCP 新增 `meeting/autonomous` 双上下文断言，允许 CTO 在非会议场景发起编排治理。
 16. 工具分发架构：`ToolService` 逐步转为编排层，具体域逻辑拆分至 `InternalApiClient`、`ToolGovernanceService` 及多类 handler（orchestration/requirement/repo/model/skill/audit/meeting）。
 17. 内置工具目录治理：`builtin-tool-catalog.ts` 承载内置工具清单，`builtin-tool-definitions.ts` 承载常量与清理列表，减少 `tool.service.ts` 静态数据耦合。
+18. 鉴权升级：新增 Agent Credential + JWT token exchange，`POST /tools/:id/execute` 在 `hybrid/jwt-strict` 模式下支持 Bearer token 并在执行入口统一执行 scope/白名单/requiredPermissions 校验。
 
 ---
 
@@ -60,6 +61,7 @@
 | `TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_PLAN.md` | Tool ID 命名层级与 namespace 优化计划 |
 | `RD_RELATED_DOCS_WRITE_MCP_PLAN.md` | RD 文档写入 MCP（docs-write）接入计划 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_A_SECURITY_AUTH_HOTFIX.md` | 工具鉴权热修与 JWT 凭证化升级计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -79,6 +81,7 @@
 | `technical/TOOLING_UNIFICATION_ARCHITECTURE_DESIGN.md` | 工具系统统一化技术设计 |
 | `technical/MCP_PROFILE_GOVERNANCE_TECHNICAL.md` | Agent 工具白名单治理技术设计 |
 | `technical/TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_DESIGN.md` | Tool ID 五段式命名与 namespace 分类设计 |
+| `technical/AGENT_TOOL_AUTH_JWT_CREDENTIAL_TECHNICAL_DESIGN.md` | Agent 凭证换 token + JWT 工具鉴权升级设计 |
 | `api/agents-api.md` | Tools/Agent/MCP 相关接口清单 |
 
 ---

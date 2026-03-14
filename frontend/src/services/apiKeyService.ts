@@ -11,6 +11,7 @@ export interface ApiKey {
   useCount: number;
   isDefault: boolean;
   isDeprecated: boolean;
+  category: 'LLM' | 'OTHER';
   lastUsedAt?: string;
   expiresAt?: string;
   createdAt?: string;
@@ -37,6 +38,7 @@ export interface CreateApiKeyDto {
   expiresAt?: string;
   isDefault?: boolean;
   isDeprecated?: boolean;
+  category?: 'LLM' | 'OTHER';
 }
 
 export interface UpdateApiKeyDto {
@@ -48,6 +50,7 @@ export interface UpdateApiKeyDto {
   expiresAt?: string;
   isDefault?: boolean;
   isDeprecated?: boolean;
+  category?: 'LLM' | 'OTHER';
 }
 
 class ApiKeyService {

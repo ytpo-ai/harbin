@@ -14,6 +14,7 @@ export interface CreateApiKeyDto {
   expiresAt?: Date;
   isDefault?: boolean;
   isDeprecated?: boolean;
+  category?: 'LLM' | 'OTHER';
 }
 
 export interface UpdateApiKeyDto {
@@ -25,6 +26,7 @@ export interface UpdateApiKeyDto {
   expiresAt?: Date;
   isDefault?: boolean;
   isDeprecated?: boolean;
+  category?: 'LLM' | 'OTHER';
 }
 
 export interface ApiKeyResponse {
@@ -40,6 +42,7 @@ export interface ApiKeyResponse {
   expiresAt?: Date;
   isDefault: boolean;
   isDeprecated: boolean;
+  category: 'LLM' | 'OTHER';
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -90,6 +93,7 @@ export class ApiKeyService {
       expiresAt: apiKeyData.expiresAt,
       isDefault: apiKeyData.isDefault ?? false,
       isDeprecated: apiKeyData.isDeprecated ?? false,
+      category: apiKeyData.category ?? 'LLM',
       useCount: 0,
     });
 
@@ -134,13 +138,17 @@ export class ApiKeyService {
     }
 
     const updateData: any = {
-      ...updates,
       updatedAt: new Date()
     };
 
-    if (typeof updates.provider === 'string') {
-      updateData.provider = updates.provider.trim().toLowerCase();
-    }
+    if (updates.name !== undefined) updateData.name = updates.name;
+    if (updates.provider !== undefined) updateData.provider = updates.provider.trim().toLowerCase();
+    if (updates.description !== undefined) updateData.description = updates.description;
+    if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
+    if (updates.isDefault !== undefined) updateData.isDefault = updates.isDefault;
+    if (updates.isDeprecated !== undefined) updateData.isDeprecated = updates.isDeprecated;
+    if (updates.category !== undefined) updateData.category = updates.category;
+    if (updates.expiresAt !== undefined) updateData.expiresAt = updates.expiresAt;
 
     // 如果提供了新的key，需要重新加密
     if (updates.key) {
@@ -264,6 +272,7 @@ export class ApiKeyService {
       expiresAt: apiKey.expiresAt,
       isDefault: apiKey.isDefault ?? false,
       isDeprecated: apiKey.isDeprecated ?? false,
+      category: (apiKey.category as 'LLM' | 'OTHER') || 'LLM',
       createdAt: apiKey.createdAt,
       updatedAt: apiKey.updatedAt,
     };

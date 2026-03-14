@@ -3,11 +3,26 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { basename } from 'path';
 import { RdTask, RdTaskDocument, RdTaskStatus } from '../../shared/schemas/rd-task.schema';
-import { RdProject, RdProjectDocument } from '../../shared/schemas/rd-project.schema';
+import { RdProject, RdProjectDocument, RdProjectSourceType } from '../../shared/schemas/rd-project.schema';
 import { Employee, EmployeeDocument } from '../../shared/schemas/employee.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { OpencodeService } from './opencode.service';
-import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, SyncOpencodeContextDto, ImportOpencodeProjectDto, QueryRdProjectDto, SyncAgentOpencodeProjectsDto } from './dto';
+import {
+  BindGithubProjectDto,
+  BindOpencodeProjectDto,
+  CreateLocalRdProjectDto,
+  CreateRdProjectDto,
+  CreateRdTaskDto,
+  ImportOpencodeProjectDto,
+  QueryRdProjectDto,
+  SendOpencodePromptDto,
+  SyncAgentOpencodeProjectsDto,
+  SyncOpencodeContextDto,
+  UnbindOpencodeProjectDto,
+  UpdateRdProjectDto,
+  UpdateRdTaskDto,
+} from './dto';
+import { ApiKeyService } from '../api-keys/api-key.service';
 
 @Injectable()
 export class RdManagementService {
@@ -19,6 +34,7 @@ export class RdManagementService {
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
     private agentClientService: AgentClientService,
     private opencodeService: OpencodeService,
+    private apiKeyService: ApiKeyService,
   ) {}
 
   private getProjectPath(project: any): string {
@@ -48,6 +64,18 @@ export class RdManagementService {
     return endpointRef.trim();
   }
 
+  private resolveSessionModelFromAgent(agent: any): { providerID: string; modelID: string } | undefined {
+    const provider = String(agent?.model?.provider || '').trim();
+    const modelId = String(agent?.model?.model || '').trim();
+    if (provider && modelId) {
+      return {
+        providerID: provider,
+        modelID: modelId,
+      };
+    }
+    return undefined;
+  }
+
   private normalizePath(input: string): string {
     const trimmed = String(input || '').trim();
     if (!trimmed) {
@@ -57,6 +85,25 @@ export class RdManagementService {
       return '/';
     }
     return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+
+  private looksLikeGithubProvider(provider: string): boolean {
+    const value = String(provider || '').trim().toLowerCase();
+    if (!value) {
+      return false;
+    }
+    return value.includes('github') || value === 'git' || value === 'gh';
+  }
+
+  private async requireLocalProject(projectId: string): Promise<RdProjectDocument> {
+    const project = await this.rdProjectModel.findById(projectId).exec();
+    if (!project) {
+      throw new NotFoundException('Local project not found');
+    }
+    if ((project.sourceType || RdProjectSourceType.OPENCODE) !== RdProjectSourceType.LOCAL) {
+      throw new BadRequestException('Binding target must be a local project');
+    }
+    return project;
   }
 
   private parseOpenCodeProjectScopes(agentConfig: unknown): string[] {
@@ -203,16 +250,63 @@ export class RdManagementService {
     throw new BadRequestException('EI projects can only be created through OpenCode sync');
   }
 
+  async createLocalProject(createDto: CreateLocalRdProjectDto): Promise<RdProject> {
+    const localPath = String(createDto.localPath || '').trim();
+    if (!localPath) {
+      throw new BadRequestException('localPath is required');
+    }
+
+    const normalizedPath = this.normalizePath(localPath);
+    const existing = await this.rdProjectModel
+      .findOne({
+        sourceType: RdProjectSourceType.LOCAL,
+        localPath: normalizedPath,
+      })
+      .exec();
+
+    const payload = {
+      name: String(createDto.name || '').trim() || basename(localPath) || 'local-project',
+      description: createDto.description?.trim() || '',
+      sourceType: RdProjectSourceType.LOCAL,
+      localPath: normalizedPath,
+      createdBySync: false,
+      metadata: {
+        ...(existing?.metadata || {}),
+        ...(createDto.metadata || {}),
+      },
+    };
+
+    if (existing) {
+      return this.rdProjectModel
+        .findOneAndUpdate({ _id: existing._id }, { $set: payload }, { new: true })
+        .populate('manager', 'name email')
+        .populate('members', 'name email')
+        .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+        .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+        .exec();
+    }
+
+    return new this.rdProjectModel(payload).save();
+  }
+
   async findAllProjects(filters?: QueryRdProjectDto): Promise<RdProject[]> {
     const query: Record<string, any> = {};
     if (filters?.syncedFromAgentId) {
       query.syncedFromAgentId = filters.syncedFromAgentId;
+    }
+    if (filters?.sourceType) {
+      query.sourceType = filters.sourceType;
+    }
+    if (filters?.bindingLocalProjectId) {
+      query.bindingLocalProjectId = new Types.ObjectId(filters.bindingLocalProjectId);
     }
 
     return this.rdProjectModel
       .find(query)
       .populate('manager', 'name email')
       .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
       .sort({ createdAt: -1 })
       .exec();
   }
@@ -222,6 +316,8 @@ export class RdManagementService {
       .findOne({ _id: new Types.ObjectId(projectId) })
       .populate('manager', 'name email')
       .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
       .exec();
   }
 
@@ -234,7 +330,207 @@ export class RdManagementService {
       )
       .populate('manager', 'name email')
       .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
       .exec();
+  }
+
+  async bindOpencodeProject(payload: BindOpencodeProjectDto): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(payload.localProjectId);
+
+    const importResult = await this.importOpencodeProject({
+      projectId: payload.projectId,
+      projectPath: payload.projectPath,
+      endpointRef: payload.endpointRef,
+      agentId: payload.agentId,
+      name: payload.name,
+    });
+
+    const opencodeProject = importResult.project as RdProjectDocument;
+    if (!opencodeProject?._id) {
+      throw new BadRequestException('Failed to bind OpenCode project');
+    }
+
+    const previousLocalBindingId = opencodeProject.bindingLocalProjectId
+      ? String(opencodeProject.bindingLocalProjectId)
+      : '';
+    const currentLocalBindingId = String(localProject._id);
+
+    if (previousLocalBindingId && previousLocalBindingId !== currentLocalBindingId) {
+      await this.rdProjectModel.updateOne(
+        { _id: new Types.ObjectId(previousLocalBindingId) },
+        { $pull: { opencodeBindingIds: opencodeProject._id } },
+      );
+    }
+
+    await this.rdProjectModel.updateOne(
+      { _id: opencodeProject._id },
+      { $set: { bindingLocalProjectId: localProject._id } },
+    );
+
+    const updatedLocal = await this.rdProjectModel
+      .findOneAndUpdate(
+        { _id: localProject._id },
+        { $addToSet: { opencodeBindingIds: opencodeProject._id } },
+        { new: true },
+      )
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updatedLocal;
+  }
+
+  async bindGithubProject(payload: BindGithubProjectDto): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(payload.localProjectId);
+
+    const apiKey = await this.apiKeyService.getApiKey(payload.githubApiKeyId);
+    if (!apiKey || !apiKey.isActive) {
+      throw new BadRequestException('Invalid githubApiKeyId or API key is inactive');
+    }
+    if (!this.looksLikeGithubProvider(apiKey.provider || '')) {
+      this.logger.warn(
+        `Binding github repo with non-standard api key provider: ${apiKey.provider || 'unknown'} (id=${payload.githubApiKeyId})`,
+      );
+    }
+
+    const owner = String(payload.owner || '').trim();
+    const repo = String(payload.repo || '').trim();
+    if (!owner || !repo) {
+      throw new BadRequestException('owner and repo are required');
+    }
+
+    const githubName = payload.name?.trim() || `${owner}/${repo}`;
+    const existingGithubBinding = localProject.githubBindingId
+      ? await this.rdProjectModel.findById(localProject.githubBindingId).exec()
+      : await this.rdProjectModel
+          .findOne({
+            sourceType: RdProjectSourceType.GITHUB,
+            bindingLocalProjectId: localProject._id,
+          })
+          .exec();
+
+    const basePayload = {
+      name: githubName,
+      description: payload.description?.trim() || existingGithubBinding?.description || '',
+      sourceType: RdProjectSourceType.GITHUB,
+      bindingLocalProjectId: localProject._id,
+      repositoryUrl: payload.repositoryUrl.trim(),
+      githubOwner: owner,
+      githubRepo: repo,
+      githubApiKeyId: payload.githubApiKeyId,
+      branch: payload.branch?.trim() || existingGithubBinding?.branch || 'main',
+      createdBySync: false,
+      metadata: {
+        ...(existingGithubBinding?.metadata || {}),
+        ...(payload.metadata || {}),
+      },
+    };
+
+    const githubProject = existingGithubBinding
+      ? await this.rdProjectModel
+          .findOneAndUpdate({ _id: existingGithubBinding._id }, { $set: basePayload }, { new: true })
+          .exec()
+      : await new this.rdProjectModel(basePayload).save();
+
+    const updatedLocal = await this.rdProjectModel
+      .findOneAndUpdate(
+        { _id: localProject._id },
+        { $set: { githubBindingId: githubProject._id } },
+        { new: true },
+      )
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updatedLocal;
+  }
+
+  async unbindOpencodeProject(localProjectId: string, payload: UnbindOpencodeProjectDto): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(localProjectId);
+    const bindingId = new Types.ObjectId(payload.opencodeBindingId);
+
+    const opencodeProject = await this.rdProjectModel.findById(bindingId).exec();
+    if (!opencodeProject) {
+      throw new NotFoundException('OpenCode binding project not found');
+    }
+    if ((opencodeProject.sourceType || RdProjectSourceType.OPENCODE) !== RdProjectSourceType.OPENCODE) {
+      throw new BadRequestException('Only opencode project can be unbound');
+    }
+
+    const boundToLocalId = String(opencodeProject.bindingLocalProjectId || '');
+    if (!boundToLocalId || boundToLocalId !== String(localProject._id)) {
+      throw new BadRequestException('OpenCode project is not bound to this local project');
+    }
+
+    await this.rdProjectModel.updateOne(
+      { _id: opencodeProject._id },
+      { $unset: { bindingLocalProjectId: '' } },
+    );
+
+    const updatedLocal = await this.rdProjectModel
+      .findOneAndUpdate(
+        { _id: localProject._id },
+        { $pull: { opencodeBindingIds: opencodeProject._id } },
+        { new: true },
+      )
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updatedLocal;
+  }
+
+  async unbindGithubProject(localProjectId: string): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(localProjectId);
+    const githubBindingId = localProject.githubBindingId;
+
+    if (!githubBindingId) {
+      return this.findProjectById(String(localProject._id));
+    }
+
+    const githubId = new Types.ObjectId(githubBindingId);
+    const githubProject = await this.rdProjectModel.findById(githubId).exec();
+
+    if (!githubProject) {
+      return this.rdProjectModel
+        .findOneAndUpdate(
+          { _id: localProject._id },
+          { $unset: { githubBindingId: '' } },
+          { new: true },
+        )
+        .populate('manager', 'name email')
+        .populate('members', 'name email')
+        .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+        .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+        .exec();
+    }
+
+    if ((githubProject.sourceType || RdProjectSourceType.OPENCODE) !== RdProjectSourceType.GITHUB) {
+      throw new BadRequestException('Current github binding is invalid');
+    }
+
+    await this.rdProjectModel.deleteOne({ _id: githubProject._id }).exec();
+
+    const updatedLocal = await this.rdProjectModel
+      .findOneAndUpdate(
+        { _id: localProject._id },
+        { $unset: { githubBindingId: '' } },
+        { new: true },
+      )
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updatedLocal;
   }
 
   async deleteProject(projectId: string): Promise<boolean> {
@@ -400,10 +696,32 @@ export class RdManagementService {
 
   async createStandaloneOpencodeSession(payload: {
     projectPath: string;
+    agentId?: string;
     title?: string;
     config?: Record<string, any>;
+    model?: { providerID: string; modelID: string };
   }): Promise<any> {
-    return this.opencodeService.createSession(payload);
+    let resolvedModel = payload.model;
+
+    if (!resolvedModel && payload.agentId?.trim()) {
+      const agent = await this.agentClientService.getAgent(payload.agentId.trim());
+      resolvedModel = this.resolveSessionModelFromAgent(agent);
+    }
+
+    try {
+      return await this.opencodeService.createSession({
+        projectPath: payload.projectPath,
+        title: payload.title,
+        config: payload.config,
+        model: resolvedModel,
+      });
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : String(error || 'Failed to create OpenCode session');
+      if (message.includes('OpenCode 不支持当前 Agent 模型')) {
+        throw new BadRequestException(message);
+      }
+      throw error;
+    }
   }
 
   async promptOpencodeSession(payload: {
@@ -411,7 +729,15 @@ export class RdManagementService {
     prompt: string;
     model?: { providerID: string; modelID: string };
   }): Promise<any> {
-    return this.opencodeService.promptSession(payload.sessionId, payload.prompt, payload.model);
+    try {
+      return await this.opencodeService.promptSession(payload.sessionId, payload.prompt, payload.model);
+    } catch (error: any) {
+      const message = error instanceof Error ? error.message : String(error || 'Failed to prompt OpenCode session');
+      if (message.includes('OpenCode 不支持当前 Agent 模型')) {
+        throw new BadRequestException(message);
+      }
+      throw error;
+    }
   }
 
   async importOpencodeProject(payload: ImportOpencodeProjectDto): Promise<any> {
@@ -456,8 +782,10 @@ export class RdManagementService {
     const updatePayload = {
       name: projectName,
       description: `Synced from OpenCode (${resolvedPath})`,
+      sourceType: RdProjectSourceType.OPENCODE,
       opencodeProjectId: matched?.id,
       opencodeProjectPath: resolvedPath,
+      opencodeEndpointRef: endpointRef,
       opencodeSessionId: sessions?.[0]?.id || existing?.opencodeSessionId,
       createdBySync: true,
       ...(syncedFromAgentId ? { syncedFromAgentId } : {}),

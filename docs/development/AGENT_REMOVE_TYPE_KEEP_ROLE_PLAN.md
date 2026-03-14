@@ -26,8 +26,7 @@
 4. 展示文案与相关页面调整
    - Agent 详情、讨论、会议页面从“类型”展示切换为“角色（roleId）”展示：
      - `frontend/src/pages/AgentDetail.tsx`
-     - `frontend/src/pages/Discussions.tsx`
-     - `frontend/src/pages/Meetings.tsx`
+      - `frontend/src/pages/Meetings.tsx`
    - HR 页面同步按钮文案调整为“系统角色模板”语义：`frontend/src/pages/HRManagement.tsx`。
 
 5. Memo 与功能文档同步

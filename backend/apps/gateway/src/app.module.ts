@@ -11,7 +11,7 @@ import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.s
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env.development', '.env'],
       load: [databaseConfig],
     }),
     MongooseModule.forRootAsync({

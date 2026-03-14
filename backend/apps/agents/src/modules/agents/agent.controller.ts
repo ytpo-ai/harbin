@@ -82,7 +82,7 @@ export class AgentController {
   @Put('mcp/profiles/:roleCode')
   async upsertMcpProfile(
     @Param('roleCode') roleCode: string,
-    @Body() body: { role?: string; tools?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
+    @Body() body: { role?: string; tools?: string[]; permissions?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
   ) {
     return this.agentService.upsertMcpProfile(roleCode, body);
   }
@@ -95,7 +95,7 @@ export class AgentController {
   @Put('tool-permission-sets/:roleCode')
   async upsertToolPermissionSet(
     @Param('roleCode') roleCode: string,
-    @Body() body: { tools?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
+    @Body() body: { tools?: string[]; permissions?: string[]; capabilities?: string[]; exposed?: boolean; description?: string },
   ) {
     return this.agentService.upsertToolPermissionSet(roleCode, body);
   }

@@ -17,6 +17,9 @@ interface RoleLike {
 const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
   role: 'general-assistant',
   tools: [],
+  permissions: [],
+  permissionsManual: [],
+  permissionsDerived: [],
   capabilities: [],
   exposed: false,
   description: 'No MCP profile found for this role',
@@ -67,7 +70,17 @@ const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   'internal.web.fetch': 'builtin.web-retrieval.internal.web-fetch.fetch',
 };
 
-const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
+interface McpProfileSeed {
+  roleCode: string;
+  role: string;
+  tools: string[];
+  permissions?: string[];
+  capabilities?: string[];
+  exposed: boolean;
+  description?: string;
+}
+
+const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
   {
     roleCode: 'executive-lead',
     role: 'executive-lead',
@@ -95,7 +108,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       REQUIREMENT_TOOL_IDS.syncGithub,
       REQUIREMENT_TOOL_IDS.board,
     ],
-    capabilities: ['strategy_planning', 'decision_making', 'stakeholder_communication', 'resource_governance'],
+    permissions: ['strategy_planning', 'decision_making', 'stakeholder_communication', 'resource_governance'],
     exposed: true,
     description: '负责战略规划、关键决策与跨团队协同。',
   },
@@ -122,7 +135,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       REQUIREMENT_TOOL_IDS.comment,
       REQUIREMENT_TOOL_IDS.board,
     ],
-    capabilities: ['schedule_management', 'meeting_followup', 'information_synthesis'],
+    permissions: ['schedule_management', 'meeting_followup', 'information_synthesis'],
     exposed: true,
     description: '负责高管日程管理、会议纪要与事项跟进。',
   },
@@ -135,7 +148,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       'builtin.data-analysis.internal.content-analysis.extract',
       'internal.agents.list',
     ],
-    capabilities: ['system_design', 'technical_planning', 'risk_assessment'],
+    permissions: ['system_design', 'technical_planning', 'risk_assessment'],
     exposed: true,
     description: '负责技术架构、方案评审与技术风险控制。',
   },
@@ -143,7 +156,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'fullstack-engineer',
     role: 'fullstack-engineer',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
+    permissions: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
     exposed: true,
     description: '负责前后端实现、联调测试与工程交付。',
   },
@@ -151,7 +164,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'devops-engineer',
     role: 'devops-engineer',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['deployment_automation', 'monitoring_alerting', 'incident_response'],
+    permissions: ['deployment_automation', 'monitoring_alerting', 'incident_response'],
     exposed: true,
     description: '负责部署发布、监控告警与系统稳定性保障。',
   },
@@ -159,7 +172,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'data-analyst',
     role: 'data-analyst',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['data_analysis', 'insight_generation', 'reporting'],
+    permissions: ['data_analysis', 'insight_generation', 'reporting'],
     exposed: true,
     description: '负责数据分析、结论提炼与报告输出。',
   },
@@ -178,7 +191,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       ORCHESTRATION_TOOL_IDS.updateSchedule,
       ORCHESTRATION_TOOL_IDS.debugTask,
     ],
-    capabilities: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
+    permissions: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
     exposed: true,
     description: '负责产品规划、优先级管理与跨团队推进。',
   },
@@ -186,7 +199,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'human-resources-manager',
     role: 'human-resources-manager',
     tools: ['internal.web.search'],
-    capabilities: ['talent_acquisition', 'performance_management', 'organization_development'],
+    permissions: ['talent_acquisition', 'performance_management', 'organization_development'],
     exposed: true,
     description: '负责招聘、绩效管理与组织人才发展。',
   },
@@ -194,7 +207,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'administrative-assistant',
     role: 'administrative-assistant',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'internal.web.fetch'],
-    capabilities: ['administrative_coordination', 'meeting_support', 'document_management'],
+    permissions: ['administrative_coordination', 'meeting_support', 'document_management'],
     exposed: true,
     description: '负责行政事务、会议支持与流程协同。',
   },
@@ -202,7 +215,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
     roleCode: 'marketing-strategist',
     role: 'marketing-strategist',
     tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['campaign_planning', 'brand_communication', 'growth_optimization'],
+    permissions: ['campaign_planning', 'brand_communication', 'growth_optimization'],
     exposed: true,
     description: '负责市场策略、活动策划与增长转化。',
   },
@@ -215,7 +228,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       'builtin.data-analysis.internal.content-analysis.extract',
       'builtin.sys-mg.mcp.audit.list-human-operation-log',
     ],
-    capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
+    permissions: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
     exposed: true,
     description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
   },
@@ -246,7 +259,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       REQUIREMENT_TOOL_IDS.syncGithub,
       REQUIREMENT_TOOL_IDS.board,
     ],
-    capabilities: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
+    permissions: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
     exposed: true,
     description: '系统内置类型，用于平台默认流程与系统任务协同。',
   },
@@ -258,7 +271,7 @@ const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
       'builtin.sys-mg.mcp.meeting.send-message',
       'builtin.sys-mg.mcp.meeting.update-status',
     ],
-    capabilities: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
+    permissions: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
     exposed: true,
     description: '会议助理，负责监控进行中的会议，在会议长时间未活动时发送提醒并自动结束会议。',
   },
@@ -277,6 +290,9 @@ export class AgentMcpProfileService {
     try {
       for (const seed of MCP_PROFILE_SEEDS) {
         const normalizedSeedTools = this.normalizeToolIds(seed.tools || []);
+        const manualPermissions = this.normalizeIncomingPermissions(seed);
+        const permissionsDerived = await this.derivePermissionsFromTools(normalizedSeedTools);
+        const permissions = this.uniqueStrings(manualPermissions, permissionsDerived);
         await this.agentProfileModel
           .updateOne(
             { roleCode: seed.roleCode },
@@ -284,18 +300,24 @@ export class AgentMcpProfileService {
               $setOnInsert: {
                 role: seed.role,
                 tools: normalizedSeedTools,
-                capabilities: seed.capabilities,
+                permissions,
+                permissionsManual: manualPermissions,
+                permissionsDerived,
+                capabilities: permissions,
                 exposed: seed.exposed,
                 description: seed.description || '',
               },
               $set: {
                 role: seed.role,
+                permissions,
+                permissionsManual: manualPermissions,
+                permissionsDerived,
+                capabilities: permissions,
                 exposed: seed.exposed,
                 description: seed.description || '',
               },
               $addToSet: {
                 tools: { $each: normalizedSeedTools },
-                capabilities: { $each: seed.capabilities || [] },
               },
             },
             { upsert: true },
@@ -323,13 +345,7 @@ export class AgentMcpProfileService {
     const profiles = await this.agentProfileModel.find().exec();
     const record: Record<string, AgentMcpMapProfile> = {};
     for (const profile of profiles) {
-      record[profile.roleCode] = {
-        role: profile.role,
-        tools: this.normalizeToolIds(profile.tools || []),
-        capabilities: profile.capabilities || [],
-        exposed: profile.exposed === true,
-        description: profile.description || '',
-      };
+      record[profile.roleCode] = this.toAgentMcpMapProfile(profile);
     }
     return record;
   }
@@ -343,13 +359,7 @@ export class AgentMcpProfileService {
     const profiles = await this.agentProfileModel.find({ roleCode: { $in: uniqueRoleCodes } }).exec();
     const map = new Map<string, AgentMcpMapProfile>();
     for (const profile of profiles) {
-      map.set(profile.roleCode, {
-        role: profile.role,
-        tools: this.normalizeToolIds(profile.tools || []),
-        capabilities: profile.capabilities || [],
-        exposed: profile.exposed === true,
-        description: profile.description || '',
-      });
+      map.set(profile.roleCode, this.toAgentMcpMapProfile(profile));
     }
     return map;
   }
@@ -364,34 +374,18 @@ export class AgentMcpProfileService {
     if (!roleProfile) {
       return DEFAULT_MCP_PROFILE;
     }
-    return {
-      role: roleProfile.role,
-      tools: this.normalizeToolIds(roleProfile.tools || []),
-      capabilities: roleProfile.capabilities || [],
-      exposed: roleProfile.exposed === true,
-      description: roleProfile.description || '',
-    };
+    return this.toAgentMcpMapProfile(roleProfile);
   }
 
   async getMcpProfiles(): Promise<AgentProfile[]> {
     const profiles = await this.agentProfileModel.find().sort({ roleCode: 1 }).exec();
-    return profiles.map((profile) => {
-      const plain = profile?.toObject ? profile.toObject() : profile;
-      return {
-        ...plain,
-        tools: this.normalizeToolIds(plain.tools || []),
-      } as AgentProfile;
-    });
+    return profiles.map((profile) => this.normalizeProfileEntity(profile));
   }
 
   async getMcpProfile(roleCode: string): Promise<AgentProfile | null> {
     const profile = await this.agentProfileModel.findOne({ roleCode: roleCode.trim() }).exec();
     if (!profile) return null;
-    const plain = profile?.toObject ? profile.toObject() : profile;
-    return {
-      ...plain,
-      tools: this.normalizeToolIds(plain.tools || []),
-    } as AgentProfile;
+    return this.normalizeProfileEntity(profile);
   }
 
   async upsertMcpProfile(roleCode: string, updates: Partial<AgentMcpMapProfile>): Promise<AgentProfile> {
@@ -400,22 +394,37 @@ export class AgentMcpProfileService {
       throw new BadRequestException('roleCode is required');
     }
 
+    const existing = await this.agentProfileModel.findOne({ roleCode: normalizedRoleCode }).lean().exec();
+    const normalizedTools = this.normalizeToolIds(
+      Object.prototype.hasOwnProperty.call(updates, 'tools') ? updates.tools || [] : ((existing as any)?.tools || []),
+    );
+    const hasManualPermissionUpdates =
+      Object.prototype.hasOwnProperty.call(updates, 'permissions') ||
+      Object.prototype.hasOwnProperty.call(updates, 'capabilities') ||
+      Object.prototype.hasOwnProperty.call(updates, 'permissionsManual');
+    const manualPermissions = hasManualPermissionUpdates
+      ? this.normalizeIncomingPermissions(updates)
+      : this.normalizeIncomingPermissions((existing as any) || {});
+    const permissionsDerived = await this.derivePermissionsFromTools(normalizedTools);
     const payload: Partial<AgentProfile> = {
-      role: updates.role || DEFAULT_MCP_PROFILE.role,
-      tools: this.normalizeToolIds(updates.tools || []),
-      capabilities: updates.capabilities || [],
-      exposed: updates.exposed === true,
-      description: updates.description || '',
+      role: updates.role || String((existing as any)?.role || '').trim() || DEFAULT_MCP_PROFILE.role,
+      tools: normalizedTools,
+      permissionsManual: manualPermissions,
+      permissionsDerived,
+      permissions: this.uniqueStrings(manualPermissions, permissionsDerived),
+      capabilities: this.uniqueStrings(manualPermissions, permissionsDerived),
+      exposed: Object.prototype.hasOwnProperty.call(updates, 'exposed')
+        ? updates.exposed === true
+        : (existing as any)?.exposed === true,
+      description: Object.prototype.hasOwnProperty.call(updates, 'description')
+        ? updates.description || ''
+        : String((existing as any)?.description || ''),
     };
 
     const profile = await this.agentProfileModel
       .findOneAndUpdate({ roleCode: normalizedRoleCode }, { ...payload, roleCode: normalizedRoleCode }, { new: true, upsert: true })
       .exec();
-    const plain = profile?.toObject ? profile.toObject() : profile;
-    return {
-      ...plain,
-      tools: this.normalizeToolIds(plain?.tools || []),
-    } as AgentProfile;
+    return this.normalizeProfileEntity(profile);
   }
 
   async getToolPermissionSets(roles: RoleLike[]): Promise<AgentToolPermissionSet[]> {
@@ -432,7 +441,10 @@ export class AgentMcpProfileService {
         roleName: role.name || roleCode,
         roleStatus: role.status || 'unknown',
         tools: this.normalizeToolIds(profile?.tools || []),
-        capabilities: profile?.capabilities || [],
+        permissions: this.resolveProfilePermissions(profile),
+        permissionsManual: this.normalizeStringArray((profile as any)?.permissionsManual || []),
+        permissionsDerived: this.normalizeStringArray((profile as any)?.permissionsDerived || []),
+        capabilities: this.resolveProfilePermissions(profile),
         exposed: profile?.exposed === true,
         description: profile?.description || role.description || '',
       };
@@ -441,7 +453,7 @@ export class AgentMcpProfileService {
 
   async upsertToolPermissionSet(
     roleCode: string,
-    updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'capabilities' | 'exposed' | 'description'>>,
+    updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'permissions' | 'capabilities' | 'exposed' | 'description'>>,
     roles: RoleLike[],
   ): Promise<AgentToolPermissionSet> {
     const normalizedRoleCode = String(roleCode || '').trim();
@@ -454,12 +466,33 @@ export class AgentMcpProfileService {
       throw new BadRequestException(`Role code not found: ${normalizedRoleCode}`);
     }
 
+    const existing = await this.agentProfileModel.findOne({ roleCode: normalizedRoleCode }).lean().exec();
+    const normalizedTools = this.normalizeToolIds(
+      Object.prototype.hasOwnProperty.call(updates, 'tools') ? updates.tools || [] : ((existing as any)?.tools || []),
+    );
+    const hasManualPermissionUpdates =
+      Object.prototype.hasOwnProperty.call(updates, 'permissions') ||
+      Object.prototype.hasOwnProperty.call(updates, 'capabilities') ||
+      Object.prototype.hasOwnProperty.call(updates, 'permissionsManual');
+    const manualPermissions = hasManualPermissionUpdates
+      ? this.normalizeIncomingPermissions(updates)
+      : this.normalizeIncomingPermissions((existing as any) || {});
+    const permissionsDerived = await this.derivePermissionsFromTools(normalizedTools);
+    const mergedPermissions = this.uniqueStrings(manualPermissions, permissionsDerived);
+
     const payload: Partial<AgentProfile> = {
       role: normalizedRoleCode,
-      tools: this.normalizeToolIds(updates.tools || []),
-      capabilities: updates.capabilities || [],
-      exposed: updates.exposed === true,
-      description: updates.description || '',
+      tools: normalizedTools,
+      permissionsManual: manualPermissions,
+      permissionsDerived,
+      permissions: mergedPermissions,
+      capabilities: mergedPermissions,
+      exposed: Object.prototype.hasOwnProperty.call(updates, 'exposed')
+        ? updates.exposed === true
+        : (existing as any)?.exposed === true,
+      description: Object.prototype.hasOwnProperty.call(updates, 'description')
+        ? updates.description || ''
+        : String((existing as any)?.description || ''),
     };
 
     const profile = await this.agentProfileModel
@@ -472,7 +505,10 @@ export class AgentMcpProfileService {
       roleName: role.name || normalizedRoleCode,
       roleStatus: role.status || 'unknown',
       tools: this.normalizeToolIds(profile?.tools || []),
-      capabilities: profile?.capabilities || [],
+      permissions: this.resolveProfilePermissions(profile),
+      permissionsManual: this.normalizeStringArray((profile as any)?.permissionsManual || []),
+      permissionsDerived: this.normalizeStringArray((profile as any)?.permissionsDerived || []),
+      capabilities: this.resolveProfilePermissions(profile),
       exposed: profile?.exposed === true,
       description: profile?.description || role.description || '',
     };
@@ -483,7 +519,7 @@ export class AgentMcpProfileService {
     resetCount: number;
     missingRoleCodes: string[];
   }> {
-    const systemSeeds = new Map<string, { tools: string[]; capabilities: string[]; exposed: boolean; description: string }>();
+    const systemSeeds = new Map<string, { tools: string[]; permissionsManual: string[]; exposed: boolean; description: string }>();
     for (const seed of MCP_PROFILE_SEEDS) {
       const roleCode = String(seed.role || '').trim();
       if (!roleCode) {
@@ -493,14 +529,14 @@ export class AgentMcpProfileService {
       if (!existing) {
         systemSeeds.set(roleCode, {
           tools: this.normalizeToolIds(seed.tools || []),
-          capabilities: [...(seed.capabilities || [])],
+          permissionsManual: this.normalizeIncomingPermissions(seed),
           exposed: seed.exposed === true,
           description: seed.description || '',
         });
         continue;
       }
       existing.tools = this.uniqueStrings(existing.tools, this.normalizeToolIds(seed.tools || []));
-      existing.capabilities = this.uniqueStrings(existing.capabilities, seed.capabilities || []);
+      existing.permissionsManual = this.uniqueStrings(existing.permissionsManual, this.normalizeIncomingPermissions(seed));
       existing.exposed = existing.exposed || seed.exposed === true;
       if (!existing.description && seed.description) {
         existing.description = seed.description;
@@ -517,6 +553,8 @@ export class AgentMcpProfileService {
         continue;
       }
 
+      const permissionsDerived = await this.derivePermissionsFromTools(seed.tools || []);
+      const permissions = this.uniqueStrings(seed.permissionsManual || [], permissionsDerived);
       await this.agentProfileModel
         .findOneAndUpdate(
           { roleCode },
@@ -524,7 +562,10 @@ export class AgentMcpProfileService {
             roleCode,
             role: roleCode,
             tools: this.normalizeToolIds(seed.tools || []),
-            capabilities: seed.capabilities || [],
+            permissionsManual: seed.permissionsManual || [],
+            permissionsDerived,
+            permissions,
+            capabilities: permissions,
             exposed: seed.exposed === true,
             description: seed.description || '',
           },
@@ -632,11 +673,81 @@ export class AgentMcpProfileService {
       description: agent.description || profile.description || '',
       roleId: agent.roleId,
       role: role?.name || role?.code || profile.role,
-      capabilitySet: this.uniqueStrings(agent.capabilities || [], profile.capabilities || []),
+      capabilitySet: this.uniqueStrings(agent.capabilities || [], profile.permissions || profile.capabilities || []),
       toolSet,
       exposed: profile.exposed === true,
       mapKey: mapKey || 'default',
     };
+  }
+
+  private toAgentMcpMapProfile(profile: Partial<AgentProfile>): AgentMcpMapProfile {
+    const tools = this.normalizeToolIds(profile.tools || []);
+    const permissionsManual = this.normalizeStringArray(profile.permissionsManual || []);
+    const permissionsDerived = this.normalizeStringArray(profile.permissionsDerived || []);
+    const permissions = this.resolveProfilePermissions(profile);
+    return {
+      role: String(profile.role || '').trim() || DEFAULT_MCP_PROFILE.role,
+      tools,
+      permissions,
+      permissionsManual,
+      permissionsDerived,
+      capabilities: permissions,
+      exposed: profile.exposed === true,
+      description: profile.description || '',
+    };
+  }
+
+  private normalizeProfileEntity(profile: any): AgentProfile {
+    const plain = profile?.toObject ? profile.toObject() : profile;
+    const normalized = this.toAgentMcpMapProfile(plain || {});
+    return {
+      ...plain,
+      tools: normalized.tools,
+      permissions: normalized.permissions,
+      permissionsManual: normalized.permissionsManual || [],
+      permissionsDerived: normalized.permissionsDerived || [],
+      capabilities: normalized.permissions,
+    } as AgentProfile;
+  }
+
+  private resolveProfilePermissions(profile: Partial<AgentProfile> | null | undefined): string[] {
+    if (!profile) {
+      return [];
+    }
+    const combined = this.uniqueStrings(
+      this.normalizeStringArray(profile.permissions || []),
+      this.normalizeStringArray(profile.permissionsManual || []),
+      this.normalizeStringArray(profile.permissionsDerived || []),
+      this.normalizeStringArray(profile.capabilities || []),
+    );
+    return combined;
+  }
+
+  private normalizeIncomingPermissions(updates: Partial<AgentMcpMapProfile> | Partial<AgentProfile>): string[] {
+    const profileLike = updates as Partial<AgentProfile>;
+    return this.uniqueStrings(
+      this.normalizeStringArray((updates as any)?.permissions || []),
+      this.normalizeStringArray(profileLike.permissionsManual || []),
+      this.normalizeStringArray((updates as any)?.capabilities || []),
+    );
+  }
+
+  private async derivePermissionsFromTools(tools: string[]): Promise<string[]> {
+    const normalizedTools = this.normalizeToolIds(tools || []);
+    if (!normalizedTools.length) {
+      return [];
+    }
+    const matchedTools = await this.toolService.getToolsByIds(normalizedTools);
+    const permissionIds = (matchedTools || []).flatMap((tool: any) =>
+      (Array.isArray(tool.requiredPermissions) ? tool.requiredPermissions : [])
+        .map((item: any) => String(item?.id || '').trim())
+        .filter(Boolean),
+    );
+    return this.normalizeStringArray(permissionIds);
+  }
+
+  private normalizeStringArray(items: string[]): string[] {
+    return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => String(item || '').trim()).filter(Boolean))).sort();
   }
 
   private normalizeToolId(toolId: string): string {

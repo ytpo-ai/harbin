@@ -134,6 +134,10 @@ export interface BindGithubProjectDto {
   metadata?: Record<string, any>;
 }
 
+export interface UnbindOpencodeProjectDto {
+  opencodeBindingId: string;
+}
+
 export interface CreateRdTaskDto {
   title: string;
   description: string;
@@ -271,6 +275,24 @@ class RdConversationService {
 
   async bindGithubProject(data: BindGithubProjectDto): Promise<RdProject> {
     const response = await axios.post(`${API_URL}/rd-management/projects/bind/github`, data, this.getAuthHeaders());
+    return response.data;
+  }
+
+  async unbindOpencodeProject(localProjectId: string, data: UnbindOpencodeProjectDto): Promise<RdProject> {
+    const response = await axios.post(
+      `${API_URL}/rd-management/projects/${localProjectId}/unbind/opencode`,
+      data,
+      this.getAuthHeaders(),
+    );
+    return response.data;
+  }
+
+  async unbindGithubProject(localProjectId: string): Promise<RdProject> {
+    const response = await axios.post(
+      `${API_URL}/rd-management/projects/${localProjectId}/unbind/github`,
+      {},
+      this.getAuthHeaders(),
+    );
     return response.data;
   }
 

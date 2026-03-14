@@ -93,6 +93,26 @@ const getToolProvider = (tool?: any): string => {
   return String(tool?.provider || 'unknown').trim();
 };
 
+const getToolRequiredPermissionIds = (tool?: any): string[] => {
+  const requiredPermissions = Array.isArray(tool?.requiredPermissions) ? tool.requiredPermissions : [];
+  return Array.from(
+    new Set(
+      requiredPermissions
+        .map((item: any) => String(item?.id || '').trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
+const buildAutoGrantedPermissions = (selectedToolIds: string[], tools: any[], basePermissions: string[]): string[] => {
+  const selectedSet = new Set((selectedToolIds || []).map((item) => String(item || '').trim()).filter(Boolean));
+  const derivedPermissions = (tools || [])
+    .filter((tool) => selectedSet.has(getToolKey(tool)))
+    .flatMap((tool) => getToolRequiredPermissionIds(tool));
+
+  return Array.from(new Set([...(basePermissions || []), ...derivedPermissions].map((item) => String(item || '').trim()).filter(Boolean)));
+};
+
 const getAgentAvatarUrl = (agent: Agent): string => {
   const withAvatar = agent as Agent & {
     avatar?: string;
@@ -513,7 +533,7 @@ const Agents: React.FC = () => {
 // 创建Agent模态框组件
 const CreateAgentModal: React.FC<{
   availableModels: AIModel[];
-  availableTools: Array<{ id: string; toolId?: string; name: string; enabled?: boolean }>;
+  availableTools: Array<{ id: string; toolId?: string; name: string; enabled?: boolean; requiredPermissions?: Array<{ id?: string }> }>;
   toolPermissionSets: AgentToolPermissionSet[];
   businessRoles: AgentBusinessRole[];
   onClose: () => void;
@@ -522,6 +542,7 @@ const CreateAgentModal: React.FC<{
   const queryClient = useQueryClient();
   const [toolProviderFilter, setToolProviderFilter] = useState('');
   const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
+  const [autoGrantPermissions, setAutoGrantPermissions] = useState(true);
   const [formData, setFormData] = useState({
     name: '',
     roleId: '',
@@ -620,6 +641,11 @@ const CreateAgentModal: React.FC<{
       return;
     }
 
+    const basePermissions: string[] = [];
+    const nextPermissions = autoGrantPermissions
+      ? buildAutoGrantedPermissions(formData.selectedTools, allowedTools, basePermissions)
+      : basePermissions;
+
     const agentData = {
       name: formData.name,
       roleId: formData.roleId,
@@ -630,7 +656,7 @@ const CreateAgentModal: React.FC<{
       apiKeyId: formData.apiKeyId || undefined,
       isActive: true,
       tools: formData.selectedTools,
-      permissions: [],
+      permissions: nextPermissions,
       personality: {
         workEthic: 80,
         creativity: 75,
@@ -804,6 +830,15 @@ const CreateAgentModal: React.FC<{
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">工具设置</label>
+              <label className="mb-2 inline-flex items-center text-xs text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={autoGrantPermissions}
+                  onChange={(e) => setAutoGrantPermissions(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="ml-2">自动赋权（默认开启）：勾选工具时自动补齐工具所需权限</span>
+              </label>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                 <select
                   value={toolProviderFilter}
@@ -833,22 +868,41 @@ const CreateAgentModal: React.FC<{
                     {group.items.map((tool) => {
                       const toolId = getToolKey(tool);
                       const checked = formData.selectedTools.includes(toolId);
+                      const requiredPermissionIds = getToolRequiredPermissionIds(tool);
                       return (
-                        <label key={toolId} className="flex items-center justify-between text-sm text-gray-700 pl-1">
-                          <span>{tool.name}</span>
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              setFormData((prev) => ({
-                                ...prev,
-                                selectedTools: e.target.checked
-                                  ? [...prev.selectedTools, toolId]
-                                  : prev.selectedTools.filter((id) => id !== toolId),
-                              }));
-                            }}
-                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                          />
+                        <label key={toolId} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
+                          <div className="flex items-start justify-between gap-3 text-sm text-gray-700">
+                            <div>
+                              <p className="font-medium text-gray-900">{tool.name}</p>
+                              <p className="text-xs text-gray-400 mt-0.5">ID: {toolId}</p>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {requiredPermissionIds.length > 0 ? (
+                                  requiredPermissionIds.map((permissionId) => (
+                                    <span key={`${toolId}-${permissionId}`} className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200">
+                                      {permissionId}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-600 border border-gray-200">
+                                    无需额外权限
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  selectedTools: e.target.checked
+                                    ? [...prev.selectedTools, toolId]
+                                    : prev.selectedTools.filter((id) => id !== toolId),
+                                }));
+                              }}
+                              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mt-1"
+                            />
+                          </div>
                         </label>
                       );
                     })}
@@ -887,7 +941,7 @@ const CreateAgentModal: React.FC<{
 const EditAgentModal: React.FC<{
   agent: Agent;
   availableModels: AIModel[];
-  availableTools: Array<{ id: string; toolId?: string; name: string; description?: string; enabled?: boolean }>;
+  availableTools: Array<{ id: string; toolId?: string; name: string; description?: string; enabled?: boolean; requiredPermissions?: Array<{ id?: string }> }>;
   toolPermissionSets: AgentToolPermissionSet[];
   businessRoles: AgentBusinessRole[];
   onClose: () => void;
@@ -897,6 +951,7 @@ const EditAgentModal: React.FC<{
   const [activeTab, setActiveTab] = useState<'model' | 'tools' | 'basic'>('model');
   const [toolProviderFilter, setToolProviderFilter] = useState('');
   const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
+  const [autoGrantPermissions, setAutoGrantPermissions] = useState(true);
   const [selectedModelId, setSelectedModelId] = useState(agent.model?.id || '');
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
   const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
@@ -1024,11 +1079,18 @@ const EditAgentModal: React.FC<{
       return;
     }
 
+    const selectedAllowedTools = selectedTools.filter((toolId) => allowedToolIds.has(toolId));
+    const basePermissions = Array.isArray(agent.permissions) ? agent.permissions : [];
+    const nextPermissions = autoGrantPermissions
+      ? buildAutoGrantedPermissions(selectedAllowedTools, allowedTools, basePermissions)
+      : basePermissions;
+
     onSave({
       config: configParsed.config || {},
       model: selectedModel,
       apiKeyId: selectedApiKeyId || undefined,
-      tools: selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
+      tools: selectedAllowedTools,
+      permissions: nextPermissions,
       name: name.trim(),
       roleId: roleId.trim(),
       description: description.trim(),
@@ -1341,6 +1403,15 @@ const EditAgentModal: React.FC<{
                 发现 {invalidSelectedTools.length} 个历史工具不在当前角色白名单中，保存时将自动移除。
               </div>
             )}
+            <label className="inline-flex items-center text-xs text-gray-700">
+              <input
+                type="checkbox"
+                checked={autoGrantPermissions}
+                onChange={(e) => setAutoGrantPermissions(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="ml-2">自动赋权（默认开启）：勾选工具时自动补齐工具所需权限</span>
+            </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <select
                 value={toolProviderFilter}
@@ -1370,6 +1441,7 @@ const EditAgentModal: React.FC<{
                 {group.items.map((tool) => {
                   const toolId = getToolKey(tool);
                   const checked = selectedTools.includes(toolId);
+                  const requiredPermissionIds = getToolRequiredPermissionIds(tool);
                   return (
                     <label key={toolId} className="block border border-gray-100 rounded-md p-2 hover:bg-gray-50">
                       <div className="flex items-start justify-between gap-3">
@@ -1377,6 +1449,19 @@ const EditAgentModal: React.FC<{
                           <p className="text-sm font-medium text-gray-900">{tool.name}</p>
                           {tool.description && <p className="text-xs text-gray-500 mt-0.5">{tool.description}</p>}
                           <p className="text-xs text-gray-400 mt-0.5">ID: {toolId}</p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {requiredPermissionIds.length > 0 ? (
+                              requiredPermissionIds.map((permissionId) => (
+                                <span key={`${toolId}-${permissionId}`} className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700 border border-blue-200">
+                                  {permissionId}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-gray-50 px-2 py-0.5 text-[10px] font-medium text-gray-600 border border-gray-200">
+                                无需额外权限
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <input
                           type="checkbox"

@@ -15,6 +15,15 @@ export class AgentProfile {
   tools: string[];
 
   @Prop({ type: [String], default: [] })
+  permissions: string[];
+
+  @Prop({ type: [String], default: [] })
+  permissionsManual: string[];
+
+  @Prop({ type: [String], default: [] })
+  permissionsDerived: string[];
+
+  @Prop({ type: [String], default: [] })
   capabilities: string[];
 
   @Prop({ default: false })

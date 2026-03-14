@@ -145,6 +145,11 @@ export class EngineeringIntelligenceController {
     return this.engineeringIntelligenceService.getRequirementById(requirementId);
   }
 
+  @Delete('requirements/:requirementId')
+  async deleteRequirement(@Param('requirementId') requirementId: string) {
+    return this.engineeringIntelligenceService.deleteRequirement(requirementId);
+  }
+
   @Post('requirements/:requirementId/comments')
   async addRequirementComment(
     @Param('requirementId') requirementId: string,

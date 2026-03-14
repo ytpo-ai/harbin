@@ -23,11 +23,16 @@ import { PlannerService } from './planner.service';
 import { MessagesModule } from '../messages/messages.module';
 import { PlanSession, PlanSessionSchema } from '../../shared/schemas/plan-session.schema';
 import { SessionManagerService } from './session-manager.service';
+import { TaskClassificationService } from './services/task-classification.service';
+import { TaskOutputValidationService } from './services/task-output-validation.service';
+import { ExecutorSelectionService } from './services/executor-selection.service';
+import { AgentMessagesModule } from '../agent-messages/agent-messages.module';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
+    AgentMessagesModule,
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
@@ -40,7 +45,14 @@ import { SessionManagerService } from './session-manager.service';
     ]),
   ],
   controllers: [OrchestrationController],
-  providers: [OrchestrationService, PlannerService, SessionManagerService],
+  providers: [
+    OrchestrationService,
+    PlannerService,
+    SessionManagerService,
+    TaskClassificationService,
+    TaskOutputValidationService,
+    ExecutorSelectionService,
+  ],
   exports: [OrchestrationService],
 })
 export class OrchestrationModule {}

@@ -83,6 +83,9 @@ export class EiRequirement {
   @Prop({ required: true, enum: ['human', 'agent', 'system'], default: 'human' })
   createdByType: EiActorType;
 
+  @Prop()
+  localProjectId?: string;
+
   @Prop({ type: [Object], default: [] })
   comments: EiRequirementComment[];
 
@@ -107,4 +110,5 @@ export const EiRequirementSchema = SchemaFactory.createForClass(EiRequirement);
 EiRequirementSchema.index({ requirementId: 1 }, { unique: true });
 EiRequirementSchema.index({ status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ currentAssigneeAgentId: 1, status: 1, updatedAt: -1 });
+EiRequirementSchema.index({ localProjectId: 1, status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ title: 'text', description: 'text' });

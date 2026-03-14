@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { WsAppModule } from './app.module';
 import { RedisService } from '@libs/infra';
 import { WebSocketServer, WebSocket } from 'ws';
+import { isWsStandardChannel, WS_PROTOCOL_VERSION, WsStandardMessage } from '@libs/infra';
 
 interface WsEnvelope {
   action: 'subscribe' | 'unsubscribe' | 'ping';
@@ -42,7 +43,16 @@ async function bootstrap() {
         let outbound = message;
         try {
           const parsed = JSON.parse(message);
-          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const isStandardWsMessage =
+            isWsStandardChannel(channel) &&
+            parsed &&
+            typeof parsed === 'object' &&
+            !Array.isArray(parsed) &&
+            (parsed as WsStandardMessage).protocol === WS_PROTOCOL_VERSION;
+
+          if (isStandardWsMessage) {
+            outbound = JSON.stringify(parsed);
+          } else if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
             outbound = JSON.stringify({ ...parsed, channel });
           } else {
             outbound = JSON.stringify({ channel, payload: parsed });

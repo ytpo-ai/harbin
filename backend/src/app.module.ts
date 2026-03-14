@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TaskModule } from './modules/tasks/task.module';
-import { ChatModule } from './modules/chat/chat.module';
 import { HRModule } from './modules/hr/hr.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
@@ -20,6 +19,7 @@ import { OperationLogModule } from './modules/operation-logs/operation-log.modul
 import { MessagesModule } from './modules/messages/messages.module';
 import { AgentActionLogModule } from './modules/agent-action-logs/agent-action-log.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
+import { AgentMessagesModule } from './modules/agent-messages/agent-messages.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -30,7 +30,7 @@ import jwtConfig from './config/jwt.config';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env.development', '.env'],
       load: [appConfig, databaseConfig, aiConfig, jwtConfig],
     }),
     InfraModule,
@@ -50,10 +50,10 @@ import jwtConfig from './config/jwt.config';
     AgentActionLogModule,
     MessagesModule,
     MessageCenterModule,
+    AgentMessagesModule,
     AgentClientModule,
     ToolClientModule,
     TaskModule,
-    ChatModule,
     HRModule,
     RolesModule,
     ApiKeysModule,

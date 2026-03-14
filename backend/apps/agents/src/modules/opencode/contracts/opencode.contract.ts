@@ -15,6 +15,10 @@ export interface OpenCodeAdapterEvent {
 export interface OpenCodeCreateSessionInput {
   title?: string;
   config?: Record<string, unknown>;
+  model?: {
+    providerID: string;
+    modelID: string;
+  };
 }
 
 export interface OpenCodePromptInput {

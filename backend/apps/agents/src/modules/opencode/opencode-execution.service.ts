@@ -15,6 +15,8 @@ interface RuntimeMappedEvent {
 @Injectable()
 export class OpenCodeExecutionService {
   private readonly logger = new Logger(OpenCodeExecutionService.name);
+  private readonly eventReadTimeoutMs = 5000;
+  private readonly eventReadLimit = 40;
 
   constructor(
     private readonly adapter: OpenCodeAdapter,
@@ -101,54 +103,118 @@ export class OpenCodeExecutionService {
   }): Promise<OpenCodeExecutionStartResult> {
     const result = await this.startExecution({
       taskPrompt: input.taskPrompt,
-      sessionId: input.runtimeContext.sessionId,
+      sessionId: undefined,
       title: input.title,
       sessionConfig: input.sessionConfig,
       model: input.model,
     });
 
-    const syntheticEvents: OpenCodeAdapterEvent[] = [
-      {
-        type: 'step.progress',
-        sessionId: result.sessionId,
-        timestamp: new Date().toISOString(),
-        payload: {
-          text: result.response,
-          metadata: result.metadata,
-        },
-        raw: result,
-      },
-      {
-        type: 'task.completed',
-        sessionId: result.sessionId,
-        timestamp: new Date().toISOString(),
-        payload: {
-          metadata: result.metadata,
-        },
-        raw: result,
-      },
-    ];
-
     const mapper = input.mapEvent || this.mapOpenCodeEventToRuntimeEvent.bind(this);
     let sequence = 10_000;
+    let recordedFromRealEvents = 0;
 
-    for (const event of syntheticEvents) {
+    const realEvents = await this.collectSessionEvents(result.sessionId, this.eventReadLimit, this.eventReadTimeoutMs);
+    for (const event of realEvents) {
       const mapped = mapper(event);
-      if (mapped.runtimeEventType === 'llm.delta') {
-        await this.runtimeOrchestrator.recordLlmDelta({
-          runId: input.runtimeContext.runId,
-          agentId: input.agentId,
-          messageId: input.runtimeContext.userMessageId,
-          traceId: input.runtimeContext.traceId,
-          sequence: sequence++,
-          delta: result.response,
-          sessionId: input.runtimeContext.sessionId,
-          taskId: input.taskId,
-        });
+      if (mapped.runtimeEventType !== 'llm.delta') {
+        continue;
       }
+
+      const delta = this.extractDeltaText(mapped.payload);
+      if (!delta) {
+        continue;
+      }
+
+      await this.runtimeOrchestrator.recordLlmDelta({
+        runId: input.runtimeContext.runId,
+        agentId: input.agentId,
+        messageId: input.runtimeContext.userMessageId,
+        traceId: input.runtimeContext.traceId,
+        sequence: sequence++,
+        delta,
+        sessionId: input.runtimeContext.sessionId,
+        taskId: input.taskId,
+      });
+      recordedFromRealEvents += 1;
+    }
+
+    if (recordedFromRealEvents === 0 && result.response) {
+      await this.runtimeOrchestrator.recordLlmDelta({
+        runId: input.runtimeContext.runId,
+        agentId: input.agentId,
+        messageId: input.runtimeContext.userMessageId,
+        traceId: input.runtimeContext.traceId,
+        sequence,
+        delta: result.response,
+        sessionId: input.runtimeContext.sessionId,
+        taskId: input.taskId,
+      });
     }
 
     return result;
+  }
+
+  private async collectSessionEvents(
+    sessionId: string,
+    limit: number,
+    timeoutMs: number,
+  ): Promise<OpenCodeAdapterEvent[]> {
+    const events: OpenCodeAdapterEvent[] = [];
+    const stream = this.adapter.subscribeEvents(sessionId);
+    const iterator = stream[Symbol.asyncIterator]();
+
+    try {
+      while (events.length < limit) {
+        const next = await Promise.race([
+          iterator.next(),
+          new Promise<{ timeout: true }>((resolve) => {
+            setTimeout(() => resolve({ timeout: true }), timeoutMs);
+          }),
+        ]);
+
+        if ((next as { timeout?: true }).timeout) {
+          break;
+        }
+
+        const value = next as IteratorResult<OpenCodeAdapterEvent>;
+        if (value.done) {
+          break;
+        }
+
+        events.push(value.value);
+      }
+    } finally {
+      try {
+        await iterator.return?.(undefined as any);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || 'unknown error');
+        this.logger.debug(`OpenCode event iterator close failed: ${message}`);
+      }
+    }
+
+    return events;
+  }
+
+  private extractDeltaText(payload: Record<string, unknown>): string {
+    const directKeys = ['delta', 'text', 'content', 'message'];
+    for (const key of directKeys) {
+      const value = payload[key];
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+    }
+
+    const nested = payload.payload;
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      for (const key of directKeys) {
+        const value = (nested as Record<string, unknown>)[key];
+        if (typeof value === 'string' && value.trim()) {
+          return value;
+        }
+      }
+    }
+
+    return '';
   }
 
   private async ensureSessionId(input: OpenCodeExecutionStartInput): Promise<string> {
@@ -159,6 +225,7 @@ export class OpenCodeExecutionService {
     const session = await this.adapter.createSession({
       title: input.title,
       config: input.sessionConfig,
+      model: input.model,
     });
     return session.id;
   }

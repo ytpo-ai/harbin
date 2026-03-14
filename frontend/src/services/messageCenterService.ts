@@ -1,5 +1,11 @@
 import api from './api';
 
+export const MESSAGE_CENTER_UPDATED_EVENT = 'message-center:updated';
+
+export interface MessageCenterUpdatedDetail {
+  unreadCount?: number;
+}
+
 export type MessageType = 'engineering_statistics' | 'orchestration' | 'system_alert';
 
 export interface MessageCenterItem {
@@ -26,6 +32,21 @@ export interface MessageCenterListResponse {
 }
 
 class MessageCenterService {
+  private emitUpdated(detail?: MessageCenterUpdatedDetail) {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent<MessageCenterUpdatedDetail>(MESSAGE_CENTER_UPDATED_EVENT, { detail }));
+    }
+  }
+
+  private async emitUpdatedWithUnreadCount() {
+    try {
+      const unreadCount = await this.getUnreadCount();
+      this.emitUpdated({ unreadCount });
+    } catch {
+      this.emitUpdated();
+    }
+  }
+
   async listMessages(params?: {
     page?: number;
     pageSize?: number;
@@ -43,10 +64,12 @@ class MessageCenterService {
 
   async markAsRead(messageId: string): Promise<void> {
     await api.patch(`/message-center/messages/${encodeURIComponent(messageId)}/read`);
+    await this.emitUpdatedWithUnreadCount();
   }
 
   async markAllAsRead(): Promise<number> {
     const response = await api.patch('/message-center/messages/read-all');
+    await this.emitUpdatedWithUnreadCount();
     return Number(response.data?.data?.updatedCount || 0);
   }
 }

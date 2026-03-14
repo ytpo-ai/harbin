@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execSync } from 'child_process';
 
 export interface CodeUpdatesReaderCommit {
   hash: string;
@@ -20,7 +21,7 @@ export interface CodeUpdatesReaderResult {
 
 function execGit(command: string, cwd: string): { output: string; error?: string } {
   try {
-    const output = require('child_process').execSync(command, {
+    const output = execSync(command, {
       encoding: 'utf-8',
       cwd,
       maxBuffer: 10 * 1024 * 1024,

@@ -1,11 +1,12 @@
 import {
+  IsArray,
   IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
   IsObject,
-  IsOptional,
   IsString,
+  IsOptional,
   MaxLength,
   Min,
   ValidateNested,
@@ -115,4 +116,27 @@ export class ScheduleHistoryQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+}
+
+export class TriggerSystemEngineeringStatisticsDto {
+  @IsOptional()
+  @IsString()
+  receiverId?: string;
+
+  @IsOptional()
+  @IsEnum(['all', 'docs', 'frontend', 'backend'])
+  scope?: 'all' | 'docs' | 'frontend' | 'backend';
+
+  @IsOptional()
+  @IsEnum(['estimate', 'exact'])
+  tokenMode?: 'estimate' | 'exact';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  projectIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  triggeredBy?: string;
 }

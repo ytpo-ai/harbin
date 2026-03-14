@@ -30,8 +30,8 @@
 5. 注入 Agent 执行上下文
    - 在 `generateAgentResponse` 中保留原有 `teamContext.participants`（ID 列表），新增 `teamContext.participantProfiles`（结构化参会人信息），保持向后兼容。
 
-6. 强化讨论系统提示
-   - `buildDiscussionContext` 变更为异步，注入“参会人详情”摘要，帮助模型在回复时准确识别当前参与者。
+6. 强化会议系统提示
+   - 会议响应上下文注入“参会人详情”摘要，帮助模型在回复时准确识别当前参与者。
 
 ## 文档更新
 

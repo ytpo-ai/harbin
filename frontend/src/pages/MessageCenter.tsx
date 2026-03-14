@@ -1,8 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { CheckIcon, EnvelopeOpenIcon } from '@heroicons/react/24/outline';
-import { useNavigate } from 'react-router-dom';
-import { messageCenterService, MessageCenterItem, MessageType } from '../services/messageCenterService';
+import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  messageCenterService,
+  MessageCenterItem,
+  MessageType,
+  MESSAGE_CENTER_UPDATED_EVENT,
+} from '../services/messageCenterService';
 
 function formatTypeLabel(type: MessageType): string {
   if (type === 'engineering_statistics') return '工程统计';
@@ -18,11 +23,13 @@ function readFilterToQuery(readFilter: 'all' | 'read' | 'unread'): boolean | und
 
 const MessageCenter: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [typeFilter, setTypeFilter] = useState<'all' | MessageType>('all');
   const [readFilter, setReadFilter] = useState<'all' | 'read' | 'unread'>('all');
+  const [localUnreadCount, setLocalUnreadCount] = useState<number | null>(null);
 
   const queryParams = useMemo(
     () => ({
@@ -38,8 +45,14 @@ const MessageCenter: React.FC = () => {
     messageCenterService.listMessages(queryParams),
   );
 
+  React.useEffect(() => {
+    setLocalUnreadCount(data?.unreadCount ?? null);
+  }, [data?.unreadCount]);
+
   const markOneMutation = useMutation((messageId: string) => messageCenterService.markAsRead(messageId), {
     onSuccess: () => {
+      setLocalUnreadCount((prev) => (prev === null ? 0 : Math.max(0, prev - 1)));
+      window.dispatchEvent(new CustomEvent(MESSAGE_CENTER_UPDATED_EVENT));
       queryClient.invalidateQueries('message-center-page');
       queryClient.invalidateQueries('message-center-unread-count');
     },
@@ -47,12 +60,15 @@ const MessageCenter: React.FC = () => {
 
   const markAllMutation = useMutation(() => messageCenterService.markAllAsRead(), {
     onSuccess: () => {
+      setLocalUnreadCount(0);
+      window.dispatchEvent(new CustomEvent(MESSAGE_CENTER_UPDATED_EVENT, { detail: { unreadCount: 0 } }));
       queryClient.invalidateQueries('message-center-page');
       queryClient.invalidateQueries('message-center-unread-count');
     },
   });
 
   const items: MessageCenterItem[] = data?.items || [];
+  const selectedMessageId = new URLSearchParams(location.search).get('messageId') || '';
 
   const openMessageDetail = async (item: MessageCenterItem) => {
     if (!item.isRead) {
@@ -113,7 +129,7 @@ const MessageCenter: React.FC = () => {
           </select>
 
           <div className="flex items-center text-sm text-gray-500 px-1">
-            共 {data?.total || 0} 条，未读 {data?.unreadCount || 0} 条
+            共 {data?.total || 0} 条，未读 {(localUnreadCount ?? data?.unreadCount) || 0} 条
           </div>
         </div>
       </div>
@@ -126,7 +142,12 @@ const MessageCenter: React.FC = () => {
         ) : (
           <div className="divide-y divide-gray-100">
             {items.map((item) => (
-              <div key={item.messageId} className="p-4 flex items-start justify-between gap-3">
+              <div
+                key={item.messageId}
+                className={`p-4 flex items-start justify-between gap-3 ${
+                  selectedMessageId === item.messageId ? 'bg-primary-50' : ''
+                }`}
+              >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600">{formatTypeLabel(item.type)}</span>

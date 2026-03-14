@@ -128,7 +128,7 @@ const Tools: React.FC = () => {
   const { data: agents } = useQuery('agents', agentService.getAgents);
 
   const upsertPermissionSetMutation = useMutation(
-    ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'> }) =>
+    ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'> }) =>
       agentService.upsertToolPermissionSet(roleCode, updates),
     {
       onSuccess: () => {
@@ -648,7 +648,7 @@ const Tools: React.FC = () => {
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Role Code</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Exposed</th>
                   <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
+                  <th className="px-4 py-3 text-left font-medium text-gray-600">Permissions</th>
                   <th className="px-4 py-3 text-right font-medium text-gray-600">操作</th>
                 </tr>
               </thead>
@@ -667,7 +667,7 @@ const Tools: React.FC = () => {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{set.tools?.length || 0}</td>
-                    <td className="px-4 py-3 text-gray-700">{set.capabilities?.length || 0}</td>
+                    <td className="px-4 py-3 text-gray-700">{set.permissions?.length || set.capabilities?.length || 0}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => setEditingPermissionSet(set)}
@@ -1050,12 +1050,12 @@ const EditToolPermissionSetModal: React.FC<{
   permissionSet: AgentToolPermissionSet;
   availableTools: Array<{ id: string; toolId?: string; name: string; provider?: string; namespace?: string; enabled?: boolean }>;
   onClose: () => void;
-  onSave: (updates: Pick<AgentToolPermissionSet, 'tools' | 'capabilities' | 'exposed' | 'description'>) => void;
+  onSave: (updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'>) => void;
   isSaving: boolean;
 }> = ({ permissionSet, availableTools, onClose, onSave, isSaving }) => {
   const [description, setDescription] = useState(permissionSet.description || '');
   const [tools, setTools] = useState<string[]>(permissionSet.tools || []);
-  const [capabilitiesText, setCapabilitiesText] = useState((permissionSet.capabilities || []).join(', '));
+  const [permissionsText, setPermissionsText] = useState((permissionSet.permissions || permissionSet.capabilities || []).join(', '));
   const [exposed, setExposed] = useState(permissionSet.exposed === true);
   const [providerFilter, setProviderFilter] = useState('');
   const [namespaceFilter, setNamespaceFilter] = useState('');
@@ -1064,7 +1064,7 @@ const EditToolPermissionSetModal: React.FC<{
     setTools((prev) => (checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)));
   };
 
-  const capabilities = capabilitiesText
+  const permissions = permissionsText
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
@@ -1123,11 +1123,11 @@ const EditToolPermissionSetModal: React.FC<{
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Capabilities（逗号分隔）</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Permissions（逗号分隔）</label>
             <input
               type="text"
-              value={capabilitiesText}
-              onChange={(e) => setCapabilitiesText(e.target.value)}
+              value={permissionsText}
+              onChange={(e) => setPermissionsText(e.target.value)}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             />
           </div>
@@ -1211,7 +1211,7 @@ const EditToolPermissionSetModal: React.FC<{
             onClick={() =>
               onSave({
                 tools,
-                capabilities,
+                permissions,
                 exposed,
                 description: description.trim(),
               })

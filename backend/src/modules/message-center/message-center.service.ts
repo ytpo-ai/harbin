@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SystemMessage, SystemMessageDocument, SystemMessageType } from '../../shared/schemas/system-message.schema';
+import { WsMessageService } from '@libs/infra';
 
 export interface ListSystemMessagesQuery {
   receiverId: string;
@@ -26,6 +27,7 @@ export class MessageCenterService {
   constructor(
     @InjectModel(SystemMessage.name)
     private readonly systemMessageModel: Model<SystemMessageDocument>,
+    private readonly wsMessageService: WsMessageService,
   ) {}
 
   async listMessages(query: ListSystemMessagesQuery) {
@@ -122,7 +124,7 @@ export class MessageCenterService {
       throw new BadRequestException('title and content are required');
     }
 
-    return this.systemMessageModel.create({
+    const created = await this.systemMessageModel.create({
       receiverId: input.receiverId,
       type: input.type,
       title: input.title,
@@ -132,5 +134,25 @@ export class MessageCenterService {
       status: input.status || 'active',
       isRead: false,
     });
+
+    const unreadCount = await this.getUnreadCount(input.receiverId);
+    void this.wsMessageService
+      .publishUserMessage({
+        userId: input.receiverId,
+        event: 'message-center.message.created',
+        source: input.source || 'message-center',
+        data: {
+          messageId: created.messageId,
+          type: created.type,
+          title: created.title,
+          unreadCount,
+          createdAt: new Date().toISOString(),
+        },
+      })
+      .catch(() => {
+        // ignore websocket publish errors
+      });
+
+    return created;
   }
 }

@@ -38,7 +38,7 @@ wait_for_service() {
 echo "========================================"
 echo "1/5 启动 legacy 服务 (端口 3001)..."
 if [ -n "$WATCH_ARG" ]; then
-    nohup pnpm run start:legacy -- --watch > "$LOG_DIR/legacy-app.log" 2>&1 &
+    pnpm run start:legacy -- --watch </dev/null > "$LOG_DIR/legacy-app.log" 2>&1 &
 else
     nohup pnpm run start:legacy > "$LOG_DIR/legacy-app.log" 2>&1 &
 fi
@@ -47,7 +47,7 @@ wait_for_service 3001 "legacy"
 echo "========================================"
 echo "2/5 启动 gateway 服务 (端口 3100)..."
 if [ -n "$WATCH_ARG" ]; then
-    nohup pnpm run start:gateway -- --watch > "$LOG_DIR/gateway-app.log" 2>&1 &
+    pnpm run start:gateway -- --watch </dev/null > "$LOG_DIR/gateway-app.log" 2>&1 &
 else
     nohup pnpm run start:gateway > "$LOG_DIR/gateway-app.log" 2>&1 &
 fi
@@ -56,7 +56,7 @@ wait_for_service 3100 "gateway"
 echo "========================================"
 echo "3/5 启动 agents 服务 (端口 3002)..."
 if [ -n "$WATCH_ARG" ]; then
-    nohup pnpm run start:agents -- --watch > "$LOG_DIR/agents-app.log" 2>&1 &
+    pnpm run start:agents -- --watch </dev/null > "$LOG_DIR/agents-app.log" 2>&1 &
 else
     nohup pnpm run start:agents > "$LOG_DIR/agents-app.log" 2>&1 &
 fi
@@ -65,7 +65,7 @@ wait_for_service 3002 "agents"
 echo "========================================"
 echo "4/5 启动 ws 服务 (端口 3003)..."
 if [ -n "$WATCH_ARG" ]; then
-    nohup pnpm run start:ws -- --watch > "$LOG_DIR/ws-app.log" 2>&1 &
+    pnpm run start:ws -- --watch </dev/null > "$LOG_DIR/ws-app.log" 2>&1 &
 else
     nohup pnpm run start:ws > "$LOG_DIR/ws-app.log" 2>&1 &
 fi
@@ -74,7 +74,7 @@ wait_for_service 3003 "ws"
 echo "========================================"
 echo "5/5 启动 ei 服务 (端口 3004)..."
 if [ -n "$WATCH_ARG" ]; then
-    nohup pnpm run start:ei -- --watch > "$LOG_DIR/ei-app.log" 2>&1 &
+    pnpm run start:ei -- --watch </dev/null > "$LOG_DIR/ei-app.log" 2>&1 &
 else
     nohup pnpm run start:ei > "$LOG_DIR/ei-app.log" 2>&1 &
 fi

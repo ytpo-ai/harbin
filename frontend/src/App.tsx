@@ -12,7 +12,7 @@ import EmployeeManagement from './pages/EmployeeManagement';
 import HRManagement from './pages/HRManagement';
 import Meetings from './pages/Meetings';
 import RdConversation from './pages/RdConversation';
-import EngineeringIntelligence from './pages/EngineeringIntelligence';
+import ProjectManagement from './pages/ProjectManagement';
 import EngineeringStatistics from './pages/EngineeringStatistics';
 import EngineeringRequirements from './pages/EngineeringRequirements';
 import EngineeringRequirementDetail from './pages/EngineeringRequirementDetail';
@@ -81,7 +81,7 @@ function App() {
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
             <Route path="/memos" element={<ProtectedRoute><Memos /></ProtectedRoute>} />
             <Route path="/message-center" element={<ProtectedRoute><MessageCenter /></ProtectedRoute>} />
-            <Route path="/engineering-intelligence" element={<ProtectedRoute><EngineeringIntelligence /></ProtectedRoute>} />
+            <Route path="/engineering-intelligence" element={<ProtectedRoute><ProjectManagement /></ProtectedRoute>} />
             <Route path="/engineering-intelligence/statistics" element={<ProtectedRoute><EngineeringStatistics /></ProtectedRoute>} />
             <Route path="/engineering-intelligence/requirements" element={<ProtectedRoute><EngineeringRequirements /></ProtectedRoute>} />
             <Route path="/engineering-intelligence/requirements/:requirementId" element={<ProtectedRoute><EngineeringRequirementDetail /></ProtectedRoute>} />

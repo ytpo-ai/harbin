@@ -46,13 +46,13 @@
         "agentId": "agent-id",
         "contextType": "chat",
         "contextId": "meeting-id",
-        "action": "chat_execution:chat:discussion",
+        "action": "chat_execution:chat:meeting",
         "details": {
           "status": "completed",
           "durationMs": 1200,
           "taskId": "task-id",
           "taskTitle": "参与会议讨论: ...",
-          "taskType": "discussion",
+          "taskType": "meeting",
           "executionMode": "chat",
           "agentSessionId": "meeting-meeting-id-agent-id"
         },

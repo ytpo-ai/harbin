@@ -40,6 +40,9 @@ export class ApiKey {
   @Prop({ default: false })
   isDeprecated: boolean;
 
+  @Prop({ default: 'LLM', enum: ['LLM', 'OTHER'] })
+  category: string;
+
   @Prop()
   createdAt?: Date;
 

@@ -4,6 +4,13 @@ export interface ToolExecutionContext {
   teamId?: string;
   taskId?: string;
   idempotencyKey?: string;
+  auth?: {
+    mode?: 'jwt' | 'internal-context' | 'legacy';
+    scopes?: string[];
+    permissions?: string[];
+    jti?: string;
+  };
+  originSessionId?: string;
   actor?: {
     employeeId?: string;
     role?: string;

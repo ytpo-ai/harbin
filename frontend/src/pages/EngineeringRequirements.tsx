@@ -9,6 +9,9 @@ import {
   RequirementStatus,
 } from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
+import { rdConversationService, RdProject } from '../services/rdConversationService';
+import { useToast } from '../hooks/useToast';
+import Toast from '../components/Toast';
 
 const STATUS_OPTIONS: RequirementStatus[] = ['todo', 'assigned', 'in_progress', 'review', 'done', 'blocked'];
 const PRIORITY_OPTIONS: RequirementPriority[] = ['low', 'medium', 'high', 'critical'];
@@ -29,23 +32,58 @@ const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   critical: 'Critical',
 };
 
+function extractRequestErrorMessage(error: any): string {
+  const candidates = [
+    error?.response?.data?.message,
+    error?.response?.data?.error,
+    error?.message,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '请求失败，请稍后重试';
+}
+
 const EngineeringRequirements: React.FC = () => {
   const queryClient = useQueryClient();
+  const { toast, showToast, clearToast } = useToast(4000);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequirementStatus | 'all'>('all');
+  const [localProjectFilterId, setLocalProjectFilterId] = useState('');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<RequirementPriority>('medium');
   const [labelsInput, setLabelsInput] = useState('');
+  const [selectedLocalProjectId, setSelectedLocalProjectId] = useState('');
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncTarget, setSyncTarget] = useState<RequirementItem | null>(null);
+  const [syncOwner, setSyncOwner] = useState('');
+  const [syncRepo, setSyncRepo] = useState('');
+  const [syncLabelsInput, setSyncLabelsInput] = useState('');
+
+  const { data: localProjects = [] } = useQuery<RdProject[]>(
+    ['ei-local-projects-for-requirements'],
+    () => rdConversationService.getProjects({ sourceType: 'local' }),
+    { retry: false },
+  );
+
+  const localProjectById = useMemo(() => {
+    const map = new Map<string, RdProject>();
+    localProjects.forEach((item) => map.set(item._id, item));
+    return map;
+  }, [localProjects]);
 
   const { data: requirements = [], isLoading, refetch } = useQuery(
-    ['ei-requirements', statusFilter, search],
+    ['ei-requirements', statusFilter, search, localProjectFilterId],
     () =>
       engineeringIntelligenceService.listRequirements({
         status: statusFilter === 'all' ? undefined : statusFilter,
         search: search.trim() || undefined,
         limit: 100,
+        localProjectId: localProjectFilterId || undefined,
       }),
     { retry: false },
   );
@@ -62,6 +100,7 @@ const EngineeringRequirements: React.FC = () => {
         description: description.trim() || undefined,
         priority,
         labels,
+        localProjectId: selectedLocalProjectId || undefined,
         createdById: user?.id,
         createdByName: user?.name,
         createdByType: 'human',
@@ -73,29 +112,74 @@ const EngineeringRequirements: React.FC = () => {
         setDescription('');
         setPriority('medium');
         setLabelsInput('');
+        setSelectedLocalProjectId('');
         queryClient.invalidateQueries('ei-requirements');
+        showToast('success', '需求创建成功');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
 
   const syncMutation = useMutation(
-    async (item: RequirementItem) => {
-      const owner = window.prompt('GitHub owner', item.githubLink?.owner || '');
-      if (!owner) return null;
-      const repo = window.prompt('GitHub repo', item.githubLink?.repo || '');
-      if (!repo) return null;
-      return engineeringIntelligenceService.syncRequirementToGithub(item.requirementId, {
-        owner: owner.trim(),
-        repo: repo.trim(),
-        labels: item.labels,
+    async (payload: { item: RequirementItem; owner: string; repo: string; labels: string[] }) => {
+      return engineeringIntelligenceService.syncRequirementToGithub(payload.item.requirementId, {
+        owner: payload.owner.trim(),
+        repo: payload.repo.trim(),
+        labels: payload.labels,
       });
     },
     {
       onSuccess: () => {
         queryClient.invalidateQueries('ei-requirements');
+        showToast('success', '已同步到 GitHub Issue');
+        setIsSyncModalOpen(false);
+        setSyncTarget(null);
+        setSyncOwner('');
+        setSyncRepo('');
+        setSyncLabelsInput('');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
+
+  const openSyncModal = (item: RequirementItem) => {
+    setSyncTarget(item);
+    const project = item.localProjectId ? localProjectById.get(item.localProjectId) : undefined;
+    const githubBinding = project?.githubBindingId && typeof project.githubBindingId !== 'string'
+      ? project.githubBindingId
+      : undefined;
+    setSyncOwner(String(githubBinding?.githubOwner || item.githubLink?.owner || ''));
+    setSyncRepo(String(githubBinding?.githubRepo || item.githubLink?.repo || ''));
+    setSyncLabelsInput((item.labels || []).join(', '));
+    setIsSyncModalOpen(true);
+  };
+
+  const submitSyncToGithub = () => {
+    if (!syncTarget) return;
+    const project = syncTarget.localProjectId ? localProjectById.get(syncTarget.localProjectId) : undefined;
+    const githubBinding = project?.githubBindingId && typeof project.githubBindingId !== 'string'
+      ? project.githubBindingId
+      : undefined;
+    const owner = String(githubBinding?.githubOwner || syncOwner || '').trim();
+    const repo = String(githubBinding?.githubRepo || syncRepo || '').trim();
+    if (!owner) {
+      showToast('error', 'GitHub owner 不能为空');
+      return;
+    }
+    if (!repo) {
+      showToast('error', 'GitHub repo 不能为空');
+      return;
+    }
+    const labels = syncLabelsInput
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    syncMutation.mutate({ item: syncTarget, owner, repo, labels });
+  };
 
   const groupedCount = useMemo(() => {
     const counts: Record<RequirementStatus, number> = {
@@ -158,6 +242,16 @@ const EngineeringRequirements: React.FC = () => {
             rows={3}
             className="md:col-span-12 border border-gray-300 rounded px-3 py-2 text-sm"
           />
+          <select
+            value={selectedLocalProjectId}
+            onChange={(e) => setSelectedLocalProjectId(e.target.value)}
+            className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
+          >
+            <option value="">选择所属本地项目（可选）</option>
+            {localProjects.map((item) => (
+              <option key={item._id} value={item._id}>{item.name}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -180,6 +274,16 @@ const EngineeringRequirements: React.FC = () => {
             <option value="all">全部状态</option>
             {STATUS_OPTIONS.map((item) => (
               <option key={item} value={item}>{STATUS_LABEL[item]}</option>
+            ))}
+          </select>
+          <select
+            value={localProjectFilterId}
+            onChange={(e) => setLocalProjectFilterId(e.target.value)}
+            className="border border-gray-300 rounded px-3 py-2 text-sm"
+          >
+            <option value="">全部项目</option>
+            {localProjects.map((item) => (
+              <option key={item._id} value={item._id}>{item.name}</option>
             ))}
           </select>
           <button
@@ -214,6 +318,7 @@ const EngineeringRequirements: React.FC = () => {
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">状态</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">优先级</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">负责人</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">项目</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">GitHub</th>
                 <th className="px-3 py-2 text-right text-xs font-semibold text-gray-600">操作</th>
               </tr>
@@ -221,11 +326,11 @@ const EngineeringRequirements: React.FC = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td className="px-3 py-3 text-xs text-gray-500" colSpan={6}>加载中...</td>
+                  <td className="px-3 py-3 text-xs text-gray-500" colSpan={7}>加载中...</td>
                 </tr>
               ) : requirements.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3 text-xs text-gray-400" colSpan={6}>暂无需求</td>
+                  <td className="px-3 py-3 text-xs text-gray-400" colSpan={7}>暂无需求</td>
                 </tr>
               ) : (
                 requirements.map((item) => (
@@ -238,23 +343,35 @@ const EngineeringRequirements: React.FC = () => {
                     <td className="px-3 py-2 text-xs text-gray-700">{STATUS_LABEL[item.status]}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{PRIORITY_LABEL[item.priority]}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.currentAssigneeAgentName || item.currentAssigneeAgentId || '-'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-700">{item.localProjectId ? localProjectById.get(item.localProjectId)?.name || item.localProjectId : '-'}</td>
                     <td className="px-3 py-2 text-xs">
                       {item.githubLink?.issueUrl ? (
                         <a href={item.githubLink.issueUrl} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline">
                           #{item.githubLink.issueNumber}
                         </a>
+                      ) : item.localProjectId && localProjectById.get(item.localProjectId)?.githubBindingId ? (
+                        <span className="text-amber-600">已绑定仓库，未同步</span>
+                      ) : item.localProjectId ? (
+                        <span className="text-rose-600">未绑定 GitHub</span>
                       ) : (
-                        <span className="text-gray-400">未关联</span>
+                        <span className="text-gray-400">未选择项目</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs text-right">
+                      {(() => {
+                        const project = item.localProjectId ? localProjectById.get(item.localProjectId) : undefined;
+                        const hasGithubBinding = Boolean(project?.githubBindingId);
+                        return (
                       <button
-                        onClick={() => syncMutation.mutate(item)}
+                        onClick={() => openSyncModal(item)}
+                        disabled={!hasGithubBinding}
                         className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded"
                       >
                         <ArrowUpOnSquareIcon className="h-3.5 w-3.5" />
                         同步 GitHub
                       </button>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))
@@ -263,6 +380,70 @@ const EngineeringRequirements: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {isSyncModalOpen && (
+        <div className="fixed inset-0 z-[90]">
+          <button
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (syncMutation.isLoading) return;
+              setIsSyncModalOpen(false);
+            }}
+            aria-label="关闭同步弹窗"
+          />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-gray-200 shadow-2xl p-4 space-y-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">同步到 GitHub</p>
+              <p className="text-xs text-gray-500 mt-1">{syncTarget?.title || '-'}</p>
+            </div>
+
+            {syncTarget?.localProjectId && !localProjectById.get(syncTarget.localProjectId)?.githubBindingId ? (
+              <p className="text-xs text-rose-600">该需求所属项目未绑定 GitHub 仓库，无法同步。</p>
+            ) : null}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <input
+                value={syncOwner}
+                onChange={(e) => setSyncOwner(e.target.value)}
+                placeholder="owner"
+                disabled
+                className="border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <input
+                value={syncRepo}
+                onChange={(e) => setSyncRepo(e.target.value)}
+                placeholder="repo"
+                disabled
+                className="border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <input
+                value={syncLabelsInput}
+                onChange={(e) => setSyncLabelsInput(e.target.value)}
+                placeholder="labels, comma separated"
+                className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setIsSyncModalOpen(false)}
+                disabled={syncMutation.isLoading}
+                className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50 disabled:text-gray-400"
+              >
+                取消
+              </button>
+              <button
+                onClick={submitSyncToGithub}
+                disabled={syncMutation.isLoading}
+                className="rounded px-3 py-2 text-sm bg-primary-600 text-white disabled:bg-gray-300"
+              >
+                {syncMutation.isLoading ? '同步中...' : '确认同步'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast ? <Toast toast={toast} onClose={clearToast} /> : null}
     </div>
   );
 };

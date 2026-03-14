@@ -184,7 +184,7 @@ export const BUILTIN_TOOLS = [
           '当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 builtin.sys-mg.internal.agent-master.list-agents 工具获取实时名单，再基于工具结果回答。',
         type: 'data_analysis' as const,
         category: 'System Intelligence',
-        requiredPermissions: [{ id: 'data_access', name: 'Agent Registry Read', level: 'basic' }],
+        requiredPermissions: [{ id: 'agent_registry_read', name: 'Agent Registry Read', level: 'basic' }],
         tokenCost: 3,
         implementation: {
           type: 'built_in' as const,

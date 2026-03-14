@@ -23,12 +23,6 @@
 - `GET /meetings/:id/agent-states`：获取 Agent 思考状态
 - `DELETE /meetings/:id`：删除会议
 
-## Discussions（`/discussions`）
-
-- `POST /discussions`：创建讨论
-- `POST /discussions/:id/messages`：发送消息
-- `POST /discussions/:id/end`：结束讨论
-
 ## Roles（`/roles`）
 
 - `GET /roles`：查询角色列表
@@ -88,6 +82,30 @@
 - `PATCH /message-center/messages/read-all`：全部消息标记已读
 - `POST /message-center/hooks/engineering-statistics`：工程统计通知写入 Hook（EI 调用，通知落库在 legacy）
 
+## Agent Messages（`/agent-messages`）
+
+- `POST /agent-messages/direct`：Agent 直发消息（先落库 `sent`，再入 Redis 分发队列）
+- `POST /agent-messages/publish`：发布事件消息（按订阅关系匹配后生成订阅消息并分发）
+- `PATCH /agent-messages/:messageId/ack`：接收方 ACK（更新为 `delivered` 或 `processing`）
+- `PATCH /agent-messages/:messageId/processed`：接收方处理完成（更新为 `processed`）
+
+任务生命周期事件（建议）：`task.created`、`task.status.changed`、`task.completed`、`task.exception`、`task.failed`
+
+> Hook 通道：任务事件会同步发布到 Redis 频道 `orchestration:task-events`，用于订阅方实时消费。
+
+## Agent Message Subscriptions（`/agent-message-subscriptions`）
+
+- `POST /agent-message-subscriptions`：创建或更新订阅（按 `subscriberAgentId + eventType` 幂等）
+- `GET /agent-message-subscriptions`：查询订阅列表（支持 `subscriberAgentId/eventType/isActive`）
+
+订阅 `eventType` 支持：
+
+- 精确匹配：如 `task.completed`
+- 域通配：如 `task.*`
+- 全局通配：`*`
+
+`filters` 为可选 JSON（浅层匹配），可用于按 `planId`、`taskId` 等字段筛选。
+
 ## RD Management（`/rd-management`）
 
 > OpenCode Serve（`4098`）直连参数规范与 `directory` 约束见：`docs/api/opencode-api.md`
@@ -103,6 +121,8 @@
 - `POST /rd-management/projects/local`
 - `POST /rd-management/projects/bind/opencode`
 - `POST /rd-management/projects/bind/github`
+- `POST /rd-management/projects/:id/unbind/opencode`
+- `POST /rd-management/projects/:id/unbind/github`
 - `GET /rd-management/opencode/sessions`
 - `GET /rd-management/opencode/sessions/:id`
 - `GET /rd-management/opencode/sessions/:id/messages`

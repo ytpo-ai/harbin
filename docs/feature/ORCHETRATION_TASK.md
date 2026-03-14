@@ -75,6 +75,15 @@
    - `unassigned`：标记失败或等待人工
 3. 任务完成后更新 Plan 统计
 4. 若计划关联 `requirementId`，计划启动/完成会触发需求状态 best-effort 回写。
+5. 任务消息联动：发布任务生命周期事件（`task.created/task.status.changed/task.completed/task.exception/task.failed`），订阅方通过 Redis 消息分发链路接收通知；Agent 间协作沟通使用独立直发消息链路。
+
+#### Orchestration 服务拆分（Plan D）
+
+- `OrchestrationService` 聚焦流程编排，领域逻辑下沉到子服务：
+  - `TaskClassificationService`
+  - `TaskOutputValidationService`
+  - `ExecutorSelectionService`
+- 计划创建与重规划复用共享任务创建流程，减少重复实现。
 
 #### 任务调试 MCP
 
@@ -120,6 +129,7 @@
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 编排与调度去重复/职责边界重构计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -130,6 +140,7 @@
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化开发沉淀 |
 | `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | Plan D 开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -149,8 +160,11 @@
 |------|------|
 | `orchestration.module.ts` | 模块装配与依赖注入 |
 | `orchestration.controller.ts` | REST API 控制器 |
-| `orchestration.service.ts` | 核心业务逻辑（计划管理、任务执行，智能分配） |
+| `orchestration.service.ts` | 核心流程编排（计划管理、任务执行编排） |
 | `planner.service.ts` | 任务拆解服务（Agent 拆解 + 启发式兜底） |
+| `services/task-classification.service.ts` | 任务分类能力 |
+| `services/task-output-validation.service.ts` | 输出质量与证明校验能力 |
+| `services/executor-selection.service.ts` | 执行者选择与能力匹配 |
 
 > 注意：原有的 `session-manager.service.ts` 已移除，会话管理已迁移到 `apps/agents` 侧的 AgentSession。
 
@@ -174,6 +188,13 @@
 | 文件 | 功能 |
 |------|------|
 | `agent.service.ts` | orchestration_* 工具注册与意图识别 |
+
+### 消息协作集成 (backend/src/modules/agent-messages/)
+
+| 文件 | 功能 |
+|------|------|
+| `agent-messages.service.ts` | 消息落库、订阅匹配、分发入队 |
+| `agent-message-dispatcher.service.ts` | Redis 分发消费者与重试/死信处理 |
 
 ---
 

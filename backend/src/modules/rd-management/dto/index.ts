@@ -1,5 +1,6 @@
-import { IsString, IsOptional, IsEnum, IsMongoId, IsObject, IsArray, IsNumber } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsMongoId, IsObject, IsArray, IsNumber, IsUrl } from 'class-validator';
 import { RdTaskStatus, RdTaskPriority } from '../../../shared/schemas/rd-task.schema';
+import { RdProjectSourceType } from '../../../shared/schemas/rd-project.schema';
 
 export class CreateRdTaskDto {
   @IsString()
@@ -123,11 +124,19 @@ export class CreateOpencodeSessionDto {
 
   @IsOptional()
   @IsString()
+  agentId?: string;
+
+  @IsOptional()
+  @IsString()
   title?: string;
 
   @IsOptional()
   @IsObject()
   config?: Record<string, any>;
+
+  @IsOptional()
+  @IsObject()
+  model?: { providerID: string; modelID: string };
 }
 
 export class PromptOpencodeSessionDto {
@@ -283,4 +292,91 @@ export class QueryRdProjectDto {
   @IsOptional()
   @IsString()
   syncedFromAgentId?: string;
+
+  @IsOptional()
+  @IsEnum(RdProjectSourceType)
+  sourceType?: RdProjectSourceType;
+
+  @IsOptional()
+  @IsMongoId()
+  bindingLocalProjectId?: string;
+}
+
+export class CreateLocalRdProjectDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  localPath: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+export class BindOpencodeProjectDto {
+  @IsMongoId()
+  localProjectId: string;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string;
+
+  @IsOptional()
+  @IsString()
+  projectPath?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+
+  @IsOptional()
+  @IsString()
+  agentId?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+}
+
+export class BindGithubProjectDto {
+  @IsMongoId()
+  localProjectId: string;
+
+  @IsUrl({ require_tld: false })
+  repositoryUrl: string;
+
+  @IsString()
+  owner: string;
+
+  @IsString()
+  repo: string;
+
+  @IsString()
+  githubApiKeyId: string;
+
+  @IsOptional()
+  @IsString()
+  branch?: string;
+
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsObject()
+  metadata?: Record<string, any>;
+}
+
+export class UnbindOpencodeProjectDto {
+  @IsMongoId()
+  opencodeBindingId: string;
 }

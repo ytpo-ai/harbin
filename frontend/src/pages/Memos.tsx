@@ -74,7 +74,7 @@ const Memos: React.FC = () => {
         id: `memo-test-${Date.now()}`,
         title: `备忘录测试对话 ${new Date().toLocaleTimeString()}`,
         description: prompt,
-        type: 'discussion',
+        type: 'chat',
         priority: 'medium',
         status: 'in_progress',
         assignedAgents: [id],

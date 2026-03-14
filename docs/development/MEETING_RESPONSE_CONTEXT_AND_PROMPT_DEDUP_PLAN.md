@@ -12,7 +12,7 @@
 ### 1) 会议任务描述补全最新发言
 
 - 文件：`backend/src/modules/meetings/meeting.service.ts`
-- 在构建 discussion 任务时，将 `triggerMessage.content` 提炼为摘要并拼入 `task.description`。
+- 在构建会议响应任务时，将 `triggerMessage.content` 提炼为摘要并拼入 `task.description`。
 - 效果：session 中可直接看到“最新发言”摘要，降低“请回应什么”不明确问题。
 
 ### 2) 会议响应触发去重

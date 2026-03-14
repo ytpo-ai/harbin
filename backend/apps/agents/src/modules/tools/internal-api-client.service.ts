@@ -13,23 +13,31 @@ export class InternalApiClient {
     process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004/api';
   private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
 
-  buildSignedHeaders(): Record<string, string> {
+  constructor() {
     if (!this.contextSecret) {
-      throw new Error('INTERNAL_CONTEXT_SECRET is required for internal API calls');
+      throw new Error('INTERNAL_CONTEXT_SECRET is required');
     }
+  }
 
+  buildSignedHeaders(context?: { actorId?: string; actorRole?: string; originSessionId?: string }): Record<string, string> {
     const now = Date.now();
-    const context: GatewayUserContext = {
-      employeeId: 'agents-service',
-      role: 'system',
+    const actorId = String(context?.actorId || 'agents-service').trim() || 'agents-service';
+    const actorRole = String(context?.actorRole || 'system').trim() || 'system';
+    const originSessionId = String(context?.originSessionId || '').trim();
+    const userContext: GatewayUserContext = {
+      employeeId: actorId,
+      role: actorRole,
       issuedAt: now,
       expiresAt: now + 60 * 1000,
     };
-    const encoded = encodeUserContext(context);
+    const encoded = encodeUserContext(userContext);
     const signature = signEncodedContext(encoded, this.contextSecret);
     return {
       'x-user-context': encoded,
       'x-user-signature': signature,
+      'x-actor-id': actorId,
+      'x-actor-role': actorRole,
+      ...(originSessionId ? { 'x-origin-session-id': originSessionId } : {}),
       'content-type': 'application/json',
     };
   }

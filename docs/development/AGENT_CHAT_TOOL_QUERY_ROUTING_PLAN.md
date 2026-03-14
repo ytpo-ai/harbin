@@ -37,7 +37,6 @@
 
 - `backend/src/modules/agents-client/agent-client.service.ts`
 - `backend/src/modules/meetings/meeting.service.ts`
-- `backend/src/modules/chat/discussion.service.ts`
 - `backend/src/modules/agent-action-logs/agent-action-log.service.ts`
 - `backend/src/shared/schemas/agent-action-log.schema.ts`
 

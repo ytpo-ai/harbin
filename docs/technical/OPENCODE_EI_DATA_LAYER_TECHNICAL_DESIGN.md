@@ -40,7 +40,7 @@
 
 执行前强校验：
 
-- 角色准入：仅 `engineering`、`operations`、`technical-expert` 可发起 OpenCode 执行。
+- 角色准入：仅 `devops-engineer`、`fullstack-engineer`、`technical-architect` 可发起 OpenCode 执行。
 - 模型绑定匹配：执行请求模型需与 Agent 绑定模型一致（或命中显式 fallback 白名单）。
 - 配额检测：按 `agentId + period` 配额校验，超限触发审批。
 

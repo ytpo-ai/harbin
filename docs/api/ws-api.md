@@ -30,7 +30,6 @@
 ## 事件通道示例
 
 - `meeting:<meetingId>`：会议消息、状态、总结事件
-- `discussion:<discussionId>`：讨论协作事件
 - `stream:<sessionId>`：模型流式输出事件
 
 服务端推送消息会附加 `channel` 字段，便于前端单连接多路复用。

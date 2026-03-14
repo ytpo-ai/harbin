@@ -39,7 +39,7 @@ export interface Team {
 }
 
 export interface TeamSettings {
-	collaborationMode: 'pipeline' | 'parallel' | 'hierarchical' | 'discussion';
+	collaborationMode: 'pipeline' | 'parallel' | 'hierarchical';
 	maxConcurrentAgents: number;
 	votingEnabled: boolean;
 	consensusThreshold: number;
@@ -59,25 +59,6 @@ export interface Task {
 	createdAt?: Date;
 	updatedAt?: Date;
 	completedAt?: Date;
-}
-
-export interface Discussion {
-	id?: string;
-	taskId: string;
-	participants: string[];
-	messages: DiscussionMessage[];
-	status: 'active' | 'concluded' | 'paused';
-	createdAt?: Date;
-	updatedAt?: Date;
-}
-
-export interface DiscussionMessage {
-	id: string;
-	agentId: string;
-	content: string;
-	type: 'opinion' | 'question' | 'agreement' | 'disagreement' | 'suggestion' | 'conclusion';
-	timestamp: Date;
-	metadata?: any;
 }
 
 // ===== 新增组织架构相关类型 =====

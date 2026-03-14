@@ -14,7 +14,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   private flushing = false;
 
   private readonly eiBaseUrl = process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004';
-  private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
+  private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
   private readonly maxRetry = Math.max(1, Number(process.env.RUNTIME_EI_SYNC_MAX_RETRY || 5));
   private readonly pollIntervalMs = Math.max(1000, Number(process.env.RUNTIME_EI_SYNC_POLL_INTERVAL_MS || 5000));
   private readonly timeoutMs = Math.max(2000, Number(process.env.RUNTIME_EI_SYNC_TIMEOUT_MS || 10000));
@@ -25,7 +25,11 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectModel(AgentRun.name) private readonly runModel: Model<AgentRunDocument>,
     private readonly persistence: RuntimePersistenceService,
-  ) {}
+  ) {
+    if (!this.contextSecret) {
+      throw new Error('INTERNAL_CONTEXT_SECRET is required');
+    }
+  }
 
   onModuleInit(): void {
     this.timer = setInterval(() => {

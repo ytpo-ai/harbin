@@ -83,7 +83,10 @@ export interface AgentToolPermissionSet {
   roleName: string;
   roleStatus: 'active' | 'inactive' | 'unknown';
   tools: string[];
-  capabilities: string[];
+  permissions: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
+  capabilities?: string[];
   exposed: boolean;
   description?: string;
 }
@@ -91,7 +94,10 @@ export interface AgentToolPermissionSet {
 export interface AgentMcpMapProfile {
   role: string;
   tools: string[];
-  capabilities: string[];
+  permissions: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
+  capabilities?: string[];
   exposed: boolean;
   description?: string;
 }
@@ -242,6 +248,7 @@ export class AgentService {
       normalizedData.tools || [],
       'create',
     );
+    normalizedData.permissions = await this.inheritRoleProfilePermissions(normalizedData.roleId, normalizedData.permissions || []);
 
     try {
       const modelConfig: AIModel = {
@@ -341,6 +348,17 @@ export class AgentService {
           apiKeyId: 1,
         };
       }
+    }
+
+    if (hasRoleIdField || hasToolsField || Object.prototype.hasOwnProperty.call(updates, 'permissions')) {
+      const basePermissions = Object.prototype.hasOwnProperty.call(updates, 'permissions')
+        ? Array.isArray(updates.permissions)
+          ? updates.permissions
+          : []
+        : Array.isArray(existingAgent.permissions)
+          ? existingAgent.permissions
+          : [];
+      normalizedUpdates.permissions = await this.inheritRoleProfilePermissions(targetRoleId, basePermissions);
     }
 
     const updated = await this.agentModel.findByIdAndUpdate(
@@ -2108,6 +2126,12 @@ export class AgentService {
     return role;
   }
 
+  private async inheritRoleProfilePermissions(roleId: string, currentPermissions: string[]): Promise<string[]> {
+    const role = await this.assertRoleExists(roleId);
+    const profile = await this.agentMcpProfileService.getMcpProfileByRoleCode(role.code);
+    return this.uniqueStrings(currentPermissions || [], profile.permissions || profile.capabilities || []);
+  }
+
   private async getRoleMapByIds(roleIds: string[]): Promise<Map<string, AgentBusinessRole>> {
     const uniqueIds = Array.from(new Set(roleIds.map((item) => String(item || '').trim()).filter(Boolean)));
     const map = new Map<string, AgentBusinessRole>();
@@ -2144,7 +2168,7 @@ export class AgentService {
 
   async upsertToolPermissionSet(
     roleCode: string,
-    updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'capabilities' | 'exposed' | 'description'>>,
+    updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'permissions' | 'capabilities' | 'exposed' | 'description'>>,
   ): Promise<AgentToolPermissionSet> {
     const roles = await this.getAvailableRoles();
     return this.agentMcpProfileService.upsertToolPermissionSet(roleCode, updates, roles as any);

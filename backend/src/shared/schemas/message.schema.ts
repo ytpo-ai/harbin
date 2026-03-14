@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type MessageDocument = Message & Document;
 
-export type MessageSceneType = 'meeting' | 'discussion' | 'orchestration_session' | 'task';
+export type MessageSceneType = 'meeting' | 'orchestration_session' | 'task';
 export type MessageSenderType = 'employee' | 'agent' | 'system';
 
 @Schema({ timestamps: true, collection: 'messages' })
@@ -12,7 +12,7 @@ export class Message {
   @Prop({ required: true, unique: true, default: () => uuidv4() })
   id: string;
 
-  @Prop({ required: true, enum: ['meeting', 'discussion', 'orchestration_session', 'task'] })
+  @Prop({ required: true, enum: ['meeting', 'orchestration_session', 'task'] })
   sceneType: MessageSceneType;
 
   @Prop({ required: true })

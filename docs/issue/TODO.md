@@ -23,7 +23,7 @@
 
 - [x] 0. 文档设计前置：完成本轮功能设计文档更新（feature 层），统一 `config` / 门禁 / 同步口径后再进入代码开发。
 - [x] 1. Agent 数据模型新增 `config` JSON 字段，并打通创建/更新/查询接口（兼容历史 Agent，默认 `{}`）。
-- [x] 2. Agent 执行前门禁接入 `config` 解析：角色准入（engineering/operations/technical-expert）、模型绑定匹配校验。
+- [x] 2. Agent 执行前门禁接入 `config` 解析：角色准入（devops-engineer/fullstack-engineer/technical-architect）、模型绑定匹配校验。
 - [x] 3. 实现 `agent + period` 配额检测与超限审批触发（`permission.asked`），审批通过后可继续执行。
 - [x] 4. 新增 OpenCode 执行适配层骨架：`OpenCodeAdapter` + `OpenCodeExecutionService`，支持会话建立与流式事件接入。
 - [x] 5. 打通 OpenCode 事件到 Runtime 的落库链路（run/message/part/outbox），保留映射函数为可扩展点。

@@ -136,6 +136,27 @@ export class SchedulerController {
     return this.schedulerService.triggerSchedule(scheduleId);
   }
 
+  @Post('system/engineering-statistics/trigger')
+  async triggerSystemEngineeringStatistics(
+    @Body() dto: Record<string, any>,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.schedulerService.triggerSystemEngineeringStatistics({
+      receiverId: dto?.receiverId || user.id,
+      scope: dto?.scope,
+      tokenMode: dto?.tokenMode,
+      projectIds: dto?.projectIds,
+      triggeredBy: dto?.triggeredBy || 'frontend-button',
+    });
+  }
+
+  @Get('system/engineering-statistics')
+  async getSystemEngineeringStatisticsSchedule(@Headers('authorization') authHeader: string) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.schedulerService.getOrCreateEngineeringStatisticsSchedule();
+  }
+
   @Get(':id/history')
   async history(
     @Param('id') scheduleId: string,

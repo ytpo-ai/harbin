@@ -1,6 +1,23 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query, Headers, UnauthorizedException, MessageEvent, Sse } from '@nestjs/common';
 import { RdManagementService } from './rd-management.service';
-import { CreateRdTaskDto, UpdateRdTaskDto, CreateRdProjectDto, UpdateRdProjectDto, SendOpencodePromptDto, QueryRdTaskDto, SyncOpencodeContextDto, CreateOpencodeSessionDto, PromptOpencodeSessionDto, ImportOpencodeProjectDto, QueryRdProjectDto, SyncAgentOpencodeProjectsDto } from './dto';
+import {
+  BindGithubProjectDto,
+  BindOpencodeProjectDto,
+  CreateLocalRdProjectDto,
+  CreateOpencodeSessionDto,
+  CreateRdProjectDto,
+  CreateRdTaskDto,
+  ImportOpencodeProjectDto,
+  PromptOpencodeSessionDto,
+  QueryRdProjectDto,
+  QueryRdTaskDto,
+  SendOpencodePromptDto,
+  SyncAgentOpencodeProjectsDto,
+  SyncOpencodeContextDto,
+  UnbindOpencodeProjectDto,
+  UpdateRdProjectDto,
+  UpdateRdTaskDto,
+} from './dto';
 import { AuthService } from '../auth/auth.service';
 import { Observable } from 'rxjs';
 
@@ -86,6 +103,15 @@ export class RdManagementController {
     return this.rdManagementService.createProject(createDto);
   }
 
+  @Post('projects/local')
+  async createLocalProject(
+    @Body() createDto: CreateLocalRdProjectDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.createLocalProject(createDto);
+  }
+
   @Get('projects')
   async findAllProjects(
     @Query() query: QueryRdProjectDto,
@@ -125,6 +151,43 @@ export class RdManagementController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
     return this.rdManagementService.deleteProject(projectId);
+  }
+
+  @Post('projects/bind/opencode')
+  async bindOpencodeProject(
+    @Body() dto: BindOpencodeProjectDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.bindOpencodeProject(dto);
+  }
+
+  @Post('projects/bind/github')
+  async bindGithubProject(
+    @Body() dto: BindGithubProjectDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.bindGithubProject(dto);
+  }
+
+  @Post('projects/:id/unbind/opencode')
+  async unbindOpencodeProject(
+    @Param('id') localProjectId: string,
+    @Body() dto: UnbindOpencodeProjectDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.unbindOpencodeProject(localProjectId, dto);
+  }
+
+  @Post('projects/:id/unbind/github')
+  async unbindGithubProject(
+    @Param('id') localProjectId: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.rdManagementService.unbindGithubProject(localProjectId);
   }
 
   // ========== OpenCode 集成 ==========

@@ -1,9 +1,25 @@
 import React, { useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { engineeringIntelligenceService, RequirementStatus } from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
+import { useToast } from '../hooks/useToast';
+import Toast from '../components/Toast';
+
+function extractRequestErrorMessage(error: any): string {
+  const candidates = [
+    error?.response?.data?.message,
+    error?.response?.data?.error,
+    error?.message,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '请求失败，请稍后重试';
+}
 
 const STATUS_OPTIONS: RequirementStatus[] = ['todo', 'assigned', 'in_progress', 'review', 'done', 'blocked'];
 
@@ -18,7 +34,9 @@ const STATUS_LABEL: Record<RequirementStatus, string> = {
 
 const EngineeringRequirementDetail: React.FC = () => {
   const { requirementId = '' } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { toast, showToast, clearToast } = useToast(4000);
 
   const [statusNote, setStatusNote] = useState('');
   const [comment, setComment] = useState('');
@@ -48,6 +66,10 @@ const EngineeringRequirementDetail: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
         queryClient.invalidateQueries('ei-requirements');
+        showToast('success', '分发成功');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
@@ -69,6 +91,10 @@ const EngineeringRequirementDetail: React.FC = () => {
         queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
         queryClient.invalidateQueries('ei-requirements');
         queryClient.invalidateQueries('ei-requirement-board');
+        showToast('success', '状态更新成功');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
@@ -87,6 +113,10 @@ const EngineeringRequirementDetail: React.FC = () => {
       onSuccess: () => {
         setComment('');
         queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
+        showToast('success', '评论已发送');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
@@ -107,6 +137,27 @@ const EngineeringRequirementDetail: React.FC = () => {
       onSuccess: () => {
         queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
         queryClient.invalidateQueries('ei-requirements');
+        showToast('success', '同步 GitHub 成功');
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
+      },
+    },
+  );
+
+  const deleteMutation = useMutation(
+    () => engineeringIntelligenceService.deleteRequirement(requirementId),
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('ei-requirements');
+        queryClient.invalidateQueries('ei-requirement-board');
+        showToast('success', '需求已删除');
+        window.setTimeout(() => {
+          navigate('/engineering-intelligence/requirements');
+        }, 200);
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
       },
     },
   );
@@ -126,6 +177,16 @@ const EngineeringRequirementDetail: React.FC = () => {
           <div className="flex items-center gap-2">
             <Link to="/engineering-intelligence/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">返回列表</Link>
             <button onClick={() => refetch()} className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm"><ArrowPathIcon className="h-4 w-4" />刷新</button>
+            <button
+              onClick={() => {
+                if (!window.confirm('确认删除该需求？该操作不可恢复。')) return;
+                deleteMutation.mutate();
+              }}
+              disabled={deleteMutation.isLoading}
+              className="px-3 py-2 border border-rose-300 text-rose-700 rounded text-sm disabled:opacity-50"
+            >
+              {deleteMutation.isLoading ? '删除中...' : '删除'}
+            </button>
           </div>
         </div>
       </div>
@@ -235,6 +296,7 @@ const EngineeringRequirementDetail: React.FC = () => {
           </div>
         </section>
       </div>
+      {toast ? <Toast toast={toast} onClose={clearToast} /> : null}
     </div>
   );
 };

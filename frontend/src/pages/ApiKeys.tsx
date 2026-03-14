@@ -15,19 +15,21 @@ import {
 import { ApiKey } from '../services/apiKeyService';
 
 const PROVIDERS = [
-  { id: 'openai', name: 'OpenAI', color: '#10a37f' },
-  { id: 'anthropic', name: 'Anthropic', color: '#d97757' },
-  { id: 'google', name: 'Google', color: '#4285f4' },
-  { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5' },
-  { id: 'mistral', name: 'Mistral AI', color: '#ff7000' },
-  { id: 'meta', name: 'Meta AI', color: '#0668e1' },
-  { id: 'alibaba', name: 'Alibaba', color: '#ff6a00' },
-  { id: 'moonshot', name: 'Kimi', color: '#000000' },
-  { id: 'baichuan', name: 'Baichuan', color: '#1a73e8' },
-  { id: 'zhipu', name: 'Zhipu AI', color: '#3b82f6' },
-  { id: 'xunfei', name: 'Xunfei', color: '#0ea5e9' },
-  { id: 'minimax', name: 'MiniMax', color: '#f59e0b' },
-  { id: 'microsoft', name: 'Microsoft', color: '#00a4ef' }
+  { id: 'openai', name: 'OpenAI', color: '#10a37f', category: 'LLM' },
+  { id: 'anthropic', name: 'Anthropic', color: '#d97757', category: 'LLM' },
+  { id: 'google', name: 'Google', color: '#4285f4', category: 'LLM' },
+  { id: 'deepseek', name: 'DeepSeek', color: '#4f46e5', category: 'LLM' },
+  { id: 'mistral', name: 'Mistral AI', color: '#ff7000', category: 'LLM' },
+  { id: 'meta', name: 'Meta AI', color: '#0668e1', category: 'LLM' },
+  { id: 'alibaba', name: 'Alibaba', color: '#ff6a00', category: 'LLM' },
+  { id: 'moonshot', name: 'Kimi', color: '#000000', category: 'LLM' },
+  { id: 'baichuan', name: 'Baichuan', color: '#1a73e8', category: 'LLM' },
+  { id: 'zhipu', name: 'Zhipu AI', color: '#3b82f6', category: 'LLM' },
+  { id: 'xunfei', name: 'Xunfei', color: '#0ea5e9', category: 'LLM' },
+  { id: 'minimax', name: 'MiniMax', color: '#f59e0b', category: 'LLM' },
+  { id: 'microsoft', name: 'Microsoft', color: '#00a4ef', category: 'LLM' },
+  { id: 'github', name: 'GitHub', color: '#24292e', category: 'OTHER' },
+  { id: 'github-enterprise', name: 'GitHub Enterprise', color: '#0366d6', category: 'OTHER' },
 ];
 
 const ApiKeys: React.FC = () => {
@@ -35,6 +37,7 @@ const ApiKeys: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<'LLM' | 'OTHER' | 'all'>('all');
 
   const { data: apiKeys, isLoading } = useQuery('api-keys', apiKeyService.getAllApiKeys);
   const { data: stats } = useQuery('api-key-stats', apiKeyService.getApiKeyStats);
@@ -66,7 +69,8 @@ const ApiKeys: React.FC = () => {
   });
 
   const filteredKeys = apiKeys?.filter(key => 
-    selectedProvider === 'all' || key.provider === selectedProvider
+    (selectedProvider === 'all' || key.provider === selectedProvider) &&
+    (selectedCategory === 'all' || (key.category || 'LLM') === selectedCategory)
   ) || [];
 
   const getProviderInfo = (providerId: string) => {
@@ -147,6 +151,43 @@ const ApiKeys: React.FC = () => {
         </div>
       )}
 
+      {/* 分类切换 */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">分类</h3>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedCategory('all')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              selectedCategory === 'all'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            全部
+          </button>
+          <button
+            onClick={() => setSelectedCategory('LLM')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              selectedCategory === 'LLM'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            LLM
+          </button>
+          <button
+            onClick={() => setSelectedCategory('OTHER')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              selectedCategory === 'OTHER'
+                ? 'bg-primary-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            其他
+          </button>
+        </div>
+      </div>
+
       {/* 提供商分布 */}
       <div className="bg-white rounded-lg shadow p-4">
         <h3 className="text-sm font-medium text-gray-700 mb-3">按提供商分布</h3>
@@ -197,6 +238,9 @@ const ApiKeys: React.FC = () => {
                 提供商
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                分类
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 API Key
               </th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -228,26 +272,35 @@ const ApiKeys: React.FC = () => {
                     </div>
                   </td>
                    <td className="px-6 py-4 whitespace-nowrap">
-                     <div className="flex items-center gap-2">
-                       <span 
-                         className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
-                         style={{ backgroundColor: provider.color }}
-                       >
-                         {provider.name}
-                       </span>
-                       {apiKey.isDefault && (
-                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                           默认
-                         </span>
-                       )}
-                       {apiKey.isDeprecated && (
-                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
-                           已弃用
-                         </span>
-                       )}
-                     </div>
-                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+                          style={{ backgroundColor: provider.color }}
+                        >
+                          {provider.name}
+                        </span>
+                        {apiKey.isDefault && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            默认
+                          </span>
+                        )}
+                        {apiKey.isDeprecated && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">
+                            已弃用
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        apiKey.category === 'LLM' 
+                          ? 'bg-blue-100 text-blue-800' 
+                          : 'bg-purple-100 text-purple-800'
+                      }`}>
+                        {apiKey.category === 'LLM' ? 'LLM' : '其他'}
+                      </span>
+                    </td>
+                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center space-x-2">
                       <code className="text-sm bg-gray-100 px-2 py-1 rounded">
                         {apiKey.keyMasked}
@@ -368,6 +421,7 @@ const ApiKeyModal: React.FC<{
      isActive: apiKey?.isActive ?? true,
      isDefault: apiKey?.isDefault ?? false,
      isDeprecated: apiKey?.isDeprecated ?? false,
+     category: apiKey?.category || 'LLM',
    });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -416,6 +470,21 @@ const ApiKeyModal: React.FC<{
               ))}
             </select>
             <p className="mt-1 text-xs text-gray-500">修改提供商将影响默认归属</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              分类 <span className="text-red-500">*</span>
+            </label>
+            <select
+              required
+              value={formData.category}
+              onChange={(e) => setFormData({ ...formData, category: e.target.value as 'LLM' | 'OTHER' })}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="LLM">LLM (大语言模型)</option>
+              <option value="OTHER">其他</option>
+            </select>
           </div>
 
           <div>

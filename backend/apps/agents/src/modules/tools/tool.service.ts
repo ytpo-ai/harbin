@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
@@ -36,6 +36,7 @@ import { BUILTIN_TOOLS, IMPLEMENTED_TOOL_IDS } from './builtin-tool-catalog';
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
   tools: [],
+  permissions: [],
   capabilities: [],
   exposed: false,
 };
@@ -88,6 +89,8 @@ interface ParsedToolIdentity {
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
   private readonly backendBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
+  private readonly rolePermissionCacheTtlMs = Math.max(30_000, Number(process.env.TOOL_ROLE_PERMISSION_CACHE_TTL_MS || 300_000));
+  private readonly rolePermissionCache = new Map<string, { roleCode?: string; permissions: string[]; expiresAt: number }>();
 
   constructor(
     @InjectModel(Tool.name) private toolModel: Model<ToolDocument>,
@@ -433,6 +436,9 @@ export class ToolService {
       resolvedToolId,
       requestedToolId: base.requestedToolId || resolvedToolId,
       traceId: base.traceId || base.id,
+      authMode: base.authMode,
+      tokenJti: base.tokenJti,
+      originSessionId: base.originSessionId,
     };
   }
 
@@ -808,6 +814,9 @@ export class ToolService {
       agentId,
       taskId,
       idempotencyKey,
+      authMode: executionContext?.auth?.mode,
+      tokenJti: executionContext?.auth?.jti,
+      originSessionId: executionContext?.originSessionId,
       parameters,
       status: 'executing',
       tokenCost: tool.tokenCost || 0,
@@ -816,8 +825,8 @@ export class ToolService {
     await execution.save();
 
     try {
-      this.authorizeToolExecution(tool, agentId);
-      this.validateToolInput(parameters);
+      await this.authorizeToolExecution(tool, agentId, executionContext);
+      this.validateToolInput(parameters, (tool.inputSchema || tool.implementation?.parameters) as Record<string, unknown> | undefined);
 
       let attempt = 0;
       let rawResult: any;
@@ -870,18 +879,190 @@ export class ToolService {
     }
   }
 
-  private authorizeToolExecution(tool: Tool, agentId: string): void {
+  private async authorizeToolExecution(tool: Tool, agentId: string, executionContext?: ToolExecutionContext): Promise<void> {
     if (!tool.enabled) {
       throw new Error('Tool is disabled');
     }
     if (!agentId?.trim()) {
       throw new Error('Missing agentId in tool execution');
     }
+
+    const authMode = String(executionContext?.auth?.mode || '').trim().toLowerCase();
+    const normalizedAgentId = agentId.trim();
+    const agentLookup: Record<string, unknown> = { id: normalizedAgentId };
+    if (Types.ObjectId.isValid(normalizedAgentId)) {
+      agentLookup.$or = [{ id: normalizedAgentId }, { _id: new Types.ObjectId(normalizedAgentId) }];
+      delete agentLookup.id;
+    }
+    const agent = await this.agentModel
+      .findOne(agentLookup)
+      .select({ id: 1, roleId: 1, tools: 1, permissions: 1, isActive: 1 })
+      .lean()
+      .exec();
+
+    if (!agent) {
+      throw new Error(`Agent not found or inactive: ${agentId}`);
+    }
+
+    const requireActiveAgent = authMode === 'jwt';
+    if (agent.isActive !== true && requireActiveAgent) {
+      throw new Error(`Agent not found or inactive: ${agentId}`);
+    }
+
+    const resolvedToolId = String(tool.canonicalId || tool.id || '').trim() || String(tool.id || '').trim();
+    const scopeSet = new Set((executionContext?.auth?.scopes || []).map((scope) => String(scope || '').trim()).filter(Boolean));
+    if (scopeSet.size > 0 && !scopeSet.has('tool:execute:*') && !scopeSet.has(`tool:execute:${resolvedToolId}`)) {
+      throw new Error(`Tool scope denied: ${resolvedToolId}`);
+    }
+
+    const strictPermissions = String(process.env.TOOLS_AUTH_STRICT_PERMISSIONS || 'false').trim().toLowerCase();
+    const strict = strictPermissions === 'true' || strictPermissions === '1' || strictPermissions === 'yes' || strictPermissions === 'on';
+    const assignedToolIds = new Set((agent.tools || []).map((item) => String(item || '').trim()).filter(Boolean));
+    const enforceAssignment = strict || authMode === 'jwt' || assignedToolIds.size > 0;
+    if (enforceAssignment && !assignedToolIds.has(resolvedToolId) && !assignedToolIds.has(String(tool.id || '').trim())) {
+      throw new Error(`Tool not assigned: ${resolvedToolId}`);
+    }
+
+    const requiredPermissions = Array.from(
+      new Set(
+        (Array.isArray(tool.requiredPermissions) ? tool.requiredPermissions : [])
+          .map((item) => String(item?.id || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    if (requiredPermissions.length) {
+      const roleBasedPermissions = await this.resolveRoleAndProfilePermissions(agent.roleId);
+      const granted = new Set(
+        [
+          ...(agent.permissions || []),
+          ...roleBasedPermissions,
+          ...(executionContext?.auth?.permissions || []),
+        ]
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      );
+      const missing = requiredPermissions.filter((permissionId) => !granted.has(permissionId));
+      if (missing.length) {
+        throw new Error(`Tool permission denied: missing=${missing.join(',')}`);
+      }
+    }
   }
 
-  private validateToolInput(parameters: any): void {
+  private async resolveRoleAndProfilePermissions(roleId?: string): Promise<string[]> {
+    const normalizedRoleId = String(roleId || '').trim();
+    if (!normalizedRoleId) {
+      return [];
+    }
+
+    const now = Date.now();
+    const cached = this.rolePermissionCache.get(normalizedRoleId);
+    if (cached && cached.expiresAt > now) {
+      return cached.permissions;
+    }
+
+    const result = {
+      roleCode: undefined as string | undefined,
+      permissions: [] as string[],
+    };
+
+    try {
+      const roleResp = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(normalizedRoleId)}`, {
+        headers: this.internalApiClient.buildSignedHeaders(),
+        timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
+      });
+      const role = roleResp?.data || {};
+      result.roleCode = String(role.code || '').trim() || undefined;
+      result.permissions = this.normalizeStringArray(role.permissions || role.capabilities || []);
+    } catch {
+      result.roleCode = undefined;
+      result.permissions = [];
+    }
+
+    if (result.roleCode) {
+      try {
+        const profile = await this.agentProfileModel
+          .findOne({ roleCode: result.roleCode })
+          .select({ permissions: 1, permissionsManual: 1, permissionsDerived: 1, capabilities: 1 })
+          .lean()
+          .exec();
+        const profilePermissions = this.normalizeStringArray([
+          ...((profile as any)?.permissions || []),
+          ...((profile as any)?.permissionsManual || []),
+          ...((profile as any)?.permissionsDerived || []),
+          ...((profile as any)?.capabilities || []),
+        ]);
+        result.permissions = Array.from(new Set([...result.permissions, ...profilePermissions]));
+      } catch {
+        // ignore profile lookup errors
+      }
+    }
+
+    this.rolePermissionCache.set(normalizedRoleId, {
+      roleCode: result.roleCode,
+      permissions: result.permissions,
+      expiresAt: now + this.rolePermissionCacheTtlMs,
+    });
+
+    return result.permissions;
+  }
+
+  private validateToolInput(parameters: any, inputSchema?: Record<string, unknown>): void {
     if (parameters === undefined || parameters === null) {
       throw new Error('Missing tool parameters');
+    }
+
+    if (!inputSchema || typeof inputSchema !== 'object') {
+      return;
+    }
+
+    const required = Array.isArray((inputSchema as any).required)
+      ? (inputSchema as any).required.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      : [];
+    if (required.length) {
+      for (const key of required) {
+        if (!(key in parameters) || parameters[key] === undefined || parameters[key] === null) {
+          throw new Error(`Invalid tool parameters: missing required field '${key}'`);
+        }
+      }
+    }
+
+    const properties = (inputSchema as any).properties;
+    if (properties && typeof properties === 'object' && !Array.isArray(properties)) {
+      const additionalProperties = (inputSchema as any).additionalProperties;
+      if (additionalProperties === false) {
+        const allowed = new Set(Object.keys(properties));
+        const extras = Object.keys(parameters || {}).filter((key) => !allowed.has(key));
+        if (extras.length) {
+          throw new Error(`Invalid tool parameters: unknown fields ${extras.join(',')}`);
+        }
+      }
+
+      for (const [key, spec] of Object.entries(properties)) {
+        if (!(key in parameters)) continue;
+        const expectedType = String((spec as any)?.type || '').trim();
+        if (!expectedType) continue;
+        const value = parameters[key];
+        if (value === undefined || value === null) continue;
+
+        if (expectedType === 'string' && typeof value !== 'string') {
+          throw new Error(`Invalid tool parameters: field '${key}' must be string`);
+        }
+        if (expectedType === 'number' && typeof value !== 'number') {
+          throw new Error(`Invalid tool parameters: field '${key}' must be number`);
+        }
+        if (expectedType === 'integer' && (!Number.isInteger(value) || typeof value !== 'number')) {
+          throw new Error(`Invalid tool parameters: field '${key}' must be integer`);
+        }
+        if (expectedType === 'boolean' && typeof value !== 'boolean') {
+          throw new Error(`Invalid tool parameters: field '${key}' must be boolean`);
+        }
+        if (expectedType === 'array' && !Array.isArray(value)) {
+          throw new Error(`Invalid tool parameters: field '${key}' must be array`);
+        }
+        if (expectedType === 'object' && (typeof value !== 'object' || Array.isArray(value))) {
+          throw new Error(`Invalid tool parameters: field '${key}' must be object`);
+        }
+      }
     }
   }
 
@@ -889,8 +1070,45 @@ export class ToolService {
     return {
       success: true,
       traceId,
-      data: rawResult,
+      data: this.sanitizeToolOutput(rawResult),
     };
+  }
+
+  private sanitizeToolOutput(rawResult: unknown, depth = 0): unknown {
+    const maxDepth = 8;
+    const maxString = 12000;
+    const maxArray = 200;
+    const redactedPattern = /(token|secret|password|authorization|api[-_]?key)/i;
+
+    if (depth > maxDepth) {
+      return '[TRUNCATED_DEPTH]';
+    }
+    if (rawResult === null || rawResult === undefined) {
+      return rawResult;
+    }
+    if (typeof rawResult === 'string') {
+      return rawResult.length > maxString ? `${rawResult.slice(0, maxString)}...` : rawResult;
+    }
+    if (typeof rawResult === 'number' || typeof rawResult === 'boolean') {
+      return rawResult;
+    }
+    if (Array.isArray(rawResult)) {
+      return rawResult.slice(0, maxArray).map((item) => this.sanitizeToolOutput(item, depth + 1));
+    }
+    if (typeof rawResult === 'object') {
+      const source = rawResult as Record<string, unknown>;
+      const entries = Object.entries(source).slice(0, 300);
+      const sanitized: Record<string, unknown> = {};
+      for (const [key, value] of entries) {
+        if (redactedPattern.test(key)) {
+          sanitized[key] = '[REDACTED]';
+          continue;
+        }
+        sanitized[key] = this.sanitizeToolOutput(value, depth + 1);
+      }
+      return sanitized;
+    }
+    return String(rawResult);
   }
 
   private normalizeToolError(error: unknown): NormalizedToolError {
@@ -909,6 +1127,10 @@ export class ToolService {
     if (message.includes('timeout')) return 'TOOL_TIMEOUT';
     if (message.includes('not found')) return 'TOOL_NOT_FOUND';
     if (message.includes('disabled')) return 'TOOL_DISABLED';
+    if (message.includes('scope denied')) return 'TOOL_SCOPE_DENIED';
+    if (message.includes('not assigned')) return 'TOOL_NOT_ASSIGNED';
+    if (message.includes('permission denied')) return 'TOOL_PERMISSION_DENIED';
+    if (message.includes('invalid tool parameters')) return 'TOOL_INPUT_INVALID';
     if (message.includes('rate limit')) return 'TOOL_RATE_LIMITED';
     if (message.includes('circuit open')) return 'TOOL_CIRCUIT_OPEN';
     if (message.includes('requires confirm=true')) return 'TOOL_CONFIRM_REQUIRED';
@@ -1234,7 +1456,7 @@ export class ToolService {
         undefined,
       taskType:
         executionContext?.taskType ||
-        (typeof teamContext.meetingType === 'string' ? 'discussion' : undefined),
+        (typeof teamContext.meetingType === 'string' ? 'meeting' : undefined),
       organizationId:
         (typeof teamContext.organizationId === 'string' && teamContext.organizationId) ||
         (typeof teamContext.orgId === 'string' && teamContext.orgId) ||
@@ -1260,7 +1482,7 @@ export class ToolService {
     agentId?: string;
   } {
     const context = this.resolveMeetingContext(executionContext);
-    const meetingLike = context.taskType === 'discussion' || Boolean(context.meetingId);
+    const meetingLike = context.taskType === 'meeting' || Boolean(context.meetingId);
     if (meetingLike && options.allowMeeting) {
       return {
         mode: 'meeting',
@@ -1637,7 +1859,7 @@ export class ToolService {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
         role: role?.name || profile.role,
-        capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...(profile.capabilities || [])])).slice(0, 12),
+        capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...((profile as any).permissions || profile.capabilities || [])])).slice(0, 12),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
       };

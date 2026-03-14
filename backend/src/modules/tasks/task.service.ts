@@ -3,14 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Task, TaskDocument } from '../../shared/schemas/task.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
-import { DiscussionService } from '../chat/discussion.service';
 import { Agent, TeamSettings, ChatMessage } from '../../shared/types';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface CollaborationResult {
   success: boolean;
   result?: any;
-  discussion?: any;
   errors?: string[];
 }
 
@@ -19,7 +17,6 @@ export class TaskService {
   constructor(
     @InjectModel(Task.name) private taskModel: Model<TaskDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly discussionService: DiscussionService
   ) {}
 
   async createTask(taskData: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<Task> {
@@ -60,8 +57,6 @@ export class TaskService {
 
     try {
       switch (teamSettings.collaborationMode) {
-        case 'discussion':
-          return await this.executeDiscussionMode(task, agents);
         case 'pipeline':
           return await this.executePipelineMode(task, agents);
         case 'parallel':
@@ -77,53 +72,6 @@ export class TaskService {
         errors: [error instanceof Error ? error.message : 'Unknown error'] 
       };
     }
-  }
-
-  private async executeDiscussionMode(task: Task, agents: Agent[]): Promise<CollaborationResult> {
-    const agentIds = agents.map(agent => agent.id);
-    
-    // 创建讨论
-    const discussion = await this.discussionService.createDiscussion(
-      task.id,
-      agentIds,
-      `开始讨论任务: ${task.title}\n${task.description}`
-    );
-
-    // 等待讨论完成（这里简化处理，实际可能需要更复杂的超时和结束条件）
-    return new Promise((resolve) => {
-      const timeout = setTimeout(() => {
-        this.discussionService.concludeDiscussion(
-          discussion.id,
-          '讨论时间结束，请基于讨论结果完成任务'
-        ).then(() => {
-          // 选择一个agent来总结和完成任务
-          const primaryAgent = agents[0];
-          this.agentClientService.executeTask(primaryAgent.id, task, {
-            teamContext: { discussionId: discussion.id, mode: 'discussion' }
-          }).then(result => {
-            this.updateTask(task.id, {
-              result,
-              status: 'completed',
-              completedAt: new Date(),
-            }).then(() => {
-              resolve({
-                success: true,
-                result,
-                discussion
-              });
-            });
-          });
-        });
-      }, 60000); // 60秒讨论时间
-
-      // 可以添加提前结束的条件
-      this.discussionService.subscribeToEvents(discussion.id, (event) => {
-        if (event.type === 'conclusion') {
-          clearTimeout(timeout);
-          // 处理讨论结束逻辑
-        }
-      });
-    });
   }
 
   private async executePipelineMode(task: Task, agents: Agent[]): Promise<CollaborationResult> {

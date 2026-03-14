@@ -25,7 +25,7 @@ export class OrchestrationToolHandler {
         undefined,
       taskType:
         executionContext?.taskType ||
-        (typeof teamContext.meetingType === 'string' ? 'discussion' : undefined),
+        (typeof teamContext.meetingType === 'string' ? 'meeting' : undefined),
       organizationId:
         (typeof teamContext.organizationId === 'string' && teamContext.organizationId) ||
         (typeof teamContext.orgId === 'string' && teamContext.orgId) ||
@@ -51,7 +51,7 @@ export class OrchestrationToolHandler {
     agentId?: string;
   } {
     const context = this.resolveMeetingContext(executionContext);
-    const meetingLike = context.taskType === 'discussion' || Boolean(context.meetingId);
+    const meetingLike = context.taskType === 'meeting' || Boolean(context.meetingId);
     if (meetingLike && options.allowMeeting) {
       return {
         mode: 'meeting',

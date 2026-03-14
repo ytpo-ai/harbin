@@ -200,7 +200,7 @@ export class MeetingService {
     return true;
   }
 
-  private buildDiscussionTaskDescription(triggerMessage: MeetingMessage): string {
+  private buildMeetingResponseTaskDescription(triggerMessage: MeetingMessage): string {
     const latestMessage = String(triggerMessage.content || '').replace(/\s+/g, ' ').trim();
     if (!latestMessage) {
       return '请对会议中的发言做出回应';
@@ -1852,14 +1852,14 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       this.logger.log(`Generating response for agent ${agent.name} in meeting ${meetingId}`);
 
-      const contextMessages = await this.buildDiscussionContext(meeting, agentId, triggerMessage);
+      const contextMessages = await this.buildMeetingResponseContext(meeting, agentId, triggerMessage);
 
       const participantProfiles = await this.buildParticipantContextProfiles(meeting);
       
       const task = {
         title: `参与会议讨论: ${meeting.title}`,
-        description: this.buildDiscussionTaskDescription(triggerMessage),
-        type: 'discussion',
+        description: this.buildMeetingResponseTaskDescription(triggerMessage),
+        type: 'meeting',
         priority: 'medium',
         status: 'in_progress',
         assignedAgents: [agentId],
@@ -1905,7 +1905,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   /**
    * 构建讨论上下文
    */
-  private async buildDiscussionContext(
+  private async buildMeetingResponseContext(
     meeting: Meeting, 
     agentId: string, 
     triggerMessage: MeetingMessage
@@ -1990,7 +1990,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     const task = {
       title: '加入会议',
       description: prompt,
-      type: 'discussion',
+      type: 'meeting',
       priority: 'low',
       status: 'in_progress',
       assignedAgents: [participant.id],
@@ -2090,12 +2090,12 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     this.ensureMeetingCompatibility(meeting);
 
-    const discussionContent = meeting.messages
+    const meetingContent = meeting.messages
       .filter(m => m.senderType !== 'system')
       .map(m => `${m.senderId}: ${m.content}`)
       .join('\n');
 
-    const prompt = `请根据以下会议讨论内容生成一个简洁的会议总结：\n\n会议标题：${meeting.title}\n\n讨论内容：\n${discussionContent}\n\n请提供：\n1. 会议摘要（2-3句话）\n2. 行动项（如果有的话）\n3. 达成的决定（如果有的话）`;
+    const prompt = `请根据以下会议讨论内容生成一个简洁的会议总结：\n\n会议标题：${meeting.title}\n\n讨论内容：\n${meetingContent}\n\n请提供：\n1. 会议摘要（2-3句话）\n2. 行动项（如果有的话）\n3. 达成的决定（如果有的话）`;
 
     try {
       // 找到主持人（可能是employee或agent）

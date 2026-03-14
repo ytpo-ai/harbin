@@ -32,6 +32,15 @@ export class ToolExecution {
   @Prop()
   idempotencyKey?: string;
 
+  @Prop()
+  authMode?: 'jwt' | 'internal-context' | 'legacy';
+
+  @Prop()
+  tokenJti?: string;
+
+  @Prop()
+  originSessionId?: string;
+
   @Prop({ type: Object })
   parameters: any;
 
