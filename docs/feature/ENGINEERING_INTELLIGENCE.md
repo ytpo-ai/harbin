@@ -60,6 +60,25 @@
 - RD 管理页恢复“新建 Session”能力：创建时优先对齐所选 Agent 绑定模型（`providerID/modelID`）并透传到 OpenCode session。
 - RD 管理发送前会进行 OpenCode 模型能力校验；若目标模型未配置，接口返回明确错误（不自动改写 OpenCode 全局配置）。
 - RD 管理 events 面板按当前选中 `sessionId` 过滤，保障会话视角下事件信息同步一致。
+- `研发智能` 首页已重建为 `项目管理`：默认聚焦三类项目（local/opencode/github）与绑定关系管理。
+- 首页移除文档树、提交历史、文档详情抽屉能力；文档相关能力不再作为该入口主流程。
+- 绑定交互遵循前置约束：必须先创建并选中 local 项目，才可绑定 opencode/github。
+- 项目管理页支持解绑能力：可对已绑定的 opencode/github 关系执行解绑。
+- OpenCode 绑定支持冲突提示：当目标项目已绑定其他 local 项目时，前端二次确认后改绑。
+- 本地项目列表支持搜索与分页，便于多项目管理。
+- 项目管理页交互已按前端规范重构：列表优先、创建弹窗化、详情抽屉化（抽屉内 Tab 管理绑定能力）。
+- GitHub 绑定增强：支持从仓库 URL 自动解析 `owner/repo`（HTTPS/SSH），并在 URL 非法时提供前端校验提示。
+- GitHub API Key 选择增强：前端按“GitHub-like provider”筛选可用 key，兼容历史 provider 命名差异。
+- 项目管理页绑定反馈增强：统一成功/失败提示区，绑定/解绑/同步过程显示 loading 文案。
+- 绑定概览修复：OpenCode 绑定列表改为按 `bindingLocalProjectId` 查询，确保与绑定页状态一致。
+- 抽屉内补齐 loading/empty/error 统一样式，提升状态可感知性。
+- 操作反馈升级为全局 Toast：支持成功/失败提示、自动消失与手动关闭。
+- Toast 能力已抽离为通用前端 Hook/组件（`useToast` + `Toast`），便于需求管理/工程统计等页面复用统一交互。
+- `需求管理` 与 `工程统计` 页面已接入统一 Toast 反馈（成功/失败），减少原生弹窗提示并统一操作反馈体验。
+- `需求管理` 页“同步 GitHub”交互已从原生 `window.prompt` 升级为规范化弹窗表单（owner/repo/labels）。
+- 需求管理新增 EI 本地项目关联：创建需求可选择 `local` 项目，列表支持按项目筛选。
+- 需求同步 GitHub 改为优先复用需求所属本地项目绑定仓库；若项目未绑定 GitHub，列表显示“未绑定 GitHub”并禁用同步按钮。
+- 需求详情页新增删除能力：支持二次确认删除需求，成功后返回需求列表并刷新看板/列表缓存。
 
 ### 1.8 工程统计（本轮新增）
 
@@ -85,6 +104,14 @@
 - 通过系统调度触发时，`receiverId` 会默认回填为当前登录用户，保障前端按钮触发后可收到消息中心通知。
 - 前端 `工程统计` 页面按钮触发时会显式透传当前登录用户 `receiverId`，避免跨服务链路中上下文丢失导致通知静默。
 
+### 1.10 CTO 日常研发闭环（本轮新增）
+
+- Agents 侧新增 requirement MCP 工具集（list/get/create/update-status/assign/comment/sync-github/board），用于 CTO 治理链路直接操作 EI 需求。
+- 编排任务支持 `requirementId` 关联；创建计划与重规划可透传来源需求。
+- 编排运行链路在计划启动时回写需求 `in_progress`，计划完成后回写 `review -> done`（best-effort，不阻塞主链路）。
+- 需求状态流转到 `done` 自动关闭关联 GitHub Issue；从 `done` 回退时自动 reopen（失败仅记录 `lastError`）。
+- 开发类任务新增 `CODE_EXECUTION_PROOF` warning 校验，用于自动验收 build/test/lint 与代码变更证据。
+
 ### 1.9 消息中心联动（本轮新增）
 
 - 消息中心能力归属 legacy 主 backend（`backend/src/modules/message-center`），不落在 EI 独立服务中。
@@ -103,6 +130,7 @@
 | `plan/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发会话页 EI 项目同步改造计划 |
 | `plan/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 | `plan/ENGINEERING_INTELLIGENCE_REQUIREMENT_MANAGEMENT_PLAN.md` | 研发智能需求管理（Issue 协作）计划 |
+| `plan/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -119,6 +147,7 @@
 | `development/OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1 EI 同步与分析实现总结 |
 | `development/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发会话页 EI 项目同步实现与排障总结 |
 | `development/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
+| `development/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造开发沉淀 |
 
 ### API 文档 (docs/api/)
 
@@ -137,6 +166,7 @@
 | `backend/apps/engineering-intelligence/src/` | EI 服务主模块（同步接收、分析计算、查询接口） |
 | `backend/apps/agents/src/modules/runtime/` | Runtime 事件事实来源与同步触发链路 |
 | `backend/apps/agents/src/modules/tools/` | 工程统计 MCP 工具定义与执行入口 |
+| `backend/src/modules/orchestration/` | 需求关联编排、回写与任务验证逻辑 |
 | `backend/src/modules/rd-management/` | 研发会话页 OpenCode 项目同步与 EI 项目列表接口 |
 | `backend/src/shared/schemas/rd-project.schema.ts` | `ei_projects` 集合模型（同步来源、OpenCode 项目标识） |
 

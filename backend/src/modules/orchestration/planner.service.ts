@@ -30,10 +30,11 @@ export class PlannerService {
     prompt: string;
     mode?: 'sequential' | 'parallel' | 'hybrid';
     plannerAgentId?: string;
+    requirementId?: string;
   }): Promise<PlannerResult> {
     const mode = input.mode || 'hybrid';
     if (input.plannerAgentId) {
-      const result = await this.planByAgent(input.prompt, input.plannerAgentId, mode);
+      const result = await this.planByAgent(input.prompt, input.plannerAgentId, mode, input.requirementId);
       if (result) {
         return result;
       }
@@ -41,7 +42,7 @@ export class PlannerService {
 
     const defaultPlanner = await this.agentModel.findOne({ isActive: true }).sort({ createdAt: 1 }).exec();
     if (defaultPlanner?._id) {
-      const result = await this.planByAgent(input.prompt, defaultPlanner._id.toString(), mode);
+      const result = await this.planByAgent(input.prompt, defaultPlanner._id.toString(), mode, input.requirementId);
       if (result) {
         return result;
       }
@@ -54,6 +55,7 @@ export class PlannerService {
     prompt: string,
     plannerAgentId: string,
     mode: 'sequential' | 'parallel' | 'hybrid',
+    requirementId?: string,
   ): Promise<PlannerResult | null> {
     const task: Task = {
       title: 'Planner agent task decomposition',
@@ -66,6 +68,7 @@ export class PlannerService {
         '3) tasks 数量 3-8 条。',
         '4) dependencies 为当前任务依赖的前置任务索引数组。',
         `5) mode 优先使用 ${mode}。`,
+        requirementId ? `5.1) 来源需求ID: ${requirementId}，请确保任务拆解围绕该需求交付闭环。` : '5.1) 若存在来源需求ID，应保持任务拆解与需求范围一致。',
         '6) 若存在发送邮件/外部动作任务，优先依赖“邮件草稿/内容生成”任务，而不是“校对/润色”任务，避免过度阻塞。',
       ].join('\n'),
       type: 'planning',

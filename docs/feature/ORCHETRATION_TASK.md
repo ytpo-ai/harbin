@@ -20,6 +20,10 @@
 | `orchestration_tasks` | `orchestration-task.schema.ts` | 任务表，包含分配、执行结果、依赖关系与触发模式 (`mode=plan|schedule`) |
 | `plan_sessions` | `plan-session.schema.ts` | 会话聚合视图（任务状态快照） |
 
+补充字段：
+
+- `orchestration_tasks.requirementId?: ObjectId`：用于将编排任务与 EI 需求建立闭环关联。
+
 #### OrchestrationPlan 状态
 
 - `draft`：草稿
@@ -70,6 +74,7 @@
    - `employee`：标记为 waiting_human，等待人工完成
    - `unassigned`：标记失败或等待人工
 3. 任务完成后更新 Plan 统计
+4. 若计划关联 `requirementId`，计划启动/完成会触发需求状态 best-effort 回写。
 
 #### 任务调试 MCP
 
@@ -96,6 +101,12 @@
 - 要求输出包含 RESEARCH_EXECUTION_PROOF
 - 验证输出结构化格式（JSON/表格/列表）及内容完整性
 
+#### 开发任务验证（warning 级）
+
+- 新增 `CODE_EXECUTION_PROOF` 校验分支。
+- 检查 build/test/lint 执行证据、成功信号、代码变更证据。
+- 缺失证据只写入 `runLogs.warn`，不阻断任务完成。
+
 ---
 
 ## 2. 相关文档
@@ -108,6 +119,7 @@
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理主计划 |
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
+| `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -117,6 +129,7 @@
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理开发沉淀 |
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化开发沉淀 |
 | `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
+| `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 

@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import axios from 'axios';
+import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
 import { Tool, ToolDocument } from '../../shared/schemas/tool.schema';
 import {
@@ -41,6 +42,8 @@ import {
 @Injectable()
 export class OrchestrationService {
   private readonly runningPlans = new Set<string>();
+  private readonly engineeringIntelligenceBaseUrl =
+    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004/api';
 
   constructor(
     @InjectModel(OrchestrationPlan.name)
@@ -65,10 +68,13 @@ export class OrchestrationService {
     createdBy: string,
     dto: CreatePlanFromPromptDto,
   ): Promise<any> {
+    const requirementId = String(dto.requirementId || '').trim() || undefined;
+    const requirementObjectId = this.parseRequirementObjectId(dto.requirementId);
     const planningResult = await this.plannerService.planFromPrompt({
       prompt: dto.prompt,
       mode: dto.mode,
       plannerAgentId: dto.plannerAgentId,
+      requirementId: dto.requirementId,
     });
 
     if (!planningResult.tasks?.length) {
@@ -92,6 +98,7 @@ export class OrchestrationService {
       taskIds: [],
       metadata: {
         strategyNote: planningResult.strategyNote,
+        ...(requirementId ? { requirementId } : {}),
       },
       createdBy,
     }).save();
@@ -103,6 +110,7 @@ export class OrchestrationService {
       tasksToCreate.push({
         mode: 'plan',
         planId: plan._id.toString(),
+        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
         title: task.title,
         description: task.description,
         priority: task.priority,
@@ -201,11 +209,14 @@ export class OrchestrationService {
     const plannerAgentId = dto.plannerAgentId?.trim();
     const title = dto.title?.trim() || plan.title || this.derivePlanTitle(prompt);
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
+    const requirementId = this.resolveRequirementIdFromPlan(plan);
+    const requirementObjectId = this.resolveRequirementObjectIdFromPlan(plan);
 
     const planningResult = await this.plannerService.planFromPrompt({
       prompt,
       mode: fallbackMode,
       plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
+      requirementId,
     });
 
     if (!planningResult.tasks?.length) {
@@ -221,6 +232,7 @@ export class OrchestrationService {
       tasksToCreate.push({
         mode: 'plan',
         planId,
+        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
         title: task.title,
         description: task.description,
         priority: task.priority,
@@ -277,6 +289,7 @@ export class OrchestrationService {
               ...(plan.metadata || {}),
               strategyNote: planningResult.strategyNote,
               replannedAt: new Date().toISOString(),
+              ...(requirementId ? { requirementId } : {}),
             },
           },
         },
@@ -448,6 +461,11 @@ export class OrchestrationService {
       throw new NotFoundException('Plan not found');
     }
 
+    const requirementId = this.resolveRequirementIdFromPlan(plan);
+    if (requirementId) {
+      await this.tryUpdateRequirementStatus(requirementId, 'in_progress', 'orchestration plan started');
+    }
+
     await this.setPlanStatus(planId, 'running');
     const continueOnFailure = dto.continueOnFailure ?? false;
 
@@ -495,6 +513,10 @@ export class OrchestrationService {
     const nextStatus = this.derivePlanStatus(latest.tasks);
     await this.setPlanStatus(planId, nextStatus);
     await this.setPlanSessionStatus(planId, nextStatus);
+    if (requirementId && nextStatus === 'completed') {
+      await this.tryUpdateRequirementStatus(requirementId, 'review', 'orchestration plan passed auto review gate');
+      await this.tryUpdateRequirementStatus(requirementId, 'done', 'orchestration plan completed');
+    }
     return this.getPlanById(planId);
   }
 
@@ -1030,6 +1052,27 @@ export class OrchestrationService {
         }
       }
 
+      const codeValidation = this.validateCodeExecutionProof(task.title, task.description, output);
+      if (!codeValidation.valid) {
+        await this.orchestrationTaskModel
+          .updateOne(
+            { _id: taskId },
+            {
+              $push: {
+                runLogs: {
+                  timestamp: new Date(),
+                  level: 'warn',
+                  message: `CODE_EXECUTION_PROOF warning: ${codeValidation.reason}`,
+                  metadata: {
+                    missing: codeValidation.missing,
+                  },
+                },
+              },
+            },
+          )
+          .exec();
+      }
+
       await this.orchestrationTaskModel
         .updateOne(
           { _id: taskId },
@@ -1100,6 +1143,52 @@ export class OrchestrationService {
       throw new BadRequestException('Task is not associated with orchestration plan');
     }
     return task.planId;
+  }
+
+  private parseRequirementObjectId(requirementId?: string): Types.ObjectId | undefined {
+    const normalized = String(requirementId || '').trim();
+    if (!normalized) {
+      return undefined;
+    }
+    if (!Types.ObjectId.isValid(normalized)) {
+      return undefined;
+    }
+    return new Types.ObjectId(normalized);
+  }
+
+  private resolveRequirementObjectIdFromPlan(plan: OrchestrationPlan): Types.ObjectId | undefined {
+    const raw = String((plan.metadata || {}).requirementId || '').trim();
+    if (!raw || !Types.ObjectId.isValid(raw)) {
+      return undefined;
+    }
+    return new Types.ObjectId(raw);
+  }
+
+  private resolveRequirementIdFromPlan(plan: OrchestrationPlan): string | undefined {
+    return String((plan.metadata || {}).requirementId || '').trim() || undefined;
+  }
+
+  private async tryUpdateRequirementStatus(
+    requirementId: string,
+    status: 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked',
+    note: string,
+  ): Promise<void> {
+    try {
+      await axios.post(
+        `${this.engineeringIntelligenceBaseUrl}/engineering-intelligence/requirements/${encodeURIComponent(requirementId)}/status`,
+        {
+          status,
+          changedByType: 'system',
+          changedByName: 'orchestration-service',
+          note,
+        },
+        {
+          timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+        },
+      );
+    } catch {
+      // requirement sync is best-effort and should not block orchestration execution.
+    }
   }
 
   private async markTaskFailed(taskId: string, errorMessage: string): Promise<void> {
@@ -1572,6 +1661,55 @@ export class OrchestrationService {
   private isEmailTool(tool: Tool): boolean {
     const text = `${tool.id} ${tool.name} ${tool.description} ${tool.category}`.toLowerCase();
     return text.includes('gmail') || text.includes('email') || text.includes('mail');
+  }
+
+  private isCodeTask(title: string, description: string): boolean {
+    const text = `${title} ${description}`.toLowerCase();
+    return (
+      text.includes('code') ||
+      text.includes('implement') ||
+      text.includes('开发') ||
+      text.includes('编码') ||
+      text.includes('修复') ||
+      text.includes('fix') ||
+      text.includes('refactor')
+    );
+  }
+
+  private validateCodeExecutionProof(
+    title: string,
+    description: string,
+    output: string,
+  ): { valid: boolean; reason?: string; missing?: string[] } {
+    if (!this.isCodeTask(title, description)) {
+      return { valid: true };
+    }
+
+    const text = String(output || '');
+    const lower = text.toLowerCase();
+    const hasBuild = /\b(npm run build|pnpm build|yarn build|bun run build|build\b)\b/i.test(text);
+    const hasTest = /\b(npm test|pnpm test|yarn test|bun test|pytest|go test|vitest|jest|test\b)\b/i.test(text);
+    const hasLint = /\b(npm run lint|pnpm lint|yarn lint|bun run lint|ruff check|eslint|lint\b)\b/i.test(text);
+    const hasSuccessSignal =
+      /\b(exit code\s*:?\s*0|completed successfully|success|passed|all checks passed|0 failed)\b/i.test(text) ||
+      (!/\b(exit code\s*:?\s*[1-9]|error:|failed|exception)\b/i.test(text) && lower.length > 0);
+    const hasDiffSignal =
+      /\b(git diff|files changed|changed files|modified:|create mode|insertions\(|deletions\()\b/i.test(text);
+
+    const missing: string[] = [];
+    if (!(hasBuild || hasTest || hasLint)) missing.push('build/test/lint commands');
+    if (!hasSuccessSignal) missing.push('successful command exit evidence');
+    if (!hasDiffSignal) missing.push('code change evidence');
+
+    if (missing.length > 0) {
+      return {
+        valid: false,
+        reason: `missing ${missing.join(', ')}`,
+        missing,
+      };
+    }
+
+    return { valid: true };
   }
 
   private requiresResearchQualityValidation(title: string, description: string): boolean {

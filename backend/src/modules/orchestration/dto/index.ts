@@ -31,6 +31,10 @@ export class CreatePlanFromPromptDto {
   @IsOptional()
   @IsBoolean()
   autoRun?: boolean;
+
+  @IsOptional()
+  @IsString()
+  requirementId?: string;
 }
 
 export class RunPlanDto {

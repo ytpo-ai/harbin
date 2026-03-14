@@ -1208,6 +1208,44 @@ export class EngineeringIntelligenceService {
     return status;
   }
 
+  private async resolveRequirementGithubTarget(
+    requirement: EiRequirementDocument,
+    payload: SyncRequirementToGithubDto,
+  ): Promise<{ owner: string; repo: string }> {
+    const payloadOwner = String(payload.owner || '').trim();
+    const payloadRepo = String(payload.repo || '').trim();
+    if (payloadOwner && payloadRepo) {
+      return { owner: payloadOwner, repo: payloadRepo };
+    }
+
+    const localProjectId = String(requirement.localProjectId || '').trim();
+    if (!localProjectId) {
+      throw new BadRequestException('Requirement has no local project binding');
+    }
+
+    const localProject = await this.rdProjectModel
+      .findById(localProjectId)
+      .populate('githubBindingId', 'githubOwner githubRepo sourceType')
+      .lean()
+      .exec();
+
+    if (!localProject) {
+      throw new BadRequestException('Bound local project not found');
+    }
+
+    const githubBinding = localProject.githubBindingId as
+      | { githubOwner?: string; githubRepo?: string; sourceType?: string }
+      | undefined;
+    const owner = String(githubBinding?.githubOwner || '').trim();
+    const repo = String(githubBinding?.githubRepo || '').trim();
+
+    if (!owner || !repo) {
+      throw new BadRequestException('Bound local project has no GitHub repository');
+    }
+
+    return { owner, repo };
+  }
+
   async createRequirement(payload: CreateRequirementDto) {
     const now = new Date();
     const requirementId = this.generateRequirementId();
@@ -1225,6 +1263,7 @@ export class EngineeringIntelligenceService {
       createdById: payload.createdById ? String(payload.createdById).trim() : undefined,
       createdByName: payload.createdByName ? String(payload.createdByName).trim() : undefined,
       createdByType: payload.createdByType || 'human',
+      localProjectId: payload.localProjectId ? String(payload.localProjectId).trim() : undefined,
       comments: [],
       assignments: [],
       statusHistory: [
@@ -1256,6 +1295,9 @@ export class EngineeringIntelligenceService {
     if (query.assigneeAgentId) {
       filters.currentAssigneeAgentId = String(query.assigneeAgentId).trim();
     }
+    if (query.localProjectId) {
+      filters.localProjectId = String(query.localProjectId).trim();
+    }
     if (search) {
       filters.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -1273,6 +1315,26 @@ export class EngineeringIntelligenceService {
       throw new NotFoundException('Requirement not found');
     }
     return requirement;
+  }
+
+  async deleteRequirement(requirementId: string) {
+    const normalizedId = String(requirementId || '').trim();
+    if (!normalizedId) {
+      throw new BadRequestException('requirementId is required');
+    }
+
+    const result = await this.requirementModel
+      .deleteOne({ requirementId: normalizedId })
+      .exec();
+
+    if (!result.deletedCount) {
+      throw new NotFoundException('Requirement not found');
+    }
+
+    return {
+      success: true,
+      requirementId: normalizedId,
+    };
   }
 
   async addRequirementComment(requirementId: string, payload: AddRequirementCommentDto) {
@@ -1368,8 +1430,76 @@ export class EngineeringIntelligenceService {
 
     requirement.statusHistory = [...(requirement.statusHistory || []), statusEvent];
     requirement.lastBoardEventAt = new Date();
+
+    await this.syncGithubIssueLifecycle(requirement, toStatus);
+
     await requirement.save();
     return requirement.toObject();
+  }
+
+  private async patchGithubIssueState(
+    requirement: EiRequirementDocument,
+    state: 'open' | 'closed',
+  ): Promise<void> {
+    const github = requirement.githubLink;
+    if (!github?.owner || !github?.repo || !github?.issueNumber) {
+      return;
+    }
+
+    const response = await fetch(
+      `${this.githubApiBase}/repos/${encodeURIComponent(github.owner)}/${encodeURIComponent(github.repo)}/issues/${github.issueNumber}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${this.getGitHubToken()}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ state }),
+      },
+    );
+
+    if (!response.ok) {
+      const bodyText = await response.text();
+      throw new BadRequestException(`GitHub API error (${response.status}): ${bodyText}`);
+    }
+
+    const issue = (await response.json()) as { state: 'open' | 'closed'; html_url?: string };
+    requirement.githubLink = {
+      ...github,
+      issueState: issue.state,
+      issueUrl: issue.html_url || github.issueUrl,
+      syncedAt: new Date(),
+      lastError: undefined,
+    };
+  }
+
+  private async syncGithubIssueLifecycle(
+    requirement: EiRequirementDocument,
+    toStatus: EiRequirementStatus,
+  ): Promise<void> {
+    const github = requirement.githubLink;
+    if (!github?.issueNumber) {
+      return;
+    }
+
+    const shouldClose = toStatus === 'done';
+    const nextState: 'open' | 'closed' = shouldClose ? 'closed' : 'open';
+    const currentState = github.issueState || 'open';
+    if (currentState === nextState) {
+      return;
+    }
+
+    try {
+      await this.patchGithubIssueState(requirement, nextState);
+    } catch (error) {
+      requirement.githubLink = {
+        ...github,
+        syncedAt: new Date(),
+        lastError: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   async getRequirementBoard() {
@@ -1397,13 +1527,13 @@ export class EngineeringIntelligenceService {
 
   async syncRequirementToGithub(requirementId: string, payload: SyncRequirementToGithubDto) {
     const normalizedId = String(requirementId || '').trim();
-    const owner = String(payload.owner || '').trim();
-    const repo = String(payload.repo || '').trim();
 
     const requirement = await this.requirementModel.findOne({ requirementId: normalizedId }).exec();
     if (!requirement) {
       throw new NotFoundException('Requirement not found');
     }
+
+    const { owner, repo } = await this.resolveRequirementGithubTarget(requirement, payload);
 
     const issueTitle = requirement.title;
     const issueBody = [

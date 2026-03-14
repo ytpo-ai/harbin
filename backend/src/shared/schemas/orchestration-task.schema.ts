@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 export type OrchestrationTaskDocument = OrchestrationTask & Document;
 
@@ -22,6 +22,9 @@ export class OrchestrationTask {
 
   @Prop()
   planId?: string;
+
+  @Prop({ type: Types.ObjectId, ref: 'EiRequirement', required: false })
+  requirementId?: Types.ObjectId;
 
   @Prop({ enum: ['plan', 'schedule'], default: 'plan' })
   mode: OrchestrationTaskMode;
@@ -95,5 +98,6 @@ export class OrchestrationTask {
 export const OrchestrationTaskSchema = SchemaFactory.createForClass(OrchestrationTask);
 
 OrchestrationTaskSchema.index({ planId: 1, order: 1 });
+OrchestrationTaskSchema.index({ requirementId: 1, status: 1, updatedAt: -1 });
 OrchestrationTaskSchema.index({ status: 1 });
 OrchestrationTaskSchema.index({ mode: 1, scheduleId: 1, createdAt: -1 });

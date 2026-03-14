@@ -40,6 +40,8 @@
 11. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
 12. 工具级 Prompt：`tools` 支持 `prompt` 字段，Agent 运行时会按已授权工具自动注入对应 system 提示，不再依赖角色硬编码。
 13. 演进方向：对外统一为原子 `Tool`，对内保留 `Toolkit` 管理能力。
+14. 需求管理 MCP：新增 `requirement` toolkit（list/get/create/update-status/assign/comment/sync-github/board），统一代理 EI 需求 API。
+15. 编排上下文分级：Orchestration MCP 新增 `meeting/autonomous` 双上下文断言，允许 CTO 在非会议场景发起编排治理。
 
 ---
 
@@ -55,6 +57,7 @@
 | `AGENT_TOOL_MANAGEMENT_UI_OPTIMIZATION_PLAN.md` | 工具管理页与调用日志 Tab 展示优化计划 |
 | `TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_PLAN.md` | Tool ID 命名层级与 namespace 优化计划 |
 | `RD_RELATED_DOCS_WRITE_MCP_PLAN.md` | RD 文档写入 MCP（docs-write）接入计划 |
+| `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -64,6 +67,7 @@
 | `AGENTS_TOOLS_MIGRATION_PLAN.md` | agents/tools 模块迁移与边界收敛总结 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | 工具白名单治理开发沉淀 |
 | `TOOL_PROMPT_INJECTION_PLAN.md` | 工具级 prompt 注入与历史数据回填总结 |
+| `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
 
 ### 技术文档 (docs/technical/, docs/api/)
 
