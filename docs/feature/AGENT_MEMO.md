@@ -103,6 +103,7 @@ type MemoType = 'knowledge' | 'standard';
 - 记录已执行的编排任务及状态轨迹（开始执行后到终态）。
 - 视图口径：`running` / `success` / `failed` / `cancelled`。
 - `todo` 中任务一旦进入执行态（如 `running`）即自动出队，并进入 `history` 聚合域。
+- `history` 合并策略已下沉到 `MemoTaskHistoryService.upsertHistoryItem`（状态时间线去重、startedAt/finishedAt/finalStatus 计算、条目上限截断）。
 
 #### Topic（主题积累）
 
@@ -206,6 +207,7 @@ type MemoType = 'knowledge' | 'standard';
 | `AGENT_MEMO_REDESIGN_PLAN.md` | 备忘录重构开发总结 |
 | `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_SUMMARY.md` | Identity/Evaluation开发总结 |
 | `TODO_HISTORY_MEMO_AGGREGATION_OPTIMIZATION_PLAN.md` | TODO/History 内容与聚合优化开发总结 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Memo 一期拆分（MemoTaskTodoService/MemoTaskHistoryService）开发沉淀 |
 
 ### 技术文档 (docs/technical/, docs/feature/)
 
@@ -235,6 +237,8 @@ type MemoType = 'knowledge' | 'standard';
 | `modules/memos/memo.module.ts` | Memo 模块依赖注入配置 |
 | `modules/memos/memo.controller.ts` | REST API 控制器，处理所有 memo 相关请求 |
 | `modules/memos/memo.service.ts` | 核心业务逻辑，CRUD、搜索、版本管理 |
+| `modules/memos/memo-task-todo.service.ts` | TODO 状态归一化、读写聚合、内容渲染 |
+| `modules/memos/memo-task-history.service.ts` | History 状态归一化、timeline 去重与合并策略 |
 | `modules/memos/memo.service.spec.ts` | 单元测试 |
 
 #### 聚合服务

@@ -14,6 +14,9 @@ import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { OpenCodeModule } from '../opencode/opencode.module';
 import { AgentExecutionService } from './agent-execution.service';
+import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
+import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
+import { AgentMcpProfileService } from './agent-mcp-profile.service';
 
 @Module({
   imports: [
@@ -32,7 +35,7 @@ import { AgentExecutionService } from './agent-execution.service';
     OpenCodeModule,
   ],
   controllers: [AgentController],
-  providers: [AgentService, AgentExecutionService],
+  providers: [AgentService, AgentExecutionService, AgentOrchestrationIntentService, AgentOpenCodePolicyService, AgentMcpProfileService],
   exports: [AgentService],
 })
 export class AgentModule {}

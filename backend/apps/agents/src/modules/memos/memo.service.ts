@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AgentMemo, AgentMemoDocument, MemoKind, MemoType } from '../../schemas/agent-memo.schema';
 import { AgentMemoVersion, AgentMemoVersionDocument } from '../../schemas/agent-memo-version.schema';
 import { MemoDocSyncService } from './memo-doc-sync.service';
-import { HistoryTaskItem, MemoTaskHistoryService, TaskStatus } from './memo-task-history.service';
+import { MemoTaskHistoryService, TaskStatus } from './memo-task-history.service';
 import { MemoTaskTodoService, TaskSourceType, TodoTaskItem } from './memo-task-todo.service';
 
 const EVENT_KEY_PREFIX = 'memo:event:';
@@ -1088,42 +1088,19 @@ export class MemoService {
   }): Promise<AgentMemo> {
     const historyDoc = await this.getOrCreateHistoryDocument(payload.agentId);
     const historyItems = this.memoTaskHistoryService.readHistoryItems(historyDoc.payload);
-    const at = payload.at || new Date().toISOString();
-    const existing = historyItems.find((item) => item.taskId === payload.taskId);
-
-    const timelineEntry = {
-      status: payload.status,
-      at,
-      note: payload.note ? this.compact(payload.note, 200) : undefined,
-    } as const;
-
-    const nextItem: HistoryTaskItem = {
+    const compactedNote = payload.note ? this.compact(payload.note, 200) : undefined;
+    const { nextItems, status } = this.memoTaskHistoryService.upsertHistoryItem(historyItems, {
       taskId: payload.taskId,
       title: payload.title,
       description: payload.description,
-      orchestrationId: payload.orchestrationId,
-      priority: this.memoTaskHistoryService.normalizePriority(payload.priority),
+      status: payload.status,
+      note: compactedNote,
       sourceType: payload.sourceType,
-      startedAt: existing?.startedAt || (payload.status === 'running' ? at : undefined),
-      finishedAt:
-        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
-          ? at
-          : existing?.finishedAt,
-      finalStatus:
-        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
-          ? payload.status
-          : existing?.finalStatus,
-      currentStatus: payload.status,
-      statusTimeline: this.memoTaskHistoryService.dedupeTimeline([...(existing?.statusTimeline || []), timelineEntry]),
-      updatedAt: at,
-    };
-
-    if (!nextItem.startedAt) {
-      const runningAt = nextItem.statusTimeline.find((item) => item.status === 'running')?.at;
-      nextItem.startedAt = runningAt || at;
-    }
-
-    const nextItems = [nextItem, ...historyItems.filter((item) => item.taskId !== payload.taskId)].slice(0, 500);
+      orchestrationId: payload.orchestrationId,
+      priority: payload.priority,
+      at: payload.at,
+      maxItems: 500,
+    });
 
     return this.updateMemo(historyDoc.id, {
       memoKind: 'history',
@@ -1134,7 +1111,7 @@ export class MemoService {
         ...((historyDoc.payload as Record<string, any>) || {}),
         topic: 'history',
         sourceType: payload.sourceType,
-        status: payload.status,
+        status,
         tasks: nextItems,
       },
       tags: this.uniqueStrings([...(historyDoc.tags || []), 'history', 'task']),

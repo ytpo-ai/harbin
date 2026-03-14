@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
-import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { ModelService } from '../models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
@@ -20,6 +19,9 @@ import { RuntimeEiSyncService } from '../runtime/runtime-ei-sync.service';
 import { OpenCodeExecutionService } from '../opencode/opencode-execution.service';
 import { RedisService } from '@libs/infra';
 import { AgentExecutionService } from './agent-execution.service';
+import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
+import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
+import { AgentMcpProfileService } from './agent-mcp-profile.service';
 
 export interface AgentContext {
   task: Task;
@@ -102,34 +104,6 @@ interface EnabledAgentSkillContext {
   proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }
 
-interface OpenCodeModelBinding {
-  provider: string;
-  model: string;
-}
-
-interface OpenCodeExecutionConfig {
-  provider: 'opencode';
-  projectDirectory?: string;
-  modelPolicy: {
-    bound?: OpenCodeModelBinding;
-    fallback: OpenCodeModelBinding[];
-  };
-}
-
-interface AgentBudgetConfig {
-  period: 'day' | 'week' | 'month';
-  limit: number;
-  unit: 'runCount';
-}
-
-const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
-  role: 'general-assistant',
-  tools: [],
-  capabilities: [],
-  exposed: false,
-  description: 'No MCP profile found for this role',
-};
-
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_ROLE_ID = 'system-model-management-role';
 const MODEL_LIST_TOOL_ID = 'builtin.sys-mg.mcp.model-admin.list-models';
@@ -162,7 +136,6 @@ const REQUIREMENT_TOOL_IDS = {
   syncGithub: 'builtin.sys-mg.mcp.requirement.sync-github',
   board: 'builtin.sys-mg.mcp.requirement.board',
 } as const;
-const ORCHESTRATION_TOOL_ID_SET = new Set<string>(Object.values(ORCHESTRATION_TOOL_IDS));
 const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   'mcp.orchestration.createPlan': ORCHESTRATION_TOOL_IDS.createPlan,
   'mcp.orchestration.updatePlan': ORCHESTRATION_TOOL_IDS.updatePlan,
@@ -185,206 +158,8 @@ const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
 };
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
-const OPENCODE_ALLOWED_ROLE_CODES = new Set([
-  'devops-engineer',
-  'fullstack-engineer',
-  'technical-architect',
-]);
-const OPENCODE_BUDGET_PERIOD_SET = new Set(['day', 'week', 'month']);
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
-
-const MCP_PROFILE_SEEDS: Omit<AgentProfile, 'createdAt' | 'updatedAt'>[] = [
-  {
-    roleCode: 'executive-lead',
-    role: 'executive-lead',
-    tools: [
-      'builtin.web-retrieval.internal.web-search.exa',
-      'builtin.web-retrieval.internal.web-fetch.fetch',
-      'builtin.data-analysis.internal.content-analysis.extract',
-      'builtin.sys-mg.internal.agent-master.list-agents',
-      'builtin.sys-mg.mcp.orchestration.create-plan',
-      'builtin.sys-mg.mcp.orchestration.update-plan',
-      'builtin.sys-mg.mcp.orchestration.run-plan',
-      'builtin.sys-mg.mcp.orchestration.get-plan',
-      'builtin.sys-mg.mcp.orchestration.list-plans',
-      'builtin.sys-mg.mcp.orchestration.reassign-task',
-      'builtin.sys-mg.mcp.orchestration.complete-human-task',
-      'builtin.sys-mg.mcp.orchestration.create-schedule',
-      'builtin.sys-mg.mcp.orchestration.update-schedule',
-      'builtin.sys-mg.mcp.orchestration.debug-task',
-      REQUIREMENT_TOOL_IDS.list,
-      REQUIREMENT_TOOL_IDS.get,
-      REQUIREMENT_TOOL_IDS.create,
-      REQUIREMENT_TOOL_IDS.updateStatus,
-      REQUIREMENT_TOOL_IDS.assign,
-      REQUIREMENT_TOOL_IDS.comment,
-      REQUIREMENT_TOOL_IDS.syncGithub,
-      REQUIREMENT_TOOL_IDS.board,
-    ],
-    capabilities: ['strategy_planning', 'decision_making', 'stakeholder_communication', 'resource_governance'],
-    exposed: true,
-    description: '负责战略规划、关键决策与跨团队协同。',
-  },
-  {
-    roleCode: 'management-assistant',
-    role: 'management-assistant',
-    tools: [
-      'builtin.web-retrieval.internal.web-search.exa',
-      'builtin.web-retrieval.internal.web-fetch.fetch',
-      'builtin.data-analysis.internal.content-analysis.extract',
-      'builtin.sys-mg.internal.agent-master.list-agents',
-      ORCHESTRATION_TOOL_IDS.createPlan,
-      ORCHESTRATION_TOOL_IDS.updatePlan,
-      ORCHESTRATION_TOOL_IDS.runPlan,
-      ORCHESTRATION_TOOL_IDS.getPlan,
-      ORCHESTRATION_TOOL_IDS.listPlans,
-      ORCHESTRATION_TOOL_IDS.createSchedule,
-      ORCHESTRATION_TOOL_IDS.updateSchedule,
-      ORCHESTRATION_TOOL_IDS.debugTask,
-      REQUIREMENT_TOOL_IDS.list,
-      REQUIREMENT_TOOL_IDS.get,
-      REQUIREMENT_TOOL_IDS.updateStatus,
-      REQUIREMENT_TOOL_IDS.assign,
-      REQUIREMENT_TOOL_IDS.comment,
-      REQUIREMENT_TOOL_IDS.board,
-    ],
-    capabilities: ['schedule_management', 'meeting_followup', 'information_synthesis'],
-    exposed: true,
-    description: '负责高管日程管理、会议纪要与事项跟进。',
-  },
-  {
-    roleCode: 'technical-architect',
-    role: 'technical-architect',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'builtin.data-analysis.internal.content-analysis.extract', 'internal.agents.list'],
-    capabilities: ['system_design', 'technical_planning', 'risk_assessment'],
-    exposed: true,
-    description: '负责技术架构、方案评审与技术风险控制。',
-  },
-  {
-    roleCode: 'fullstack-engineer',
-    role: 'fullstack-engineer',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
-    exposed: true,
-    description: '负责前后端实现、联调测试与工程交付。',
-  },
-  {
-    roleCode: 'devops-engineer',
-    role: 'devops-engineer',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['deployment_automation', 'monitoring_alerting', 'incident_response'],
-    exposed: true,
-    description: '负责部署发布、监控告警与系统稳定性保障。',
-  },
-  {
-    roleCode: 'data-analyst',
-    role: 'data-analyst',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['data_analysis', 'insight_generation', 'reporting'],
-    exposed: true,
-    description: '负责数据分析、结论提炼与报告输出。',
-  },
-  {
-    roleCode: 'product-manager',
-    role: 'product-manager',
-    tools: [
-      'builtin.web-retrieval.internal.web-search.exa',
-      'builtin.web-retrieval.internal.web-fetch.fetch',
-      ORCHESTRATION_TOOL_IDS.createPlan,
-      ORCHESTRATION_TOOL_IDS.updatePlan,
-      ORCHESTRATION_TOOL_IDS.runPlan,
-      ORCHESTRATION_TOOL_IDS.getPlan,
-      ORCHESTRATION_TOOL_IDS.listPlans,
-      ORCHESTRATION_TOOL_IDS.createSchedule,
-      ORCHESTRATION_TOOL_IDS.updateSchedule,
-      ORCHESTRATION_TOOL_IDS.debugTask,
-    ],
-    capabilities: ['requirement_planning', 'roadmap_management', 'cross_team_alignment'],
-    exposed: true,
-    description: '负责产品规划、优先级管理与跨团队推进。',
-  },
-  {
-    roleCode: 'human-resources-manager',
-    role: 'human-resources-manager',
-    tools: ['internal.web.search'],
-    capabilities: ['talent_acquisition', 'performance_management', 'organization_development'],
-    exposed: true,
-    description: '负责招聘、绩效管理与组织人才发展。',
-  },
-  {
-    roleCode: 'administrative-assistant',
-    role: 'administrative-assistant',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'internal.web.fetch'],
-    capabilities: ['administrative_coordination', 'meeting_support', 'document_management'],
-    exposed: true,
-    description: '负责行政事务、会议支持与流程协同。',
-  },
-  {
-    roleCode: 'marketing-strategist',
-    role: 'marketing-strategist',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
-    capabilities: ['campaign_planning', 'brand_communication', 'growth_optimization'],
-    exposed: true,
-    description: '负责市场策略、活动策划与增长转化。',
-  },
-  {
-    roleCode: 'human-exclusive-assistant',
-    role: 'human-exclusive-assistant',
-    tools: [
-      'builtin.web-retrieval.internal.web-search.exa',
-      'builtin.web-retrieval.internal.web-fetch.fetch',
-      'builtin.data-analysis.internal.content-analysis.extract',
-      'builtin.sys-mg.mcp.audit.list-human-operation-log',
-    ],
-    capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
-    exposed: true,
-    description: '面向人类用户的专属助理，负责个人事务协同与执行跟进。',
-  },
-  {
-    roleCode: 'system-builtin-agent',
-    role: 'system-builtin-agent',
-    tools: [
-      'builtin.web-retrieval.internal.web-search.exa',
-      'builtin.web-retrieval.internal.web-fetch.fetch',
-      'builtin.data-analysis.internal.content-analysis.extract',
-      'builtin.sys-mg.internal.agent-master.list-agents',
-      'builtin.sys-mg.mcp.model-admin.list-models',
-      'builtin.sys-mg.mcp.model-admin.add-model',
-      'builtin.sys-mg.mcp.orchestration.create-plan',
-      'builtin.sys-mg.mcp.orchestration.run-plan',
-      'builtin.sys-mg.mcp.orchestration.get-plan',
-      'builtin.sys-mg.mcp.orchestration.list-plans',
-      'builtin.sys-mg.mcp.orchestration.reassign-task',
-      'builtin.sys-mg.mcp.orchestration.complete-human-task',
-      'builtin.sys-mg.mcp.orchestration.create-schedule',
-      'builtin.sys-mg.mcp.orchestration.update-schedule',
-      'builtin.sys-mg.mcp.orchestration.debug-task',
-      REQUIREMENT_TOOL_IDS.list,
-      REQUIREMENT_TOOL_IDS.get,
-      REQUIREMENT_TOOL_IDS.updateStatus,
-      REQUIREMENT_TOOL_IDS.assign,
-      REQUIREMENT_TOOL_IDS.comment,
-      REQUIREMENT_TOOL_IDS.syncGithub,
-      REQUIREMENT_TOOL_IDS.board,
-    ],
-    capabilities: ['system_coordination', 'workflow_orchestration', 'platform_safeguard'],
-    exposed: true,
-    description: '系统内置类型，用于平台默认流程与系统任务协同。',
-  },
-  {
-    roleCode: 'meeting-assistant',
-    role: 'meeting-assistant',
-    tools: [
-      'builtin.sys-mg.mcp.meeting.list-meetings',
-      'builtin.sys-mg.mcp.meeting.send-message',
-      'builtin.sys-mg.mcp.meeting.update-status',
-    ],
-    capabilities: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
-    exposed: true,
-    description: '会议助理，负责监控进行中的会议，在会议长时间未活动时发送提醒并自动结束会议。',
-  },
-];
 
 @Injectable()
 export class AgentService {
@@ -396,7 +171,6 @@ export class AgentService {
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(AgentSkill.name) private agentSkillModel: Model<AgentSkillDocument>,
-    @InjectModel(AgentRun.name) private agentRunModel: Model<AgentRunDocument>,
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
     private readonly apiKeyService: ApiKeyService,
@@ -408,10 +182,13 @@ export class AgentService {
     private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
     private readonly agentExecutionService: AgentExecutionService,
+    private readonly agentOrchestrationIntentService: AgentOrchestrationIntentService,
+    private readonly agentOpenCodePolicyService: AgentOpenCodePolicyService,
+    private readonly agentMcpProfileService: AgentMcpProfileService,
   ) {}
 
   async seedMcpProfileSeeds(): Promise<void> {
-    await this.ensureMcpProfileSeeds();
+    await this.agentMcpProfileService.ensureMcpProfileSeeds();
   }
 
   async seedModelManagementAgent(): Promise<void> {
@@ -593,7 +370,7 @@ export class AgentService {
     }
 
     const role = await this.assertRoleExists(normalizedRoleId);
-    const profile = await this.getMcpProfileByRoleCode(role.code);
+    const profile = await this.agentMcpProfileService.getMcpProfileByRoleCode(role.code);
     const whitelist = new Set(this.normalizeToolIds(profile.tools || []));
     const normalizedTools = this.normalizeToolIds(tools || []);
     const invalid = normalizedTools.filter((toolId) => !whitelist.has(toolId));
@@ -621,295 +398,13 @@ export class AgentService {
   }
 
   private async assertOpenCodeExecutionGate(agent: Agent): Promise<void> {
-    const executionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    const executionConfig = this.agentOpenCodePolicyService.parseOpenCodeExecutionConfig(agent.config);
     if (!executionConfig) {
       return;
     }
 
     const role = await this.assertRoleExists(agent.roleId);
-    const roleCode = String(role.code || '').trim();
-    if (!OPENCODE_ALLOWED_ROLE_CODES.has(roleCode)) {
-      throw new BadRequestException(
-        `OpenCode execution role not allowed: ${roleCode || 'unknown'}. Allowed roles: devops-engineer, fullstack-engineer, technical-architect`,
-      );
-    }
-
-    const boundModel = executionConfig.modelPolicy.bound;
-    if (!boundModel) {
-      return;
-    }
-
-    const currentProvider = String(agent.model?.provider || '').trim();
-    const currentModel = String(agent.model?.model || '').trim();
-    if (!this.matchesModelBinding(boundModel, currentProvider, currentModel)) {
-      throw new BadRequestException(
-        `OpenCode model binding mismatch: expected ${boundModel.provider}/${boundModel.model}, got ${currentProvider}/${currentModel}`,
-      );
-    }
-  }
-
-  private parseOpenCodeExecutionConfig(config: unknown): OpenCodeExecutionConfig | null {
-    if (!this.isPlainObject(config)) {
-      return null;
-    }
-
-    const execution = (config as Record<string, unknown>).execution;
-    if (!this.isPlainObject(execution)) {
-      return null;
-    }
-
-    const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
-    if (provider !== 'opencode') {
-      return null;
-    }
-
-    const projectDirectoryRaw = (execution as Record<string, unknown>).projectDirectory;
-    if (projectDirectoryRaw !== undefined && projectDirectoryRaw !== null && typeof projectDirectoryRaw !== 'string') {
-      throw new BadRequestException('agent.config.execution.projectDirectory must be a string');
-    }
-    const projectDirectory =
-      typeof projectDirectoryRaw === 'string' && projectDirectoryRaw.trim().length > 0
-        ? projectDirectoryRaw.trim()
-        : undefined;
-
-    const modelPolicyRaw = (execution as Record<string, unknown>).modelPolicy;
-    if (modelPolicyRaw !== undefined && !this.isPlainObject(modelPolicyRaw)) {
-      throw new BadRequestException('agent.config.execution.modelPolicy must be a JSON object');
-    }
-
-    const modelPolicy = this.isPlainObject(modelPolicyRaw)
-      ? (modelPolicyRaw as Record<string, unknown>)
-      : {};
-    const bound = this.parseModelBinding(modelPolicy.bound, 'agent.config.execution.modelPolicy.bound');
-
-    const fallbackRaw = modelPolicy.fallback;
-    const fallback: OpenCodeModelBinding[] = [];
-    if (fallbackRaw !== undefined) {
-      if (!Array.isArray(fallbackRaw)) {
-        throw new BadRequestException('agent.config.execution.modelPolicy.fallback must be an array');
-      }
-      for (let i = 0; i < fallbackRaw.length; i += 1) {
-        const binding = this.parseModelBinding(
-          fallbackRaw[i],
-          `agent.config.execution.modelPolicy.fallback[${i}]`,
-        );
-        if (binding) {
-          fallback.push(binding);
-        }
-      }
-    }
-
-    return {
-      provider: 'opencode',
-      projectDirectory,
-      modelPolicy: {
-        bound,
-        fallback,
-      },
-    };
-  }
-
-  private parseModelBinding(value: unknown, fieldPath: string): OpenCodeModelBinding | undefined {
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-
-    if (typeof value === 'string') {
-      const raw = value.trim();
-      if (!raw) {
-        return undefined;
-      }
-      const separator = raw.includes('/') ? '/' : ':';
-      const [provider, model] = raw.split(separator);
-      if (!provider || !model) {
-        throw new BadRequestException(`${fieldPath} must be "provider/model" or an object`);
-      }
-      return {
-        provider: provider.trim(),
-        model: model.trim(),
-      };
-    }
-
-    if (!this.isPlainObject(value)) {
-      throw new BadRequestException(`${fieldPath} must be a JSON object`);
-    }
-
-    const provider = String((value as Record<string, unknown>).provider || '').trim();
-    const model = String((value as Record<string, unknown>).model || '').trim();
-    if (!provider || !model) {
-      throw new BadRequestException(`${fieldPath} must include provider and model`);
-    }
-    return { provider, model };
-  }
-
-  private matchesModelBinding(binding: OpenCodeModelBinding, provider: string, model: string): boolean {
-    return binding.provider === provider && binding.model === model;
-  }
-
-  private isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
-  private async applyAgentBudgetGate(
-    agent: Agent,
-    runtimeAgentId: string,
-    task: Task,
-    runtimeContext: RuntimeRunContext,
-    context?: Partial<AgentContext>,
-  ): Promise<void> {
-    const budgetConfig = this.parseAgentBudgetConfig(agent.config);
-    if (!budgetConfig) {
-      return;
-    }
-
-    const usage = await this.evaluateAgentBudgetUsage(
-      runtimeAgentId,
-      budgetConfig,
-      runtimeContext.resumed,
-    );
-
-    if (!usage.exceeded) {
-      return;
-    }
-
-    const approval = context?.approval;
-    const approved = approval?.approved === true;
-    const quotaPayload = {
-      gate: 'agent_budget',
-      period: budgetConfig.period,
-      unit: budgetConfig.unit,
-      limit: budgetConfig.limit,
-      usedBefore: usage.usedBefore,
-      usedAfter: usage.usedAfter,
-      periodStart: usage.periodStart.toISOString(),
-      periodEnd: usage.periodEnd.toISOString(),
-    };
-
-    if (approved) {
-      const approverId = approval?.approverId || context?.actor?.employeeId;
-      await this.runtimeOrchestrator.resumeRunWithActor(runtimeContext.runId, {
-        actorId: approverId || 'approval-system',
-        actorType: approverId ? 'employee' : 'system',
-        reason: approval?.reason || 'quota approval granted',
-      });
-      await this.runtimeOrchestrator.recordPermissionDecision({
-        runId: runtimeContext.runId,
-        agentId: runtimeAgentId,
-        sessionId: runtimeContext.sessionId,
-        taskId: task.id,
-        traceId: runtimeContext.traceId,
-        approved: true,
-        payload: {
-          ...quotaPayload,
-          approvalId: approval?.approvalId,
-          approverId,
-          reason: approval?.reason || 'quota approval granted',
-        },
-      });
-      return;
-    }
-
-    await this.runtimeOrchestrator.pauseRunWithActor(runtimeContext.runId, {
-      actorId: context?.actor?.employeeId || 'system',
-      actorType: context?.actor?.employeeId ? 'employee' : 'system',
-      reason: 'quota exceeded, approval required',
-    });
-    await this.runtimeOrchestrator.recordPermissionAsked({
-      runId: runtimeContext.runId,
-      agentId: runtimeAgentId,
-      sessionId: runtimeContext.sessionId,
-      taskId: task.id,
-      traceId: runtimeContext.traceId,
-      payload: {
-        ...quotaPayload,
-        requestType: 'quota.exceeded',
-        message: 'Agent quota exceeded and approval is required to continue execution',
-      },
-    });
-
-    throw new BadRequestException(
-      `Agent quota exceeded and run paused for approval. period=${budgetConfig.period}, limit=${budgetConfig.limit}, used=${usage.usedAfter}`,
-    );
-  }
-
-  private parseAgentBudgetConfig(config: unknown): AgentBudgetConfig | null {
-    if (!this.isPlainObject(config)) {
-      return null;
-    }
-
-    const budget = (config as Record<string, unknown>).budget;
-    if (budget === undefined || budget === null) {
-      return null;
-    }
-    if (!this.isPlainObject(budget)) {
-      throw new BadRequestException('agent.config.budget must be a JSON object');
-    }
-
-    const periodRaw = String((budget as Record<string, unknown>).period || '').trim().toLowerCase();
-    const limitRaw = Number((budget as Record<string, unknown>).limit);
-    const unitRaw = String((budget as Record<string, unknown>).unit || 'runCount').trim();
-
-    if (!periodRaw || !OPENCODE_BUDGET_PERIOD_SET.has(periodRaw)) {
-      throw new BadRequestException('agent.config.budget.period must be one of day/week/month');
-    }
-    if (!Number.isFinite(limitRaw) || limitRaw < 0) {
-      throw new BadRequestException('agent.config.budget.limit must be a non-negative number');
-    }
-    if (unitRaw !== 'runCount') {
-      throw new BadRequestException('agent.config.budget.unit currently only supports runCount');
-    }
-
-    return {
-      period: periodRaw as AgentBudgetConfig['period'],
-      limit: Math.floor(limitRaw),
-      unit: 'runCount',
-    };
-  }
-
-  private async evaluateAgentBudgetUsage(
-    agentId: string,
-    budgetConfig: AgentBudgetConfig,
-    resumedRun: boolean,
-  ): Promise<{
-    usedBefore: number;
-    usedAfter: number;
-    exceeded: boolean;
-    periodStart: Date;
-    periodEnd: Date;
-  }> {
-    const periodStart = this.resolveBudgetPeriodStart(budgetConfig.period);
-    const periodEnd = new Date();
-    const usedAfter = await this.agentRunModel
-      .countDocuments({
-        agentId,
-        startedAt: {
-          $gte: periodStart,
-          $lte: periodEnd,
-        },
-      })
-      .exec();
-    const usedBefore = resumedRun ? usedAfter : Math.max(0, usedAfter - 1);
-
-    return {
-      usedBefore,
-      usedAfter,
-      exceeded: usedAfter > budgetConfig.limit,
-      periodStart,
-      periodEnd,
-    };
-  }
-
-  private resolveBudgetPeriodStart(period: AgentBudgetConfig['period']): Date {
-    const now = new Date();
-    if (period === 'day') {
-      return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    }
-    if (period === 'week') {
-      const day = now.getDay();
-      const diffToMonday = (day + 6) % 7;
-      return new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMonday);
-    }
-    return new Date(now.getFullYear(), now.getMonth(), 1);
+    this.agentOpenCodePolicyService.assertOpenCodeExecutionGate(agent, String(role.code || '').trim(), executionConfig);
   }
 
   async migrateAllToolIdsToCanonical(): Promise<{
@@ -1240,7 +735,7 @@ export class AgentService {
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
     this.logger.log(`[task_messages] taskId=${taskId} compiledMessages=${messages.length}`);
 
-    const openCodeExecutionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    const openCodeExecutionConfig = this.agentOpenCodePolicyService.parseOpenCodeExecutionConfig(agent.config);
     const role = await this.getRoleById(agent.roleId);
     const roleCode = role?.code ? String(role.code).trim() : undefined;
     const executionChannel: 'native' | 'opencode' = openCodeExecutionConfig ? 'opencode' : 'native';
@@ -1272,7 +767,7 @@ export class AgentService {
     await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
 
     try {
-      await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
+      await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       let response = '';
 
       // 确保模型已注册 - 类型转换
@@ -1448,7 +943,7 @@ export class AgentService {
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
     const messages = await this.buildMessages(agent, task, agentContext, enabledSkills);
 
-    const openCodeExecutionConfig = this.parseOpenCodeExecutionConfig(agent.config);
+    const openCodeExecutionConfig = this.agentOpenCodePolicyService.parseOpenCodeExecutionConfig(agent.config);
     const role = await this.getRoleById(agent.roleId);
     const roleCode = role?.code ? String(role.code).trim() : undefined;
     const executionChannel: 'native' | 'opencode' = openCodeExecutionConfig ? 'opencode' : 'native';
@@ -1485,7 +980,7 @@ export class AgentService {
     let streamSequence = 1;
     let runtimeInterrupted = false;
     try {
-      await this.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
+      await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       if (openCodeExecutionConfig) {
         const sessionConfig: Record<string, unknown> = {
@@ -1847,14 +1342,14 @@ export class AgentService {
       return deterministicModelManagementResult;
     }
 
-    const forcedOrchestrationAction = this.extractForcedOrchestrationAction(
+    const forcedOrchestrationAction = this.agentOrchestrationIntentService.extractForcedOrchestrationAction(
       task,
       messages,
       assignedToolIds,
       executionContext,
     );
-    if (!forcedOrchestrationAction && this.hasMeetingOrchestrationIntent(task, messages, executionContext)) {
-      const hasAnyOrchestrationTool = Array.from(assignedToolIds).some((toolId) => ORCHESTRATION_TOOL_ID_SET.has(toolId));
+    if (!forcedOrchestrationAction && this.agentOrchestrationIntentService.hasMeetingOrchestrationIntent(task, messages, executionContext)) {
+      const hasAnyOrchestrationTool = this.agentOrchestrationIntentService.hasAnyOrchestrationTool(assignedToolIds);
       if (!hasAnyOrchestrationTool) {
         return '我识别到你希望执行计划编排，但当前这个 Agent 未分配 builtin.sys-mg.mcp.orchestration.* 工具。请在 Agent 管理中为其绑定对应 MCP Profile 工具后重试。';
       }
@@ -1871,7 +1366,7 @@ export class AgentService {
           task.id,
           executionContext,
         );
-        return this.formatForcedOrchestrationAnswer(
+        return this.agentOrchestrationIntentService.formatForcedOrchestrationAnswer(
           forcedOrchestrationAction.tool,
           this.extractToolResultPayload(execution),
           forcedOrchestrationAction.parameters,
@@ -2468,408 +1963,9 @@ export class AgentService {
       .join(' ');
   }
 
-  private extractForcedOrchestrationAction(
-    task: Task,
-    messages: ChatMessage[],
-    assignedToolIds: Set<string>,
-    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
-  ):
-    | {
-        tool:
-          | 'builtin.sys-mg.mcp.orchestration.create-plan'
-          | 'builtin.sys-mg.mcp.orchestration.run-plan'
-          | 'builtin.sys-mg.mcp.orchestration.get-plan'
-          | 'builtin.sys-mg.mcp.orchestration.list-plans'
-          | 'builtin.sys-mg.mcp.orchestration.reassign-task'
-          | 'builtin.sys-mg.mcp.orchestration.complete-human-task'
-          | 'builtin.sys-mg.mcp.orchestration.create-schedule'
-          | 'builtin.sys-mg.mcp.orchestration.update-schedule'
-          | 'builtin.sys-mg.mcp.orchestration.debug-task';
-        parameters: Record<string, any>;
-        reason: string;
-      }
-    | null {
-    const meetingLike =
-      task.type === 'discussion' ||
-      executionContext?.taskType === 'discussion' ||
-      Boolean(executionContext?.teamContext?.meetingId);
-    if (!meetingLike) {
-      return null;
-    }
-
-    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
-      .reverse()
-      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
-    const latestUser = this.normalizeMeetingUserInstruction(latestUserMessage);
-    if (!latestUser) {
-      return null;
-    }
-    const lower = latestUser.toLowerCase();
-    if (this.hasOrchestrationNegationIntent(lower)) {
-      return null;
-    }
-
-    const planId = this.extractEntityIdFromText(latestUser, 'plan');
-    const taskId = this.extractEntityIdFromText(latestUser, 'task');
-    const recoveredPlanId = this.extractRecentPlanIdFromConversation(task, messages);
-    const shortRunConfirmIntent = this.isShortRunConfirmIntent(lower) && Boolean(recoveredPlanId);
-
-    const includesAny = (patterns: string[]) => patterns.some((item) => lower.includes(item.toLowerCase()));
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.createPlan) &&
-      includesAny(['创建计划', '生成计划', '拆解计划', '编排计划', 'create plan'])
-    ) {
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.createPlan,
-        parameters: {
-          prompt: latestUser,
-          title: task.title || '会议编排计划',
-          mode: 'hybrid',
-          autoRun: false,
-        },
-        reason: 'meeting_orchestration_create',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.createSchedule) &&
-      includesAny(['创建定时计划', '新增定时计划', '创建调度计划', 'create schedule'])
-    ) {
-      const selectedPlanId = planId || recoveredPlanId;
-      if (!selectedPlanId) {
-        if (!assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans)) {
-          return null;
-        }
-        return {
-          tool: ORCHESTRATION_TOOL_IDS.listPlans,
-          parameters: {},
-          reason: 'meeting_orchestration_create_schedule_missing_planid_fallback_list',
-        };
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.createSchedule,
-        parameters: {
-          planId: selectedPlanId,
-          scheduleType: 'cron',
-          expression: '0 */2 * * *',
-          timezone: 'Asia/Shanghai',
-          enabled: true,
-        },
-        reason: 'meeting_orchestration_create_schedule',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.updateSchedule) &&
-      includesAny(['修改定时计划', '更新定时计划', '调整定时计划', 'update schedule'])
-    ) {
-      const scheduleId = this.extractEntityIdFromText(latestUser, 'schedule');
-      if (!scheduleId) {
-        return null;
-      }
-      const enabledSignal = includesAny(['启用', 'enable']) ? true : includesAny(['停用', 'disable']) ? false : undefined;
-      if (enabledSignal === undefined) {
-        return null;
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.updateSchedule,
-        parameters: {
-          scheduleId,
-          enabled: enabledSignal,
-        },
-        reason: 'meeting_orchestration_update_schedule',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.runPlan) &&
-      (includesAny(['执行计划', '运行计划', '开始执行计划', 'run plan']) || shortRunConfirmIntent)
-    ) {
-      const selectedPlanId = planId || recoveredPlanId;
-      if (!selectedPlanId) {
-        if (!assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans)) {
-          return null;
-        }
-        return {
-          tool: ORCHESTRATION_TOOL_IDS.listPlans,
-          parameters: {},
-          reason: 'meeting_orchestration_run_missing_planid_fallback_list',
-        };
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.runPlan,
-        parameters: {
-          planId: selectedPlanId,
-          continueOnFailure: true,
-          confirm: true,
-        },
-        reason: shortRunConfirmIntent && !planId ? 'meeting_orchestration_run_short_confirm' : 'meeting_orchestration_run',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.getPlan) &&
-      includesAny(['查看计划', '计划详情', '查询计划', 'get plan'])
-    ) {
-      if (!planId) {
-        return null;
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.getPlan,
-        parameters: {
-          planId,
-        },
-        reason: 'meeting_orchestration_get',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.listPlans) &&
-      includesAny(['计划列表', '所有计划', 'list plans'])
-    ) {
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.listPlans,
-        parameters: {},
-        reason: 'meeting_orchestration_list',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.reassignTask) &&
-      includesAny(['改派任务', '重新分配任务', 'reassign task'])
-    ) {
-      if (!taskId) {
-        return null;
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.reassignTask,
-        parameters: {
-          taskId,
-          executorType: 'agent',
-          reason: '会议中触发改派',
-          confirm: true,
-        },
-        reason: 'meeting_orchestration_reassign',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.completeHumanTask) &&
-      includesAny(['人工完成任务', '完成人工任务', 'complete human task'])
-    ) {
-      if (!taskId) {
-        return null;
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.completeHumanTask,
-        parameters: {
-          taskId,
-          summary: '会议中确认人工任务完成',
-          output: latestUser,
-          confirm: true,
-        },
-        reason: 'meeting_orchestration_complete_human',
-      };
-    }
-
-    if (
-      assignedToolIds.has(ORCHESTRATION_TOOL_IDS.debugTask) &&
-      includesAny(['调试任务', '任务调试', 'debug task', 'debug-run'])
-    ) {
-      if (!taskId) {
-        return null;
-      }
-      return {
-        tool: ORCHESTRATION_TOOL_IDS.debugTask,
-        parameters: {
-          taskId,
-          resetResult: true,
-        },
-        reason: 'meeting_orchestration_debug_task',
-      };
-    }
-
-    return null;
-  }
-
-  private hasMeetingOrchestrationIntent(
-    task: Task,
-    messages: ChatMessage[],
-    executionContext?: { teamContext?: any; taskType?: string; teamId?: string },
-  ): boolean {
-    const meetingLike =
-      task.type === 'discussion' ||
-      executionContext?.taskType === 'discussion' ||
-      Boolean(executionContext?.teamContext?.meetingId);
-    if (!meetingLike) {
-      return false;
-    }
-    const latestUserMessage = [...(task.messages || []), ...(messages || [])]
-      .reverse()
-      .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
-    const lower = this.normalizeMeetingUserInstruction(latestUserMessage).toLowerCase();
-    if (!lower) {
-      return false;
-    }
-    if (this.hasOrchestrationNegationIntent(lower)) {
-      return false;
-    }
-    return [
-      '创建计划',
-      '生成计划',
-      '编排计划',
-      '执行计划',
-      '运行计划',
-      '计划详情',
-      '计划列表',
-      '改派任务',
-      '人工完成任务',
-      'create plan',
-      'run plan',
-      'create schedule',
-      'update schedule',
-      '调试任务',
-      '任务调试',
-      'debug task',
-      'debug-run',
-      '定时计划',
-      '调度计划',
-      'orchestration_',
-    ].some((item) => lower.includes(item));
-  }
-
-  private hasOrchestrationNegationIntent(latestUserLower: string): boolean {
-    const normalized = String(latestUserLower || '').trim();
-    if (!normalized) {
-      return false;
-    }
-
-    return [
-      '不要执行计划',
-      '不执行计划',
-      '不是编排',
-      '无需编排',
-      '不需要编排',
-      '取消编排',
-      '不要计划编排',
-      '不要run plan',
-      "don't run plan",
-      'not orchestration',
-      'no orchestration',
-    ].some((item) => normalized.includes(item));
-  }
-
-  private isShortRunConfirmIntent(latestUserLower: string): boolean {
-    const normalized = String(latestUserLower || '').trim();
-    return ['执行', '继续', '开始', 'run', 'go', 'ok执行', '确认执行'].includes(normalized);
-  }
-
-  private normalizeMeetingUserInstruction(content: unknown): string {
-    const raw = String(content || '').trim();
-    if (!raw) {
-      return '';
-    }
-
-    const wrapped = raw.match(/\[新消息\][^:：]*[:：]\s*([\s\S]*?)(?:\n\n请对此做出回应。?)?$/i);
-    if (wrapped?.[1]) {
-      return wrapped[1].trim();
-    }
-
-    return raw;
-  }
-
-  private extractRecentPlanIdFromConversation(task: Task, messages: ChatMessage[]): string | null {
-    const source = [
-      ...(task.messages || []),
-      ...(messages || []),
-    ]
-      .map((item) => String(item?.content || ''))
-      .reverse();
-
-    for (const text of source) {
-      const explicit = text.match(/planId\s*[:=]\s*([a-zA-Z0-9_-]{6,64})/i);
-      if (explicit?.[1]) {
-        return explicit[1];
-      }
-      const objectId = text.match(/\b[a-f0-9]{24}\b/i);
-      if (objectId?.[0] && /plan|计划/i.test(text)) {
-        return objectId[0];
-      }
-    }
-
-    return null;
-  }
-
-  private extractEntityIdFromText(input: string, entity: 'plan' | 'task' | 'schedule'): string | null {
-    const text = String(input || '');
-    const explicit = text.match(new RegExp(`${entity}\\s*[_-]?id\\s*[:：]\\s*([a-zA-Z0-9_-]{6,64})`, 'i'));
-    if (explicit?.[1]) {
-      return explicit[1];
-    }
-    const objectId = text.match(/\b[a-f0-9]{24}\b/i);
-    if (objectId?.[0]) {
-      return objectId[0];
-    }
-    return null;
-  }
-
-  private formatForcedOrchestrationAnswer(
-    tool: string,
-    result: any,
-    parameters: Record<string, any>,
-  ): string {
-    const payload = result?.result || result || {};
-    if (tool === ORCHESTRATION_TOOL_IDS.createPlan) {
-      const planId = payload?.id || payload?._id || payload?.planId || 'unknown';
-      const taskCount = Array.isArray(payload?.tasks) ? payload.tasks.length : 0;
-      return `已触发计划创建，planId=${planId}，任务数=${taskCount}。如需继续执行，请回复“执行计划 planId:${planId}”。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.updatePlan) {
-      return `已提交计划更新（planId=${parameters.planId || 'unknown'}）。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.runPlan) {
-      return `已触发计划执行（planId=${parameters.planId}，continueOnFailure=${parameters.continueOnFailure === true ? 'true' : 'false'}）。可继续让我查询执行进度。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.getPlan) {
-      const status = payload?.status || 'unknown';
-      const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
-      const completed = tasks.filter((item: any) => item?.status === 'completed').length;
-      const failed = tasks.filter((item: any) => item?.status === 'failed').length;
-      const waitingHuman = tasks.filter((item: any) => item?.status === 'waiting_human').length;
-      return `计划状态：${status}。任务统计：completed=${completed}，failed=${failed}，waiting_human=${waitingHuman}，total=${tasks.length}。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.listPlans) {
-      const plans = Array.isArray(payload) ? payload : Array.isArray(payload?.plans) ? payload.plans : [];
-      return `已查询计划列表，当前可见计划数量=${plans.length}。如需执行请提供 planId（例如：执行计划 planId:xxx）。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.reassignTask) {
-      return `已提交任务改派请求（taskId=${parameters.taskId}）。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.completeHumanTask) {
-      return `已提交人工任务完成回填（taskId=${parameters.taskId}）。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.createSchedule) {
-      const scheduleId = payload?.id || payload?._id || payload?.scheduleId || 'unknown';
-      const nextRunAt = payload?.nextRunAt || payload?.schedule?.nextRunAt || 'unknown';
-      return `已创建定时计划，scheduleId=${scheduleId}，nextRunAt=${nextRunAt}。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.updateSchedule) {
-      return `已提交定时计划更新（scheduleId=${parameters.scheduleId}）。`;
-    }
-    if (tool === ORCHESTRATION_TOOL_IDS.debugTask) {
-      const status = payload?.execution?.status || payload?.task?.status || payload?.debug?.status || 'unknown';
-      const error = payload?.execution?.error || payload?.debug?.error;
-      return error
-        ? `已执行任务调试（taskId=${parameters.taskId}，status=${status}），失败原因：${error}`
-        : `已执行任务调试（taskId=${parameters.taskId}，status=${status}）。`;
-    }
-    return `已执行编排工具 ${tool}。`;
-  }
-
   private async getAllowedToolIds(agent: Agent): Promise<string[]> {
     const role = await this.getRoleById(agent.roleId);
-    const profile = await this.getMcpProfileByRoleCode(role?.code);
+    const profile = await this.agentMcpProfileService.getMcpProfileByRoleCode(role?.code);
     const merged = this
       .uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID])
       .map((toolId) => this.normalizeToolId(toolId));
@@ -2942,18 +2038,7 @@ export class AgentService {
   }
 
   async getAgentsMcpMap(): Promise<Record<string, AgentMcpMapProfile>> {
-    const profiles = await this.agentProfileModel.find().exec();
-    const record: Record<string, AgentMcpMapProfile> = {};
-    for (const profile of profiles) {
-      record[profile.roleCode] = {
-        role: profile.role,
-        tools: this.normalizeToolIds(profile.tools || []),
-        capabilities: profile.capabilities || [],
-        exposed: profile.exposed === true,
-        description: profile.description || '',
-      };
-    }
-    return record;
+    return this.agentMcpProfileService.getAgentsMcpMap();
   }
 
   async getMcpAgents(options?: { includeHidden?: boolean }): Promise<{
@@ -2965,16 +2050,7 @@ export class AgentService {
     const agents = await this.getAllAgents();
     const normalizedAgents = agents.map((agent) => this.normalizeAgentEntity(agent));
     const roleMap = await this.getRoleMapByIds(normalizedAgents.map((agent) => agent.roleId));
-    const profileKeys = normalizedAgents.map((agent) => this.resolveProfileLookupKey(agent, roleMap.get(agent.roleId)));
-    const profileMap = await this.getMcpProfilesByRoleCodes(profileKeys);
-    const toolMap = await this.buildToolSummaryMap(normalizedAgents, profileMap, roleMap);
-
-    const mapped = normalizedAgents.map((agent) => {
-      const role = roleMap.get(agent.roleId);
-      const mapKey = this.resolveProfileLookupKey(agent, role);
-      const profile = profileMap.get(mapKey) || DEFAULT_MCP_PROFILE;
-      return this.toMcpProfile(agent, profile, mapKey, toolMap, role);
-    });
+    const mapped = await this.agentMcpProfileService.buildAgentMcpProfiles(normalizedAgents, roleMap as any);
     const visibleAgents = mapped.filter((item) => includeHidden || item.exposed);
 
     return {
@@ -2993,14 +2069,7 @@ export class AgentService {
 
     const normalized = this.normalizeAgentEntity(agent);
     const role = await this.getRoleById(normalized.roleId);
-    const mapKey = this.resolveProfileLookupKey(normalized, role || undefined);
-    const mapProfile = await this.getMcpProfileByRoleCode(role?.code);
-    const roleMap = new Map<string, AgentBusinessRole>();
-    if (role) {
-      roleMap.set(normalized.roleId, role);
-    }
-    const toolMap = await this.buildToolSummaryMap([normalized], new Map([[mapKey, mapProfile]]), roleMap);
-    const profile = this.toMcpProfile(normalized, mapProfile, mapKey, toolMap, role || undefined);
+    const profile = await this.agentMcpProfileService.buildSingleAgentMcpProfile(normalized, (role || undefined) as any);
 
     if (!includeHidden && !profile.exposed) {
       throw new NotFoundException(`MCP profile is not exposed for agent: ${agentId}`);
@@ -3068,136 +2137,17 @@ export class AgentService {
     return Array.from(new Set(merged));
   }
 
-  private resolveProfileLookupKey(_agent: Agent, role?: AgentBusinessRole): string {
-    const roleCode = String(role?.code || '').trim();
-    if (roleCode) return roleCode;
-    return '';
-  }
-
-  private async buildToolSummaryMap(
-    agents: Agent[],
-    profileMap: Map<string, AgentMcpMapProfile>,
-    roleMap?: Map<string, AgentBusinessRole>,
-  ): Promise<Map<string, AgentMcpToolSummary>> {
-    const mergedIds = this.uniqueStrings(
-      ...agents.map((agent) => {
-        const mapKey = this.resolveProfileLookupKey(agent, roleMap?.get(agent.roleId));
-        const mapProfile = profileMap.get(mapKey) || DEFAULT_MCP_PROFILE;
-        return [...(agent.tools || []), ...(mapProfile.tools || [])];
-      }),
-    ).map((toolId) => this.normalizeToolId(toolId));
-
-    if (!mergedIds.length) {
-      return new Map();
-    }
-
-    const tools = await this.toolService.getToolsByIds(mergedIds);
-    const summaryMap = new Map<string, AgentMcpToolSummary>();
-    for (const tool of tools as any[]) {
-      const canonicalId = tool.canonicalId || this.normalizeToolId(tool.id);
-      const summary = {
-        id: canonicalId,
-        name: tool.name,
-        description: tool.description,
-        type: tool.type,
-        category: tool.category,
-      };
-      summaryMap.set(canonicalId, summary);
-      summaryMap.set(tool.id, summary);
-    }
-    return summaryMap;
-  }
-
-  private toMcpProfile(
-    agent: Agent,
-    profile: AgentMcpMapProfile,
-    mapKey: string,
-    toolMap: Map<string, AgentMcpToolSummary>,
-    role?: AgentBusinessRole,
-  ): AgentMcpProfile {
-    const toolIds = this.uniqueStrings(agent.tools || [], profile.tools || []).map((toolId) => this.normalizeToolId(toolId));
-    const toolSet = toolIds.map((toolId) => {
-      const existing = toolMap.get(toolId);
-      if (existing) return existing;
-      return {
-        id: toolId,
-        name: toolId,
-        description: 'Tool metadata not found in registry',
-      };
-    });
-
-    return {
-      id: agent.id || '',
-      name: agent.name,
-      description: agent.description || profile.description || '',
-      roleId: agent.roleId,
-      role: role?.name || role?.code || profile.role,
-      capabilitySet: this.uniqueStrings(agent.capabilities || [], profile.capabilities || []),
-      toolSet,
-      exposed: profile.exposed === true,
-      mapKey: mapKey || 'default',
-    };
-  }
-
   async getToolPermissionSets(): Promise<AgentToolPermissionSet[]> {
     const roles = await this.getAvailableRoles();
-    const roleCodes = Array.from(new Set(roles.map((role) => String(role.code || '').trim()).filter(Boolean)));
-    const profiles = await this.agentProfileModel.find({ roleCode: { $in: roleCodes } }).exec();
-    const profileMap = new Map(profiles.map((profile) => [String(profile.roleCode || '').trim(), profile]));
-
-    return roles.map((role) => {
-      const roleCode = String(role.code || '').trim();
-      const profile = profileMap.get(roleCode);
-      return {
-        roleId: role.id,
-        roleCode,
-        roleName: role.name || roleCode,
-        roleStatus: role.status || 'unknown',
-        tools: this.normalizeToolIds(profile?.tools || []),
-        capabilities: profile?.capabilities || [],
-        exposed: profile?.exposed === true,
-        description: profile?.description || role.description || '',
-      };
-    });
+    return this.agentMcpProfileService.getToolPermissionSets(roles as any);
   }
 
   async upsertToolPermissionSet(
     roleCode: string,
     updates: Partial<Pick<AgentMcpMapProfile, 'tools' | 'capabilities' | 'exposed' | 'description'>>,
   ): Promise<AgentToolPermissionSet> {
-    const normalizedRoleCode = String(roleCode || '').trim();
-    if (!normalizedRoleCode) {
-      throw new BadRequestException('roleCode is required');
-    }
-
     const roles = await this.getAvailableRoles();
-    const role = roles.find((item) => String(item.code || '').trim() === normalizedRoleCode);
-    if (!role) {
-      throw new BadRequestException(`Role code not found: ${normalizedRoleCode}`);
-    }
-
-    const payload: Partial<AgentProfile> = {
-      role: normalizedRoleCode,
-      tools: this.normalizeToolIds(updates.tools || []),
-      capabilities: updates.capabilities || [],
-      exposed: updates.exposed === true,
-      description: updates.description || '',
-    };
-
-    const profile = await this.agentProfileModel
-      .findOneAndUpdate({ roleCode: normalizedRoleCode }, { ...payload, roleCode: normalizedRoleCode }, { new: true, upsert: true })
-      .exec();
-
-    return {
-      roleId: role.id,
-      roleCode: normalizedRoleCode,
-      roleName: role.name || normalizedRoleCode,
-      roleStatus: role.status || 'unknown',
-      tools: this.normalizeToolIds(profile?.tools || []),
-      capabilities: profile?.capabilities || [],
-      exposed: profile?.exposed === true,
-      description: profile?.description || role.description || '',
-    };
+    return this.agentMcpProfileService.upsertToolPermissionSet(roleCode, updates, roles as any);
   }
 
   async resetToolPermissionSetsBySystemRoles(): Promise<{
@@ -3205,197 +2155,23 @@ export class AgentService {
     resetCount: number;
     missingRoleCodes: string[];
   }> {
-    const systemSeeds = new Map<string, { tools: string[]; capabilities: string[]; exposed: boolean; description: string }>();
-    for (const seed of MCP_PROFILE_SEEDS) {
-      const roleCode = String(seed.role || '').trim();
-      if (!roleCode) {
-        continue;
-      }
-      const existing = systemSeeds.get(roleCode);
-      if (!existing) {
-        systemSeeds.set(roleCode, {
-          tools: this.normalizeToolIds(seed.tools || []),
-          capabilities: [...(seed.capabilities || [])],
-          exposed: seed.exposed === true,
-          description: seed.description || '',
-        });
-        continue;
-      }
-      existing.tools = this.uniqueStrings(existing.tools, this.normalizeToolIds(seed.tools || []));
-      existing.capabilities = this.uniqueStrings(existing.capabilities, seed.capabilities || []);
-      existing.exposed = existing.exposed || seed.exposed === true;
-      if (!existing.description && seed.description) {
-        existing.description = seed.description;
-      }
-    }
-
     const roles = await this.getAvailableRoles();
-    const roleCodeSet = new Set(roles.map((role) => String(role.code || '').trim()).filter(Boolean));
-    const missingRoleCodes: string[] = [];
-    let resetCount = 0;
-
-    for (const [roleCode, seed] of systemSeeds.entries()) {
-      if (!roleCodeSet.has(roleCode)) {
-        missingRoleCodes.push(roleCode);
-        continue;
-      }
-
-      await this.agentProfileModel
-        .findOneAndUpdate(
-          { roleCode },
-          {
-            roleCode,
-            role: roleCode,
-            tools: this.normalizeToolIds(seed.tools || []),
-            capabilities: seed.capabilities || [],
-            exposed: seed.exposed === true,
-            description: seed.description || '',
-          },
-          { upsert: true, new: true },
-        )
-        .exec();
-      resetCount += 1;
-    }
-
-    return {
-      totalRoles: roles.length,
-      resetCount,
-      missingRoleCodes,
-    };
+    return this.agentMcpProfileService.resetToolPermissionSetsBySystemRoles(roles as any);
   }
 
   async getMcpProfiles(): Promise<AgentProfile[]> {
-    const profiles = await this.agentProfileModel.find().sort({ roleCode: 1 }).exec();
-    return profiles.map((profile) => {
-      const plain = profile?.toObject ? profile.toObject() : profile;
-      return {
-        ...plain,
-        tools: this.normalizeToolIds(plain.tools || []),
-      } as AgentProfile;
-    });
+    return this.agentMcpProfileService.getMcpProfiles();
   }
 
   async getMcpProfile(roleCode: string): Promise<AgentProfile | null> {
-    const profile = await this.agentProfileModel.findOne({ roleCode: roleCode.trim() }).exec();
-    if (!profile) return null;
-    const plain = profile?.toObject ? profile.toObject() : profile;
-    return {
-      ...plain,
-      tools: this.normalizeToolIds(plain.tools || []),
-    } as AgentProfile;
+    return this.agentMcpProfileService.getMcpProfile(roleCode);
   }
 
   async upsertMcpProfile(
     roleCode: string,
     updates: Partial<AgentMcpMapProfile>,
   ): Promise<AgentProfile> {
-    const normalizedRoleCode = roleCode.trim();
-    if (!normalizedRoleCode) {
-      throw new BadRequestException('roleCode is required');
-    }
-
-    const payload: Partial<AgentProfile> = {
-      role: updates.role || DEFAULT_MCP_PROFILE.role,
-      tools: this.normalizeToolIds(updates.tools || []),
-      capabilities: updates.capabilities || [],
-      exposed: updates.exposed === true,
-      description: updates.description || '',
-    };
-
-    const profile = await this.agentProfileModel
-      .findOneAndUpdate({ roleCode: normalizedRoleCode }, { ...payload, roleCode: normalizedRoleCode }, { new: true, upsert: true })
-      .exec();
-    const plain = profile?.toObject ? profile.toObject() : profile;
-    return {
-      ...plain,
-      tools: this.normalizeToolIds(plain?.tools || []),
-    } as AgentProfile;
-  }
-
-  private async getMcpProfilesByRoleCodes(roleCodes: string[]): Promise<Map<string, AgentMcpMapProfile>> {
-    const uniqueRoleCodes = Array.from(new Set(roleCodes.map((item) => item.trim()).filter(Boolean)));
-    if (!uniqueRoleCodes.length) {
-      return new Map();
-    }
-
-    const profiles = await this.agentProfileModel.find({ roleCode: { $in: uniqueRoleCodes } }).exec();
-    const map = new Map<string, AgentMcpMapProfile>();
-    for (const profile of profiles) {
-      map.set(profile.roleCode, {
-        role: profile.role,
-        tools: this.normalizeToolIds(profile.tools || []),
-        capabilities: profile.capabilities || [],
-        exposed: profile.exposed === true,
-        description: profile.description || '',
-      });
-    }
-    return map;
-  }
-
-  private async getMcpProfileByRoleCode(roleCode?: string): Promise<AgentMcpMapProfile> {
-    const normalizedRoleCode = String(roleCode || '').trim();
-    if (!normalizedRoleCode) {
-      return DEFAULT_MCP_PROFILE;
-    }
-
-    const roleProfile = await this.agentProfileModel.findOne({ roleCode: normalizedRoleCode }).exec();
-    if (!roleProfile) {
-      return DEFAULT_MCP_PROFILE;
-    }
-    return {
-      role: roleProfile.role,
-      tools: this.normalizeToolIds(roleProfile.tools || []),
-      capabilities: roleProfile.capabilities || [],
-      exposed: roleProfile.exposed === true,
-      description: roleProfile.description || '',
-    };
-  }
-
-  private async ensureMcpProfileSeeds(): Promise<void> {
-    try {
-      for (const seed of MCP_PROFILE_SEEDS) {
-        const normalizedSeedTools = this.normalizeToolIds(seed.tools || []);
-        await this.agentProfileModel
-          .updateOne(
-            { roleCode: seed.roleCode },
-            {
-              $setOnInsert: {
-                role: seed.role,
-                tools: normalizedSeedTools,
-                capabilities: seed.capabilities,
-                exposed: seed.exposed,
-                description: seed.description || '',
-              },
-              $set: {
-                role: seed.role,
-                exposed: seed.exposed,
-                description: seed.description || '',
-              },
-              $addToSet: {
-                tools: { $each: normalizedSeedTools },
-                capabilities: { $each: seed.capabilities || [] },
-              },
-            },
-            { upsert: true },
-          )
-          .exec();
-      }
-
-      await this.agentProfileModel
-        .updateOne(
-          { roleCode: 'human-exclusive-assistant' },
-          {
-            $addToSet: {
-              tools: 'builtin.sys-mg.mcp.audit.list-human-operation-log',
-            },
-          },
-        )
-        .exec();
-      // 移除删除操作：禁止后端重启时删除用户自定义的 agent profile
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to seed MCP profiles';
-      this.logger.warn(`MCP profile seed skipped: ${message}`);
-    }
+    return this.agentMcpProfileService.upsertMcpProfile(roleCode, updates);
   }
 
   private pickDefaultModel(): AIModel {

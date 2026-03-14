@@ -62,6 +62,8 @@
 - 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，非流式与流式路径均强制走 OpenCode 执行桥接，不允许回落 native 模型通道。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
 - OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
+- OpenCode 调用通道：Runtime 侧已移除 SDK 依赖，统一通过 OpenCode HTTP API（含 SSE）直连执行与事件读取。
+- OpenCode session 创建时会显式透传当前执行模型（`providerID/modelID`），保证 session 模型与 Agent 绑定模型对齐。
 - `agent_runs` 扩展字段：
   - `executionChannel`（`native|opencode`）
   - `roleCode`
@@ -116,6 +118,11 @@
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），将备忘录摘要挂载到 session 侧缓存。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
+- Agent 主执行链路已按职责拆分协作：
+  - `modules/agents/agent-execution.service.ts`（runtime 生命周期模板与收尾）
+  - `modules/agents/agent-opencode-policy.service.ts`（OpenCode gate/budget 策略）
+  - `modules/agents/agent-orchestration-intent.service.ts`（会议编排意图与强制工具映射）
+  - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
 - 当 `agent.config.execution.provider=opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
 - 会议场景编排意图触发已收敛：移除“执行/继续/开始”单词级触发，新增“否定编排”阻断分支，减少误判。
@@ -133,6 +140,7 @@
 | `AGENT_RUNTIME_FEATURE_DOC_PLAN.md` | Runtime 功能文档沉淀计划（本次） |
 | `OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 交互主计划与角色/预算约束 |
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
+| `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -141,6 +149,8 @@
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构落地说明、能力边界与 commit 映射 |
 | `AGENT_MESSAGE_CONTENT_VALIDATION_PLAN.md` | AgentMessage content 必填校验修复与写入链路一致性说明 |
 | `OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1（config/门禁/同步/补偿）开发总结 |
+| `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agent 执行链路公共能力提取（AgentExecutionService）开发沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -186,5 +196,9 @@
 | 文件 | 功能 |
 |------|------|
 | `modules/agents/agent.service.ts` | Agent 执行链路接入 runtime（start/assert/complete/fail/tool events） |
+| `modules/agents/agent-execution.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
+| `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
+| `modules/agents/agent-orchestration-intent.service.ts` | 会议编排意图识别与强制工具调用映射 |
+| `modules/agents/agent-mcp-profile.service.ts` | MCP profile 读写、映射与权限集下沉服务 |
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | Runtime 控制类路径网关侧审计日志 |
 | `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |

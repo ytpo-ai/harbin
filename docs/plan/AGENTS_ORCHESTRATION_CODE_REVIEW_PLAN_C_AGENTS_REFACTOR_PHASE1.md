@@ -61,6 +61,44 @@
      - `dispatchRepoToolImplementation`
    - 删除已迁移到 handler 的冗余私有实现（requirements/orchestration 大段旧逻辑），保留薄分发层与必要兼容方法。
 
+5. **Phase C3 收口推进（已落地）**
+   - `MemoTaskHistoryService` 新增 history 合并策略入口：
+     - `upsertHistoryItem`
+     - `UpsertHistoryTaskInput`
+    - `memo.service.ts` 的 `upsertTaskHistory` 改为调用 `MemoTaskHistoryService.upsertHistoryItem`，将 timeline 去重、startedAt/finishedAt/finalStatus 判定、条目截断等策略下沉。
+
+6. **Phase C4 Agent 深拆分（已确认，执行中）**
+   - 用户确认继续后，新增 `agent.service.ts` 深拆分收口步骤：
+     - 抽取 OpenCode gate/budget 相关策略到独立 service（policy 下沉）
+     - 抽取会议编排意图识别与强制工具调用映射到独立 service（intent 下沉）
+     - `agent.service.ts` 保留执行编排入口，删除对应私有实现细节
+   - 验证要求：`npm run build:agents` + 核心 3 组单测通过。
+
+7. **Phase C4 首轮落地（已完成）**
+   - 新增 `AgentOpenCodePolicyService`，下沉 OpenCode gate/budget 策略：
+     - `parseOpenCodeExecutionConfig`
+     - `assertOpenCodeExecutionGate`
+     - `applyAgentBudgetGate`
+   - 新增 `AgentOrchestrationIntentService`，下沉会议编排意图识别与强制工具调用映射：
+     - `extractForcedOrchestrationAction`
+     - `hasMeetingOrchestrationIntent`
+     - `formatForcedOrchestrationAnswer`
+   - `agent.service.ts` 删除对应私有实现细节，仅保留执行编排入口与服务协作。
+   - 量化结果：`agent.service.ts` 行数由 `3474` 降至 `2768`（-706）。
+   - 验证通过：
+     - `npm run build:agents`
+     - `npm test -- apps/agents/src/modules/tools/tool.service.spec.ts apps/agents/src/modules/agents/agent.service.spec.ts apps/agents/src/modules/memos/memo.service.spec.ts --runInBand`
+
+8. **Phase C4 第二轮落地（已完成）**
+   - 新增 `AgentMcpProfileService`，下沉 MCP profile 领域逻辑：
+     - profile seed / profile CRUD / role-permission reset
+     - agent->mcp profile 映射与 tool summary 组装
+   - `agent.service.ts` 删除大段 MCP 领域常量与私有实现（包括 `MCP_PROFILE_SEEDS`、mapping/summary 细节），改为调用 `AgentMcpProfileService`。
+   - 量化结果：`agent.service.ts` 行数由 `2768` 降至 `2250`（-518），较初始 `3474` 已累计下降 `1224`。
+   - 验证通过：
+     - `npm run build:agents`
+     - `npm test -- apps/agents/src/modules/tools/tool.service.spec.ts apps/agents/src/modules/agents/agent.service.spec.ts apps/agents/src/modules/memos/memo.service.spec.ts --runInBand`
+
 ## 5. 量化目标（Phase2 收口）
 
 1. `tool.service.ts` 目标：`<= 1500` 行（本阶段现实目标）

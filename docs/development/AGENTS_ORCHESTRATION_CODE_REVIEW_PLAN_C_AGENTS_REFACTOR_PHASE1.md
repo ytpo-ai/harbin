@@ -90,13 +90,66 @@
 
 - `AgentService` 执行链路（`executeTaskDetailed`/`executeTaskWithStreaming`）仍可继续做模板化收敛。
 
+## 6. 第三轮补充拆分（2026-03-14）
+
+### 6.1 Agent 执行链与运行时模板继续收口
+
+- `AgentExecutionService` 新增 runtime 生命周期模板方法：
+  - `startRuntimeExecution`
+  - `completeRuntimeExecution`
+  - `failRuntimeExecution`
+  - `releaseRuntimeExecution`
+- `AgentService` 的 `executeTaskDetailed/executeTaskWithStreaming` 改为调用上述模板方法，移除重复 `startRun/completeRun/failRun/releaseRun` 分支。
+- 抽取 `resolveCustomApiKey`，统一 detailed/streaming API Key 获取、usage 记录与降级日志。
+
+### 6.2 ToolService 继续去重（Phase C2 收口）
+
+- `ToolService` 主分发改为薄分发 + 领域分发：
+  - `dispatchRepoToolImplementation`
+  - `dispatchOrchestrationToolImplementation`
+  - `dispatchRequirementToolImplementation`
+- 删除已迁移到 handler 的 requirements/orchestration 冗余私有实现，降低主类复杂度。
+
+### 6.3 Memo history 策略继续下沉（Phase C3 收口）
+
+- `MemoTaskHistoryService` 新增：
+  - `UpsertHistoryTaskInput`
+  - `upsertHistoryItem`
+- `MemoService.upsertTaskHistory` 改为调用 `MemoTaskHistoryService.upsertHistoryItem`，主服务保留编排入口。
+
+## 7. 第四轮补充拆分（2026-03-14）
+
+### 7.1 Agent 深拆分：策略与意图下沉
+
+- 新增 `AgentOpenCodePolicyService`：下沉 OpenCode gate/budget 策略（配置解析、门禁校验、配额审批暂停/恢复）。
+- 新增 `AgentOrchestrationIntentService`：下沉会议编排意图识别、强制工具映射与结果文案。
+
+### 7.2 Agent 深拆分：MCP Profile 领域下沉
+
+- 新增 `AgentMcpProfileService`：下沉 MCP profile seeds、profile CRUD、tool permission set reset/upsert、agent->profile 映射与 tool summary 组装。
+- `AgentService` 删除对应大段 MCP 常量与私有实现，改为服务协作。
+
+### 7.3 量化结果
+
+- `agent.service.ts`：`3474 -> 2250`（累计 `-1224`）
+- 达到 Plan C 目标阈值附近（`<= 2200`，当前差 `50` 行）
+
+## 8. 测试与验证（本轮）
+
+- 构建验证：`npm run build:agents`（通过）
+- 回归单测：
+  - `apps/agents/src/modules/tools/tool.service.spec.ts`
+  - `apps/agents/src/modules/agents/agent.service.spec.ts`
+  - `apps/agents/src/modules/memos/memo.service.spec.ts`
+  - 结果：3/3 suite 通过，27/27 tests 通过
+
 ## 6. 风险与后续建议
 
 - 当前拆分为可回滚的小步改造，优先保证行为等价与测试稳定。
 - 后续继续拆分前，建议先补充 handler 级单测，降低分发逻辑迁移风险。
 - 对 `tool.service.ts` 的 4k+ 规模仍需继续推进 handler 级拆分，避免后续演进再次回到集中式变更。
 
-## 7. 关联文档
+## 9. 关联文档
 
 - 计划文档：`docs/plan/AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md`
 - Review 文档：`docs/issue/AGENTS_ORCHESTRATION_CODE_REVIEW.md`

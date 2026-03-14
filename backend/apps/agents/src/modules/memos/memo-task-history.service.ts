@@ -28,6 +28,19 @@ export interface HistoryTaskItem {
   updatedAt: string;
 }
 
+export interface UpsertHistoryTaskInput {
+  taskId: string;
+  title: string;
+  description?: string;
+  status: 'running' | 'success' | 'failed' | 'cancelled';
+  note?: string;
+  sourceType: 'orchestration_task';
+  orchestrationId?: string;
+  priority?: 'low' | 'medium' | 'high';
+  at?: string;
+  maxItems?: number;
+}
+
 @Injectable()
 export class MemoTaskHistoryService {
   normalizeTaskStatus(status?: TaskStatus): NormalizedTaskStatus {
@@ -104,6 +117,52 @@ export class MemoTaskHistoryService {
       deduped.push(item);
     }
     return deduped.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }
+
+  upsertHistoryItem(
+    historyItems: HistoryTaskItem[],
+    payload: UpsertHistoryTaskInput,
+  ): { nextItems: HistoryTaskItem[]; status: HistoryTaskItem['currentStatus'] } {
+    const at = payload.at || new Date().toISOString();
+    const existing = historyItems.find((item) => item.taskId === payload.taskId);
+    const timelineEntry = {
+      status: payload.status,
+      at,
+      note: payload.note,
+    } as const;
+
+    const nextItem: HistoryTaskItem = {
+      taskId: payload.taskId,
+      title: payload.title,
+      description: payload.description,
+      orchestrationId: payload.orchestrationId,
+      priority: this.normalizePriority(payload.priority),
+      sourceType: payload.sourceType,
+      startedAt: existing?.startedAt || (payload.status === 'running' ? at : undefined),
+      finishedAt:
+        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
+          ? at
+          : existing?.finishedAt,
+      finalStatus:
+        payload.status === 'success' || payload.status === 'failed' || payload.status === 'cancelled'
+          ? payload.status
+          : existing?.finalStatus,
+      currentStatus: payload.status,
+      statusTimeline: this.dedupeTimeline([...(existing?.statusTimeline || []), timelineEntry]),
+      updatedAt: at,
+    };
+
+    if (!nextItem.startedAt) {
+      const runningAt = nextItem.statusTimeline.find((item) => item.status === 'running')?.at;
+      nextItem.startedAt = runningAt || at;
+    }
+
+    const limit = Math.max(1, Math.min(Number(payload.maxItems || 500), 5000));
+    const nextItems = [nextItem, ...historyItems.filter((item) => item.taskId !== payload.taskId)].slice(0, limit);
+    return {
+      nextItems,
+      status: payload.status,
+    };
   }
 
   renderHistoryContent(
