@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { Method } from 'axios';
 import {
   OpenCodeAdapterEvent,
+  OpenCodeRuntimeOptions,
   OpenCodeAdapterSessionInfo,
   OpenCodeCreateSessionInput,
   OpenCodePromptInput,
@@ -11,8 +12,16 @@ import {
 @Injectable()
 export class OpenCodeAdapter {
   private readonly logger = new Logger(OpenCodeAdapter.name);
+  private readonly defaultRequestTimeoutMs: number;
+  private readonly messageRequestTimeoutMs: number;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) {
+    this.defaultRequestTimeoutMs = this.resolveTimeoutMs('OPENCODE_REQUEST_TIMEOUT_MS', 120000);
+    this.messageRequestTimeoutMs = this.resolveTimeoutMs(
+      'OPENCODE_MESSAGE_REQUEST_TIMEOUT_MS',
+      this.defaultRequestTimeoutMs,
+    );
+  }
 
   async createSession(input: OpenCodeCreateSessionInput): Promise<OpenCodeAdapterSessionInfo> {
     const config = input.config || {};
@@ -25,6 +34,7 @@ export class OpenCodeAdapter {
         ...(input.model ? { model: input.model } : {}),
         ...config,
       },
+      runtime: input.runtime,
       throwOnError: true,
     });
 
@@ -41,6 +51,7 @@ export class OpenCodeAdapter {
         parts: [{ type: 'text', text: input.prompt }],
         ...(input.model ? { model: input.model } : {}),
       },
+      runtime: input.runtime,
       throwOnError: true,
     });
 
@@ -50,8 +61,8 @@ export class OpenCodeAdapter {
     };
   }
 
-  async *subscribeEvents(sessionId?: string): AsyncGenerator<OpenCodeAdapterEvent> {
-    for await (const event of this.streamSse()) {
+  async *subscribeEvents(sessionId?: string, runtime?: OpenCodeRuntimeOptions): AsyncGenerator<OpenCodeAdapterEvent> {
+    for await (const event of this.streamSse(runtime)) {
       const payload = event.payload;
       const eventSessionId = this.resolveSessionId(payload);
       if (sessionId && eventSessionId && eventSessionId !== sessionId) {
@@ -68,14 +79,18 @@ export class OpenCodeAdapter {
     }
   }
 
-  private getBaseUrl(): string {
-    return String(this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096')
+  private getBaseUrl(runtime?: OpenCodeRuntimeOptions): string {
+    return String(runtime?.baseUrl || this.configService.get<string>('OPENCODE_SERVER_URL') || 'http://localhost:4096')
       .trim()
       .replace(/\/+$/, '');
   }
 
   private getPassword(): string {
     return String(this.configService.get<string>('OPENCODE_SERVER_PASSWORD') || '').trim();
+  }
+
+  private isAuthEnabled(runtime?: OpenCodeRuntimeOptions): boolean {
+    return runtime?.authEnable === true;
   }
 
   private async request<T = any>(
@@ -86,34 +101,115 @@ export class OpenCodeAdapter {
       data?: any;
       timeout?: number;
       responseType?: 'json' | 'stream';
+      runtime?: OpenCodeRuntimeOptions;
       throwOnError?: boolean;
     },
   ): Promise<T> {
-    const password = this.getPassword();
-    if (!password) {
+    const runtime = options?.runtime;
+    const baseUrl = this.getBaseUrl(runtime);
+    const username = 'opencode';
+    const authEnabled = this.isAuthEnabled(runtime);
+    const password = authEnabled ? this.getPassword() : '';
+    const hasPassword = Boolean(password);
+    const timeoutMs = this.resolveRequestTimeoutMs(route, runtime, options?.timeout);
+    const requestUrl = this.buildRequestUrl(baseUrl, route, options?.params);
+    if (authEnabled && !password) {
+      this.logger.error(
+        `[opencode_request_config_invalid] method=${method} url=${requestUrl} username=${username} authEnabled=${authEnabled} hasPassword=${hasPassword} timeoutMs=${timeoutMs} error=OpenCode password is missing`,
+      );
       throw new Error('OpenCode password is missing. Please set OPENCODE_SERVER_PASSWORD');
     }
 
     try {
       const response = await axios.request<T>({
         method,
-        baseURL: this.getBaseUrl(),
+        baseURL: baseUrl,
         url: route,
-        auth: { username: 'opencode', password },
+        ...(authEnabled ? { auth: { username, password } } : {}),
         params: options?.params,
         data: options?.data,
-        timeout: options?.timeout ?? 10000,
+        timeout: timeoutMs,
         responseType: options?.responseType,
       });
       return response.data;
     } catch (error: any) {
       const message = error?.message || String(error || 'unknown error');
-      this.logger.error(`OpenCode API request failed: ${method} ${route} - ${message}`);
+      const status = error?.response?.status;
+      const code = error?.code;
+      const isTimeout = this.isTimeoutError(error);
+      this.logger.error(
+        `[opencode_request_failed] method=${method} url=${requestUrl} username=${username} authEnabled=${authEnabled} hasPassword=${hasPassword} timeoutMs=${timeoutMs} isTimeout=${isTimeout} status=${status || 'unknown'} code=${code || 'none'} error=${message}`,
+      );
       if (options?.throwOnError) {
         throw error;
       }
       throw error;
     }
+  }
+
+  private buildRequestUrl(baseUrl: string, route: string, params?: Record<string, any>): string {
+    const normalizedRoute = route.startsWith('/') ? route : `/${route}`;
+    const url = new URL(normalizedRoute, `${baseUrl}/`);
+    if (params && typeof params === 'object') {
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null) continue;
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            if (item === undefined || item === null) continue;
+            url.searchParams.append(key, String(item));
+          }
+          continue;
+        }
+        url.searchParams.set(key, String(value));
+      }
+    }
+    return url.toString();
+  }
+
+  private isTimeoutError(error: any): boolean {
+    const code = String(error?.code || '').toUpperCase();
+    if (code === 'ECONNABORTED') {
+      return true;
+    }
+    const message = String(error?.message || '').toLowerCase();
+    return message.includes('timeout');
+  }
+
+  private resolveRequestTimeoutMs(route: string, runtime?: OpenCodeRuntimeOptions, requestedTimeoutMs?: number): number {
+    if (requestedTimeoutMs !== undefined && requestedTimeoutMs !== null) {
+      return this.normalizeTimeoutMs(requestedTimeoutMs, this.defaultRequestTimeoutMs);
+    }
+
+    if (runtime?.requestTimeoutMs !== undefined && runtime?.requestTimeoutMs !== null) {
+      return this.normalizeTimeoutMs(runtime.requestTimeoutMs, this.defaultRequestTimeoutMs);
+    }
+
+    if (this.isMessageRoute(route)) {
+      return this.messageRequestTimeoutMs;
+    }
+
+    return this.defaultRequestTimeoutMs;
+  }
+
+  private isMessageRoute(route: string): boolean {
+    const normalizedRoute = route.toLowerCase();
+    return normalizedRoute.includes('/session/') && normalizedRoute.endsWith('/message');
+  }
+
+  private resolveTimeoutMs(envKey: string, fallback: number): number {
+    const raw = this.configService.get<string>(envKey);
+    return this.normalizeTimeoutMs(raw, fallback);
+  }
+
+  private normalizeTimeoutMs(rawValue: unknown, fallback: number): number {
+    const parsed = Number(rawValue);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return fallback;
+    }
+    if (parsed === 0) {
+      return 0;
+    }
+    return Math.max(1000, Math.floor(parsed));
   }
 
   private parseSsePayload(rawData: string): Record<string, unknown> {
@@ -132,10 +228,11 @@ export class OpenCodeAdapter {
     }
   }
 
-  private async *streamSse(): AsyncGenerator<{ type: string; payload: Record<string, unknown> }> {
+  private async *streamSse(runtime?: OpenCodeRuntimeOptions): AsyncGenerator<{ type: string; payload: Record<string, unknown> }> {
     const stream = await this.request<any>('GET', '/event', {
       responseType: 'stream',
       timeout: 0,
+      runtime,
       throwOnError: true,
     });
 

@@ -3,6 +3,6 @@
   "version": "1.0.0",
   "description": "通用AI助手平台 - 支持多模型接入的Agent团队协作系统",
   "keywords": ["ai", "agent", "team", "llm", "collaboration"],
-  "author": "AI Team Platform",
+  "author": "coder-van",
   "license": "MIT"
 }

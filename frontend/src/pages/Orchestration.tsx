@@ -243,18 +243,8 @@ const Orchestration: React.FC = () => {
         plannerAgentId: planDetail?.strategy?.plannerAgentId,
       }),
     {
-      onSuccess: async (updated) => {
-        setPlanHint('重新编排已完成，任务结构已覆盖更新');
-        if (updated?._id) {
-          setPromptDrafts((prev) => {
-            const next = {
-              ...prev,
-              [updated._id]: updated.sourcePrompt || '',
-            };
-            window.localStorage.setItem(PLAN_PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(next));
-            return next;
-          });
-        }
+      onSuccess: async () => {
+        setPlanHint('重新编排请求已提交，正在后台处理');
         setDebugDrawerOpen(false);
         setDebugTaskId('');
         setDebugHint('');

@@ -61,6 +61,7 @@ export interface OrchestrationPlan {
   };
   taskIds: string[];
   tasks?: OrchestrationTask[];
+  metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
 }
@@ -128,6 +129,13 @@ export interface RunPlanAcceptedResponse {
   alreadyRunning?: boolean;
 }
 
+export interface ReplanPlanAcceptedResponse {
+  accepted: boolean;
+  planId: string;
+  status: string;
+  alreadyRunning?: boolean;
+}
+
 export interface UpdatePlanDto {
   title?: string;
   sourcePrompt?: string;
@@ -165,7 +173,7 @@ export const orchestrationService = {
     return response.data;
   },
 
-  async replanPlan(planId: string, payload: ReplanPlanDto): Promise<OrchestrationPlan> {
+  async replanPlan(planId: string, payload: ReplanPlanDto): Promise<ReplanPlanAcceptedResponse> {
     const response = await api.post(`/orchestration/plans/${planId}/replan`, payload);
     return response.data;
   },

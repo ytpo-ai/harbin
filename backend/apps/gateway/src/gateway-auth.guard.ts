@@ -4,8 +4,11 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
 import { verifyEmployeeToken } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
+import { Model } from 'mongoose';
+import { Employee, EmployeeDocument } from '../../../src/shared/schemas/employee.schema';
 
 const PUBLIC_PATHS = new Set([
   '/api/auth/login',
@@ -18,7 +21,12 @@ const PUBLIC_PATHS = new Set([
 
 @Injectable()
 export class GatewayAuthGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+  constructor(
+    @InjectModel(Employee.name)
+    private readonly employeeModel: Model<EmployeeDocument>,
+  ) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const path = req.originalUrl?.split('?')[0] || req.url;
 
@@ -38,10 +46,16 @@ export class GatewayAuthGuard implements CanActivate {
       throw new UnauthorizedException('Invalid or expired token');
     }
 
+    const employee = await this.employeeModel
+      .findOne({ id: payload.employeeId })
+      .select({ role: 1 })
+      .lean()
+      .exec();
+
     const userContext: GatewayUserContext = {
       employeeId: payload.employeeId,
       email: payload.email,
-      role: '',
+      role: String(employee?.role || ''),
       issuedAt: Date.now(),
       expiresAt: payload.exp,
     };

@@ -35,7 +35,11 @@ export class OpencodeService {
     return String(this.configService.get<string>('OPENCODE_SERVER_PASSWORD') || '').trim();
   }
 
-  private buildAuth() {
+  private buildAuth(authEnable?: boolean) {
+    if (authEnable !== true) {
+      return undefined;
+    }
+
     const password = this.getPassword();
     if (!password) {
       throw new Error('OpenCode password is missing. Please set OPENCODE_SERVER_PASSWORD');
@@ -52,17 +56,20 @@ export class OpencodeService {
       data?: any;
       timeout?: number;
       responseType?: 'json' | 'stream';
+      authEnable?: boolean;
       throwOnError?: boolean;
     },
   ): Promise<T> {
     const baseURL = this.getBaseUrl(options?.baseUrl);
+    const auth = this.buildAuth(options?.authEnable);
+    const requestUrl = `${baseURL}${route}`;
 
     try {
       const response = await axios.request<T>({
         method,
         baseURL,
         url: route,
-        auth: this.buildAuth(),
+        ...(auth ? { auth } : {}),
         params: options?.params,
         data: options?.data,
         timeout: options?.timeout ?? 10000,
@@ -71,10 +78,12 @@ export class OpencodeService {
       return response.data;
     } catch (error: any) {
       const message = error?.message || String(error || 'unknown error');
+      const status = Number(error?.response?.status || 0) || 'N/A';
       if (options?.throwOnError) {
+        this.logger.error(`OpenCode API request failed: ${method} ${requestUrl} - status=${status} - ${message}`);
         throw error;
       }
-      this.logger.warn(`OpenCode API request failed: ${method} ${baseURL}${route} - ${message}`);
+      this.logger.warn(`OpenCode API request failed: ${method} ${requestUrl} - status=${status} - ${message}`);
       throw error;
     }
   }
@@ -288,11 +297,12 @@ export class OpencodeService {
     return 'Unknown OpenCode error';
   }
 
-  private async *streamSse(baseUrl?: string): AsyncGenerator<{ type: string; payload: Record<string, unknown> }> {
+  private async *streamSse(baseUrl?: string, authEnable?: boolean): AsyncGenerator<{ type: string; payload: Record<string, unknown> }> {
     const stream = await this.request<any>('GET', '/event', {
       baseUrl,
       responseType: 'stream',
       timeout: 0,
+      authEnable,
       throwOnError: true,
     });
 
@@ -359,7 +369,7 @@ export class OpencodeService {
 
     (async () => {
       try {
-        for await (const event of this.streamSse()) {
+        for await (const event of this.streamSse(undefined, true)) {
           this.recentEvents.unshift({
             timestamp: new Date().toISOString(),
             event: {
@@ -426,6 +436,8 @@ export class OpencodeService {
     title?: string;
     config?: Record<string, any>;
     model?: { providerID: string; modelID: string };
+    baseUrl?: string;
+    authEnable?: boolean;
   }): Promise<any> {
     const doCreate = async () => {
       const directory =
@@ -438,6 +450,8 @@ export class OpencodeService {
       };
 
       const session = await this.request<any>('POST', '/session', {
+        baseUrl: options.baseUrl,
+        authEnable: options.authEnable,
         params: directory ? { directory } : undefined,
         data: body,
         throwOnError: true,
@@ -461,10 +475,11 @@ export class OpencodeService {
     }
   }
 
-  async getSession(sessionId: string, baseUrl?: string): Promise<any | null> {
+  async getSession(sessionId: string, baseUrl?: string, options?: { authEnable?: boolean }): Promise<any | null> {
     try {
       return await this.request<any>('GET', `/session/${encodeURIComponent(sessionId)}`, {
         baseUrl,
+        authEnable: options?.authEnable,
         throwOnError: true,
       });
     } catch (error: any) {
@@ -473,9 +488,18 @@ export class OpencodeService {
     }
   }
 
-  async promptSession(sessionId: string, prompt: string, model?: { providerID: string; modelID: string }): Promise<any> {
+  async promptSession(
+    sessionId: string,
+    prompt: string,
+    model?: { providerID: string; modelID: string },
+    options?: { baseUrl?: string; authEnable?: boolean },
+  ): Promise<any> {
+    const requestRoute = `/session/${encodeURIComponent(sessionId)}/message`;
+    const requestUrl = `${this.getBaseUrl(options?.baseUrl)}${requestRoute}`;
     const doPrompt = () =>
-      this.request<any>('POST', `/session/${encodeURIComponent(sessionId)}/message`, {
+      this.request<any>('POST', requestRoute, {
+        baseUrl: options?.baseUrl,
+        authEnable: options?.authEnable,
         data: {
           parts: [{ type: 'text', text: prompt }],
           ...(model ? { model } : {}),
@@ -487,14 +511,19 @@ export class OpencodeService {
       return await doPrompt();
     } catch (error: any) {
       const message = this.extractOpencodeErrorMessage(error);
-      this.logger.error(`Error prompting session: ${message}`, error?.stack);
-      throw new Error(`Failed to prompt session: ${message}`);
+      this.logger.error(`Error prompting session via ${requestUrl}: ${message}`, error?.stack);
+      const wrapped: any = new Error(`Failed to prompt session: ${message}`);
+      wrapped.status = Number(error?.response?.status || 0) || undefined;
+      wrapped.cause = error;
+      throw wrapped;
     }
   }
 
-  async getSessionHistory(sessionId: string): Promise<any> {
+  async getSessionHistory(sessionId: string, options?: { baseUrl?: string; authEnable?: boolean }): Promise<any> {
     try {
       const messages = await this.request<any>('GET', `/session/${encodeURIComponent(sessionId)}/message`, {
+        baseUrl: options?.baseUrl,
+        authEnable: options?.authEnable,
         throwOnError: true,
       });
       return Array.isArray(messages) ? messages : [];
@@ -504,10 +533,11 @@ export class OpencodeService {
     }
   }
 
-  async listSessions(baseUrl?: string): Promise<any[]> {
+  async listSessions(baseUrl?: string, options?: { authEnable?: boolean }): Promise<any[]> {
     try {
       const rows = await this.request<any>('GET', '/session', {
         baseUrl,
+        authEnable: options?.authEnable,
         throwOnError: true,
       });
       return Array.isArray(rows) ? rows : [];
@@ -517,15 +547,16 @@ export class OpencodeService {
     }
   }
 
-  async listSessionsByProject(projectPath: string, baseUrl?: string): Promise<any[]> {
+  async listSessionsByProject(projectPath: string, baseUrl?: string, options?: { authEnable?: boolean }): Promise<any[]> {
     if (!projectPath) {
-      return this.listSessions(baseUrl);
+      return this.listSessions(baseUrl, options);
     }
 
     try {
       const rows = await this.request<any>('GET', '/session', {
         baseUrl,
         params: { directory: projectPath },
+        authEnable: options?.authEnable,
         throwOnError: true,
       });
       if (Array.isArray(rows) && rows.length > 0) {
@@ -535,7 +566,7 @@ export class OpencodeService {
       this.logger.warn(`List sessions by directory failed: ${error?.message || error}`);
     }
 
-    const sessions = await this.listSessions(baseUrl);
+    const sessions = await this.listSessions(baseUrl, options);
     return sessions.filter((session) => this.matchesProjectPath(session, projectPath));
   }
 
@@ -554,10 +585,11 @@ export class OpencodeService {
     }));
   }
 
-  async listProjects(baseUrl?: string, options?: { throwOnError?: boolean }): Promise<any[]> {
+  async listProjects(baseUrl?: string, options?: { throwOnError?: boolean; authEnable?: boolean }): Promise<any[]> {
     try {
       const rows = await this.request<any>('GET', '/project', {
         baseUrl,
+        authEnable: options?.authEnable,
         throwOnError: true,
       });
       return Array.isArray(rows) ? rows : [];
@@ -589,7 +621,7 @@ export class OpencodeService {
     onComplete?: () => void;
   }): Promise<() => void> {
     let active = true;
-    const iterator = this.streamSse()[Symbol.asyncIterator]();
+    const iterator = this.streamSse(undefined, true)[Symbol.asyncIterator]();
 
     (async () => {
       try {
@@ -648,7 +680,7 @@ export class OpencodeService {
 
       const [projectResult, sessionsResult] = await Promise.allSettled([
         this.getCurrentProject(configuredDirectory),
-        this.listSessions(),
+        this.listSessions(undefined, { authEnable: true }),
       ]);
 
       const project = projectResult.status === 'fulfilled' ? projectResult.value : null;

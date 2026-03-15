@@ -14,6 +14,10 @@ export interface OpenCodeModelBinding {
 export interface OpenCodeExecutionConfig {
   provider: 'opencode';
   projectDirectory?: string;
+  endpoint?: string;
+  endpointRef?: string;
+  authEnable: boolean;
+  requestTimeoutMs?: number;
   modelPolicy: {
     bound?: OpenCodeModelBinding;
     fallback: OpenCodeModelBinding[];
@@ -40,6 +44,7 @@ interface AgentTaskExecutionContext {
 
 const OPENCODE_ALLOWED_ROLE_CODES = new Set(['devops-engineer', 'fullstack-engineer', 'technical-architect']);
 const OPENCODE_BUDGET_PERIOD_SET = new Set(['day', 'week', 'month']);
+const OPENCODE_MODEL_BINDING_CHECK_ENABLED = 'OPENCODE_MODEL_BINDING_CHECK_ENABLED';
 
 @Injectable()
 export class AgentOpenCodePolicyService {
@@ -58,6 +63,10 @@ export class AgentOpenCodePolicyService {
 
     const boundModel = executionConfig.modelPolicy.bound;
     if (!boundModel) {
+      return;
+    }
+
+    if (!this.isModelBindingCheckEnabled()) {
       return;
     }
 
@@ -96,6 +105,37 @@ export class AgentOpenCodePolicyService {
         ? projectDirectoryRaw.trim()
         : undefined;
 
+    const endpointRaw = (execution as Record<string, unknown>).endpoint;
+    if (endpointRaw !== undefined && endpointRaw !== null && typeof endpointRaw !== 'string') {
+      throw new BadRequestException('agent.config.execution.endpoint must be a string');
+    }
+    const endpoint = typeof endpointRaw === 'string' && endpointRaw.trim().length > 0 ? endpointRaw.trim() : undefined;
+
+    const endpointRefRaw = (execution as Record<string, unknown>).endpointRef;
+    if (endpointRefRaw !== undefined && endpointRefRaw !== null && typeof endpointRefRaw !== 'string') {
+      throw new BadRequestException('agent.config.execution.endpointRef must be a string');
+    }
+    const endpointRef =
+      typeof endpointRefRaw === 'string' && endpointRefRaw.trim().length > 0 ? endpointRefRaw.trim() : undefined;
+
+    const authEnableRaw = (execution as Record<string, unknown>).auth_enable;
+    if (authEnableRaw !== undefined && typeof authEnableRaw !== 'boolean') {
+      throw new BadRequestException('agent.config.execution.auth_enable must be a boolean');
+    }
+    const authEnable = authEnableRaw === true;
+
+    const requestTimeoutMsRaw = (execution as Record<string, unknown>).request_timeout_ms;
+    if (requestTimeoutMsRaw !== undefined && requestTimeoutMsRaw !== null) {
+      const parsedTimeout = Number(requestTimeoutMsRaw);
+      if (!Number.isFinite(parsedTimeout) || parsedTimeout < 1000) {
+        throw new BadRequestException('agent.config.execution.request_timeout_ms must be a number >= 1000');
+      }
+    }
+    const requestTimeoutMs =
+      requestTimeoutMsRaw !== undefined && requestTimeoutMsRaw !== null
+        ? Math.floor(Number(requestTimeoutMsRaw))
+        : undefined;
+
     const modelPolicyRaw = (execution as Record<string, unknown>).modelPolicy;
     if (modelPolicyRaw !== undefined && !this.isPlainObject(modelPolicyRaw)) {
       throw new BadRequestException('agent.config.execution.modelPolicy must be a JSON object');
@@ -121,6 +161,10 @@ export class AgentOpenCodePolicyService {
     return {
       provider: 'opencode',
       projectDirectory,
+      endpoint,
+      endpointRef,
+      authEnable,
+      requestTimeoutMs,
       modelPolicy: {
         bound,
         fallback,
@@ -240,6 +284,13 @@ export class AgentOpenCodePolicyService {
 
   private matchesModelBinding(binding: OpenCodeModelBinding, provider: string, model: string): boolean {
     return binding.provider === provider && binding.model === model;
+  }
+
+  private isModelBindingCheckEnabled(): boolean {
+    const raw = String(process.env[OPENCODE_MODEL_BINDING_CHECK_ENABLED] || 'false')
+      .trim()
+      .toLowerCase();
+    return raw === 'true';
   }
 
   private isPlainObject(value: unknown): value is Record<string, unknown> {

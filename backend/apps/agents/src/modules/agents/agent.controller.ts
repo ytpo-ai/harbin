@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, Query, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Put, Query, Req, Logger } from '@nestjs/common';
 import { Request } from 'express';
 import { GatewayUserContext } from '@libs/contracts';
 import { AgentService } from './agent.service';
@@ -6,6 +6,8 @@ import { Agent, Task, AIModel } from '../../../../../src/shared/types';
 
 @Controller('agents')
 export class AgentController {
+  private readonly logger = new Logger(AgentController.name);
+
   constructor(private readonly agentService: AgentService) {}
 
   private toBooleanFlag(value?: string): boolean {
@@ -153,16 +155,41 @@ export class AgentController {
     @Body() body: { task: Task; context?: any },
     @Req() req: Request & { userContext?: GatewayUserContext },
   ) {
+    const requestIdHeader = req.headers['x-request-id'];
+    const requestId = Array.isArray(requestIdHeader)
+      ? String(requestIdHeader[0] || '').trim()
+      : String(requestIdHeader || '').trim();
     const actor = {
       employeeId: req.userContext?.employeeId,
       role: req.userContext?.role,
     };
+    const requestMeta = {
+      requestId: requestId || body?.context?.requestMeta?.requestId,
+      source: body?.context?.requestMeta?.source || 'unknown',
+    };
     const context = {
       ...(body.context || {}),
       actor,
+      requestMeta,
     };
-    const result = await this.agentService.executeTaskDetailed(id, body.task, context);
-    return result;
+
+    this.logger.log(
+      `[agent_execute_ingress] requestId=${requestMeta.requestId || 'none'} agentId=${id} taskId=${body?.task?.id || 'unknown'} type=${body?.task?.type || 'unknown'} hasTeamContext=${Boolean(context?.teamContext)}`,
+    );
+
+    try {
+      const result = await this.agentService.executeTaskDetailed(id, body.task, context);
+      this.logger.log(
+        `[agent_execute_egress] requestId=${requestMeta.requestId || 'none'} agentId=${id} taskId=${body?.task?.id || 'unknown'} status=success runId=${result.runId || 'none'} sessionId=${result.sessionId || 'none'} responseLength=${(result.response || '').length}`,
+      );
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+      this.logger.error(
+        `[agent_execute_error] requestId=${requestMeta.requestId || 'none'} agentId=${id} taskId=${body?.task?.id || 'unknown'} error=${message}`,
+      );
+      throw error;
+    }
   }
 
   @Post(':id/test')

@@ -16,6 +16,8 @@ import {
   CreateOpencodeSessionDto,
   ImportOpencodeProjectDto,
   PromptOpencodeSessionDto,
+  QueryOpencodeProjectsDto,
+  QueryOpencodeSessionsDto,
   SendOpencodePromptDto,
   SyncAgentOpencodeProjectsDto,
   SyncOpencodeContextDto,
@@ -78,9 +80,16 @@ export class EiOpencodeController {
   }
 
   @Get('opencode/projects')
-  async getOpencodeProjects(@Headers('authorization') authHeader: string) {
+  async getOpencodeProjects(
+    @Query() query: QueryOpencodeProjectsDto,
+    @Headers('authorization') authHeader: string,
+  ) {
     await this.getUserFromAuthHeader(authHeader);
-    return this.opencodeService.getOpencodeProjects();
+    return this.opencodeService.getOpencodeProjects({
+      endpoint: query?.endpoint,
+      endpointRef: query?.endpointRef,
+      authEnable: query?.auth_enable,
+    });
   }
 
   @Post('opencode/projects/import')
@@ -101,11 +110,15 @@ export class EiOpencodeController {
 
   @Get('opencode/sessions')
   async getOpencodeSessions(
-    @Query('directory') directory: string | undefined,
+    @Query() query: QueryOpencodeSessionsDto,
     @Headers('authorization') authHeader: string,
   ) {
     await this.getUserFromAuthHeader(authHeader);
-    return this.opencodeService.getOpencodeSessions(directory);
+    return this.opencodeService.getOpencodeSessions(query?.directory, {
+      endpoint: query?.endpoint,
+      endpointRef: query?.endpointRef,
+      authEnable: query?.auth_enable,
+    });
   }
 
   @Get('opencode/sessions/:id')

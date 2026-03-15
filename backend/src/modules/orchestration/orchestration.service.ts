@@ -269,6 +269,58 @@ export class OrchestrationService {
     return latestPlan;
   }
 
+  async replanPlanAsync(
+    planId: string,
+    dto: ReplanPlanDto,
+  ): Promise<{ accepted: boolean; planId: string; status: string; alreadyRunning?: boolean }> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const runKey = `replan:${planId}`;
+    if (this.runningPlans.has(runKey)) {
+      return {
+        accepted: true,
+        planId,
+        status: 'running',
+        alreadyRunning: true,
+      };
+    }
+
+    this.runningPlans.add(runKey);
+
+    setTimeout(() => {
+      this.replanPlan(planId, dto)
+        .catch(async (error) => {
+          const message = error instanceof Error ? error.message : 'Async replan failed';
+          await this.orchestrationPlanModel
+            .updateOne(
+              { _id: planId },
+              {
+                $set: {
+                  metadata: {
+                    ...(plan.metadata || {}),
+                    asyncReplanError: message,
+                  },
+                },
+              },
+            )
+            .exec();
+        })
+        .finally(() => {
+          this.runningPlans.delete(runKey);
+        });
+    }, 0);
+
+    return {
+      accepted: true,
+      planId,
+      status: 'accepted',
+      alreadyRunning: false,
+    };
+  }
+
   async updatePlan(planId: string, dto: UpdatePlanDto): Promise<any> {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {

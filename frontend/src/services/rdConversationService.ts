@@ -99,11 +99,16 @@ export interface ImportOpencodeProjectDto {
   projectPath?: string;
   name?: string;
   agentId?: string;
+  endpoint?: string;
   endpointRef?: string;
+  auth_enable?: boolean;
 }
 
 export interface SyncAgentOpencodeProjectsDto {
   projectPaths?: string[];
+  endpoint?: string;
+  endpointRef?: string;
+  auth_enable?: boolean;
 }
 
 export interface CreateLocalRdProjectDto {
@@ -117,7 +122,9 @@ export interface BindOpencodeProjectDto {
   localProjectId: string;
   projectId?: string;
   projectPath?: string;
+  endpoint?: string;
   endpointRef?: string;
+  auth_enable?: boolean;
   agentId?: string;
   name?: string;
 }
@@ -329,8 +336,11 @@ class RdConversationService {
     return response.data;
   }
 
-  async getOpencodeProjects(): Promise<any[]> {
-    const response = await axios.get(`${API_URL}/ei/opencode/projects`, this.getAuthHeaders());
+  async getOpencodeProjects(params?: { endpoint?: string; endpointRef?: string; auth_enable?: boolean }): Promise<any[]> {
+    const response = await axios.get(`${API_URL}/ei/opencode/projects`, {
+      ...this.getAuthHeaders(),
+      params,
+    });
     return response.data;
   }
 
@@ -348,10 +358,16 @@ class RdConversationService {
     return response.data;
   }
 
-  async getOpencodeSessions(directory?: string): Promise<any[]> {
+  async getOpencodeSessions(
+    directory?: string,
+    options?: { endpoint?: string; endpointRef?: string; auth_enable?: boolean },
+  ): Promise<any[]> {
     const response = await axios.get(`${API_URL}/ei/opencode/sessions`, {
       ...this.getAuthHeaders(),
-      params: directory ? { directory } : undefined,
+      params: {
+        ...(directory ? { directory } : {}),
+        ...(options || {}),
+      },
     });
     return response.data;
   }
@@ -374,10 +390,21 @@ class RdConversationService {
     return response.data;
   }
 
-  async promptOpencodeSession(sessionId: string, prompt: string, model?: any): Promise<any> {
+  async promptOpencodeSession(
+    sessionId: string,
+    prompt: string,
+    model?: any,
+    options?: { endpoint?: string; endpointRef?: string; auth_enable?: boolean },
+  ): Promise<any> {
     const response = await axios.post(
       `${API_URL}/ei/opencode/sessions/${sessionId}/prompt`,
-      { prompt, model },
+      {
+        prompt,
+        model,
+        ...(options?.endpoint ? { endpoint: options.endpoint } : {}),
+        ...(options?.endpointRef ? { endpointRef: options.endpointRef } : {}),
+        ...(options?.auth_enable !== undefined ? { auth_enable: options.auth_enable } : {}),
+      },
       this.getAuthHeaders()
     );
     return response.data;

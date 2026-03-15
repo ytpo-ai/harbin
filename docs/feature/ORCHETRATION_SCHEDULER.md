@@ -45,6 +45,7 @@
 8. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
 9. 调度失败默认启用指数退避重试，超过最大重试后写入 `deadLetters[]`，并通过日志/可选 webhook 告警。
 10. 系统内置 schedule/plan 改为 seed 数据化管理：服务启动仅注册已有启用计划，不再自动写库；缺失项通过 `seed:manual --only=system-schedules` 补种。
+11. 系统内置新增 `system-cto-daily-requirement-triage`：每日 10:00（`Asia/Shanghai`）由 CTO Agent 自动整理需求并分发给研发 Agent。
 
 ### 1.4 API 接口
 
@@ -72,6 +73,7 @@
 | `ORCHESTRATION_SCHEDULER_MODULE_PLAN.md` | Scheduler 模块实施计划 |
 | `SYSTEM_MEETING_MONITOR_PLAN_BINDING_PLAN.md` | 系统会议监控补齐 plan 关联计划 |
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
+| `CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 调度职责边界与失败治理重构计划 |
 | `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
 

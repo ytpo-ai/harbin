@@ -53,6 +53,8 @@
 - 项目记录集合统一为 `ei_projects`（复用原 `rdproject` 结构并扩展同步字段）。
 - `ei_projects` 仅允许通过同步链路创建（`POST /ei/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
 - 同步按 `agentId + opencodeProjectPath / opencodeProjectId` 幂等更新，返回 `created/updated/skipped` 统计。
+- Agent 项目同步支持按 Agent config 透传 OpenCode 连接策略：优先使用 `execution.endpoint`，其次 `execution.endpointRef`，最终回退服务端 `OPENCODE_SERVER_URL`。
+- Agent 项目同步新增 `auth_enable` 语义：仅当 `auth_enable=true` 时服务端才读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth；否则不携带用户名/密码。
 - `ei_projects` 新增三类项目来源：`local`（本地项目）、`opencode`（OpenCode 项目）、`github`（GitHub 仓库）。
 - 绑定关系约束：一个 `local` 项目可绑定多个 `opencode` 项目，但最多绑定一个 `github` 仓库。
 - GitHub 凭据不落库明文，改为引用 API Key（`githubApiKeyId`）。
@@ -112,6 +114,7 @@
 - 编排运行链路在计划启动时回写需求 `in_progress`，计划完成后回写 `review -> done`（best-effort，不阻塞主链路）。
 - 需求状态流转到 `done` 自动关闭关联 GitHub Issue；从 `done` 回退时自动 reopen（失败仅记录 `lastError`）。
 - 开发类任务新增 `CODE_EXECUTION_PROOF` warning 校验，用于自动验收 build/test/lint 与代码变更证据。
+- 系统内置定时计划新增 `system-cto-daily-requirement-triage`，每日 10:00 触发 CTO Agent 执行需求整理与研发分发。
 
 ### 1.9 消息中心联动（本轮新增）
 
@@ -134,6 +137,7 @@
 | `plan/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 | `plan/ENGINEERING_INTELLIGENCE_REQUIREMENT_MANAGEMENT_PLAN.md` | 研发智能需求管理（Issue 协作）计划 |
 | `plan/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造计划 |
+| `plan/CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
 
 ### 技术文档 (docs/technical/)
 

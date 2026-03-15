@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GatewayController } from './gateway.controller';
 import { GatewayProxyService } from './gateway-proxy.service';
+import { GatewayAuthGuard } from './gateway-auth.guard';
 import databaseConfig from '../../../src/config/database.config';
 import { OperationLog, OperationLogSchema } from '../../../src/shared/schemas/operation-log.schema';
 import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.schema';
@@ -31,6 +32,6 @@ import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.s
     ]),
   ],
   controllers: [GatewayController],
-  providers: [GatewayProxyService],
+  providers: [GatewayProxyService, GatewayAuthGuard],
 })
 export class GatewayAppModule {}

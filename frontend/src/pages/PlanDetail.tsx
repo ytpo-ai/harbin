@@ -7,6 +7,7 @@ import {
   BeakerIcon,
   ChevronRightIcon,
   ClockIcon,
+  DocumentDuplicateIcon,
   PencilSquareIcon,
   PlayIcon,
   XMarkIcon,
@@ -15,6 +16,7 @@ import { agentService } from '../services/agentService';
 import { employeeService } from '../services/employeeService';
 import {
   orchestrationService,
+  OrchestrationTask,
   OrchestrationPlan,
 } from '../services/orchestrationService';
 
@@ -45,6 +47,56 @@ const formatDateTime = (value?: string) => {
   return date.toLocaleString();
 };
 
+const formatExecutor = (task: OrchestrationTask) => {
+  const executorType = task.assignment?.executorType || 'unassigned';
+  const executorId = task.assignment?.executorId;
+  if (executorType === 'unassigned') return 'unassigned';
+  return executorId ? `${executorType}:${executorId}` : executorType;
+};
+
+const buildPlanTasksMarkdown = (plan: OrchestrationPlan) => {
+  const tasks = plan.tasks || [];
+  const taskTitleById = new Map(tasks.map((task) => [task._id, `#${task.order + 1} ${task.title || '未命名任务'}`]));
+  const lines: string[] = [];
+
+  lines.push(`# 计划任务清单：${plan.title || '未命名计划'}`);
+  lines.push('');
+  lines.push(`- 计划 ID: ${plan._id}`);
+  lines.push(`- 计划状态: ${plan.status}`);
+  lines.push(`- 编排模式: ${plan.strategy?.mode || '-'}`);
+  lines.push(`- Planner: ${plan.strategy?.plannerAgentId || '默认'}`);
+  lines.push(`- 更新时间: ${formatDateTime(plan.updatedAt)}`);
+  lines.push('');
+  lines.push('## Prompt');
+  lines.push('');
+  lines.push(plan.sourcePrompt || '-');
+  lines.push('');
+  lines.push('## 任务列表');
+  lines.push('');
+
+  if (!tasks.length) {
+    lines.push('_暂无任务_');
+    return lines.join('\n');
+  }
+
+  for (const task of tasks) {
+    const dependencies = (task.dependencyTaskIds || [])
+      .map((dependencyId) => taskTitleById.get(dependencyId) || dependencyId)
+      .join(', ');
+    lines.push(`### ${task.order + 1}. ${task.title || '未命名任务'}`);
+    lines.push(`- 状态: ${task.status}`);
+    lines.push(`- 优先级: ${task.priority}`);
+    lines.push(`- 执行者: ${formatExecutor(task)}`);
+    lines.push(`- 依赖: ${dependencies || '无'}`);
+    lines.push(`- 描述: ${task.description || '-'}`);
+    lines.push(`- 输出: ${task.result?.output || task.result?.summary || '-'}`);
+    lines.push(`- 错误: ${task.result?.error || '-'}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+};
+
 const PlanDetail: React.FC = () => {
   const { id: planId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -52,6 +104,11 @@ const PlanDetail: React.FC = () => {
 
   const [promptDraft, setPromptDraft] = useState('');
   const [promptHint, setPromptHint] = useState('');
+  const [isReplanModalOpen, setIsReplanModalOpen] = useState(false);
+  const [replanPlannerAgentId, setReplanPlannerAgentId] = useState('');
+  const [isReplanPending, setIsReplanPending] = useState(false);
+  const [replanRequestedAt, setReplanRequestedAt] = useState<number | null>(null);
+  const [lastAsyncReplanError, setLastAsyncReplanError] = useState('');
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
   const [debugTaskId, setDebugTaskId] = useState('');
   const [debugTitle, setDebugTitle] = useState('');
@@ -68,6 +125,7 @@ const PlanDetail: React.FC = () => {
       enabled: Boolean(planId),
       refetchInterval: (data) => {
         if (!planId) return false;
+        if (isReplanPending) return 2000;
         const status = (data as any)?.status as string | undefined;
         if (!status) return false;
         if (ACTIVE_PLAN_STATUS.has(status)) return 3000;
@@ -155,29 +213,75 @@ const PlanDetail: React.FC = () => {
   );
 
   const replanPlanMutation = useMutation(
-    ({ planId, prompt: nextPrompt }: { planId: string; prompt: string }) =>
+    ({
+      planId,
+      prompt: nextPrompt,
+      plannerAgentId,
+    }: {
+      planId: string;
+      prompt: string;
+      plannerAgentId?: string;
+    }) =>
       orchestrationService.replanPlan(planId, {
         prompt: nextPrompt,
         mode: planDetail?.strategy?.mode,
-        plannerAgentId: planDetail?.strategy?.plannerAgentId,
+        plannerAgentId,
       }),
     {
+      onMutate: () => {
+        setIsReplanModalOpen(false);
+        setPromptHint('正在重新编排，请稍候...');
+        setIsReplanPending(true);
+        setReplanRequestedAt(Date.now());
+        setLastAsyncReplanError(String(planDetail?.metadata?.asyncReplanError || ''));
+      },
       onSuccess: async () => {
-        setPromptHint('重新编排已完成，任务结构已覆盖更新');
+        setPromptHint('重新编排任务已提交，正在后台处理中...');
         setDebugDrawerOpen(false);
         setDebugTaskId('');
         setDebugHint('');
-        await Promise.all([
-          queryClient.invalidateQueries('orchestration-plans'),
-          queryClient.invalidateQueries(['orchestration-plan', planId]),
-        ]);
+        await queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
       onError: (error) => {
+        setIsReplanPending(false);
         const message = error instanceof Error ? error.message : '重新编排失败，请稍后重试';
         setPromptHint(message);
       },
     },
   );
+
+  useEffect(() => {
+    if (!isReplanPending || !planDetail) return;
+
+    const currentAsyncError = String(planDetail.metadata?.asyncReplanError || '');
+    if (currentAsyncError && currentAsyncError !== lastAsyncReplanError) {
+      setIsReplanPending(false);
+      setPromptHint(`重新编排失败：${currentAsyncError}`);
+      return;
+    }
+
+    const replannedAtRaw = String(planDetail.metadata?.replannedAt || '');
+    if (!replannedAtRaw || !replanRequestedAt) return;
+
+    const replannedAt = new Date(replannedAtRaw).getTime();
+    if (Number.isNaN(replannedAt)) return;
+    if (replannedAt < replanRequestedAt - 1000) return;
+
+    setIsReplanPending(false);
+    setPromptHint('重新编排已完成，任务结构已覆盖更新');
+    window.alert('编排完成');
+    Promise.all([
+      queryClient.invalidateQueries('orchestration-plans'),
+      queryClient.invalidateQueries(['orchestration-plan', planId]),
+    ]);
+  }, [
+    isReplanPending,
+    lastAsyncReplanError,
+    planDetail,
+    planId,
+    queryClient,
+    replanRequestedAt,
+  ]);
 
   const retryTaskMutation = useMutation((taskId: string) => orchestrationService.retryTask(taskId), {
     onSuccess: async () => {
@@ -301,6 +405,29 @@ const PlanDetail: React.FC = () => {
     setDebugHint('');
   };
 
+  const handleCopyPlanTasksMarkdown = async () => {
+    if (!planDetail) return;
+    const markdown = buildPlanTasksMarkdown(planDetail);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(markdown);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = markdown;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setPromptHint('已复制到剪贴板');
+    } catch {
+      setPromptHint('复制失败，请稍后重试');
+    }
+  };
+
   if (planLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -369,14 +496,14 @@ const PlanDetail: React.FC = () => {
                   setPromptHint('Prompt 不能为空');
                   return;
                 }
-                const ok = window.confirm('确认覆盖当前计划任务并重新编排？旧任务执行轨迹将被替换。');
-                if (!ok) return;
-                replanPlanMutation.mutate({ planId, prompt: nextPrompt });
+                setReplanPlannerAgentId(planDetail?.strategy?.plannerAgentId || '');
+                setIsReplanModalOpen(true);
               }}
-              disabled={!planId || replanPlanMutation.isLoading || runPlanMutation.isLoading}
+              disabled={!planId || replanPlanMutation.isLoading || isReplanPending || runPlanMutation.isLoading}
               className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
             >
-              <ArrowPathIcon className="h-4 w-4" /> 重新编排
+              <ArrowPathIcon className={`h-4 w-4 ${(replanPlanMutation.isLoading || isReplanPending) ? 'animate-spin' : ''}`} />
+              {(replanPlanMutation.isLoading || isReplanPending) ? '重新编排中...' : '重新编排'}
             </button>
             <button
               onClick={() => planId && runPlanMutation.mutate({ planId, continueOnFailure: true })}
@@ -384,6 +511,13 @@ const PlanDetail: React.FC = () => {
               className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-sm text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
             >
               <PlayIcon className="h-4 w-4" /> 运行
+            </button>
+            <button
+              onClick={handleCopyPlanTasksMarkdown}
+              disabled={!planDetail}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <DocumentDuplicateIcon className="h-4 w-4" /> 复制任务MD
             </button>
           </div>
         </div>
@@ -716,6 +850,74 @@ const PlanDetail: React.FC = () => {
               </>
             )}
           </aside>
+        </div>
+      )}
+
+      {isReplanModalOpen && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <p className="text-sm font-semibold text-slate-900">选择 Planner 后重新编排</p>
+              <button
+                onClick={() => {
+                  if (replanPlanMutation.isLoading) return;
+                  setIsReplanModalOpen(false);
+                }}
+                disabled={replanPlanMutation.isLoading}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+                aria-label="关闭重新编排弹窗"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 px-4 py-4">
+              <p className="text-xs text-slate-600">确认后将覆盖当前任务结构，并按所选 Planner 重新编排。</p>
+              <select
+                value={replanPlannerAgentId}
+                onChange={(event) => setReplanPlannerAgentId(event.target.value)}
+                disabled={replanPlanMutation.isLoading}
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm disabled:opacity-50"
+              >
+                <option value="">默认 Planner</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+              <button
+                onClick={() => setIsReplanModalOpen(false)}
+                disabled={replanPlanMutation.isLoading}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => {
+                  if (!planId) return;
+                  const nextPrompt = promptDraft.trim() || planDetail?.sourcePrompt?.trim() || '';
+                  if (!nextPrompt) {
+                    setPromptHint('Prompt 不能为空');
+                    return;
+                  }
+                  replanPlanMutation.mutate({
+                    planId,
+                    prompt: nextPrompt,
+                    plannerAgentId: replanPlannerAgentId || undefined,
+                  });
+                }}
+                disabled={!planId || replanPlanMutation.isLoading || isReplanPending}
+                className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-3 py-1.5 text-sm text-white hover:bg-indigo-700 disabled:bg-slate-300"
+              >
+                <ArrowPathIcon className={`h-4 w-4 ${replanPlanMutation.isLoading ? 'animate-spin' : ''}`} />
+                {replanPlanMutation.isLoading ? '重新编排中...' : '确定并重排'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

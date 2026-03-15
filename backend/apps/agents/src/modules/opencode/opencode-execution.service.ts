@@ -5,6 +5,7 @@ import {
   OpenCodeAdapterEvent,
   OpenCodeExecutionStartInput,
   OpenCodeExecutionStartResult,
+  OpenCodeRuntimeOptions,
 } from './contracts/opencode.contract';
 
 interface RuntimeMappedEvent {
@@ -29,6 +30,7 @@ export class OpenCodeExecutionService {
       sessionId,
       prompt: input.taskPrompt,
       model: input.model,
+      runtime: input.runtime,
     });
 
     return {
@@ -40,9 +42,10 @@ export class OpenCodeExecutionService {
 
   async consumeSessionEvents(
     sessionId: string,
+    runtime: OpenCodeRuntimeOptions | undefined,
     onEvent: (event: OpenCodeAdapterEvent) => Promise<void> | void,
   ): Promise<void> {
-    for await (const event of this.adapter.subscribeEvents(sessionId)) {
+    for await (const event of this.adapter.subscribeEvents(sessionId, runtime)) {
       try {
         await onEvent(event);
       } catch (error) {
@@ -99,6 +102,7 @@ export class OpenCodeExecutionService {
       providerID: string;
       modelID: string;
     };
+    runtime?: OpenCodeRuntimeOptions;
     mapEvent?: (event: OpenCodeAdapterEvent) => RuntimeMappedEvent;
   }): Promise<OpenCodeExecutionStartResult> {
     const result = await this.startExecution({
@@ -107,13 +111,19 @@ export class OpenCodeExecutionService {
       title: input.title,
       sessionConfig: input.sessionConfig,
       model: input.model,
+      runtime: input.runtime,
     });
 
     const mapper = input.mapEvent || this.mapOpenCodeEventToRuntimeEvent.bind(this);
     let sequence = 10_000;
     let recordedFromRealEvents = 0;
 
-    const realEvents = await this.collectSessionEvents(result.sessionId, this.eventReadLimit, this.eventReadTimeoutMs);
+    const realEvents = await this.collectSessionEvents(
+      result.sessionId,
+      this.eventReadLimit,
+      this.eventReadTimeoutMs,
+      input.runtime,
+    );
     for (const event of realEvents) {
       const mapped = mapper(event);
       if (mapped.runtimeEventType !== 'llm.delta') {
@@ -158,9 +168,10 @@ export class OpenCodeExecutionService {
     sessionId: string,
     limit: number,
     timeoutMs: number,
+    runtime?: OpenCodeRuntimeOptions,
   ): Promise<OpenCodeAdapterEvent[]> {
     const events: OpenCodeAdapterEvent[] = [];
-    const stream = this.adapter.subscribeEvents(sessionId);
+    const stream = this.adapter.subscribeEvents(sessionId, runtime);
     const iterator = stream[Symbol.asyncIterator]();
 
     try {
@@ -226,6 +237,7 @@ export class OpenCodeExecutionService {
       title: input.title,
       config: input.sessionConfig,
       model: input.model,
+      runtime: input.runtime,
     });
     return session.id;
   }

@@ -773,6 +773,9 @@ export class AgentService {
         enabled: Boolean(openCodeExecutionConfig),
         strictExecution: Boolean(openCodeExecutionConfig),
         projectDirectory: openCodeExecutionConfig?.projectDirectory,
+        endpoint: openCodeExecutionConfig?.endpoint,
+        endpointRef: openCodeExecutionConfig?.endpointRef,
+        authEnable: openCodeExecutionConfig?.authEnable,
         modelPolicy: openCodeExecutionConfig?.modelPolicy,
       },
     };
@@ -824,6 +827,11 @@ export class AgentService {
           model: {
             providerID: modelConfig.provider,
             modelID: modelConfig.model,
+          },
+          runtime: {
+            baseUrl: openCodeExecutionConfig.endpoint || openCodeExecutionConfig.endpointRef,
+            authEnable: openCodeExecutionConfig.authEnable,
+            requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
           },
         });
 
@@ -982,6 +990,9 @@ export class AgentService {
         enabled: Boolean(openCodeExecutionConfig),
         strictExecution: Boolean(openCodeExecutionConfig),
         projectDirectory: openCodeExecutionConfig?.projectDirectory,
+        endpoint: openCodeExecutionConfig?.endpoint,
+        endpointRef: openCodeExecutionConfig?.endpointRef,
+        authEnable: openCodeExecutionConfig?.authEnable,
         modelPolicy: openCodeExecutionConfig?.modelPolicy,
       },
     };
@@ -1031,6 +1042,11 @@ export class AgentService {
           model: {
             providerID: agent.model.provider,
             modelID: agent.model.model,
+          },
+          runtime: {
+            baseUrl: openCodeExecutionConfig.endpoint || openCodeExecutionConfig.endpointRef,
+            authEnable: openCodeExecutionConfig.authEnable,
+            requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
           },
         });
 
@@ -1191,6 +1207,12 @@ export class AgentService {
       messages.push({
         role: 'system',
         content: `你可以调用以下工具（仅限这些）:\n${JSON.stringify(toolSpecs)}\n\n当你需要调用工具时，必须只输出以下格式，不要添加任何额外文本:\n<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>\n\n工具结果会作为系统消息返回给你，收到后继续完成最终回答。`,
+        timestamp: new Date(),
+      });
+
+      messages.push({
+        role: 'system',
+        content: `当你工作时，优先考虑使用已有工具来解决问题，当你使用工具前，务必先确定自己足够的权限，当你需要某个工具而你没有该工具时，你可以询问是否可以给添加工具。\n`,
         timestamp: new Date(),
       });
 

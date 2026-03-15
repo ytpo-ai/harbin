@@ -121,6 +121,7 @@ export class AgentClientService {
     context?: any,
   ): Promise<{ response: string; runId?: string; sessionId?: string }> {
     const startedAt = Date.now();
+    const requestId = randomUUID();
     const executionMode = this.resolveExecutionMode(context);
     const contextType = this.resolveContextType(context);
     const contextId = this.resolveContextId(context, task);
@@ -144,13 +145,32 @@ export class AgentClientService {
     });
 
     try {
+      this.logger.log(
+        `[agents_execute_request] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} contextType=${contextType} contextId=${contextId || 'none'} executionMode=${executionMode} sessionId=${contextSessionId || 'none'} title="${this.compactLogText(task.title)}"`,
+      );
       const response = await axios.post<{ response: string; runId?: string; sessionId?: string }>(
         `${this.baseUrl}/api/agents/${agentId}/execute`,
-        { task, context },
         {
-          headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+          task,
+          context: {
+            ...(context || {}),
+            requestMeta: {
+              requestId,
+              source: 'legacy-agent-client',
+            },
+          },
+        },
+        {
+          headers: this.buildSignedHeaders({
+            'content-type': 'application/json',
+            'x-request-id': requestId,
+          }),
           timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
         },
+      );
+
+      this.logger.log(
+        `[agents_execute_response] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=success durationMs=${Date.now() - startedAt} runId=${response.data?.runId || 'none'} sessionId=${response.data?.sessionId || 'none'} responseLength=${(response.data?.response || '').length}`,
       );
 
       await this.agentActionLogService.record({
@@ -178,6 +198,17 @@ export class AgentClientService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
+      const axiosError = error as {
+        response?: {
+          status?: number;
+          data?: any;
+        };
+      };
+      const status = axiosError?.response?.status;
+      const errorDetail = this.extractErrorDetail(axiosError?.response?.data);
+      this.logger.error(
+        `[agents_execute_failed] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=${status || 'unknown'} durationMs=${Date.now() - startedAt} error=${this.compactLogText(message)} detail="${errorDetail}"`,
+      );
       await this.agentActionLogService.record({
         agentId,
         contextType,
@@ -197,6 +228,35 @@ export class AgentClientService {
       });
       throw error;
     }
+  }
+
+  private compactLogText(value: unknown, maxLength = 120): string {
+    const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '';
+    return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
+  }
+
+  private extractErrorDetail(payload: any): string {
+    if (!payload) return 'none';
+    if (typeof payload === 'string') {
+      return this.compactLogText(payload, 300) || 'none';
+    }
+    if (typeof payload === 'object') {
+      const message = payload.message;
+      const error = payload.error;
+      const code = payload.code || payload.errorCode;
+      const parts = [
+        code ? `code=${this.compactLogText(code, 80)}` : '',
+        message
+          ? `message=${Array.isArray(message)
+            ? this.compactLogText(message.join('; '), 300)
+            : this.compactLogText(message, 300)}`
+          : '',
+        error ? `error=${this.compactLogText(error, 120)}` : '',
+      ].filter(Boolean);
+      return parts.join(' ') || this.compactLogText(JSON.stringify(payload), 300) || 'none';
+    }
+    return this.compactLogText(payload, 300) || 'none';
   }
 
   async executeTask(agentId: string, task: Task, context?: any): Promise<string> {

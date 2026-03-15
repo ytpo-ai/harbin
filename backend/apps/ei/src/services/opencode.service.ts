@@ -28,12 +28,12 @@ export class EiOpencodeService {
     return this.core.getCurrentOpencodeContext();
   }
 
-  getOpencodeProjects() {
-    return this.core.listOpencodeProjects();
+  getOpencodeProjects(options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean }) {
+    return this.core.listOpencodeProjects(options);
   }
 
-  getOpencodeSessions(directory?: string) {
-    return this.core.listOpencodeSessions(directory);
+  getOpencodeSessions(directory?: string, options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean }) {
+    return this.core.listOpencodeSessions(directory, options);
   }
 
   getOpencodeSession(sessionId: string) {
@@ -53,6 +53,9 @@ export class EiOpencodeService {
       sessionId,
       prompt: payload.prompt,
       model: payload.model,
+      endpoint: payload.endpoint,
+      endpointRef: payload.endpointRef,
+      authEnable: payload.auth_enable,
     });
   }
 

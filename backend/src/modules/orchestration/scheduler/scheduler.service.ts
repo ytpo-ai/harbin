@@ -39,6 +39,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly systemScheduleNames = [
     'system-meeting-monitor',
     'system-engineering-statistics',
+    'system-cto-daily-requirement-triage',
     'system-memo-event-flush',
     'system-memo-full-aggregation',
   ];

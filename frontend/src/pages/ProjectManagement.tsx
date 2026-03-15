@@ -253,7 +253,15 @@ const ProjectManagement: React.FC = () => {
   );
 
   const syncAgentProjectsMutation = useMutation(
-    () => rdManagementService.syncAgentOpencodeProjects(selectedAgentId),
+    () => {
+      const execution = (rdAgents.find((agent) => agent.id === selectedAgentId)?.config as Record<string, any> | undefined)
+        ?.execution as Record<string, any> | undefined;
+      return rdManagementService.syncAgentOpencodeProjects(selectedAgentId, {
+        endpoint: typeof execution?.endpoint === 'string' ? execution.endpoint : undefined,
+        endpointRef: typeof execution?.endpointRef === 'string' ? execution.endpointRef : undefined,
+        auth_enable: execution?.auth_enable === true,
+      });
+    },
     {
       onSuccess: async () => {
         showToast('success', 'OpenCode 项目同步完成');
@@ -272,7 +280,10 @@ const ProjectManagement: React.FC = () => {
         localProjectId: selectedLocalProjectId,
         projectId: selectedOpencodeProject.opencodeProjectId,
         projectPath: selectedOpencodeProject.opencodeProjectPath,
+        endpoint: selectedOpencodeProject.opencodeEndpointRef,
         endpointRef: selectedOpencodeProject.opencodeEndpointRef,
+        auth_enable: (rdAgents.find((agent) => agent.id === selectedAgentId)?.config as Record<string, any> | undefined)
+          ?.execution?.auth_enable === true,
         agentId: selectedAgentId || selectedOpencodeProject.syncedFromAgentId,
       });
     },

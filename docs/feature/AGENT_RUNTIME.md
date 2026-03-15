@@ -57,13 +57,16 @@
 
 - 执行前门禁：
 - 角色准入仅允许 `devops-engineer`、`fullstack-engineer`、`technical-architect`。
-  - 模型绑定匹配：请求模型需命中 Agent 绑定模型或显式 fallback 白名单。
+  - 模型绑定匹配：请求模型需命中 Agent 绑定模型或显式 fallback 白名单（受环境变量 `OPENCODE_MODEL_BINDING_CHECK_ENABLED` 控制，默认关闭）。
   - 配额检测：按 `agent + period` 检测，超限触发 `permission.asked` 审批流并暂停 run。
 - 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，非流式与流式路径均强制走 OpenCode 执行桥接，不允许回落 native 模型通道。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
 - OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
+- OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `OPENCODE_SERVER_URL`。
+- OpenCode 认证开关：支持 `agent.config.execution.auth_enable`（boolean，默认 `false`）；仅当为 `true` 时读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth（username=`opencode`）。
 - OpenCode 调用通道：Runtime 侧已移除 SDK 依赖，统一通过 OpenCode HTTP API（含 SSE）直连执行与事件读取。
 - OpenCode session 创建时会显式透传当前执行模型（`providerID/modelID`），保证 session 模型与 Agent 绑定模型对齐。
+- 当 `OPENCODE_MODEL_BINDING_CHECK_ENABLED=false` 时，创建 session 与发送 message 仅透传执行模型，不再因为绑定不一致直接阻断；后续可在 OpenCode 可用模型列表稳定后再开启严格校验。
 - `agent_runs` 扩展字段：
   - `executionChannel`（`native|opencode`）
   - `roleCode`
@@ -139,6 +142,7 @@
 | `AGENT_RUNTIME_OVERHAUL_PLAN.md` | Runtime 重构规划入口（已合并到开发沉淀） |
 | `AGENT_RUNTIME_FEATURE_DOC_PLAN.md` | Runtime 功能文档沉淀计划（本次） |
 | `OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 交互主计划与角色/预算约束 |
+| `OPENCODE_AGENT_TASK_SSE_WORKER_PLAN.md` | OpenCode 长任务抗超时改造计划（Worker + SSE） |
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 
@@ -158,6 +162,7 @@
 |------|------|
 | `technical/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
 | `technical/AGENT_RUNTIME_WORKFLOW_TECHNICAL_DESIGN.md` | Runtime 工作流技术设计 |
+| `technical/OPENCODE_AGENT_TASK_SSE_WORKER_TECHNICAL_DESIGN.md` | OpenCode 长任务抗超时技术设计（Worker + SSE） |
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | OpenCode 执行事实层与 EI 分析层分层设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | local/ecds 多环境协同与 ingest 同步设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |

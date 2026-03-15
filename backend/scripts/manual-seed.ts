@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { createRequire } from 'module';
 
 type SeedName =
   | 'mcp-profiles'
@@ -16,6 +17,8 @@ const ALL_SEEDS: SeedName[] = [
   'system-schedules',
   'meeting-monitor',
 ];
+
+const localRequire = createRequire(__filename);
 
 function parseArgs(args: string[]) {
   const onlyArg = args.find((arg) => arg.startsWith('--only='));
@@ -70,19 +73,11 @@ async function run(): Promise<void> {
   const needsLegacyApp = selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules'].includes(seed));
 
   const { AgentsAppModule, AgentService, ToolService, ModelManagementService } = needsAgentsApp
-    ? {
-        AgentsAppModule: require('../apps/agents/src/app.module').AgentsAppModule,
-        AgentService: require('../apps/agents/src/modules/agents/agent.service').AgentService,
-        ToolService: require('../apps/agents/src/modules/tools/tool.service').ToolService,
-        ModelManagementService: require('../apps/agents/src/modules/models/model-management.service').ModelManagementService,
-      }
+    ? loadAgentsSeedDependencies()
     : { AgentsAppModule: null, AgentService: null, ToolService: null, ModelManagementService: null };
 
   const { AppModule, seedSystemSchedules } = needsLegacyApp
-    ? {
-        AppModule: require('../src/app.module').AppModule,
-        seedSystemSchedules: require('./system-schedule-seed').seedSystemSchedules,
-      }
+    ? loadLegacySeedDependencies()
     : { AppModule: null, seedSystemSchedules: null };
 
   const agentsApp = needsAgentsApp ? await NestFactory.createApplicationContext(AgentsAppModule) : null;
@@ -132,6 +127,28 @@ async function run(): Promise<void> {
       await legacyApp.close();
     }
   }
+}
+
+function loadAgentsSeedDependencies() {
+  const { AgentsAppModule } = localRequire('../apps/agents/src/app.module');
+  const { AgentService } = localRequire('../apps/agents/src/modules/agents/agent.service');
+  const { ToolService } = localRequire('../apps/agents/src/modules/tools/tool.service');
+  const { ModelManagementService } = localRequire('../apps/agents/src/modules/models/model-management.service');
+  return {
+    AgentsAppModule,
+    AgentService,
+    ToolService,
+    ModelManagementService,
+  };
+}
+
+function loadLegacySeedDependencies() {
+  const { AppModule } = localRequire('../src/app.module');
+  const { seedSystemSchedules } = localRequire('./system-schedule-seed');
+  return {
+    AppModule,
+    seedSystemSchedules,
+  };
 }
 
 run().catch((error) => {

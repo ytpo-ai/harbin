@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AgentsAppModule } from './app.module';
 import { initializeNetworkProxy } from '@libs/infra';
+import { HttpExceptionLoggingFilter } from './filters/http-exception-logging.filter';
 
 async function bootstrap() {
   await initializeNetworkProxy();
@@ -14,6 +15,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalFilters(new HttpExceptionLoggingFilter());
 
   app.setGlobalPrefix('api');
 

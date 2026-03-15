@@ -8,7 +8,52 @@ cd "$SCRIPT_DIR"
 LOG_DIR="/tmp/harbin-logs"
 mkdir -p "$LOG_DIR"
 
-ENV=${1:-development}
+usage() {
+    echo "用法: $0 [environment] [-p|--port <port>]"
+    echo "示例: $0 development"
+    echo "示例: $0 development -p 3002"
+}
+
+ENV="development"
+ENV_SET=0
+TARGET_PORT=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -p|--port)
+            if [ -z "$2" ]; then
+                echo "错误: -p|--port 需要端口参数"
+                usage
+                exit 1
+            fi
+            TARGET_PORT="$2"
+            shift 2
+            ;;
+        --port=*)
+            TARGET_PORT="${1#--port=}"
+            shift
+            ;;
+        -p*)
+            TARGET_PORT="${1#-p}"
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            if [ "$ENV_SET" -eq 0 ]; then
+                ENV="$1"
+                ENV_SET=1
+                shift
+            else
+                echo "错误: 无法识别参数 $1"
+                usage
+                exit 1
+            fi
+            ;;
+    esac
+done
 
 if [ "$ENV" = "development" ]; then
     WATCH_ARG="--watch"
@@ -35,50 +80,72 @@ wait_for_service() {
     echo "$name 已启动 (端口 $port)"
 }
 
-echo "========================================"
-echo "1/5 启动 legacy 服务 (端口 3001)..."
-if [ -n "$WATCH_ARG" ]; then
-    pnpm run start:legacy -- --watch </dev/null > "$LOG_DIR/legacy-app.log" 2>&1 &
-else
-    nohup pnpm run start:legacy > "$LOG_DIR/legacy-app.log" 2>&1 &
-fi
-wait_for_service 3001 "legacy"
+resolve_service_by_port() {
+    case "$1" in
+        3001)
+            echo "legacy|start:legacy|$LOG_DIR/legacy-app.log"
+            ;;
+        3100)
+            echo "gateway|start:gateway|$LOG_DIR/gateway-app.log"
+            ;;
+        3002)
+            echo "agents|start:agents|$LOG_DIR/agents-app.log"
+            ;;
+        3003)
+            echo "ws|start:ws|$LOG_DIR/ws-app.log"
+            ;;
+        3004)
+            echo "ei|start:ei|$LOG_DIR/ei-app.log"
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
 
-echo "========================================"
-echo "2/5 启动 gateway 服务 (端口 3100)..."
-if [ -n "$WATCH_ARG" ]; then
-    pnpm run start:gateway -- --watch </dev/null > "$LOG_DIR/gateway-app.log" 2>&1 &
-else
-    nohup pnpm run start:gateway > "$LOG_DIR/gateway-app.log" 2>&1 &
-fi
-wait_for_service 3100 "gateway"
+start_backend_service() {
+    local service_name=$1
+    local service_port=$2
+    local start_script=$3
+    local log_file=$4
 
-echo "========================================"
-echo "3/5 启动 agents 服务 (端口 3002)..."
-if [ -n "$WATCH_ARG" ]; then
-    pnpm run start:agents -- --watch </dev/null > "$LOG_DIR/agents-app.log" 2>&1 &
-else
-    nohup pnpm run start:agents > "$LOG_DIR/agents-app.log" 2>&1 &
-fi
-wait_for_service 3002 "agents"
+    echo "========================================"
+    echo "启动 $service_name 服务 (端口 $service_port)..."
 
-echo "========================================"
-echo "4/5 启动 ws 服务 (端口 3003)..."
-if [ -n "$WATCH_ARG" ]; then
-    pnpm run start:ws -- --watch </dev/null > "$LOG_DIR/ws-app.log" 2>&1 &
-else
-    nohup pnpm run start:ws > "$LOG_DIR/ws-app.log" 2>&1 &
-fi
-wait_for_service 3003 "ws"
+    if [ -n "$WATCH_ARG" ]; then
+        pnpm run "$start_script" -- --watch </dev/null > "$log_file" 2>&1 &
+    else
+        nohup pnpm run "$start_script" > "$log_file" 2>&1 &
+    fi
 
-echo "========================================"
-echo "5/5 启动 ei 服务 (端口 3004)..."
-if [ -n "$WATCH_ARG" ]; then
-    pnpm run start:ei -- --watch </dev/null > "$LOG_DIR/ei-app.log" 2>&1 &
-else
-    nohup pnpm run start:ei > "$LOG_DIR/ei-app.log" 2>&1 &
+    wait_for_service "$service_port" "$service_name"
+}
+
+if [ -n "$TARGET_PORT" ]; then
+    if ! [[ "$TARGET_PORT" =~ ^[0-9]+$ ]]; then
+        echo "错误: 端口必须是数字，收到: $TARGET_PORT"
+        exit 1
+    fi
+
+    if ! service_line=$(resolve_service_by_port "$TARGET_PORT"); then
+        echo "错误: 不支持的后端服务端口 $TARGET_PORT"
+        echo "支持端口: 3001, 3002, 3003, 3004, 3100"
+        exit 1
+    fi
+
+    IFS='|' read -r service_name start_script log_file <<< "$service_line"
+    start_backend_service "$service_name" "$TARGET_PORT" "$start_script" "$log_file"
+
+    echo "========================================"
+    echo "后端服务已启动，日志文件位于: $log_file"
+    exit 0
 fi
-wait_for_service 3004 "ei"
+
+start_backend_service "legacy" 3001 "start:legacy" "$LOG_DIR/legacy-app.log"
+start_backend_service "gateway" 3100 "start:gateway" "$LOG_DIR/gateway-app.log"
+start_backend_service "agents" 3002 "start:agents" "$LOG_DIR/agents-app.log"
+start_backend_service "ws" 3003 "start:ws" "$LOG_DIR/ws-app.log"
+start_backend_service "ei" 3004 "start:ei" "$LOG_DIR/ei-app.log"
 
 echo "========================================"
 echo "后端服务已启动，日志文件位于: $LOG_DIR"

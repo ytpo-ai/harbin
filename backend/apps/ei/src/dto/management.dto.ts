@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsEnum, IsMongoId, IsObject, IsArray, IsNumber, IsUrl } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsMongoId, IsObject, IsArray, IsNumber, IsUrl, IsBoolean } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { RdTaskStatus, RdTaskPriority } from '../../../../src/shared/schemas/ei-task.schema';
 import { RdProjectSourceType } from '../../../../src/shared/schemas/ei-project.schema';
 
@@ -146,6 +147,18 @@ export class PromptOpencodeSessionDto {
   @IsOptional()
   @IsObject()
   model?: { providerID: string; modelID: string };
+
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  auth_enable?: boolean;
 }
 
 export class ImportOpencodeProjectDto {
@@ -168,6 +181,14 @@ export class ImportOpencodeProjectDto {
   @IsOptional()
   @IsString()
   endpointRef?: string;
+
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  auth_enable?: boolean;
 }
 
 export class SyncAgentOpencodeProjectsDto {
@@ -175,6 +196,70 @@ export class SyncAgentOpencodeProjectsDto {
   @IsArray()
   @IsString({ each: true })
   projectPaths?: string[];
+
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  auth_enable?: boolean;
+}
+
+export class QueryOpencodeSessionsDto {
+  @IsOptional()
+  @IsString()
+  directory?: string;
+
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return true;
+      if (normalized === 'false' || normalized === '0') return false;
+    }
+    return value;
+  })
+  @IsBoolean()
+  auth_enable?: boolean;
+}
+
+export class QueryOpencodeProjectsDto {
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsString()
+  endpointRef?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null || value === '') return undefined;
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (normalized === 'true' || normalized === '1') return true;
+      if (normalized === 'false' || normalized === '0') return false;
+    }
+    return value;
+  })
+  @IsBoolean()
+  auth_enable?: boolean;
 }
 
 export class CreateRdProjectDto {
@@ -333,6 +418,14 @@ export class BindOpencodeProjectDto {
   @IsOptional()
   @IsString()
   endpointRef?: string;
+
+  @IsOptional()
+  @IsString()
+  endpoint?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  auth_enable?: boolean;
 
   @IsOptional()
   @IsString()

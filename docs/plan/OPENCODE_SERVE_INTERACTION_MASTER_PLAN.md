@@ -120,9 +120,9 @@
    - `technical-architect`（技术专家）
 2. 系统按 **`agent + 周期` 配额控制**预算与限额。
 3. 配额超限后不直接拒绝，进入审批流（`permission.asked`），审批通过可继续执行。
-4. 执行前必须做模型绑定匹配检测：
-   - Agent 绑定模型必须与本次 OpenCode 执行模型一致（或在允许的回退集合内）。
-   - 不匹配直接阻断执行并返回可读错误。
+4. 执行前模型绑定匹配检测采用可配置开关：
+   - 通过 `OPENCODE_MODEL_BINDING_CHECK_ENABLED` 控制是否严格校验 Agent 绑定模型与本次 OpenCode 执行模型一致（默认 `false`）。
+   - 开关关闭时不因 mismatch 阻断；开关开启后恢复严格校验与可读错误。
 
 ## 详细执行计划（分阶段）
 
@@ -169,8 +169,12 @@
    - `syncRetryCount`
 6. 增加执行前校验：
    - 角色准入校验（仅 `devops-engineer` / `fullstack-engineer` / `technical-architect`）。
-   - Agent 绑定模型匹配检测（provider/model/apiKeyRef）。
+   - Agent 绑定模型匹配检测（provider/model/apiKeyRef，受 `OPENCODE_MODEL_BINDING_CHECK_ENABLED` 控制，默认关闭）。
    - `agent + 周期` 配额检测，超限转审批。
+7. 增加 OpenCode Endpoint 与认证策略：
+   - 执行地址优先读取 `agent.config.execution.endpoint`，其次读取 `agent.config.execution.endpointRef`，最后回退 `OPENCODE_SERVER_URL`。
+   - 新增 `agent.config.execution.auth_enable`（boolean，默认 `false`）。
+   - 仅当 `auth_enable=true` 时读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth（username=`opencode`）；否则不带用户名/密码。
 
 交付物：
 

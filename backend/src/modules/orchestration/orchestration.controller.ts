@@ -159,7 +159,7 @@ export class OrchestrationController {
     @Headers('x-user-signature') internalSignature?: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
-    return this.orchestrationService.replanPlan(planId, dto);
+    return this.orchestrationService.replanPlanAsync(planId, dto);
   }
 
   @Post('tasks/:id/reassign')

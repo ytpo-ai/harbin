@@ -19,6 +19,7 @@ export interface OpenCodeCreateSessionInput {
     providerID: string;
     modelID: string;
   };
+  runtime?: OpenCodeRuntimeOptions;
 }
 
 export interface OpenCodePromptInput {
@@ -28,6 +29,13 @@ export interface OpenCodePromptInput {
     providerID: string;
     modelID: string;
   };
+  runtime?: OpenCodeRuntimeOptions;
+}
+
+export interface OpenCodeRuntimeOptions {
+  baseUrl?: string;
+  authEnable?: boolean;
+  requestTimeoutMs?: number;
 }
 
 export interface OpenCodeExecutionStartInput {
@@ -39,6 +47,7 @@ export interface OpenCodeExecutionStartInput {
     providerID: string;
     modelID: string;
   };
+  runtime?: OpenCodeRuntimeOptions;
 }
 
 export interface OpenCodeExecutionStartResult {

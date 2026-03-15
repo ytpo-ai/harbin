@@ -14,12 +14,14 @@ import {
 type SystemSeedName =
   | 'meeting-monitor'
   | 'engineering-statistics'
+  | 'cto-daily-requirement-triage'
   | 'memo-event-flush'
   | 'memo-full-aggregation';
 
 const SYSTEM_SEED_ORDER: SystemSeedName[] = [
   'meeting-monitor',
   'engineering-statistics',
+  'cto-daily-requirement-triage',
   'memo-event-flush',
   'memo-full-aggregation',
 ];
@@ -28,6 +30,8 @@ const systemMeetingMonitorScheduleName = 'system-meeting-monitor';
 const systemMeetingMonitorPlanKey = 'system-meeting-monitor';
 const systemEngineeringStatisticsScheduleName = 'system-engineering-statistics';
 const systemEngineeringStatisticsPlanKey = 'system-engineering-statistics';
+const systemCtoDailyRequirementTriageScheduleName = 'system-cto-daily-requirement-triage';
+const systemCtoDailyRequirementTriagePlanKey = 'system-cto-daily-requirement-triage';
 const systemMemoEventFlushScheduleName = 'system-memo-event-flush';
 const systemMemoEventFlushPlanKey = 'system-memo-event-flush';
 const systemMemoFullAggregationScheduleName = 'system-memo-full-aggregation';
@@ -52,6 +56,11 @@ export async function seedSystemSchedules(
     }
     if (seed === 'engineering-statistics') {
       const schedule = await ensureEngineeringStatisticsSchedule(scheduleModel, planModel);
+      if (schedule) created.push(schedule);
+      continue;
+    }
+    if (seed === 'cto-daily-requirement-triage') {
+      const schedule = await ensureCtoDailyRequirementTriageSchedule(scheduleModel, planModel);
       if (schedule) created.push(schedule);
       continue;
     }
@@ -291,6 +300,82 @@ async function ensureMemoEventFlushSchedule(
   }).save();
 }
 
+async function ensureCtoDailyRequirementTriageSchedule(
+  scheduleModel: Model<OrchestrationScheduleDocument>,
+  planModel: Model<OrchestrationPlanDocument>,
+): Promise<OrchestrationScheduleDocument | null> {
+  const plan = await ensureSystemPlan(planModel, {
+    systemKey: systemCtoDailyRequirementTriagePlanKey,
+    linkedScheduleName: systemCtoDailyRequirementTriageScheduleName,
+    title: 'CTO 每日需求整理与分发计划',
+    sourcePrompt: '系统内置计划：每日 10:00 由 CTO 整理需求并分发给研发 Agent。',
+    plannerAgentId: 'executive-lead',
+  });
+  const planId = getEntityId(plan as unknown as Record<string, unknown>);
+  const existing = await scheduleModel.findOne({ name: systemCtoDailyRequirementTriageScheduleName }).exec();
+
+  const cronExpression = '0 10 * * *';
+  const timezone = 'Asia/Shanghai';
+  const targetAgentId = 'executive-lead';
+  const input = buildCtoDailyRequirementTriageInput();
+
+  if (existing) {
+    await scheduleModel
+      .updateOne(
+        { _id: getEntityId(existing as unknown as Record<string, unknown>) },
+        {
+          $set: {
+            planId,
+            schedule: {
+              type: 'cron',
+              expression: cronExpression,
+              timezone,
+            },
+            target: {
+              executorType: 'agent',
+              executorId: targetAgentId,
+              executorName: 'CTO Agent',
+            },
+            input,
+          },
+        },
+      )
+      .exec();
+    return scheduleModel.findOne({ _id: getEntityId(existing as unknown as Record<string, unknown>) }).exec();
+  }
+
+  return new scheduleModel({
+    name: systemCtoDailyRequirementTriageScheduleName,
+    description: '系统内置：CTO 每日整理项目需求并分发给研发 Agent',
+    planId,
+    schedule: {
+      type: 'cron',
+      expression: cronExpression,
+      timezone,
+    },
+    target: {
+      executorType: 'agent',
+      executorId: targetAgentId,
+      executorName: 'CTO Agent',
+    },
+    input,
+    enabled: true,
+    status: 'idle',
+    nextRunAt: computeNextRunAt({
+      type: 'cron',
+      expression: cronExpression,
+      timezone,
+    }),
+    stats: {
+      totalRuns: 0,
+      successRuns: 0,
+      failedRuns: 0,
+      skippedRuns: 0,
+    },
+    createdBy: 'system',
+  }).save();
+}
+
 async function ensureMemoFullAggregationSchedule(
   scheduleModel: Model<OrchestrationScheduleDocument>,
   planModel: Model<OrchestrationPlanDocument>,
@@ -370,6 +455,7 @@ async function ensureSystemPlan(
     linkedScheduleName: string;
     title: string;
     sourcePrompt: string;
+    plannerAgentId?: string;
   },
 ): Promise<OrchestrationPlanDocument> {
   const plan = await planModel
@@ -381,7 +467,7 @@ async function ensureSystemPlan(
           sourcePrompt: options.sourcePrompt,
           status: 'planned',
           strategy: {
-            plannerAgentId: 'meeting-assistant',
+            plannerAgentId: options.plannerAgentId || 'meeting-assistant',
             mode: 'hybrid',
           },
           createdBy: 'system',
@@ -407,6 +493,25 @@ async function ensureSystemPlan(
     throw new Error(`Failed to ensure system plan: ${options.systemKey}`);
   }
   return plan;
+}
+
+function buildCtoDailyRequirementTriageInput(): { prompt: string; payload: Record<string, unknown> } {
+  return {
+    prompt: [
+      '你是 CTO Agent，请执行每日研发需求治理例行任务。',
+      '步骤1：通过 requirement MCP 工具读取 todo/blocked 需求并按优先级整理当日待办。',
+      '步骤2：为可执行需求补充分配负责人，必要时更新到 assigned。',
+      '步骤3：对需要启动开发的需求创建或更新编排计划，并分发给研发 Agent（fullstack-engineer/devops-engineer/technical-architect）。',
+      '步骤4：输出结构化日报，包含需求总数、分发结果、阻塞项和下一步建议。',
+      '若需求信息不足，请先通过 requirement.comment 记录澄清问题，再暂缓分发。',
+    ].join('\n'),
+    payload: {
+      workflow: 'cto_daily_requirement_triage',
+      triggeredBy: 'system-schedule',
+      runAt: '10:00',
+      timezone: 'Asia/Shanghai',
+    },
+  };
 }
 
 function buildMeetingMonitorInput(): { prompt: string; payload: Record<string, unknown> } {

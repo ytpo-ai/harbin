@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { basename } from 'path';
@@ -41,27 +41,38 @@ export class EiManagementService {
     return String(project?.worktree || project?.path || project?.cwd || '').trim();
   }
 
-  private getAgentOpenCodeEndpoint(agentConfig: unknown): string | undefined {
+  private resolveAgentOpenCodeRuntime(agentConfig: unknown): {
+    endpoint?: string;
+    endpointRef?: string;
+    authEnable: boolean;
+  } {
     if (!agentConfig || typeof agentConfig !== 'object' || Array.isArray(agentConfig)) {
-      return undefined;
+      return { authEnable: false };
     }
 
     const execution = (agentConfig as Record<string, unknown>).execution;
     if (!execution || typeof execution !== 'object' || Array.isArray(execution)) {
-      return undefined;
+      return { authEnable: false };
     }
 
     const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
     if (provider !== 'opencode') {
-      return undefined;
+      return { authEnable: false };
     }
 
-    const endpointRef = (execution as Record<string, unknown>).endpointRef;
-    if (typeof endpointRef !== 'string' || !endpointRef.trim()) {
-      return undefined;
-    }
+    const endpointRaw = (execution as Record<string, unknown>).endpoint;
+    const endpoint = typeof endpointRaw === 'string' && endpointRaw.trim() ? endpointRaw.trim() : undefined;
 
-    return endpointRef.trim();
+    const endpointRefRaw = (execution as Record<string, unknown>).endpointRef;
+    const endpointRef = typeof endpointRefRaw === 'string' && endpointRefRaw.trim() ? endpointRefRaw.trim() : undefined;
+
+    const authEnable = (execution as Record<string, unknown>).auth_enable === true;
+
+    return {
+      endpoint,
+      endpointRef,
+      authEnable,
+    };
   }
 
   private resolveSessionModelFromAgent(agent: any): { providerID: string; modelID: string } | undefined {
@@ -85,6 +96,121 @@ export class EiManagementService {
       return '/';
     }
     return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+
+  private isDuplicateKeyError(error: unknown): boolean {
+    const maybe = error as { code?: number } | null;
+    return Boolean(maybe && maybe.code === 11000);
+  }
+
+  private async collectOpencodeEndpointCandidates(directory?: string): Promise<string[]> {
+    const query: Record<string, any> = { sourceType: RdProjectSourceType.OPENCODE };
+    if (directory) {
+      query.opencodeProjectPath = directory;
+    }
+
+    const rows = await this.rdProjectModel.find(query).select('opencodeEndpointRef').lean().exec();
+    const seen = new Set<string>();
+    const endpoints: string[] = [];
+    for (const row of rows) {
+      const endpoint = String((row as any)?.opencodeEndpointRef || '').trim();
+      if (!endpoint || seen.has(endpoint)) {
+        continue;
+      }
+      seen.add(endpoint);
+      endpoints.push(endpoint);
+    }
+    return endpoints;
+  }
+
+  private buildAgentRuntimeCandidates(agentConfig: unknown): Array<{ endpoint?: string; authEnable: boolean }> {
+    const runtime = this.resolveAgentOpenCodeRuntime(agentConfig);
+    const endpoint = runtime.endpoint?.trim() || runtime.endpointRef?.trim() || undefined;
+    if (!endpoint) {
+      return [];
+    }
+
+    return [{ endpoint, authEnable: runtime.authEnable }];
+  }
+
+  private async resolveSessionEndpointCandidates(
+    sessionId: string,
+    projectPath?: string,
+  ): Promise<Array<{ endpoint?: string; authEnable: boolean }>> {
+    const normalizedSessionId = String(sessionId || '').trim();
+    const normalizedProjectPath = String(projectPath || '').trim();
+    const candidates: Array<{ endpoint?: string; authEnable: boolean }> = [];
+    const seen = new Set<string>();
+
+    const pushCandidate = (endpoint?: string, authEnable?: boolean) => {
+      const normalizedEndpoint = String(endpoint || '').trim() || undefined;
+      const normalizedAuth = authEnable === true;
+      const key = `${normalizedEndpoint || '__default__'}::${normalizedAuth ? '1' : '0'}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      candidates.push({ endpoint: normalizedEndpoint, authEnable: normalizedAuth });
+    };
+
+    const findProjectBySession = async (): Promise<any | null> => {
+      if (!normalizedSessionId) {
+        return null;
+      }
+
+      const bySession = await this.rdProjectModel
+        .findOne({ sourceType: RdProjectSourceType.OPENCODE, opencodeSessionId: normalizedSessionId })
+        .sort({ updatedAt: -1 })
+        .select('opencodeEndpointRef syncedFromAgentId')
+        .lean()
+        .exec();
+      if (bySession) {
+        return bySession;
+      }
+
+      return this.rdProjectModel
+        .findOne({ sourceType: RdProjectSourceType.OPENCODE, 'metadata.opencodeImport.sessions.id': normalizedSessionId })
+        .sort({ updatedAt: -1 })
+        .select('opencodeEndpointRef syncedFromAgentId')
+        .lean()
+        .exec();
+    };
+
+    const [projectBySession, projectByPath] = await Promise.all([
+      findProjectBySession(),
+      normalizedProjectPath
+        ? this.rdProjectModel
+            .findOne({ sourceType: RdProjectSourceType.OPENCODE, opencodeProjectPath: normalizedProjectPath })
+            .sort({ updatedAt: -1 })
+            .select('opencodeEndpointRef syncedFromAgentId')
+            .lean()
+            .exec()
+        : Promise.resolve(null),
+    ]);
+
+    const project = projectBySession || projectByPath;
+
+    if (project?.syncedFromAgentId) {
+      const agent = await this.agentClientService.getAgent(String(project.syncedFromAgentId).trim());
+      this.buildAgentRuntimeCandidates(agent?.config).forEach((item) => pushCandidate(item.endpoint, item.authEnable));
+    }
+
+    const mappedEndpoint = String((project as any)?.opencodeEndpointRef || '').trim();
+    if (mappedEndpoint) {
+      pushCandidate(mappedEndpoint, false);
+      pushCandidate(mappedEndpoint, true);
+    }
+
+    const persistedEndpoints = await this.collectOpencodeEndpointCandidates(normalizedProjectPath || undefined);
+    for (const endpoint of persistedEndpoints) {
+      pushCandidate(endpoint, false);
+      pushCandidate(endpoint, true);
+    }
+
+    pushCandidate(undefined, false);
+    pushCandidate(undefined, true);
+
+    return candidates;
   }
 
   private looksLikeGithubProvider(provider: string): boolean {
@@ -341,7 +467,9 @@ export class EiManagementService {
     const importResult = await this.importOpencodeProject({
       projectId: payload.projectId,
       projectPath: payload.projectPath,
+      endpoint: payload.endpoint,
       endpointRef: payload.endpointRef,
+      auth_enable: payload.auth_enable,
       agentId: payload.agentId,
       name: payload.name,
     });
@@ -671,27 +799,95 @@ export class EiManagementService {
     return this.opencodeService.getCurrentContext();
   }
 
-  async listOpencodeProjects(): Promise<any[]> {
-    return this.opencodeService.listProjects();
+  async listOpencodeProjects(options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean }): Promise<any[]> {
+    const endpoint = options?.endpoint?.trim() || options?.endpointRef?.trim() || undefined;
+    const authEnable = options?.authEnable;
+
+    if (authEnable !== undefined) {
+      return this.opencodeService.listProjects(endpoint, { authEnable });
+    }
+
+    const unauthenticated = await this.opencodeService.listProjects(endpoint, { authEnable: false });
+    if (unauthenticated.length > 0) {
+      return unauthenticated;
+    }
+    return this.opencodeService.listProjects(endpoint, { authEnable: true });
   }
 
-  async listOpencodeSessions(directory?: string): Promise<any[]> {
-    if (directory?.trim()) {
-      return this.opencodeService.listSessionsByProject(directory.trim());
+  async listOpencodeSessions(
+    directory?: string,
+    options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean },
+  ): Promise<any[]> {
+    const normalizedDirectory = directory?.trim() || undefined;
+    let endpoint = options?.endpoint?.trim() || options?.endpointRef?.trim() || undefined;
+    if (!endpoint && normalizedDirectory) {
+      const mappedProject = await this.rdProjectModel
+        .findOne({ sourceType: RdProjectSourceType.OPENCODE, opencodeProjectPath: normalizedDirectory })
+        .sort({ updatedAt: -1 })
+        .select('opencodeEndpointRef')
+        .lean()
+        .exec();
+      const mappedEndpoint = String((mappedProject as any)?.opencodeEndpointRef || '').trim();
+      if (mappedEndpoint) {
+        endpoint = mappedEndpoint;
+      }
     }
-    return this.opencodeService.listSessions();
+
+    const authCandidates = options?.authEnable !== undefined ? [options.authEnable] : [false, true];
+    for (const authEnable of authCandidates) {
+      if (normalizedDirectory) {
+        const byProject = await this.opencodeService.listSessionsByProject(normalizedDirectory, endpoint, { authEnable });
+        if (byProject.length > 0) {
+          return byProject;
+        }
+        continue;
+      }
+
+      const allSessions = await this.opencodeService.listSessions(endpoint, { authEnable });
+      if (allSessions.length > 0) {
+        return allSessions;
+      }
+    }
+
+    return [];
   }
 
   async getOpencodeSession(sessionId: string): Promise<any> {
-    const session = await this.opencodeService.getSession(sessionId);
-    if (!session) {
-      throw new NotFoundException('OpenCode session not found');
+    const candidates = await this.resolveSessionEndpointCandidates(sessionId);
+    for (const candidate of candidates) {
+      const session = await this.opencodeService.getSession(sessionId, candidate.endpoint, {
+        authEnable: candidate.authEnable,
+      });
+      if (session) {
+        return session;
+      }
     }
-    return session;
+
+    throw new NotFoundException('OpenCode session not found');
   }
 
   async getOpencodeSessionMessages(sessionId: string): Promise<any[]> {
-    return this.opencodeService.getSessionHistory(sessionId);
+    const candidates = await this.resolveSessionEndpointCandidates(sessionId);
+
+    for (const candidate of candidates) {
+      const session = await this.opencodeService.getSession(sessionId, candidate.endpoint, {
+        authEnable: candidate.authEnable,
+      });
+      if (!session) {
+        continue;
+      }
+
+      try {
+        return await this.opencodeService.getSessionHistory(sessionId, {
+          baseUrl: candidate.endpoint,
+          authEnable: candidate.authEnable,
+        });
+      } catch (_error) {
+        return [];
+      }
+    }
+
+    throw new NotFoundException('OpenCode session not found');
   }
 
   async createStandaloneOpencodeSession(payload: {
@@ -702,10 +898,15 @@ export class EiManagementService {
     model?: { providerID: string; modelID: string };
   }): Promise<any> {
     let resolvedModel = payload.model;
+    let runtimeEndpoint: string | undefined;
+    let runtimeAuthEnable: boolean | undefined;
 
     if (!resolvedModel && payload.agentId?.trim()) {
       const agent = await this.agentClientService.getAgent(payload.agentId.trim());
       resolvedModel = this.resolveSessionModelFromAgent(agent);
+      const runtime = this.resolveAgentOpenCodeRuntime(agent?.config);
+      runtimeEndpoint = runtime.endpoint?.trim() || runtime.endpointRef?.trim() || undefined;
+      runtimeAuthEnable = runtime.authEnable;
     }
 
     try {
@@ -714,6 +915,8 @@ export class EiManagementService {
         title: payload.title,
         config: payload.config,
         model: resolvedModel,
+        baseUrl: runtimeEndpoint,
+        authEnable: runtimeAuthEnable,
       });
     } catch (error: any) {
       const message = error instanceof Error ? error.message : String(error || 'Failed to create OpenCode session');
@@ -728,21 +931,73 @@ export class EiManagementService {
     sessionId: string;
     prompt: string;
     model?: { providerID: string; modelID: string };
+    endpoint?: string;
+    endpointRef?: string;
+    authEnable?: boolean;
   }): Promise<any> {
-    try {
-      return await this.opencodeService.promptSession(payload.sessionId, payload.prompt, payload.model);
-    } catch (error: any) {
-      const message = error instanceof Error ? error.message : String(error || 'Failed to prompt OpenCode session');
-      if (message.includes('OpenCode 不支持当前 Agent 模型')) {
-        throw new BadRequestException(message);
-      }
-      throw error;
+    const sessionId = String(payload?.sessionId || '').trim();
+    const prompt = String(payload?.prompt || '').trim();
+
+    if (!sessionId) {
+      throw new BadRequestException('sessionId is required');
     }
+    if (!prompt) {
+      throw new BadRequestException('prompt is required');
+    }
+
+    const preferredEndpoint = String(payload.endpoint || payload.endpointRef || '').trim() || undefined;
+    const preferredAuthEnable = payload.authEnable;
+    const candidates = preferredEndpoint
+      ? [
+          {
+            endpoint: preferredEndpoint,
+            authEnable: preferredAuthEnable === true,
+          },
+        ]
+      : await this.resolveSessionEndpointCandidates(sessionId);
+    let lastError: any = null;
+
+    for (const candidate of candidates) {
+      try {
+        return await this.opencodeService.promptSession(sessionId, prompt, payload.model, {
+          baseUrl: candidate.endpoint,
+          authEnable: candidate.authEnable,
+        });
+      } catch (error: any) {
+        lastError = error;
+        const status = Number(error?.status || error?.response?.status || 0);
+        if (status === 404) {
+          continue;
+        }
+        break;
+      }
+    }
+
+    const error = lastError;
+    const message = error instanceof Error ? error.message : String(error || 'Failed to prompt OpenCode session');
+    const status = Number(error?.status || error?.response?.status || 0);
+    if (message.includes('OpenCode 不支持当前 Agent 模型')) {
+      throw new BadRequestException(message);
+    }
+    if (status === 404) {
+      throw new NotFoundException('OpenCode session not found');
+    }
+    if (status === 400 || status === 422) {
+      throw new BadRequestException(message);
+    }
+    if (status === 401 || status === 403) {
+      throw new BadRequestException(`OpenCode authorization failed: ${message}`);
+    }
+    if (status === 502 || status === 503 || status === 504) {
+      throw new ServiceUnavailableException(`OpenCode service unavailable: ${message}`);
+    }
+    throw error;
   }
 
   async importOpencodeProject(payload: ImportOpencodeProjectDto): Promise<any> {
-    const endpointRef = payload.endpointRef?.trim() || undefined;
-    const projects = await this.opencodeService.listProjects(endpointRef);
+    const endpoint = payload.endpoint?.trim() || payload.endpointRef?.trim() || undefined;
+    const authEnable = payload.auth_enable === true;
+    const projects = await this.opencodeService.listProjects(endpoint, { authEnable });
 
     const matched = projects.find((project) => {
       const projectPath = this.getProjectPath(project);
@@ -761,23 +1016,23 @@ export class EiManagementService {
       throw new BadRequestException('Invalid OpenCode project path');
     }
 
-    const sessions = await this.opencodeService.listSessionsByProject(resolvedPath, endpointRef);
+    const sessions = await this.opencodeService.listSessionsByProject(resolvedPath, endpoint, { authEnable });
     const events = this.opencodeService.getRecentEvents(200, resolvedPath);
     const defaultName = basename(resolvedPath) || matched?.id || 'opencode-project';
     const projectName = payload.name?.trim() || defaultName;
     const syncedFromAgentId = payload.agentId?.trim() || undefined;
 
-    const existingQuery: Record<string, any> = {
+    const identityFilter: Record<string, any> = {
       $or: [
         { opencodeProjectPath: resolvedPath },
         ...(matched?.id ? [{ opencodeProjectId: matched.id }] : []),
       ],
     };
     if (syncedFromAgentId) {
-      existingQuery.syncedFromAgentId = syncedFromAgentId;
+      identityFilter.syncedFromAgentId = syncedFromAgentId;
     }
 
-    const existing = await this.rdProjectModel.findOne(existingQuery).exec();
+    const existing = await this.rdProjectModel.findOne(identityFilter).exec();
 
     const updatePayload = {
       name: projectName,
@@ -785,7 +1040,7 @@ export class EiManagementService {
       sourceType: RdProjectSourceType.OPENCODE,
       opencodeProjectId: matched?.id,
       opencodeProjectPath: resolvedPath,
-      opencodeEndpointRef: endpointRef,
+      opencodeEndpointRef: endpoint,
       opencodeSessionId: sessions?.[0]?.id || existing?.opencodeSessionId,
       createdBySync: true,
       ...(syncedFromAgentId ? { syncedFromAgentId } : {}),
@@ -800,24 +1055,38 @@ export class EiManagementService {
       },
     };
 
-    const project = existing
-      ? await this.rdProjectModel
-          .findOneAndUpdate(
-            { _id: existing._id },
-            { $set: updatePayload },
-            { new: true },
-          )
-          .exec()
-      : await new this.rdProjectModel({
-          ...updatePayload,
-        }).save();
+    let project: any;
+    try {
+      project = await this.rdProjectModel
+        .findOneAndUpdate(
+          identityFilter,
+          { $set: updatePayload },
+          { new: true, upsert: true, setDefaultsOnInsert: true },
+        )
+        .exec();
+    } catch (error) {
+      if (!this.isDuplicateKeyError(error)) {
+        throw error;
+      }
+      project = await this.rdProjectModel
+        .findOneAndUpdate(
+          identityFilter,
+          { $set: updatePayload },
+          { new: true },
+        )
+        .exec();
+      if (!project) {
+        throw error;
+      }
+    }
 
     return {
       project,
       importedSessions: sessions.length,
       importedEvents: events.length,
       syncedFromAgentId,
-      endpointRef: endpointRef || null,
+      endpointRef: endpoint || null,
+      authEnable,
     };
   }
 
@@ -839,13 +1108,22 @@ export class EiManagementService {
       : [];
     const finalScopes = requestedScopes.length > 0 ? requestedScopes : configuredScopes;
 
-    const endpointRef = this.getAgentOpenCodeEndpoint(agent.config);
+    const runtimeFromAgent = this.resolveAgentOpenCodeRuntime(agent.config);
+    const endpoint =
+      syncDto.endpoint?.trim() ||
+      runtimeFromAgent.endpoint ||
+      syncDto.endpointRef?.trim() ||
+      runtimeFromAgent.endpointRef;
+    const authEnable = syncDto.auth_enable === true || (syncDto.auth_enable === undefined && runtimeFromAgent.authEnable);
     let opencodeProjects: any[] = [];
     try {
-      opencodeProjects = await this.opencodeService.listProjects(endpointRef, { throwOnError: Boolean(endpointRef) });
+      opencodeProjects = await this.opencodeService.listProjects(endpoint, {
+        throwOnError: Boolean(endpoint),
+        authEnable,
+      });
     } catch (error: any) {
       throw new BadRequestException(
-        `Failed to query OpenCode endpoint ${endpointRef}: ${error?.message || error}`,
+        `Failed to query OpenCode endpoint ${endpoint}: ${error?.message || error}`,
       );
     }
     const candidates = opencodeProjects.filter((item) => {
@@ -884,7 +1162,8 @@ export class EiManagementService {
         projectPath: path,
         name: basename(path) || project?.id,
         agentId: normalizedAgentId,
-        endpointRef,
+        endpoint,
+        auth_enable: authEnable,
       });
 
       if (existing) {
@@ -897,7 +1176,8 @@ export class EiManagementService {
 
     return {
       agentId: normalizedAgentId,
-      endpointRef: endpointRef || null,
+      endpointRef: endpoint || null,
+      authEnable,
       scopes: finalScopes,
       stats,
       projects: syncedProjects,

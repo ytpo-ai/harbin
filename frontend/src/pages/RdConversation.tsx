@@ -112,21 +112,56 @@ const RdConversation: React.FC = () => {
     { refetchInterval: 15000, retry: false }
   );
 
+  const { data: agents = [] } = useQuery<Agent[]>(
+    'rd-agents',
+    () => agentService.getAgents(),
+    { retry: false }
+  );
+
+  const rdAgents = useMemo(
+    () =>
+      agents.filter((agent) => {
+        const config = agent.config as Record<string, any> | undefined;
+        const provider = String(config?.execution?.provider || '').toLowerCase();
+        return agent.isActive && provider === 'opencode';
+      }),
+    [agents],
+  );
+
+  const selectedAgent = useMemo(
+    () => rdAgents.find((agent) => agent.id === selectedAgentId),
+    [rdAgents, selectedAgentId],
+  );
+
+  const selectedAgentExecutionConfig = useMemo(() => {
+    const execution = (selectedAgent?.config as Record<string, any> | undefined)?.execution;
+    return {
+      endpoint: typeof execution?.endpoint === 'string' ? execution.endpoint : undefined,
+      endpointRef: typeof execution?.endpointRef === 'string' ? execution.endpointRef : undefined,
+      auth_enable: execution?.auth_enable === true,
+    };
+  }, [selectedAgent]);
+
   const { data: sessions = [], refetch: refetchSessions } = useQuery(
-    ['rd-opencode-sessions', selectedProjectPath],
-    () => rdConversationService.getOpencodeSessions(selectedProjectPath || undefined),
+    [
+      'rd-opencode-sessions',
+      selectedProjectPath,
+      selectedAgentExecutionConfig.endpoint,
+      selectedAgentExecutionConfig.endpointRef,
+      selectedAgentExecutionConfig.auth_enable,
+    ],
+    () =>
+      rdConversationService.getOpencodeSessions(selectedProjectPath || undefined, {
+        endpoint: selectedAgentExecutionConfig.endpoint,
+        endpointRef: selectedAgentExecutionConfig.endpointRef,
+        auth_enable: selectedAgentExecutionConfig.auth_enable,
+      }),
     { enabled: !!selectedProjectPath, refetchInterval: 10000, retry: false }
   );
 
   const { data: localProjects = [], refetch: refetchLocalProjects } = useQuery<RdProject[]>(
     ['rd-local-projects', selectedAgentId],
     () => rdConversationService.getProjects({ syncedFromAgentId: selectedAgentId || undefined }),
-    { retry: false }
-  );
-
-  const { data: agents = [] } = useQuery<Agent[]>(
-    'rd-agents',
-    () => agentService.getAgents(),
     { retry: false }
   );
 
@@ -172,6 +207,11 @@ const RdConversation: React.FC = () => {
               modelID: selectedAgent.model.model,
             }
           : undefined,
+        {
+          endpoint: selectedAgentExecutionConfig.endpoint,
+          endpointRef: selectedAgentExecutionConfig.endpointRef,
+          auth_enable: selectedAgentExecutionConfig.auth_enable,
+        },
       ),
     {
       onSuccess: async () => {
@@ -186,27 +226,18 @@ const RdConversation: React.FC = () => {
   );
 
   const syncAgentProjectsMutation = useMutation(
-    () => rdConversationService.syncAgentOpencodeProjects(selectedAgentId),
+    () => {
+      return rdConversationService.syncAgentOpencodeProjects(selectedAgentId, {
+        endpoint: selectedAgentExecutionConfig.endpoint,
+        endpointRef: selectedAgentExecutionConfig.endpointRef,
+        auth_enable: selectedAgentExecutionConfig.auth_enable,
+      });
+    },
     {
       onSuccess: async () => {
         await refetchLocalProjects();
       },
     }
-  );
-
-  const rdAgents = useMemo(
-    () =>
-      agents.filter((agent) => {
-        const config = agent.config as Record<string, any> | undefined;
-        const provider = String(config?.execution?.provider || '').toLowerCase();
-        return agent.isActive && provider === 'opencode';
-      }),
-    [agents],
-  );
-
-  const selectedAgent = useMemo(
-    () => rdAgents.find((agent) => agent.id === selectedAgentId),
-    [rdAgents, selectedAgentId],
   );
 
   const createSessionMutation = useMutation(
