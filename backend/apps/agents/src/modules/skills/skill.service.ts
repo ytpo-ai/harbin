@@ -5,19 +5,12 @@ import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
-import { AgentSkill, AgentSkillDocument, SkillProficiency } from '../../schemas/agent-skill.schema';
 import {
   Skill,
   SkillDocument,
   SkillSourceType,
   SkillStatus,
 } from '../../schemas/skill.schema';
-import {
-  SkillSuggestion,
-  SkillSuggestionDocument,
-  SkillSuggestionPriority,
-  SkillSuggestionStatus,
-} from '../../schemas/skill-suggestion.schema';
 import { SkillDocSyncService } from './skill-doc-sync.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
 import { RedisService } from '@libs/infra';
@@ -46,10 +39,7 @@ interface SkillReadOptions {
 }
 
 interface AssignSkillInput {
-  proficiencyLevel?: SkillProficiency;
-  assignedBy?: string;
   enabled?: boolean;
-  note?: string;
 }
 
 interface SkillListFilters {
@@ -75,8 +65,6 @@ export class SkillService {
 
   constructor(
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
-    @InjectModel(AgentSkill.name) private readonly agentSkillModel: Model<AgentSkillDocument>,
-    @InjectModel(SkillSuggestion.name) private readonly suggestionModel: Model<SkillSuggestionDocument>,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly skillDocSyncService: SkillDocSyncService,
     private readonly memoEventBus: MemoEventBusService,
@@ -309,46 +297,31 @@ export class SkillService {
     await this.invalidateEnabledSkillCacheBySkillIds([skillId]);
     await this.invalidateSkillCaches(existed as unknown as Skill);
     await this.skillModel.deleteOne({ id: skillId }).exec();
-    await this.agentSkillModel.deleteMany({ skillId }).exec();
-    await this.suggestionModel.deleteMany({ skillId }).exec();
+    await this.agentModel.updateMany({ skills: skillId }, { $pull: { skills: skillId } }).exec();
     await this.removeSkillDocSafely(existed.slug);
     await this.rebuildIndexSafely();
     return true;
   }
 
-  async assignSkillToAgent(agentId: string, skillId: string, payload?: AssignSkillInput): Promise<AgentSkill> {
+  async assignSkillToAgent(
+    agentId: string,
+    skillId: string,
+    payload?: AssignSkillInput,
+  ): Promise<{ agentId: string; skillId: string; enabled: boolean; skills: string[] }> {
     const agent = await this.findAgent(agentId);
     if (!agent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
     await this.getSkillById(skillId);
 
-    const assigned = await this.agentSkillModel
-      .findOneAndUpdate(
-        { agentId, skillId },
-        {
-          $set: {
-            proficiencyLevel: payload?.proficiencyLevel || 'beginner',
-            assignedBy: payload?.assignedBy || 'AgentSkillManager',
-            enabled: payload?.enabled ?? true,
-            note: payload?.note,
-          },
-          $setOnInsert: {
-            id: uuidv4(),
-            agentId,
-            skillId,
-          },
-        },
-        { upsert: true, new: true, setDefaultsOnInsert: true },
-      )
+    const enabled = payload?.enabled ?? true;
+    const update = enabled
+      ? { $addToSet: { skills: skillId } }
+      : { $pull: { skills: skillId } };
+    const updatedAgent = await this.agentModel
+      .findOneAndUpdate({ _id: (agent as any)._id }, update, { new: true })
       .exec();
 
-    await this.suggestionModel
-      .updateMany(
-        { agentId, skillId, status: { $in: ['pending', 'accepted'] } },
-        { status: 'applied', appliedAt: new Date(), reviewedAt: new Date() },
-      )
-      .exec();
     this.memoEventBus.emit({
       name: 'agent.skill_changed',
       agentId,
@@ -356,57 +329,62 @@ export class SkillService {
     });
     await this.invalidateEnabledSkillCacheByAgentIds([agentId]);
     await this.rebuildIndexSafely();
-    return assigned;
+    return {
+      agentId,
+      skillId,
+      enabled,
+      skills: this.uniqueStrings((updatedAgent?.skills || []).map((item: any) => String(item || '').trim())),
+    };
   }
 
-  async getAgentSkills(agentId: string): Promise<Array<{ assignment: AgentSkill; skill: Skill | null }>> {
-    await this.ensureAgentExists(agentId);
-    const assignments = await this.agentSkillModel.find({ agentId, enabled: true }).sort({ updatedAt: -1 }).exec();
-    const skills = await this.skillModel.find({ id: { $in: assignments.map((item) => item.skillId) } }).exec();
-    const skillMap = new Map<string, Skill>();
-    for (const skill of skills) {
-      skillMap.set(skill.id, skill as unknown as Skill);
+  async getAgentSkills(agentId: string): Promise<Array<{ skillId: string; skill: Skill | null }>> {
+    const agent = await this.findAgent(agentId);
+    if (!agent) {
+      throw new NotFoundException(`Agent not found: ${agentId}`);
     }
+    const skillIds = this.uniqueStrings((agent.skills || []).map((item) => String(item || '').trim()));
+    if (!skillIds.length) return [];
 
-    return assignments.map((assignment) => ({
-      assignment,
-      skill: skillMap.get(assignment.skillId) || null,
+    const skills = await this.skillModel.find({ id: { $in: skillIds } }).exec();
+    const skillMap = new Map(skills.map((item) => [item.id, item as unknown as Skill]));
+    return skillIds.map((skillId) => ({
+      skillId,
+      skill: skillMap.get(skillId) || null,
     }));
   }
 
-  async getSkillAgents(skillId: string): Promise<Array<{ assignment: AgentSkill; agent: { id: string; name: string } | null }>> {
-    const assignments = await this.agentSkillModel.find({ skillId }).sort({ updatedAt: -1 }).exec();
-    const agentIds = [...new Set(assignments.map((a) => a.agentId))];
-    const agentDocs = await this.agentModel.find({ id: { $in: agentIds } }).exec();
-    const agentMap = new Map<string, { id: string; name: string }>();
-    for (const agent of agentDocs) {
-      agentMap.set(agent.id, { id: agent.id, name: agent.name });
-    }
+  async getSkillAgents(skillId: string): Promise<Array<{ id: string; name: string }>> {
+    const agents = await this.agentModel
+      .find({ skills: skillId })
+      .sort({ updatedAt: -1 })
+      .select({ id: 1, name: 1 })
+      .lean()
+      .exec();
 
-    return assignments.map((assignment) => ({
-      assignment,
-      agent: agentMap.get(assignment.agentId) || null,
+    return (agents || []).map((agent: any) => ({
+      id: String(agent.id || agent._id || ''),
+      name: String(agent.name || ''),
     }));
   }
 
   async getAllSkillAgents(): Promise<Record<string, Array<{ agentId: string; agentName: string }>>> {
-    const assignments = await this.agentSkillModel.find({}).exec();
-    const agentIds = [...new Set(assignments.map((a) => a.agentId))];
-    const agentDocs = await this.agentModel.find({ id: { $in: agentIds } }).exec();
-    const agentMap = new Map<string, string>();
-    for (const agent of agentDocs) {
-      agentMap.set(agent.id, agent.name);
-    }
-
+    const agents = await this.agentModel
+      .find({ skills: { $exists: true, $ne: [] } })
+      .select({ id: 1, name: 1, skills: 1 })
+      .lean()
+      .exec();
     const result: Record<string, Array<{ agentId: string; agentName: string }>> = {};
-    for (const assignment of assignments) {
-      if (!result[assignment.skillId]) {
-        result[assignment.skillId] = [];
+    for (const agent of agents as any[]) {
+      const agentId = String(agent.id || agent._id || '').trim();
+      if (!agentId) continue;
+      const agentName = String(agent.name || agentId);
+      const skillIds = this.uniqueStrings((agent.skills || []).map((item: any) => String(item || '').trim()));
+      for (const skillId of skillIds) {
+        if (!result[skillId]) {
+          result[skillId] = [];
+        }
+        result[skillId].push({ agentId, agentName });
       }
-      result[assignment.skillId].push({
-        agentId: assignment.agentId,
-        agentName: agentMap.get(assignment.agentId) || assignment.agentId,
-      });
     }
     return result;
   }
@@ -515,186 +493,16 @@ export class SkillService {
     };
   }
 
-  async suggestSkillsForAgent(payload: {
-    agentId: string;
-    contextTags?: string[];
-    topK?: number;
-    persist?: boolean;
-  }): Promise<Array<{ skill: Skill; score: number; reason: string; priority: SkillSuggestionPriority }>> {
-    const agent = await this.findAgent(payload.agentId);
-    if (!agent) {
-      throw new NotFoundException(`Agent not found: ${payload.agentId}`);
-    }
-
-    const topK = Math.max(1, Math.min(Number(payload.topK || 5), 20));
-    const contextTags = this.uniqueStrings(payload.contextTags || []);
-    const capabilityTags = this.uniqueStrings([...(agent.capabilities || []), ...(agent.tools || []), ...contextTags]);
-
-    const assigned = await this.agentSkillModel.find({ agentId: payload.agentId, enabled: true }).exec();
-    const assignedSkillIds = new Set(assigned.map((item) => item.skillId));
-
-    const candidateSkills = await this.skillModel
-      .find({ id: { $nin: Array.from(assignedSkillIds) }, status: { $in: ['active', 'experimental'] } })
-      .exec();
-
-    const ranked = candidateSkills
-      .map((skill) => {
-        const score = this.computeSuggestionScore(skill as unknown as Skill, capabilityTags);
-        return {
-          skill: skill as unknown as Skill,
-          score,
-          reason: this.buildSuggestionReason(skill as unknown as Skill, capabilityTags),
-          priority: this.priorityFromScore(score),
-        };
-      })
-      .sort((a, b) => b.score - a.score)
-      .slice(0, topK);
-
-    if (payload.persist !== false) {
-      for (const item of ranked) {
-        const existed = await this.suggestionModel
-          .findOne({
-            agentId: payload.agentId,
-            skillId: item.skill.id,
-            status: { $in: ['pending', 'accepted'] },
-          })
-          .exec();
-
-        const suggestion = existed
-          ? await this.suggestionModel
-              .findOneAndUpdate(
-                { id: existed.id },
-                {
-                  reason: item.reason,
-                  score: item.score,
-                  priority: item.priority,
-                  context: { contextTags, capabilityTags },
-                  updatedAt: new Date(),
-                },
-                { new: true },
-              )
-              .exec()
-          : await this.suggestionModel.create({
-              id: uuidv4(),
-              agentId: payload.agentId,
-              skillId: item.skill.id,
-              reason: item.reason,
-              priority: item.priority,
-              status: 'pending',
-              score: item.score,
-              suggestedBy: 'AgentSkillManager',
-              context: { contextTags, capabilityTags },
-            });
-
-        await this.syncSuggestionDocsSafely(suggestion as unknown as SkillSuggestion, item.skill);
-      }
-      await this.rebuildIndexSafely();
-    }
-
-    return ranked;
-  }
-
-  async getSuggestionsForAgent(agentId: string, status?: SkillSuggestionStatus): Promise<SkillSuggestion[]> {
-    await this.ensureAgentExists(agentId);
-    const query: Record<string, any> = { agentId };
-    if (status) query.status = status;
-    return this.suggestionModel.find(query).sort({ createdAt: -1 }).exec();
-  }
-
-  async reviewSuggestion(suggestionId: string, payload: { status: SkillSuggestionStatus; note?: string }): Promise<SkillSuggestion> {
-    if (!['pending', 'accepted', 'rejected', 'applied'].includes(payload.status)) {
-      throw new BadRequestException('Invalid suggestion status');
-    }
-
-    const suggestion = await this.suggestionModel.findOne({ id: suggestionId }).exec();
-    if (!suggestion) {
-      throw new NotFoundException(`Suggestion not found: ${suggestionId}`);
-    }
-
-    suggestion.status = payload.status;
-    suggestion.reviewedAt = new Date();
-    if (payload.note?.trim()) {
-      suggestion.context = {
-        ...(suggestion.context || {}),
-        reviewNote: payload.note.trim(),
-      };
-    }
-
-    if (payload.status === 'applied') {
-      suggestion.appliedAt = new Date();
-      await this.assignSkillToAgent(suggestion.agentId, suggestion.skillId, {
-        assignedBy: 'AgentSkillManager',
-        proficiencyLevel: 'beginner',
-      });
-    }
-
-    const saved = await suggestion.save();
-    const skill = await this.skillModel.findOne({ id: saved.skillId }).exec();
-    await this.syncSuggestionDocsSafely(saved as unknown as SkillSuggestion, (skill as unknown as Skill) || undefined);
-    await this.rebuildIndexSafely();
-    return saved;
-  }
-
-  async rebuildSkillDocs(): Promise<{ skills: number; suggestions: number }> {
+  async rebuildSkillDocs(): Promise<{ skills: number }> {
     const skills = await this.skillModel.find().sort({ name: 1 }).exec();
-    const suggestions = await this.suggestionModel.find().sort({ createdAt: -1 }).exec();
 
     for (const skill of skills) {
       await this.syncSkillDocsSafely(skill as unknown as Skill);
     }
-
-    const skillMap = new Map<string, Skill>();
-    for (const skill of skills) {
-      skillMap.set(skill.id, skill as unknown as Skill);
-    }
-
-    for (const suggestion of suggestions) {
-      await this.syncSuggestionDocsSafely(
-        suggestion as unknown as SkillSuggestion,
-        skillMap.get(suggestion.skillId),
-      );
-    }
     await this.rebuildIndexSafely();
     return {
       skills: skills.length,
-      suggestions: suggestions.length,
     };
-  }
-
-  private priorityFromScore(score: number): SkillSuggestionPriority {
-    if (score >= 85) return 'critical';
-    if (score >= 70) return 'high';
-    if (score >= 50) return 'medium';
-    return 'low';
-  }
-
-  private computeSuggestionScore(skill: Skill, capabilityTags: string[]): number {
-    const haystack = this.uniqueStrings([
-      skill.name,
-      skill.description,
-      skill.category,
-      ...(skill.tags || []),
-    ]).join(' ').toLowerCase();
-    const overlapCount = capabilityTags.filter((tag) => haystack.includes(tag.toLowerCase())).length;
-    const base = skill.confidenceScore ?? 50;
-    const overlapBoost = overlapCount * 8;
-    const activeBoost = skill.status === 'active' ? 8 : 0;
-    return this.normalizeScore(base + overlapBoost + activeBoost);
-  }
-
-  private buildSuggestionReason(skill: Skill, capabilityTags: string[]): string {
-    const matched = capabilityTags.filter((tag) => {
-      const lower = tag.toLowerCase();
-      return (
-        skill.name.toLowerCase().includes(lower) ||
-        skill.description.toLowerCase().includes(lower) ||
-        (skill.tags || []).some((skillTag) => skillTag.toLowerCase().includes(lower))
-      );
-    });
-    if (!matched.length) {
-      return `Skill ${skill.name} has a strong generic fit and can enhance this agent's capability breadth.`;
-    }
-    return `Skill ${skill.name} matches current context tags: ${matched.slice(0, 5).join(', ')}.`;
   }
 
   private normalizeSlug(value: string): string {
@@ -837,12 +645,14 @@ export class SkillService {
   private async invalidateEnabledSkillCacheBySkillIds(skillIds: string[]): Promise<void> {
     const normalizedSkillIds = this.uniqueStrings(skillIds || []);
     if (!normalizedSkillIds.length) return;
-    const assignments = await this.agentSkillModel
-      .find({ skillId: { $in: normalizedSkillIds } })
-      .select({ agentId: 1 })
+    const agents = await this.agentModel
+      .find({ skills: { $in: normalizedSkillIds } })
+      .select({ id: 1, _id: 1 })
       .lean()
       .exec();
-    const agentIds = assignments.map((item: any) => String(item.agentId || '').trim()).filter(Boolean);
+    const agentIds = (agents || [])
+      .map((item: any) => String(item.id || item._id || '').trim())
+      .filter(Boolean);
     await this.invalidateEnabledSkillCacheByAgentIds(agentIds);
   }
 
@@ -887,13 +697,6 @@ export class SkillService {
     return this.agentModel.findOne({ id: agentId }).exec();
   }
 
-  private async ensureAgentExists(agentId: string): Promise<void> {
-    const agent = await this.findAgent(agentId);
-    if (!agent) {
-      throw new NotFoundException(`Agent not found: ${agentId}`);
-    }
-  }
-
   private async syncSkillDocsSafely(skill: Skill): Promise<void> {
     try {
       await this.skillDocSyncService.syncSkill(skill);
@@ -910,21 +713,10 @@ export class SkillService {
     }
   }
 
-  private async syncSuggestionDocsSafely(suggestion: SkillSuggestion, skill?: Skill): Promise<void> {
-    try {
-      await this.skillDocSyncService.syncSuggestion(suggestion, skill);
-    } catch (error) {
-      this.skillDocSyncService.reportSyncError(error, `Failed to sync suggestion doc ${suggestion.id}`);
-    }
-  }
-
   private async rebuildIndexSafely(): Promise<void> {
     try {
-      const [skills, suggestions] = await Promise.all([
-        this.skillModel.find().sort({ name: 1 }).exec(),
-        this.suggestionModel.find().sort({ createdAt: -1 }).exec(),
-      ]);
-      await this.skillDocSyncService.rebuildIndex(skills as unknown as Skill[], suggestions as unknown as SkillSuggestion[]);
+      const skills = await this.skillModel.find().sort({ name: 1 }).exec();
+      await this.skillDocSyncService.rebuildIndex(skills as unknown as Skill[]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Skill index rebuild skipped: ${message}`);

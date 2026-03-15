@@ -69,6 +69,9 @@ export class Agent {
   tools: string[]; // 可使用的工具ID列表
 
   @Prop({ type: [String], default: [] })
+  skills?: string[]; // 已启用的技能ID列表
+
+  @Prop({ type: [String], default: [] })
   permissions: string[]; // 权限ID列表
 
   @Prop(raw({

@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
-import { AgentSkill, AgentSkillSchema } from '../../schemas/agent-skill.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { Skill, SkillSchema } from '../../schemas/skill.schema';
 import { AgentService } from './agent.service';
@@ -23,7 +22,6 @@ import { AgentMcpProfileService } from './agent-mcp-profile.service';
     MongooseModule.forFeature([
       { name: Agent.name, schema: AgentSchema },
       { name: AgentProfile.name, schema: AgentProfileSchema },
-      { name: AgentSkill.name, schema: AgentSkillSchema },
       { name: AgentRun.name, schema: AgentRunSchema },
       { name: Skill.name, schema: SkillSchema },
     ]),

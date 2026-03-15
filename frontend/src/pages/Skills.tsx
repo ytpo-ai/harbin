@@ -4,11 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import {
   ArrowPathIcon,
   BookOpenIcon,
-  CheckCircleIcon,
   EllipsisVerticalIcon,
   EyeIcon,
-  ExclamationTriangleIcon,
-  LightBulbIcon,
   PlusIcon,
   TrashIcon,
   WrenchScrewdriverIcon,
@@ -16,7 +13,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { skillService, SkillPagedResponse } from '../services/skillService';
 import { agentService } from '../services/agentService';
-import { Skill, SkillSuggestion } from '../types';
+import { Skill } from '../types';
 
 const statusOptions: Array<Skill['status']> = ['active', 'experimental', 'deprecated', 'disabled'];
 const sourceOptions: Array<Skill['sourceType']> = ['manual', 'github', 'web', 'internal'];
@@ -97,9 +94,6 @@ const Skills: React.FC = () => {
     const size = Number(searchParams.get('pageSize') || '10');
     return [10, 20, 50].includes(size) ? size : 10;
   });
-  const [suggestionAgentId, setSuggestionAgentId] = useState('');
-  const [contextTagsInput, setContextTagsInput] = useState('');
-  const [highlightedSkillId, setHighlightedSkillId] = useState('');
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'detail' | 'binding'>('detail');
   const [bindingAgentId, setBindingAgentId] = useState('');
@@ -110,7 +104,6 @@ const Skills: React.FC = () => {
   const operationMenuButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const { data: agents = [] } = useQuery('agents', agentService.getAgents);
-  const { data: allSkills = [] } = useQuery('skills-all', () => skillService.getSkills());
   const { data: allSkillAgents = {} } = useQuery('all-skill-agents', () => skillService.getAllSkillAgents());
   const { data: skillsPagedRaw, isLoading: skillsLoading, isError: skillsError, error: skillsErrorDetail } = useQuery(
     ['skills-paged', statusFilter, categoryFilter, debouncedSearchKeyword, currentPage, pageSize],
@@ -146,18 +139,10 @@ const Skills: React.FC = () => {
 
   const categoryOptions = useMemo(() => [...skillCategoryOptions], []);
 
-  const skillNameMap = useMemo(() => new Map(allSkills.map((skill) => [skill.id, skill.name])), [allSkills]);
-
   const { data: activeSkillDetail, isFetching: activeSkillLoading } = useQuery(
     ['skill-detail', activeSkillId],
     () => skillService.getSkillById(activeSkillId as string, { includeContent: true }),
     { enabled: !!activeSkillId },
-  );
-
-  const { data: suggestions = [] } = useQuery(
-    ['skill-suggestions', suggestionAgentId],
-    () => skillService.getSuggestionsForAgent(suggestionAgentId),
-    { enabled: !!suggestionAgentId },
   );
 
   useEffect(() => {
@@ -269,7 +254,6 @@ const Skills: React.FC = () => {
       queryClient.invalidateQueries('skills-paged');
       queryClient.invalidateQueries('skills-all');
       if (bindingAgentId) queryClient.invalidateQueries(['agent-skills', bindingAgentId]);
-      if (suggestionAgentId) queryClient.invalidateQueries(['skill-suggestions', suggestionAgentId]);
       if (activeSkillId) setActiveSkillId(null);
     },
   });
@@ -291,39 +275,11 @@ const Skills: React.FC = () => {
     },
   });
 
-  const suggestMutation = useMutation(skillService.suggestSkillsForAgent, {
-    onSuccess: () => {
-      if (suggestionAgentId) queryClient.invalidateQueries(['skill-suggestions', suggestionAgentId]);
-    },
-  });
-
-  const reviewMutation = useMutation(
-    ({ id, status }: { id: string; status: SkillSuggestion['status'] }) => skillService.reviewSuggestion(id, { status }),
-    {
-      onSuccess: () => {
-        if (suggestionAgentId) queryClient.invalidateQueries(['skill-suggestions', suggestionAgentId]);
-      },
-    },
-  );
-
   const rebuildDocsMutation = useMutation(skillService.rebuildDocs, {
     onSuccess: (result) => {
-      alert(`文档重建完成：skills=${result.skills}, suggestions=${result.suggestions}`);
+      alert(`文档重建完成：skills=${result.skills}`);
     },
   });
-
-  const locateSkill = (skillId: string) => {
-    const target = allSkills.find((skill) => skill.id === skillId);
-    if (!target) return;
-    setStatusFilter('');
-    setCategoryFilter(target.category || '');
-    setSearchKeyword(target.name);
-    setCurrentPage(1);
-    setHighlightedSkillId(skillId);
-    window.setTimeout(() => setHighlightedSkillId(''), 2200);
-    const section = document.getElementById('skills-library-section');
-    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
 
   const resetSkillFilters = () => {
     setStatusFilter('');
@@ -333,25 +289,12 @@ const Skills: React.FC = () => {
     setPageSize(10);
   };
 
-  const handleSuggest = () => {
-    if (!suggestionAgentId) {
-      alert('请先选择一个 Agent');
-      return;
-    }
-    suggestMutation.mutate({
-      agentId: suggestionAgentId,
-      contextTags: contextTagsInput.split(',').map((tag) => tag.trim()).filter(Boolean),
-      topK: 5,
-      persist: true,
-    });
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Skills 管理</h1>
-          <p className="mt-1 text-sm text-gray-500">管理技能库、Agent 绑定与 AgentSkillManager 建议流</p>
+          <p className="mt-1 text-sm text-gray-500">管理技能库、Agent 绑定与文档重建</p>
         </div>
         <div className="relative flex items-center gap-2">
           <button
@@ -487,7 +430,7 @@ const Skills: React.FC = () => {
             {skills.map((skill) => (
               <div
                 key={skill.id}
-                className={`rounded-md border p-3 ${highlightedSkillId === skill.id ? 'border-primary-500 bg-primary-50/50' : 'border-gray-200'}`}
+                className="rounded-md border border-gray-200 p-3"
               >
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2 rounded-md bg-gray-50 px-2 py-1.5">
@@ -558,64 +501,6 @@ const Skills: React.FC = () => {
         )}
       </section>
 
-      <section className="rounded-lg bg-white p-5 shadow">
-        <h2 className="mb-4 text-lg font-medium text-gray-900">Skill 建议与审核</h2>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <select
-            value={suggestionAgentId}
-            onChange={(e) => setSuggestionAgentId(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-          >
-            <option value="">选择 Agent</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>{agent.name}</option>
-            ))}
-          </select>
-          <input
-            value={contextTagsInput}
-            onChange={(e) => setContextTagsInput(e.target.value)}
-            className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-            placeholder="context tags: security,typescript"
-          />
-        </div>
-        <button
-          onClick={handleSuggest}
-          disabled={suggestMutation.isLoading}
-          className="mt-3 inline-flex items-center rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-        >
-          <LightBulbIcon className="mr-2 h-4 w-4" />
-          {suggestMutation.isLoading ? '生成中...' : '生成建议'}
-        </button>
-
-        <div className="mt-4 space-y-2">
-          {suggestionAgentId && suggestions.length === 0 && (
-            <p className="text-sm text-gray-500">暂无建议记录，点击“生成建议”开始分析。</p>
-          )}
-          {suggestions.map((suggestion) => (
-            <div key={suggestion.id} className="rounded-md border border-gray-200 p-3">
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  onClick={() => locateSkill(suggestion.skillId)}
-                  className="text-left text-sm font-medium text-primary-700 hover:underline"
-                >
-                  {skillNameMap.get(suggestion.skillId) || `skillId=${suggestion.skillId}`}
-                </button>
-                <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">{suggestion.priority} · {suggestion.status}</span>
-              </div>
-              <p className="mt-1 text-xs text-gray-600">{suggestion.reason}</p>
-              <p className="mt-1 text-xs text-gray-500">score={suggestion.score}</p>
-              {suggestion.status === 'pending' && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button onClick={() => reviewMutation.mutate({ id: suggestion.id, status: 'accepted' })} className="inline-flex items-center rounded border border-green-300 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100"><CheckCircleIcon className="mr-1 h-3.5 w-3.5" /> 接受</button>
-                  <button onClick={() => reviewMutation.mutate({ id: suggestion.id, status: 'rejected' })} className="inline-flex items-center rounded border border-red-300 bg-red-50 px-2 py-1 text-xs text-red-700 hover:bg-red-100"><ExclamationTriangleIcon className="mr-1 h-3.5 w-3.5" /> 拒绝</button>
-                  <button onClick={() => reviewMutation.mutate({ id: suggestion.id, status: 'applied' })} className="inline-flex items-center rounded border border-primary-300 bg-primary-50 px-2 py-1 text-xs text-primary-700 hover:bg-primary-100">立即应用</button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
       <SkillDetailDrawer
         open={!!activeSkillId}
         skill={activeSkillDetail || null}
@@ -671,7 +556,6 @@ const SkillDetailDrawer: React.FC<{
   onAssign: (payload: {
     agentId: string;
     skillId: string;
-    assignedBy?: string;
   }) => void;
 }> = ({
   open,
@@ -907,7 +791,6 @@ const SkillDetailDrawer: React.FC<{
                   onAssign({
                     agentId: bindingAgentId,
                     skillId: skill.id,
-                    assignedBy: 'AgentSkillManager',
                   });
                 }}
                 disabled={bindingSaving}

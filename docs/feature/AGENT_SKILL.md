@@ -5,8 +5,7 @@
 ### 1.1 目标
 
 - 提供统一的技能库（Skill Library）管理能力，支持创建、更新、下线与检索。
-- 提供 Agent 与 Skill 的绑定能力，支持熟练度管理与启停控制。
-- 提供技能建议（Skill Suggestion）能力，支持推荐、审核、应用闭环。
+- 提供 Agent 与 Skill 的绑定能力，基于 `Agent.skills` 维护启用技能列表。
 - 采用“元数据先行 + 正文按需加载”的渐进式加载策略，降低列表与路由链路负载。
 
 ### 1.2 数据结构
@@ -16,8 +15,7 @@
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
 | `skills` | `skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version 等） |
-| `agentskills` | `agent-skill.schema.ts` | Agent 与 Skill 绑定关系（agentId + skillId 唯一） |
-| `skillsuggestions` | `skill-suggestion.schema.ts` | 技能增强建议（reason/priority/status/score/context） |
+| `agents` | `agent.schema.ts` | Agent 主表中的 `skills: string[]` 维护已启用 skillId |
 
 `skills` 的状态语义：
 
@@ -35,8 +33,7 @@
 ### 1.3 核心逻辑
 
 1. Skill 管理：通过 `/skills` 完成技能增删改查与筛选。
-2. 绑定管理：通过 `/skills/assign` 维护 Agent 与 Skill 关系，保障 `(agentId, skillId)` 幂等。
-3. 建议闭环：根据 Agent 上下文生成建议，支持审核并应用到绑定关系。
+2. 绑定管理：通过 `/skills/assign` 维护 `Agent.skills`，支持绑定与解绑（`enabled=false`）。
 4. 渐进式加载：
    - 列表/路由阶段只读取 skill 元数据（name/description/metadata/status/tags）。
    - 执行阶段才读取 `content` 注入上下文（如 `<skill_content>`）。
@@ -87,14 +84,13 @@
 | 文件 | 功能 |
 |------|------|
 | `skill.schema.ts` | Skill 主表结构与索引 |
-| `agent-skill.schema.ts` | Agent-Skill 关系结构与唯一索引 |
-| `skill-suggestion.schema.ts` | Skill 建议结构与状态流转字段 |
+| `agent.schema.ts`（shared） | Agent 主表中的 `skills` 字段 |
 
 ### 前端 Skills 页面 (frontend/src/)
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Skills.tsx` | Skills 列表筛选、折叠操作面板（检索/文档重建）、详情抽屉编辑、Agent 绑定 Tab、建议审核 |
+| `pages/Skills.tsx` | Skills 列表筛选、折叠操作面板（检索/文档重建）、详情抽屉编辑、Agent 绑定 Tab |
 | `services/skillService.ts` | Skills 相关 API 封装 |
 
 前端交互约定（2026-03 更新）：

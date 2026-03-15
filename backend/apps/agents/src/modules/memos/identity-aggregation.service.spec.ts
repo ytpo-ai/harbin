@@ -13,9 +13,6 @@ describe('IdentityAggregationService', () => {
     const toolModel = {
       find: jest.fn(),
     };
-    const agentSkillModel = {
-      find: jest.fn(),
-    };
     const skillModel = {
       find: jest.fn(),
     };
@@ -28,7 +25,6 @@ describe('IdentityAggregationService', () => {
     const service = new IdentityAggregationService(
       agentModel as any,
       toolModel as any,
-      agentSkillModel as any,
       skillModel as any,
       memoModel as any,
     );
@@ -37,14 +33,13 @@ describe('IdentityAggregationService', () => {
       service,
       agentModel,
       toolModel,
-      agentSkillModel,
       skillModel,
       memoModel,
     };
   };
 
   it('renders agent name and tool descriptions in capability section', async () => {
-    const { service, agentModel, toolModel, agentSkillModel, memoModel } = createService();
+    const { service, agentModel, toolModel, memoModel } = createService();
 
     agentModel.findById.mockReturnValue(
       queryResult({
@@ -55,6 +50,7 @@ describe('IdentityAggregationService', () => {
         description: '技术负责人',
         systemPrompt: '负责技术架构与工程交付',
         tools: ['internal.web.search'],
+        skills: [],
         capabilities: ['analysis'],
         personality: { workEthic: 90, creativity: 85, leadership: 88, teamwork: 92 },
         learningAbility: 86,
@@ -62,7 +58,6 @@ describe('IdentityAggregationService', () => {
         createdAt: new Date('2026-03-01T00:00:00.000Z'),
       }),
     );
-    agentSkillModel.find.mockReturnValue(queryResult([]));
     toolModel.find.mockReturnValue(
       queryResult([
         {
@@ -84,7 +79,7 @@ describe('IdentityAggregationService', () => {
   });
 
   it('falls back when tool metadata is missing in registry', async () => {
-    const { service, agentModel, toolModel, agentSkillModel, memoModel } = createService();
+    const { service, agentModel, toolModel, memoModel } = createService();
 
     agentModel.findById.mockReturnValue(
       queryResult({
@@ -95,12 +90,12 @@ describe('IdentityAggregationService', () => {
         description: '',
         systemPrompt: '',
         tools: ['unknown.tool'],
+        skills: [],
         capabilities: [],
         isActive: true,
         createdAt: new Date('2026-03-02T00:00:00.000Z'),
       }),
     );
-    agentSkillModel.find.mockReturnValue(queryResult([]));
     toolModel.find.mockReturnValue(queryResult([]));
     memoModel.findOne.mockReturnValue(queryResult(null));
     memoModel.create.mockResolvedValue({ id: 'memo-new' });

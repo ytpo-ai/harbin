@@ -1,7 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { SkillService } from './skill.service';
 import { SkillSourceType, SkillStatus } from '../../schemas/skill.schema';
-import { SkillSuggestionStatus } from '../../schemas/skill-suggestion.schema';
 
 @Controller('skills')
 export class SkillController {
@@ -92,17 +91,11 @@ export class SkillController {
     body: {
       agentId: string;
       skillId: string;
-      proficiencyLevel?: 'beginner' | 'intermediate' | 'advanced' | 'expert';
-      assignedBy?: string;
       enabled?: boolean;
-      note?: string;
     },
   ) {
     return this.skillService.assignSkillToAgent(body.agentId, body.skillId, {
-      proficiencyLevel: body.proficiencyLevel,
-      assignedBy: body.assignedBy,
       enabled: body.enabled,
-      note: body.note,
     });
   }
 
@@ -111,32 +104,6 @@ export class SkillController {
     @Body() body: { query: string; maxResults?: number; sourceType?: SkillSourceType; dryRun?: boolean },
   ) {
     return this.skillService.discoverSkillsFromInternet(body);
-  }
-
-  @Post('manager/suggest/:agentId')
-  async suggestByAgentSkillManager(
-    @Param('agentId') agentId: string,
-    @Body() body?: { contextTags?: string[]; topK?: number; persist?: boolean },
-  ) {
-    return this.skillService.suggestSkillsForAgent({
-      agentId,
-      contextTags: body?.contextTags || [],
-      topK: body?.topK,
-      persist: body?.persist,
-    });
-  }
-
-  @Get('suggestions/agents/:agentId')
-  async getSuggestionsForAgent(@Param('agentId') agentId: string, @Query('status') status?: SkillSuggestionStatus) {
-    return this.skillService.getSuggestionsForAgent(agentId, status);
-  }
-
-  @Put('suggestions/:id')
-  async reviewSuggestion(
-    @Param('id') id: string,
-    @Body() body: { status: SkillSuggestionStatus; note?: string },
-  ) {
-    return this.skillService.reviewSuggestion(id, body);
   }
 
   @Post('docs/rebuild')

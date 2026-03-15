@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
-import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 
@@ -52,7 +51,6 @@ export class IdentityAggregationService {
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
-    @InjectModel(AgentSkill.name) private readonly agentSkillModel: Model<AgentSkillDocument>,
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
   ) {}
@@ -75,7 +73,7 @@ export class IdentityAggregationService {
 
       await this.updateIdentityMemo(agentId, content, {
         lastAggregatedAt: new Date().toISOString(),
-        sources: ['agent', 'agent_skills', 'tool_registry'],
+        sources: ['agent', 'agent.skills', 'tool_registry'],
       });
 
       this.logger.log(`Identity aggregation completed for agent: ${agentId}`);
@@ -120,22 +118,22 @@ export class IdentityAggregationService {
   }
 
   private async getAgentSkills(agentId: string): Promise<SkillInfo[]> {
-    const assignments = await this.agentSkillModel.find({ agentId, enabled: true }).exec();
-    if (assignments.length === 0) {
+    const agent = await this.getAgentDocument(agentId);
+    const skillIds = Array.from(new Set((agent?.skills || []).map((item) => String(item || '').trim()).filter(Boolean)));
+    if (!skillIds.length) {
       return [];
     }
 
-    const skillIds = assignments.map((a) => a.skillId);
     const skills = await this.skillModel.find({ id: { $in: skillIds } }).exec();
-    const skillMap = new Map(skills.map((s) => [s.id, s]));
+    const skillMap = new Map(skills.map((item) => [item.id, item]));
 
-    return assignments.map((assignment) => {
-      const skill = skillMap.get(assignment.skillId);
+    return skillIds.map((skillId) => {
+      const skill = skillMap.get(skillId);
       return {
-        name: skill?.name || assignment.skillId,
-        proficiencyLevel: assignment.proficiencyLevel || 'beginner',
-        assignedBy: assignment.assignedBy || 'system',
-        assignedAt: (assignment as any).createdAt || new Date(),
+        name: skill?.name || skillId,
+        proficiencyLevel: 'beginner',
+        assignedBy: 'system',
+        assignedAt: new Date(),
         category: skill?.category || 'general',
       };
     });
@@ -271,7 +269,7 @@ export class IdentityAggregationService {
     lines.push('## 元信息', '');
     lines.push(`- version: ${Date.now()}`);
     lines.push(`- lastAggregatedAt: ${new Date().toISOString()}`);
-    lines.push(`- sources: [agent, agent_skills, tool_registry]`);
+    lines.push(`- sources: [agent, agent.skills, tool_registry]`);
 
     return lines.join('\n');
   }

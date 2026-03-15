@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
-import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 import { ModelService } from '../models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
@@ -176,7 +175,6 @@ export class AgentService {
   constructor(
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
-    @InjectModel(AgentSkill.name) private agentSkillModel: Model<AgentSkillDocument>,
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
     private readonly apiKeyService: ApiKeyService,
@@ -232,6 +230,7 @@ export class AgentService {
       capabilities: agentData.capabilities || [],
       config: this.normalizeAgentConfig(agentData.config),
       tools: agentData.tools || [],
+      skills: this.normalizeSkillIds(agentData.skills || []),
       permissions: agentData.permissions || [],
       personality: agentData.personality || {
         workEthic: 80,
@@ -248,6 +247,7 @@ export class AgentService {
       normalizedData.tools || [],
       'create',
     );
+    await this.ensureSkillsExist(normalizedData.skills || []);
     normalizedData.permissions = await this.inheritRoleProfilePermissions(normalizedData.roleId, normalizedData.permissions || []);
 
     try {
@@ -359,6 +359,13 @@ export class AgentService {
           ? existingAgent.permissions
           : [];
       normalizedUpdates.permissions = await this.inheritRoleProfilePermissions(targetRoleId, basePermissions);
+    }
+
+    const hasSkillsField = Object.prototype.hasOwnProperty.call(updates, 'skills');
+    if (hasSkillsField) {
+      const normalizedSkills = this.normalizeSkillIds(Array.isArray(updates.skills) ? updates.skills : []);
+      await this.ensureSkillsExist(normalizedSkills);
+      normalizedUpdates.skills = normalizedSkills;
     }
 
     const updated = await this.agentModel.findByIdAndUpdate(
@@ -1276,34 +1283,22 @@ export class AgentService {
       }
     }
 
-    const assignments = await this.agentSkillModel
-      .find({ agentId: { $in: candidateAgentIds }, enabled: true })
-      .exec();
-    if (!assignments.length) {
+    const agentSkillIds = this.uniqueStrings((agent.skills || []).filter(Boolean));
+    if (!agentSkillIds.length) {
       return [];
     }
 
-    const skillIds = this.uniqueStrings(assignments.map((item) => item.skillId));
     const skills = await this.skillModel
-      .find({ id: { $in: skillIds }, status: { $in: ['active', 'experimental'] } })
+      .find({ id: { $in: agentSkillIds }, status: { $in: ['active', 'experimental'] } })
       .exec();
-    const skillMap = new Map<string, Skill>();
-    for (const skill of skills) {
-      skillMap.set(skill.id, skill as unknown as Skill);
-    }
 
-    const contexts: EnabledAgentSkillContext[] = [];
-    for (const assignment of assignments) {
-      const skill = skillMap.get(assignment.skillId);
-      if (!skill) continue;
-      contexts.push({
-        id: skill.id,
-        name: skill.name,
-        description: skill.description,
-        tags: skill.tags || [],
-        proficiencyLevel: assignment.proficiencyLevel,
-      });
-    }
+    const contexts: EnabledAgentSkillContext[] = skills.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      tags: skill.tags || [],
+      proficiencyLevel: 'beginner',
+    }));
 
     const payload = JSON.stringify({
       agentIds: candidateAgentIds,
@@ -1707,6 +1702,22 @@ export class AgentService {
 
   private normalizeToolIds(toolIds: string[]): string[] {
     return this.uniqueStrings(toolIds || []).map((toolId) => this.normalizeToolId(toolId));
+  }
+
+  private normalizeSkillIds(skillIds: string[]): string[] {
+    return this.uniqueStrings(skillIds || []);
+  }
+
+  private async ensureSkillsExist(skillIds: string[]): Promise<void> {
+    const normalizedSkillIds = this.normalizeSkillIds(skillIds);
+    if (!normalizedSkillIds.length) return;
+
+    const skills = await this.skillModel.find({ id: { $in: normalizedSkillIds } }).select({ id: 1 }).lean().exec();
+    const existingIds = new Set((skills || []).map((item: any) => String(item.id || '').trim()).filter(Boolean));
+    const missing = normalizedSkillIds.filter((skillId) => !existingIds.has(skillId));
+    if (missing.length) {
+      throw new BadRequestException(`Invalid skills: ${missing.join(', ')}`);
+    }
   }
 
   private extractToolResultPayload(execution: any): any {

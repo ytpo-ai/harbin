@@ -92,12 +92,9 @@ Profile 字段说明：
 - `POST /skills`：创建技能
 - `PUT /skills/:id`：更新技能
 - `DELETE /skills/:id`：删除技能
-- `POST /skills/assign`：为 Agent 绑定技能
+- `POST /skills/assign`：为 Agent 绑定/解绑技能（写入 `Agent.skills`）
 - `GET /skills/agents/:agentId`：查询 Agent 技能清单
 - `POST /skills/manager/discover`：联网检索并入库技能
-- `POST /skills/manager/suggest/:agentId`：生成技能建议
-- `GET /skills/suggestions/agents/:agentId`：查询建议记录
-- `PUT /skills/suggestions/:id`：审核建议
 - `POST /skills/docs/rebuild`：重建技能文档（默认 `docs/skills`，配置 `AGENT_DATA_ROOT` 后写入 `$AGENT_DATA_ROOT/skills`）
 - `GET /skills/:id/content`：按需读取技能正文（渐进式加载）
 

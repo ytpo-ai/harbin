@@ -13,6 +13,7 @@ export interface Agent {
 	systemPrompt: string;
 	isActive: boolean;
 	tools: string[]; // 可使用的工具ID列表
+	skills?: string[]; // 已启用技能ID列表
 	permissions: string[]; // 权限ID列表
 	personality: {
 		workEthic: number; // 工作伦理 0-100
@@ -128,34 +129,6 @@ export interface Skill {
 	usageCount?: number;
 	discoveredBy?: string;
 	metadata?: any;
-	createdAt?: Date;
-	updatedAt?: Date;
-}
-
-export interface AgentSkill {
-	id: string;
-	agentId: string;
-	skillId: string;
-	proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
-	enabled: boolean;
-	assignedBy?: string;
-	note?: string;
-	createdAt?: Date;
-	updatedAt?: Date;
-}
-
-export interface SkillSuggestion {
-	id: string;
-	agentId: string;
-	skillId: string;
-	reason: string;
-	priority: 'low' | 'medium' | 'high' | 'critical';
-	status: 'pending' | 'accepted' | 'rejected' | 'applied';
-	score: number;
-	suggestedBy?: string;
-	context?: any;
-	reviewedAt?: Date;
-	appliedAt?: Date;
 	createdAt?: Date;
 	updatedAt?: Date;
 }

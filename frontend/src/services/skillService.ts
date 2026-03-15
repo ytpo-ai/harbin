@@ -1,5 +1,5 @@
 import api from './api';
-import { AgentSkill, Skill, SkillSuggestion } from '../types';
+import { Skill } from '../types';
 
 export interface SkillPagedResponse {
   items: Skill[];
@@ -53,21 +53,18 @@ export const skillService = {
   async assignSkillToAgent(payload: {
     agentId: string;
     skillId: string;
-    proficiencyLevel?: 'beginner' | 'intermediate' | 'advanced' | 'expert';
-    assignedBy?: string;
     enabled?: boolean;
-    note?: string;
-  }): Promise<AgentSkill> {
+  }): Promise<{ agentId: string; skillId: string; enabled: boolean; skills: string[] }> {
     const response = await api.post('/skills/assign', payload);
     return response.data;
   },
 
-  async getAgentSkills(agentId: string): Promise<Array<{ assignment: AgentSkill; skill: Skill | null }>> {
+  async getAgentSkills(agentId: string): Promise<Array<{ skillId: string; skill: Skill | null }>> {
     const response = await api.get(`/skills/agents/${agentId}`);
     return response.data;
   },
 
-  async getSkillAgents(skillId: string): Promise<Array<{ assignment: AgentSkill; agent: { id: string; name: string } | null }>> {
+  async getSkillAgents(skillId: string): Promise<Array<{ id: string; name: string }>> {
     const response = await api.get(`/skills/skills/${skillId}/agents`);
     return response.data;
   },
@@ -87,31 +84,7 @@ export const skillService = {
     return response.data;
   },
 
-  async suggestSkillsForAgent(payload: {
-    agentId: string;
-    contextTags?: string[];
-    topK?: number;
-    persist?: boolean;
-  }): Promise<Array<{ skill: Skill; score: number; reason: string; priority: 'low' | 'medium' | 'high' | 'critical' }>> {
-    const response = await api.post(`/skills/manager/suggest/${payload.agentId}`, {
-      contextTags: payload.contextTags || [],
-      topK: payload.topK,
-      persist: payload.persist,
-    });
-    return response.data;
-  },
-
-  async getSuggestionsForAgent(agentId: string, status?: SkillSuggestion['status']): Promise<SkillSuggestion[]> {
-    const response = await api.get(`/skills/suggestions/agents/${agentId}`, { params: { status } });
-    return response.data;
-  },
-
-  async reviewSuggestion(suggestionId: string, payload: { status: SkillSuggestion['status']; note?: string }): Promise<SkillSuggestion> {
-    const response = await api.put(`/skills/suggestions/${suggestionId}`, payload);
-    return response.data;
-  },
-
-  async rebuildDocs(): Promise<{ skills: number; suggestions: number }> {
+  async rebuildDocs(): Promise<{ skills: number }> {
     const response = await api.post('/skills/docs/rebuild');
     return response.data;
   },

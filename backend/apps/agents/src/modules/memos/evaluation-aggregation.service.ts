@@ -5,8 +5,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { AgentPart, AgentPartDocument } from '../../schemas/agent-part.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
+import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { OrchestrationTask, OrchestrationTaskDocument } from '../../../../../src/shared/schemas/orchestration-task.schema';
-import { AgentSkill, AgentSkillDocument } from '../../schemas/agent-skill.schema';
 import { Skill, SkillDocument } from '../../schemas/skill.schema';
 
 interface EvaluationData {
@@ -77,8 +77,8 @@ export class EvaluationAggregationService {
     @InjectModel(AgentRun.name) private readonly runModel: Model<AgentRunDocument>,
     @InjectModel(AgentPart.name) private readonly partModel: Model<AgentPartDocument>,
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
+    @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     @InjectModel(OrchestrationTask.name) private readonly taskModel: Model<OrchestrationTaskDocument>,
-    @InjectModel(AgentSkill.name) private readonly agentSkillModel: Model<AgentSkillDocument>,
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
   ) {}
 
@@ -188,23 +188,23 @@ export class EvaluationAggregationService {
   }
 
   private async getSkillStatistics(agentId: string): Promise<SkillStatistics> {
-    const assignments = await this.agentSkillModel.find({ agentId, enabled: true }).exec();
-    if (assignments.length === 0) {
+    const agent = await this.getAgentDocument(agentId);
+    const skillIds = Array.from(new Set((agent?.skills || []).map((item) => String(item || '').trim()).filter(Boolean)));
+    if (!skillIds.length) {
       return {
         skills: [],
         proficiencyCount: { expert: 0, advanced: 0, intermediate: 0, beginner: 0 },
       };
     }
 
-    const skillIds = assignments.map((a) => a.skillId);
     const skills = await this.skillModel.find({ id: { $in: skillIds } }).exec();
-    const skillMap = new Map(skills.map((s) => [s.id, s]));
+    const skillMap = new Map(skills.map((item) => [item.id, item]));
 
-    const skillsWithCategory: SkillInfo[] = assignments.map((assignment) => {
-      const skill = skillMap.get(assignment.skillId);
+    const skillsWithCategory: SkillInfo[] = skillIds.map((skillId) => {
+      const skill = skillMap.get(skillId);
       return {
-        name: skill?.name || assignment.skillId,
-        proficiencyLevel: assignment.proficiencyLevel || 'beginner',
+        name: skill?.name || skillId,
+        proficiencyLevel: 'beginner',
         category: skill?.category || 'general',
       };
     });
@@ -399,7 +399,7 @@ export class EvaluationAggregationService {
     lines.push(`- version: ${Date.now()}`);
     lines.push(`- lastAggregatedAt: ${new Date().toISOString()}`);
     lines.push(`- period: ${periodStr}`);
-    lines.push(`- sources: [orchestration_tasks, agent_skills, agent_runs, agent_parts]`);
+    lines.push(`- sources: [orchestration_tasks, agent.skills, agent_runs, agent_parts]`);
 
     return lines.join('\n');
   }
@@ -409,6 +409,14 @@ export class EvaluationAggregationService {
     const normalized = text.replace(/\s+/g, ' ').trim();
     if (normalized.length <= maxLength) return normalized;
     return normalized.slice(0, Math.max(0, maxLength - 3)) + '...';
+  }
+
+  private async getAgentDocument(agentId: string): Promise<AgentDocument | null> {
+    let agent = await this.agentModel.findById(agentId).exec();
+    if (!agent) {
+      agent = await this.agentModel.findOne({ id: agentId }).exec();
+    }
+    return agent;
   }
 
   private async updateEvaluationMemo(
