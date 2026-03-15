@@ -41,6 +41,7 @@
 
 - Orchestration 发布任务生命周期事件，供订阅者消费。
 - 协作直发（如 CTO -> coder-lzw、coder-lzw -> CTO）由 Agent 侧流程通过 `direct` 接口发起。
+- Message Center 页面通过 `GET /message-center/inner-messages` 提供内部消息只读展示入口（按当前登录员工绑定 Agent 过滤）。
 
 ## 2. 相关文档
 
@@ -76,3 +77,5 @@
 | `backend/src/shared/schemas/inner-message.schema.ts` | Inner Message 模型 |
 | `backend/src/shared/schemas/inner-message-subscription.schema.ts` | 订阅模型 |
 | `backend/src/modules/orchestration/orchestration.service.ts` | 分配/完成事件的消息联动 |
+| `backend/src/modules/message-center/message-center.controller.ts` | 内部消息分页查询转发接口 |
+| `frontend/src/pages/MessageCenter.tsx` | 内部消息 Tab 展示 |

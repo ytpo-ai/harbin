@@ -13,6 +13,12 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { MessageCenterService } from './message-center.service';
 import { SystemMessageType } from '../../shared/schemas/system-message.schema';
+import { InnerMessageMode, InnerMessageStatus } from '../../shared/schemas/inner-message.schema';
+
+interface CurrentEmployeeContext {
+  employeeId: string;
+  receiverAgentId?: string;
+}
 
 @Controller('message-center')
 export class MessageCenterController {
@@ -21,18 +27,23 @@ export class MessageCenterController {
     private readonly messageCenterService: MessageCenterService,
   ) {}
 
-  private async resolveCurrentEmployeeId(authHeader: string): Promise<string> {
+  private async resolveCurrentEmployee(authHeader: string): Promise<CurrentEmployeeContext> {
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new UnauthorizedException('无效的Token');
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const employee = await this.authService.getEmployeeFromToken(token);
+    const employee = await this.authService.verifyToken(token);
     if (!employee?.id) {
       throw new UnauthorizedException('Token已过期或无效');
     }
 
-    return employee.id;
+    const receiverAgentId = String(employee.exclusiveAssistantAgentId || employee.aiProxyAgentId || '').trim() || undefined;
+
+    return {
+      employeeId: employee.id,
+      receiverAgentId,
+    };
   }
 
   @Get('messages')
@@ -43,7 +54,7 @@ export class MessageCenterController {
     @Query('isRead') isRead?: string,
     @Query('type') type?: SystemMessageType,
   ) {
-    const receiverId = await this.resolveCurrentEmployeeId(authHeader);
+    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
 
     const normalizedIsRead =
       typeof isRead === 'string'
@@ -57,7 +68,7 @@ export class MessageCenterController {
     return {
       success: true,
       data: await this.messageCenterService.listMessages({
-        receiverId,
+        receiverId: currentEmployee.employeeId,
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
         isRead: normalizedIsRead,
@@ -66,10 +77,34 @@ export class MessageCenterController {
     };
   }
 
+  @Get('inner-messages')
+  async listInnerMessages(
+    @Headers('authorization') authHeader: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('mode') mode?: InnerMessageMode,
+    @Query('status') status?: InnerMessageStatus,
+    @Query('eventType') eventType?: string,
+  ) {
+    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
+
+    return {
+      success: true,
+      data: await this.messageCenterService.listInnerMessages({
+        receiverAgentId: currentEmployee.receiverAgentId || '',
+        page: page ? Number(page) : undefined,
+        pageSize: pageSize ? Number(pageSize) : undefined,
+        mode,
+        status,
+        eventType,
+      }),
+    };
+  }
+
   @Get('unread-count')
   async getUnreadCount(@Headers('authorization') authHeader: string) {
-    const receiverId = await this.resolveCurrentEmployeeId(authHeader);
-    const unreadCount = await this.messageCenterService.getUnreadCount(receiverId);
+    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
+    const unreadCount = await this.messageCenterService.getUnreadCount(currentEmployee.employeeId);
 
     return {
       success: true,
@@ -88,21 +123,21 @@ export class MessageCenterController {
       throw new BadRequestException('messageId is required');
     }
 
-    const receiverId = await this.resolveCurrentEmployeeId(authHeader);
+    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
 
     return {
       success: true,
-      data: await this.messageCenterService.markAsRead(receiverId, messageId),
+      data: await this.messageCenterService.markAsRead(currentEmployee.employeeId, messageId),
     };
   }
 
   @Patch('messages/read-all')
   async markAllAsRead(@Headers('authorization') authHeader: string) {
-    const receiverId = await this.resolveCurrentEmployeeId(authHeader);
+    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
 
     return {
       success: true,
-      data: await this.messageCenterService.markAllAsRead(receiverId),
+      data: await this.messageCenterService.markAllAsRead(currentEmployee.employeeId),
     };
   }
 

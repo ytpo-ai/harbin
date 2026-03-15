@@ -77,6 +77,7 @@
 ## Message Center（`/message-center`）
 
 - `GET /message-center/messages`：查询当前登录用户消息列表（支持 `page/pageSize/isRead/type`）
+- `GET /message-center/inner-messages`：查询当前登录用户绑定 Agent 的内部消息列表（支持 `page/pageSize/status/mode/eventType`）
 - `GET /message-center/unread-count`：查询当前登录用户未读数
 - `PATCH /message-center/messages/:messageId/read`：单条消息标记已读
 - `PATCH /message-center/messages/read-all`：全部消息标记已读

@@ -7,6 +7,8 @@ export interface MessageCenterUpdatedDetail {
 }
 
 export type MessageType = 'engineering_statistics' | 'orchestration' | 'system_alert';
+export type InnerMessageMode = 'direct' | 'subscription';
+export type InnerMessageStatus = 'sent' | 'delivered' | 'processing' | 'processed' | 'failed';
 
 export interface MessageCenterItem {
   messageId: string;
@@ -28,6 +30,35 @@ export interface MessageCenterListResponse {
   pageSize: number;
   totalPages: number;
   items: MessageCenterItem[];
+  fetchedAt: string;
+}
+
+export interface InnerMessageCenterItem {
+  messageId: string;
+  mode: InnerMessageMode;
+  eventType: string;
+  senderAgentId: string;
+  receiverAgentId: string;
+  title: string;
+  content: string;
+  payload?: Record<string, any>;
+  status: InnerMessageStatus;
+  sentAt?: string;
+  deliveredAt?: string;
+  processingAt?: string;
+  processedAt?: string;
+  failedAt?: string;
+  error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InnerMessageCenterListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  items: InnerMessageCenterItem[];
   fetchedAt: string;
 }
 
@@ -60,6 +91,17 @@ class MessageCenterService {
   async getUnreadCount(): Promise<number> {
     const response = await api.get('/message-center/unread-count');
     return Number(response.data?.data?.unreadCount || 0);
+  }
+
+  async listInnerMessages(params?: {
+    page?: number;
+    pageSize?: number;
+    mode?: InnerMessageMode;
+    status?: InnerMessageStatus;
+    eventType?: string;
+  }): Promise<InnerMessageCenterListResponse> {
+    const response = await api.get('/message-center/inner-messages', { params: params || {} });
+    return response.data.data;
   }
 
   async markAsRead(messageId: string): Promise<void> {

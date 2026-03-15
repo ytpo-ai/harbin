@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SystemMessage, SystemMessageDocument, SystemMessageType } from '../../shared/schemas/system-message.schema';
+import { InnerMessage, InnerMessageDocument, InnerMessageMode, InnerMessageStatus } from '../../shared/schemas/inner-message.schema';
 import { WsMessageService } from '@libs/infra';
 
 export interface ListSystemMessagesQuery {
@@ -22,11 +23,22 @@ export interface CreateSystemMessageInput {
   status?: string;
 }
 
+export interface ListInnerMessagesQuery {
+  receiverAgentId: string;
+  page?: number;
+  pageSize?: number;
+  mode?: InnerMessageMode;
+  status?: InnerMessageStatus;
+  eventType?: string;
+}
+
 @Injectable()
 export class MessageCenterService {
   constructor(
     @InjectModel(SystemMessage.name)
     private readonly systemMessageModel: Model<SystemMessageDocument>,
+    @InjectModel(InnerMessage.name)
+    private readonly innerMessageModel: Model<InnerMessageDocument>,
     private readonly wsMessageService: WsMessageService,
   ) {}
 
@@ -73,6 +85,59 @@ export class MessageCenterService {
 
   async getUnreadCount(receiverId: string): Promise<number> {
     return this.systemMessageModel.countDocuments({ receiverId, isRead: false, status: 'active' }).exec();
+  }
+
+  async listInnerMessages(query: ListInnerMessagesQuery) {
+    if (!query.receiverAgentId?.trim()) {
+      return {
+        total: 0,
+        page: 1,
+        pageSize: Math.max(1, Math.min(Number(query.pageSize || 20), 100)),
+        totalPages: 0,
+        items: [],
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
+    const page = Math.max(1, Math.min(Number(query.page || 1), 10000));
+    const pageSize = Math.max(1, Math.min(Number(query.pageSize || 20), 100));
+    const skip = (page - 1) * pageSize;
+
+    const filter: Record<string, any> = {
+      receiverAgentId: query.receiverAgentId,
+    };
+
+    if (query.mode) {
+      filter.mode = query.mode;
+    }
+
+    if (query.status) {
+      filter.status = query.status;
+    }
+
+    if (query.eventType?.trim()) {
+      filter.eventType = query.eventType.trim();
+    }
+
+    const [total, list] = await Promise.all([
+      this.innerMessageModel.countDocuments(filter).exec(),
+      this.innerMessageModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean()
+        .exec(),
+    ]);
+
+    return {
+      total,
+      page,
+      pageSize,
+      totalPages: total === 0 ? 0 : Math.ceil(total / pageSize),
+      items: list,
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   async markAsRead(receiverId: string, messageId: string) {
