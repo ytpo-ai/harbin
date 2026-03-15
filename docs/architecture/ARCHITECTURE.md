@@ -41,7 +41,7 @@ WebSocket Service (3003) <------------- Redis Pub/Sub
 - `ws`（`backend/apps/ws`）
   - WebSocket 网关，订阅 Redis channel 并转发给前端。
   - 端口默认 `3003`，WS 路径 `/ws`（HTTP 服务器上）。
-- `engineering-intelligence`（`backend/apps/engineering-intelligence`）
+- `ei`（`backend/apps/ei`）
   - 独立承载研发智能文档分析能力。
   - 端口默认 `3004`，全局前缀 `/api`。
 
@@ -117,7 +117,7 @@ npm run start:ei -- --watch     # ei
 ## 模块状态说明
 
 - `organization` 与 `governance` 功能模块已在当前版本下线，文档中仅保留历史/迁移语义，不作为当前可用主流程能力。
-- 研发智能后端已独立为 `engineering-intelligence` 服务；前端入口保留在主前端应用内。
+- 研发智能后端已独立为 `ei` 服务；前端入口保留在主前端应用内。
 
 ## 相关文档
 

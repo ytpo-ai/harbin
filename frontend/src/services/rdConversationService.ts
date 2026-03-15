@@ -206,7 +206,7 @@ class RdConversationService {
   // ========== 任务管理 ==========
 
   async getTasks(filters?: any): Promise<RdTask[]> {
-    const response = await axios.get(`${API_URL}/rd-management/tasks`, {
+    const response = await axios.get(`${API_URL}/ei/tasks`, {
       ...this.getAuthHeaders(),
       params: filters,
     });
@@ -214,29 +214,29 @@ class RdConversationService {
   }
 
   async getTaskById(taskId: string): Promise<RdTask> {
-    const response = await axios.get(`${API_URL}/rd-management/tasks/${taskId}`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/tasks/${taskId}`, this.getAuthHeaders());
     return response.data;
   }
 
   async createTask(data: CreateRdTaskDto): Promise<RdTask> {
-    const response = await axios.post(`${API_URL}/rd-management/tasks`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/tasks`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async updateTask(taskId: string, data: UpdateRdTaskDto): Promise<RdTask> {
-    const response = await axios.put(`${API_URL}/rd-management/tasks/${taskId}`, data, this.getAuthHeaders());
+    const response = await axios.put(`${API_URL}/ei/tasks/${taskId}`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async deleteTask(taskId: string): Promise<boolean> {
-    const response = await axios.delete(`${API_URL}/rd-management/tasks/${taskId}`, this.getAuthHeaders());
+    const response = await axios.delete(`${API_URL}/ei/tasks/${taskId}`, this.getAuthHeaders());
     return response.data;
   }
 
   // ========== 项目管理 ==========
 
   async getProjects(filters?: { syncedFromAgentId?: string; sourceType?: 'local' | 'opencode' | 'github'; bindingLocalProjectId?: string }): Promise<RdProject[]> {
-    const response = await axios.get(`${API_URL}/rd-management/projects`, {
+    const response = await axios.get(`${API_URL}/ei/projects`, {
       ...this.getAuthHeaders(),
       params: filters,
     });
@@ -244,43 +244,43 @@ class RdConversationService {
   }
 
   async getProjectById(projectId: string): Promise<RdProject> {
-    const response = await axios.get(`${API_URL}/rd-management/projects/${projectId}`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/projects/${projectId}`, this.getAuthHeaders());
     return response.data;
   }
 
   async createProject(data: CreateRdProjectDto): Promise<RdProject> {
-    const response = await axios.post(`${API_URL}/rd-management/projects`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/projects`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async updateProject(projectId: string, data: UpdateRdProjectDto): Promise<RdProject> {
-    const response = await axios.put(`${API_URL}/rd-management/projects/${projectId}`, data, this.getAuthHeaders());
+    const response = await axios.put(`${API_URL}/ei/projects/${projectId}`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async deleteProject(projectId: string): Promise<boolean> {
-    const response = await axios.delete(`${API_URL}/rd-management/projects/${projectId}`, this.getAuthHeaders());
+    const response = await axios.delete(`${API_URL}/ei/projects/${projectId}`, this.getAuthHeaders());
     return response.data;
   }
 
   async createLocalProject(data: CreateLocalRdProjectDto): Promise<RdProject> {
-    const response = await axios.post(`${API_URL}/rd-management/projects/local`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/projects/local`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async bindOpencodeProject(data: BindOpencodeProjectDto): Promise<RdProject> {
-    const response = await axios.post(`${API_URL}/rd-management/projects/bind/opencode`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/projects/bind/opencode`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async bindGithubProject(data: BindGithubProjectDto): Promise<RdProject> {
-    const response = await axios.post(`${API_URL}/rd-management/projects/bind/github`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/projects/bind/github`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async unbindOpencodeProject(localProjectId: string, data: UnbindOpencodeProjectDto): Promise<RdProject> {
     const response = await axios.post(
-      `${API_URL}/rd-management/projects/${localProjectId}/unbind/opencode`,
+      `${API_URL}/ei/projects/${localProjectId}/unbind/opencode`,
       data,
       this.getAuthHeaders(),
     );
@@ -289,7 +289,7 @@ class RdConversationService {
 
   async unbindGithubProject(localProjectId: string): Promise<RdProject> {
     const response = await axios.post(
-      `${API_URL}/rd-management/projects/${localProjectId}/unbind/github`,
+      `${API_URL}/ei/projects/${localProjectId}/unbind/github`,
       {},
       this.getAuthHeaders(),
     );
@@ -300,7 +300,7 @@ class RdConversationService {
 
   async sendOpencodePrompt(taskId: string, prompt: string, projectPath?: string, model?: any): Promise<any> {
     const response = await axios.post(
-      `${API_URL}/rd-management/tasks/${taskId}/opencode/prompt`,
+      `${API_URL}/ei/tasks/${taskId}/opencode/prompt`,
       { prompt, projectPath, model },
       this.getAuthHeaders()
     );
@@ -309,7 +309,7 @@ class RdConversationService {
 
   async createTaskOpencodeSession(taskId: string, projectPath: string): Promise<any> {
     const response = await axios.post(
-      `${API_URL}/rd-management/tasks/${taskId}/opencode/session`,
+      `${API_URL}/ei/tasks/${taskId}/opencode/session`,
       { projectPath },
       this.getAuthHeaders()
     );
@@ -318,30 +318,30 @@ class RdConversationService {
 
   async getOpencodeHistory(taskId: string): Promise<any> {
     const response = await axios.get(
-      `${API_URL}/rd-management/tasks/${taskId}/opencode/history`,
+      `${API_URL}/ei/tasks/${taskId}/opencode/history`,
       this.getAuthHeaders()
     );
     return response.data;
   }
 
   async getCurrentOpencodeContext(): Promise<OpencodeCurrentContext> {
-    const response = await axios.get(`${API_URL}/rd-management/opencode/current`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/opencode/current`, this.getAuthHeaders());
     return response.data;
   }
 
   async getOpencodeProjects(): Promise<any[]> {
-    const response = await axios.get(`${API_URL}/rd-management/opencode/projects`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/opencode/projects`, this.getAuthHeaders());
     return response.data;
   }
 
   async importOpencodeProject(payload: ImportOpencodeProjectDto): Promise<any> {
-    const response = await axios.post(`${API_URL}/rd-management/opencode/projects/import`, payload, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/opencode/projects/import`, payload, this.getAuthHeaders());
     return response.data;
   }
 
   async syncAgentOpencodeProjects(agentId: string, payload?: SyncAgentOpencodeProjectsDto): Promise<any> {
     const response = await axios.post(
-      `${API_URL}/rd-management/agents/${encodeURIComponent(agentId)}/opencode/projects/sync`,
+      `${API_URL}/ei/agents/${encodeURIComponent(agentId)}/opencode/projects/sync`,
       payload || {},
       this.getAuthHeaders(),
     );
@@ -349,7 +349,7 @@ class RdConversationService {
   }
 
   async getOpencodeSessions(directory?: string): Promise<any[]> {
-    const response = await axios.get(`${API_URL}/rd-management/opencode/sessions`, {
+    const response = await axios.get(`${API_URL}/ei/opencode/sessions`, {
       ...this.getAuthHeaders(),
       params: directory ? { directory } : undefined,
     });
@@ -357,7 +357,7 @@ class RdConversationService {
   }
 
   async getOpencodeSession(sessionId: string): Promise<any> {
-    const response = await axios.get(`${API_URL}/rd-management/opencode/sessions/${sessionId}`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/opencode/sessions/${sessionId}`, this.getAuthHeaders());
     return response.data;
   }
 
@@ -365,18 +365,18 @@ class RdConversationService {
     if (!sessionId?.trim()) {
       return [];
     }
-    const response = await axios.get(`${API_URL}/rd-management/opencode/sessions/${sessionId}/messages`, this.getAuthHeaders());
+    const response = await axios.get(`${API_URL}/ei/opencode/sessions/${sessionId}/messages`, this.getAuthHeaders());
     return response.data;
   }
 
   async createOpencodeSession(data: CreateOpencodeSessionDto): Promise<any> {
-    const response = await axios.post(`${API_URL}/rd-management/opencode/sessions`, data, this.getAuthHeaders());
+    const response = await axios.post(`${API_URL}/ei/opencode/sessions`, data, this.getAuthHeaders());
     return response.data;
   }
 
   async promptOpencodeSession(sessionId: string, prompt: string, model?: any): Promise<any> {
     const response = await axios.post(
-      `${API_URL}/rd-management/opencode/sessions/${sessionId}/prompt`,
+      `${API_URL}/ei/opencode/sessions/${sessionId}/prompt`,
       { prompt, model },
       this.getAuthHeaders()
     );
@@ -385,7 +385,7 @@ class RdConversationService {
 
   subscribeOpencodeEvents(onEvent: (event: OpencodeEventPayload) => void): EventSource {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
-    const url = `${API_URL}/rd-management/opencode/events?token=${encodeURIComponent(token)}`;
+    const url = `${API_URL}/ei/opencode/events?token=${encodeURIComponent(token)}`;
     const source = new EventSource(url);
 
     source.onmessage = (message) => {
@@ -406,7 +406,7 @@ class RdConversationService {
 
   async syncCurrentOpencodeToTask(taskId: string, payload?: { sessionId?: string; projectPath?: string }): Promise<RdTask> {
     const response = await axios.post(
-      `${API_URL}/rd-management/tasks/${taskId}/opencode/sync-current`,
+      `${API_URL}/ei/tasks/${taskId}/opencode/sync-current`,
       payload || {},
       this.getAuthHeaders()
     );
@@ -415,7 +415,7 @@ class RdConversationService {
 
   async syncCurrentOpencodeToProject(projectId: string, payload?: { sessionId?: string; projectPath?: string }): Promise<RdProject> {
     const response = await axios.post(
-      `${API_URL}/rd-management/projects/${projectId}/opencode/sync-current`,
+      `${API_URL}/ei/projects/${projectId}/opencode/sync-current`,
       payload || {},
       this.getAuthHeaders()
     );
@@ -424,7 +424,7 @@ class RdConversationService {
 
   async completeTask(taskId: string, result: any): Promise<RdTask> {
     const response = await axios.post(
-      `${API_URL}/rd-management/tasks/${taskId}/complete`,
+      `${API_URL}/ei/tasks/${taskId}/complete`,
       { result },
       this.getAuthHeaders()
     );

@@ -294,7 +294,7 @@ const EngineeringRequirements: React.FC = () => {
             刷新
           </button>
           <Link
-            to="/engineering-intelligence/board"
+            to="/ei/board"
             className="ml-auto inline-flex items-center gap-1 px-3 py-2 border border-primary-200 text-primary-700 rounded text-sm"
           >
             智能研发看板
@@ -336,7 +336,7 @@ const EngineeringRequirements: React.FC = () => {
                 requirements.map((item) => (
                   <tr key={item.requirementId} className="border-t border-gray-100">
                     <td className="px-3 py-2 text-xs">
-                      <Link to={`/engineering-intelligence/requirements/${item.requirementId}`} className="text-primary-700 hover:underline">
+                      <Link to={`/ei/requirements/${item.requirementId}`} className="text-primary-700 hover:underline">
                         {item.title}
                       </Link>
                     </td>

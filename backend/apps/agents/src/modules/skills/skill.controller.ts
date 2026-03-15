@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { SkillService } from './skill.service';
-import { SkillSourceType, SkillStatus } from '../../schemas/skill.schema';
+import { SkillSourceType, SkillStatus } from '../../schemas/agent-skill.schema';
 
 @Controller('skills')
 export class SkillController {

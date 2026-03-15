@@ -7,11 +7,11 @@ import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.sc
 import {
   AgentToolCredential,
   AgentToolCredentialDocument,
-} from '../../../../../src/shared/schemas/agent-tool-credential.schema';
+} from '../../schemas/agent-tool-credential.schema';
 import {
   AgentToolTokenRevocation,
   AgentToolTokenRevocationDocument,
-} from '../../../../../src/shared/schemas/agent-tool-token-revocation.schema';
+} from '../../schemas/agent-tool-token-revocation.schema';
 
 type AuthMode = 'legacy' | 'hybrid' | 'jwt-strict';
 

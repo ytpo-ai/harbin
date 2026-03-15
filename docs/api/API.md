@@ -13,7 +13,7 @@
 - `docs/api/agents-api.md`
   - Agents 服务接口（agents/tools/skills/models/model-management）
 - `docs/api/legacy-api.md`
-  - Legacy 服务接口（meetings/hr/orchestration/messages/rd-management 等）
+  - Legacy 服务接口（meetings/hr/orchestration/messages 等）
 - `docs/api/engineering-intelligence-api.md`
   - 研发智能独立服务接口（仓库管理、文档摘要、docs 浏览）
 - `docs/api/ws-api.md`

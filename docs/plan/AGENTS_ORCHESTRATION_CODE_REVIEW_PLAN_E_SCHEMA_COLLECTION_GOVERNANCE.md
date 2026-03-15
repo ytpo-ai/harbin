@@ -92,3 +92,90 @@ npm run test -- --runInBand
 
 - 每批迁移保留回滚脚本与快照
 - 发现异常立即回退到旧 collection 映射
+
+## 10. 本次会话确认后的命名映射（2026-03-15）
+
+### 10.1 重命名项（old -> new）
+
+- `agentprofiles` -> `agent_profiles`
+- `toolexecutions` -> `agent_tool_executions`
+- `orchestrationschedules` -> `orchestration_schedules`
+- `agenttooltokenrevocations` -> `agent_tool_token_revocations`
+- `agenttoolcredentials` -> `agent_tool_credentials`
+- `orchestrationtasks` -> `orchestration_tasks`
+- `apikeys` -> `api_keys`
+- `plansessions` -> `orchestration_plan_sessions`
+- `rdtasks` -> `ei_tasks`
+- `orchestrationplans` -> `orchestration_plans`
+- `operationlogs` -> `operation_logs`
+- `agentsessions` -> `agent_sessions`
+- `agentroles` -> `agent_roles`
+- `agentmemoversions` -> `agent_memo_versions`
+- `skills` -> `agent_skills`
+- `agentmemos` -> `agent_memos`
+- `engineeringrepositories` -> `ei_repositories`
+- `tools` -> `agent_tools`
+- `toolkits` -> `agent_toolkits`
+- `model_registry` -> `agent_model_registry`
+- `messages` -> `chats`
+
+### 10.2 未重命名项（保持不变）
+
+- `agents`
+- `inner_messages`
+- `inner_message_subscriptions`
+- `ei_projects`
+- `system_messages`
+- `tasks`
+- `employees`
+- `invitations`
+- `meetings`
+- `agent_action_logs`
+- `agent_runs`
+- `agent_parts`
+- `agent_messages`
+- `agent_events_outbox`
+- `agent_runtime_maintenance_audits`
+- `ei_requirements`
+- `ei_project_statistics_snapshots`
+- `ei_opencode_run_analytics`
+- `ei_opencode_event_facts`
+- `ei_opencode_run_sync_batches`
+
+### 10.3 结构治理项
+
+- 删除 collection 对应 schema 中的 `organizationId` 字段（如存在历史残留，迁移脚本中统一 `$unset`）。
+- `AgentSession` 采用单一目标集合名 `agent_sessions`，避免双 schema 默认命名冲突。
+
+## 11. 本次追加治理（文件命名与 Schema 归属收敛）
+
+### 11.1 目标
+
+- 统一 schema 文件命名为 kebab-case，消除 camelCase 文件名（例如 `api-key.schema.ts`）。
+- 将仅由 agents 领域使用的 schema 下沉到 `backend/apps/agents/src/schemas/`，明确领域归属（如 tools 相关 schema）。
+
+### 11.2 执行步骤
+
+1. 盘点 schema 文件命名不规范项并生成改名映射。
+2. 盘点 agents 专属 schema 的实际引用范围并确认迁移名单。
+3. 执行文件改名/迁移并修复所有 import 路径。
+4. 清理 shared 层冗余导出，确保 shared 仅保留跨 app 复用模型。
+5. 运行 build/test 校验，更新相关文档（plan/feature/dailylog）。
+
+### 11.3 本次文件改名与迁移映射
+
+文件改名（仅命名规范化）：
+
+- `backend/src/shared/schemas/apiKey.schema.ts` -> `backend/src/shared/schemas/api-key.schema.ts`
+- `backend/apps/agents/src/schemas/skill.schema.ts` -> `backend/apps/agents/src/schemas/agent-skill.schema.ts`
+- `backend/src/shared/schemas/message.schema.ts` -> `backend/src/shared/schemas/chat.schema.ts`
+- `backend/src/shared/schemas/rd-project.schema.ts` -> `backend/src/shared/schemas/ei-project.schema.ts`
+- `backend/src/shared/schemas/rd-task.schema.ts` -> `backend/src/shared/schemas/ei-task.schema.ts`
+
+文件迁移（下沉到 agents 领域）：
+
+- `backend/src/shared/schemas/tool.schema.ts` -> `backend/apps/agents/src/schemas/tool.schema.ts`
+- `backend/src/shared/schemas/toolkit.schema.ts` -> `backend/apps/agents/src/schemas/toolkit.schema.ts`
+- `backend/src/shared/schemas/toolExecution.schema.ts` -> `backend/apps/agents/src/schemas/tool-execution.schema.ts`
+- `backend/src/shared/schemas/agent-tool-credential.schema.ts` -> `backend/apps/agents/src/schemas/agent-tool-credential.schema.ts`
+- `backend/src/shared/schemas/agent-tool-token-revocation.schema.ts` -> `backend/apps/agents/src/schemas/agent-tool-token-revocation.schema.ts`

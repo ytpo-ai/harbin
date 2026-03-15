@@ -12,7 +12,7 @@ import {
   OrchestrationTask,
   OrchestrationTaskSchema,
 } from '../../shared/schemas/orchestration-task.schema';
-import { Tool, ToolSchema } from '../../shared/schemas/tool.schema';
+import { Tool, ToolSchema } from '../../../apps/agents/src/schemas/tool.schema';
 import {
   OrchestrationSchedule,
   OrchestrationScheduleSchema,
@@ -21,18 +21,18 @@ import { OrchestrationController } from './orchestration.controller';
 import { OrchestrationService } from './orchestration.service';
 import { PlannerService } from './planner.service';
 import { MessagesModule } from '../messages/messages.module';
-import { PlanSession, PlanSessionSchema } from '../../shared/schemas/plan-session.schema';
+import { PlanSession, PlanSessionSchema } from '../../shared/schemas/orchestration-plan-session.schema';
 import { SessionManagerService } from './session-manager.service';
 import { TaskClassificationService } from './services/task-classification.service';
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
-import { AgentMessagesModule } from '../agent-messages/agent-messages.module';
+import { InnerMessageModule } from '../inner-message/inner-message.module';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
-    AgentMessagesModule,
+    InnerMessageModule,
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },

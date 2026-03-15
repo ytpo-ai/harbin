@@ -51,7 +51,7 @@
 
 - 研发会话页面改为先选择研发 Agent，再触发 OpenCode projects 同步。
 - 项目记录集合统一为 `ei_projects`（复用原 `rdproject` 结构并扩展同步字段）。
-- `ei_projects` 仅允许通过同步链路创建（`POST /rd-management/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
+- `ei_projects` 仅允许通过同步链路创建（`POST /ei/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
 - 同步按 `agentId + opencodeProjectPath / opencodeProjectId` 幂等更新，返回 `created/updated/skipped` 统计。
 - `ei_projects` 新增三类项目来源：`local`（本地项目）、`opencode`（OpenCode 项目）、`github`（GitHub 仓库）。
 - 绑定关系约束：一个 `local` 项目可绑定多个 `opencode` 项目，但最多绑定一个 `github` 仓库。
@@ -61,6 +61,7 @@
 - RD 管理发送前会进行 OpenCode 模型能力校验；若目标模型未配置，接口返回明确错误（不自动改写 OpenCode 全局配置）。
 - RD 管理 events 面板按当前选中 `sessionId` 过滤，保障会话视角下事件信息同步一致。
 - `研发智能` 首页已重建为 `项目管理`：默认聚焦三类项目（local/opencode/github）与绑定关系管理。
+- 研发智能前端主路由已从 `/engineering-intelligence` 统一迁移到 `/ei`（旧路由保留兼容重定向）。
 - 首页移除文档树、提交历史、文档详情抽屉能力；文档相关能力不再作为该入口主流程。
 - 绑定交互遵循前置约束：必须先创建并选中 local 项目，才可绑定 opencode/github。
 - 项目管理页支持解绑能力：可对已绑定的 opencode/github 关系执行解绑。
@@ -127,6 +128,8 @@
 | 文件 | 说明 |
 |------|------|
 | `plan/OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 执行到分析的总体规划 |
+| `plan/EI_BACKEND_MODULE_RELOCATION_REFACTOR_PLAN.md` | EI 模块迁移与资源化 API 重构计划 |
+| `plan/EI_MODULES_FLATTEN_TO_SRC_PLAN.md` | EI controllers/services/dto 上移至 `src` 并统一去除 `ei-` 文件名前缀 |
 | `plan/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发会话页 EI 项目同步改造计划 |
 | `plan/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 | `plan/ENGINEERING_INTELLIGENCE_REQUIREMENT_MANAGEMENT_PLAN.md` | 研发智能需求管理（Issue 协作）计划 |
@@ -137,6 +140,7 @@
 | 文件 | 说明 |
 |------|------|
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | 数据分层、同步契约、补偿策略 |
+| `technical/EI_API_RESOURCE_RESTRUCTURE_DESIGN.md` | EI 资源化接口与 Controller/Service 拆分设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | 多环境同步、节点治理与冲突处理 |
 
 ### 开发讨论文档 (docs/development/)
@@ -163,12 +167,16 @@
 
 | 路径 | 功能 |
 |------|------|
-| `backend/apps/engineering-intelligence/src/` | EI 服务主模块（同步接收、分析计算、查询接口） |
+| `backend/apps/ei/src/` | EI 服务主模块（同步接收、分析计算、查询接口） |
 | `backend/apps/agents/src/modules/runtime/` | Runtime 事件事实来源与同步触发链路 |
 | `backend/apps/agents/src/modules/tools/` | 工程统计 MCP 工具定义与执行入口 |
 | `backend/src/modules/orchestration/` | 需求关联编排、回写与任务验证逻辑 |
-| `backend/src/modules/rd-management/` | 研发会话页 OpenCode 项目同步与 EI 项目列表接口 |
-| `backend/src/shared/schemas/rd-project.schema.ts` | `ei_projects` 集合模型（同步来源、OpenCode 项目标识） |
+| `backend/apps/ei/src/app.module.ts` | EI 应用装配入口（controllers/providers 直接在 AppModule 注册） |
+| `backend/apps/ei/src/services/ei.service.ts` | EI 核心领域服务（聚合同步、统计、需求等核心逻辑） |
+| `backend/apps/ei/src/controllers/` | EI 控制器目录（含 `tasks/projects/opencode/repositories/opencode-sync/statistics/requirements`） |
+| `backend/apps/ei/src/services/` | EI 服务目录（含 `management` 核心服务与资源服务、OpenCode 客户端服务） |
+| `backend/apps/ei/src/dto/` | EI DTO 目录（需求、统计、管理与聚合导出） |
+| `backend/src/shared/schemas/ei-project.schema.ts` | `ei_projects` 集合模型（同步来源、OpenCode 项目标识） |
 
 ### 前端入口（规划影响）
 

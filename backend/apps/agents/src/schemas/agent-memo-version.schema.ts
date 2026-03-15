@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type AgentMemoVersionDocument = AgentMemoVersion & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_memo_versions' })
 export class AgentMemoVersion {
   @Prop({ required: true, unique: true })
   id: string;

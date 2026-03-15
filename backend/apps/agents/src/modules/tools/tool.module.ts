@@ -1,22 +1,22 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule } from '@nestjs/config';
-import { Tool, ToolSchema } from '../../../../../src/shared/schemas/tool.schema';
-import { Toolkit, ToolkitSchema } from '../../../../../src/shared/schemas/toolkit.schema';
-import { ToolExecution, ToolExecutionSchema } from '../../../../../src/shared/schemas/toolExecution.schema';
+import { Tool, ToolSchema } from '../../schemas/tool.schema';
+import { Toolkit, ToolkitSchema } from '../../schemas/toolkit.schema';
+import { ToolExecution, ToolExecutionSchema } from '../../schemas/tool-execution.schema';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
-import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/apiKey.schema';
+import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/api-key.schema';
 import {
   AgentToolCredential,
   AgentToolCredentialSchema,
-} from '../../../../../src/shared/schemas/agent-tool-credential.schema';
+} from '../../schemas/agent-tool-credential.schema';
 import {
   AgentToolTokenRevocation,
   AgentToolTokenRevocationSchema,
-} from '../../../../../src/shared/schemas/agent-tool-token-revocation.schema';
+} from '../../schemas/agent-tool-token-revocation.schema';
 import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';

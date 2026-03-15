@@ -20,7 +20,7 @@ export enum InvitationRole {
   INTERN = 'intern',
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'invitations' })
 export class Invitation {
   @Prop({ required: true, unique: true })
   id: string;

@@ -18,10 +18,10 @@
 ```text
 Producer (orchestration / agent api)
   -> MongoDB (message status=sent)
-  -> Redis Queue (agent:message:dispatch)
+  -> Redis Queue (inner:message:dispatch)
       -> MessageDispatcherConsumer
          -> SubscriptionMatcher (for publish mode)
-         -> Redis Pub/Sub (agent:inbox:{agentId})
+         -> Redis Pub/Sub (inner:inbox:{agentId})
          -> Ack/Process API update Mongo status
 ```
 
@@ -33,7 +33,7 @@ Producer (orchestration / agent api)
 
 ## 3. 数据模型
 
-## 3.1 `agent_collaboration_messages`
+## 3.1 `inner_messages`
 
 核心字段：
 
@@ -56,7 +56,7 @@ Producer (orchestration / agent api)
 4. `{ dedupKey: 1 }` unique sparse
 5. `{ messageId: 1 }` unique
 
-## 3.2 `agent_message_subscriptions`
+## 3.2 `inner_message_subscriptions`
 
 核心字段：
 
@@ -76,12 +76,12 @@ Producer (orchestration / agent api)
 
 队列键：
 
-- `agent:message:dispatch`：主分发队列
-- `agent:message:dispatch:dead-letter`：死信队列
+- `inner:message:dispatch`：主分发队列
+- `inner:message:dispatch:dead-letter`：死信队列
 
 频道键：
 
-- `agent:inbox:{agentId}`：Agent 实时收件频道
+- `inner:inbox:{agentId}`：Agent 实时收件频道
 
 消息 envelope 建议：
 
@@ -103,16 +103,16 @@ Producer (orchestration / agent api)
 
 ## 5.1 直发消息流程
 
-1. A 调用 `POST /agent-messages/direct`。
+1. A 调用 `POST /inner-messages/direct`。
 2. 服务落库 `status=sent`。
 3. 推送 dispatch envelope 到 Redis 队列。
-4. 分发消费者读取后推送 `agent:inbox:B`。
+4. 分发消费者读取后推送 `inner:inbox:B`。
 5. B 收到后立即 ACK（`delivered/processing`）。
 6. B 处理完成后调用 processed 接口，状态变更为 `processed`。
 
 ## 5.2 订阅消息流程
 
-1. 发布方调用 `POST /agent-messages/publish`。
+1. 发布方调用 `POST /inner-messages/publish`。
 2. 分发服务查找 `eventType` 活跃订阅者。
 3. 为每个订阅者生成消息记录并入队。
 4. 分发消费者逐条投递到订阅者 inbox。

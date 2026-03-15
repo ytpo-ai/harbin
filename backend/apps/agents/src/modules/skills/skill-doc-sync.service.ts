@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
 import * as path from 'path';
-import { Skill } from '../../schemas/skill.schema';
+import { Skill } from '../../schemas/agent-skill.schema';
 
 @Injectable()
 export class SkillDocSyncService {

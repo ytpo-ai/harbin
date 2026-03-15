@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { MessagesService } from './messages.service';
-import { MessageSceneType } from '../../shared/schemas/message.schema';
+import { MessageSceneType } from '../../shared/schemas/chat.schema';
 
 @Controller('messages')
 export class MessagesController {

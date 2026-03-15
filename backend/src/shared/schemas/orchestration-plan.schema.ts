@@ -6,7 +6,7 @@ export type OrchestrationPlanDocument = OrchestrationPlan & Document;
 export type OrchestrationMode = 'sequential' | 'parallel' | 'hybrid';
 export type OrchestrationPlanStatus = 'draft' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'orchestration_plans' })
 export class OrchestrationPlan {
   @Prop()
   id?: string;

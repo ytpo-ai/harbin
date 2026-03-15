@@ -3,117 +3,101 @@
 ## 基础信息
 
 - 服务地址（直连）：`http://localhost:3004/api`
-- 经 Gateway 访问：`http://localhost:3100/api/engineering-intelligence`
-- 服务职责：仓库配置管理、docs 目录浏览、文档摘要与历史追踪
+- 经 Gateway 访问：`http://localhost:3100/api/ei`
+- 说明：本文档已更新为“资源化 API 结构”目标设计，用于 EI 后端模块迁移与接口重构。
 
-## Repositories（`/engineering-intelligence/repositories`）
+## 状态约定
 
-- `GET /repositories`：获取仓库配置列表
-- `POST /repositories`：新增仓库配置（支持 branch）
-- `PUT /repositories/:id`：更新仓库配置
-- `DELETE /repositories/:id`：删除仓库配置
+- `active`：当前已使用或计划作为主路径。
+- `compat`：兼容路径，短期保留用于平滑迁移。
+- `deprecated`：已标记弃用，待下线。
 
-## 文档处理
+## 资源化接口清单
 
-- `POST /repositories/:id/summarize`：触发文档摘要
-- `GET /repositories/:id/docs/tree`：获取 docs 目录树
-- `GET /repositories/:id/docs/content?path=docs/...`：获取文档正文
-- `GET /repositories/:id/docs/history?path=docs/...&limit=20`：获取文档更新记录与贡献统计
+### 1) Ingest（事件接入）
 
-## OpenCode 同步与分析（已实现第一阶段）
+- `POST /ei/ingest/events` (`active`)
+  - 作用：接收单批次或多批次事件上报。
+  - 请求头：`x-ei-node-signature`、`x-ei-node-timestamp`。
+  - 请求体：支持 `{ syncBatchId, run, events, envId, nodeId }` 或 `{ batches: [...] }`。
 
-- `POST /engineering-intelligence/opencode/runs/sync`
-  - 作用：接收 Agents 终态 run 的事件明细同步（A 方案）。
-  - 幂等键：`runId + syncBatchId`。
-  - 顺序约束：`events[].sequence` 必须连续升序。
-  - 多环境字段：`envId`、`nodeId` 必填，且需满足节点标识格式约束。
+### 2) Sync Batches（同步批次）
 
-- `POST /engineering-intelligence/opencode/ingest/events`
-  - 作用：边缘节点（local/ecds）批量上报事件明细到中心。
-  - 校验要点：节点验签、幂等去重、顺序校验、脱敏校验。
-  - 验签骨架请求头：`x-ei-node-signature`、`x-ei-node-timestamp`。
-  - 支持单批次 payload 或 `{ batches: [...] }` 批量模式。
+- `POST /ei/sync-batches` (`active`)
+  - 作用：创建/重放 run 同步批次。
+- `GET /ei/sync-batches/:batchId` (`active`)
+  - 作用：查询批次状态与错误信息。
 
-落库集合（当前实现）：
+### 3) Runs（run 分析）
+
+- `GET /ei/runs` (`active`)
+  - 作用：分页查询 run 列表。
+- `GET /ei/runs/:runId` (`active`)
+  - 作用：查询单 run 分析详情。
+- `GET /ei/runs/:runId/events` (`active`)
+  - 作用：查询单 run 事件明细。
+- `POST /ei/runs/:runId/recompute-metrics` (`active`)
+  - 作用：按 run 重算指标。
+
+### 4) Metrics（聚合指标）
+
+- `GET /ei/metrics/overview` (`active`)
+  - 作用：查询聚合指标看板。
+
+### 5) Projects（项目与绑定）
+
+- `GET /ei/projects` (`active`)
+- `POST /ei/projects/opencode/sync` (`active`)
+- `POST /ei/projects/:projectId/bindings/opencode` (`active`)
+- `DELETE /ei/projects/:projectId/bindings/opencode/:bindingId` (`active`)
+- `POST /ei/projects/:projectId/bindings/github` (`active`)
+- `DELETE /ei/projects/:projectId/bindings/github/:bindingId` (`active`)
+
+说明：GitHub 绑定必须使用 `githubApiKeyId`，不落库明文凭据。
+
+### 6) Requirements（研发需求）
+
+- `POST /ei/requirements` (`active`)
+- `GET /ei/requirements` (`active`)
+- `GET /ei/requirements/:requirementId` (`active`)
+- `PATCH /ei/requirements/:requirementId/status` (`active`)
+- `POST /ei/requirements/:requirementId/assign` (`active`)
+- `POST /ei/requirements/:requirementId/comments` (`active`)
+- `POST /ei/requirements/:requirementId/github/sync` (`active`)
+- `GET /ei/requirements/board` (`active`)
+
+### 7) Statistics（工程统计）
+
+- `POST /ei/statistics/snapshots` (`active`)
+  - 请求体：`scope`、`tokenMode`、`projectIds[]`、`triggeredBy`、`receiverId?`。
+- `GET /ei/statistics/snapshots` (`active`)
+- `GET /ei/statistics/snapshots/latest` (`active`)
+- `GET /ei/statistics/snapshots/:snapshotId` (`active`)
+
+## 兼容路径映射
+
+- `POST /ei/opencode/runs/sync` (`compat`) -> `POST /ei/sync-batches`
+- `POST /ei/opencode/ingest/events` (`compat`) -> `POST /ei/ingest/events`
+- `GET /ei/opencode/runs/:runId/analysis` (`compat`) -> `GET /ei/runs/:runId`
+- `GET /ei/opencode/metrics/overview` (`compat`) -> `GET /ei/metrics/overview`
+- `POST /ei/opencode/runs/:runId/recompute-metrics` (`compat`) -> `POST /ei/runs/:runId/recompute-metrics`
+
+## 编排调度入口（保持不变）
+
+- `GET /orchestration/schedules/system/engineering-statistics`
+- `POST /orchestration/schedules/system/engineering-statistics/trigger`
+
+## 落库集合
 
 - `ei_opencode_run_sync_batches`
 - `ei_opencode_event_facts`
 - `ei_opencode_run_analytics`
-
-- `GET /engineering-intelligence/opencode/runs/:runId/analysis`
-  - 作用：查询单 run 成本/效率/质量/惊喜度分析视图。
-
-- `GET /engineering-intelligence/opencode/metrics/overview`
-  - 作用：查询聚合指标看板。
-
-- `POST /engineering-intelligence/opencode/runs/:runId/recompute-metrics`
-  - 作用：按 run 重算指标，支持口径演进后的回放计算。
-
-## 工程统计（新增）
-
-- `POST /engineering-intelligence/statistics/snapshots`
-  - 作用：由统计计划或工具触发一次工程统计并创建快照。
-  - 请求体：`scope(all/docs/frontend/backend)`、`tokenMode(estimate/exact)`、`projectIds[]`、`triggeredBy`、`receiverId`（可选，传入后将通过 legacy message-center 写入通知）。
-
-- `GET /engineering-intelligence/statistics/snapshots/latest`
-  - 作用：获取最近一次统计快照。
-
-- `GET /engineering-intelligence/statistics/snapshots/:snapshotId`
-  - 作用：获取指定快照详情（项目明细 + 汇总 + 错误列表）。
-
-- `GET /engineering-intelligence/statistics/snapshots?limit=20`
-  - 作用：分页获取统计历史（按时间倒序）。
-
-## 编排调度入口（按钮触发）
-
-- `GET /orchestration/schedules/system/engineering-statistics`
-  - 作用：获取（或确保存在）系统默认工程统计计划。
-
-- `POST /orchestration/schedules/system/engineering-statistics/trigger`
-  - 作用：触发系统工程统计计划执行一次。
-  - 请求体：`receiverId`、`scope`、`tokenMode`、`projectIds[]`、`triggeredBy`。
-
-落库集合（新增）：
-
 - `ei_project_statistics_snapshots`
-
-## 研发需求管理（新增）
-
-- `POST /engineering-intelligence/requirements`
-  - 作用：创建需求条目，初始状态为 `todo`。
-  - 请求体：`title`、`description?`、`priority?`、`labels?`、`createdBy*?`。
-
-- `GET /engineering-intelligence/requirements`
-  - 作用：需求列表查询。
-  - 查询参数：`status?`、`assigneeAgentId?`、`search?`、`limit?`。
-
-- `GET /engineering-intelligence/requirements/:requirementId`
-  - 作用：获取需求详情（讨论、分发、状态轨迹、GitHub 映射）。
-
-- `POST /engineering-intelligence/requirements/:requirementId/comments`
-  - 作用：追加讨论消息。
-  - 请求体：`content`、`authorId?`、`authorName?`、`authorType?`。
-
-- `POST /engineering-intelligence/requirements/:requirementId/assign`
-  - 作用：将需求分发给研发 Agent，并将状态推进到 `assigned`。
-  - 请求体：`toAgentId`、`toAgentName?`、`assignedBy*?`、`reason?`。
-
-- `POST /engineering-intelligence/requirements/:requirementId/status`
-  - 作用：更新需求状态并记录状态轨迹。
-  - 请求体：`status(todo/assigned/in_progress/review/done/blocked)`、`changedBy*?`、`note?`。
-
-- `GET /engineering-intelligence/requirements/board`
-  - 作用：按状态泳道返回看板数据。
-
-- `POST /engineering-intelligence/requirements/:requirementId/github/sync`
-  - 作用：一键创建 GitHub Issue 并回写映射关系。
-  - 请求体：`owner`、`repo`、`labels?`、`metadata?`。
-
-落库集合（新增）：
-
 - `ei_requirements`
+- `ei_projects`
 
-## 说明
+## 约束
 
-- 历史兼容路径 `/api/cto-docs/*` 已移除。
-- 前端入口位于主前端应用：`/engineering-intelligence`。
+- 禁止新增/透传 `organizationId`。
+- ingest/sync 必须保留幂等与顺序校验。
+- 前端入口保持在主应用：`/ei`。

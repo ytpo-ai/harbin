@@ -6,7 +6,7 @@ export type OrchestrationScheduleDocument = OrchestrationSchedule & Document;
 export type OrchestrationScheduleStatus = 'idle' | 'running' | 'paused' | 'error';
 export type OrchestrationScheduleType = 'cron' | 'interval';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'orchestration_schedules' })
 export class OrchestrationSchedule {
   @Prop()
   id?: string;

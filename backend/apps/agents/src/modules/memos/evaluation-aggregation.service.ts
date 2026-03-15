@@ -7,7 +7,7 @@ import { AgentPart, AgentPartDocument } from '../../schemas/agent-part.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { OrchestrationTask, OrchestrationTaskDocument } from '../../../../../src/shared/schemas/orchestration-task.schema';
-import { Skill, SkillDocument } from '../../schemas/skill.schema';
+import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 
 interface EvaluationData {
   taskStats: TaskStatistics;

@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type AgentProfileDocument = AgentProfile & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_profiles' })
 export class AgentProfile {
   @Prop({ required: true, unique: true })
   roleCode: string;

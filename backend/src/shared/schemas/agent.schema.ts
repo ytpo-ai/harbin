@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type AgentDocument = Agent & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agents' })
 export class Agent {
   @Prop()
   id?: string;

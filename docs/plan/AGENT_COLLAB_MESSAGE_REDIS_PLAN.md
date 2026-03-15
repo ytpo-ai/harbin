@@ -33,8 +33,8 @@
 ## 3. 执行步骤
 
 1. 数据层设计与落地
-   - 新增 `agent_collaboration_messages`：记录消息生命周期与收发关系。
-   - 新增 `agent_message_subscriptions`：记录事件订阅关系。
+   - 新增 `inner_messages`：记录消息生命周期与收发关系。
+   - 新增 `inner_message_subscriptions`：记录事件订阅关系。
    - 增加必要索引（receiver/status/eventType/dedupKey）。
 2. 消息分发服务实现
    - 定义 Redis 队列键：主队列、重试队列、死信队列。
@@ -42,12 +42,12 @@
    - 订阅模式：匹配订阅后为每个订阅者落库并投递。
    - 直发模式：读取已发送消息并投递给目标 Agent。
 3. API 与服务边界
-   - `POST /agent-messages/direct`
-   - `POST /agent-messages/publish`
-   - `POST /agent-message-subscriptions`
-   - `GET /agent-message-subscriptions`
-   - `PATCH /agent-messages/:messageId/ack`
-   - `PATCH /agent-messages/:messageId/processed`
+   - `POST /inner-messages/direct`
+   - `POST /inner-messages/publish`
+   - `POST /inner-message-subscriptions`
+   - `GET /inner-message-subscriptions`
+   - `PATCH /inner-messages/:messageId/ack`
+   - `PATCH /inner-messages/:messageId/processed`
 4. 编排集成
    - 任务创建/重分配时，若分配到 agent，发送 `task.assigned`。
    - 任务执行成功后，发送 `task.completed` 给 CTO Agent（可配置）。
@@ -64,7 +64,7 @@
 
 - 后端
   - `backend/src/modules/orchestration`（任务分配/完成触发消息）
-  - 新增 `backend/src/modules/agent-messages`（分发与状态管理）
+  - 新增 `backend/src/modules/inner-message`（分发与状态管理）
   - 新增 `backend/src/shared/schemas` 消息与订阅模型
 - Redis
   - 新增 Agent 消息分发队列与死信队列

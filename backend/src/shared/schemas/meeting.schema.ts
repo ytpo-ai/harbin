@@ -97,7 +97,7 @@ export class MeetingMessage {
   };
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'meetings' })
 export class Meeting {
   @Prop({ required: true, unique: true })
   id: string;

@@ -20,7 +20,7 @@ export interface AgentSessionMemoSnapshot {
   topic: AgentSessionMemoSnapshotItem[];
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_sessions' })
 export class AgentSession {
   @Prop()
   id?: string;

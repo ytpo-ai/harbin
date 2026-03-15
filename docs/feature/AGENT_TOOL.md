@@ -14,9 +14,9 @@
 
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
-| `toolkits` | `toolkit.schema.ts` | 工具包实体（provider/namespace/auth/status/version） |
-| `tools` | `tool.schema.ts` | 工具定义（id/name/description/type/schema 等） |
-| `tool_executions` | `toolExecution.schema.ts` | 工具执行记录（入参、结果、状态、耗时） |
+| `agent_toolkits` | `toolkit.schema.ts` | 工具包实体（provider/namespace/auth/status/version） |
+| `agent_tools` | `tool.schema.ts` | 工具定义（id/name/description/type/schema 等） |
+| `agent_tool_executions` | `tool-execution.schema.ts` | 工具执行记录（入参、结果、状态、耗时） |
 
 目标演进（详见技术设计文档）：
 
@@ -112,12 +112,12 @@
 | `gh-repo-docs-reader-mcp.util.ts` | 文档检索类工具实现 |
 | `gh-repo-updates-mcp.util.ts` | 更新摘要类工具实现 |
 
-### 共享 Schema (backend/src/shared/schemas/)
+### Agents Schema (backend/apps/agents/src/schemas/)
 
 | 文件 | 功能 |
 |------|------|
 | `tool.schema.ts` | 工具定义模型 |
-| `toolExecution.schema.ts` | 工具执行记录模型 |
+| `tool-execution.schema.ts` | 工具执行记录模型 |
 
 ### 集成调用
 

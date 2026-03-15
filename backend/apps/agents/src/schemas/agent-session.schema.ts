@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type AgentSessionDocument = AgentSession & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_sessions' })
 export class AgentSession {
   @Prop({ required: true, unique: true })
   id: string;

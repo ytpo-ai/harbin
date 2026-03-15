@@ -65,7 +65,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
     try {
       const payload = await this.buildRunSyncPayload(run);
       const response = await axios.post(
-        `${this.eiBaseUrl}/engineering-intelligence/opencode/runs/sync`,
+        `${this.eiBaseUrl}/ei/sync-batches`,
         payload,
         {
           headers: this.buildSignedHeaders(),

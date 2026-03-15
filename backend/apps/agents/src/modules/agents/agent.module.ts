@@ -3,7 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
-import { Skill, SkillSchema } from '../../schemas/skill.schema';
+import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
 import { ModelModule } from '../models/model.module';

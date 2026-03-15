@@ -142,7 +142,7 @@ export class MessageCenterController {
         status: payload.status,
         summary: payload.summary || {},
         error: payload.error,
-        redirectPath: `/engineering-intelligence/statistics?snapshotId=${encodeURIComponent(payload.snapshotId)}`,
+        redirectPath: `/ei/statistics?snapshotId=${encodeURIComponent(payload.snapshotId)}`,
       },
       source: 'engineering-intelligence',
     });

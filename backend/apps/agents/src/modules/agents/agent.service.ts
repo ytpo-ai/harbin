@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
-import { Skill, SkillDocument } from '../../schemas/skill.schema';
+import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { ModelService } from '../models/model.service';
 import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
 import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';

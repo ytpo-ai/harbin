@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { ApiKey, ApiKeyDocument } from '../../shared/schemas/apiKey.schema';
+import { ApiKey, ApiKeyDocument } from '../../shared/schemas/api-key.schema';
 import { EncryptionUtil } from '../../shared/utils/encryption.util';
 import { v4 as uuidv4 } from 'uuid';
 

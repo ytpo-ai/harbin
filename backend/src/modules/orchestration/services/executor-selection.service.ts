@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../../shared/schemas/agent.schema';
-import { Tool, ToolDocument } from '../../../shared/schemas/tool.schema';
+import { Tool, ToolDocument } from '../../../../apps/agents/src/schemas/tool.schema';
 import {
   Employee,
   EmployeeDocument,

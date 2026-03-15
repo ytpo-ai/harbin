@@ -3,8 +3,8 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
-import { Tool, ToolDocument } from '../../../../../src/shared/schemas/tool.schema';
-import { Skill, SkillDocument } from '../../schemas/skill.schema';
+import { Tool, ToolDocument } from '../../schemas/tool.schema';
+import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 
 interface IdentityData {

@@ -14,10 +14,10 @@
 
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
-| `skills` | `skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version 等） |
+| `agent_skills` | `agent-skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version 等） |
 | `agents` | `agent.schema.ts` | Agent 主表中的 `skills: string[]` 维护已启用 skillId |
 
-`skills` 的状态语义：
+`agent_skills` 的状态语义：
 
 - `active`：正式可用，默认可推荐。
 - `experimental`：实验能力，可推荐但优先级通常低于 active。
@@ -83,7 +83,7 @@
 
 | 文件 | 功能 |
 |------|------|
-| `skill.schema.ts` | Skill 主表结构与索引 |
+| `agent-skill.schema.ts` | Skill 主表结构与索引 |
 | `agent.schema.ts`（shared） | Agent 主表中的 `skills` 字段 |
 
 ### 前端 Skills 页面 (frontend/src/)

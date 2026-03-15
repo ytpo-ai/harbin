@@ -3,7 +3,7 @@ import { Document } from 'mongoose';
 
 export type ModelRegistryDocument = ModelRegistry & Document;
 
-@Schema({ collection: 'model_registry', timestamps: true })
+@Schema({ collection: 'agent_model_registry', timestamps: true })
 export class ModelRegistry {
   @Prop({ required: true, unique: true, trim: true })
   id: string;

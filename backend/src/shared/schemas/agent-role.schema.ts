@@ -6,7 +6,7 @@ export type AgentRoleDocument = AgentRole & Document;
 
 export type AgentRoleStatus = 'active' | 'inactive';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_roles' })
 export class AgentRole {
   @Prop({ required: true, unique: true, default: () => uuidv4() })
   id: string;

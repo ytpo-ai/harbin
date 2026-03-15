@@ -9,7 +9,6 @@ import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
 import { InvitationModule } from './modules/invitations/invitation.module';
 import { AuthModule } from './modules/auth/auth.module';
-import { RdManagementModule } from './modules/rd-management/rd-management.module';
 import { OrchestrationModule } from './modules/orchestration/orchestration.module';
 import { OrchestrationSchedulerModule } from './modules/orchestration/scheduler/scheduler.module';
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
@@ -19,7 +18,7 @@ import { OperationLogModule } from './modules/operation-logs/operation-log.modul
 import { MessagesModule } from './modules/messages/messages.module';
 import { AgentActionLogModule } from './modules/agent-action-logs/agent-action-log.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
-import { AgentMessagesModule } from './modules/agent-messages/agent-messages.module';
+import { InnerMessageModule } from './modules/inner-message/inner-message.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -50,7 +49,7 @@ import jwtConfig from './config/jwt.config';
     AgentActionLogModule,
     MessagesModule,
     MessageCenterModule,
-    AgentMessagesModule,
+    InnerMessageModule,
     AgentClientModule,
     ToolClientModule,
     TaskModule,
@@ -61,7 +60,6 @@ import jwtConfig from './config/jwt.config';
     EmployeeModule,
     InvitationModule,
     AuthModule,
-    RdManagementModule,
     OrchestrationModule,
     OrchestrationSchedulerModule,
   ],

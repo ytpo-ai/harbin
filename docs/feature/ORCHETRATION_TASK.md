@@ -18,7 +18,7 @@
 |------|-------------|------|
 | `orchestration_plans` | `orchestration-plan.schema.ts` | 计划主表，包含策略、统计、状态 |
 | `orchestration_tasks` | `orchestration-task.schema.ts` | 任务表，包含分配、执行结果、依赖关系与触发模式 (`mode=plan|schedule`) |
-| `plan_sessions` | `plan-session.schema.ts` | 会话聚合视图（任务状态快照） |
+| `plan_sessions` | `orchestration-plan-session.schema.ts` | 会话聚合视图（任务状态快照） |
 
 补充字段：
 
@@ -174,7 +174,7 @@
 |------|------|
 | `orchestration-plan.schema.ts` | 计划数据模型 |
 | `orchestration-task.schema.ts` | 任务数据模型 |
-| `plan-session.schema.ts` | 会话聚合视图模型 |
+| `orchestration-plan-session.schema.ts` | 会话聚合视图模型 |
 
 ### 前端 (frontend/src/)
 
@@ -189,12 +189,12 @@
 |------|------|
 | `agent.service.ts` | orchestration_* 工具注册与意图识别 |
 
-### 消息协作集成 (backend/src/modules/agent-messages/)
+### 消息协作集成 (backend/src/modules/inner-message/)
 
 | 文件 | 功能 |
 |------|------|
-| `agent-messages.service.ts` | 消息落库、订阅匹配、分发入队 |
-| `agent-message-dispatcher.service.ts` | Redis 分发消费者与重试/死信处理 |
+| `inner-message.service.ts` | 消息落库、订阅匹配、分发入队 |
+| `inner-message-dispatcher.service.ts` | Redis 分发消费者与重试/死信处理 |
 
 ---
 

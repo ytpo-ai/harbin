@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
-import { Tool, ToolSchema } from '../../../../../src/shared/schemas/tool.schema';
+import { Tool, ToolSchema } from '../../schemas/tool.schema';
 import { AgentMemo, AgentMemoSchema } from '../../schemas/agent-memo.schema';
 import { AgentMemoVersion, AgentMemoVersionSchema } from '../../schemas/agent-memo-version.schema';
-import { Skill, SkillSchema } from '../../schemas/skill.schema';
+import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { OrchestrationTask, OrchestrationTaskSchema } from '../../../../../src/shared/schemas/orchestration-task.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { AgentPart, AgentPartSchema } from '../../schemas/agent-part.schema';

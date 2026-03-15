@@ -40,7 +40,7 @@
 
 ### 2.2 新增 `orchestration` 侧 PlanSession 模型
 
-路径：`backend/src/shared/schemas/plan-session.schema.ts`
+路径：`backend/src/shared/schemas/orchestration-plan-session.schema.ts`
 
 按 `planId` 聚合任务快照：
 

@@ -41,13 +41,13 @@
         "tsConfigPath": "apps/ws/tsconfig.app.json"
       }
     },
-    "engineering-intelligence": {
+    "ei": {
       "type": "application",
-      "root": "apps/engineering-intelligence",
+      "root": "apps/ei",
       "entryFile": "main",
-      "sourceRoot": "apps/engineering-intelligence/src",
+      "sourceRoot": "apps/ei/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/engineering-intelligence/tsconfig.app.json"
+        "tsConfigPath": "apps/ei/tsconfig.app.json"
       }
     }
   }

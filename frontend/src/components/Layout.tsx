@@ -274,10 +274,10 @@ const Layout: React.FC = () => {
       name: '研发智能',
       icon: SparklesIcon,
       items: [
-        { name: '项目管理', href: '/engineering-intelligence', icon: SparklesIcon },
-        { name: '工程统计', href: '/engineering-intelligence/statistics', icon: ChartBarIcon },
-        { name: '需求管理', href: '/engineering-intelligence/requirements', icon: DocumentTextIcon },
-        { name: '智能研发看板', href: '/engineering-intelligence/board', icon: ChartBarIcon },
+        { name: '项目管理', href: '/ei', icon: SparklesIcon },
+        { name: '工程统计', href: '/ei/statistics', icon: ChartBarIcon },
+        { name: '需求管理', href: '/ei/requirements', icon: DocumentTextIcon },
+        { name: '智能研发看板', href: '/ei/board', icon: ChartBarIcon },
         { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
       ],
     },
@@ -305,8 +305,8 @@ const Layout: React.FC = () => {
   const isItemActive = (href: string) =>
     href === '/'
       ? location.pathname === '/'
-      : href === '/engineering-intelligence'
-        ? location.pathname === '/engineering-intelligence'
+      : href === '/ei'
+        ? location.pathname === '/ei'
         : location.pathname.startsWith(href);
 
   return (

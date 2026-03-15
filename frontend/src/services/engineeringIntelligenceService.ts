@@ -161,34 +161,34 @@ export interface RequirementBoardResult {
 
 export const engineeringIntelligenceService = {
   async listRepositories(): Promise<EngineeringRepository[]> {
-    const response = await api.get('/engineering-intelligence/repositories');
+    const response = await api.get('/ei/repositories');
     return response.data;
   },
 
   async createRepository(payload: { repositoryUrl: string; branch?: string }): Promise<EngineeringRepository> {
-    const response = await api.post('/engineering-intelligence/repositories', payload);
+    const response = await api.post('/ei/repositories', payload);
     return response.data;
   },
 
   async deleteRepository(id: string): Promise<{ success: boolean }> {
-    const response = await api.delete(`/engineering-intelligence/repositories/${id}`);
+    const response = await api.delete(`/ei/repositories/${id}`);
     return response.data;
   },
 
   async getDocsTree(id: string): Promise<EngineeringDocTreeResult> {
-    const response = await api.get(`/engineering-intelligence/repositories/${id}/docs/tree`);
+    const response = await api.get(`/ei/repositories/${id}/docs/tree`);
     return response.data;
   },
 
   async getDocContent(id: string, path: string): Promise<EngineeringDocContentResult> {
-    const response = await api.get(`/engineering-intelligence/repositories/${id}/docs/content`, {
+    const response = await api.get(`/ei/repositories/${id}/docs/content`, {
       params: { path },
     });
     return response.data;
   },
 
   async getDocHistory(id: string, path: string, limit = 20): Promise<EngineeringDocHistoryResult> {
-    const response = await api.get(`/engineering-intelligence/repositories/${id}/docs/history`, {
+    const response = await api.get(`/ei/repositories/${id}/docs/history`, {
       params: { path, limit },
     });
     return response.data;
@@ -201,22 +201,22 @@ export const engineeringIntelligenceService = {
     triggeredBy?: string;
     receiverId?: string;
   }): Promise<EngineeringStatisticsSnapshot> {
-    const response = await api.post('/engineering-intelligence/statistics/snapshots', payload || {});
+    const response = await api.post('/ei/statistics/snapshots', payload || {});
     return response.data;
   },
 
   async getLatestStatisticsSnapshot(): Promise<EngineeringStatisticsSnapshot | null> {
-    const response = await api.get('/engineering-intelligence/statistics/snapshots/latest');
+    const response = await api.get('/ei/statistics/snapshots/latest');
     return response.data;
   },
 
   async getStatisticsSnapshotById(snapshotId: string): Promise<EngineeringStatisticsSnapshot> {
-    const response = await api.get(`/engineering-intelligence/statistics/snapshots/${snapshotId}`);
+    const response = await api.get(`/ei/statistics/snapshots/${snapshotId}`);
     return response.data;
   },
 
   async listStatisticsSnapshots(limit = 20): Promise<EngineeringStatisticsSnapshot[]> {
-    const response = await api.get('/engineering-intelligence/statistics/snapshots', {
+    const response = await api.get('/ei/statistics/snapshots', {
       params: { limit },
     });
     return response.data;
@@ -232,7 +232,7 @@ export const engineeringIntelligenceService = {
     createdByType?: RequirementActorType;
     localProjectId?: string;
   }): Promise<RequirementItem> {
-    const response = await api.post('/engineering-intelligence/requirements', payload);
+    const response = await api.post('/ei/requirements', payload);
     return response.data;
   },
 
@@ -243,17 +243,17 @@ export const engineeringIntelligenceService = {
     limit?: number;
     localProjectId?: string;
   }): Promise<RequirementItem[]> {
-    const response = await api.get('/engineering-intelligence/requirements', { params });
+    const response = await api.get('/ei/requirements', { params });
     return response.data;
   },
 
   async getRequirementById(requirementId: string): Promise<RequirementItem> {
-    const response = await api.get(`/engineering-intelligence/requirements/${requirementId}`);
+    const response = await api.get(`/ei/requirements/${requirementId}`);
     return response.data;
   },
 
   async deleteRequirement(requirementId: string): Promise<{ success: boolean; requirementId: string }> {
-    const response = await api.delete(`/engineering-intelligence/requirements/${requirementId}`);
+    const response = await api.delete(`/ei/requirements/${requirementId}`);
     return response.data;
   },
 
@@ -261,7 +261,7 @@ export const engineeringIntelligenceService = {
     requirementId: string,
     payload: { content: string; authorId?: string; authorName?: string; authorType?: RequirementActorType },
   ): Promise<RequirementItem> {
-    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/comments`, payload);
+    const response = await api.post(`/ei/requirements/${requirementId}/comments`, payload);
     return response.data;
   },
 
@@ -275,7 +275,7 @@ export const engineeringIntelligenceService = {
       reason?: string;
     },
   ): Promise<RequirementItem> {
-    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/assign`, payload);
+    const response = await api.post(`/ei/requirements/${requirementId}/assign`, payload);
     return response.data;
   },
 
@@ -289,12 +289,12 @@ export const engineeringIntelligenceService = {
       note?: string;
     },
   ): Promise<RequirementItem> {
-    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/status`, payload);
+    const response = await api.patch(`/ei/requirements/${requirementId}/status`, payload);
     return response.data;
   },
 
   async getRequirementBoard(): Promise<RequirementBoardResult> {
-    const response = await api.get('/engineering-intelligence/requirements/board');
+    const response = await api.get('/ei/requirements/board');
     return response.data;
   },
 
@@ -302,7 +302,7 @@ export const engineeringIntelligenceService = {
     requirementId: string,
     payload: { owner?: string; repo?: string; labels?: string[]; metadata?: Record<string, unknown> },
   ): Promise<{ success: boolean; requirementId: string; githubLink?: RequirementGithubLink }> {
-    const response = await api.post(`/engineering-intelligence/requirements/${requirementId}/github/sync`, payload);
+    const response = await api.post(`/ei/requirements/${requirementId}/github/sync`, payload);
     return response.data;
   },
 };

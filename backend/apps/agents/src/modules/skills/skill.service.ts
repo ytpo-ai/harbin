@@ -10,7 +10,7 @@ import {
   SkillDocument,
   SkillSourceType,
   SkillStatus,
-} from '../../schemas/skill.schema';
+} from '../../schemas/agent-skill.schema';
 import { SkillDocSyncService } from './skill-doc-sync.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
 import { RedisService } from '@libs/infra';

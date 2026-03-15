@@ -68,7 +68,7 @@ export class InternalApiClient {
       errorCode: 'ei_api_request_failed',
       method,
       endpoint: normalizedEndpoint,
-      url: `${this.engineeringIntelligenceBaseUrl}/engineering-intelligence${normalizedEndpoint}`,
+      url: `${this.engineeringIntelligenceBaseUrl}/ei${normalizedEndpoint}`,
       body,
     });
   }
@@ -105,7 +105,7 @@ export class InternalApiClient {
 
   async postEngineeringStatistics(payload: Record<string, unknown>): Promise<any> {
     const response = await axios.post(
-      `${this.engineeringIntelligenceBaseUrl}/engineering-intelligence/statistics/snapshots`,
+      `${this.engineeringIntelligenceBaseUrl}/ei/statistics/snapshots`,
       payload,
       {
         headers: this.buildSignedHeaders(),

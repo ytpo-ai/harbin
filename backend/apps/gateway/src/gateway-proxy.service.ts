@@ -26,7 +26,10 @@ export class GatewayProxyService {
   ) {}
 
   resolveTarget(originalUrl: string): string {
-    if (originalUrl.startsWith('/api/engineering-intelligence')) {
+    if (
+      originalUrl.startsWith('/api/ei') ||
+      originalUrl.startsWith('/api/engineering-intelligence')
+    ) {
       return this.engineeringIntelligenceBaseUrl;
     }
 

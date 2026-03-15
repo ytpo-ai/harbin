@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Message, MessageDocument, MessageSceneType, MessageSenderType } from '../../shared/schemas/message.schema';
+import { Message, MessageDocument, MessageSceneType, MessageSenderType } from '../../shared/schemas/chat.schema';
 
 export interface AppendMessageDto {
   sceneType: MessageSceneType;

@@ -27,7 +27,7 @@
 | `agent/agent_skill` | Agent 技能绑定 | `docs/feature/AGENT_SKILL.md` |
 | `agent/agent_mcp` | MCP 工具集成 | `docs/feature/AGENT_MCP.md` |
 | `agent/agent_runtime` | Agent 运行时 | `docs/feature/AGENT_RUNTIME.md` |
-| `agent/agent_message` | Agent 协作消息 | `docs/feature/AGENT_MESSAGE.md` |
+| `agent/agent_message` | Agent 协作消息 | `docs/feature/INNER_MESSAGE.md` |
 
 ### 2. 任务编排模块 (orchestration)
 | 2级功能 | 说明 | 功能文档 |
@@ -83,7 +83,7 @@
 | `docs/feature/AGENT_TOOL.md` | agent/tool |
 | `docs/feature/AGENT_SKILL.md` | agent/skill |
 | `docs/feature/AGENT_RUNTIME.md` | agent/agent_runtime |
-| `docs/feature/AGENT_MESSAGE.md` | agent/agent_message |
+| `docs/feature/INNER_MESSAGE.md` | agent/agent_message |
 | `docs/feature/ORCHETRATION.md` | orchestration |
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |

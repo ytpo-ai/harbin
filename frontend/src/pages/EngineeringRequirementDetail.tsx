@@ -153,7 +153,7 @@ const EngineeringRequirementDetail: React.FC = () => {
         queryClient.invalidateQueries('ei-requirement-board');
         showToast('success', '需求已删除');
         window.setTimeout(() => {
-          navigate('/engineering-intelligence/requirements');
+          navigate('/ei/requirements');
         }, 200);
       },
       onError: (error) => {
@@ -175,7 +175,7 @@ const EngineeringRequirementDetail: React.FC = () => {
             <p className="mt-1 text-sm text-gray-600">状态：{detail ? STATUS_LABEL[detail.status] : '-'}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link to="/engineering-intelligence/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">返回列表</Link>
+            <Link to="/ei/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">返回列表</Link>
             <button onClick={() => refetch()} className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm"><ArrowPathIcon className="h-4 w-4" />刷新</button>
             <button
               onClick={() => {

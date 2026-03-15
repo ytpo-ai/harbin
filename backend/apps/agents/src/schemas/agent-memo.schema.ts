@@ -15,7 +15,7 @@ export type MemoKind =
   | 'achievement'
   | 'criticism';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'agent_memos' })
 export class AgentMemo {
   @Prop({ required: true, unique: true })
   id: string;

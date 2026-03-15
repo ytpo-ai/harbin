@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
-import { Tool, ToolDocument } from '../../shared/schemas/tool.schema';
+import { Tool, ToolDocument } from '../../../apps/agents/src/schemas/tool.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
@@ -20,14 +20,14 @@ import {
   EmployeeStatus,
   EmployeeType,
 } from '../../shared/schemas/employee.schema';
-import { PlanSession, PlanSessionDocument } from '../../shared/schemas/plan-session.schema';
+import { PlanSession, PlanSessionDocument } from '../../shared/schemas/orchestration-plan-session.schema';
 import {
   OrchestrationSchedule,
   OrchestrationScheduleDocument,
 } from '../../shared/schemas/orchestration-schedule.schema';
 import { Task } from '../../shared/types';
 import { AgentClientService } from '../agents-client/agent-client.service';
-import { AgentMessagesService } from '../agent-messages/agent-messages.service';
+import { InnerMessageService } from '../inner-message/inner-message.service';
 import { PlannerService } from './planner.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { TaskClassificationService } from './services/task-classification.service';
@@ -66,7 +66,7 @@ export class OrchestrationService {
     private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     private readonly plannerService: PlannerService,
     private readonly agentClientService: AgentClientService,
-    private readonly agentMessagesService: AgentMessagesService,
+    private readonly innerMessageService: InnerMessageService,
     private readonly executorSelectionService: ExecutorSelectionService,
     private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
@@ -1350,7 +1350,7 @@ export class OrchestrationService {
   ): Promise<void> {
     try {
       await axios.post(
-        `${this.engineeringIntelligenceBaseUrl}/engineering-intelligence/requirements/${encodeURIComponent(requirementId)}/status`,
+        `${this.engineeringIntelligenceBaseUrl}/ei/requirements/${encodeURIComponent(requirementId)}/status`,
         {
           status,
           changedByType: 'system',
@@ -1659,7 +1659,7 @@ export class OrchestrationService {
       return;
     }
 
-    await this.agentMessagesService.publishTaskEvent({
+    await this.innerMessageService.publishTaskEvent({
       eventType: input.eventType,
       taskId,
       planId: input.task.planId,

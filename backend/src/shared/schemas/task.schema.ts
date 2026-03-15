@@ -3,7 +3,7 @@ import { Document, Types } from 'mongoose';
 
 export type TaskDocument = Task & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'tasks' })
 export class Task {
   @Prop()
   id?: string;

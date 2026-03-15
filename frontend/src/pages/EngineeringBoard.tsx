@@ -32,7 +32,7 @@ const EngineeringBoard: React.FC = () => {
             <p className="mt-1 text-sm text-gray-600">按需求状态展示研发执行流转，默认 5 秒自动刷新。</p>
           </div>
           <div className="flex items-center gap-2">
-            <Link to="/engineering-intelligence/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">需求管理</Link>
+            <Link to="/ei/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">需求管理</Link>
             <button onClick={() => refetch()} className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm"><ArrowPathIcon className="h-4 w-4" />刷新</button>
           </div>
         </div>
@@ -56,7 +56,7 @@ const EngineeringBoard: React.FC = () => {
                   items.map((item) => (
                     <Link
                       key={item.requirementId}
-                      to={`/engineering-intelligence/requirements/${item.requirementId}`}
+                      to={`/ei/requirements/${item.requirementId}`}
                       className="block border border-gray-200 rounded p-2 bg-gray-50 hover:bg-gray-100"
                     >
                       <p className="text-xs font-medium text-gray-800 line-clamp-2">{item.title}</p>

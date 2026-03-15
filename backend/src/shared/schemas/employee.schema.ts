@@ -28,7 +28,7 @@ export enum EmployeeRole {
   INTERN = 'intern',
 }
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'employees' })
 export class Employee {
   @Prop({ required: true, unique: true })
   id: string;

@@ -15,7 +15,7 @@ export type OrchestrationTaskStatus =
 
 export type OrchestrationTaskMode = 'plan' | 'schedule';
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'orchestration_tasks' })
 export class OrchestrationTask {
   @Prop()
   id?: string;

@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export type OperationLogDocument = OperationLog & Document;
 
-@Schema({ timestamps: true })
+@Schema({ timestamps: true, collection: 'operation_logs' })
 export class OperationLog {
   @Prop({ required: true, unique: true, default: uuidv4 })
   id: string;
