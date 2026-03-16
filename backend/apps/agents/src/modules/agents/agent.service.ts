@@ -25,6 +25,14 @@ import { AgentMcpProfileService } from './agent-mcp-profile.service';
 export interface AgentContext {
   task: Task;
   teamContext?: any;
+  opencodeRuntime?: {
+    endpoint?: string;
+    endpointRef?: string;
+    authEnable?: boolean;
+  };
+  runtimeLifecycle?: {
+    onStarted?: (input: { runId: string; sessionId?: string; traceId: string }) => void | Promise<void>;
+  };
   actor?: {
     employeeId?: string;
     role?: string;
@@ -792,6 +800,12 @@ export class AgentService {
       teamContext: context?.teamContext,
     });
 
+    await context?.runtimeLifecycle?.onStarted?.({
+      runId: runtimeContext.runId,
+      sessionId: runtimeContext.sessionId,
+      traceId: runtimeContext.traceId,
+    });
+
     await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
 
     try {
@@ -817,6 +831,9 @@ export class AgentService {
           sessionConfig.projectPath = openCodeExecutionConfig.projectDirectory;
         }
 
+        const resolvedOpenCodeRuntime = this.resolveOpenCodeRuntimeOptions(openCodeExecutionConfig, context?.opencodeRuntime);
+        this.logResolvedOpenCodeRuntime(taskId, 'detailed', resolvedOpenCodeRuntime);
+
         const openCodeResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
           runtimeContext,
           agentId: runtimeAgentId,
@@ -829,8 +846,8 @@ export class AgentService {
             modelID: modelConfig.model,
           },
           runtime: {
-            baseUrl: openCodeExecutionConfig.endpoint || openCodeExecutionConfig.endpointRef,
-            authEnable: openCodeExecutionConfig.authEnable,
+            baseUrl: resolvedOpenCodeRuntime.baseUrl,
+            authEnable: resolvedOpenCodeRuntime.authEnable,
             requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
           },
         });
@@ -950,7 +967,7 @@ export class AgentService {
     task: Task,
     onToken: (token: string) => void,
     context?: Partial<AgentContext>
-  ): Promise<void> {
+  ): Promise<ExecuteTaskResult> {
     const agent = await this.getAgent(agentId);
     if (!agent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
@@ -1019,6 +1036,9 @@ export class AgentService {
       await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       if (openCodeExecutionConfig) {
+        const resolvedOpenCodeRuntime = this.resolveOpenCodeRuntimeOptions(openCodeExecutionConfig, context?.opencodeRuntime);
+        this.logResolvedOpenCodeRuntime(taskId, 'streaming', resolvedOpenCodeRuntime);
+
         const sessionConfig: Record<string, unknown> = {
           metadata: {
             taskId,
@@ -1044,16 +1064,22 @@ export class AgentService {
             modelID: agent.model.model,
           },
           runtime: {
-            baseUrl: openCodeExecutionConfig.endpoint || openCodeExecutionConfig.endpointRef,
-            authEnable: openCodeExecutionConfig.authEnable,
+            baseUrl: resolvedOpenCodeRuntime.baseUrl,
+            authEnable: resolvedOpenCodeRuntime.authEnable,
             requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
+          },
+          onDelta: async (delta) => {
+            if (!delta) return;
+            tokenChunks += 1;
+            fullResponse += delta;
+            onToken(delta);
           },
         });
 
-        fullResponse = openCodeResult.response || '';
-        if (fullResponse) {
-          tokenChunks = 1;
-          onToken(fullResponse);
+        if (!fullResponse && openCodeResult.response) {
+          fullResponse = openCodeResult.response;
+          tokenChunks += 1;
+          onToken(openCodeResult.response);
         }
       } else {
         // 获取自定义API Key（如果配置了）
@@ -1144,6 +1170,96 @@ export class AgentService {
         })),
       },
     });
+
+    return {
+      response: fullResponse,
+      runId: runtimeContext.runId,
+      sessionId: runtimeContext.sessionId,
+    };
+  }
+
+  async cancelRuntimeRun(runId: string): Promise<void> {
+    if (!String(runId || '').trim()) {
+      return;
+    }
+    await this.runtimeOrchestrator.cancelRunWithActor(runId, {
+      actorId: 'agent-task-worker',
+      actorType: 'system',
+      reason: 'step_timeout_cancel',
+    });
+  }
+
+  private resolveOpenCodeRuntimeOptions(
+    executionConfig: {
+      endpoint?: string;
+      endpointRef?: string;
+      authEnable: boolean;
+    },
+    runtime?: {
+      endpoint?: string;
+      endpointRef?: string;
+      authEnable?: boolean;
+    },
+  ): {
+    baseUrl?: string;
+    authEnable: boolean;
+    source: 'agent_config_endpoint' | 'agent_config_endpoint_ref' | 'runtime_endpoint' | 'runtime_endpoint_ref' | 'env_default';
+  } {
+    const endpoint = String(executionConfig.endpoint || '').trim();
+    if (endpoint) {
+      return {
+        baseUrl: endpoint,
+        authEnable: executionConfig.authEnable,
+        source: 'agent_config_endpoint',
+      };
+    }
+
+    const endpointRef = String(executionConfig.endpointRef || '').trim();
+    if (endpointRef) {
+      return {
+        baseUrl: endpointRef,
+        authEnable: executionConfig.authEnable,
+        source: 'agent_config_endpoint_ref',
+      };
+    }
+
+    const runtimeEndpoint = String(runtime?.endpoint || '').trim();
+    if (runtimeEndpoint) {
+      return {
+        baseUrl: runtimeEndpoint,
+        authEnable: runtime?.authEnable ?? executionConfig.authEnable,
+        source: 'runtime_endpoint',
+      };
+    }
+
+    const runtimeEndpointRef = String(runtime?.endpointRef || '').trim();
+    if (runtimeEndpointRef) {
+      return {
+        baseUrl: runtimeEndpointRef,
+        authEnable: runtime?.authEnable ?? executionConfig.authEnable,
+        source: 'runtime_endpoint_ref',
+      };
+    }
+
+    return {
+      baseUrl: undefined,
+      authEnable: executionConfig.authEnable,
+      source: 'env_default',
+    };
+  }
+
+  private logResolvedOpenCodeRuntime(
+    taskId: string,
+    mode: 'detailed' | 'streaming',
+    runtime: {
+      baseUrl?: string;
+      authEnable: boolean;
+      source: 'agent_config_endpoint' | 'agent_config_endpoint_ref' | 'runtime_endpoint' | 'runtime_endpoint_ref' | 'env_default';
+    },
+  ): void {
+    this.logger.log(
+      `[opencode_runtime_resolved] taskId=${taskId} mode=${mode} source=${runtime.source} baseUrl=${runtime.baseUrl || 'env'} authEnable=${runtime.authEnable}`,
+    );
   }
 
   private async buildMessages(

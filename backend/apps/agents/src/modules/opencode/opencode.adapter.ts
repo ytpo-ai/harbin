@@ -56,9 +56,51 @@ export class OpenCodeAdapter {
     });
 
     return {
-      response: String(result?.info?.content || result?.content || ''),
+      response: this.extractResponseText(result),
       metadata: (result?.info || {}) as Record<string, unknown>,
     };
+  }
+
+  private extractResponseText(result: any): string {
+    const direct = [result?.info?.content, result?.content, result?.message, result?.output];
+    for (const value of direct) {
+      if (typeof value === 'string' && value.trim()) {
+        return value;
+      }
+    }
+
+    const candidates = [result?.parts, result?.info?.parts, result?.payload?.parts];
+    for (const parts of candidates) {
+      const text = this.extractTextFromParts(parts);
+      if (text) {
+        return text;
+      }
+    }
+
+    return '';
+  }
+
+  private extractTextFromParts(parts: unknown): string {
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+
+    const chunks: string[] = [];
+    for (const part of parts) {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const row = part as Record<string, unknown>;
+      if (typeof row.text === 'string' && row.text.trim()) {
+        chunks.push(row.text);
+        continue;
+      }
+      if (typeof row.content === 'string' && row.content.trim()) {
+        chunks.push(row.content);
+      }
+    }
+
+    return chunks.join('').trim();
   }
 
   async *subscribeEvents(sessionId?: string, runtime?: OpenCodeRuntimeOptions): AsyncGenerator<OpenCodeAdapterEvent> {

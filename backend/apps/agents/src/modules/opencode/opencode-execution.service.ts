@@ -104,6 +104,7 @@ export class OpenCodeExecutionService {
     };
     runtime?: OpenCodeRuntimeOptions;
     mapEvent?: (event: OpenCodeAdapterEvent) => RuntimeMappedEvent;
+    onDelta?: (delta: string) => void | Promise<void>;
   }): Promise<OpenCodeExecutionStartResult> {
     const result = await this.startExecution({
       taskPrompt: input.taskPrompt,
@@ -117,6 +118,7 @@ export class OpenCodeExecutionService {
     const mapper = input.mapEvent || this.mapOpenCodeEventToRuntimeEvent.bind(this);
     let sequence = 10_000;
     let recordedFromRealEvents = 0;
+    const responseChunks: string[] = [];
 
     const realEvents = await this.collectSessionEvents(
       result.sessionId,
@@ -130,10 +132,13 @@ export class OpenCodeExecutionService {
         continue;
       }
 
-      const delta = this.extractDeltaText(mapped.payload);
+      const delta = this.extractDeltaText(mapped.payload) || this.extractDeltaText(event.payload || {});
       if (!delta) {
         continue;
       }
+
+      responseChunks.push(delta);
+      await input.onDelta?.(delta);
 
       await this.runtimeOrchestrator.recordLlmDelta({
         runId: input.runtimeContext.runId,
@@ -159,6 +164,17 @@ export class OpenCodeExecutionService {
         sessionId: input.runtimeContext.sessionId,
         taskId: input.taskId,
       });
+    }
+
+    const eventReconstructedResponse = responseChunks.join('').trim();
+    if (!result.response && eventReconstructedResponse) {
+      this.logger.log(
+        `OpenCode response reconstructed from events sessionId=${result.sessionId} chunks=${responseChunks.length}`,
+      );
+      return {
+        ...result,
+        response: eventReconstructedResponse,
+      };
     }
 
     return result;
@@ -225,7 +241,53 @@ export class OpenCodeExecutionService {
       }
     }
 
+    const candidateObjects = [payload, nested].filter(
+      (item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)),
+    );
+    for (const obj of candidateObjects) {
+      const info = obj.info;
+      if (info && typeof info === 'object' && !Array.isArray(info)) {
+        const infoContent = (info as Record<string, unknown>).content;
+        if (typeof infoContent === 'string' && infoContent.trim()) {
+          return infoContent;
+        }
+        const infoParts = (info as Record<string, unknown>).parts;
+        const textFromInfoParts = this.extractTextFromParts(infoParts);
+        if (textFromInfoParts) {
+          return textFromInfoParts;
+        }
+      }
+
+      const textFromParts = this.extractTextFromParts(obj.parts);
+      if (textFromParts) {
+        return textFromParts;
+      }
+    }
+
     return '';
+  }
+
+  private extractTextFromParts(parts: unknown): string {
+    if (!Array.isArray(parts)) {
+      return '';
+    }
+
+    const chunks: string[] = [];
+    for (const part of parts) {
+      if (!part || typeof part !== 'object' || Array.isArray(part)) {
+        continue;
+      }
+      const row = part as Record<string, unknown>;
+      if (typeof row.text === 'string' && row.text.trim()) {
+        chunks.push(row.text);
+        continue;
+      }
+      if (typeof row.content === 'string' && row.content.trim()) {
+        chunks.push(row.content);
+      }
+    }
+
+    return chunks.join('').trim();
   }
 
   private async ensureSessionId(input: OpenCodeExecutionStartInput): Promise<string> {

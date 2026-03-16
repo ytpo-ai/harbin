@@ -62,17 +62,37 @@
 - 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，非流式与流式路径均强制走 OpenCode 执行桥接，不允许回落 native 模型通道。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
 - OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
-- OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `OPENCODE_SERVER_URL`。
+- OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `context.opencodeRuntime.endpoint` > `context.opencodeRuntime.endpointRef` > `OPENCODE_SERVER_URL`。
 - OpenCode 认证开关：支持 `agent.config.execution.auth_enable`（boolean，默认 `false`）；仅当为 `true` 时读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth（username=`opencode`）。
 - OpenCode 调用通道：Runtime 侧已移除 SDK 依赖，统一通过 OpenCode HTTP API（含 SSE）直连执行与事件读取。
 - OpenCode session 创建时会显式透传当前执行模型（`providerID/modelID`），保证 session 模型与 Agent 绑定模型对齐。
 - 当 `OPENCODE_MODEL_BINDING_CHECK_ENABLED=false` 时，创建 session 与发送 message 仅透传执行模型，不再因为绑定不一致直接阻断；后续可在 OpenCode 可用模型列表稳定后再开启严格校验。
+- 优先级约束说明见：`docs/TIP.MD`（用于排查 endpoint 错配、默认 env 误命中）。
+
+#### OpenCode 任务流故障记录（2026-03-16）
+
+- 现象：`/agents/tasks/:taskId/events` 可收到 `result(status=succeeded)`，但 `token` 事件为空，`result.response` 也为空。
+- 根因：
+  - endpoint 选择链路存在优先级偏差，部分分支会误回退到环境默认地址。
+  - OpenCode `POST /session/:id/message` 在部分版本下返回文本位于 `parts/info.parts`，而非仅 `info.content/content`，导致响应解析为空。
+  - 执行桥接只在尾部回填 response，未稳定把事件增量回调到 Task SSE `token` 事件。
+- 修复：
+  - 统一 endpoint 解析优先级（见上方规则与 `docs/TIP.MD`）。
+  - 扩展消息响应解析：支持 `parts/info.parts/payload.parts/message/output` 多路径提取。
+  - OpenCode 执行桥接增加 `onDelta`，每个 delta 实时透传为 Task SSE `token` 事件；若 message response 为空则按事件重建最终 response。
 - `agent_runs` 扩展字段：
   - `executionChannel`（`native|opencode`）
   - `roleCode`
   - `executionData`（含模型快照、OpenCode 开关、同步诊断信息）
   - `sync`（对象）：`state/lastSyncAt/retryCount/nextRetryAt/lastError/deadLettered`
 - 同步策略：run 终态后触发 EI 异步同步，失败进入自动重试，超限进入死信，可通过 run 级 replay 与 dead-letter requeue 补齐。
+
+#### Agent Task SSE 重试与超时治理（已实现：第二阶段）
+
+- Agent Task 增加 `stepTimeoutMs/taskTimeoutMs/maxAttempts/retryBaseDelayMs/retryMaxDelayMs` 字段。
+- Worker 对单次执行启用 step timeout 守卫；对任务全生命周期启用 task timeout 守卫。
+- 错误分类支持 `retryable/fatal/cancelled`：仅 retryable 错误进入指数退避 + jitter 重试。
+- SSE 事件流增加 `retry_scheduled/retry_started` 语义（通过 progress payload 承载），并在任务查询接口返回 `attempt/nextRetryAt` 等字段。
 
 #### 工具调用状态机（part 级）
 
@@ -143,6 +163,7 @@
 | `AGENT_RUNTIME_FEATURE_DOC_PLAN.md` | Runtime 功能文档沉淀计划（本次） |
 | `OPENCODE_SERVE_INTERACTION_MASTER_PLAN.md` | OpenCode 交互主计划与角色/预算约束 |
 | `OPENCODE_AGENT_TASK_SSE_WORKER_PLAN.md` | OpenCode 长任务抗超时改造计划（Worker + SSE） |
+| `AGENT_TASK_SSE_MULTI_SERVE_PLAN.md` | Agent Task SSE 化与 Multi-Serve OpenCode 接入计划 |
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 
@@ -163,6 +184,7 @@
 | `technical/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
 | `technical/AGENT_RUNTIME_WORKFLOW_TECHNICAL_DESIGN.md` | Runtime 工作流技术设计 |
 | `technical/OPENCODE_AGENT_TASK_SSE_WORKER_TECHNICAL_DESIGN.md` | OpenCode 长任务抗超时技术设计（Worker + SSE） |
+| `technical/AGENT_TASK_SSE_MULTI_SERVE_TECHNICAL_DESIGN.md` | Agent Task SSE 化与 Multi-Serve OpenCode 技术设计 |
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | OpenCode 执行事实层与 EI 分析层分层设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | local/ecds 多环境协同与 ingest 同步设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |
@@ -205,5 +227,11 @@
 | `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
 | `modules/agents/agent-orchestration-intent.service.ts` | 会议编排意图识别与强制工具调用映射 |
 | `modules/agents/agent-mcp-profile.service.ts` | MCP profile 读写、映射与权限集下沉服务 |
+| `modules/agent-tasks/agent-task.controller.ts` | Agent Task 异步任务 API（create/get/cancel/SSE） |
+| `modules/agent-tasks/agent-task.service.ts` | Agent Task 状态管理、幂等、事件续传与权限校验 |
+| `modules/agent-tasks/agent-task.worker.ts` | 异步 Worker 消费队列并驱动 runtime + OpenCode 执行 |
+| `modules/agent-tasks/runtime-sse-stream.service.ts` | SSE 实时流 + 心跳 + Redis 订阅桥接 |
+| `modules/agent-tasks/opencode-serve-router.service.ts` | Multi-Serve 路由与会话粘性所需 serve 选择能力 |
+| `schemas/agent-task.schema.ts` | Agent Task 状态持久化模型（queued/running/succeeded/failed/cancelled） |
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | Runtime 控制类路径网关侧审计日志 |
 | `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |

@@ -16,6 +16,10 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 ## 日常进度记录规范及协议
 具体规范及约束请阅读 `docs/dailylog/RULES.md` 中的说明。
 
+## OpenCode Endpoint 优先级提示
+
+请优先阅读 `docs/TIP.MD`。其中定义了 Agent 任务执行时 OpenCode endpoint 的强制优先级与排障要点。
+
 ## 需求处理流程协议
 
 当用户提出具体开发需求时，先梳理功能当前的设计方案，必须先输出执行计划（plan），并等待用户明确同意后才可开始编码。

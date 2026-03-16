@@ -15,6 +15,80 @@
 - `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
 
+### Agent Task SSE（`/agents/tasks`）
+
+- `POST /agents/tasks`：创建异步 Agent 任务，快速返回 `taskId`
+  - 请求示例：
+
+```json
+{
+  "agentId": "agent_xxx",
+  "task": "请分析并修复构建失败",
+  "sessionContext": {},
+  "idempotencyKey": "task-20260316-001"
+}
+```
+
+  - 响应示例：
+
+```json
+{
+  "taskId": "task_xxx",
+  "status": "queued"
+}
+```
+
+- `GET /agents/tasks/:taskId`：查询任务状态与摘要（`status/progress/currentStep/error/resultSummary/lastEventAt`）
+  - 额外返回重试与超时治理字段：`attempt/maxAttempts/nextRetryAt/lastAttemptAt/stepTimeoutMs/taskTimeoutMs`
+- `GET /agents/tasks/:taskId/events`：SSE 订阅任务事件（支持 `Last-Event-ID` 或 query `lastEventId`）
+  - 关键响应头：
+    - `Content-Type: text/event-stream`
+    - `Cache-Control: no-cache, no-transform`
+    - `Connection: keep-alive`
+- `POST /agents/tasks/:taskId/cancel`：请求取消任务
+
+SSE 事件 envelope：
+
+```json
+{
+  "id": "evt_000123",
+  "type": "status|progress|token|tool|result|error|heartbeat",
+  "taskId": "task_xxx",
+  "runId": "run_xxx",
+  "sequence": 123,
+  "timestamp": "2026-03-16T10:00:01.000Z",
+  "payload": {}
+}
+```
+
+重试与超时策略：
+
+- `stepTimeoutMs`：单次执行步骤超时（超时后触发 `STEP_TIMEOUT_EXCEEDED`）。
+- `taskTimeoutMs`：任务总时长上限（超限后触发 `TASK_TIMEOUT_EXCEEDED` 并终止重试）。
+- `maxAttempts`：最大尝试次数（含首次执行）。
+- 对可重试错误采用指数退避 + jitter（基于 `retryBaseDelayMs/retryMaxDelayMs`）。
+- SSE payload 中补充 `retry_scheduled/retry_started` 语义用于前端观测。
+
+Multi-Serve 路由配置（agents service）：
+
+- 环境变量 `OPENCODE_SERVE_REGISTRY` 支持配置多 OpenCode serve 节点（JSON array）。
+- 每项字段：`serveId/baseUrl/authEnable/maxConcurrency/weight`。
+- 未配置时 fallback 到 `OPENCODE_SERVER_URL`（`serveId=default`）。
+
+OpenCode endpoint 解析优先级（强约束）：
+
+- `agent.config.execution.endpoint`
+- `agent.config.execution.endpointRef`
+- `context.opencodeRuntime.endpoint`
+- `context.opencodeRuntime.endpointRef`
+- `OPENCODE_SERVER_URL`
+
+故障排查（Token 输出为空但任务成功）：
+
+- 先看事件流是否仅有 `result` 而无 `token`；若是，优先检查 OpenCode 返回是否位于 `parts/info.parts`。
+- 服务端已兼容 `info.content/content/parts/info.parts/payload.parts/message/output` 多种返回结构。
+- 若 `result.response` 为空但 OpenCode 实际有输出，服务端会按会话事件重建 response，并通过 `token` 事件实时透传。
+
 OpenCode 相关（规划中）：
 
 - Agent 实体增加 `config` JSON 字段（创建/更新/查询可读写，历史默认 `{}`）。
