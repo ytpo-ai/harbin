@@ -24,6 +24,7 @@ type DrawerTab = 'debug' | 'session';
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
+  drafting: 'bg-amber-100 text-amber-700',
   planned: 'bg-indigo-100 text-indigo-700',
   running: 'bg-blue-100 text-blue-700',
   paused: 'bg-amber-100 text-amber-700',
@@ -39,6 +40,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const TERMINAL_PLAN_STATUS = new Set(['completed', 'failed']);
 const ACTIVE_PLAN_STATUS = new Set(['running', 'paused']);
+const STREAMING_PLAN_STATUS = new Set(['drafting']);
 
 const formatDateTime = (value?: string) => {
   if (!value) return '-';
@@ -117,6 +119,9 @@ const PlanDetail: React.FC = () => {
   const [debugSessionId, setDebugSessionId] = useState('');
   const [debugAgentId, setDebugAgentId] = useState('');
   const [activeDrawerTab, setActiveDrawerTab] = useState<DrawerTab>('debug');
+  const [streamHint, setStreamHint] = useState('');
+  const [streamConnected, setStreamConnected] = useState(false);
+  const [streamTaskIds, setStreamTaskIds] = useState<string[]>([]);
 
   const { data: planDetail, isLoading: planLoading, error: planError } = useQuery<OrchestrationPlan>(
     ['orchestration-plan', planId],
@@ -128,12 +133,66 @@ const PlanDetail: React.FC = () => {
         if (isReplanPending) return 2000;
         const status = (data as any)?.status as string | undefined;
         if (!status) return false;
+        if (STREAMING_PLAN_STATUS.has(status)) return 2500;
         if (ACTIVE_PLAN_STATUS.has(status)) return 3000;
         if (status && TERMINAL_PLAN_STATUS.has(status)) return false;
         return false;
       },
     },
   );
+
+  useEffect(() => {
+    if (!planId) {
+      return;
+    }
+
+    let disposed = false;
+    const unsubscribe = orchestrationService.subscribePlanEvents(planId, {
+      onEvent: (event) => {
+        if (disposed || !event?.type) {
+          return;
+        }
+        setStreamConnected(true);
+        if (event.type === 'plan.task.generated') {
+          const generatedTaskId = String((event.data?.task?._id || '')).trim();
+          if (generatedTaskId) {
+            setStreamTaskIds((prev) => (prev.includes(generatedTaskId) ? prev : [...prev, generatedTaskId]));
+          }
+          setStreamHint(`正在生成任务 (${event.data?.index || 0}/${event.data?.total || '-'})`);
+          void queryClient.invalidateQueries(['orchestration-plan', planId]);
+          return;
+        }
+        if (event.type === 'plan.completed') {
+          setStreamHint('任务生成完成');
+          void Promise.all([
+            queryClient.invalidateQueries('orchestration-plans'),
+            queryClient.invalidateQueries(['orchestration-plan', planId]),
+          ]);
+          return;
+        }
+        if (event.type === 'plan.failed') {
+          setStreamHint(`任务生成失败: ${event.data?.error || 'unknown error'}`);
+          void queryClient.invalidateQueries(['orchestration-plan', planId]);
+          return;
+        }
+        if (event.type === 'plan.status.changed' && event.data?.status === 'drafting') {
+          setStreamHint('任务生成中...');
+        }
+      },
+      onError: () => {
+        if (disposed) {
+          return;
+        }
+        setStreamConnected(false);
+      },
+    });
+
+    return () => {
+      disposed = true;
+      setStreamConnected(false);
+      unsubscribe();
+    };
+  }, [planId, queryClient]);
 
   const { data: agents = [] } = useQuery('plan-detail-agents', () => agentService.getAgents());
   const { data: employees = [] } = useQuery('plan-detail-employees', () => employeeService.getEmployees());
@@ -180,6 +239,8 @@ const PlanDetail: React.FC = () => {
     setDebugAgentId('');
     setActiveDrawerTab('debug');
     setDebugHint('');
+    setStreamHint('');
+    setStreamTaskIds([]);
   }, [planId]);
 
   const savePlanPromptMutation = useMutation(
@@ -555,6 +616,17 @@ const PlanDetail: React.FC = () => {
           </div>
         </div>
 
+        {planDetail.status === 'drafting' && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-medium">任务生成中</p>
+            <p className="mt-1 text-xs text-amber-700">
+              {streamHint || '系统正在异步编排任务，任务会逐条显示在下方列表。'}
+              {' · '}
+              {streamConnected ? '实时连接已建立' : '实时连接重连中，已启用轮询兜底'}
+            </p>
+          </div>
+        )}
+
         <div className="space-y-2">
           <p className="text-sm font-semibold text-slate-800">任务列表</p>
           {planTasks.length === 0 ? (
@@ -563,7 +635,7 @@ const PlanDetail: React.FC = () => {
             planTasks.map((task) => (
               <div
                 key={task._id}
-                className={`rounded-lg border bg-white p-4 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-slate-200'}`}
+                className={`rounded-lg border bg-white p-4 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-slate-200'} ${streamTaskIds.includes(task._id) ? 'ring-1 ring-amber-300' : ''}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div>

@@ -29,24 +29,7 @@ export interface Agent {
 	updatedAt?: Date;
 }
 
-export interface Team {
-	id?: string;
-	name: string;
-	description: string;
-	agents: Agent[];
-	settings: TeamSettings;
-	createdAt?: Date;
-	updatedAt?: Date;
-}
-
-export interface TeamSettings {
-	collaborationMode: 'pipeline' | 'parallel' | 'hierarchical';
-	maxConcurrentAgents: number;
-	votingEnabled: boolean;
-	consensusThreshold: number;
-}
-
-export interface Task {
+export interface AgentExecutionTask {
 	id?: string;
 	title: string;
 	description: string;
@@ -61,6 +44,8 @@ export interface Task {
 	updatedAt?: Date;
 	completedAt?: Date;
 }
+
+export type Task = AgentExecutionTask;
 
 // ===== 新增组织架构相关类型 =====
 

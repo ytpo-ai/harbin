@@ -27,6 +27,7 @@
 #### OrchestrationPlan 状态
 
 - `draft`：草稿
+- `drafting`：编排中（任务流式生成）
 - `planned`：已规划
 - `running`：执行中
 - `paused`：暂停（等待人工）
@@ -49,11 +50,11 @@
 #### 计划创建流程
 
 1. 用户输入自然语言需求（prompt）
-2. Planner 服务调用 Agent 进行任务拆解（3-8 个子任务）
-3. 生成 OrchestrationPlan 记录
-4. 为每个子任务生成 OrchestrationTask 记录
-5. 解析任务依赖关系
-6. 智能选择执行者（Agent/Employee）
+2. 先创建 OrchestrationPlan 占位记录（`status=drafting`）并立即返回 `planId`
+3. 后台异步调用 Planner 进行任务拆解（3-8 个子任务）
+4. 每生成一个子任务即落库并更新 PlanSession/统计
+5. 逐条推送计划事件（任务生成中/已生成）给前端
+6. 全部任务生成后切换为 `planned`，失败则置为 `failed`
 
 #### 计划管理约束
 
@@ -62,6 +63,7 @@
 - 计划详情页点击“重新编排”先弹出 Planner 选择框，确认后按所选 Planner 覆盖当前任务结构并重排；执行中按钮显示 loading 并禁用重复触发。
 - 重新编排接口改为异步受理：前端提交后轮询计划详情状态，完成后提示“编排完成”并刷新页面，避免长耗时同步请求超时。
 - 计划详情页支持一键复制任务清单为 Markdown（含计划信息、Prompt、任务列表、依赖/执行者/结果），复制成功提示“已复制到剪贴板”。
+- 创建计划后前端自动跳转 `/orchestration/plans/:id`，并在详情页显示“任务生成中”；任务按 `plan.task.generated` 事件逐条展示，体验接近 step 流式输出。
 
 #### 执行模式
 
@@ -79,6 +81,12 @@
 3. 任务完成后更新 Plan 统计
 4. 若计划关联 `requirementId`，计划启动/完成会触发需求状态 best-effort 回写。
 5. 任务消息联动：发布任务生命周期事件（`task.created/task.status.changed/task.completed/task.exception/task.failed`），订阅方通过 Redis 消息分发链路接收通知；Agent 间协作沟通使用独立直发消息链路。
+
+#### Agent 执行链路（异步化）
+
+- Orchestration 在执行 `agent` 任务时改为提交 `Agent Task` 异步任务（`POST /agents/tasks`），不再同步阻塞等待 `executeTaskDetailed`。
+- 编排侧优先通过 Agent Task SSE 事件流（`GET /agents/tasks/:taskId/events`）等待终态，异常时回退到状态查询（`GET /agents/tasks/:taskId`）轮询。
+- 该改造避免计划编排请求被长耗时模型推理拖住，从链路层消除同步等待导致的 504 风险。
 
 #### Orchestration 服务拆分（Plan D）
 
@@ -206,6 +214,7 @@
 | 方法 | 路径 | 功能 |
 |------|------|------|
 | POST | `/orchestration/plans/from-prompt` | 从自然语言创建计划 |
+| GET | `/orchestration/plans/:id/events` | 订阅计划事件流（SSE） |
 | PATCH | `/orchestration/plans/:id` | 更新计划基础信息（标题/提示词/策略/元数据） |
 | POST | `/orchestration/plans/:id/replan` | 覆盖当前计划任务并基于当前 prompt 重新编排 |
 | GET | `/orchestration/plans` | 获取计划列表 |

@@ -4,12 +4,15 @@ import {
   Delete,
   Get,
   Headers,
+  MessageEvent,
   Param,
   Patch,
   Post,
   Query,
+  Sse,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { decodeUserContext, verifyEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
 import { AuthService } from '../auth/auth.service';
@@ -62,13 +65,24 @@ export class OrchestrationController {
     };
   }
 
-  private async getUserFromAuthHeader(authHeader?: string, encodedContext?: string, signature?: string) {
+  private async getUserFromAuthHeader(
+    authHeader?: string,
+    encodedContext?: string,
+    signature?: string,
+    tokenOverride?: string,
+  ) {
     const internal = this.resolveUserFromInternalContext(encodedContext, signature);
     if (internal) {
       return internal;
     }
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      if (tokenOverride?.trim()) {
+        const employee = await this.authService.getEmployeeFromToken(tokenOverride.trim());
+        if (employee) {
+          return { id: employee.id };
+        }
+      }
       throw new UnauthorizedException('无效的Token');
     }
 
@@ -91,6 +105,18 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.createPlanFromPrompt(user.id, dto);
+  }
+
+  @Sse('plans/:id/events')
+  async streamPlanEvents(
+    @Param('id') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+    @Query('access_token') accessToken?: string,
+  ): Promise<Observable<MessageEvent>> {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature, accessToken);
+    return this.orchestrationService.streamPlanEvents(planId);
   }
 
   @Get('plans')

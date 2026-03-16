@@ -1,7 +1,7 @@
 import api from './api';
 
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
-export type PlanStatus = 'draft' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
+export type PlanStatus = 'draft' | 'drafting' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
 export type TaskStatus =
   | 'pending'
   | 'assigned'
@@ -136,6 +136,11 @@ export interface ReplanPlanAcceptedResponse {
   alreadyRunning?: boolean;
 }
 
+export interface PlanStreamEvent {
+  type: string;
+  data: Record<string, any>;
+}
+
 export interface UpdatePlanDto {
   title?: string;
   sourcePrompt?: string;
@@ -166,6 +171,36 @@ export const orchestrationService = {
   async getPlanById(planId: string): Promise<OrchestrationPlan> {
     const response = await api.get(`/orchestration/plans/${planId}`);
     return response.data;
+  },
+
+  subscribePlanEvents(
+    planId: string,
+    handlers: {
+      onEvent: (event: PlanStreamEvent) => void;
+      onError?: () => void;
+    },
+  ): () => void {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
+    const streamUrl = `${baseURL}/orchestration/plans/${encodeURIComponent(planId)}/events${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
+    const source = new EventSource(streamUrl);
+
+    source.onmessage = (raw) => {
+      try {
+        const payload = JSON.parse(raw.data || '{}');
+        handlers.onEvent(payload);
+      } catch {
+        // ignore invalid payload
+      }
+    };
+
+    source.onerror = () => {
+      handlers.onError?.();
+    };
+
+    return () => {
+      source.close();
+    };
   },
 
   async updatePlan(planId: string, payload: UpdatePlanDto): Promise<OrchestrationPlan> {

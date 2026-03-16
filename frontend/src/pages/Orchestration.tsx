@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   BeakerIcon,
   ArrowPathIcon,
@@ -26,6 +27,7 @@ type DrawerTab = 'debug' | 'session';
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
+  drafting: 'bg-amber-100 text-amber-700',
   planned: 'bg-indigo-100 text-indigo-700',
   running: 'bg-blue-100 text-blue-700',
   paused: 'bg-amber-100 text-amber-700',
@@ -51,6 +53,7 @@ const formatDateTime = (value?: string) => {
 };
 
 const Orchestration: React.FC = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -189,7 +192,8 @@ const Orchestration: React.FC = () => {
       await queryClient.invalidateQueries('orchestration-plans');
       if (created?._id) {
         setSelectedPlanId(created._id);
-        setIsDetailDrawerOpen(true);
+        setIsDetailDrawerOpen(false);
+        navigate(`/orchestration/plans/${created._id}`);
       }
       setIsCreateModalOpen(false);
     },

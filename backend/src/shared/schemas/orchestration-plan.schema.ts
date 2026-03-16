@@ -4,7 +4,7 @@ import { Document } from 'mongoose';
 export type OrchestrationPlanDocument = OrchestrationPlan & Document;
 
 export type OrchestrationMode = 'sequential' | 'parallel' | 'hybrid';
-export type OrchestrationPlanStatus = 'draft' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
+export type OrchestrationPlanStatus = 'draft' | 'drafting' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
 
 @Schema({ timestamps: true, collection: 'orchestration_plans' })
 export class OrchestrationPlan {
@@ -17,7 +17,7 @@ export class OrchestrationPlan {
   @Prop({ required: true })
   sourcePrompt: string;
 
-  @Prop({ enum: ['draft', 'planned', 'running', 'paused', 'completed', 'failed'], default: 'planned' })
+  @Prop({ enum: ['draft', 'drafting', 'planned', 'running', 'paused', 'completed', 'failed'], default: 'planned' })
   status: OrchestrationPlanStatus;
 
   @Prop(raw({

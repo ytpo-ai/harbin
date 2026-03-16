@@ -47,6 +47,10 @@
     - `Connection: keep-alive`
 - `POST /agents/tasks/:taskId/cancel`：请求取消任务
 
+说明：Orchestration 执行 agent 类型任务时已切换到该异步任务通道（提交任务 + 查询终态回写），不再在编排服务内同步等待 `POST /agents/:id/execute` 的完整返回。
+
+补充：编排侧终态感知优先消费 `GET /agents/tasks/:taskId/events`（SSE 事件驱动），若 SSE 订阅异常则自动降级为 `GET /agents/tasks/:taskId` 轮询。
+
 SSE 事件 envelope：
 
 ```json
@@ -438,6 +442,9 @@ OpenCode EI 同步补偿（已实现骨架）：
 ## Orchestration Scheduler（Legacy Backend）
 
 - 以下接口由 legacy backend 提供（非 agents service），用于管理定时调度任务：
+- 计划创建已升级为“秒回 + 异步编排”：
+  - `POST /orchestration/plans/from-prompt` 仅创建占位计划并返回（`status=drafting`）。
+  - 后台异步生成任务，前端可通过 `GET /orchestration/plans/:id/events` 订阅事件流，接收 `plan.status.changed` / `plan.task.generated` / `plan.completed` / `plan.failed`。
 - `POST /orchestration/schedules`：创建定时计划
 - `GET /orchestration/schedules`：获取计划列表
 - `GET /orchestration/schedules/:id`：获取计划详情
