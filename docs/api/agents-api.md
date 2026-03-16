@@ -89,6 +89,12 @@ OpenCode endpoint 解析优先级（强约束）：
 - 服务端已兼容 `info.content/content/parts/info.parts/payload.parts/message/output` 多种返回结构。
 - 若 `result.response` 为空但 OpenCode 实际有输出，服务端会按会话事件重建 response，并通过 `token` 事件实时透传。
 
+取消任务与 OpenCode 会话中断：
+
+- Agent Task 取消会触发 OpenCode 会话中断请求：`POST /session/:sessionId/abort`。
+- 取消请求使用与本次执行相同的 resolved endpoint（遵循上方优先级），不应回退到 env 默认 endpoint。
+- 推荐观察日志关键字：`[task_cancel] ... sessionId=... endpoint=...`、`OpenCode abort request start/success/failed`。
+
 OpenCode 相关（规划中）：
 
 - Agent 实体增加 `config` JSON 字段（创建/更新/查询可读写，历史默认 `{}`）。

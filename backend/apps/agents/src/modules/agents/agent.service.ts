@@ -32,6 +32,7 @@ export interface AgentContext {
   };
   runtimeLifecycle?: {
     onStarted?: (input: { runId: string; sessionId?: string; traceId: string }) => void | Promise<void>;
+    onOpenCodeSession?: (input: { sessionId: string; endpoint?: string; authEnable: boolean }) => void | Promise<void>;
   };
   actor?: {
     employeeId?: string;
@@ -1074,6 +1075,13 @@ export class AgentService {
             fullResponse += delta;
             onToken(delta);
           },
+          onSessionReady: async (sessionId) => {
+            await context?.runtimeLifecycle?.onOpenCodeSession?.({
+              sessionId,
+              endpoint: resolvedOpenCodeRuntime.baseUrl,
+              authEnable: resolvedOpenCodeRuntime.authEnable,
+            });
+          },
         });
 
         if (!fullResponse && openCodeResult.response) {
@@ -1186,6 +1194,23 @@ export class AgentService {
       actorId: 'agent-task-worker',
       actorType: 'system',
       reason: 'step_timeout_cancel',
+    });
+  }
+
+  async cancelOpenCodeSession(
+    sessionId: string,
+    runtime?: {
+      endpoint?: string;
+      authEnable?: boolean;
+    },
+  ): Promise<boolean> {
+    if (!String(sessionId || '').trim()) {
+      return false;
+    }
+
+    return this.openCodeExecutionService.cancelSession(sessionId, {
+      baseUrl: runtime?.endpoint,
+      authEnable: runtime?.authEnable,
     });
   }
 

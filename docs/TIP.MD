@@ -18,3 +18,9 @@
 
 - 在日志中输出最终解析来源（如 `agent_config_endpoint`、`agent_config_endpoint_ref`、`env_default`）。
 - 出现 502/超时时，优先核对“最终命中 endpoint”是否符合本规则。
+
+## 取消任务（OpenCode）约束
+
+- Agent Task 取消 OpenCode 会话时，必须复用本次执行的已解析 runtime endpoint（不可回退到 `OPENCODE_SERVER_URL`）。
+- 取消接口固定调用：`POST /session/:id/abort`。
+- 为便于核对链路，建议输出：`sessionId + endpoint + abort start/success/failed`。

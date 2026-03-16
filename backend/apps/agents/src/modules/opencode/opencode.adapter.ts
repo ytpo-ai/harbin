@@ -61,6 +61,21 @@ export class OpenCodeAdapter {
     };
   }
 
+  async abortSession(
+    sessionId: string,
+    runtime?: OpenCodeRuntimeOptions,
+  ): Promise<{ response: string; metadata: Record<string, unknown> }> {
+    const result = await this.request<any>('POST', `/session/${encodeURIComponent(sessionId)}/abort`, {
+      runtime,
+      data: {},
+    });
+
+    return {
+      response: this.extractResponseText(result),
+      metadata: (result?.info || {}) as Record<string, unknown>,
+    };
+  }
+
   private extractResponseText(result: any): string {
     const direct = [result?.info?.content, result?.content, result?.message, result?.output];
     for (const value of direct) {

@@ -105,8 +105,9 @@ export class OpenCodeExecutionService {
     runtime?: OpenCodeRuntimeOptions;
     mapEvent?: (event: OpenCodeAdapterEvent) => RuntimeMappedEvent;
     onDelta?: (delta: string) => void | Promise<void>;
+    onSessionReady?: (sessionId: string) => void | Promise<void>;
   }): Promise<OpenCodeExecutionStartResult> {
-    const result = await this.startExecution({
+    const sessionId = await this.ensureSessionId({
       taskPrompt: input.taskPrompt,
       sessionId: undefined,
       title: input.title,
@@ -114,6 +115,18 @@ export class OpenCodeExecutionService {
       model: input.model,
       runtime: input.runtime,
     });
+    await input.onSessionReady?.(sessionId);
+    const prompt = await this.adapter.promptSession({
+      sessionId,
+      prompt: input.taskPrompt,
+      model: input.model,
+      runtime: input.runtime,
+    });
+    const result: OpenCodeExecutionStartResult = {
+      sessionId,
+      response: prompt.response,
+      metadata: prompt.metadata,
+    };
 
     const mapper = input.mapEvent || this.mapOpenCodeEventToRuntimeEvent.bind(this);
     let sequence = 10_000;
@@ -178,6 +191,30 @@ export class OpenCodeExecutionService {
     }
 
     return result;
+  }
+
+  async cancelSession(sessionId: string, runtime?: OpenCodeRuntimeOptions): Promise<boolean> {
+    const normalizedSessionId = String(sessionId || '').trim();
+    if (!normalizedSessionId) {
+      return false;
+    }
+
+    try {
+      this.logger.log(
+        `OpenCode abort request start sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
+      );
+      await this.adapter.abortSession(normalizedSessionId, runtime);
+      this.logger.log(
+        `OpenCode abort request success sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
+      );
+      return true;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(
+        `OpenCode abort request failed sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} reason=${reason}`,
+      );
+      return false;
+    }
   }
 
   private async collectSessionEvents(

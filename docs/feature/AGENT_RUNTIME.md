@@ -80,6 +80,8 @@
   - 统一 endpoint 解析优先级（见上方规则与 `docs/TIP.MD`）。
   - 扩展消息响应解析：支持 `parts/info.parts/payload.parts/message/output` 多路径提取。
   - OpenCode 执行桥接增加 `onDelta`，每个 delta 实时透传为 Task SSE `token` 事件；若 message response 为空则按事件重建最终 response。
+  - OpenCode 取消链路统一为 `POST /session/:id/abort`，并复用执行时解析的 runtime endpoint，避免取消阶段误回退到环境默认地址。
+  - 取消链路增加可观测日志：`session captured`、`abort start/success/failed`（含 endpoint）。
 - `agent_runs` 扩展字段：
   - `executionChannel`（`native|opencode`）
   - `roleCode`
