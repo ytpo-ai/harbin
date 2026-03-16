@@ -152,6 +152,7 @@
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
 - 会议场景编排意图触发已收敛：移除“执行/继续/开始”单词级触发，新增“否定编排”阻断分支，减少误判。
 - 工具 ID 在运行时统一归一化到 canonical（如 `builtin.sys-mg.mcp.orchestration.*`），并兼容 legacy 别名映射，避免“已分配却被判定未分配”。
+- Agent 执行入口（`POST /api/agents/:id/execute`）支持 `_id` 与业务 `id` 双标识查询；非 ObjectId 标识（如 `executive-lead`）不再触发 `_id` CastError。
 
 ---
 
@@ -167,6 +168,7 @@
 | `OPENCODE_AGENT_TASK_SSE_WORKER_PLAN.md` | OpenCode 长任务抗超时改造计划（Worker + SSE） |
 | `AGENT_TASK_SSE_MULTI_SERVE_PLAN.md` | Agent Task SSE 化与 Multi-Serve OpenCode 接入计划 |
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
+| `AGENT_EXECUTE_IDENTIFIER_COMPAT_PLAN.md` | Agent 执行入口 `id/_id` 双标识兼容修复计划 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 
 ### 开发总结 (docs/development/)

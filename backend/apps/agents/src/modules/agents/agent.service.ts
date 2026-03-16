@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, isValidObjectId } from 'mongoose';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
@@ -283,7 +283,7 @@ export class AgentService {
   }
 
   async getAgent(agentId: string): Promise<Agent | null> {
-    return this.agentModel.findById(agentId).exec();
+    return this.agentModel.findOne(this.buildAgentLookupQuery(agentId)).exec();
   }
 
   async getAgentByName(name: string): Promise<Agent | null> {
@@ -299,7 +299,7 @@ export class AgentService {
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
-    const existingAgent = await this.agentModel.findById(agentId).exec();
+    const existingAgent = await this.getAgent(agentId);
     if (!existingAgent) {
       throw new NotFoundException(`Agent not found: ${agentId}`);
     }
@@ -378,7 +378,7 @@ export class AgentService {
     }
 
     const updated = await this.agentModel.findByIdAndUpdate(
-      agentId,
+      (existingAgent as any)._id,
       normalizedUpdates,
       { new: true }
     ).exec();
@@ -480,8 +480,25 @@ export class AgentService {
   }
 
   async deleteAgent(agentId: string): Promise<boolean> {
-    const result = await this.agentModel.findByIdAndDelete(agentId).exec();
-    return !!result;
+    const existingAgent = await this.getAgent(agentId);
+    if (!existingAgent) {
+      return false;
+    }
+    const result = await this.agentModel.deleteOne({ _id: (existingAgent as any)._id }).exec();
+    return Boolean(result.deletedCount && result.deletedCount > 0);
+  }
+
+  private buildAgentLookupQuery(agentIdentifier: string): Record<string, unknown> {
+    const normalizedIdentifier = String(agentIdentifier || '').trim();
+    if (!normalizedIdentifier) {
+      return { id: '__missing_agent_identifier__' };
+    }
+    if (isValidObjectId(normalizedIdentifier)) {
+      return {
+        $or: [{ _id: normalizedIdentifier }, { id: normalizedIdentifier }],
+      };
+    }
+    return { id: normalizedIdentifier };
   }
 
   async testAgentConnection(
@@ -1027,6 +1044,12 @@ export class AgentService {
       teamContext: context?.teamContext,
     });
 
+    await context?.runtimeLifecycle?.onStarted?.({
+      runId: runtimeContext.runId,
+      sessionId: runtimeContext.sessionId,
+      traceId: runtimeContext.traceId,
+    });
+
     await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, agent.id || agentId);
 
     let fullResponse = '';
@@ -1186,14 +1209,14 @@ export class AgentService {
     };
   }
 
-  async cancelRuntimeRun(runId: string): Promise<void> {
+  async cancelRuntimeRun(runId: string, reason?: string): Promise<void> {
     if (!String(runId || '').trim()) {
       return;
     }
     await this.runtimeOrchestrator.cancelRunWithActor(runId, {
       actorId: 'agent-task-worker',
       actorType: 'system',
-      reason: 'step_timeout_cancel',
+      reason: reason || 'user_cancel',
     });
   }
 
