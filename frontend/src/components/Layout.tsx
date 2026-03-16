@@ -279,6 +279,7 @@ const Layout: React.FC = () => {
         { name: '需求管理', href: '/ei/requirements', icon: DocumentTextIcon },
         { name: '智能研发看板', href: '/ei/board', icon: ChartBarIcon },
         { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
+        { name: 'Agent任务流', href: '/agent-task-runner', icon: BoltIcon },
       ],
     },
     {
@@ -325,7 +326,7 @@ const Layout: React.FC = () => {
             }`}
           >
             <h1 className="text-xl font-bold text-gray-900">
-              {isSidebarExpanded ? 'AI Agent Team' : 'AI'}
+              {isSidebarExpanded ? 'ytpo.ai' : 'yt'}
             </h1>
             <button
               type="button"
@@ -467,7 +468,7 @@ const Layout: React.FC = () => {
           <div className="px-2 py-2 border-t border-gray-200">
             {isSidebarExpanded && (
               <div className="text-xs text-gray-500">
-                <p>© 2026 AI Agent Team</p>
+                <p>© 2026 ytpo.ai</p>
               </div>
             )}
           </div>

@@ -18,6 +18,7 @@ export class GatewayProxyService {
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
   private readonly defaultProxyTimeoutMs = this.parseTimeout(process.env.GATEWAY_PROXY_TIMEOUT_MS, 30000);
   private readonly debugRunTimeoutMs = this.parseTimeout(process.env.GATEWAY_DEBUG_RUN_TIMEOUT_MS, 180000);
+  private readonly sseProxyTimeoutMs = this.parseTimeout(process.env.GATEWAY_SSE_PROXY_TIMEOUT_MS, 1800000);
   private readonly sensitiveKeyPattern = /password|passwd|secret|token|authorization|cookie|api[-_]?key/i;
 
   constructor(
@@ -174,10 +175,17 @@ export class GatewayProxyService {
   }
 
   private resolveTimeoutMs(path: string): number {
+    if (this.isSseTaskEventsPath(path)) {
+      return this.sseProxyTimeoutMs;
+    }
     if (/^\/api\/orchestration\/tasks\/[^/]+\/debug-run$/.test(path)) {
       return this.debugRunTimeoutMs;
     }
     return this.defaultProxyTimeoutMs;
+  }
+
+  private isSseTaskEventsPath(path: string): boolean {
+    return /^\/api\/agents\/tasks\/[^/]+\/events$/.test(path);
   }
 
   buildSignedHeaders(userContext?: GatewayUserContext): Record<string, string> {
@@ -212,6 +220,9 @@ export class GatewayProxyService {
     Object.assign(headers, this.buildSignedHeaders(req.userContext));
 
     const timeoutMs = this.resolveTimeoutMs(pathOnly);
+    const wantsSse =
+      this.isSseTaskEventsPath(pathOnly) ||
+      String(req.headers.accept || '').toLowerCase().includes('text/event-stream');
     const config: AxiosRequestConfig = {
       url: targetUrl,
       method: req.method,
@@ -220,7 +231,7 @@ export class GatewayProxyService {
       data: ['GET', 'HEAD'].includes(req.method) ? undefined : req.body,
       validateStatus: () => true,
       timeout: timeoutMs,
-      responseType: 'arraybuffer',
+      responseType: wantsSse ? 'stream' : 'arraybuffer',
     };
 
     try {
@@ -252,6 +263,24 @@ export class GatewayProxyService {
         const message = error instanceof Error ? error.message : 'Unknown operation log error';
         this.logger.warn(`requestId=${requestId} operation log skipped: ${message}`);
       });
+
+      if (wantsSse) {
+        res.setHeader('Cache-Control', 'no-cache, no-transform');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+        res.status(response.status);
+        const stream = response.data as NodeJS.ReadableStream;
+        stream.on('error', () => {
+          res.end();
+        });
+        req.on('close', () => {
+          if (typeof (stream as any).destroy === 'function') {
+            (stream as any).destroy();
+          }
+        });
+        stream.pipe(res);
+        return;
+      }
 
       res.status(response.status).send(response.data);
     } catch (error) {

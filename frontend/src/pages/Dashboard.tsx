@@ -36,7 +36,7 @@ const Dashboard: React.FC = () => {
       {/* 页面标题 */}
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">仪表盘</h1>
-        <p className="mt-1 text-sm text-gray-500">AI Agent Team 平台概览</p>
+        <p className="mt-1 text-sm text-gray-500">ytpo.ai 平台概览</p>
       </div>
 
       {/* 统计卡片 */}

@@ -12,6 +12,7 @@ import EmployeeManagement from './pages/EmployeeManagement';
 import HRManagement from './pages/HRManagement';
 import Meetings from './pages/Meetings';
 import RdConversation from './pages/RdConversation';
+import AgentTaskRunner from './pages/AgentTaskRunner';
 import ProjectManagement from './pages/ProjectManagement';
 import EngineeringStatistics from './pages/EngineeringStatistics';
 import EngineeringRequirements from './pages/EngineeringRequirements';
@@ -74,6 +75,7 @@ function App() {
             <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/rd-conversation" element={<ProtectedRoute><RdConversation /></ProtectedRoute>} />
+            <Route path="/agent-task-runner" element={<ProtectedRoute><AgentTaskRunner /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/orchestration/plans/:id" element={<ProtectedRoute><PlanDetail /></ProtectedRoute>} />
             <Route path="/scheduler" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />

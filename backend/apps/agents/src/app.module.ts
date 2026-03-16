@@ -14,6 +14,7 @@ import { AgentStreamController } from './controllers/stream.controller';
 import { HealthController } from './controllers/health.controller';
 import { SkillModule } from './modules/skills/skill.module';
 import { MemoModule } from './modules/memos/memo.module';
+import { AgentTaskModule } from './modules/agent-tasks/agent-task.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { MemoModule } from './modules/memos/memo.module';
     InfraModule,
     ModelModule,
     ApiKeysModule,
+    AgentTaskModule,
     AgentModule,
     SkillModule,
     MemoModule,

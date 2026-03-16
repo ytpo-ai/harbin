@@ -18,6 +18,7 @@ export class OpenCodeExecutionService {
   private readonly logger = new Logger(OpenCodeExecutionService.name);
   private readonly eventReadTimeoutMs = 5000;
   private readonly eventReadLimit = 40;
+  private readonly activeAbortControllers = new Map<string, AbortController>();
 
   constructor(
     private readonly adapter: OpenCodeAdapter,
@@ -116,12 +117,35 @@ export class OpenCodeExecutionService {
       runtime: input.runtime,
     });
     await input.onSessionReady?.(sessionId);
-    const prompt = await this.adapter.promptSession({
-      sessionId,
-      prompt: input.taskPrompt,
-      model: input.model,
-      runtime: input.runtime,
-    });
+
+    const abortController = new AbortController();
+    this.activeAbortControllers.set(sessionId, abortController);
+    this.logger.log(`[opencode_prompt] registered AbortController sessionId=${sessionId}`);
+
+    let prompt: { response: string; metadata: Record<string, unknown> };
+    try {
+      prompt = await this.adapter.promptSession(
+        {
+          sessionId,
+          prompt: input.taskPrompt,
+          model: input.model,
+          runtime: input.runtime,
+        },
+        { signal: abortController.signal },
+      );
+    } catch (error) {
+      if (this.isAbortError(error)) {
+        this.logger.log(`[opencode_prompt] aborted sessionId=${sessionId}`);
+        return {
+          sessionId,
+          response: '',
+          metadata: {},
+        };
+      }
+      throw error;
+    } finally {
+      this.activeAbortControllers.delete(sessionId);
+    }
     const result: OpenCodeExecutionStartResult = {
       sessionId,
       response: prompt.response,
@@ -199,22 +223,63 @@ export class OpenCodeExecutionService {
       return false;
     }
 
-    try {
-      this.logger.log(
-        `OpenCode abort request start sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
-      );
-      await this.adapter.abortSession(normalizedSessionId, runtime);
-      this.logger.log(
-        `OpenCode abort request success sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
-      );
-      return true;
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error || 'unknown');
-      this.logger.warn(
-        `OpenCode abort request failed sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} reason=${reason}`,
-      );
-      return false;
+    // 1. Abort the in-flight HTTP request (so executeWithRuntimeBridge returns immediately)
+    const controller = this.activeAbortControllers.get(normalizedSessionId);
+    if (controller) {
+      this.logger.log(`[opencode_cancel] aborting in-flight HTTP request sessionId=${normalizedSessionId}`);
+      controller.abort();
+      this.activeAbortControllers.delete(normalizedSessionId);
+    } else {
+      this.logger.log(`[opencode_cancel] no active AbortController for sessionId=${normalizedSessionId}`);
     }
+
+    // 2. Call OpenCode server abort endpoint with retry
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        this.logger.log(
+          `OpenCode abort request start sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} attempt=${attempt + 1}/${maxRetries + 1}`,
+        );
+        await this.adapter.abortSession(normalizedSessionId, runtime);
+        this.logger.log(
+          `OpenCode abort request success sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
+        );
+        return true;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error || 'unknown');
+        this.logger.warn(
+          `OpenCode abort request failed sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} attempt=${attempt + 1}/${maxRetries + 1} reason=${reason}`,
+        );
+        if (attempt < maxRetries) {
+          await this.sleep(1000 * (attempt + 1));
+        } else {
+          // All retries exhausted — still return true if we aborted the HTTP request
+          return !!controller;
+        }
+      }
+    }
+    return !!controller;
+  }
+
+  private async sleep(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private isAbortError(error: unknown): boolean {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return true;
+    }
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+      if (message.includes('abort') || message.includes('cancel')) {
+        return true;
+      }
+      // Axios wraps abort errors with code 'ERR_CANCELED'
+      if ((error as any).code === 'ERR_CANCELED' || (error as any).code === 'ECONNABORTED') {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async collectSessionEvents(

@@ -38,7 +38,7 @@ const Login: React.FC = () => {
           <div className="mx-auto h-16 w-16 bg-primary-600 rounded-2xl flex items-center justify-center mb-4">
             <UserGroupIcon className="h-10 w-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">AI Agent Team</h1>
+          <h1 className="text-3xl font-bold text-gray-900">ytpo.ai</h1>
           <p className="mt-2 text-gray-600">员工登录</p>
         </div>
 
@@ -145,7 +145,7 @@ const Login: React.FC = () => {
 
         {/* 底部信息 */}
         <div className="mt-8 text-center text-sm text-gray-500">
-          <p>© 2026 AI Agent Team. All rights reserved.</p>
+          <p>© 2026 ytpo.ai. All rights reserved.</p>
         </div>
       </div>
     </div>

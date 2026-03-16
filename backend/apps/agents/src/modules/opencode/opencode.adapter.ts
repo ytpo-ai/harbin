@@ -45,7 +45,10 @@ export class OpenCodeAdapter {
     };
   }
 
-  async promptSession(input: OpenCodePromptInput): Promise<{ response: string; metadata: Record<string, unknown> }> {
+  async promptSession(
+    input: OpenCodePromptInput,
+    options?: { signal?: AbortSignal },
+  ): Promise<{ response: string; metadata: Record<string, unknown> }> {
     const result = await this.request<any>('POST', `/session/${encodeURIComponent(input.sessionId)}/message`, {
       data: {
         parts: [{ type: 'text', text: input.prompt }],
@@ -53,6 +56,7 @@ export class OpenCodeAdapter {
       },
       runtime: input.runtime,
       throwOnError: true,
+      signal: options?.signal,
     });
 
     return {
@@ -160,6 +164,7 @@ export class OpenCodeAdapter {
       responseType?: 'json' | 'stream';
       runtime?: OpenCodeRuntimeOptions;
       throwOnError?: boolean;
+      signal?: AbortSignal;
     },
   ): Promise<T> {
     const runtime = options?.runtime;
@@ -187,6 +192,7 @@ export class OpenCodeAdapter {
         data: options?.data,
         timeout: timeoutMs,
         responseType: options?.responseType,
+        signal: options?.signal,
       });
       return response.data;
     } catch (error: any) {
@@ -200,7 +206,7 @@ export class OpenCodeAdapter {
       if (options?.throwOnError) {
         throw error;
       }
-      throw error;
+      return undefined as unknown as T;
     }
   }
 

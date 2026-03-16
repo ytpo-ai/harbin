@@ -144,6 +144,53 @@ export interface AgentRuntimeRun {
   error?: string;
 }
 
+export interface AgentTaskEvent {
+  id: string;
+  type: 'status' | 'progress' | 'token' | 'tool' | 'result' | 'error' | 'heartbeat';
+  taskId: string;
+  runId?: string;
+  sequence: number;
+  timestamp: string;
+  payload: Record<string, unknown>;
+}
+
+export interface AgentTaskInfo {
+  taskId: string;
+  runId?: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+  progress: number;
+  attempt?: number;
+  maxAttempts?: number;
+  nextRetryAt?: string;
+  lastAttemptAt?: string;
+  stepTimeoutMs?: number;
+  taskTimeoutMs?: number;
+  currentStep?: string;
+  error?: string;
+  resultSummary?: Record<string, unknown>;
+  lastEventAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  cancelRequested?: boolean;
+  serveId?: string;
+}
+
+export interface CreateAgentTaskPayload {
+  agentId: string;
+  task: string;
+  sessionContext?: Record<string, unknown>;
+  idempotencyKey?: string;
+}
+
+export interface StreamAgentTaskEventsOptions {
+  taskId: string;
+  lastEventId?: string;
+  lastSequence?: number;
+  signal?: AbortSignal;
+  onEvent: (event: AgentTaskEvent) => void;
+  onOpen?: () => void;
+}
+
 export const agentService = {
   // 获取所有agent
   async getAgents(): Promise<Agent[]> {
@@ -274,6 +321,108 @@ export const agentService = {
       reason: reason || 'manual_cancel_from_ui',
     });
     return response.data;
+  },
+
+  async createAgentTask(payload: CreateAgentTaskPayload): Promise<{ taskId: string; runId?: string; status: string }> {
+    const response = await api.post('/agents/tasks', payload);
+    return response.data;
+  },
+
+  async getAgentTask(taskId: string): Promise<AgentTaskInfo> {
+    const response = await api.get(`/agents/tasks/${encodeURIComponent(taskId)}`);
+    return response.data;
+  },
+
+  async cancelAgentTask(taskId: string, reason?: string): Promise<{ success: boolean; taskId: string; cancelRequested: boolean }> {
+    const response = await api.post(`/agents/tasks/${encodeURIComponent(taskId)}/cancel`, {
+      reason,
+    });
+    return response.data;
+  },
+
+  async streamAgentTaskEvents(options: StreamAgentTaskEventsOptions): Promise<void> {
+    const baseUrl = ((import.meta as any).env?.VITE_API_URL || api.defaults.baseURL || '/api').replace(/\/$/, '');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const query = new URLSearchParams();
+    if (options.lastEventId) query.set('lastEventId', options.lastEventId);
+    if (typeof options.lastSequence === 'number' && Number.isFinite(options.lastSequence) && options.lastSequence >= 0) {
+      query.set('lastSequence', String(Math.floor(options.lastSequence)));
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    const url = `${baseUrl}/agents/tasks/${encodeURIComponent(options.taskId)}/events${suffix}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.lastEventId ? { 'Last-Event-ID': options.lastEventId } : {}),
+      },
+      signal: options.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`SSE stream failed with status ${response.status}`);
+    }
+
+    options.onOpen?.();
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let currentId = '';
+    let currentData: string[] = [];
+
+    const flushEvent = () => {
+      if (currentData.length === 0) {
+        currentId = '';
+        return;
+      }
+      const raw = currentData.join('\n').trim();
+      currentData = [];
+      if (!raw) {
+        currentId = '';
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(raw) as AgentTaskEvent;
+        const normalized: AgentTaskEvent = {
+          ...parsed,
+          id: parsed.id || currentId,
+        };
+        options.onEvent(normalized);
+      } catch {
+        // ignore malformed chunk
+      }
+      currentId = '';
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        flushEvent();
+        break;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line) {
+          flushEvent();
+          continue;
+        }
+        if (line.startsWith('id:')) {
+          currentId = line.slice(3).trim();
+          continue;
+        }
+        if (line.startsWith('data:')) {
+          currentData.push(line.slice(5).trimStart());
+        }
+      }
+    }
   },
 
   // 流式测试Agent模型连接（WS + Redis channel）

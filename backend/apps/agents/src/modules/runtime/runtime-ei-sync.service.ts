@@ -13,7 +13,8 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private flushing = false;
 
-  private readonly eiBaseUrl = process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004';
+  private readonly eiBaseUrl = this.resolveEiBaseUrl();
+  private readonly eiSyncUrl = `${this.eiBaseUrl}/ei/sync-batches`;
   private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
   private readonly maxRetry = Math.max(1, Number(process.env.RUNTIME_EI_SYNC_MAX_RETRY || 5));
   private readonly pollIntervalMs = Math.max(1000, Number(process.env.RUNTIME_EI_SYNC_POLL_INTERVAL_MS || 5000));
@@ -32,6 +33,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
+    this.logger.log(`EI sync target resolved to ${this.eiSyncUrl}`);
     this.timer = setInterval(() => {
       void this.flushPendingRuns();
     }, this.pollIntervalMs);
@@ -65,7 +67,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
     try {
       const payload = await this.buildRunSyncPayload(run);
       const response = await axios.post(
-        `${this.eiBaseUrl}/ei/sync-batches`,
+        this.eiSyncUrl,
         payload,
         {
           headers: this.buildSignedHeaders(),
@@ -231,5 +233,11 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
       'x-user-signature': signature,
       'content-type': 'application/json',
     };
+  }
+
+  private resolveEiBaseUrl(): string {
+    const raw = String(process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004').trim();
+    const normalized = raw.replace(/\/+$/, '');
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
   }
 }

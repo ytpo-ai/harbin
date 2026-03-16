@@ -806,6 +806,11 @@ export class RuntimePersistenceService {
     return this.outboxModel.find(filter).exec();
   }
 
+  async findEventByEventId(eventId: string): Promise<AgentEventOutbox | null> {
+    if (!eventId) return null;
+    return this.outboxModel.findOne({ eventId }).exec();
+  }
+
   async requeueDeadLetterByEventIds(eventIds: string[]): Promise<number> {
     if (!eventIds.length) return 0;
     const result = await this.outboxModel

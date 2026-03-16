@@ -156,7 +156,7 @@ export class AgentTaskWorker implements OnModuleInit {
 
                 const latest = await this.taskService.getTaskById(taskId);
                 if (latest?.cancelRequested) {
-                  await this.agentService.cancelRuntimeRun(runtime.runId);
+                  await this.agentService.cancelRuntimeRun(runtime.runId, 'user_cancel');
                 }
 
                 await this.taskService.publishTaskEvent({
@@ -199,7 +199,7 @@ export class AgentTaskWorker implements OnModuleInit {
         async () => {
           const latestRun = await this.taskService.getTaskById(taskId);
           if (latestRun?.runId) {
-            await this.agentService.cancelRuntimeRun(latestRun.runId);
+            await this.agentService.cancelRuntimeRun(latestRun.runId, 'step_timeout_cancel');
           }
         },
       );
@@ -225,8 +225,7 @@ export class AgentTaskWorker implements OnModuleInit {
       })();
 
       const latestTask = await this.taskService.getTaskById(taskId);
-      const hasResponse = String(executeResult.response || '').trim().length > 0;
-      const status = latestTask?.cancelRequested && !hasResponse ? 'cancelled' : 'succeeded';
+      const status = latestTask?.cancelRequested ? 'cancelled' : 'succeeded';
       await this.taskService.updateTaskState({
         taskId,
         status,
@@ -366,27 +365,59 @@ export class AgentTaskWorker implements OnModuleInit {
     watch: { active: boolean },
     onCancel?: () => Promise<void>,
   ): Promise<{ runId?: string; sessionId?: string } | null> {
-    while (this.running && watch.active) {
-      const latest = await this.taskService.getTaskById(taskId);
-      if (!latest) {
-        return null;
-      }
+    return new Promise<{ runId?: string; sessionId?: string } | null>((resolve) => {
+      let settled = false;
+      let pollTimer: NodeJS.Timeout | null = null;
+      let watchTimer: NodeJS.Timeout | null = null;
 
-      if (latest.cancelRequested) {
+      const cleanup = () => {
+        this.taskService.cancelEmitter.removeAllListeners(`cancel:${taskId}`);
+        if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+        if (watchTimer) { clearInterval(watchTimer as unknown as NodeJS.Timeout); watchTimer = null; }
+      };
+
+      const handleCancel = async () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        const latest = await this.taskService.getTaskById(taskId);
+        if (!latest?.cancelRequested) {
+          resolve(null);
+          return;
+        }
         await onCancel?.();
         if (latest.runId) {
-          await this.agentService.cancelRuntimeRun(latest.runId);
+          await this.agentService.cancelRuntimeRun(latest.runId, 'user_cancel');
         }
-        return {
-          runId: latest.runId,
-          sessionId: latest.sessionId,
-        };
-      }
+        resolve({ runId: latest.runId, sessionId: latest.sessionId });
+      };
 
-      await this.sleep(this.cancelPollIntervalMs);
-    }
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(null);
+      };
 
-    return null;
+      // 1. EventEmitter — instant notification from cancelTask
+      this.taskService.cancelEmitter.once(`cancel:${taskId}`, () => void handleCancel());
+
+      // 2. Polling fallback — in case the event was missed
+      const poll = async () => {
+        if (settled || !watch.active || !this.running) { settle(); return; }
+        const latest = await this.taskService.getTaskById(taskId);
+        if (!latest) { settle(); return; }
+        if (latest.cancelRequested) { void handleCancel(); return; }
+        pollTimer = setTimeout(() => void poll(), this.cancelPollIntervalMs);
+      };
+
+      // 3. Watch guard — exit when execution finishes (watch.active set to false)
+      watchTimer = setInterval(() => {
+        if (!watch.active || !this.running) { settle(); }
+      }, 200) as unknown as NodeJS.Timeout;
+
+      void poll();
+    });
   }
 
   private startRetryScheduler(): void {
