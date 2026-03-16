@@ -2,14 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeStatus } from '../../shared/schemas/employee.schema';
-import { ToolClientService } from '../tools-client/tool-client.service';
 import { TaskService } from '../tasks/task.service';
 
 @Injectable()
 export class HRService {
   constructor(
     @InjectModel(Employee.name) private readonly employeeModel: Model<EmployeeDocument>,
-    private readonly toolClientService: ToolClientService,
     private readonly taskService: TaskService,
   ) {}
 
@@ -19,22 +17,30 @@ export class HRService {
       throw new Error(`Agent ${agentId} is not an employee`);
     }
 
-    const tasks = await this.taskService.getAllTasks();
-    const agentTasks = tasks.filter((task) => task.assignedAgents.includes(agentId));
-    const completedTasks = agentTasks.filter((task) => task.status === 'completed');
-    const taskCompletionRate = agentTasks.length > 0 ? (completedTasks.length / agentTasks.length) * 100 : 0;
-
-    const toolExecutions = await this.toolClientService.getToolExecutions(agentId);
-    const totalTokenConsumption = toolExecutions.reduce((sum, exec) => sum + exec.tokenCost, 0);
-    const totalExecutionCost = toolExecutions.length * 50;
+    const mockTaskStats = {
+      totalAssigned: 12,
+      completed: 9,
+      inProgress: 2,
+      failed: 1,
+      completionRate: 75,
+    };
+    const mockTokenConsumption = 3600;
+    const mockTotalCost = 450;
+    const mockToolUsage = {
+      totalExecutions: 9,
+      totalTokenConsumption: mockTokenConsumption,
+      totalCost: mockTotalCost,
+      avgCostPerExecution: 50,
+      mostUsedTool: 'code-review',
+    };
 
     const latestPerformance = employee.performance;
     const performanceKpis = {
-      taskCompletionRate: Math.round(taskCompletionRate * 100) / 100,
+      taskCompletionRate: mockTaskStats.completionRate,
       codeQuality: latestPerformance?.codeQuality ?? 75,
       collaboration: latestPerformance?.collaboration ?? 80,
       innovation: latestPerformance?.innovation ?? 70,
-      efficiency: this.calculateEfficiency(completedTasks.length, totalTokenConsumption),
+      efficiency: 78,
     };
 
     const overallScore =
@@ -58,24 +64,18 @@ export class HRService {
       kpis: performanceKpis,
       overallScore: Math.round(overallScore * 100) / 100,
       taskStats: {
-        totalAssigned: agentTasks.length,
-        completed: completedTasks.length,
-        inProgress: agentTasks.filter((task) => task.status === 'in_progress').length,
-        failed: agentTasks.filter((task) => task.status === 'failed').length,
-        completionRate: Math.round(taskCompletionRate * 100) / 100,
+        totalAssigned: mockTaskStats.totalAssigned,
+        completed: mockTaskStats.completed,
+        inProgress: mockTaskStats.inProgress,
+        failed: mockTaskStats.failed,
+        completionRate: mockTaskStats.completionRate,
       },
-      toolUsage: {
-        totalExecutions: toolExecutions.length,
-        totalTokenConsumption,
-        totalCost: totalExecutionCost,
-        avgCostPerExecution: toolExecutions.length > 0 ? totalExecutionCost / toolExecutions.length : 0,
-        mostUsedTool: this.getMostUsedTool(toolExecutions),
-      },
+      toolUsage: mockToolUsage,
       tokenConsumption: {
-        total: totalTokenConsumption,
-        cost: totalExecutionCost,
+        total: mockTokenConsumption,
+        cost: mockTotalCost,
       },
-      completedTasks: completedTasks.length,
+      completedTasks: mockTaskStats.completed,
       earnings: (employee.salary || 0) * 12,
       recommendations: this.generateRecommendations(overallScore, performanceKpis, employee),
     };

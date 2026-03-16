@@ -125,6 +125,7 @@
 |------|------|
 | `backend/apps/agents/src/modules/agents/agent.service.ts` | Agent 运行链路中的工具可用集与调用协同 |
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | `/api/tools/**` 网关分流与日志透传 |
+| `backend/src/modules/agents-client/agent-client.service.ts` | legacy 后端访问 agents 服务时的工具执行历史查询（`getToolExecutions`） |
 
 ### 前端 Tools 页面 (frontend/src/)
 

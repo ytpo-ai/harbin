@@ -12,8 +12,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { OrchestrationModule } from './modules/orchestration/orchestration.module';
 import { OrchestrationSchedulerModule } from './modules/orchestration/scheduler/scheduler.module';
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
-import { ToolClientModule } from './modules/tools-client/tool-client.module';
-import { ModelClientModule } from './modules/models-client/model-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { AgentActionLogModule } from './modules/agent-action-logs/agent-action-log.module';
@@ -44,14 +42,12 @@ import jwtConfig from './config/jwt.config';
       },
       inject: [ConfigService],
     }),
-    ModelClientModule,
     OperationLogModule,
     AgentActionLogModule,
     MessagesModule,
     MessageCenterModule,
     InnerMessageModule,
     AgentClientModule,
-    ToolClientModule,
     TaskModule,
     HRModule,
     RolesModule,

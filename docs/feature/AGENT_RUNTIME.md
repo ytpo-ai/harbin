@@ -239,3 +239,4 @@
 | `schemas/agent-task.schema.ts` | Agent Task 状态持久化模型（queued/running/succeeded/failed/cancelled） |
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | Runtime 控制类路径网关侧审计日志 |
 | `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |
+| `backend/src/modules/agents-client/agent-client.service.ts` | legacy 后端对 Agents Runtime/Task/Session/Memo 的统一客户端封装（已合并 models/tools client 能力） |

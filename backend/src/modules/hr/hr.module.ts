@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { HRService } from './hr.service';
 import { HRController } from './hr.controller';
-import { ToolClientModule } from '../tools-client/tool-client.module';
 import { TaskModule } from '../tasks/task.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 
@@ -11,7 +10,6 @@ import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
     MongooseModule.forFeature([
       { name: Employee.name, schema: EmployeeSchema },
     ]),
-    ToolClientModule,
     TaskModule,
   ],
   controllers: [HRController],

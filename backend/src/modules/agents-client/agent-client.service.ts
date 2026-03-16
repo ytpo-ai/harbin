@@ -9,7 +9,8 @@ import {
 } from '@libs/common';
 import { RedisService } from '@libs/infra';
 import { randomUUID } from 'crypto';
-import { Agent, Task, AIModel } from '../../shared/types';
+import { Readable } from 'stream';
+import { Agent, Task, AIModel, ToolExecution } from '../../shared/types';
 import { AgentActionLogService } from '../agent-action-logs/agent-action-log.service';
 import { AgentActionContextType } from '../../shared/schemas/agent-action-log.schema';
 
@@ -31,6 +32,36 @@ export interface AgentMemoSnapshot {
 }
 
 export type AgentExecutionMode = 'chat' | 'task';
+
+export type AsyncAgentTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+
+export interface CreateAsyncAgentTaskResult {
+  taskId: string;
+  runId?: string;
+  status: AsyncAgentTaskStatus;
+}
+
+export interface AsyncAgentTaskSnapshot {
+  taskId: string;
+  runId?: string;
+  sessionId?: string;
+  status: AsyncAgentTaskStatus;
+  progress?: number;
+  currentStep?: string;
+  error?: string;
+  resultSummary?: Record<string, unknown>;
+  startedAt?: string;
+  finishedAt?: string;
+}
+
+export interface AsyncAgentTaskCompletionResult {
+  status: 'succeeded' | 'failed' | 'cancelled';
+  runId?: string;
+  sessionId?: string;
+  output?: string;
+  error?: string;
+  snapshot?: AsyncAgentTaskSnapshot;
+}
 
 @Injectable()
 export class AgentClientService {
@@ -89,6 +120,18 @@ export class AgentClientService {
     const response = await axios.get<Agent[]>(`${this.baseUrl}/api/agents/active`, {
       headers: this.buildSignedHeaders(),
       timeout: this.timeout,
+    });
+    return response.data;
+  }
+
+  async getToolExecutions(agentId?: string, toolId?: string): Promise<ToolExecution[]> {
+    const response = await axios.get<ToolExecution[]>(`${this.baseUrl}/api/tools/executions/history`, {
+      params: {
+        ...(agentId ? { agentId } : {}),
+        ...(toolId ? { toolId } : {}),
+      },
+      headers: this.buildSignedHeaders(),
+      timeout: Number(process.env.AGENTS_CLIENT_TIMEOUT_MS || 15000),
     });
     return response.data;
   }
@@ -262,6 +305,186 @@ export class AgentClientService {
   async executeTask(agentId: string, task: Task, context?: any): Promise<string> {
     const result = await this.executeTaskDetailed(agentId, task, context);
     return result.response;
+  }
+
+  async createAsyncAgentTask(input: {
+    agentId: string;
+    prompt: string;
+    sessionContext?: Record<string, unknown>;
+    idempotencyKey?: string;
+  }): Promise<CreateAsyncAgentTaskResult> {
+    const response = await axios.post<CreateAsyncAgentTaskResult>(
+      `${this.baseUrl}/api/agents/tasks`,
+      {
+        agentId: input.agentId,
+        task: input.prompt,
+        sessionContext: input.sessionContext,
+        idempotencyKey: input.idempotencyKey,
+      },
+      {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      },
+    );
+    return response.data;
+  }
+
+  async getAsyncAgentTask(taskId: string): Promise<AsyncAgentTaskSnapshot> {
+    const normalizedTaskId = String(taskId || '').trim();
+    if (!normalizedTaskId) {
+      throw new Error('taskId is required');
+    }
+    const response = await axios.get<AsyncAgentTaskSnapshot>(
+      `${this.baseUrl}/api/agents/tasks/${encodeURIComponent(normalizedTaskId)}`,
+      {
+        headers: this.buildSignedHeaders(),
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      },
+    );
+    return response.data;
+  }
+
+  async waitForAsyncAgentTaskCompletionBySse(
+    taskId: string,
+    options?: { timeoutMs?: number; signal?: AbortSignal },
+  ): Promise<AsyncAgentTaskCompletionResult> {
+    const normalizedTaskId = String(taskId || '').trim();
+    if (!normalizedTaskId) {
+      throw new Error('taskId is required');
+    }
+
+    const timeoutMs = Math.max(1000, Number(options?.timeoutMs || process.env.AGENTS_EXEC_TIMEOUT_MS || 120000));
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+    const linkedSignal = options?.signal;
+    const abortByLinkedSignal = () => controller.abort();
+    if (linkedSignal) {
+      if (linkedSignal.aborted) {
+        clearTimeout(timeoutHandle);
+        controller.abort();
+      } else {
+        linkedSignal.addEventListener('abort', abortByLinkedSignal, { once: true });
+      }
+    }
+
+    try {
+      const response = await axios.get<Readable>(
+        `${this.baseUrl}/api/agents/tasks/${encodeURIComponent(normalizedTaskId)}/events`,
+        {
+          headers: this.buildSignedHeaders({ accept: 'text/event-stream' }),
+          responseType: 'stream',
+          timeout: 0,
+          signal: controller.signal,
+        },
+      );
+
+      return await this.consumeAsyncTaskSseStream(response.data, normalizedTaskId);
+    } catch (error: any) {
+      if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') {
+        throw new Error(`Async agent task SSE wait timeout: ${normalizedTaskId}`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutHandle);
+      if (linkedSignal) {
+        linkedSignal.removeEventListener('abort', abortByLinkedSignal);
+      }
+    }
+  }
+
+  private async consumeAsyncTaskSseStream(
+    stream: Readable,
+    taskId: string,
+  ): Promise<AsyncAgentTaskCompletionResult> {
+    let buffer = '';
+    let eventType = 'message';
+    let dataLines: string[] = [];
+
+    const resolveFromEvent = (payload: any, sseEventType: string): AsyncAgentTaskCompletionResult | null => {
+      if (!payload || typeof payload !== 'object') {
+        return null;
+      }
+      const event = (payload.data && typeof payload.data === 'object') ? payload.data : payload;
+      const type = String(event.type || sseEventType || '').toLowerCase();
+      const body = event.payload && typeof event.payload === 'object' ? event.payload : {};
+
+      const status = String((body as any).status || '').toLowerCase();
+      if (type === 'result' || status === 'succeeded') {
+        return {
+          status: 'succeeded',
+          runId: typeof event.runId === 'string' ? event.runId : undefined,
+          sessionId: typeof (body as any).sessionId === 'string' ? (body as any).sessionId : undefined,
+          output: typeof (body as any).response === 'string' ? (body as any).response : undefined,
+        };
+      }
+      if (type === 'error' || status === 'failed') {
+        return {
+          status: 'failed',
+          runId: typeof event.runId === 'string' ? event.runId : undefined,
+          error: typeof (body as any).error === 'string' ? (body as any).error : 'Async agent task failed',
+        };
+      }
+      if (status === 'cancelled') {
+        return {
+          status: 'cancelled',
+          runId: typeof event.runId === 'string' ? event.runId : undefined,
+          error: typeof (body as any).error === 'string' ? (body as any).error : 'Async agent task cancelled',
+        };
+      }
+      return null;
+    };
+
+    const flush = (): AsyncAgentTaskCompletionResult | null => {
+      if (!dataLines.length) {
+        eventType = 'message';
+        return null;
+      }
+      const raw = dataLines.join('\n').trim();
+      dataLines = [];
+      const currentType = eventType;
+      eventType = 'message';
+      if (!raw || raw === '[DONE]') {
+        return null;
+      }
+      try {
+        const parsed = JSON.parse(raw);
+        return resolveFromEvent(parsed, currentType);
+      } catch {
+        return null;
+      }
+    };
+
+    try {
+      for await (const chunk of stream) {
+        buffer += chunk.toString('utf8');
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line) {
+            const terminal = flush();
+            if (terminal) {
+              return terminal;
+            }
+            continue;
+          }
+
+          if (line.startsWith('event:')) {
+            eventType = line.slice('event:'.length).trim() || 'message';
+            continue;
+          }
+          if (line.startsWith('data:')) {
+            dataLines.push(line.slice('data:'.length).trimStart());
+          }
+        }
+      }
+    } finally {
+      if (typeof stream.destroy === 'function') {
+        stream.destroy();
+      }
+    }
+
+    throw new Error(`Async agent task SSE stream ended before terminal event: ${taskId}`);
   }
 
   private resolveContextType(context?: any): AgentActionContextType {
