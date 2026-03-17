@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
+import { AgentRole, AgentRoleSchema } from '../../shared/schemas/agent-role.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanSchema,
@@ -41,6 +42,7 @@ import { InnerMessageModule } from '../inner-message/inner-message.module';
       { name: Agent.name, schema: AgentSchema },
       { name: Tool.name, schema: ToolSchema },
       { name: Employee.name, schema: EmployeeSchema },
+      { name: AgentRole.name, schema: AgentRoleSchema },
       { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
     ]),
   ],

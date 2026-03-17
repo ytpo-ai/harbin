@@ -258,10 +258,16 @@ export class OrchestrationService {
 
       const idByIndex: string[] = [];
       const total = planningResult.tasks.length;
+      const assignmentPolicy = this.detectAssignmentPolicy(plan.sourcePrompt);
 
       for (let i = 0; i < planningResult.tasks.length; i++) {
         const planningTask = planningResult.tasks[i];
-        const assignment = await this.executorSelectionService.selectExecutor(planningTask.title, planningTask.description);
+        const assignment = await this.executorSelectionService.selectExecutor({
+          title: planningTask.title,
+          description: planningTask.description,
+          plannerAgentId: planningResult.plannerAgentId,
+          assignmentPolicy,
+        });
 
         const createdTask = await new this.orchestrationTaskModel({
           mode: 'plan',
@@ -429,88 +435,250 @@ export class OrchestrationService {
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
     const requirementId = this.resolveRequirementIdFromPlan(plan);
     const requirementObjectId = this.resolveRequirementObjectIdFromPlan(plan);
+    try {
+      await this.orchestrationTaskModel.deleteMany({ planId }).exec();
 
-    const planningResult = await this.plannerService.planFromPrompt({
-      prompt,
-      mode: fallbackMode,
-      plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
-      requirementId,
-    });
-
-    if (!planningResult.tasks?.length) {
-      throw new BadRequestException('Planner did not produce any tasks');
-    }
-
-    await this.orchestrationTaskModel.deleteMany({ planId }).exec();
-
-    const { createdTasks, idByIndex } = await this.createTasksFromPlanningResult({
-      planId,
-      planningTasks: planningResult.tasks,
-      requirementObjectId,
-      logMessagePrefix: 'Task replanned and assigned to',
-    });
-
-    await this.orchestrationPlanModel
-      .updateOne(
-        { _id: planId },
-        {
-          $set: {
-            title,
-            sourcePrompt: prompt,
-            status: 'planned',
-            strategy: {
-              plannerAgentId: planningResult.plannerAgentId,
-              mode: planningResult.mode,
-            },
-            stats: {
-              totalTasks: createdTasks.length,
-              completedTasks: 0,
-              failedTasks: 0,
-              waitingHumanTasks: 0,
-            },
-            taskIds: idByIndex,
-            metadata: {
-              ...(plan.metadata || {}),
-              strategyNote: planningResult.strategyNote,
-              replannedAt: new Date().toISOString(),
-              ...(requirementId ? { requirementId } : {}),
+      await this.planSessionModel
+        .updateOne(
+          { planId },
+          {
+            $set: {
+              planId,
+              title,
+              status: 'active',
+              tasks: [],
             },
           },
-        },
-      )
-      .exec();
+          { upsert: true },
+        )
+        .exec();
 
-    await this.planSessionModel
-      .updateOne(
-        { planId },
-        {
-          $set: {
-            planId,
-            title,
-            status: 'active',
-            tasks: createdTasks.map((createdTask, index) => ({
-              taskId: createdTask._id.toString(),
-              order: createdTask.order,
-              title: createdTask.title,
-              status: createdTask.status,
-              input: planningResult.tasks[index]?.description || createdTask.description,
-              executorType: createdTask.assignment?.executorType,
-              executorId: createdTask.assignment?.executorId,
-              updatedAt: new Date(),
-            })),
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              title,
+              sourcePrompt: prompt,
+              status: 'drafting',
+              strategy: {
+                plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
+                mode: fallbackMode,
+              },
+              stats: {
+                totalTasks: 0,
+                completedTasks: 0,
+                failedTasks: 0,
+                waitingHumanTasks: 0,
+              },
+              taskIds: [],
+              'metadata.replanStartedAt': new Date().toISOString(),
+              ...(requirementId ? { 'metadata.requirementId': requirementId } : {}),
+            },
+            $unset: {
+              'metadata.asyncReplanError': 1,
+              'metadata.replannedAt': 1,
+              'metadata.replanFailedAt': 1,
+            },
           },
-        },
-        { upsert: true },
-      )
-      .exec();
+        )
+        .exec();
 
-    const latestPlan = await this.getPlanById(planId);
-    if (dto.autoRun) {
-      await this.runPlan(planId, { continueOnFailure: true });
+      await this.setPlanStatus(planId, 'drafting');
+      this.emitPlanStreamEvent(planId, 'plan.status.changed', {
+        planId,
+        status: 'drafting',
+        phase: 'replanning',
+      });
+
+      const planningResult = await this.plannerService.planFromPrompt({
+        prompt,
+        mode: fallbackMode,
+        plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
+        requirementId,
+      });
+
+      if (!planningResult.tasks?.length) {
+        throw new BadRequestException('Planner did not produce any tasks');
+      }
+
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              strategy: {
+                plannerAgentId: planningResult.plannerAgentId,
+                mode: planningResult.mode,
+              },
+              'metadata.strategyNote': planningResult.strategyNote,
+              'metadata.planningStartedAt': new Date().toISOString(),
+            },
+          },
+        )
+        .exec();
+
+      const idByIndex: string[] = [];
+      const total = planningResult.tasks.length;
+      const replanAssignmentPolicy = this.detectAssignmentPolicy(plan.sourcePrompt);
+
+      for (let i = 0; i < planningResult.tasks.length; i++) {
+        const planningTask = planningResult.tasks[i];
+        const assignment = await this.executorSelectionService.selectExecutor({
+          title: planningTask.title,
+          description: planningTask.description,
+          plannerAgentId: planningResult.plannerAgentId,
+          assignmentPolicy: replanAssignmentPolicy,
+        });
+
+        const createdTask = await new this.orchestrationTaskModel({
+          mode: 'plan',
+          planId,
+          ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
+          title: planningTask.title,
+          description: planningTask.description,
+          priority: planningTask.priority,
+          status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
+          order: i,
+          dependencyTaskIds: [],
+          assignment,
+          runLogs: [
+            {
+              timestamp: new Date(),
+              level: 'info',
+              message: 'Task replanned and assigned to ' + assignment.executorType,
+              metadata: {
+                executorId: assignment.executorId,
+                reason: assignment.reason,
+              },
+            },
+          ],
+        }).save();
+
+        const taskId = createdTask._id.toString();
+        idByIndex.push(taskId);
+
+        const deps = (planningTask.dependencies || [])
+          .map((depIndex) => idByIndex[depIndex])
+          .filter(Boolean);
+
+        if (deps.length) {
+          await this.orchestrationTaskModel
+            .updateOne({ _id: createdTask._id }, { $set: { dependencyTaskIds: deps } })
+            .exec();
+          createdTask.dependencyTaskIds = deps;
+        }
+
+        await this.orchestrationPlanModel
+          .updateOne(
+            { _id: planId },
+            {
+              $push: {
+                taskIds: taskId,
+              },
+              $set: {
+                'stats.totalTasks': idByIndex.length,
+              },
+            },
+          )
+          .exec();
+
+        await this.planSessionModel
+          .updateOne(
+            { planId },
+            {
+              $push: {
+                tasks: {
+                  taskId,
+                  order: createdTask.order,
+                  title: createdTask.title,
+                  status: createdTask.status,
+                  input: planningTask.description || createdTask.description,
+                  executorType: createdTask.assignment?.executorType,
+                  executorId: createdTask.assignment?.executorId,
+                  updatedAt: new Date(),
+                },
+              },
+            },
+          )
+          .exec();
+
+        await this.emitTaskLifecycleEvent({
+          eventType: 'task.created',
+          task: createdTask,
+          status: createdTask.status,
+          payload: {
+            assignment: createdTask.assignment,
+          },
+        }).catch(() => undefined);
+
+        this.emitPlanStreamEvent(planId, 'plan.task.generated', {
+          planId,
+          index: i + 1,
+          total,
+          task: createdTask.toObject(),
+        });
+      }
+
+      await this.refreshPlanStats(planId);
+      await this.setPlanStatus(planId, 'planned');
+      await this.setPlanSessionStatus(planId, 'planned');
+
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              'metadata.strategyNote': planningResult.strategyNote,
+              'metadata.replannedAt': new Date().toISOString(),
+              'metadata.planningCompletedAt': new Date().toISOString(),
+            },
+            $unset: {
+              'metadata.asyncReplanError': 1,
+            },
+          },
+        )
+        .exec();
+
+      this.emitPlanStreamEvent(planId, 'plan.completed', {
+        planId,
+        status: 'planned',
+        totalTasks: total,
+      });
+
+      if (dto.autoRun) {
+        const run = await this.runPlanAsync(planId, { continueOnFailure: true });
+        this.emitPlanStreamEvent(planId, 'plan.autorun.accepted', {
+          planId,
+          status: run.status,
+          alreadyRunning: run.alreadyRunning,
+        });
+      }
+
       return this.getPlanById(planId);
-    }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Async replan failed';
+      await this.setPlanStatus(planId, 'failed');
+      await this.setPlanSessionStatus(planId, 'failed');
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              'metadata.asyncReplanError': message,
+              'metadata.replanFailedAt': new Date().toISOString(),
+            },
+          },
+        )
+        .exec();
 
-    return latestPlan;
+      this.emitPlanStreamEvent(planId, 'plan.failed', {
+        planId,
+        status: 'failed',
+        error: message,
+      });
+      throw error;
+    }
   }
 
   async replanPlanAsync(
@@ -536,22 +704,7 @@ export class OrchestrationService {
 
     setTimeout(() => {
       this.replanPlan(planId, dto)
-        .catch(async (error) => {
-          const message = error instanceof Error ? error.message : 'Async replan failed';
-          await this.orchestrationPlanModel
-            .updateOne(
-              { _id: planId },
-              {
-                $set: {
-                  metadata: {
-                    ...(plan.metadata || {}),
-                    asyncReplanError: message,
-                  },
-                },
-              },
-            )
-            .exec();
-        })
+        .catch(() => undefined)
         .finally(() => {
           this.runningPlans.delete(runKey);
         });
@@ -1131,76 +1284,6 @@ export class OrchestrationService {
       task: latestTask,
       execution,
     };
-  }
-
-  private async createTasksFromPlanningResult(options: {
-    planId: string;
-    planningTasks: Array<{
-      title: string;
-      description: string;
-      priority: 'low' | 'medium' | 'high' | 'urgent';
-      dependencies: number[];
-    }>;
-    requirementObjectId?: Types.ObjectId;
-    logMessagePrefix: string;
-  }): Promise<{ createdTasks: OrchestrationTaskDocument[]; idByIndex: string[] }> {
-    const { planId, planningTasks, requirementObjectId, logMessagePrefix } = options;
-    const tasksToCreate: Partial<OrchestrationTask>[] = [];
-
-    for (let i = 0; i < planningTasks.length; i++) {
-      const task = planningTasks[i];
-      const assignment = await this.executorSelectionService.selectExecutor(task.title, task.description);
-      tasksToCreate.push({
-        mode: 'plan',
-        planId,
-        ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
-        title: task.title,
-        description: task.description,
-        priority: task.priority,
-        status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
-        order: i,
-        dependencyTaskIds: [],
-        assignment,
-        runLogs: [{
-          timestamp: new Date(),
-          level: 'info',
-          message: `${logMessagePrefix} ${assignment.executorType}`,
-          metadata: {
-            executorId: assignment.executorId,
-            reason: assignment.reason,
-          },
-        }],
-      });
-    }
-
-    const createdTasks = await this.orchestrationTaskModel.insertMany(tasksToCreate) as any[];
-    const idByIndex = createdTasks.map((task) => task._id.toString());
-
-    await Promise.all(
-      createdTasks.map((task, index) => {
-        const deps = planningTasks[index].dependencies
-          .map((depIndex) => idByIndex[depIndex])
-          .filter(Boolean);
-        return this.orchestrationTaskModel
-          .updateOne({ _id: task._id }, { $set: { dependencyTaskIds: deps } })
-          .exec();
-      }),
-    );
-
-    await Promise.all(
-      createdTasks.map((task) =>
-        this.emitTaskLifecycleEvent({
-          eventType: 'task.created',
-          task,
-          status: task.status,
-          payload: {
-            assignment: task.assignment,
-          },
-        }).catch(() => undefined),
-      ),
-    );
-
-    return { createdTasks, idByIndex };
   }
 
   private async executeTaskNode(
@@ -2075,245 +2158,29 @@ export class OrchestrationService {
     return prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
   }
 
-  private async selectExecutor(
-    title: string,
-    description: string,
-  ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
-    const emailTask = this.isEmailTask(title, description);
-    const researchTask = this.isResearchTask(title, description);
-    const text = `${title} ${description}`.toLowerCase();
-    const keywords = text
-      .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
-      .filter((item) => item.length >= 2)
-      .slice(0, 20);
-
-    const [agents, employees] = await Promise.all([
-      this.agentModel.find({ isActive: true }).exec(),
-      this.employeeModel
-        .find({
-          status: { $in: [EmployeeStatus.ACTIVE, EmployeeStatus.PROBATION] },
-        })
-        .exec(),
-    ]);
-
-    const emailCapableAgentIdSet = await this.getEmailCapableAgentIdSet(agents);
-    const researchCapableAgentIdSet = this.getResearchCapableAgentIdSet(agents);
-
-    const agentCandidates = agents
-      .map((agent) => {
-        const context = `${agent.name} ${agent.description} ${(agent.capabilities || []).join(' ')}`.toLowerCase();
-        const score = keywords.reduce((acc, keyword) => (context.includes(keyword) ? acc + 1 : acc), 0);
-        return { id: agent._id.toString(), score };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    const employeeCandidates = employees
-      .map((employee) => {
-        const context = `${employee.name || ''} ${employee.title || ''} ${employee.description || ''} ${(employee.capabilities || []).join(' ')}`.toLowerCase();
-        const score = keywords.reduce((acc, keyword) => (context.includes(keyword) ? acc + 1 : acc), 0);
-        return { id: employee.id, score, type: employee.type };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    const bestAgent = agentCandidates[0];
-    const bestEmployee = employeeCandidates[0];
-
-    if (emailTask) {
-      const emailAgent = agentCandidates.find((candidate) => emailCapableAgentIdSet.has(candidate.id));
-      if (emailAgent) {
-        return {
-          executorType: 'agent',
-          executorId: emailAgent.id,
-          reason: `Email task routed to mail-capable agent score=${emailAgent.score}`,
-        };
-      }
-
-      const humanEmployee = employees.find((employee) => employee.type === EmployeeType.HUMAN);
-      if (humanEmployee) {
-        return {
-          executorType: 'employee',
-          executorId: humanEmployee.id,
-          reason: 'Email task routed to human due to missing mail tool capability',
-        };
-      }
-
-      return {
-        executorType: 'unassigned',
-        reason: 'Email task requires tool/credential, manual assignment required',
-      };
-    }
-
-    if (researchTask) {
-      const researchAgent = agentCandidates.find((candidate) => researchCapableAgentIdSet.has(candidate.id));
-      if (researchAgent) {
-        return {
-          executorType: 'agent',
-          executorId: researchAgent.id,
-          reason: `Research task routed to research-capable agent score=${researchAgent.score}`,
-        };
-      }
-    }
-
-    if ((!bestAgent || bestAgent.score <= 0) && (!bestEmployee || bestEmployee.score <= 0)) {
-      const fallbackAgent = agents[0];
-      if (fallbackAgent?._id) {
-        return {
-          executorType: 'agent',
-          executorId: fallbackAgent._id.toString(),
-          reason: 'Fallback assignment to first active agent (no keyword match)',
-        };
-      }
-      return {
-        executorType: 'unassigned',
-        reason: 'No matching capability found, manual assignment required',
-      };
-    }
-
-    if ((bestAgent?.score || 0) >= (bestEmployee?.score || 0)) {
-      return {
-        executorType: 'agent',
-        executorId: bestAgent.id,
-        reason: `Best capability match score=${bestAgent.score}`,
-      };
-    }
-
-    return {
-      executorType: 'employee',
-      executorId: bestEmployee.id,
-      reason: `Best human assignment score=${bestEmployee.score}`,
-    };
+  /**
+   * Detect whether the plan prompt requires locking all task assignees to the planner agent.
+   */
+  private detectAssignmentPolicy(prompt: string): 'default' | 'lock_to_planner' {
+    const text = (prompt || '').toLowerCase();
+    const lockSignals = [
+      'assignee 必须',
+      'assignee必须',
+      'all tasks assigned to me',
+      'assignmentpolicy=lock_to_planner',
+      'enforcesingleassignee=true',
+    ];
+    if (lockSignals.some((signal) => text.includes(signal))) return 'lock_to_planner';
+    if (/所有.*任务.*归属.*自身/.test(text)) return 'lock_to_planner';
+    if (/plan\s*tasks.*assignee.*必须.*(cto|planner|自身|自己)/.test(text)) return 'lock_to_planner';
+    return 'default';
   }
 
-  private isExternalActionTask(title: string, description: string): boolean {
-    return this.isEmailTask(title, description);
-  }
+  // NOTE: Legacy selectExecutor and duplicate classification methods removed.
+  // All executor selection now goes through ExecutorSelectionService.
+  // All task classification now goes through TaskClassificationService.
 
-  private isEmailTask(title: string, description: string): boolean {
-    const text = `${title} ${description}`.toLowerCase();
-    return (
-      text.includes('send email') ||
-      text.includes('email to') ||
-      text.includes('发送邮件') ||
-      text.includes('发邮件') ||
-      text.includes('gmail') ||
-      text.includes('@')
-    );
-  }
-
-  private isResearchTask(title: string, description: string): boolean {
-    const text = `${title} ${description}`.toLowerCase();
-    return (
-      text.includes('research') ||
-      text.includes('search') ||
-      text.includes('compile') ||
-      text.includes('population') ||
-      text.includes('most populous') ||
-      text.includes('调研') ||
-      text.includes('检索') ||
-      text.includes('汇总')
-    );
-  }
-
-  private async getEmailCapableAgentIdSet(agents: Agent[]): Promise<Set<string>> {
-    const toolIds = Array.from(new Set(agents.flatMap((agent) => agent.tools || []).filter(Boolean)));
-    if (!toolIds.length) {
-      return new Set();
-    }
-
-    const tools = await this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
-    const emailToolIdSet = new Set(
-      tools
-        .filter((tool) => this.isEmailTool(tool))
-        .map((tool) => tool.id),
-    );
-
-    return new Set(
-      agents
-        .filter((agent) => (agent.tools || []).some((toolId) => emailToolIdSet.has(toolId)))
-        .map((agent) => this.getEntityId(agent as unknown as Record<string, any>))
-        .filter(Boolean),
-    );
-  }
-
-  private getResearchCapableAgentIdSet(agents: Agent[]): Set<string> {
-    const researchToolSet = new Set(['websearch', 'webfetch', 'content_extract']);
-    return new Set(
-      agents
-        .filter((agent) => (agent.tools || []).some((toolId) => researchToolSet.has(toolId)))
-        .map((agent) => this.getEntityId(agent as unknown as Record<string, any>))
-        .filter(Boolean),
-    );
-  }
-
-  private async hasEmailExecutionCapability(agent: Agent | null): Promise<boolean> {
-    if (!agent) {
-      return false;
-    }
-    const toolIds = (agent.tools || []).filter(Boolean);
-    if (!toolIds.length) {
-      return false;
-    }
-    const tools = await this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
-    return tools.some((tool) => this.isEmailTool(tool));
-  }
-
-  private isEmailTool(tool: Tool): boolean {
-    const text = `${tool.id} ${tool.name} ${tool.description} ${tool.category}`.toLowerCase();
-    return text.includes('gmail') || text.includes('email') || text.includes('mail');
-  }
-
-  private isCodeTask(title: string, description: string): boolean {
-    const text = `${title} ${description}`.toLowerCase();
-    return (
-      text.includes('code') ||
-      text.includes('implement') ||
-      text.includes('开发') ||
-      text.includes('编码') ||
-      text.includes('修复') ||
-      text.includes('fix') ||
-      text.includes('refactor')
-    );
-  }
-
-  private validateCodeExecutionProof(
-    title: string,
-    description: string,
-    output: string,
-  ): { valid: boolean; reason?: string; missing?: string[] } {
-    if (!this.isCodeTask(title, description)) {
-      return { valid: true };
-    }
-
-    const text = String(output || '');
-    const lower = text.toLowerCase();
-    const hasBuild = /\b(npm run build|pnpm build|yarn build|bun run build|build\b)\b/i.test(text);
-    const hasTest = /\b(npm test|pnpm test|yarn test|bun test|pytest|go test|vitest|jest|test\b)\b/i.test(text);
-    const hasLint = /\b(npm run lint|pnpm lint|yarn lint|bun run lint|ruff check|eslint|lint\b)\b/i.test(text);
-    const hasSuccessSignal =
-      /\b(exit code\s*:?\s*0|completed successfully|success|passed|all checks passed|0 failed)\b/i.test(text) ||
-      (!/\b(exit code\s*:?\s*[1-9]|error:|failed|exception)\b/i.test(text) && lower.length > 0);
-    const hasDiffSignal =
-      /\b(git diff|files changed|changed files|modified:|create mode|insertions\(|deletions\()\b/i.test(text);
-
-    const missing: string[] = [];
-    if (!(hasBuild || hasTest || hasLint)) missing.push('build/test/lint commands');
-    if (!hasSuccessSignal) missing.push('successful command exit evidence');
-    if (!hasDiffSignal) missing.push('code change evidence');
-
-    if (missing.length > 0) {
-      return {
-        valid: false,
-        reason: `missing ${missing.join(', ')}`,
-        missing,
-      };
-    }
-
-    return { valid: true };
-  }
-
-  private requiresResearchQualityValidation(title: string, description: string): boolean {
-    return Boolean(this.detectResearchTaskKind(title, description));
-  }
+  // Legacy classification/validation methods removed — now in TaskClassificationService/TaskOutputValidationService/ExecutorSelectionService
 
   private validateResearchOutput(
     output: string,

@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
-import { Task } from '../../shared/types';
+import { AgentExecutionTask } from '../../shared/types';
 
 interface PlannerTaskDraft {
   title: string;
@@ -57,7 +57,7 @@ export class PlannerService {
     mode: 'sequential' | 'parallel' | 'hybrid',
     requirementId?: string,
   ): Promise<PlannerResult | null> {
-    const task: Task = {
+    const task: AgentExecutionTask = {
       title: 'Planner agent task decomposition',
       description: [
         '将用户需求拆解为可执行任务清单并返回 JSON。',
@@ -70,6 +70,7 @@ export class PlannerService {
         `5) mode 优先使用 ${mode}。`,
         requirementId ? `5.1) 来源需求ID: ${requirementId}，请确保任务拆解围绕该需求交付闭环。` : '5.1) 若存在来源需求ID，应保持任务拆解与需求范围一致。',
         '6) 若存在发送邮件/外部动作任务，优先依赖“邮件草稿/内容生成”任务，而不是“校对/润色”任务，避免过度阻塞。',
+        '7) 若需求涉及编排/分配/通知，最后一个任务应为“汇总输出编排结果 JSON”。',
       ].join('\n'),
       type: 'planning',
       priority: 'high',

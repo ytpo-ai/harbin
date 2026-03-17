@@ -59,9 +59,10 @@
 #### 计划管理约束
 
 - 删除计划前会检查是否存在关联定时服务（`planId` 绑定的 schedule），存在则禁止删除。
+- 计划编排列表与计划详情均提供删除入口；点击删除先二次确认，若计划已绑定 schedule 则提示“已绑定定时服务，无法删除”。
 - 计划详情页面使用独立路由 `/orchestration/plans/:id`，支持从计划列表或定时服务列表跳转。
 - 计划详情页点击“重新编排”先弹出 Planner 选择框，确认后按所选 Planner 覆盖当前任务结构并重排；执行中按钮显示 loading 并禁用重复触发。
-- 重新编排接口改为异步受理：前端提交后轮询计划详情状态，完成后提示“编排完成”并刷新页面，避免长耗时同步请求超时。
+- 重新编排接口改为异步受理：开始时先清空旧任务并将计划状态置为 `drafting`，随后通过 `plan.status.changed/plan.task.generated/plan.completed/plan.failed` 事件流式返回新任务，前端以 SSE 实时刷新任务列表并在断线时轮询兜底。
 - 计划详情页支持一键复制任务清单为 Markdown（含计划信息、Prompt、任务列表、依赖/执行者/结果），复制成功提示“已复制到剪贴板”。
 - 创建计划后前端自动跳转 `/orchestration/plans/:id`，并在详情页显示“任务生成中”；任务按 `plan.task.generated` 事件逐条展示，体验接近 step 流式输出。
 
@@ -102,12 +103,14 @@
 - MCP 工具调用后会透传到 `POST /orchestration/tasks/:id/debug-run`，支持带草稿修改（`title/description`）与 `resetResult`。
 - 返回结构包含执行状态、错误信息、最近日志与建议下一步动作，便于 Agent 自主继续编排。
 
-#### 智能分配策略
+#### 智能分配策略（能力路由 + Planner 锁定）
 
-- **邮件任务**：优先分配具有邮件工具的 Agent，否则分配给员工
-- **调研任务**：优先分配具有 websearch/webfetch 工具的 Agent
-- **关键词匹配**：计算 Agent/Employee 与任务描述的关键词匹配度
-- **兜底策略**：无匹配时使用第一个活跃 Agent
+- **策略模式**：支持 `default` 与 `lock_to_planner` 两种分配策略。
+- **锁定策略**：当 Prompt 命中强约束信号（如 `all tasks assigned to me`、`assignmentPolicy=lock_to_planner`）时，所有 plan task 直接分配给 `plannerAgentId`。
+- **能力路由评分**：默认策略下基于 4 维评分选择执行者：角色匹配（40）+ 工具覆盖（30）+ 能力标签匹配（20）+ 关键词相关性（10）。
+- **角色语义**：执行者选择会结合 `Agent.roleId` 与 `AgentRole.capabilities/tools`，不再仅依赖任务文本关键词。
+- **工具硬门槛**：当任务声明 `requiredTools` 时，候选执行者必须覆盖必需工具，否则返回 `unassigned` 并给出缺失工具说明。
+- **兜底策略**：无候选达到阈值时保留回退逻辑（优先员工可执行场景，否则回退首个活跃 Agent 或 `unassigned`）。
 
 #### 外部动作验证
 
@@ -141,6 +144,7 @@
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 编排与调度去重复/职责边界重构计划 |
+| `ORCHESTRATION_EXECUTOR_SELECTION_SKILL_ACTIVATION_PLAN.md` | 执行者能力路由重构 + Skill 渐进激活修复方案 |
 
 ### 开发总结 (docs/development/)
 

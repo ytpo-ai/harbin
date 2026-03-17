@@ -118,6 +118,8 @@ interface EnabledAgentSkillContext {
   proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }
 
+const SKILL_CONTENT_MAX_INJECT_LENGTH = Math.max(500, Number(process.env.SKILL_CONTENT_MAX_INJECT_LENGTH || 4000));
+
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
 const MODEL_MANAGEMENT_ROLE_ID = 'system-model-management-role';
 const MODEL_LIST_TOOL_ID = 'builtin.sys-mg.mcp.model-admin.list-models';
@@ -1325,10 +1327,21 @@ export class AgentService {
       timestamp: new Date(),
     });
 
-    // 任务上下文
+    // 任务上下文（去重：若 description 已存在于 user 消息中则不重复注入）
+    const descAlreadyInHistory =
+      task.description &&
+      task.description.length > 50 &&
+      context.previousMessages.some(
+        (msg) =>
+          msg.role === 'user' &&
+          typeof msg.content === 'string' &&
+          msg.content.includes(task.description.slice(0, 100)),
+      );
     messages.push({
       role: 'system',
-      content: `任务信息:\n标题: ${task.title}\n描述: ${task.description}\n类型: ${task.type}\n优先级: ${task.priority}`,
+      content: descAlreadyInHistory
+        ? `任务信息:\n标题: ${task.title}\n类型: ${task.type}\n优先级: ${task.priority}`
+        : `任务信息:\n标题: ${task.title}\n描述: ${task.description}\n类型: ${task.type}\n优先级: ${task.priority}`,
       timestamp: new Date(),
     });
 
@@ -1356,6 +1369,38 @@ export class AgentService {
           '请优先基于以上已启用技能的能力边界来拆解与执行任务，并在输出中体现对应技能的方法论。',
         timestamp: new Date(),
       });
+
+      // 渐进式激活：对匹配当前任务的 skill 按需加载 content 并注入 prompt
+      for (const skill of enabledSkills) {
+        if (this.shouldActivateSkillContent(skill, task)) {
+          try {
+            const skillDoc = await this.skillModel
+              .findOne({ id: skill.id }, { content: 1, contentSize: 1 })
+              .lean()
+              .exec();
+            const rawContent = (skillDoc as any)?.content;
+            if (rawContent && typeof rawContent === 'string' && rawContent.trim()) {
+              const content =
+                rawContent.length > SKILL_CONTENT_MAX_INJECT_LENGTH
+                  ? rawContent.slice(0, SKILL_CONTENT_MAX_INJECT_LENGTH) +
+                    '\n\n[... 内容已截断，可通过工具查询完整版本]'
+                  : rawContent;
+              messages.push({
+                role: 'system',
+                content: `【激活技能方法论 - ${skill.name}】\n\n${content}`,
+                timestamp: new Date(),
+              });
+              this.logger.log(
+                `[skill_activated] skill=${skill.name} id=${skill.id} contentSize=${rawContent.length} taskType=${task.type}`,
+              );
+            }
+          } catch (err: any) {
+            this.logger.warn(
+              `[skill_content_load_failed] skill=${skill.id} error=${err?.message || err}`,
+            );
+          }
+        }
+      }
     }
 
     const allowedToolIds = await this.getAllowedToolIds(agent);
@@ -1506,6 +1551,46 @@ export class AgentService {
 
   private agentEnabledSkillCacheKey(agentId: string): string {
     return `agent:enabled-skills:${agentId}`;
+  }
+
+  /**
+   * Determine whether a skill's full content should be loaded and injected into
+   * the prompt for the current task. This keeps the default behaviour lightweight
+   * (summary-only) while activating the full methodology document when the task
+   * context signals a match.
+   */
+  private shouldActivateSkillContent(
+    skill: EnabledAgentSkillContext,
+    task: Task,
+  ): boolean {
+    const taskText = `${task.title || ''} ${task.description || ''} ${task.type || ''}`.toLowerCase();
+    const tags = (skill.tags || []).map((t) => t.toLowerCase());
+
+    // Rule 1: task.type directly matches a skill tag
+    if (task.type && tags.some((tag) => tag.includes(task.type!))) {
+      return true;
+    }
+
+    // Rule 2: planning-type tasks + skill has planning/orchestration/guard tags
+    if (task.type === 'planning') {
+      const planningSignals = ['planning', 'orchestration', 'guard', 'planner'];
+      if (tags.some((tag) => planningSignals.some((s) => tag.includes(s)))) {
+        return true;
+      }
+    }
+
+    // Rule 3: skill name or tags appear as keywords in task text (need >= 2 hits)
+    const skillSignals = [skill.name.toLowerCase(), ...tags];
+    let hitCount = 0;
+    for (const signal of skillSignals) {
+      const words = signal.split(/[\s\-_]+/).filter((w) => w.length >= 3);
+      if (words.some((word) => taskText.includes(word))) {
+        hitCount++;
+      }
+      if (hitCount >= 2) return true;
+    }
+
+    return false;
   }
 
   private async executeWithToolCalling(

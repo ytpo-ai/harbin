@@ -34,9 +34,11 @@
 
 1. Skill 管理：通过 `/skills` 完成技能增删改查与筛选。
 2. 绑定管理：通过 `/skills/assign` 维护 `Agent.skills`，支持绑定与解绑（`enabled=false`）。
-4. 渐进式加载：
+4. 渐进式加载（按需激活）：
    - 列表/路由阶段只读取 skill 元数据（name/description/metadata/status/tags）。
-   - 执行阶段才读取 `content` 注入上下文（如 `<skill_content>`）。
+   - 执行阶段先注入 skill 摘要，再根据任务上下文触发 `shouldActivateSkillContent`。
+   - 命中激活条件时才读取 `content` 注入 prompt，并受 `SKILL_CONTENT_MAX_INJECT_LENGTH` 截断保护。
+   - content 加载失败时仅告警，不阻断任务执行（fail-open）。
 5. 缓存策略：
    - Redis 缓存索引元数据（高频、轻量）。
    - Redis 按 `contentHash` 缓存正文（按需、可失效）。
@@ -78,6 +80,7 @@
 | `skill.controller.ts` | Skill CRUD、绑定、建议、文档重建接口 |
 | `skill.service.ts` | 技能库、绑定、推荐、审核、索引重建核心逻辑 |
 | `skill-doc-sync.service.ts` | 现有文档同步能力（后续计划去文件系统依赖） |
+| `../agents/agent.service.ts` | Agent 执行消息构建；Skill 摘要注入与按需 content 激活 |
 
 ### 领域 Schema (backend/apps/agents/src/schemas/)
 
