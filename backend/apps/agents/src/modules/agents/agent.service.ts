@@ -22,6 +22,8 @@ import { AgentExecutionService } from './agent-execution.service';
 import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
+import { PromptResolverService } from '../../../../../src/modules/prompt-registry/prompt-resolver.service';
+import { PROMPT_ROLES, PROMPT_SCENES } from '../../../../../src/modules/prompt-registry/prompt-resolver.constants';
 
 export interface AgentContext {
   task: Task;
@@ -199,6 +201,13 @@ const SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS = Math.max(
   Number(process.env.AGENT_SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS || 7200),
 );
 const EMPTY_MEETING_RESPONSE_FALLBACK = '操作进行中，1 分钟内补充回执。';
+const DEFAULT_MEETING_EXECUTION_POLICY_PROMPT =
+  '会议执行规则：\n' +
+  '1) 一次确认后自动执行：用户已明确同意时，直接执行，不再二次确认语气或文案。\n' +
+  '2) 分配类动作按闭环顺序执行：先 requirement 状态/分配，再发送通知。\n' +
+  '3) 回执必须三段式：动作1（已分配）+ 动作2（已通知）+ 下一步检查点（预计时间）。\n' +
+  '4) 通知默认使用短版开工文案；仅当用户明确要求时再补充验收细节。\n' +
+  '5) 分配类动作目标 1 轮闭环，最晚不超过 2 轮。';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -225,6 +234,7 @@ export class AgentService {
     private readonly agentOrchestrationIntentService: AgentOrchestrationIntentService,
     private readonly agentOpenCodePolicyService: AgentOpenCodePolicyService,
     private readonly agentMcpProfileService: AgentMcpProfileService,
+    private readonly promptResolver: PromptResolverService,
   ) {}
 
   async seedMcpProfileSeeds(mode: 'sync' | 'append' = 'sync'): Promise<void> {
@@ -1602,18 +1612,21 @@ export class AgentService {
     }
 
     if (meetingLikeTask) {
+      const meetingExecutionPolicyTemplate = await this.promptResolver.resolve({
+        scene: PROMPT_SCENES.meeting,
+        role: PROMPT_ROLES.meetingExecutionPolicy,
+        defaultContent: DEFAULT_MEETING_EXECUTION_POLICY_PROMPT,
+        sessionOverride: this.resolvePromptSessionOverride(context, PROMPT_SCENES.meeting, PROMPT_ROLES.meetingExecutionPolicy),
+      });
       const meetingExecutionPolicy = await this.resolveSystemContextBlockContent({
         scope: contextScope,
         blockType: 'meeting-execution-policy',
-        fullContent:
-          '会议执行规则：\n' +
-          '1) 一次确认后自动执行：用户已明确同意时，直接执行，不再二次确认语气或文案。\n' +
-          '2) 分配类动作按闭环顺序执行：先 requirement 状态/分配，再发送通知。\n' +
-          '3) 回执必须三段式：动作1（已分配）+ 动作2（已通知）+ 下一步检查点（预计时间）。\n' +
-          '4) 通知默认使用短版开工文案；仅当用户明确要求时再补充验收细节。\n' +
-          '5) 分配类动作目标 1 轮闭环，最晚不超过 2 轮。',
+        fullContent: meetingExecutionPolicyTemplate.content,
         snapshot: {
-          version: 'step1-meeting-execution-policy',
+          version: 'step2-prompt-registry',
+          templateVersion: meetingExecutionPolicyTemplate.version || 'code-default',
+          templateSource: meetingExecutionPolicyTemplate.source,
+          contentHash: this.hashFingerprint(meetingExecutionPolicyTemplate.content),
         },
       });
       if (meetingExecutionPolicy) {
@@ -1909,6 +1922,43 @@ export class AgentService {
     },
   ): boolean {
     return task.type === 'meeting' || context?.taskType === 'meeting' || Boolean(context?.teamContext?.meetingId);
+  }
+
+  private resolvePromptSessionOverride(
+    context: AgentContext,
+    scene: string,
+    role: string,
+  ): string | undefined {
+    const overrides = context?.teamContext?.promptOverrides;
+    if (!overrides) {
+      return undefined;
+    }
+
+    if (typeof overrides === 'string') {
+      const direct = overrides.trim();
+      return direct || undefined;
+    }
+
+    if (typeof overrides !== 'object') {
+      return undefined;
+    }
+
+    const compositeKey = `${scene}:${role}`;
+    const byComposite = String((overrides as Record<string, unknown>)[compositeKey] || '').trim();
+    if (byComposite) {
+      return byComposite;
+    }
+
+    const byScene = (overrides as Record<string, unknown>)[scene];
+    if (byScene && typeof byScene === 'object') {
+      const byRole = String((byScene as Record<string, unknown>)[role] || '').trim();
+      if (byRole) {
+        return byRole;
+      }
+    }
+
+    const byRole = String((overrides as Record<string, unknown>)[role] || '').trim();
+    return byRole || undefined;
   }
 
   private isMeaninglessAssistantResponse(response: string | undefined): boolean {

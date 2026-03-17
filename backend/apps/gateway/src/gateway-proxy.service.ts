@@ -40,7 +40,8 @@ export class GatewayProxyService {
       originalUrl.startsWith('/api/skills') ||
       originalUrl.startsWith('/api/memos') ||
       originalUrl.startsWith('/api/models') ||
-      originalUrl.startsWith('/api/model-management')
+      originalUrl.startsWith('/api/model-management') ||
+      originalUrl.startsWith('/api/prompt-registry')
     ) {
       return this.agentsBaseUrl;
     }

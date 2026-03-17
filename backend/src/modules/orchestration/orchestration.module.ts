@@ -28,11 +28,13 @@ import { TaskClassificationService } from './services/task-classification.servic
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { InnerMessageModule } from '../inner-message/inner-message.module';
+import { PromptRegistryModule } from '../prompt-registry/prompt-registry.module';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
+    PromptRegistryModule,
     InnerMessageModule,
     MessagesModule,
     MongooseModule.forFeature([

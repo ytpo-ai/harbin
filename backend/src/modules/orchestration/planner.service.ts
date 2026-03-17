@@ -4,6 +4,8 @@ import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../shared/types';
+import { PromptResolverService } from '../prompt-registry/prompt-resolver.service';
+import { PROMPT_ROLES, PROMPT_SCENES } from '../prompt-registry/prompt-resolver.constants';
 
 interface PlannerTaskDraft {
   title: string;
@@ -19,11 +21,26 @@ interface PlannerResult {
   strategyNote?: string;
 }
 
+const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
+  '将用户需求拆解为可执行任务清单并返回 JSON。',
+  '需求: {{prompt}}',
+  '输出规则:',
+  '1) 仅输出 JSON，不要附加解释。',
+  '2) JSON 结构: {"mode":"sequential|parallel|hybrid","tasks":[{"title":"","description":"","priority":"low|medium|high|urgent","dependencies":[0]}]}',
+  '3) tasks 数量 3-8 条。',
+  '4) dependencies 为当前任务依赖的前置任务索引数组。',
+  '5) mode 优先使用 {{mode}}。',
+  '5.1) {{requirementScope}}',
+  '6) 若存在发送邮件/外部动作任务，优先依赖“邮件草稿/内容生成”任务，而不是“校对/润色”任务，避免过度阻塞。',
+  '7) 若需求涉及编排/分配/通知，最后一个任务应为“汇总输出编排结果 JSON”。',
+].join('\n');
+
 @Injectable()
 export class PlannerService {
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     private readonly agentClientService: AgentClientService,
+    private readonly promptResolver: PromptResolverService,
   ) {}
 
   async planFromPrompt(input: {
@@ -57,21 +74,15 @@ export class PlannerService {
     mode: 'sequential' | 'parallel' | 'hybrid',
     requirementId?: string,
   ): Promise<PlannerResult | null> {
+    const plannerPrompt = await this.resolvePlannerTaskPrompt({
+      prompt,
+      mode,
+      requirementId,
+    });
+
     const task: AgentExecutionTask = {
       title: 'Planner agent task decomposition',
-      description: [
-        '将用户需求拆解为可执行任务清单并返回 JSON。',
-        `需求: ${prompt}`,
-        '输出规则:',
-        '1) 仅输出 JSON，不要附加解释。',
-        '2) JSON 结构: {"mode":"sequential|parallel|hybrid","tasks":[{"title":"","description":"","priority":"low|medium|high|urgent","dependencies":[0]}]}',
-        '3) tasks 数量 3-8 条。',
-        '4) dependencies 为当前任务依赖的前置任务索引数组。',
-        `5) mode 优先使用 ${mode}。`,
-        requirementId ? `5.1) 来源需求ID: ${requirementId}，请确保任务拆解围绕该需求交付闭环。` : '5.1) 若存在来源需求ID，应保持任务拆解与需求范围一致。',
-        '6) 若存在发送邮件/外部动作任务，优先依赖“邮件草稿/内容生成”任务，而不是“校对/润色”任务，避免过度阻塞。',
-        '7) 若需求涉及编排/分配/通知，最后一个任务应为“汇总输出编排结果 JSON”。',
-      ].join('\n'),
+      description: plannerPrompt,
       type: 'planning',
       priority: 'high',
       status: 'pending',
@@ -218,5 +229,53 @@ export class PlannerService {
     }
 
     return tasks;
+  }
+
+  private async resolvePlannerTaskPrompt(input: {
+    prompt: string;
+    mode: 'sequential' | 'parallel' | 'hybrid';
+    requirementId?: string;
+    sessionOverride?: string;
+  }): Promise<string> {
+    const requirementScope = input.requirementId
+      ? `来源需求ID: ${input.requirementId}，请确保任务拆解围绕该需求交付闭环。`
+      : '若存在来源需求ID，应保持任务拆解与需求范围一致。';
+
+    const resolved = await this.promptResolver.resolve({
+      scene: PROMPT_SCENES.orchestration,
+      role: PROMPT_ROLES.plannerTaskDecomposition,
+      defaultContent: DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT,
+      sessionOverride: input.sessionOverride,
+    });
+
+    return this.renderPlannerPromptTemplate(resolved.content, {
+      prompt: input.prompt,
+      mode: input.mode,
+      requirementScope,
+    });
+  }
+
+  private renderPlannerPromptTemplate(
+    template: string,
+    params: { prompt: string; mode: 'sequential' | 'parallel' | 'hybrid'; requirementScope: string },
+  ): string {
+    const normalizedTemplate = String(template || '').trim() || DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT;
+    const replaced = normalizedTemplate
+      .replace(/{{\s*prompt\s*}}/g, params.prompt)
+      .replace(/{{\s*mode\s*}}/g, params.mode)
+      .replace(/{{\s*requirementScope\s*}}/g, params.requirementScope);
+
+    const lines = [replaced.trim()];
+    if (!/{{\s*prompt\s*}}/i.test(normalizedTemplate) && !replaced.includes('需求:')) {
+      lines.push(`需求: ${params.prompt}`);
+    }
+    if (!/{{\s*mode\s*}}/i.test(normalizedTemplate) && !replaced.includes(params.mode)) {
+      lines.push(`mode 优先使用 ${params.mode}。`);
+    }
+    if (!/{{\s*requirementScope\s*}}/i.test(normalizedTemplate) && !replaced.includes(params.requirementScope)) {
+      lines.push(params.requirementScope);
+    }
+
+    return lines.join('\n').trim();
   }
 }

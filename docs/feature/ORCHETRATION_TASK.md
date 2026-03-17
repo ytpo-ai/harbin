@@ -97,6 +97,14 @@
   - `ExecutorSelectionService`
 - 计划创建与重规划复用共享任务创建流程，减少重复实现。
 
+#### Prompt Registry（会议/编排 Prompt 可运营）
+
+- 新增 Prompt 模板集合：`prompt_templates`（字段：`scene/role/version/status/content/updatedBy/updatedAt`）。
+- 新增 Prompt Resolver 统一解析优先级：`session override > DB(published) > Redis cache > code default`。
+- `PlannerService` 已接入 Resolver：计划拆解 Prompt 可通过模板版本管理，不再仅依赖代码硬编码。
+- 会议执行策略 Prompt 已接入 Resolver：meeting 场景的 system policy 支持模板化发布与回滚。
+- 新增 Prompt 管理接口与前端页面，支持草稿、发布、回滚、版本对比与审计。
+
 #### 任务调试 MCP
 
 - 新增 `orchestration_debug_task`（`builtin.sys-mg.mcp.orchestration.debug-task`）供 Agent 在会议编排上下文中直接调试单个任务。
@@ -145,6 +153,7 @@
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 编排与调度去重复/职责边界重构计划 |
 | `ORCHESTRATION_EXECUTOR_SELECTION_SKILL_ACTIVATION_PLAN.md` | 执行者能力路由重构 + Skill 渐进激活修复方案 |
+| `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -156,6 +165,7 @@
 | `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | Plan D 开发沉淀 |
+| `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | Prompt Registry 与会议/编排 Prompt 可运营改造沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -164,6 +174,7 @@
 | `technical/MEETING_ORCHESTRATION_EXECUTION_TECHNICAL.md` | 会议编排执行技术设计（中文） |
 | `technical/MCP_PROFILE_GOVERNANCE_TECHNICAL.md` | MCP Profile 治理技术设计（中文） |
 | `api/agents-api.md` | 包含 orchestration_* 工具定义与调用方式 |
+| `api/prompt-registry-api.md` | Prompt 模板管理接口（草稿/发布/回滚/diff/审计） |
 
 ---
 

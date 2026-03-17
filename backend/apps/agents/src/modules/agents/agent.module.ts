@@ -16,6 +16,7 @@ import { AgentExecutionService } from './agent-execution.service';
 import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
+import { PromptRegistryModule } from '../../../../../src/modules/prompt-registry/prompt-registry.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { AgentMcpProfileService } from './agent-mcp-profile.service';
     MemoModule,
     RuntimeModule,
     OpenCodeModule,
+    PromptRegistryModule,
   ],
   controllers: [AgentController],
   providers: [AgentService, AgentExecutionService, AgentOrchestrationIntentService, AgentOpenCodePolicyService, AgentMcpProfileService],

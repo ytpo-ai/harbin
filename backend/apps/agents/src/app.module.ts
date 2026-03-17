@@ -15,6 +15,7 @@ import { HealthController } from './controllers/health.controller';
 import { SkillModule } from './modules/skills/skill.module';
 import { MemoModule } from './modules/memos/memo.module';
 import { AgentTaskModule } from './modules/agent-tasks/agent-task.module';
+import { PromptRegistryAdminModule } from './modules/prompt-registry/prompt-registry-admin.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { AgentTaskModule } from './modules/agent-tasks/agent-task.module';
     ModelModule,
     ApiKeysModule,
     AgentTaskModule,
+    PromptRegistryAdminModule,
     AgentModule,
     SkillModule,
     MemoModule,
