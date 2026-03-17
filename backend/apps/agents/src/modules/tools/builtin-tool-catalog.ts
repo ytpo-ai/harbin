@@ -85,6 +85,29 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
+        id: 'builtin.sys-mg.mcp.inner-message.send-internal-message',
+        name: 'Send Internal Message',
+        description: 'Send direct internal message to another agent',
+        prompt:
+          '当你需要通知其他 Agent 时，调用 builtin.sys-mg.mcp.inner-message.send-internal-message。默认使用短版开工通知（任务一句话+截止点），仅当用户明确要求时再补充验收细节。只有拿到返回中的 messageId，才可以对用户确认“已发送”。',
+        type: 'api_call' as const,
+        category: 'Communication',
+        requiredPermissions: [{ id: 'inner_message_write', name: 'Inner Message Write', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            receiverAgentId: 'string',
+            title: 'string',
+            content: 'string',
+            eventType: 'string',
+            payload: 'object',
+            dedupKey: 'string',
+            maxAttempts: 'number',
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.internal.rd-related.repo-read',
         name: 'Repo Read',
         description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
@@ -613,6 +636,8 @@ export const BUILTIN_TOOLS = [
         id: 'builtin.sys-mg.mcp.requirement.update-status',
         name: 'Requirement Update Status',
         description: 'Update EI requirement status',
+        prompt:
+          '会议分配场景请先更新 requirement 状态（建议 assigned 或 in_progress）再发送通知；若用户已明确同意执行，不要再二次确认文案。',
         type: 'api_call' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'requirement_write', name: 'Requirement Write', level: 'intermediate' }],
@@ -633,6 +658,8 @@ export const BUILTIN_TOOLS = [
         id: 'builtin.sys-mg.mcp.requirement.assign',
         name: 'Requirement Assign',
         description: 'Assign EI requirement to agent',
+        prompt:
+          '会议分配场景执行 requirement.assign 后，必须补充结构化三段式回执：动作1（已分配：requirementId/执行人/状态）+ 动作2（已通知：消息摘要）+ 下一步（检查时间点）。用户明确同意后直接执行，不重复确认语气。',
         type: 'api_call' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'requirement_write', name: 'Requirement Write', level: 'intermediate' }],

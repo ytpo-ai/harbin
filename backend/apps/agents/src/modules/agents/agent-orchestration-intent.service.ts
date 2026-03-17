@@ -365,7 +365,20 @@ export class AgentOrchestrationIntentService {
 
   private isShortRunConfirmIntent(latestUserLower: string): boolean {
     const normalized = String(latestUserLower || '').trim();
-    return ['执行', '继续', '开始', 'run', 'go', 'ok执行', '确认执行'].includes(normalized);
+    return [
+      '执行',
+      '继续',
+      '开始',
+      'run',
+      'go',
+      'ok执行',
+      '确认执行',
+      '确认',
+      '同意',
+      '可以执行',
+      '按这个执行',
+      '好的执行',
+    ].includes(normalized);
   }
 
   private normalizeMeetingUserInstruction(content: unknown): string {

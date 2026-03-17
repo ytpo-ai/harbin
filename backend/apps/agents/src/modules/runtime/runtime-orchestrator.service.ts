@@ -31,6 +31,24 @@ export class RuntimeOrchestratorService {
   private readonly lockTails = new Map<string, Promise<void>>();
   private readonly memoSnapshotRefreshMs = Number(process.env.AGENT_SESSION_MEMO_REFRESH_MS || 60_000);
 
+  private extractInitialSystemMessages(metadata: Record<string, unknown>): string[] {
+    const raw = metadata?.initialSystemMessages;
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+    const seen = new Set<string>();
+    return raw
+      .map((item) => String(item || '').trim())
+      .filter((item) => item.length > 0)
+      .filter((item) => {
+        if (seen.has(item)) {
+          return false;
+        }
+        seen.add(item);
+        return true;
+      });
+  }
+
   constructor(
     private readonly persistence: RuntimePersistenceService,
     private readonly hookDispatcher: HookDispatcherService,
@@ -39,9 +57,14 @@ export class RuntimeOrchestratorService {
 
   async startRun(rawInput: RuntimeStartRunInput): Promise<RuntimeRunContext> {
     const input = RuntimeStartRunInputSchema.parse(rawInput);
+    const metadataRecord = { ...(input.metadata || {}) } as Record<string, unknown>;
+    const initialSystemMessages = this.extractInitialSystemMessages(metadataRecord);
+    if (Object.prototype.hasOwnProperty.call(metadataRecord, 'initialSystemMessages')) {
+      delete metadataRecord.initialSystemMessages;
+    }
 
     let ensuredSession;
-    const meetingContext = input.metadata?.meetingContext as
+    const meetingContext = metadataRecord?.meetingContext as
       | { meetingId?: string; agendaId?: string; latestSummary?: string }
       | undefined;
 
@@ -62,7 +85,7 @@ export class RuntimeOrchestratorService {
         input.agentId,
         input.taskTitle,
         {
-          linkedPlanId: typeof input.metadata?.planId === 'string' ? input.metadata.planId : undefined,
+          linkedPlanId: typeof metadataRecord?.planId === 'string' ? metadataRecord.planId : undefined,
           linkedTaskId: input.taskId,
           latestTaskInput: input.taskDescription,
         },
@@ -75,7 +98,7 @@ export class RuntimeOrchestratorService {
         ownerId: input.agentId,
         title: input.taskTitle,
         planContext: {
-          linkedPlanId: typeof input.metadata?.planId === 'string' ? input.metadata.planId : undefined,
+          linkedPlanId: typeof metadataRecord?.planId === 'string' ? metadataRecord.planId : undefined,
           linkedTaskId: input.taskId,
           latestTaskInput: input.taskDescription,
         },
@@ -101,7 +124,7 @@ export class RuntimeOrchestratorService {
         
         taskTitle: input.taskTitle,
         taskDescription: input.taskDescription,
-        metadata: input.metadata,
+        metadata: metadataRecord,
       });
     } else {
       resumed = true;
@@ -110,13 +133,29 @@ export class RuntimeOrchestratorService {
 
     let userMessage = await this.persistence.findLatestMessageByRunAndRole(run.id, 'user');
     if (!userMessage) {
+      let sequence = 1;
+      for (const systemContent of initialSystemMessages) {
+        await this.persistence.createMessage({
+          runId: run.id,
+          agentId: input.agentId,
+          sessionId,
+          taskId: input.taskId,
+          role: 'system',
+          sequence,
+          content: systemContent,
+          status: 'completed',
+          metadata: { source: 'runtime.startRun.initial_system' },
+        });
+        sequence += 1;
+      }
+
       userMessage = await this.persistence.createMessage({
         runId: run.id,
         agentId: input.agentId,
         sessionId,
         taskId: input.taskId,
         role: 'user',
-        sequence: 1,
+        sequence,
         content: input.userContent || input.taskDescription,
         status: 'completed',
         metadata: { source: 'runtime.startRun' },

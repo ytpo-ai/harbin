@@ -88,3 +88,39 @@ describe('AgentService agent lookup query', () => {
     });
   });
 });
+
+describe('AgentService meeting response guard', () => {
+  it('detects empty or dash-only responses as meaningless', () => {
+    const service = Object.create(AgentService.prototype);
+
+    expect(service['isMeaninglessAssistantResponse']('')).toBe(true);
+    expect(service['isMeaninglessAssistantResponse']('   ')).toBe(true);
+    expect(service['isMeaninglessAssistantResponse']('-')).toBe(true);
+    expect(service['isMeaninglessAssistantResponse']('—')).toBe(true);
+    expect(service['isMeaninglessAssistantResponse']('...')).toBe(true);
+    expect(service['isMeaninglessAssistantResponse']('已完成分配并通知')).toBe(false);
+  });
+
+  it('builds task info delta when key fields changed', () => {
+    const service = Object.create(AgentService.prototype);
+    const delta = service['buildTaskInfoDelta'](
+      {
+        title: '旧标题',
+        description: '旧描述',
+        type: 'meeting',
+        priority: 'medium',
+      },
+      {
+        title: '新标题',
+        description: '新描述',
+        type: 'planning',
+        priority: 'high',
+      },
+    );
+
+    expect(delta).toContain('标题');
+    expect(delta).toContain('描述');
+    expect(delta).toContain('类型');
+    expect(delta).toContain('优先级');
+  });
+});

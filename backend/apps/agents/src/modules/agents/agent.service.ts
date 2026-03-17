@@ -10,6 +10,7 @@ import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
 import { ToolService } from '../tools/tool.service';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { AVAILABLE_MODELS } from '../../../../../src/config/models';
 import { MemoService } from '../memos/memo.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
@@ -118,6 +119,25 @@ interface EnabledAgentSkillContext {
   proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }
 
+interface SystemContextFingerprintRecord {
+  fingerprint: string;
+  snapshot?: Record<string, unknown>;
+  updatedAt: string;
+}
+
+interface TaskInfoSnapshot {
+  title: string;
+  description: string;
+  type: string;
+  priority: string;
+}
+
+interface IdentityMemoSnapshotItem {
+  title: string;
+  topic: string;
+  contentHash: string;
+}
+
 const SKILL_CONTENT_MAX_INJECT_LENGTH = Math.max(500, Number(process.env.SKILL_CONTENT_MAX_INJECT_LENGTH || 4000));
 
 const MODEL_MANAGEMENT_AGENT_NAME = 'Model Management Agent';
@@ -174,6 +194,11 @@ const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
 };
 const DEFAULT_MAX_TOOL_ROUNDS = 30;
 const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));
+const SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS = Math.max(
+  300,
+  Number(process.env.AGENT_SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS || 7200),
+);
+const EMPTY_MEETING_RESPONSE_FALLBACK = '操作进行中，1 分钟内补充回执。';
 const MODEL_MANAGEMENT_AGENT_PROMPT =
   '你是系统内置模型管理Agent。你的职责是维护系统模型库。若用户询问“系统里有哪些模型/当前模型列表”，必须先调用 builtin.sys-mg.mcp.model-admin.list-models 再回答；若用户要求新增模型，必须先确认关键参数（provider/model/id/name/maxTokens），仅当用户明确确认后才调用 builtin.sys-mg.mcp.model-admin.add-model。未确认时严禁写入系统；不得编造模型参数。若需要调用工具，必须只输出且完整闭合标签：<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>。';
 
@@ -202,8 +227,8 @@ export class AgentService {
     private readonly agentMcpProfileService: AgentMcpProfileService,
   ) {}
 
-  async seedMcpProfileSeeds(): Promise<void> {
-    await this.agentMcpProfileService.ensureMcpProfileSeeds();
+  async seedMcpProfileSeeds(mode: 'sync' | 'append' = 'sync'): Promise<void> {
+    await this.agentMcpProfileService.ensureMcpProfileSeeds(mode);
   }
 
   async seedModelManagementAgent(): Promise<void> {
@@ -873,6 +898,30 @@ export class AgentService {
         });
 
         response = openCodeResult.response;
+        if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(response)) {
+          this.logger.warn(`[task_empty_response_retry] taskId=${taskId} channel=opencode attempt=1`);
+          await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
+          const retryResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
+            runtimeContext,
+            agentId: runtimeAgentId,
+            taskId,
+            taskPrompt:
+              `${this.resolveLatestUserContent(task, messages)}\n\n` +
+              '【系统补充】上一轮回复为空。请立即输出最小可用回执，至少包含：已分配、已通知、下一检查点。',
+            title: task.title,
+            sessionConfig,
+            model: {
+              providerID: modelConfig.provider,
+              modelID: modelConfig.model,
+            },
+            runtime: {
+              baseUrl: resolvedOpenCodeRuntime.baseUrl,
+              authEnable: resolvedOpenCodeRuntime.authEnable,
+              requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
+            },
+          });
+          response = retryResult.response;
+        }
       } else {
         // 注册provider（使用自定义key或默认key）
         this.modelService.ensureProviderWithKey(modelConfig, customApiKey);
@@ -890,6 +939,10 @@ export class AgentService {
             teamId: task.teamId,
           },
         );
+      }
+
+      if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(response)) {
+        response = EMPTY_MEETING_RESPONSE_FALLBACK;
       }
 
       this.logger.log(
@@ -1114,6 +1167,50 @@ export class AgentService {
           tokenChunks += 1;
           onToken(openCodeResult.response);
         }
+
+        if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(fullResponse)) {
+          this.logger.warn(`[stream_task_empty_response_retry] taskId=${taskId} channel=opencode attempt=1`);
+          await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
+          fullResponse = '';
+          const retryResult = await this.openCodeExecutionService.executeWithRuntimeBridge({
+            runtimeContext,
+            agentId: runtimeAgentId,
+            taskId,
+            taskPrompt:
+              `${this.resolveLatestUserContent(task, messages)}\n\n` +
+              '【系统补充】上一轮回复为空。请立即输出最小可用回执，至少包含：已分配、已通知、下一检查点。',
+            title: task.title,
+            sessionConfig,
+            model: {
+              providerID: agent.model.provider,
+              modelID: agent.model.model,
+            },
+            runtime: {
+              baseUrl: resolvedOpenCodeRuntime.baseUrl,
+              authEnable: resolvedOpenCodeRuntime.authEnable,
+              requestTimeoutMs: openCodeExecutionConfig.requestTimeoutMs,
+            },
+            onDelta: async (delta) => {
+              if (!delta) return;
+              tokenChunks += 1;
+              fullResponse += delta;
+              onToken(delta);
+            },
+            onSessionReady: async (sessionId) => {
+              await context?.runtimeLifecycle?.onOpenCodeSession?.({
+                sessionId,
+                endpoint: resolvedOpenCodeRuntime.baseUrl,
+                authEnable: resolvedOpenCodeRuntime.authEnable,
+              });
+            },
+          });
+
+          if (!fullResponse && retryResult.response) {
+            fullResponse = retryResult.response;
+            tokenChunks += 1;
+            onToken(retryResult.response);
+          }
+        }
       } else {
         // 获取自定义API Key（如果配置了）
         const customApiKey = await this.resolveCustomApiKey(agent, taskId, 'stream_task');
@@ -1158,6 +1255,12 @@ export class AgentService {
             maxTokens: agent.model.maxTokens,
           }
         );
+      }
+
+      if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(fullResponse)) {
+        fullResponse = EMPTY_MEETING_RESPONSE_FALLBACK;
+        tokenChunks += 1;
+        onToken(EMPTY_MEETING_RESPONSE_FALLBACK);
       }
 
       await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, fullResponse);
@@ -1319,6 +1422,10 @@ export class AgentService {
     enabledSkills: EnabledAgentSkillContext[],
   ): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
+    const meetingLikeTask = this.isMeetingLikeTask(task, context);
+    const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
+    const previousSystemMessages = (context.previousMessages || []).filter((message) => message?.role === 'system');
+    const previousNonSystemMessages = (context.previousMessages || []).filter((message) => message?.role !== 'system');
 
     // 系统提示
     messages.push({
@@ -1327,31 +1434,81 @@ export class AgentService {
       timestamp: new Date(),
     });
 
-    // 任务上下文（去重：若 description 已存在于 user 消息中则不重复注入）
-    const descAlreadyInHistory =
-      task.description &&
-      task.description.length > 50 &&
-      context.previousMessages.some(
-        (msg) =>
-          msg.role === 'user' &&
-          typeof msg.content === 'string' &&
-          msg.content.includes(task.description.slice(0, 100)),
-      );
-    messages.push({
-      role: 'system',
-      content: descAlreadyInHistory
-        ? `任务信息:\n标题: ${task.title}\n类型: ${task.type}\n优先级: ${task.priority}`
-        : `任务信息:\n标题: ${task.title}\n描述: ${task.description}\n类型: ${task.type}\n优先级: ${task.priority}`,
-      timestamp: new Date(),
-    });
+    const contextScope = this.resolveSystemContextScope(agent, task, context);
 
-    // 团队上下文
-    if (context.teamContext) {
-      messages.push({
-        role: 'system',
-        content: `团队上下文: ${JSON.stringify(context.teamContext)}`,
-        timestamp: new Date(),
+    if (identityMemos.length > 0) {
+      const identityContent = identityMemos
+        .map((memo) => {
+          const content = String(memo.content || '');
+          const topic = memo.payload?.topic ? String(memo.payload.topic) : '';
+          return `## ${memo.title}${topic ? ` (${topic})` : ''}\n\n${content}`;
+        })
+        .join('\n\n---\n\n');
+      const identitySnapshot: IdentityMemoSnapshotItem[] = identityMemos
+        .map((memo) => ({
+          title: String(memo.title || '').trim(),
+          topic: memo.payload?.topic ? String(memo.payload.topic).trim() : '',
+          contentHash: this.hashFingerprint(String(memo.content || '')),
+        }))
+        .sort((a, b) => `${a.title}:${a.topic}`.localeCompare(`${b.title}:${b.topic}`));
+      const identityMessage = await this.resolveSystemContextBlockContent({
+        scope: contextScope,
+        blockType: 'identity',
+        fullContent: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
+        snapshot: {
+          items: identitySnapshot,
+        },
+        buildDelta: (previous, current) =>
+          this.buildIdentityMemoDelta(
+            Array.isArray((previous as any)?.items) ? ((previous as any).items as IdentityMemoSnapshotItem[]) : [],
+            Array.isArray((current as any)?.items) ? ((current as any).items as IdentityMemoSnapshotItem[]) : [],
+          ),
+        deltaPrefix: '【身份与职责增量更新】',
       });
+      if (identityMessage) {
+        messages.push({
+          role: 'system',
+          content: identityMessage,
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    // 任务上下文（会议场景不注入固定 task-info，避免与会话消息重复）
+    if (!meetingLikeTask) {
+      const descAlreadyInHistory =
+        task.description &&
+        task.description.length > 50 &&
+        context.previousMessages.some(
+          (msg) =>
+            msg.role === 'user' &&
+            typeof msg.content === 'string' &&
+            msg.content.includes(task.description.slice(0, 100)),
+        );
+      const taskInfoSnapshot: TaskInfoSnapshot = {
+        title: String(task.title || '').trim(),
+        description: String(task.description || '').trim(),
+        type: String(task.type || '').trim(),
+        priority: String(task.priority || '').trim(),
+      };
+      const fullTaskInfoContent = descAlreadyInHistory
+        ? `任务信息:\n标题: ${taskInfoSnapshot.title}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`
+        : `任务信息:\n标题: ${taskInfoSnapshot.title}\n描述: ${taskInfoSnapshot.description}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`;
+      const taskInfoContent = await this.resolveSystemContextBlockContent({
+        scope: contextScope,
+        blockType: 'task-info',
+        fullContent: fullTaskInfoContent,
+        snapshot: taskInfoSnapshot,
+        buildDelta: (previous, current) => this.buildTaskInfoDelta(previous as TaskInfoSnapshot, current as TaskInfoSnapshot),
+        deltaPrefix: '任务信息增量更新：',
+      });
+      if (taskInfoContent) {
+        messages.push({
+          role: 'system',
+          content: taskInfoContent,
+          timestamp: new Date(),
+        });
+      }
     }
 
     if (enabledSkills.length > 0) {
@@ -1406,16 +1563,16 @@ export class AgentService {
     const allowedToolIds = await this.getAllowedToolIds(agent);
     const assignedTools = await this.toolService.getToolsByIds(allowedToolIds);
     if (assignedTools.length > 0) {
-      const toolSpecs = assignedTools.map((tool) => ({
-        id: (tool as any).canonicalId || this.normalizeToolId((tool as any).id),
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.implementation?.parameters || {},
-      }));
+      const toolSpecs = assignedTools.map((tool) => {
+        const id = (tool as any).canonicalId || this.normalizeToolId((tool as any).id);
+        const name = String(tool.name || '').trim() || 'Unnamed Tool';
+        const description = String(tool.description || '').trim() || 'No description';
+        return `- ${id} | ${name} | ${description}`;
+      });
 
       messages.push({
         role: 'system',
-        content: `你可以调用以下工具（仅限这些）:\n${JSON.stringify(toolSpecs)}\n\n当你需要调用工具时，必须只输出以下格式，不要添加任何额外文本:\n<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>\n\n工具结果会作为系统消息返回给你，收到后继续完成最终回答。`,
+        content: `你可以调用以下工具（仅限这些）:\n${toolSpecs.join('\n')}\n\n当你需要调用工具时，必须只输出以下格式，不要添加任何额外文本:\n<tool_call>{"tool":"tool_id","parameters":{}}</tool_call>\n\n工具结果会作为系统消息返回给你，收到后继续完成最终回答。`,
         timestamp: new Date(),
       });
 
@@ -1426,14 +1583,49 @@ export class AgentService {
       });
 
       const toolPromptMessages = this.buildToolPromptMessages(assignedTools);
-      for (const promptContent of toolPromptMessages) {
+      if (toolPromptMessages.length > 0) {
         messages.push({
           role: 'system',
-          content: promptContent,
+          content: `工具使用策略（按工具聚合）:\n\n${toolPromptMessages.join('\n\n')}`,
           timestamp: new Date(),
         });
       }
     }
+
+    // 团队上下文
+    if (context.teamContext) {
+      messages.push({
+        role: 'system',
+        content: `团队上下文: ${JSON.stringify(context.teamContext)}`,
+        timestamp: new Date(),
+      });
+    }
+
+    if (meetingLikeTask) {
+      const meetingExecutionPolicy = await this.resolveSystemContextBlockContent({
+        scope: contextScope,
+        blockType: 'meeting-execution-policy',
+        fullContent:
+          '会议执行规则：\n' +
+          '1) 一次确认后自动执行：用户已明确同意时，直接执行，不再二次确认语气或文案。\n' +
+          '2) 分配类动作按闭环顺序执行：先 requirement 状态/分配，再发送通知。\n' +
+          '3) 回执必须三段式：动作1（已分配）+ 动作2（已通知）+ 下一步检查点（预计时间）。\n' +
+          '4) 通知默认使用短版开工文案；仅当用户明确要求时再补充验收细节。\n' +
+          '5) 分配类动作目标 1 轮闭环，最晚不超过 2 轮。',
+        snapshot: {
+          version: 'step1-meeting-execution-policy',
+        },
+      });
+      if (meetingExecutionPolicy) {
+        messages.push({
+          role: 'system',
+          content: meetingExecutionPolicy,
+          timestamp: new Date(),
+        });
+      }
+    }
+
+    messages.push(...previousSystemMessages);
 
     const memoryContext = await this.memoService.getTaskMemoryContext(
       agent.id || '',
@@ -1449,24 +1641,8 @@ export class AgentService {
       });
     }
 
-    const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
-    if (identityMemos.length > 0) {
-      const identityContent = identityMemos
-        .map((memo) => {
-          const content = String(memo.content || '');
-          const topic = memo.payload?.topic ? String(memo.payload.topic) : '';
-          return `## ${memo.title}${topic ? ` (${topic})` : ''}\n\n${content}`;
-        })
-        .join('\n\n---\n\n');
-      messages.push({
-        role: 'system',
-        content: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
-        timestamp: new Date(),
-      });
-    }
-
-    // 历史消息
-    messages.push(...context.previousMessages);
+    // 历史用户/助手消息保留在末尾，维持对话连续性
+    messages.push(...previousNonSystemMessages);
 
     return messages;
   }
@@ -1593,6 +1769,173 @@ export class AgentService {
     return false;
   }
 
+  private resolveSystemContextScope(
+    agent: { id?: string; _id?: { toString?: () => string } },
+    task: Task,
+    context?: { teamContext?: any },
+  ): string {
+    const agentId = String(agent.id || agent._id?.toString?.() || 'unknown').trim() || 'unknown';
+    const teamContext = context?.teamContext || {};
+    const meetingId = String(teamContext?.meetingId || '').trim();
+    if (meetingId) {
+      return `meeting:${meetingId}:agent:${agentId}`;
+    }
+    const sessionId = String(teamContext?.sessionId || '').trim();
+    if (sessionId) {
+      return `session:${sessionId}:agent:${agentId}`;
+    }
+    const taskId = String(task.id || '').trim();
+    if (taskId) {
+      return `task:${taskId}:agent:${agentId}`;
+    }
+    return `ephemeral:${agentId}:${this.hashFingerprint(`${task.title || ''}|${task.type || ''}|${task.teamId || ''}`)}`;
+  }
+
+  private systemContextFingerprintCacheKey(scope: string, blockType: string): string {
+    return `agent:system-context-fingerprint:${scope}:${blockType}`;
+  }
+
+  private hashFingerprint(input: string): string {
+    return createHash('sha256').update(String(input || '')).digest('hex');
+  }
+
+  private async resolveSystemContextBlockContent(options: {
+    scope: string;
+    blockType: string;
+    fullContent: string;
+    snapshot: unknown;
+    buildDelta?: (previous: unknown, current: unknown) => string;
+    deltaPrefix?: string;
+  }): Promise<string | null> {
+    const fullContent = String(options.fullContent || '').trim();
+    if (!fullContent) {
+      return null;
+    }
+
+    const normalizedSnapshot = (options.snapshot || {}) as Record<string, unknown>;
+    const fingerprint = this.hashFingerprint(JSON.stringify(normalizedSnapshot));
+    const key = this.systemContextFingerprintCacheKey(options.scope, options.blockType);
+    const nextRecord: SystemContextFingerprintRecord = {
+      fingerprint,
+      snapshot: normalizedSnapshot,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const cached = await this.redisService.get(key);
+      if (cached) {
+        const parsed = JSON.parse(cached) as SystemContextFingerprintRecord;
+        if (parsed?.fingerprint === fingerprint) {
+          return null;
+        }
+
+        if (options.buildDelta && parsed?.snapshot) {
+          const delta = String(options.buildDelta(parsed.snapshot, normalizedSnapshot) || '').trim();
+          if (delta) {
+            await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
+            return options.deltaPrefix ? `${options.deltaPrefix}\n${delta}` : delta;
+          }
+        }
+      }
+
+      await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
+      return fullContent;
+    } catch {
+      return fullContent;
+    }
+  }
+
+  private buildTaskInfoDelta(previous: TaskInfoSnapshot, current: TaskInfoSnapshot): string {
+    const changes: string[] = [];
+    if (previous.title !== current.title) {
+      changes.push(`- 标题：${previous.title || '（空）'} -> ${current.title || '（空）'}`);
+    }
+    if (previous.description !== current.description) {
+      changes.push(
+        `- 描述：${this.compactLogText(previous.description, 120) || '（空）'} -> ${this.compactLogText(current.description, 120) || '（空）'}`,
+      );
+    }
+    if (previous.type !== current.type) {
+      changes.push(`- 类型：${previous.type || '（空）'} -> ${current.type || '（空）'}`);
+    }
+    if (previous.priority !== current.priority) {
+      changes.push(`- 优先级：${previous.priority || '（空）'} -> ${current.priority || '（空）'}`);
+    }
+    return changes.join('\n');
+  }
+
+  private buildIdentityMemoDelta(
+    previous: IdentityMemoSnapshotItem[],
+    current: IdentityMemoSnapshotItem[],
+  ): string {
+    const toMap = (items: IdentityMemoSnapshotItem[]) =>
+      new Map(items.map((item) => [`${item.title}::${item.topic}`, item]));
+    const previousMap = toMap(previous || []);
+    const currentMap = toMap(current || []);
+
+    const added: string[] = [];
+    const updated: string[] = [];
+    const removed: string[] = [];
+
+    for (const [key, next] of currentMap.entries()) {
+      const prev = previousMap.get(key);
+      const label = next.topic ? `${next.title} (${next.topic})` : next.title;
+      if (!prev) {
+        added.push(label);
+        continue;
+      }
+      if (prev.contentHash !== next.contentHash) {
+        updated.push(label);
+      }
+    }
+
+    for (const [key, prev] of previousMap.entries()) {
+      if (currentMap.has(key)) continue;
+      removed.push(prev.topic ? `${prev.title} (${prev.topic})` : prev.title);
+    }
+
+    const lines: string[] = [];
+    if (added.length) lines.push(`- 新增：${added.join('、')}`);
+    if (updated.length) lines.push(`- 更新：${updated.join('、')}`);
+    if (removed.length) lines.push(`- 移除：${removed.join('、')}`);
+    return lines.join('\n');
+  }
+
+  private isMeetingLikeTask(
+    task: Task,
+    context?: {
+      teamContext?: any;
+      taskType?: string;
+    },
+  ): boolean {
+    return task.type === 'meeting' || context?.taskType === 'meeting' || Boolean(context?.teamContext?.meetingId);
+  }
+
+  private isMeaninglessAssistantResponse(response: string | undefined): boolean {
+    const normalized = String(response || '').trim();
+    if (!normalized) {
+      return true;
+    }
+    if (['-', '—', '–', '...', '…'].includes(normalized)) {
+      return true;
+    }
+    return /^[\s\-—–_.…]+$/.test(normalized);
+  }
+
+  private shouldRetryGenerationError(error: unknown): boolean {
+    const message = this.toLogError(error).message.toLowerCase();
+    return (
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('econnreset') ||
+      message.includes('socket hang up') ||
+      message.includes('temporar') ||
+      message.includes('rate limit') ||
+      message.includes('503') ||
+      message.includes('502')
+    );
+  }
+
   private async executeWithToolCalling(
     agent: Agent,
     task: Task,
@@ -1614,6 +1957,9 @@ export class AgentService {
     const assignedToolIds = new Set(await this.getAllowedToolIds(agent));
     const agentRuntimeId = agent.id || (agent as any)._id?.toString?.() || '';
     const executedToolIds = new Set<string>();
+    const meetingLike = this.isMeetingLikeTask(task, executionContext);
+    let emptyResponseRetryUsed = false;
+    let errorRetryUsed = false;
 
     const deterministicModelManagementResult = await this.tryHandleModelManagementDeterministically(
       agent,
@@ -1686,6 +2032,21 @@ export class AgentService {
           );
           return '当前模型请求超时（上游响应过慢）。请稍后重试，或将问题拆小后再试。';
         }
+        if (meetingLike && !errorRetryUsed && this.shouldRetryGenerationError(error)) {
+          errorRetryUsed = true;
+          this.logger.warn(
+            `[tool_round_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} reason=${this.toLogError(error).message}`,
+          );
+          messages.push({
+            role: 'system',
+            content: '上一轮生成异常，请立即重试并直接给出可执行回执；不要重复提问。',
+            timestamp: new Date(),
+          });
+          continue;
+        }
+        if (meetingLike && this.shouldRetryGenerationError(error)) {
+          return EMPTY_MEETING_RESPONSE_FALLBACK;
+        }
         throw error;
       }
 
@@ -1700,7 +2061,20 @@ export class AgentService {
           });
           continue;
         }
-        return this.stripToolCallMarkup(response);
+        const cleaned = this.stripToolCallMarkup(response);
+        if (meetingLike && this.isMeaninglessAssistantResponse(cleaned)) {
+          if (!emptyResponseRetryUsed) {
+            emptyResponseRetryUsed = true;
+            messages.push({
+              role: 'system',
+              content: '你的上一轮回复为空。请立即返回最小可用回执，至少包含：已分配、已通知、下一检查点。',
+              timestamp: new Date(),
+            });
+            continue;
+          }
+          return EMPTY_MEETING_RESPONSE_FALLBACK;
+        }
+        return cleaned;
       }
 
       messages.push({

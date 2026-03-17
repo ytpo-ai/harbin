@@ -123,6 +123,13 @@ enum ParticipantRole {
 
 - Agent 入场时自动 catch-up：获取最近5条消息并生成入场发言
 - 会议结束时生成 AI 总结（含摘要、行动项、决策）
+- 会议执行链路引入系统上下文去重：`任务信息` 与 `身份与职责` 使用 fingerprint + delta 注入，内容无变化不重复注入，变更时仅注入增量
+- 会议场景默认不再注入固定 `任务信息` block；当 identity 已存在时跳过重复 `systemPrompt`，避免与身份定义重合
+- 会议分配执行遵循闭环规则：用户一次确认后自动执行，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
+- 会议异常兜底：当生成结果为空（如 `-`）时自动重试一次，仍为空则返回“操作进行中，1 分钟内补充回执。”
+- 系统消息入会顺序调整：优先注入会话历史 system 上下文，再注入工具/技能说明，降低会话阅读与追踪混乱
+- Runtime 会话落盘顺序优化：首轮运行先落盘 system 上下文，再落盘触发 user 消息，避免 user 消息长期固定在顶部影响排查
+- 工具可用清单展示精简为 `name | description`，减少大 JSON 参数块对会话上下文的噪音
 
 #### 1.3.6 消息发送交互保护
 
@@ -180,6 +187,7 @@ enum ParticipantRole {
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控计划 |
 | `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复计划 |
 | `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发计划 |
+| `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
 
 ### 开发总结 (docs/development/)
 

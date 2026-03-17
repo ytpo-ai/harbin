@@ -79,6 +79,10 @@ export class AgentExecutionService {
       roleCode,
       executionChannel,
       executionData,
+      initialSystemMessages: messages
+        .filter((msg) => msg.role === 'system')
+        .map((msg) => String(msg.content || '').trim())
+        .filter((content) => content.length > 0),
       sync: {
         state: 'pending',
         retryCount: 0,
