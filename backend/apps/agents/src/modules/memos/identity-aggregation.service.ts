@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
-import { Tool, ToolDocument } from '../../schemas/tool.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 
@@ -41,7 +40,6 @@ interface SkillInfo {
 
 interface ToolDescriptor {
   id: string;
-  description: string;
 }
 
 @Injectable()
@@ -50,7 +48,6 @@ export class IdentityAggregationService {
 
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
-    @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
   ) {}
@@ -158,49 +155,7 @@ export class IdentityAggregationService {
     }
 
     const toolIds = this.uniqueToolIds(agent.tools || []);
-    if (!toolIds.length) {
-      return [];
-    }
-
-    const tools = await this.toolModel
-      .find({
-        $or: [
-          { id: { $in: toolIds } },
-          { canonicalId: { $in: toolIds } },
-          { aliases: { $in: toolIds } },
-        ],
-      })
-      .exec();
-
-    const toolMap = new Map<string, { description: string }>();
-    for (const tool of tools) {
-      const normalizedId = this.normalizeToolId((tool as any).id);
-      const canonicalId = this.normalizeToolId((tool as any).canonicalId);
-      const descriptor = {
-        description: (tool as any).description || 'Tool metadata not found in registry',
-      };
-      if (normalizedId) {
-        toolMap.set(normalizedId, descriptor);
-      }
-      if (canonicalId) {
-        toolMap.set(canonicalId, descriptor);
-      }
-      const aliases = Array.isArray((tool as any).aliases) ? (tool as any).aliases : [];
-      for (const alias of aliases) {
-        const normalizedAlias = this.normalizeToolId(alias);
-        if (normalizedAlias) {
-          toolMap.set(normalizedAlias, descriptor);
-        }
-      }
-    }
-
-    return toolIds.map((toolId) => {
-      const metadata = toolMap.get(toolId);
-      return {
-        id: toolId,
-        description: metadata?.description || 'Tool metadata not found in registry',
-      };
-    });
+    return toolIds.map((toolId) => ({ id: toolId }));
   }
 
   private buildIdentityContent(data: IdentityData): string {
@@ -243,21 +198,18 @@ export class IdentityAggregationService {
 
     lines.push('## 能力域', '');
     lines.push(`- **主要领域**：${this.extractDomains(skills)}`);
-    lines.push(`- **工具集**：${tools.length > 0 ? tools.map((tool) => tool.id).join(', ') : '待补充'}`);
+    lines.push('- **工具集（ID 列表）**：');
+    if (tools.length > 0) {
+      for (const tool of tools) {
+        lines.push(`  - ${tool.id}`);
+      }
+    } else {
+      lines.push('  - 待补充');
+    }
     lines.push(
       `- **模型能力**：${agent.capabilities.length > 0 ? agent.capabilities.join(', ') : '待补充'}`,
       '',
     );
-
-    if (tools.length > 0) {
-      lines.push('### 工具描述', '');
-      lines.push('| 工具ID | 描述 |');
-      lines.push('|--------|------|');
-      for (const tool of tools) {
-        lines.push(`| ${tool.id} | ${tool.description} |`);
-      }
-      lines.push('');
-    }
 
     lines.push('## 工作风格', '');
     lines.push(`- 工作伦理：${agent.personality.workEthic}/100`);

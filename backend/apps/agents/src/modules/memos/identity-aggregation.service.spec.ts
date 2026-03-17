@@ -10,9 +10,6 @@ describe('IdentityAggregationService', () => {
       findById: jest.fn(),
       findOne: jest.fn(),
     };
-    const toolModel = {
-      find: jest.fn(),
-    };
     const skillModel = {
       find: jest.fn(),
     };
@@ -24,7 +21,6 @@ describe('IdentityAggregationService', () => {
 
     const service = new IdentityAggregationService(
       agentModel as any,
-      toolModel as any,
       skillModel as any,
       memoModel as any,
     );
@@ -32,14 +28,13 @@ describe('IdentityAggregationService', () => {
     return {
       service,
       agentModel,
-      toolModel,
       skillModel,
       memoModel,
     };
   };
 
-  it('renders agent name and tool descriptions in capability section', async () => {
-    const { service, agentModel, toolModel, memoModel } = createService();
+  it('renders agent name and tool id list in capability section', async () => {
+    const { service, agentModel, memoModel } = createService();
 
     agentModel.findById.mockReturnValue(
       queryResult({
@@ -58,14 +53,6 @@ describe('IdentityAggregationService', () => {
         createdAt: new Date('2026-03-01T00:00:00.000Z'),
       }),
     );
-    toolModel.find.mockReturnValue(
-      queryResult([
-        {
-          id: 'internal.web.search',
-          description: 'Search the web',
-        },
-      ]),
-    );
     memoModel.findOne.mockReturnValue(queryResult({ id: 'memo-1', version: 1 }));
     memoModel.findOneAndUpdate.mockReturnValue(queryResult({ id: 'memo-1' }));
 
@@ -75,11 +62,13 @@ describe('IdentityAggregationService', () => {
     const content = updatePayload.$set.content;
     expect(content).toContain('**Agent 名称**：Kim CTO');
     expect(content).toContain('## 能力域');
-    expect(content).toContain('| internal.web.search | Search the web |');
+    expect(content).toContain('- **工具集（ID 列表）**：');
+    expect(content).toContain('  - internal.web.search');
+    expect(content).not.toContain('### 工具描述');
   });
 
-  it('falls back when tool metadata is missing in registry', async () => {
-    const { service, agentModel, toolModel, memoModel } = createService();
+  it('keeps unknown tools and removes duplicate tool ids', async () => {
+    const { service, agentModel, memoModel } = createService();
 
     agentModel.findById.mockReturnValue(
       queryResult({
@@ -89,14 +78,13 @@ describe('IdentityAggregationService', () => {
         roleId: 'role-assistant',
         description: '',
         systemPrompt: '',
-        tools: ['unknown.tool'],
+        tools: ['unknown.tool', 'unknown.tool', '  unknown.tool  '],
         skills: [],
         capabilities: [],
         isActive: true,
         createdAt: new Date('2026-03-02T00:00:00.000Z'),
       }),
     );
-    toolModel.find.mockReturnValue(queryResult([]));
     memoModel.findOne.mockReturnValue(queryResult(null));
     memoModel.create.mockResolvedValue({ id: 'memo-new' });
 
@@ -105,6 +93,7 @@ describe('IdentityAggregationService', () => {
     const createPayload = memoModel.create.mock.calls[0][0];
     const content = createPayload.content;
     expect(content).toContain('**Agent 名称**：Alex');
-    expect(content).toContain('| unknown.tool | Tool metadata not found in registry |');
+    expect(content).toContain('  - unknown.tool');
+    expect(content.match(/  - unknown\.tool/g)?.length).toBe(1);
   });
 });
