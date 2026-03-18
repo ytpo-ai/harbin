@@ -7,6 +7,11 @@ import { AgentMemo } from '../../schemas/agent-memo.schema';
 @Injectable()
 export class MemoDocSyncService {
   private readonly logger = new Logger(MemoDocSyncService.name);
+  private readonly fileSyncEnabled = String(process.env.MEMO_FILE_SYNC_ENABLED || 'false').toLowerCase() === 'true';
+
+  isFileSyncEnabled(): boolean {
+    return this.fileSyncEnabled;
+  }
 
   private resolveWorkspaceRoot(): string {
     const cwd = process.cwd();
@@ -32,6 +37,7 @@ export class MemoDocSyncService {
   }
 
   async syncMemo(memo: AgentMemo): Promise<void> {
+    if (!this.fileSyncEnabled) return;
     const { kindDir } = this.getMemoDirs(memo.agentId, memo.memoKind);
     await fs.mkdir(kindDir, { recursive: true });
     const filePath = path.join(kindDir, `${memo.slug}.md`);
@@ -39,6 +45,7 @@ export class MemoDocSyncService {
   }
 
   async removeMemo(memo: AgentMemo): Promise<void> {
+    if (!this.fileSyncEnabled) return;
     const { kindDir } = this.getMemoDirs(memo.agentId, memo.memoKind);
     const filePath = path.join(kindDir, `${memo.slug}.md`);
     try {
@@ -49,6 +56,7 @@ export class MemoDocSyncService {
   }
 
   async rebuildIndex(memos: AgentMemo[]): Promise<void> {
+    if (!this.fileSyncEnabled) return;
     const { baseDir } = this.getMemoDirs();
     await fs.mkdir(baseDir, { recursive: true });
     await fs.writeFile(path.join(baseDir, 'README.md'), this.renderIndexMarkdown(memos), 'utf8');

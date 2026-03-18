@@ -1470,6 +1470,9 @@ export class MemoService {
 
   private async rebuildIndexSafely(): Promise<void> {
     try {
+      if (!this.memoDocSyncService.isFileSyncEnabled()) {
+        return;
+      }
       const memos = await this.memoModel.find().sort({ updatedAt: -1 }).exec();
       await this.memoDocSyncService.rebuildIndex(memos as unknown as AgentMemo[]);
     } catch (error) {
