@@ -52,9 +52,4 @@ export class RolesController {
   deleteRole(@Param('id') id: string) {
     return this.rolesService.deleteRole(id);
   }
-
-  @Post('sync-from-agent-types')
-  syncRolesFromAgentTypes(@Body() body?: { backfillAgents?: boolean }) {
-    return this.rolesService.syncRolesFromAgentTypes({ backfillAgents: body?.backfillAgents === true });
-  }
 }
