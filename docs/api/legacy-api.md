@@ -98,6 +98,8 @@
 
 - `POST /inner-message-subscriptions`：创建或更新订阅（按 `subscriberAgentId + eventType` 幂等）
 - `GET /inner-message-subscriptions`：查询订阅列表（支持 `subscriberAgentId/eventType/isActive`）
+- `GET /inner-message-subscriptions/event-definitions`：查询事件定义（优先来自 Redis 事件注册表，支持 `domain/keyword/limit`）
+- `POST /inner-message-subscriptions/rebuild-index`：重建订阅 Redis 路由索引（运维/排障）
 
 订阅 `eventType` 支持：
 

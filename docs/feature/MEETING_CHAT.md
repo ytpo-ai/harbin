@@ -122,7 +122,7 @@ enum ParticipantRole {
 #### 1.3.5 会议上下文
 
 - Agent 入场时自动 catch-up：获取最近5条消息并生成入场发言
-- 会议结束时生成 AI 总结（含摘要、行动项、决策）
+- 会议结束时由 Meeting Service 发布 `meeting.ended` inner message，会议助手 `meeting-assistant` 订阅后异步生成 AI 总结（含摘要、行动项、决策）
 - 会议执行链路引入系统上下文去重：`任务信息` 与 `身份与职责` 使用 fingerprint + delta 注入，内容无变化不重复注入，变更时仅注入增量
 - 会议场景默认不再注入固定 `任务信息` block；当 identity 已存在时跳过重复 `systemPrompt`，避免与身份定义重合
 - 会议分配执行遵循闭环规则：用户一次确认后自动执行，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
@@ -188,6 +188,7 @@ enum ParticipantRole {
 | `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复计划 |
 | `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发计划 |
 | `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
+| `MEETING_ASSISTANT_SUMMARY_EVENT_PLAN.md` | 会议总结改为会议助手事件驱动生成计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -231,6 +232,8 @@ enum ParticipantRole {
 | `modules/meetings/meeting.module.ts` | Meeting 模块依赖注入配置 |
 | `modules/meetings/meeting.controller.ts` | REST API 控制器，处理所有会议相关请求 |
 | `modules/meetings/meeting.service.ts` | 核心业务逻辑（会议生命周期、消息处理、Agent响应等） |
+| `modules/meetings/meeting-summary-automation.service.ts` | 会议助手订阅 inner message 并异步生成会议总结 |
+| `modules/meetings/meeting-inner-message.constants.ts` | 会议 inner message 事件常量（agentId/eventType） |
 
 ### 前端 (frontend/src/)
 

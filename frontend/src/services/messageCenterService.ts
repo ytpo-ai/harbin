@@ -10,6 +10,24 @@ export type MessageType = 'engineering_statistics' | 'orchestration' | 'system_a
 export type InnerMessageMode = 'direct' | 'subscription';
 export type InnerMessageStatus = 'sent' | 'delivered' | 'processing' | 'processed' | 'failed';
 
+export interface InnerMessageSubscriptionItem {
+  subscriptionId: string;
+  subscriberAgentId: string;
+  eventType: string;
+  filters: Record<string, any>;
+  isActive: boolean;
+  source?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InnerMessageEventDefinitionItem {
+  eventType: string;
+  domain: string;
+  status: string;
+  updatedAt: string;
+}
+
 export interface MessageCenterItem {
   messageId: string;
   receiverId: string;
@@ -101,6 +119,35 @@ class MessageCenterService {
     eventType?: string;
   }): Promise<InnerMessageCenterListResponse> {
     const response = await api.get('/message-center/inner-messages', { params: params || {} });
+    return response.data.data;
+  }
+
+  async listInnerMessageSubscriptions(params?: {
+    subscriberAgentId?: string;
+    eventType?: string;
+    isActive?: boolean;
+  }): Promise<InnerMessageSubscriptionItem[]> {
+    const response = await api.get('/inner-message-subscriptions', { params: params || {} });
+    return response.data.data;
+  }
+
+  async upsertInnerMessageSubscription(payload: {
+    subscriberAgentId: string;
+    eventType: string;
+    filters?: Record<string, any>;
+    isActive?: boolean;
+    source?: string;
+  }): Promise<InnerMessageSubscriptionItem> {
+    const response = await api.post('/inner-message-subscriptions', payload);
+    return response.data.data;
+  }
+
+  async listInnerMessageEventDefinitions(params?: {
+    domain?: string;
+    keyword?: string;
+    limit?: number;
+  }): Promise<InnerMessageEventDefinitionItem[]> {
+    const response = await api.get('/inner-message-subscriptions/event-definitions', { params: params || {} });
     return response.data.data;
   }
 

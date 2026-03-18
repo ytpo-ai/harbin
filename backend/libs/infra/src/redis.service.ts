@@ -120,6 +120,12 @@ export class RedisService implements OnModuleDestroy {
     return this.publisher.del(key);
   }
 
+  async delMany(keys: string[]): Promise<number> {
+    if (!this.ready) return 0;
+    if (!keys.length) return 0;
+    return this.publisher.del(...keys);
+  }
+
   async keys(pattern: string): Promise<string[]> {
     if (!this.ready) return [];
     return this.publisher.keys(pattern);
@@ -134,6 +140,55 @@ export class RedisService implements OnModuleDestroy {
   async lpush(key: string, value: string): Promise<number> {
     if (!this.ready) return 0;
     return this.publisher.lpush(key, value);
+  }
+
+  async sadd(key: string, members: string[]): Promise<number> {
+    if (!this.ready) return 0;
+    if (!members.length) return 0;
+    return this.publisher.sadd(key, ...members);
+  }
+
+  async srem(key: string, members: string[]): Promise<number> {
+    if (!this.ready) return 0;
+    if (!members.length) return 0;
+    return this.publisher.srem(key, ...members);
+  }
+
+  async smembers(key: string): Promise<string[]> {
+    if (!this.ready) return [];
+    return this.publisher.smembers(key);
+  }
+
+  async sunion(keys: string[]): Promise<string[]> {
+    if (!this.ready) return [];
+    if (!keys.length) return [];
+    return this.publisher.sunion(...keys);
+  }
+
+  async hset(key: string, values: Record<string, string>): Promise<number> {
+    if (!this.ready) return 0;
+    if (!Object.keys(values).length) return 0;
+    return this.publisher.hset(key, values);
+  }
+
+  async hgetall(key: string): Promise<Record<string, string>> {
+    if (!this.ready) return {};
+    return this.publisher.hgetall(key);
+  }
+
+  async zadd(key: string, score: number, member: string): Promise<number> {
+    if (!this.ready) return 0;
+    return this.publisher.zadd(key, String(score), member);
+  }
+
+  async zrevrange(key: string, start: number, stop: number): Promise<string[]> {
+    if (!this.ready) return [];
+    return this.publisher.zrevrange(key, start, stop);
+  }
+
+  async incr(key: string): Promise<number> {
+    if (!this.ready) return 0;
+    return this.publisher.incr(key);
   }
 
   async lrange(key: string, start: number, stop: number): Promise<string[]> {

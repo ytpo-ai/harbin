@@ -9,7 +9,7 @@ export class InnerMessageController {
   async sendDirect(
     @Body()
     payload: {
-      senderAgentId: string;
+      senderAgentId?: string;
       receiverAgentId: string;
       eventType?: string;
       title: string;
@@ -42,7 +42,7 @@ export class InnerMessageController {
   async publish(
     @Body()
     payload: {
-      senderAgentId: string;
+      senderAgentId?: string;
       eventType: string;
       title: string;
       content: string;
@@ -155,6 +155,36 @@ export class InnerMessageSubscriptionController {
     return {
       success: true,
       data,
+    };
+  }
+
+  @Get('event-definitions')
+  async listEventDefinitions(
+    @Query('domain') domain?: string,
+    @Query('keyword') keyword?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const normalizedLimit = Number.isFinite(Number(limit)) ? Number(limit) : undefined;
+    const data = await this.innerMessageService.listEventDefinitions({
+      domain,
+      keyword,
+      limit: normalizedLimit,
+    });
+
+    return {
+      success: true,
+      data,
+    };
+  }
+
+  @Post('rebuild-index')
+  async rebuildIndex() {
+    await this.innerMessageService.rebuildSubscriptionRedisIndex();
+    return {
+      success: true,
+      data: {
+        rebuilt: true,
+      },
     };
   }
 }

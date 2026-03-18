@@ -9,6 +9,8 @@ import { Agent, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
 import { MessagesService } from '../messages/messages.service';
+import { InnerMessageService } from '../inner-message/inner-message.service';
+import { MEETING_ENDED_EVENT_TYPE } from './meeting-inner-message.constants';
 
 export interface MeetingEvent {
   type: 'message' | 'participant_joined' | 'participant_left' | 'status_changed' | 'typing' | 'summary_generated' | 'settings_changed' | 'agent_state_changed';
@@ -89,6 +91,7 @@ export class MeetingService {
   private readonly memoRecordPhrases = ['记录到备忘录', 'append to memo'];
   private readonly operationLogPhrases = ['查看操作日志', 'operation log'];
   private readonly agentListPhrases = ['查看agent列表', 'list agents'];
+  private readonly meetingSummaryEventSenderAgentId = 'meeting-system';
 
   constructor(
     @InjectModel(Meeting.name) private meetingModel: Model<MeetingDocument>,
@@ -96,6 +99,7 @@ export class MeetingService {
     private readonly employeeService: EmployeeService,
     private readonly redisService: RedisService,
     private readonly messagesService: MessagesService,
+    private readonly innerMessageService: InnerMessageService,
   ) {}
 
   private normalizeSpeakingMode(mode?: string): MeetingSpeakingMode {
@@ -1030,6 +1034,15 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     this.ensureMeetingCompatibility(meeting);
 
+    if (meeting.status === MeetingStatus.ARCHIVED) {
+      throw new ConflictException('Archived meeting cannot be ended again');
+    }
+
+    if (meeting.status === MeetingStatus.ENDED) {
+      this.logger.warn(`Meeting ${meetingId} is already ended, skip duplicate end flow`);
+      return meeting;
+    }
+
     meeting.status = MeetingStatus.ENDED;
     meeting.endedAt = new Date();
     
@@ -1043,7 +1056,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     await meeting.save();
     await this.clearAllMeetingAgentThinking(meetingId, 'meeting_ended');
     await this.addSystemMessage(meetingId, `会议 "${meeting.title}" 已结束。`);
-    await this.generateMeetingSummary(meetingId);
+    await this.publishMeetingEndedSummaryEvent(meeting);
 
     this.emitEvent(meetingId, {
       type: 'status_changed',
@@ -2081,73 +2094,112 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     });
   }
 
-  /**
-   * 生成会议总结
-   */
-  private async generateMeetingSummary(meetingId: string): Promise<void> {
+  private async publishMeetingEndedSummaryEvent(meeting: MeetingDocument): Promise<void> {
+    const meetingId = String(meeting?.id || '').trim();
+    if (!meetingId) {
+      return;
+    }
+
+    const endedAt = meeting.endedAt ? new Date(meeting.endedAt).toISOString() : new Date().toISOString();
+    const dedupKey = `${MEETING_ENDED_EVENT_TYPE}:${meetingId}:${endedAt}`;
+
+    try {
+      await this.innerMessageService.publishMessage({
+        senderAgentId: this.meetingSummaryEventSenderAgentId,
+        eventType: MEETING_ENDED_EVENT_TYPE,
+        title: `会议结束：${meeting.title}`,
+        content: `会议 ${meetingId} 已结束，请生成会后总结。`,
+        payload: {
+          meetingId,
+          title: meeting.title,
+          endedAt,
+          hostId: meeting.hostId,
+          hostType: meeting.hostType,
+          status: meeting.status,
+        },
+        source: 'meeting-service',
+        dedupKey,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Failed to publish meeting ended event for meeting ${meetingId}: ${reason}`);
+    }
+  }
+
+  async generateMeetingSummary(
+    meetingId: string,
+    options?: { generatorAgentId?: string; skipIfExists?: boolean },
+  ): Promise<{ generated: boolean; reason?: string }> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
-    if (!meeting || meeting.messages.length === 0) return;
+    if (!meeting) {
+      return { generated: false, reason: 'meeting_not_found' };
+    }
+
+    if (!meeting.messages.length) {
+      return { generated: false, reason: 'empty_messages' };
+    }
 
     this.ensureMeetingCompatibility(meeting);
 
+    const existingSummaryContent = String(meeting.summary?.content || '').trim();
+    if (options?.skipIfExists && existingSummaryContent && meeting.summary?.generatedAt) {
+      return { generated: false, reason: 'already_generated' };
+    }
+
     const meetingContent = meeting.messages
-      .filter(m => m.senderType !== 'system')
-      .map(m => `${m.senderId}: ${m.content}`)
+      .filter((message) => message.senderType !== 'system')
+      .map((message) => `${message.senderId}: ${message.content}`)
       .join('\n');
 
     const prompt = `请根据以下会议讨论内容生成一个简洁的会议总结：\n\n会议标题：${meeting.title}\n\n讨论内容：\n${meetingContent}\n\n请提供：\n1. 会议摘要（2-3句话）\n2. 行动项（如果有的话）\n3. 达成的决定（如果有的话）`;
 
-    try {
-      // 找到主持人（可能是employee或agent）
-      const hostParticipant = meeting.participants.find(
-        p => p.participantId === meeting.hostId && p.participantType === meeting.hostType
-      );
-      
-      let summary = '';
-      
-      if (meeting.hostType === 'agent') {
-        const task = {
-          title: '生成会议总结',
-          description: prompt,
-          type: 'analysis',
-          priority: 'medium',
-          status: 'in_progress',
-          assignedAgents: [meeting.hostId],
-          teamId: meetingId,
-          messages: [{
+    let summary = '';
+    const generatorAgentId =
+      String(options?.generatorAgentId || '').trim() ||
+      (meeting.hostType === 'agent' ? String(meeting.hostId || '').trim() : '');
+
+    if (generatorAgentId) {
+      const task = {
+        title: '生成会议总结',
+        description: prompt,
+        type: 'analysis',
+        priority: 'medium',
+        status: 'in_progress',
+        assignedAgents: [generatorAgentId],
+        teamId: meetingId,
+        messages: [
+          {
             role: 'user',
             content: prompt,
             timestamp: new Date(),
-          }],
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-        summary = await this.agentClientService.executeTask(meeting.hostId, task as any);
-      } else {
-        // 如果是人类主持人，可以提供一个默认总结模板
-        summary = `会议 "${meeting.title}" 已结束。\n\n讨论内容涉及多个议题，参与者积极交流。具体行动项和决策请参考会议记录。`;
-      }
-      
-      meeting.summary = {
-        content: summary,
-        actionItems: [],
-        decisions: [],
-        generatedAt: new Date(),
+          },
+        ],
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
-
-      await meeting.save();
-
-      this.emitEvent(meetingId, {
-        type: 'summary_generated',
-        meetingId,
-        data: { summary },
-        timestamp: new Date(),
-      });
-
-      this.logger.log(`Generated summary for meeting ${meetingId}`);
-    } catch (error) {
-      this.logger.error(`Failed to generate summary for meeting ${meetingId}: ${error.message}`);
+      summary = await this.agentClientService.executeTask(generatorAgentId, task as any);
+    } else {
+      summary = `会议 "${meeting.title}" 已结束。\n\n讨论内容涉及多个议题，参与者积极交流。具体行动项和决策请参考会议记录。`;
     }
+
+    meeting.summary = {
+      content: summary,
+      actionItems: [],
+      decisions: [],
+      generatedAt: new Date(),
+    };
+
+    await meeting.save();
+
+    this.emitEvent(meetingId, {
+      type: 'summary_generated',
+      meetingId,
+      data: { summary },
+      timestamp: new Date(),
+    });
+
+    this.logger.log(`Generated summary for meeting ${meetingId}`);
+    return { generated: true };
   }
 
   /**

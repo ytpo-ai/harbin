@@ -19,8 +19,12 @@
 ### 1.3 核心逻辑
 
 - 消息列表按 `receiverId` 查询，支持 `page/pageSize/isRead/type` 筛选。
-- 消息中心完整页提供 Tab：`系统消息`（`system_messages`）与 `内部消息`（`inner_messages`）。
+- 消息中心完整页提供 Tab：`系统消息`（`system_messages`）、`内部消息`（`inner_messages`）与 `消息监听`（`inner_message_subscriptions`）。
 - 内部消息列表按当前登录员工绑定的 Agent（`exclusiveAssistantAgentId/aiProxyAgentId`）作为 `receiverAgentId` 查询，支持 `page/pageSize/status/mode/eventType` 筛选。
+- 消息监听 Tab 支持页面内管理 `inner_message_subscriptions`（查询、启停、创建/更新），并提供事件模板快速注册。
+- 消息监听 Tab 的 Agent 选择支持全量 Agent 下拉与名称/ID 搜索过滤。
+- 消息监听事件目录由后端 `GET /inner-message-subscriptions/event-definitions` 动态提供，前端不再硬编码事件枚举。
+- 监听事件目录覆盖计划编排/任务/会议状态变化：`orchestration.*`、`task.*`、`meeting.*`，支持精确匹配、域通配（如 `task.*`）和全局通配（`*`）。
 - Header 右上角实时显示未读角标，页面聚焦时拉取刷新一致性。
 - 已读操作（单条/全部）会广播 `message-center:updated` 事件，驱动 Header 未读角标即时同步。
 - 已读后会附带最新未读数广播，Header 优先使用事件中的未读值更新，避免异步刷新延迟导致红点残留。
@@ -68,6 +72,6 @@
 | 路径 | 功能 |
 |------|------|
 | `frontend/src/components/Layout.tsx` | Header 消息入口、未读角标、消息抽屉、用户下拉 |
-| `frontend/src/pages/MessageCenter.tsx` | 消息中心完整页（系统消息/内部消息双 Tab） |
-| `frontend/src/services/messageCenterService.ts` | 消息中心 API 服务（含内部消息查询） |
+| `frontend/src/pages/MessageCenter.tsx` | 消息中心完整页（系统消息/内部消息/消息监听三 Tab） |
+| `frontend/src/services/messageCenterService.ts` | 消息中心 API 服务（含内部消息查询与订阅管理） |
 | `frontend/src/pages/EngineeringStatistics.tsx` | 统计触发时透传 `receiverId` |

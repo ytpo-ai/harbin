@@ -19,12 +19,16 @@
 ### 1.3 核心逻辑
 
 - 直发模式（direct）
+  - `senderAgentId` 可省略，系统默认发送方为 `system`。
   - Agent A 发给 B：先落库 `sent`，再写入 Redis 分发队列。
   - 分发消费者投递到 `inner:inbox:{agentId}`。
   - 接收方收到后调用 ACK 接口更新为 `delivered/processing`，处理完成后标记 `processed`。
 - 订阅模式（subscription）
   - 发布事件后由分发服务匹配 `eventType` 订阅者。
   - 为每个订阅者生成消息记录并投递。
+- 订阅路由加速
+  - 订阅写入后同步构建 Redis 路由索引（精确/域通配/全局）与事件定义注册表。
+  - 发布侧优先通过 Redis 索引匹配订阅，Redis 不可用时回退 Mongo 查询。
 - 任务事件解耦
   - 编排侧只发布任务领域事件（`task.created/task.status.changed/task.completed/task.exception/task.failed`）。
   - CTO/其他 Agent 通过订阅接收 Hook + 消息，不在编排服务内硬编码收件人。
@@ -41,6 +45,7 @@
 
 - Orchestration 发布任务生命周期事件，供订阅者消费。
 - 协作直发（如 CTO -> coder-lzw、coder-lzw -> CTO）由 Agent 侧流程通过 `direct` 接口发起。
+- Agents Tools 提供 `builtin.sys-mg.mcp.inner-message.send-internal-message`，执行时通过内部签名调用 `POST /inner-messages/direct`。
 - Message Center 页面通过 `GET /message-center/inner-messages` 提供内部消息只读展示入口（按当前登录员工绑定 Agent 过滤）。
 
 ## 2. 相关文档
@@ -56,6 +61,7 @@
 | 文件 | 说明 |
 |------|------|
 | `technical/AGENT_COLLAB_MESSAGE_REDIS_ARCHITECTURE.md` | Agent 协作消息整体架构、状态机、Redis 队列设计 |
+| `technical/INNER_MESSAGE_REDIS_EVENT_SUBSCRIPTION_ROUTING_DESIGN.md` | 事件定义与订阅路由索引的 Redis 结构设计 |
 
 ### API 文档 (docs/api/)
 
@@ -78,4 +84,7 @@
 | `backend/src/shared/schemas/inner-message-subscription.schema.ts` | 订阅模型 |
 | `backend/src/modules/orchestration/orchestration.service.ts` | 分配/完成事件的消息联动 |
 | `backend/src/modules/message-center/message-center.controller.ts` | 内部消息分页查询转发接口 |
+| `backend/apps/agents/src/modules/tools/tool.service.ts` | `send_internal_message` 工具执行与参数校验 |
+| `backend/apps/agents/src/modules/tools/internal-api-client.service.ts` | 内部消息 API 调用封装 |
+| `backend/apps/agents/src/modules/tools/builtin-tool-catalog.ts` | 内置工具 seed（含 send_internal_message） |
 | `frontend/src/pages/MessageCenter.tsx` | 内部消息 Tab 展示 |
