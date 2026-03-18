@@ -59,7 +59,7 @@
 - 角色准入仅允许 `devops-engineer`、`fullstack-engineer`、`technical-architect`。
   - 模型绑定匹配：请求模型需命中 Agent 绑定模型或显式 fallback 白名单（受环境变量 `OPENCODE_MODEL_BINDING_CHECK_ENABLED` 控制，默认关闭）。
   - 配额检测：按 `agent + period` 检测，超限触发 `permission.asked` 审批流并暂停 run。
-- 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，非流式与流式路径均强制走 OpenCode 执行桥接，不允许回落 native 模型通道。
+- 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，执行能力为“可路由双通道”；具体 run 按任务类型判定走 `opencode` 或 `native`，命中 `opencode` 后非流式与流式路径均强制走 OpenCode 执行桥接。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
 - OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
 - OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `context.opencodeRuntime.endpoint` > `context.opencodeRuntime.endpointRef` > `OPENCODE_SERVER_URL`。
@@ -68,6 +68,8 @@
 - OpenCode session 创建时会显式透传当前执行模型（`providerID/modelID`），保证 session 模型与 Agent 绑定模型对齐。
 - 当 `OPENCODE_MODEL_BINDING_CHECK_ENABLED=false` 时，创建 session 与发送 message 仅透传执行模型，不再因为绑定不一致直接阻断；后续可在 OpenCode 可用模型列表稳定后再开启严格校验。
 - 优先级约束说明见：`docs/TIP.MD`（用于排查 endpoint 错配、默认 env 误命中）。
+- 任务类型路由优先级：`context.runtimeRouting.preferredChannel` > `agent.config.execution.taskRouting` > 内置默认映射（编码类任务走 OpenCode，其他默认 native）。
+- `agent.config.execution.taskRouting` 支持 `opencodeTaskTypes[]`、`nativeTaskTypes[]`、`defaultChannel(native|opencode)`，用于按业务任务类型自定义路由。
 
 #### OpenCode 任务流故障记录（2026-03-16）
 
@@ -130,6 +132,7 @@
 - 死信治理：`GET outbox/dead-letter`、`POST outbox/dead-letter/requeue`
 - 维护审计：`GET maintenance/audits`
 - legacy 清理：`POST maintenance/purge-legacy`
+- 数据清理脚本：`npm run cleanup:agents-runtime`（默认 dry-run；执行删除需 `--execute --confirm=DELETE_AGENT_RUNTIME_DATA`）
 
 控制约束（当前实现）：
 
@@ -143,12 +146,15 @@
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），将备忘录摘要挂载到 session 侧缓存。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
+- legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
   - `modules/agents/agent-execution.service.ts`（runtime 生命周期模板与收尾）
   - `modules/agents/agent-opencode-policy.service.ts`（OpenCode gate/budget 策略）
   - `modules/agents/agent-orchestration-intent.service.ts`（会议编排意图与强制工具映射）
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
-- 当 `agent.config.execution.provider=opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
+- Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理，并由 `agent.service.ts` 统一模板渲染读取（不通过 resolver 覆盖 Agent prompt），减少内联硬编码。
+- Agent Task Worker 会透传 `sessionContext.runtimeTaskType/runtimeChannelHint` 到 `context.runtimeRouting`，用于异步任务执行时的 runtime 通道路由。
+- 当路由命中 `opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
 - 会议场景编排意图触发已收敛：移除“执行/继续/开始”单词级触发，新增“否定编排”阻断分支，减少误判。
 - 工具 ID 在运行时统一归一化到 canonical（如 `builtin.sys-mg.mcp.orchestration.*`），并兼容 legacy 别名映射，避免“已分配却被判定未分配”。
@@ -170,6 +176,7 @@
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
 | `AGENT_EXECUTE_IDENTIFIER_COMPAT_PLAN.md` | Agent 执行入口 `id/_id` 双标识兼容修复计划 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
+| `AGENT_PROMPT_RESOLVER_REFACTOR_PLAN.md` | Agent Prompt 文案集中化与模板渲染接入计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -180,6 +187,7 @@
 | `OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1（config/门禁/同步/补偿）开发总结 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agent 执行链路公共能力提取（AgentExecutionService）开发沉淀 |
+| `AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | inner-message 统一桥接 Agent Runtime 执行链开发总结 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 
@@ -227,6 +235,7 @@
 | 文件 | 功能 |
 |------|------|
 | `modules/agents/agent.service.ts` | Agent 执行链路接入 runtime（start/assert/complete/fail/tool events） |
+| `modules/agents/agent-prompts.ts` | Agent Prompt 清单（symbol/context/scene/role/defaultContent）与默认模板构造 |
 | `modules/agents/agent-execution.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
 | `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
 | `modules/agents/agent-orchestration-intent.service.ts` | 会议编排意图识别与强制工具调用映射 |
@@ -240,3 +249,4 @@
 | `backend/apps/gateway/src/gateway-proxy.service.ts` | Runtime 控制类路径网关侧审计日志 |
 | `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |
 | `backend/src/modules/agents-client/agent-client.service.ts` | legacy 后端对 Agents Runtime/Task/Session/Memo 的统一客户端封装（已合并 models/tools client 能力） |
+| `backend/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts` | inner-message 到 Agent Runtime 的统一桥接执行 |

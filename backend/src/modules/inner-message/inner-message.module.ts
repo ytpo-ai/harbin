@@ -16,9 +16,12 @@ import {
 import { InnerMessageDispatcherService } from './inner-message-dispatcher.service';
 import { InnerMessageCollaborationAutomationService } from './inner-message-collaboration-automation.service';
 import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
+import { AgentClientModule } from '../agents-client/agent-client.module';
+import { InnerMessageAgentRuntimeBridgeService } from './inner-message-agent-runtime-bridge.service';
 
 @Module({
   imports: [
+    AgentClientModule,
     MongooseModule.forFeature([
       { name: InnerMessage.name, schema: InnerMessageSchema },
       { name: InnerMessageSubscription.name, schema: InnerMessageSubscriptionSchema },
@@ -26,7 +29,12 @@ import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
     ]),
   ],
   controllers: [InnerMessageController, InnerMessageSubscriptionController],
-  providers: [InnerMessageService, InnerMessageDispatcherService, InnerMessageCollaborationAutomationService],
+  providers: [
+    InnerMessageService,
+    InnerMessageDispatcherService,
+    InnerMessageCollaborationAutomationService,
+    InnerMessageAgentRuntimeBridgeService,
+  ],
   exports: [InnerMessageService],
 })
 export class InnerMessageModule {}

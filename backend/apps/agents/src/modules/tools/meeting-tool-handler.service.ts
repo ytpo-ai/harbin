@@ -96,4 +96,28 @@ export class MeetingToolHandler {
       updatedAt: new Date().toISOString(),
     };
   }
+
+  async generateMeetingSummary(
+    params: { meetingId?: string; skipIfExists?: boolean },
+    agentId?: string,
+  ): Promise<any> {
+    if (!params?.meetingId?.trim()) {
+      throw new Error('meeting_generate_summary requires meetingId');
+    }
+
+    const meetingId = params.meetingId.trim();
+    const result = await this.internalApiClient.callMeetingApi('POST', `/${meetingId}/generate-summary`, {
+      generatorAgentId: agentId,
+      skipIfExists: params.skipIfExists ?? true,
+    });
+    const summaryResult = result?.data || result;
+
+    return {
+      action: 'generate_summary',
+      meetingId,
+      generated: Boolean(summaryResult?.generated),
+      reason: summaryResult?.reason,
+      processedAt: new Date().toISOString(),
+    };
+  }
 }

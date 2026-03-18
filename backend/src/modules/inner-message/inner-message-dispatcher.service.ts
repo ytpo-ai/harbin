@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InnerMessageService, INNER_MESSAGE_DISPATCH_QUEUE_KEY } from './inner-message.service';
 import { RedisService } from '@libs/infra';
+import { InnerMessageAgentRuntimeBridgeService } from './inner-message-agent-runtime-bridge.service';
 
 interface DispatchEnvelope {
   dispatchId: string;
@@ -19,6 +20,7 @@ export class InnerMessageDispatcherService implements OnModuleInit, OnModuleDest
   constructor(
     private readonly innerMessageService: InnerMessageService,
     private readonly redisService: RedisService,
+    private readonly innerMessageAgentRuntimeBridgeService: InnerMessageAgentRuntimeBridgeService,
   ) {}
 
   onModuleInit(): void {
@@ -72,11 +74,16 @@ export class InnerMessageDispatcherService implements OnModuleInit, OnModuleDest
       return;
     }
 
+    if (['processed', 'failed'].includes(String(message.status || '').trim())) {
+      return;
+    }
+
     try {
       const nextAttempt = Number(envelope.attempt || 0) + 1;
       await this.innerMessageService.markDispatchAttempt(envelope.messageId, nextAttempt);
 
       await this.innerMessageService.publishToAgentInbox(message);
+      await this.innerMessageAgentRuntimeBridgeService.processMessage(message);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       const nextAttempt = Number(envelope.attempt || 0) + 1;

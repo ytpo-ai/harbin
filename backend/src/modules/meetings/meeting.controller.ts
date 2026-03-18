@@ -103,6 +103,23 @@ export class MeetingController {
     };
   }
 
+  @Post(':id/generate-summary')
+  async generateSummary(
+    @Param('id') id: string,
+    @Body() payload?: { generatorAgentId?: string; skipIfExists?: boolean },
+  ) {
+    const result = await this.meetingService.generateMeetingSummary(id, {
+      generatorAgentId: payload?.generatorAgentId,
+      skipIfExists: payload?.skipIfExists ?? true,
+    });
+
+    return {
+      success: true,
+      data: result,
+      message: result.generated ? '会议总结已生成' : '会议总结无需重复生成',
+    };
+  }
+
   @Post(':id/pause')
   async pauseMeeting(@Param('id') id: string) {
     const meeting = await this.meetingService.pauseMeeting(id);

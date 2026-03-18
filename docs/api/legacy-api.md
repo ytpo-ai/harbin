@@ -13,6 +13,7 @@
 - `POST /meetings`：创建会议
 - `POST /meetings/:id/start`：开始会议
 - `POST /meetings/:id/end`：结束会议
+- `POST /meetings/:id/generate-summary`：触发会议总结生成（支持 `generatorAgentId/skipIfExists`）
 - `POST /meetings/:id/join`：加入会议
 - `POST /meetings/:id/leave`：离开会议
 - `POST /meetings/:id/messages`：发送会议消息
@@ -89,6 +90,8 @@
 - `POST /inner-messages/publish`：发布事件消息（按订阅关系匹配后生成订阅消息并分发）
 - `PATCH /inner-messages/:messageId/ack`：接收方 ACK（更新为 `delivered` 或 `processing`）
 - `PATCH /inner-messages/:messageId/processed`：接收方处理完成（更新为 `processed`）
+
+> 统一运行时桥接：分发阶段会尝试将消息桥接到 Agent `executeTask` 执行链（由 Agent 自主思考并调用工具），并按处理结果回写 `processing/processed`。
 
 任务生命周期事件（建议）：`task.created`、`task.status.changed`、`task.completed`、`task.exception`、`task.failed`
 

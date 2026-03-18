@@ -4,7 +4,7 @@ import { Model } from 'mongoose';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { Agent } from '../../../../../src/shared/schemas/agent.schema';
 import { ToolService } from '../tools/tool.service';
-import type { AgentMcpMapProfile, AgentMcpProfile, AgentMcpToolSummary, AgentToolPermissionSet } from './agent.service';
+import type { AgentMcpMapProfile, AgentMcpProfile, AgentMcpToolSummary, AgentToolPermissionSet } from './agent.types';
 
 interface RoleLike {
   id: string;
@@ -47,6 +47,10 @@ const REQUIREMENT_TOOL_IDS = {
   comment: 'builtin.sys-mg.mcp.requirement.comment',
   syncGithub: 'builtin.sys-mg.mcp.requirement.sync-github',
   board: 'builtin.sys-mg.mcp.requirement.board',
+} as const;
+
+const INNER_MESSAGE_TOOL_IDS = {
+  sendInternalMessage: 'builtin.sys-mg.mcp.inner-message.send-internal-message',
 } as const;
 
 const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
@@ -99,6 +103,7 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
       ORCHESTRATION_TOOL_IDS.createSchedule,
       ORCHESTRATION_TOOL_IDS.updateSchedule,
       ORCHESTRATION_TOOL_IDS.debugTask,
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
       REQUIREMENT_TOOL_IDS.list,
       REQUIREMENT_TOOL_IDS.get,
       REQUIREMENT_TOOL_IDS.create,
@@ -128,6 +133,7 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
       ORCHESTRATION_TOOL_IDS.createSchedule,
       ORCHESTRATION_TOOL_IDS.updateSchedule,
       ORCHESTRATION_TOOL_IDS.debugTask,
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
       REQUIREMENT_TOOL_IDS.list,
       REQUIREMENT_TOOL_IDS.get,
       REQUIREMENT_TOOL_IDS.updateStatus,
@@ -147,6 +153,7 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
       'builtin.web-retrieval.internal.web-fetch.fetch',
       'builtin.data-analysis.internal.content-analysis.extract',
       'internal.agents.list',
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
     ],
     permissions: ['system_design', 'technical_planning', 'risk_assessment'],
     exposed: true,
@@ -155,7 +162,12 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
   {
     roleCode: 'fullstack-engineer',
     role: 'fullstack-engineer',
-    tools: ['builtin.web-retrieval.internal.web-search.exa', 'builtin.web-retrieval.internal.web-fetch.fetch', 'internal.content.extract'],
+    tools: [
+      'builtin.web-retrieval.internal.web-search.exa',
+      'builtin.web-retrieval.internal.web-fetch.fetch',
+      'internal.content.extract',
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
+    ],
     permissions: ['frontend_implementation', 'backend_implementation', 'integration_testing'],
     exposed: true,
     description: '负责前后端实现、联调测试与工程交付。',
@@ -251,6 +263,7 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
       ORCHESTRATION_TOOL_IDS.createSchedule,
       ORCHESTRATION_TOOL_IDS.updateSchedule,
       ORCHESTRATION_TOOL_IDS.debugTask,
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
       REQUIREMENT_TOOL_IDS.list,
       REQUIREMENT_TOOL_IDS.get,
       REQUIREMENT_TOOL_IDS.updateStatus,
@@ -270,6 +283,8 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
       'builtin.sys-mg.mcp.meeting.list-meetings',
       'builtin.sys-mg.mcp.meeting.send-message',
       'builtin.sys-mg.mcp.meeting.update-status',
+      'builtin.sys-mg.mcp.meeting.generate-summary',
+      INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
     ],
     permissions: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],
     exposed: true,
@@ -286,20 +301,45 @@ export class AgentMcpProfileService {
     private readonly toolService: ToolService,
   ) {}
 
-  async ensureMcpProfileSeeds(): Promise<void> {
+  async ensureMcpProfileSeeds(mode: 'sync' | 'append' = 'sync'): Promise<void> {
     try {
       for (const seed of MCP_PROFILE_SEEDS) {
         const normalizedSeedTools = this.normalizeToolIds(seed.tools || []);
         const manualPermissions = this.normalizeIncomingPermissions(seed);
         const permissionsDerived = await this.derivePermissionsFromTools(normalizedSeedTools);
         const permissions = this.uniqueStrings(manualPermissions, permissionsDerived);
+
+        if (mode === 'append') {
+          await this.agentProfileModel
+            .updateOne(
+              { roleCode: seed.roleCode },
+              {
+                $setOnInsert: {
+                  roleCode: seed.roleCode,
+                  role: seed.role,
+                  permissions,
+                  permissionsManual: manualPermissions,
+                  permissionsDerived,
+                  capabilities: permissions,
+                  exposed: seed.exposed,
+                  description: seed.description || '',
+                },
+                $addToSet: {
+                  tools: { $each: normalizedSeedTools },
+                },
+              },
+              { upsert: true },
+            )
+            .exec();
+          continue;
+        }
+
         await this.agentProfileModel
           .updateOne(
             { roleCode: seed.roleCode },
             {
               $setOnInsert: {
                 role: seed.role,
-                tools: normalizedSeedTools,
                 permissions,
                 permissionsManual: manualPermissions,
                 permissionsDerived,

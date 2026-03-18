@@ -9,6 +9,7 @@ import { ToolExecution, ToolExecutionDocument } from '../../schemas/tool-executi
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { ApiKey, ApiKeyDocument } from '../../../../../src/shared/schemas/api-key.schema';
+import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { ComposioService } from './composio.service';
 import { WebToolsService } from './web-tools.service';
 import { ModelManagementService } from '../models/model-management.service';
@@ -99,6 +100,7 @@ export class ToolService {
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(ApiKey.name) private apiKeyModel: Model<ApiKeyDocument>,
+    @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private composioService: ComposioService,
     private webToolsService: WebToolsService,
     private modelManagementService: ModelManagementService,
@@ -114,8 +116,8 @@ export class ToolService {
     private meetingToolHandler: MeetingToolHandler,
   ) {}
 
-  async seedBuiltinTools(): Promise<void> {
-    await this.initializeBuiltinTools();
+  async seedBuiltinTools(mode: 'sync' | 'append' = 'sync'): Promise<void> {
+    await this.initializeBuiltinTools(mode);
   }
 
   private inferProviderFromToolId(toolId: string): string {
@@ -318,7 +320,7 @@ export class ToolService {
       .exec();
   }
 
-  private async syncToolkitsFromTools(): Promise<void> {
+  private async syncToolkitsFromTools(mode: 'sync' | 'append' = 'sync'): Promise<void> {
     const tools = await this.toolModel
       .find({ enabled: { $ne: false } })
       .select({ id: 1, canonicalId: 1 })
@@ -349,13 +351,15 @@ export class ToolService {
       });
     }
 
-    const activeToolkitIds = Array.from(toolkitMap.keys());
-    await this.toolkitModel
-      .updateMany(
-        activeToolkitIds.length ? { id: { $nin: activeToolkitIds } } : {},
-        { $set: { status: 'deprecated' } },
-      )
-      .exec();
+    if (mode === 'sync') {
+      const activeToolkitIds = Array.from(toolkitMap.keys());
+      await this.toolkitModel
+        .updateMany(
+          activeToolkitIds.length ? { id: { $nin: activeToolkitIds } } : {},
+          { $set: { status: 'deprecated' } },
+        )
+        .exec();
+    }
   }
 
   private normalizeBooleanQuery(value?: string | boolean): boolean | undefined {
@@ -442,11 +446,13 @@ export class ToolService {
     };
   }
 
-  private async initializeBuiltinTools() {
+  private async initializeBuiltinTools(mode: 'sync' | 'append' = 'sync') {
     const builtinTools = BUILTIN_TOOLS;
 
-    await this.toolModel.deleteMany({ id: { $in: VIRTUAL_TOOL_IDS } }).exec();
-    await this.toolModel.deleteMany({ id: { $in: DEPRECATED_TOOL_IDS } }).exec();
+    if (mode === 'sync') {
+      await this.toolModel.deleteMany({ id: { $in: VIRTUAL_TOOL_IDS } }).exec();
+      await this.toolModel.deleteMany({ id: { $in: DEPRECATED_TOOL_IDS } }).exec();
+    }
 
     for (const toolData of builtinTools) {
       const metadata = this.buildBuiltinToolMetadata(toolData);
@@ -467,6 +473,10 @@ export class ToolService {
           description: `Toolkit for ${metadata.namespace}/${this.inferToolkitFromToolId(metadata.canonicalId)} (${metadata.provider})`,
         });
         this.logger.log(`已注册内置工具: ${toolData.name}`);
+        continue;
+      }
+
+      if (mode === 'append') {
         continue;
       }
 
@@ -500,8 +510,10 @@ export class ToolService {
       });
     }
 
-    await this.alignStoredToolMetadata();
-    await this.syncToolkitsFromTools();
+    if (mode === 'sync') {
+      await this.alignStoredToolMetadata();
+    }
+    await this.syncToolkitsFromTools(mode);
 
     const implementedToolIds = new Set(this.getImplementedToolIds());
     const missingImplementations = builtinTools
@@ -1172,6 +1184,8 @@ export class ToolService {
         return this.sendSlackMessage(parameters, agentId);
       case 'composio.communication.mcp.gmail.send-email':
         return this.sendGmail(parameters, agentId);
+      case 'builtin.sys-mg.mcp.inner-message.send-internal-message':
+        return this.sendInternalMessage(parameters, agentId);
       case AGENT_LIST_TOOL_ID:
       case LEGACY_AGENT_LIST_TOOL_ID:
         return this.getAgentsMcpList(parameters);
@@ -1199,6 +1213,8 @@ export class ToolService {
         return this.meetingToolHandler.sendMeetingMessage(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.meeting.update-status':
         return this.meetingToolHandler.updateMeetingStatus(parameters);
+      case 'builtin.sys-mg.mcp.meeting.generate-summary':
+        return this.meetingToolHandler.generateMeetingSummary(parameters, agentId);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
@@ -1536,6 +1552,66 @@ export class ToolService {
     };
   }
 
+  private async sendInternalMessage(
+    params: {
+      receiverAgentId?: string;
+      title?: string;
+      content?: string;
+      eventType?: string;
+      payload?: Record<string, unknown>;
+      dedupKey?: string;
+      maxAttempts?: number;
+    },
+    agentId?: string,
+  ): Promise<any> {
+    const senderAgentId = String(agentId || '').trim();
+    if (!senderAgentId) {
+      throw new Error('send_internal_message requires execution agentId');
+    }
+
+    const receiverAgentId = String(params?.receiverAgentId || '').trim();
+    const title = String(params?.title || '').trim();
+    const content = String(params?.content || '').trim();
+    const eventType = String(params?.eventType || '').trim() || 'inner.direct';
+    if (!receiverAgentId) {
+      throw new Error('send_internal_message requires receiverAgentId');
+    }
+    if (!title || !content) {
+      throw new Error('send_internal_message requires title and content');
+    }
+
+    const payload =
+      params?.payload && typeof params.payload === 'object' && !Array.isArray(params.payload)
+        ? params.payload
+        : {};
+    const maxAttempts = Number(params?.maxAttempts || 0);
+    const response = await this.internalApiClient.callInnerMessageApi('POST', '/direct', {
+      senderAgentId,
+      receiverAgentId,
+      eventType,
+      title,
+      content,
+      payload,
+      source: 'agent-mcp.send_internal_message',
+      ...(params?.dedupKey ? { dedupKey: String(params.dedupKey).trim() } : {}),
+      ...(Number.isFinite(maxAttempts) && maxAttempts > 0 ? { maxAttempts: Math.floor(maxAttempts) } : {}),
+    });
+
+    const message = response?.data || response;
+    const messageId = String(message?.messageId || '').trim();
+    return {
+      action: 'send_internal_message',
+      sent: Boolean(messageId),
+      messageId,
+      status: String(message?.status || 'sent').trim() || 'sent',
+      senderAgentId,
+      receiverAgentId,
+      eventType,
+      sentAt: message?.sentAt || new Date().toISOString(),
+      raw: message,
+    };
+  }
+
   private normalizeProvider(provider?: string): string {
     const value = String(provider || '').trim().toLowerCase();
     if (value === 'kimi') return 'moonshot';
@@ -1850,30 +1926,148 @@ export class ToolService {
       profileMap.set(profile.roleCode, profile);
     }
 
+    const toolIds = Array.from(
+      new Set(
+        agents
+          .flatMap((agent: any) => {
+            const plain = agent?.toObject ? agent.toObject() : agent;
+            const role = roleMap.get(String(plain.roleId || '').trim());
+            const profile = role?.code ? profileMap.get(role.code) || DEFAULT_PROFILE : DEFAULT_PROFILE;
+            return [...(plain.tools || []), ...((profile as any)?.tools || [])];
+          })
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const tools = toolIds.length
+      ? await this.toolModel
+          .find({
+            $or: [{ id: { $in: toolIds } }, { canonicalId: { $in: toolIds } }],
+          })
+          .select({ id: 1, canonicalId: 1, name: 1, description: 1, requiredPermissions: 1 })
+          .lean()
+          .exec()
+      : [];
+    const toolMap = new Map<string, any>();
+    for (const tool of tools as any[]) {
+      const canonicalId = String(tool.canonicalId || tool.id || '').trim();
+      const id = String(tool.id || '').trim();
+      if (canonicalId) {
+        toolMap.set(canonicalId, tool);
+      }
+      if (id) {
+        toolMap.set(id, tool);
+      }
+      for (const alias of Array.isArray(tool.aliases) ? tool.aliases : []) {
+        const normalizedAlias = String(alias || '').trim();
+        if (normalizedAlias) {
+          toolMap.set(normalizedAlias, tool);
+        }
+      }
+    }
+
     const mapped = agents.map((agent) => {
       const plain = agent?.toObject ? agent.toObject() : agent;
       const roleId = String(plain.roleId || '').trim();
       const role = roleMap.get(roleId);
       const profile = role?.code ? profileMap.get(role.code) || DEFAULT_PROFILE : DEFAULT_PROFILE;
+      const grantedPermissions = new Set(
+        [
+          ...(plain.permissions || []),
+          ...(role?.permissions || []),
+          ...((profile as any)?.permissions || []),
+          ...((profile as any)?.permissionsManual || []),
+          ...((profile as any)?.permissionsDerived || []),
+          ...((profile as any)?.capabilities || []),
+        ]
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      );
+      const effectiveToolIds = Array.from(
+        new Set(
+          [...(plain.tools || []), ...((profile as any)?.tools || [])]
+            .map((item) => String(item || '').trim())
+            .filter(Boolean),
+        ),
+      );
+      const enrichedTools = effectiveToolIds.map((toolId) => {
+        const tool = toolMap.get(toolId);
+        const resolvedToolId = String(tool?.canonicalId || tool?.id || toolId).trim();
+        const permissionSlugs: string[] = Array.from(
+          new Set(
+            (Array.isArray(tool?.requiredPermissions) ? tool.requiredPermissions : [])
+              .map((item: any) => String(item?.id || '').trim())
+              .filter(Boolean),
+          ),
+        );
+
+        return {
+          id: resolvedToolId,
+          name: String(tool?.name || resolvedToolId).trim(),
+          description: String(tool?.description || '').trim(),
+          permissionSlugs,
+          hasPermission: permissionSlugs.every((slug) => grantedPermissions.has(slug)),
+        };
+      });
+
       return {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
         role: role?.name || profile.role,
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...((profile as any).permissions || profile.capabilities || [])])).slice(0, 12),
+        tools: enrichedTools,
+        _skillIds: Array.from(new Set((plain.skills || []).map((item: any) => String(item || '').trim()).filter(Boolean))),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
       };
     });
 
     const visibleAgents = mapped.filter((item) => includeHidden || item.exposed).slice(0, limit);
+    const skillIds = Array.from(new Set(visibleAgents.flatMap((item) => item._skillIds || [])));
+    const skills = skillIds.length
+      ? await this.skillModel.find({ id: { $in: skillIds } }).select({ id: 1, name: 1, description: 1 }).lean().exec()
+      : [];
+    const skillMap = new Map<string, { id: string; name: string; description: string }>();
+    for (const skill of skills as any[]) {
+      const skillId = String(skill?.id || '').trim();
+      if (!skillId) {
+        continue;
+      }
+      skillMap.set(skillId, {
+        id: skillId,
+        name: String(skill?.name || '').trim(),
+        description: String(skill?.description || '').trim(),
+      });
+    }
     const identifyMap = await this.memoService.getFirstMemoContentMapByKind(
       visibleAgents.map((item) => String(item.id || '').trim()),
       'identity',
     );
-    const agentsWithIdentify = visibleAgents.map((item) => ({
-      ...item,
-      identify: identifyMap.get(String(item.id || '').trim()) || '',
-    }));
+    const agentsWithIdentify = visibleAgents.map((item) => {
+      const skillsWithMetadata = (item._skillIds || []).map((skillId: string) => {
+        const matched = skillMap.get(skillId);
+        if (matched) {
+          return matched;
+        }
+        return {
+          id: skillId,
+          name: skillId,
+          description: '',
+        };
+      });
+
+      return {
+        id: item.id,
+        name: item.name,
+        role: item.role,
+        capabilitySet: item.capabilitySet,
+        tools: item.tools,
+        skills: skillsWithMetadata,
+        exposed: item.exposed,
+        isActive: item.isActive,
+        identify: identifyMap.get(String(item.id || '').trim()) || '',
+      };
+    });
 
     return {
       total: mapped.length,
@@ -1884,9 +2078,9 @@ export class ToolService {
     };
   }
 
-  private async getRoleMapByIds(roleIds: string[]): Promise<Map<string, { name: string; code: string }>> {
+  private async getRoleMapByIds(roleIds: string[]): Promise<Map<string, { name: string; code: string; permissions: string[] }>> {
     const uniqueRoleIds = Array.from(new Set((roleIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
-    const map = new Map<string, { name: string; code: string }>();
+    const map = new Map<string, { name: string; code: string; permissions: string[] }>();
     if (!uniqueRoleIds.length) {
       return map;
     }
@@ -1900,8 +2094,9 @@ export class ToolService {
           const role = response.data || {};
           const code = String(role.code || '').trim();
           const name = String(role.name || role.code || '').trim();
+          const permissions = this.normalizeStringArray(role.permissions || role.capabilities || []);
           if (code) {
-            map.set(roleId, { name, code });
+            map.set(roleId, { name, code, permissions });
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'unknown role fetch error';

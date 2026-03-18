@@ -775,6 +775,22 @@ export const BUILTIN_TOOLS = [
           },
         },
       },
+      {
+        id: 'builtin.sys-mg.mcp.meeting.generate-summary',
+        name: 'Meeting MCP Generate Summary',
+        description: 'Generate meeting summary for a specific meeting',
+        type: 'api_call' as const,
+        category: 'Meeting',
+        requiredPermissions: [{ id: 'meeting_write', name: 'Meeting Write', level: 'intermediate' }],
+        tokenCost: 5,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            meetingId: 'string',
+            skipIfExists: 'boolean',
+          },
+        },
+      },
     ];
 
 export const IMPLEMENTED_TOOL_IDS = [

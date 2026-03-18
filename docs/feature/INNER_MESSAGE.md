@@ -22,7 +22,8 @@
   - `senderAgentId` 可省略，系统默认发送方为 `system`。
   - Agent A 发给 B：先落库 `sent`，再写入 Redis 分发队列。
   - 分发消费者投递到 `inner:inbox:{agentId}`。
-  - 接收方收到后调用 ACK 接口更新为 `delivered/processing`，处理完成后标记 `processed`。
+  - 分发阶段通过 Runtime Bridge 统一触发 Agent 执行入口（`executeTask` 同类链路），由 Agent 基于身份和工具自主处理。
+  - 统一执行链会在处理前回写 `processing`，处理完成后回写 `processed`（失败按重试/死信兜底）。
 - 订阅模式（subscription）
   - 发布事件后由分发服务匹配 `eventType` 订阅者。
   - 为每个订阅者生成消息记录并投递。
@@ -55,6 +56,7 @@
 | 文件 | 说明 |
 |------|------|
 | `plan/AGENT_COLLAB_MESSAGE_REDIS_PLAN.md` | Agent 协作消息 Redis 化实施计划 |
+| `plan/AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | 内部消息统一桥接到 Agent Runtime 执行链计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -62,6 +64,12 @@
 |------|------|
 | `technical/AGENT_COLLAB_MESSAGE_REDIS_ARCHITECTURE.md` | Agent 协作消息整体架构、状态机、Redis 队列设计 |
 | `technical/INNER_MESSAGE_REDIS_EVENT_SUBSCRIPTION_ROUTING_DESIGN.md` | 事件定义与订阅路由索引的 Redis 结构设计 |
+
+### 开发总结 (docs/development/)
+
+| 文件 | 说明 |
+|------|------|
+| `development/AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | 内部消息统一桥接 Agent Runtime 的实现总结 |
 
 ### API 文档 (docs/api/)
 
@@ -78,6 +86,7 @@
 | `backend/src/modules/inner-message/inner-message.controller.ts` | 直发/发布/ACK/订阅接口 |
 | `backend/src/modules/inner-message/inner-message.service.ts` | 消息落库、订阅匹配、状态流转、入队 |
 | `backend/src/modules/inner-message/inner-message-dispatcher.service.ts` | Redis 分发消费者（重试/死信） |
+| `backend/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts` | 内部消息到 Agent Runtime 执行链桥接 |
 | `backend/src/modules/inner-message/inner-message-collaboration-automation.service.ts` | 任务事件到拟人协作消息的自动编排 |
 | `backend/src/modules/inner-message/inner-message.module.ts` | 模块装配 |
 | `backend/src/shared/schemas/inner-message.schema.ts` | Inner Message 模型 |

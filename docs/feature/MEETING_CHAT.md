@@ -122,7 +122,7 @@ enum ParticipantRole {
 #### 1.3.5 会议上下文
 
 - Agent 入场时自动 catch-up：获取最近5条消息并生成入场发言
-- 会议结束时由 Meeting Service 发布 `meeting.ended` inner message，会议助手 `meeting-assistant` 订阅后异步生成 AI 总结（含摘要、行动项、决策）
+- 会议结束时由 Meeting Service 发布 `meeting.ended` inner message，并由统一 Agent Runtime 消息桥接触发 `meeting-assistant` 执行；是否生成总结由 Agent 自主决策并可调用 `meeting.generate-summary` 工具。
 - 会议执行链路引入系统上下文去重：`任务信息` 与 `身份与职责` 使用 fingerprint + delta 注入，内容无变化不重复注入，变更时仅注入增量
 - 会议场景默认不再注入固定 `任务信息` block；当 identity 已存在时跳过重复 `systemPrompt`，避免与身份定义重合
 - 会议分配执行遵循闭环规则：用户一次确认后自动执行，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
@@ -150,6 +150,7 @@ enum ParticipantRole {
 | GET | `/meetings/:id/agent-states` | 获取 Agent 状态 |
 | POST | `/meetings/:id/start` | 开始会议 |
 | POST | `/meetings/:id/end` | 结束会议 |
+| POST | `/meetings/:id/generate-summary` | 触发会议总结生成 |
 | POST | `/meetings/:id/pause` | 暂停会议 |
 | POST | `/meetings/:id/resume` | 恢复会议 |
 | PUT | `/meetings/:id/speaking-mode` | 更新发言模式 |
@@ -203,6 +204,7 @@ enum ParticipantRole {
 | `MEETING_ASSISTANT_AGENT_PLAN.md` | 会议助理与会议监控开发总结 |
 | `MEETING_ASSISTANT_LOG_SESSION_FIX_PLAN.md` | Scheduler 编排统一化与日志/会话链路修复开发总结 |
 | `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发开发总结 |
+| `AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | 内部消息统一 Agent Runtime 处理链路与会议总结工具化总结 |
 
 ### 技术文档 (docs/technical/)
 
@@ -232,7 +234,6 @@ enum ParticipantRole {
 | `modules/meetings/meeting.module.ts` | Meeting 模块依赖注入配置 |
 | `modules/meetings/meeting.controller.ts` | REST API 控制器，处理所有会议相关请求 |
 | `modules/meetings/meeting.service.ts` | 核心业务逻辑（会议生命周期、消息处理、Agent响应等） |
-| `modules/meetings/meeting-summary-automation.service.ts` | 会议助手订阅 inner message 并异步生成会议总结 |
 | `modules/meetings/meeting-inner-message.constants.ts` | 会议 inner message 事件常量（agentId/eventType） |
 
 ### 前端 (frontend/src/)
@@ -246,7 +247,7 @@ enum ParticipantRole {
 
 | 文件 | 功能 |
 |------|------|
-| `modules/tools/tool.service.ts` | MCP 工具定义与实现，包含 meeting.list、meeting.sendMessage、meeting.updateStatus |
+| `modules/tools/tool.service.ts` | MCP 工具定义与实现，包含 meeting.list、meeting.sendMessage、meeting.updateStatus、meeting.generateSummary |
 
 ---
 
@@ -256,9 +257,10 @@ enum ParticipantRole {
 
 | 工具 ID | 名称 | 功能 | 所需权限 |
 |---------|------|------|----------|
-| `builtin.mcp.meeting.list` | Meeting MCP List | 查询当前会议列表 | meeting_read |
-| `builtin.mcp.meeting.sendMessage` | Meeting MCP Send Message | 向会议发送消息 | meeting_write |
-| `builtin.mcp.meeting.updateStatus` | Meeting MCP Update Status | 修改会议状态 (start/end/pause/resume) | meeting_write |
+| `builtin.sys-mg.mcp.meeting.list-meetings` | Meeting MCP List | 查询当前会议列表 | meeting_read |
+| `builtin.sys-mg.mcp.meeting.send-message` | Meeting MCP Send Message | 向会议发送消息 | meeting_write |
+| `builtin.sys-mg.mcp.meeting.update-status` | Meeting MCP Update Status | 修改会议状态 (start/end/pause/resume) | meeting_write |
+| `builtin.sys-mg.mcp.meeting.generate-summary` | Meeting MCP Generate Summary | 触发会议总结生成 | meeting_write |
 
 > 说明：会议 MCP 工具按当前系统单租户模式运行，不依赖 organization/tenant/workspace 上下文。
 
@@ -283,6 +285,13 @@ enum ParticipantRole {
 |------|------|------|------|
 | meetingId | string | 是 | 会议 ID |
 | action | string | 是 | 操作 (start/end/pause/resume) |
+
+#### 4.1.4 meeting.generateSummary 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meetingId | string | 是 | 会议 ID |
+| skipIfExists | boolean | 否 | 已有总结时是否跳过（默认 true） |
 
 ### 4.2 会议监控 (Meeting Monitor)
 
