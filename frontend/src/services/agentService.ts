@@ -1,6 +1,8 @@
 import api from './api';
 import { Agent, AIModel } from '../types';
 
+export type AgentTier = 'leadership' | 'operations' | 'temporary';
+
 export interface AgentMcpProfile {
   roleCode: string;
   role: string;
@@ -17,6 +19,7 @@ export interface AgentBusinessRole {
   id: string;
   code: string;
   name: string;
+  tier: AgentTier;
   description?: string;
   capabilities?: string[];
   tools?: string[];

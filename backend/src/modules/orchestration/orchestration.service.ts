@@ -45,6 +45,7 @@ import {
   UpdatePlanDto,
   UpdateTaskDraftDto,
 } from './dto';
+import { AgentRoleTier, canDelegateAcrossTier, normalizeAgentRoleTier } from '../../shared/role-tier';
 
 @Injectable()
 export class OrchestrationService {
@@ -973,6 +974,33 @@ export class OrchestrationService {
       throw new BadRequestException('executorId is required when executorType is agent or employee');
     }
 
+    if (dto.sourceAgentId && dto.executorType !== 'unassigned') {
+      const sourceTier = await this.resolveAgentTierById(dto.sourceAgentId);
+      if (!sourceTier) {
+        throw this.buildTierGuardException('tier_resolution_required', 'Cannot resolve source agent tier', {
+          sourceAgentId: dto.sourceAgentId,
+        });
+      }
+
+      const targetTier = await this.resolveAssignmentTargetTier(dto.executorType, dto.executorId);
+      if (!targetTier) {
+        throw this.buildTierGuardException('tier_resolution_required', 'Cannot resolve assignment target tier', {
+          executorType: dto.executorType,
+          executorId: dto.executorId,
+        });
+      }
+
+      if (!canDelegateAcrossTier(sourceTier, targetTier)) {
+        throw this.buildTierGuardException('delegation_direction_forbidden', 'Delegation direction is not allowed by tier governance', {
+          sourceAgentId: dto.sourceAgentId,
+          sourceTier,
+          targetTier,
+          executorType: dto.executorType,
+          executorId: dto.executorId,
+        });
+      }
+    }
+
     const updated = await this.orchestrationTaskModel
       .findOneAndUpdate(
         { _id: taskId },
@@ -994,6 +1022,7 @@ export class OrchestrationService {
                 executorType: dto.executorType,
                 executorId: dto.executorId,
                 reason: dto.reason,
+                sourceAgentId: dto.sourceAgentId,
               },
             },
           },
@@ -1426,6 +1455,12 @@ export class OrchestrationService {
     }
 
     const requestedSessionId = `orch-task-${taskId}`;
+    const runtimeTaskType = this.resolveAgentRuntimeTaskType(task.title, task.description, {
+      isExternalAction,
+      isResearchTask,
+      isReviewTask,
+    });
+    const runtimeChannelHint: 'native' | 'opencode' = runtimeTaskType === 'development' ? 'opencode' : 'native';
     const taskPrompt = this.buildTaskDescription(task.description, {
       dependencyContext,
       isExternalAction,
@@ -1448,6 +1483,8 @@ export class OrchestrationService {
           sessionId: requestedSessionId,
           dependencies: task.dependencyTaskIds,
           dependencyContext,
+          runtimeTaskType,
+          runtimeChannelHint,
           externalActionValidationRequired: isExternalAction,
           researchTaskKind,
           reviewValidationRequired: isReviewTask,
@@ -1687,6 +1724,60 @@ export class OrchestrationService {
     return '';
   }
 
+  private buildTierGuardException(
+    code:
+      | 'tier_resolution_required'
+      | 'delegation_direction_forbidden'
+      | 'temporary_worker_tool_violation'
+      | 'executive_instruction_auth_missing',
+    message: string,
+    details?: Record<string, unknown>,
+  ): BadRequestException {
+    return new BadRequestException({
+      code,
+      message,
+      ...(details ? { details } : {}),
+    });
+  }
+
+  private async resolveAgentTierById(agentId?: string): Promise<AgentRoleTier | undefined> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) {
+      return undefined;
+    }
+
+    const lookup: Record<string, unknown> = { id: normalizedAgentId };
+    if (Types.ObjectId.isValid(normalizedAgentId)) {
+      lookup.$or = [{ id: normalizedAgentId }, { _id: new Types.ObjectId(normalizedAgentId) }];
+      delete lookup.id;
+    }
+
+    const agent = await this.agentModel.findOne(lookup).select({ tier: 1 }).lean().exec();
+    return normalizeAgentRoleTier((agent as any)?.tier);
+  }
+
+  private async resolveEmployeeTierById(employeeId?: string): Promise<AgentRoleTier | undefined> {
+    const normalizedEmployeeId = String(employeeId || '').trim();
+    if (!normalizedEmployeeId) {
+      return undefined;
+    }
+    const employee = await this.employeeModel.findOne({ id: normalizedEmployeeId }).select({ tier: 1 }).lean().exec();
+    return normalizeAgentRoleTier((employee as any)?.tier);
+  }
+
+  private async resolveAssignmentTargetTier(
+    executorType: 'agent' | 'employee' | 'unassigned',
+    executorId?: string,
+  ): Promise<AgentRoleTier | undefined> {
+    if (executorType === 'agent') {
+      return this.resolveAgentTierById(executorId);
+    }
+    if (executorType === 'employee') {
+      return this.resolveEmployeeTierById(executorId);
+    }
+    return undefined;
+  }
+
   async executeStandaloneTask(taskId: string): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const task = await this.orchestrationTaskModel.findOne({ _id: taskId }).exec();
     if (!task) {
@@ -1843,6 +1934,30 @@ export class OrchestrationService {
       );
     }
     return sections.join('\n\n');
+  }
+
+  private resolveAgentRuntimeTaskType(
+    title: string,
+    description: string,
+    flags: {
+      isExternalAction: boolean;
+      isResearchTask: boolean;
+      isReviewTask: boolean;
+    },
+  ): string {
+    if (flags.isExternalAction) {
+      return 'external_action';
+    }
+    if (flags.isResearchTask) {
+      return 'research';
+    }
+    if (flags.isReviewTask) {
+      return 'review';
+    }
+    if (this.taskClassificationService.isCodeTask(title, description)) {
+      return 'development';
+    }
+    return 'general';
   }
 
   private getRetryFailureHint(task: OrchestrationTask): string {

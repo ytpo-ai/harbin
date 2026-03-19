@@ -407,6 +407,7 @@ export class OrchestrationToolHandler {
         executorType: params.executorType,
         executorId: params.executorId,
         reason: params.reason,
+        sourceAgentId: agentId,
       },
     );
     return {

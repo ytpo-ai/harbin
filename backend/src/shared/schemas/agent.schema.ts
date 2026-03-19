@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { AGENT_ROLE_TIERS, AgentRoleTier } from '../role-tier';
 
 export type AgentDocument = Agent & Document;
 
@@ -18,6 +19,9 @@ export class Agent {
 
   @Prop({ required: true, trim: true })
   roleId: string;
+
+  @Prop({ enum: AGENT_ROLE_TIERS, default: 'operations', index: true })
+  tier?: AgentRoleTier;
 
   @Prop({ required: true })
   description: string;

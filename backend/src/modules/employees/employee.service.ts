@@ -6,6 +6,7 @@ import { AgentClientService } from '../agents-client/agent-client.service';
 import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS } from '../../config/models';
 import type { AIModel, Agent } from '../../shared/types';
+import { AgentRoleTier, getTierByEmployeeRole, normalizeAgentRoleTier } from '../../shared/role-tier';
 
 export interface CreateEmployeeDto {
   type: EmployeeType;
@@ -16,6 +17,7 @@ export interface CreateEmployeeDto {
   avatar?: string;
   // 共同字段
   role: EmployeeRole;
+  tier?: AgentRoleTier;
   departmentId?: string;
   title?: string;
   description?: string;
@@ -33,6 +35,7 @@ export interface UpdateEmployeeDto {
   email?: string;
   avatar?: string;
   role?: EmployeeRole;
+  tier?: AgentRoleTier;
   departmentId?: string;
   title?: string;
   description?: string;
@@ -196,6 +199,8 @@ export class EmployeeService implements OnModuleInit {
       }
     }
 
+    const roleTier = this.resolveEmployeeTierOrThrow(dto.tier, dto.role);
+
     const employee = new this.employeeModel({
       id: uuidv4(),
       type: dto.type,
@@ -204,6 +209,7 @@ export class EmployeeService implements OnModuleInit {
       email: dto.email,
       avatar: dto.avatar,
       role: dto.role,
+      tier: roleTier,
       departmentId: dto.departmentId,
       title: dto.title || this.getDefaultTitle(dto.role),
       description: dto.description,
@@ -300,6 +306,10 @@ export class EmployeeService implements OnModuleInit {
     }
 
     const normalizedUpdate: UpdateEmployeeDto = { ...dto };
+    const nextRole = dto.role || existing.role;
+    if (dto.role !== undefined || dto.tier !== undefined) {
+      normalizedUpdate.tier = this.resolveEmployeeTierOrThrow(dto.tier, nextRole);
+    }
     if (dto.exclusiveAssistantAgentId !== undefined) {
       if (dto.exclusiveAssistantAgentId) {
         const assistantAgent = await this.agentClientService.getAgent(dto.exclusiveAssistantAgentId);
@@ -543,7 +553,7 @@ export class EmployeeService implements OnModuleInit {
     const ownerDisplayName = employee.name || employee.email || employee.id;
     const assistantName = await this.buildAssistantName(this.buildAssistantDisplayName(ownerDisplayName));
     const model = this.pickDefaultAssistantModel();
-    const assistantRoleId = process.env.DEFAULT_EXCLUSIVE_ASSISTANT_ROLE_ID || 'human-exclusive-assistant-role';
+    const assistantRoleId = process.env.DEFAULT_EXCLUSIVE_ASSISTANT_ROLE_ID || 'role-human-exclusive-assistant';
 
     const createdAssistant = await this.agentClientService.createAgent({
       name: assistantName,
@@ -635,5 +645,17 @@ export class EmployeeService implements OnModuleInit {
       [EmployeeRole.INTERN]: '实习生',
     };
     return titles[role] || '员工';
+  }
+
+  private resolveEmployeeTierOrThrow(requestedTier: unknown, role: EmployeeRole): AgentRoleTier {
+    const normalizedRequestedTier = normalizeAgentRoleTier(requestedTier);
+    if (requestedTier !== undefined && !normalizedRequestedTier) {
+      throw new ConflictException('tier must be one of leadership, operations, temporary');
+    }
+    const mappedTier = getTierByEmployeeRole(role);
+    if (normalizedRequestedTier && normalizedRequestedTier !== mappedTier) {
+      throw new ConflictException(`tier mismatch for role ${role}: expected ${mappedTier}, got ${normalizedRequestedTier}`);
+    }
+    return normalizedRequestedTier || mappedTier;
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '../../../shared/schemas/agent.schema';
 import { Tool, ToolDocument } from '../../../../apps/agents/src/schemas/tool.schema';
 import {
@@ -10,6 +10,12 @@ import {
   EmployeeType,
 } from '../../../shared/schemas/employee.schema';
 import { AgentRole, AgentRoleDocument } from '../../../shared/schemas/agent-role.schema';
+import {
+  AgentRoleTier,
+  canDelegateAcrossTier,
+  getTierByAgentRoleCode,
+  normalizeAgentRoleTier,
+} from '../../../shared/role-tier';
 import { TaskClassificationService } from './task-classification.service';
 
 // ---------------------------------------------------------------------------
@@ -44,21 +50,11 @@ export interface ExecutorSelectionResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Role-code → compatible task types (weight = 40 when exact match, 25 when compatible) */
-const ROLE_TASK_COMPATIBILITY: Record<string, string[]> = {
-  'fullstack-engineer': ['development', 'code_review', 'general'],
-  'technical-architect': ['code_review', 'planning', 'development'],
-  'executive-lead': ['planning', 'general'],
-  'management-assistant': ['planning', 'general', 'email'],
-  'devops-engineer': ['development', 'general'],
-  'data-analyst': ['research', 'general'],
-  'product-manager': ['planning', 'general'],
-  'human-resources-manager': ['general'],
-  'administrative-assistant': ['email', 'general'],
-  'marketing-strategist': ['email', 'research', 'general'],
-  'meeting-assistant': ['planning', 'general'],
-  'system-builtin-agent': ['general'],
-  'human-exclusive-assistant': ['general'],
+/** Tier → compatible task types (weight = 40 when exact match, 25 when compatible) */
+const TIER_TASK_COMPATIBILITY: Record<AgentRoleTier, string[]> = {
+  leadership: ['planning', 'general', 'research'],
+  operations: ['development', 'code_review', 'research', 'email', 'planning', 'general'],
+  temporary: ['development', 'code_review', 'research', 'email', 'general'],
 };
 
 /** Task-type → tool-id fragments used for inferring tool coverage when no explicit requiredTools */
@@ -154,11 +150,29 @@ export class ExecutorSelectionService {
         .exec(),
       this.agentRoleModel.find({ status: 'active' }).exec(),
     ]);
-    const roleMap = new Map(roles.map((r) => [r.code, r]));
+    const roleMap = new Map<string, AgentRole>();
+    for (const role of roles) {
+      const roleCode = String(role.code || '').trim();
+      const roleId = String(role.id || '').trim();
+      if (roleCode) {
+        roleMap.set(roleCode, role as unknown as AgentRole);
+      }
+      if (roleId) {
+        roleMap.set(roleId, role as unknown as AgentRole);
+      }
+    }
+
+    const plannerTier = await this.resolvePlannerTier(ctx.plannerAgentId, roleMap);
+    if (ctx.plannerAgentId && !plannerTier) {
+      return {
+        executorType: 'unassigned',
+        reason: 'tier_resolution_required: cannot resolve planner tier',
+      };
+    }
 
     // 3. Email fast-path (preserves original behaviour for mail tasks)
     if (taskType === 'email') {
-      return this.routeEmailTask(agents, employees);
+      return this.routeEmailTask(agents, employees, plannerTier);
     }
 
     // 4. Multi-dimension scoring for agents
@@ -166,6 +180,7 @@ export class ExecutorSelectionService {
     const scored = agents.map((agent) => {
       const agentId = this.getEntityId(agent as unknown as Record<string, any>);
       const role = roleMap.get(agent.roleId);
+      const tier = this.resolveAgentTier(agent, role);
       const agentToolSet = new Set((agent.tools || []).map((t) => t.toLowerCase()));
       const agentCaps = new Set(
         [...(agent.capabilities || []), ...(role?.capabilities || [])].map((c) => c.toLowerCase()),
@@ -176,10 +191,17 @@ export class ExecutorSelectionService {
       // A. Role match
       if (ctx.preferredRoleCode && agent.roleId === ctx.preferredRoleCode) {
         breakdown.roleMatch = W_ROLE;
-      } else if (this.isRoleCompatible(agent.roleId, taskType)) {
+      } else if (this.isTierCompatible(tier, taskType)) {
         breakdown.roleMatch = Math.round(W_ROLE * 0.6);
       } else {
         breakdown.roleMatch = 0;
+      }
+
+      if (plannerTier && !canDelegateAcrossTier(plannerTier, tier)) {
+        breakdown.roleMatch = 0;
+        breakdown.toolCoverage = 0;
+        breakdown.capabilityMatch = 0;
+        breakdown.keywordRelevance = 0;
       }
 
       // B. Tool coverage
@@ -201,13 +223,19 @@ export class ExecutorSelectionService {
       breakdown.keywordRelevance = this.computeKeywordScore(ctx.title, ctx.description, agent, role);
 
       const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
-      return { agentId, score, breakdown, agentToolSet };
+      return { agentId, score, breakdown, agentToolSet, tier };
     });
 
     scored.sort((a, b) => b.score - a.score);
 
     // 5. Employee fallback scoring (keyword only — employees don't have role/tools)
-    const employeeScored = this.scoreEmployees(employees, ctx.title, ctx.description);
+    const employeeCandidates = plannerTier
+      ? employees.filter((employee) => {
+          const targetTier = normalizeAgentRoleTier(employee.tier) || 'operations';
+          return canDelegateAcrossTier(plannerTier, targetTier);
+        })
+      : employees;
+    const employeeScored = this.scoreEmployees(employeeCandidates, ctx.title, ctx.description);
 
     const bestAgent = scored[0];
     const bestEmployee = employeeScored[0];
@@ -256,7 +284,13 @@ export class ExecutorSelectionService {
     }
 
     // Absolute fallback — first active agent
-    const fallbackAgent = agents[0];
+    const fallbackAgent = plannerTier
+      ? agents.find((agent) => {
+          const role = roleMap.get(agent.roleId);
+          const targetTier = this.resolveAgentTier(agent, role);
+          return canDelegateAcrossTier(plannerTier, targetTier);
+        })
+      : agents[0];
     if (fallbackAgent?._id) {
       return {
         executorType: 'agent',
@@ -275,11 +309,20 @@ export class ExecutorSelectionService {
   private async routeEmailTask(
     agents: Agent[],
     employees: Employee[],
+    plannerTier?: AgentRoleTier,
   ): Promise<ExecutorSelectionResult> {
     const emailCapableSet = await this.getEmailCapableAgentIdSet(agents);
-    const emailAgent = agents.find((a) =>
-      emailCapableSet.has(this.getEntityId(a as unknown as Record<string, any>)),
-    );
+    const emailAgent = agents.find((a) => {
+      const agentId = this.getEntityId(a as unknown as Record<string, any>);
+      if (!emailCapableSet.has(agentId)) {
+        return false;
+      }
+      if (!plannerTier) {
+        return true;
+      }
+      const targetTier = normalizeAgentRoleTier(a.tier) || 'operations';
+      return canDelegateAcrossTier(plannerTier, targetTier);
+    });
     if (emailAgent) {
       return {
         executorType: 'agent',
@@ -287,7 +330,16 @@ export class ExecutorSelectionService {
         reason: 'Email task routed to mail-capable agent',
       };
     }
-    const humanEmployee = employees.find((e) => e.type === EmployeeType.HUMAN);
+    const humanEmployee = employees.find((e) => {
+      if (e.type !== EmployeeType.HUMAN) {
+        return false;
+      }
+      if (!plannerTier) {
+        return true;
+      }
+      const targetTier = normalizeAgentRoleTier(e.tier) || 'operations';
+      return canDelegateAcrossTier(plannerTier, targetTier);
+    });
     if (humanEmployee) {
       return {
         executorType: 'employee',
@@ -302,9 +354,40 @@ export class ExecutorSelectionService {
   // Scoring helpers
   // -----------------------------------------------------------------------
 
-  private isRoleCompatible(roleCode: string, taskType: string): boolean {
-    const compatible = ROLE_TASK_COMPATIBILITY[roleCode];
+  private isTierCompatible(tier: AgentRoleTier, taskType: string): boolean {
+    const compatible = TIER_TASK_COMPATIBILITY[tier];
     return compatible ? compatible.includes(taskType) : false;
+  }
+
+  private resolveAgentTier(agent: Agent, role?: AgentRole): AgentRoleTier {
+    return (
+      normalizeAgentRoleTier(agent.tier) ||
+      normalizeAgentRoleTier((role as any)?.tier) ||
+      getTierByAgentRoleCode(role?.code) ||
+      'operations'
+    );
+  }
+
+  private async resolvePlannerTier(
+    plannerAgentId: string | undefined,
+    roleMap: Map<string, AgentRole>,
+  ): Promise<AgentRoleTier | undefined> {
+    const normalizedPlannerAgentId = String(plannerAgentId || '').trim();
+    if (!normalizedPlannerAgentId) {
+      return undefined;
+    }
+
+    const plannerLookup: Record<string, unknown> = { id: normalizedPlannerAgentId };
+    if (Types.ObjectId.isValid(normalizedPlannerAgentId)) {
+      plannerLookup.$or = [{ id: normalizedPlannerAgentId }, { _id: new Types.ObjectId(normalizedPlannerAgentId) }];
+      delete plannerLookup.id;
+    }
+    const planner = await this.agentModel.findOne(plannerLookup).select({ roleId: 1, tier: 1 }).lean().exec();
+    if (!planner) {
+      return undefined;
+    }
+    const role = roleMap.get(String(planner.roleId || '').trim());
+    return this.resolveAgentTier(planner as unknown as Agent, role);
   }
 
   /** Explicit required tools → exact coverage ratio */

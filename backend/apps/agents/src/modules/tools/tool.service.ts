@@ -7,6 +7,7 @@ import { Tool, ToolDocument } from '../../schemas/tool.schema';
 import { Toolkit, ToolkitDocument } from '../../schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../schemas/tool-execution.schema';
 import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { normalizeAgentRoleTier } from '../../../../../src/shared/role-tier';
 import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
 import { ApiKey, ApiKeyDocument } from '../../../../../src/shared/schemas/api-key.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
@@ -926,7 +927,7 @@ export class ToolService {
     }
     const agent = await this.agentModel
       .findOne(agentLookup)
-      .select({ id: 1, roleId: 1, tools: 1, permissions: 1, isActive: 1 })
+      .select({ id: 1, roleId: 1, tier: 1, tools: 1, permissions: 1, isActive: 1 })
       .lean()
       .exec();
 
@@ -940,6 +941,10 @@ export class ToolService {
     }
 
     const resolvedToolId = String(tool.canonicalId || tool.id || '').trim() || String(tool.id || '').trim();
+    const agentTier = normalizeAgentRoleTier((agent as any)?.tier);
+    if (agentTier === 'temporary' && this.isSystemManagementTool(resolvedToolId)) {
+      throw new Error(`temporary_worker_tool_violation: ${resolvedToolId}`);
+    }
     const scopeSet = new Set((executionContext?.auth?.scopes || []).map((scope) => String(scope || '').trim()).filter(Boolean));
     if (scopeSet.size > 0 && !scopeSet.has('tool:execute:*') && !scopeSet.has(`tool:execute:${resolvedToolId}`)) {
       throw new Error(`Tool scope denied: ${resolvedToolId}`);
@@ -1224,12 +1229,27 @@ export class ToolService {
     if (message.includes('scope denied')) return 'TOOL_SCOPE_DENIED';
     if (message.includes('not assigned')) return 'TOOL_NOT_ASSIGNED';
     if (message.includes('permission denied')) return 'TOOL_PERMISSION_DENIED';
+    if (message.includes('temporary_worker_tool_violation')) return 'TEMPORARY_WORKER_TOOL_VIOLATION';
     if (message.includes('invalid tool parameters')) return 'TOOL_INPUT_INVALID';
     if (message.includes('rate limit')) return 'TOOL_RATE_LIMITED';
     if (message.includes('circuit open')) return 'TOOL_CIRCUIT_OPEN';
     if (message.includes('requires confirm=true')) return 'TOOL_CONFIRM_REQUIRED';
     if (message.includes('missing organization context')) return 'TOOL_CONTEXT_MISSING';
     return 'TOOL_EXECUTION_FAILED';
+  }
+
+  private isSystemManagementTool(toolId: string): boolean {
+    const normalized = String(toolId || '').trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return (
+      normalized.startsWith('builtin.sys-mg.mcp.orchestration.') ||
+      normalized.startsWith('builtin.sys-mg.mcp.model-admin.') ||
+      normalized.startsWith('builtin.sys-mg.mcp.skill-master.') ||
+      normalized.startsWith('builtin.sys-mg.mcp.audit.') ||
+      normalized.startsWith('builtin.sys-mg.internal.agent-master.')
+    );
   }
 
   private async executeToolImplementation(

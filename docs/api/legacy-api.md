@@ -9,11 +9,13 @@
 ## Meetings（`/meetings`）
 
 - `GET /meetings`：会议列表
+- `GET /meetings/:id/detail`：会议详情（含消息明细）
 - `GET /meetings/stats`：会议统计
 - `POST /meetings`：创建会议
 - `POST /meetings/:id/start`：开始会议
 - `POST /meetings/:id/end`：结束会议
-- `POST /meetings/:id/generate-summary`：触发会议总结生成（支持 `generatorAgentId/skipIfExists`）
+- `POST /meetings/:id/generate-summary`：兼容入口，写入会议总结（由调用方提供 summary 内容）
+- `PUT /meetings/:id/summary`：写入会议总结（summary/actionItems/decisions）
 - `POST /meetings/:id/join`：加入会议
 - `POST /meetings/:id/leave`：离开会议
 - `POST /meetings/:id/messages`：发送会议消息
@@ -32,6 +34,32 @@
 - `PUT /roles/:id`：更新角色
 - `DELETE /roles/:id`：删除角色
 - `POST /roles/sync-from-agent-types`：根据 `agent_type` 初始化角色并可选回填 Agent `roleId`
+
+Roles 字段补充：
+
+- `tier`：`leadership | operations | temporary`
+- 未显式传入时按系统 roleCode 映射自动回填。
+- 显式传入与预置 roleCode 映射冲突时返回 `400 Bad Request`。
+
+## Employees（`/employees`）
+
+- `GET /employees/organization`：组织员工列表
+- `GET /employees/:id`：员工详情
+- `POST /employees`：创建员工
+- `PUT /employees/:id`：更新员工
+- `POST /employees/:id/confirm`：员工转正
+- `POST /employees/:id/terminate`：员工离职
+- `POST /employees/:id/ai-proxy`：设置 AI 代理
+- `POST /employees/:id/exclusive-assistant`：绑定专属助理
+- `GET /employees/:id/exclusive-assistant`：查询专属助理绑定
+- `POST /employees/:id/exclusive-assistant/auto-create`：自动创建并绑定专属助理
+
+Employees 字段补充：
+
+- `tier`：`leadership | operations | temporary`
+- 支持在创建/更新接口显式传入 `tier`。
+- 未传入时按 `role -> tier` 映射自动回填。
+- `tier` 与 `role` 层级冲突时返回 `400 Bad Request`。
 
 ## HR（`/hr`）
 - `GET /hr/performance/:agentId`：绩效报告
@@ -64,6 +92,12 @@
 - `POST /orchestration/sessions/:id/archive`：归档会话
 - `POST /orchestration/sessions/:id/resume`：恢复会话
 - `GET /orchestration/schedules/by-plan/:planId`：查询计划关联的定时服务
+
+Orchestration 任务改派字段补充：
+
+- `POST /orchestration/tasks/:id/reassign` 支持 `sourceAgentId`（用于 tier 分派方向守卫）。
+- 非法分派方向返回 `delegation_direction_forbidden`。
+- 层级无法解析返回 `tier_resolution_required`。
 
 会话详情/列表返回中新增可选字段：
 

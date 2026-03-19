@@ -5,6 +5,7 @@ import { agentService } from '../services/agentService';
 import type { AgentTestResult } from '../services/agentService';
 import type { AgentBusinessRole } from '../services/agentService';
 import type { AgentToolPermissionSet } from '../services/agentService';
+import type { AgentTier } from '../services/agentService';
 import { modelService } from '../services/modelService';
 import { apiKeyService } from '../services/apiKeyService';
 import { toolService } from '../services/toolService';
@@ -18,7 +19,6 @@ import {
   PowerIcon, 
   UserGroupIcon,
   CpuChipIcon,
-  BuildingOfficeIcon,
   CheckCircleIcon,
   LockClosedIcon,
   BeakerIcon,
@@ -55,6 +55,29 @@ const getRoleDisplayName = (role?: AgentBusinessRole): string => {
   if (!role) return '-';
   return role.name || role.code || role.id;
 };
+
+const TIER_LABEL_MAP: Record<AgentTier, string> = {
+  leadership: '高管层',
+  operations: '执行层',
+  temporary: '临时工',
+};
+
+const TIER_BADGE_CLASS_MAP: Record<AgentTier, string> = {
+  leadership: 'bg-indigo-100 text-indigo-800',
+  operations: 'bg-slate-100 text-slate-800',
+  temporary: 'bg-amber-100 text-amber-800',
+};
+
+const normalizeTier = (value?: string): AgentTier => {
+  if (value === 'leadership' || value === 'operations' || value === 'temporary') {
+    return value;
+  }
+  return 'operations';
+};
+
+const getTierLabel = (value?: string): string => TIER_LABEL_MAP[normalizeTier(value)];
+
+const getTierBadgeClassName = (value?: string): string => TIER_BADGE_CLASS_MAP[normalizeTier(value)];
 
 const NAMESPACE_DISPLAY_MAP: Record<string, string> = {
   'builtin': 'builtin',
@@ -316,53 +339,14 @@ const Agents: React.FC = () => {
         </button>
       </div>
 
-      {/* 创始人模型配置区域 */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-6">
-        <div className="flex items-center mb-4">
-          <BuildingOfficeIcon className="h-6 w-6 text-blue-600 mr-2" />
-          <h2 className="text-lg font-semibold text-gray-900">创始人模型配置</h2>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {agents?.filter(isFounder).map((agent) => (
-            <div key={getAgentId(agent) || agent.name} className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 ${
-                    getFounderRole(agent) === 'CEO' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
-                  }`}>
-                    <span className="font-bold text-sm">{getFounderRole(agent)}</span>
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{agent.name}</h3>
-                    <p className="text-sm text-gray-500">{agent.description}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleEditAgent(agent)}
-                  className="inline-flex items-center px-3 py-1.5 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  <PencilIcon className="h-3 w-3 mr-1" />
-                  编辑配置
-                </button>
-              </div>
-              <div className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
-                <span className="text-gray-600">当前模型:</span>
-                <div className="flex items-center">
-                  <span className="font-medium text-gray-900">{agent.model?.name}</span>
-                  <span className="ml-2 text-xs text-gray-500">({agent.model?.provider})</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Agent列表 */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
           {agents?.map((agent) => {
             const agentId = getAgentId(agent) || agent.name;
             const avatarUrl = getAgentAvatarUrl(agent);
             const showAvatarImage = !!avatarUrl && !avatarLoadErrors[agentId];
+            const role = roleMap.get(agent.roleId);
+            const agentTier = normalizeTier(agent.tier || role?.tier);
 
             return (
               <div
@@ -389,7 +373,7 @@ const Agents: React.FC = () => {
                     </div>
                     <div className="min-w-0">
                       <p className="truncate text-base font-semibold text-gray-900">{agent.name}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">{getRoleDisplayName(roleMap.get(agent.roleId))}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{getRoleDisplayName(role)}</p>
                     </div>
                   </div>
                   <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -414,6 +398,9 @@ const Agents: React.FC = () => {
                   <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
                     <WrenchScrewdriverIcon className="mr-1 h-3 w-3" />
                     工具 {agent.tools?.length || 0}
+                  </span>
+                  <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${getTierBadgeClassName(agentTier)}`}>
+                    {getTierLabel(agentTier)}
                   </span>
                 </div>
 
@@ -546,6 +533,7 @@ const CreateAgentModal: React.FC<{
   const [formData, setFormData] = useState({
     name: '',
     roleId: '',
+    tier: 'operations' as AgentTier,
     description: '',
     systemPrompt: '',
     capabilities: '',
@@ -569,7 +557,8 @@ const CreateAgentModal: React.FC<{
     },
   });
 
-  const selectedRoleCode = (businessRoles.find((role) => role.id === formData.roleId)?.code || '').trim();
+  const selectedRole = businessRoles.find((role) => role.id === formData.roleId);
+  const selectedRoleCode = (selectedRole?.code || '').trim();
   const allowedToolIds = new Set(
     (toolPermissionSets.find((set) => set.roleCode === selectedRoleCode)?.tools || []).filter(Boolean),
   );
@@ -627,6 +616,7 @@ const CreateAgentModal: React.FC<{
       return {
         ...prev,
         roleId: nextRoleId,
+        tier: normalizeTier(nextRole?.tier),
         systemPrompt: nextPrompt,
         selectedTools: prev.selectedTools.filter((toolId) => nextAllowedToolIds.has(toolId)),
       };
@@ -649,6 +639,7 @@ const CreateAgentModal: React.FC<{
     const agentData = {
       name: formData.name,
       roleId: formData.roleId,
+      tier: formData.tier,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
       capabilities: formData.capabilities.split(',').map(cap => cap.trim()).filter(Boolean),
@@ -708,10 +699,25 @@ const CreateAgentModal: React.FC<{
                 <option value="">选择角色...</option>
                 {businessRoles.map((role) => (
                   <option key={role.id} value={role.id}>
-                    {getRoleDisplayName(role)}
+                    {getRoleDisplayName(role)}（{getTierLabel(role.tier)}）
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">层级 Tier <span className="text-red-500">*</span></label>
+              <select
+                required
+                value={formData.tier}
+                onChange={(e) => setFormData((prev) => ({ ...prev, tier: normalizeTier(e.target.value) }))}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="leadership">leadership（高管层）</option>
+                <option value="operations">operations（执行层）</option>
+                <option value="temporary">temporary（临时工）</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">建议与角色默认层级保持一致；不一致会被后端校验拒绝。</p>
             </div>
             
             <div>
@@ -948,6 +954,8 @@ const EditAgentModal: React.FC<{
   onSave: (updates: Partial<Agent>) => void;
   isLoading: boolean;
 }> = ({ agent, availableModels, availableTools, toolPermissionSets, businessRoles, onClose, onSave, isLoading }) => {
+  const initialRoleTier = normalizeTier(businessRoles.find((role) => role.id === agent.roleId)?.tier);
+  const initialAgentTier = normalizeTier(agent.tier || initialRoleTier);
   const [activeTab, setActiveTab] = useState<'model' | 'tools' | 'basic'>('model');
   const [toolProviderFilter, setToolProviderFilter] = useState('');
   const [toolNamespaceFilter, setToolNamespaceFilter] = useState('');
@@ -957,6 +965,7 @@ const EditAgentModal: React.FC<{
   const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
   const [name, setName] = useState(agent.name || '');
   const [roleId, setRoleId] = useState(agent.roleId || '');
+  const [tier, setTier] = useState<AgentTier>(initialAgentTier);
   const [description, setDescription] = useState(agent.description || '');
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
   const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
@@ -1029,6 +1038,7 @@ const EditAgentModal: React.FC<{
     !arraysEqual(selectedTools, agent.tools || []) ||
     name.trim() !== (agent.name || '').trim() ||
     roleId.trim() !== (agent.roleId || '').trim() ||
+    tier !== initialAgentTier ||
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
     !arraysEqual(parsedCapabilities, agent.capabilities || []) ||
@@ -1093,6 +1103,7 @@ const EditAgentModal: React.FC<{
       permissions: nextPermissions,
       name: name.trim(),
       roleId: roleId.trim(),
+      tier,
       description: description.trim(),
       systemPrompt: systemPrompt.trim(),
       capabilities: parsedCapabilities,
@@ -1172,6 +1183,7 @@ const EditAgentModal: React.FC<{
     const canUpdatePrompt = shouldApplyNextDefault(systemPrompt, previousRole?.promptTemplate);
 
     setRoleId(nextRoleId);
+    setTier(normalizeTier(nextRole?.tier));
     if (canUpdatePrompt) {
       setSystemPrompt(nextRole?.promptTemplate || '');
     }
@@ -1506,10 +1518,24 @@ const EditAgentModal: React.FC<{
                 <option value="">选择角色...</option>
                 {businessRoles.map((role) => (
                   <option key={role.id} value={role.id}>
-                    {getRoleDisplayName(role)}
+                    {getRoleDisplayName(role)}（{getTierLabel(role.tier)}）
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">层级 Tier <span className="text-red-500">*</span></label>
+              <select
+                value={tier}
+                onChange={(e) => setTier(normalizeTier(e.target.value))}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="leadership">leadership（高管层）</option>
+                <option value="operations">operations（执行层）</option>
+                <option value="temporary">temporary（临时工）</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">建议与角色默认层级保持一致；不一致会被后端校验拒绝。</p>
             </div>
 
             <div>

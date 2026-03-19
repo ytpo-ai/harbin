@@ -2,6 +2,12 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentRole, AgentRoleDocument, AgentRoleStatus } from '../../shared/schemas/agent-role.schema';
+import {
+  AgentRoleTier,
+  getTierByAgentRoleCode,
+  hasPresetTierByAgentRoleCode,
+  normalizeAgentRoleTier,
+} from '../../shared/role-tier';
 
 @Injectable()
 export class RolesService {
@@ -38,6 +44,7 @@ export class RolesService {
     tools?: string[];
     promptTemplate?: string;
     status?: AgentRoleStatus;
+    tier?: AgentRoleTier;
   }): Promise<AgentRole> {
     const code = String(input?.code || '').trim();
     const name = String(input?.name || '').trim();
@@ -53,9 +60,18 @@ export class RolesService {
       throw new BadRequestException(`Role code already exists: ${code}`);
     }
 
+    const normalizedTier = normalizeAgentRoleTier(input?.tier);
+    if (input?.tier !== undefined && !normalizedTier) {
+      throw new BadRequestException('Role tier must be one of leadership, operations, temporary');
+    }
+    if (normalizedTier && hasPresetTierByAgentRoleCode(code) && normalizedTier !== getTierByAgentRoleCode(code)) {
+      throw new BadRequestException(`Role tier mismatch with code ${code}: expected ${getTierByAgentRoleCode(code)}`);
+    }
+
     const role = new this.agentRoleModel({
       code,
       name,
+      tier: normalizedTier || getTierByAgentRoleCode(code),
       description: String(input?.description || '').trim(),
       capabilities: Array.isArray(input?.capabilities)
         ? input.capabilities.map((item) => String(item || '').trim()).filter(Boolean)
@@ -80,6 +96,7 @@ export class RolesService {
       tools?: string[];
       promptTemplate?: string;
       status?: AgentRoleStatus;
+      tier?: AgentRoleTier;
     },
   ): Promise<AgentRole> {
     const normalizedId = String(id || '').trim();
@@ -102,6 +119,22 @@ export class RolesService {
         throw new BadRequestException(`Role code already exists: ${nextCode}`);
       }
       role.code = nextCode;
+      if (!Object.prototype.hasOwnProperty.call(updates, 'tier')) {
+        role.tier = getTierByAgentRoleCode(nextCode);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'tier')) {
+      const nextTier = normalizeAgentRoleTier(updates.tier);
+      if (!nextTier) {
+        throw new BadRequestException('Role tier must be one of leadership, operations, temporary');
+      }
+      if (hasPresetTierByAgentRoleCode(role.code) && nextTier !== getTierByAgentRoleCode(role.code)) {
+        throw new BadRequestException(
+          `Role tier mismatch with code ${role.code}: expected ${getTierByAgentRoleCode(role.code)}`,
+        );
+      }
+      role.tier = nextTier;
     }
 
     if (Object.prototype.hasOwnProperty.call(updates, 'name')) {

@@ -1,6 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { AGENT_ROLE_TIERS, AgentRoleTier } from '../role-tier';
 
 export type EmployeeDocument = Employee & Document;
 
@@ -40,6 +41,9 @@ export class Employee {
   // 登录相关（仅人类员工）
   @Prop({ unique: true, sparse: true })
   email?: string;           // 邮箱（用于登录）
+
+  @Prop({ unique: true, sparse: true })
+  userId?: string;
   
   @Prop()
   passwordHash?: string;     // 密码哈希
@@ -57,6 +61,9 @@ export class Employee {
   // 职位信息
   @Prop({ enum: EmployeeRole, required: true })
   role: EmployeeRole;
+
+  @Prop({ enum: AGENT_ROLE_TIERS, default: 'operations', index: true })
+  tier: AgentRoleTier;
 
   @Prop()
   departmentId?: string;     // 部门ID
@@ -153,5 +160,4 @@ export const EmployeeSchema = SchemaFactory.createForClass(Employee);
 EmployeeSchema.index({ type: 1 });
 EmployeeSchema.index({ status: 1 });
 EmployeeSchema.index({ departmentId: 1 });
-EmployeeSchema.index({ userId: 1 });
 EmployeeSchema.index({ agentId: 1 });

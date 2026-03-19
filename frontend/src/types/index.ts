@@ -23,10 +23,13 @@ export interface ChatMessage {
   metadata?: any;
 }
 
+export type AgentTier = 'leadership' | 'operations' | 'temporary';
+
 export interface Agent {
   id: string;
   name: string;
   roleId: string;
+  tier?: AgentTier;
   description: string;
   model: AIModel;
   config?: Record<string, unknown>;
@@ -179,6 +182,7 @@ export interface AgentRole {
     max: number;
   };
   stockOptions?: number;
+  tier?: AgentTier;
 }
 
 export interface AgentEmployee {

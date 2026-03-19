@@ -101,6 +101,10 @@ export class ReassignTaskDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceAgentId?: string;
 }
 
 export class CompleteHumanTaskDto {

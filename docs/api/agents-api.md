@@ -9,8 +9,8 @@
 ## Agent（`/agents`）
 
 - `GET /agents`：获取 Agent 列表
-- `POST /agents`：创建 Agent
-- `PUT /agents/:id`：更新 Agent（支持 `roleId`）
+- `POST /agents`：创建 Agent（支持 `tier`）
+- `PUT /agents/:id`：更新 Agent（支持 `roleId`、`tier`）
 - `DELETE /agents/:id`：删除 Agent
 - `POST /agents/:id/execute`：执行 Agent 任务（返回 `response` + `runId` + `sessionId`）
 - `POST /agents/:id/test`：测试 Agent 连接
@@ -116,6 +116,9 @@ OpenCode 相关（规划中）：
 硬切换约束：
 
 - `roleId` 为必填字段（创建与更新均需满足）。
+- `tier` 枚举：`leadership | operations | temporary`。
+- 未显式传入 `tier` 时按 `role.code -> tier` 映射自动回填。
+- 若显式传入 `tier` 与角色映射不一致，后端返回 `400 Bad Request`。
 - 角色主数据来源为 legacy Roles 模块（`/roles`），agents service 仅保存引用。
 
 工具白名单约束：
@@ -169,6 +172,7 @@ Profile 字段说明：
 说明：
 
 - 此接口不持有角色主数据，仅代理 legacy HR 角色查询能力。
+- 返回结构中包含 `tier` 字段（`leadership | operations | temporary`）。
 
 ## Skills（`/skills`）
 
@@ -233,6 +237,7 @@ Skill 渐进式加载（DB + Redis）契约：
 - `POST /tools/:id/execute` 仅面向 canonical tool id；执行链路内统一记录 `requestedToolId/resolvedToolId/traceId`。
 - `POST /tools/:id/execute` 支持 Bearer token（`TOOLS_AUTH_MODE=hybrid|jwt-strict`）与内部签名上下文混合模式。
 - 响应新增：`requestedToolId`、`resolvedToolId`、`resolvedLegacyToolId`、`traceId`、`executionChannel`。
+- 当执行 Agent 的 `tier=temporary` 且调用系统管理类工具时，返回错误码 `TEMPORARY_WORKER_TOOL_VIOLATION`。
 - 执行审计字段：`authMode`、`tokenJti`、`originSessionId`（用于跨链路追踪 JWT 主体与会话）。
 - `GET /tools/executions/history` 统一返回 `toolId`（canonical）与 `legacyToolId`，并包含 `executionChannel`。
 - `GET /tools/executions/stats` 统一使用 `toolId` 字段（不再依赖 `_id`），并返回 `failureReasons` 与 `healthScore`。
@@ -299,6 +304,7 @@ Agent token exchange（新增）示例：
 - `builtin.sys-mg.internal.rd-related.docs-write`
 - `builtin.sys-mg.mcp.skill-master.list-skills`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
+- `builtin.sys-mg.mcp.inner-message.send-internal-message`
 
 `builtin.sys-mg.internal.agent-master.list-agents` 响应说明：
 
@@ -333,6 +339,14 @@ Skill Master MCP 参数约定：
   - 必填：`title`（或 `name`）、`description`
   - 可选：`category`、`tags`、`sourceType`、`sourceUrl`、`provider`、`version`、`status`、`confidenceScore`、`metadata`、`content`、`contentType`
 
+Internal Message MCP 参数约定：
+
+- `builtin.sys-mg.mcp.inner-message.send-internal-message`
+  - 必填：`receiverAgentId`、`title`、`content`
+  - 可选：`eventType`（默认 `inner.direct`）、`payload`、`dedupKey`、`maxAttempts`
+  - 执行约束：`senderAgentId` 由运行时执行 Agent 自动注入，不接受外部透传
+  - 返回关键字段：`messageId`、`status`、`sentAt`
+
 会议编排 MCP 说明：
 
 - 上述 `orchestration_*` 工具设计为会议场景调用（需存在 meeting 上下文）。
@@ -353,6 +367,10 @@ Skill Master MCP 参数约定：
   - `orchestration_debug_task` -> `POST /orchestration/tasks/:id/debug-run`
   - 参数语义：`taskId` 必填；支持可选 `title`、`description`、`resetResult`
   - 返回语义：包含 `task` 与 `execution`，并附加调试摘要字段（状态、错误、最近日志、建议动作）供 Agent 连续决策
+- 任务改派 tier 守卫：
+  - `orchestration_reassign_task` 会透传 `sourceAgentId`（运行时注入）用于分派方向校验。
+  - 非法分派方向返回 `delegation_direction_forbidden`。
+  - 源/目标层级无法解析返回 `tier_resolution_required`。
 
 ## Models（`/models`）
 

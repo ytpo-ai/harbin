@@ -16,6 +16,7 @@ const HRManagement: React.FC = () => {
   const [roleForm, setRoleForm] = useState({
     code: '',
     name: '',
+    tier: 'operations' as 'leadership' | 'operations' | 'temporary',
     description: '',
     capabilities: '',
     tools: '',
@@ -33,6 +34,7 @@ const HRManagement: React.FC = () => {
     setRoleForm({
       code: '',
       name: '',
+      tier: 'operations',
       description: '',
       capabilities: '',
       tools: '',
@@ -96,6 +98,7 @@ const HRManagement: React.FC = () => {
     const payload = {
       code: roleForm.code.trim(),
       name: roleForm.name.trim(),
+      tier: roleForm.tier,
       description: roleForm.description.trim(),
       capabilities: toStringList(roleForm.capabilities),
       tools: toStringList(roleForm.tools),
@@ -120,6 +123,7 @@ const HRManagement: React.FC = () => {
     setRoleForm({
       code: role.code || '',
       name: role.name || '',
+      tier: role.tier || 'operations',
       description: role.description || '',
       capabilities: (role.capabilities || []).join(', '),
       tools: (role.tools || []).join(', '),
@@ -208,6 +212,7 @@ const HRManagement: React.FC = () => {
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Code</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">名称</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Tier</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">状态</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
@@ -219,6 +224,7 @@ const HRManagement: React.FC = () => {
                 <tr key={role.id}>
                   <td className="px-4 py-3 text-gray-800 font-medium">{role.code}</td>
                   <td className="px-4 py-3 text-gray-700">{role.name}</td>
+                  <td className="px-4 py-3 text-gray-700">{role.tier || 'operations'}</td>
                   <td className="px-4 py-3 text-gray-700">{role.status}</td>
                   <td className="px-4 py-3 text-gray-700">{(role.capabilities || []).length}</td>
                   <td className="px-4 py-3 text-gray-700">{(role.tools || []).length}</td>
@@ -244,7 +250,7 @@ const HRManagement: React.FC = () => {
               ))}
               {(roles || []).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
                     暂无角色，请先创建角色
                   </td>
                 </tr>
@@ -433,6 +439,23 @@ const HRManagement: React.FC = () => {
                   placeholder="例如: 模型管理专员"
                   required
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tier</label>
+                <select
+                  value={roleForm.tier}
+                  onChange={(e) =>
+                    setRoleForm((prev) => ({
+                      ...prev,
+                      tier: e.target.value as 'leadership' | 'operations' | 'temporary',
+                    }))
+                  }
+                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="leadership">leadership（高管层）</option>
+                  <option value="operations">operations（执行层）</option>
+                  <option value="temporary">temporary（临时工）</option>
+                </select>
               </div>
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>

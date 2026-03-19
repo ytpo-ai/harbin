@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { RolesService } from './roles.service';
+import { AgentRoleTier } from '../../shared/role-tier';
 
 @Controller('roles')
 export class RolesController {
@@ -26,6 +27,7 @@ export class RolesController {
       tools?: string[];
       promptTemplate?: string;
       status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
     },
   ) {
     return this.rolesService.createRole(body);
@@ -43,6 +45,7 @@ export class RolesController {
       tools?: string[];
       promptTemplate?: string;
       status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
     },
   ) {
     return this.rolesService.updateRole(id, body);

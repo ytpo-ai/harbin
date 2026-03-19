@@ -4,6 +4,7 @@ export interface HRAgentRole {
   id: string;
   code: string;
   name: string;
+  tier: 'leadership' | 'operations' | 'temporary';
   description?: string;
   capabilities: string[];
   tools: string[];
@@ -58,6 +59,7 @@ export const hrService = {
     tools?: string[];
     promptTemplate?: string;
     status?: 'active' | 'inactive';
+    tier?: 'leadership' | 'operations' | 'temporary';
   }): Promise<HRAgentRole> {
     const response = await api.post('/roles', payload);
     return response.data;
@@ -73,6 +75,7 @@ export const hrService = {
       tools?: string[];
       promptTemplate?: string;
       status?: 'active' | 'inactive';
+      tier?: 'leadership' | 'operations' | 'temporary';
     },
   ): Promise<HRAgentRole> {
     const response = await api.put(`/roles/${encodeURIComponent(roleId)}`, payload);

@@ -6,6 +6,7 @@ import {
   EmployeeType,
   EmployeeStatus,
   EmployeeRole,
+  EmployeeTier,
   CreateEmployeeDto,
   UpdateEmployeeDto,
 } from '../services/employeeService';
@@ -33,6 +34,43 @@ const EMPLOYEE_ROLES = [
   { id: 'junior', name: '工程师', label: '工程师' },
   { id: 'intern', name: '实习生', label: '实习生' },
 ];
+
+const ROLE_TIER_MAP: Record<EmployeeRole, EmployeeTier> = {
+  [EmployeeRole.FOUNDER]: 'leadership',
+  [EmployeeRole.CO_FOUNDER]: 'leadership',
+  [EmployeeRole.CEO]: 'leadership',
+  [EmployeeRole.CTO]: 'leadership',
+  [EmployeeRole.MANAGER]: 'operations',
+  [EmployeeRole.SENIOR]: 'operations',
+  [EmployeeRole.JUNIOR]: 'operations',
+  [EmployeeRole.INTERN]: 'temporary',
+};
+
+const TIER_LABEL_MAP: Record<EmployeeTier, string> = {
+  leadership: '高管层',
+  operations: '执行层',
+  temporary: '临时工',
+};
+
+const TIER_BADGE_CLASS_MAP: Record<EmployeeTier, string> = {
+  leadership: 'bg-indigo-100 text-indigo-800',
+  operations: 'bg-slate-100 text-slate-800',
+  temporary: 'bg-amber-100 text-amber-800',
+};
+
+const normalizeTier = (tier?: string): EmployeeTier => {
+  if (tier === 'leadership' || tier === 'operations' || tier === 'temporary') {
+    return tier;
+  }
+  return 'operations';
+};
+
+const resolveTierByRole = (role?: EmployeeRole): EmployeeTier => {
+  if (!role) {
+    return 'operations';
+  }
+  return ROLE_TIER_MAP[role] || 'operations';
+};
 
 const EmployeeManagement: React.FC = () => {
   const queryClient = useQueryClient();
@@ -340,13 +378,14 @@ const EmployeeList: React.FC<{
   const [formData, setFormData] = useState<Partial<CreateEmployeeDto>>({
     type: EmployeeType.HUMAN,
     role: EmployeeRole.JUNIOR,
+    tier: resolveTierByRole(EmployeeRole.JUNIOR),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onAdd(formData as CreateEmployeeDto);
     setShowAddModal(false);
-    setFormData({ type: EmployeeType.HUMAN, role: EmployeeRole.JUNIOR });
+    setFormData({ type: EmployeeType.HUMAN, role: EmployeeRole.JUNIOR, tier: resolveTierByRole(EmployeeRole.JUNIOR) });
   };
 
   return (
@@ -416,12 +455,29 @@ const EmployeeList: React.FC<{
                 <select
                   required
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as EmployeeRole })}
+                  onChange={(e) => {
+                    const role = e.target.value as EmployeeRole;
+                    setFormData({ ...formData, role, tier: resolveTierByRole(role) });
+                  }}
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                 >
                   {EMPLOYEE_ROLES.map((role) => (
                     <option key={role.id} value={role.id}>{role.name}</option>
                   ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">层级 Tier *</label>
+                <select
+                  required
+                  value={formData.tier || 'operations'}
+                  onChange={(e) => setFormData({ ...formData, tier: normalizeTier(e.target.value) })}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="leadership">leadership（高管层）</option>
+                  <option value="operations">operations（执行层）</option>
+                  <option value="temporary">temporary（临时工）</option>
                 </select>
               </div>
 
@@ -465,6 +521,7 @@ const EmployeeRow: React.FC<{
       name: employee.name || '',
       email: employee.email || '',
       role: hasKnownRole ? employee.role : undefined,
+      tier: normalizeTier(employee.tier || resolveTierByRole(employee.role)),
       departmentId: employee.departmentId || '',
       title: employee.title || '',
       status: employee.status,
@@ -489,6 +546,7 @@ const EmployeeRow: React.FC<{
     onUpdate(employee.id, {
       ...formData,
       role: canUpdateRole ? formData.role : undefined,
+      tier: formData.tier,
       name: trimmedName || undefined,
       email: trimmedEmail || undefined,
       departmentId: trimmedDepartmentId || undefined,
@@ -533,6 +591,9 @@ const EmployeeRow: React.FC<{
           </div>
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <span>{EMPLOYEE_ROLES.find(r => r.id === employee.role)?.name || employee.role}</span>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${TIER_BADGE_CLASS_MAP[normalizeTier(employee.tier || resolveTierByRole(employee.role))]}`}>
+              {TIER_LABEL_MAP[normalizeTier(employee.tier || resolveTierByRole(employee.role))]}
+            </span>
             {employee.email && <span>• {employee.email}</span>}
           </div>
           <div className="text-sm text-gray-500">
@@ -560,7 +621,7 @@ const EmployeeRow: React.FC<{
           <div className="bg-white rounded-lg shadow-xl w-[520px] p-6">
             <h3 className="text-lg font-semibold mb-4">编辑账号</h3>
             <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
                   <input
@@ -586,13 +647,28 @@ const EmployeeRow: React.FC<{
                   <label className="block text-sm font-medium text-gray-700 mb-1">角色</label>
                   <select
                     value={formData.role || ''}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as EmployeeRole })}
+                    onChange={(e) => {
+                      const role = e.target.value as EmployeeRole;
+                      setFormData({ ...formData, role, tier: resolveTierByRole(role) });
+                    }}
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     {!hasKnownRole && <option value="">保持原角色（{employee.role}）</option>}
                     {EMPLOYEE_ROLES.map((role) => (
                       <option key={role.id} value={role.id}>{role.name}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">层级 Tier</label>
+                  <select
+                    value={formData.tier || 'operations'}
+                    onChange={(e) => setFormData({ ...formData, tier: normalizeTier(e.target.value) })}
+                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                  >
+                    <option value="leadership">leadership（高管层）</option>
+                    <option value="operations">operations（执行层）</option>
+                    <option value="temporary">temporary（临时工）</option>
                   </select>
                 </div>
                 <div>

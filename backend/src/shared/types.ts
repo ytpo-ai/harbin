@@ -1,4 +1,5 @@
 import type { AIModel, ChatMessage } from '@libs/contracts';
+import type { AgentRoleTier } from './role-tier';
 
 export type { AIModel, ChatMessage };
 
@@ -6,6 +7,7 @@ export interface Agent {
 	id?: string;
 	name: string;
 	roleId: string;
+	tier?: AgentRoleTier;
 	description: string;
 	model: AIModel;
 	config?: Record<string, unknown>;
@@ -132,6 +134,7 @@ export interface AgentRole {
 		max: number;
 	};
 	stockOptions?: number;
+	tier?: AgentRoleTier;
 }
 
 export interface AgentEmployee {

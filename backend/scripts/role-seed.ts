@@ -2,6 +2,7 @@ import { INestApplicationContext } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentRole, AgentRoleDocument } from '../src/shared/schemas/agent-role.schema';
+import { getTierByAgentRoleCode } from '../src/shared/role-tier';
 
 interface AgentTypeRoleSeed {
   agentType: string;
@@ -63,6 +64,7 @@ export async function seedAgentRoles(
         id: `role-${roleCode}`,
         code: roleCode,
         name: normalizedName,
+        tier: getTierByAgentRoleCode(roleCode),
         description: normalizedDescription,
         promptTemplate: normalizedPrompt,
         status: 'active',
@@ -75,6 +77,7 @@ export async function seedAgentRoles(
     }
 
     existing.name = normalizedName;
+    existing.tier = getTierByAgentRoleCode(roleCode);
     existing.description = normalizedDescription;
     existing.promptTemplate = normalizedPrompt;
     if (existing.status !== 'active') {

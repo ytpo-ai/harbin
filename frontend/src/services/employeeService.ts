@@ -23,6 +23,8 @@ export enum EmployeeRole {
   INTERN = 'intern',
 }
 
+export type EmployeeTier = 'leadership' | 'operations' | 'temporary';
+
 export interface Employee {
   _id: string;
   id: string;
@@ -33,6 +35,7 @@ export interface Employee {
   avatar?: string;
   agentId?: string;
   role: EmployeeRole;
+  tier: EmployeeTier;
   departmentId?: string;
   title?: string;
   description?: string;
@@ -83,6 +86,7 @@ export interface CreateEmployeeDto {
   email?: string;
   avatar?: string;
   role: EmployeeRole;
+  tier?: EmployeeTier;
   departmentId?: string;
   title?: string;
   description?: string;
@@ -100,6 +104,7 @@ export interface UpdateEmployeeDto {
   email?: string;
   avatar?: string;
   role?: EmployeeRole;
+  tier?: EmployeeTier;
   departmentId?: string;
   title?: string;
   description?: string;
