@@ -970,11 +970,11 @@ export class OrchestrationService {
       throw new NotFoundException('Task not found');
     }
 
-    if (dto.executorType !== 'unassigned' && !dto.executorId) {
-      throw new BadRequestException('executorId is required when executorType is agent or employee');
-    }
+    const normalizedExecutorId = dto.executorId?.trim() || undefined;
+    const requiresExplicitExecutor = dto.executorType !== 'unassigned';
+    const hasExplicitExecutor = Boolean(normalizedExecutorId);
 
-    if (dto.sourceAgentId && dto.executorType !== 'unassigned') {
+    if (dto.sourceAgentId && requiresExplicitExecutor && hasExplicitExecutor) {
       const sourceTier = await this.resolveAgentTierById(dto.sourceAgentId);
       if (!sourceTier) {
         throw this.buildTierGuardException('tier_resolution_required', 'Cannot resolve source agent tier', {
@@ -982,11 +982,11 @@ export class OrchestrationService {
         });
       }
 
-      const targetTier = await this.resolveAssignmentTargetTier(dto.executorType, dto.executorId);
+      const targetTier = await this.resolveAssignmentTargetTier(dto.executorType, normalizedExecutorId);
       if (!targetTier) {
         throw this.buildTierGuardException('tier_resolution_required', 'Cannot resolve assignment target tier', {
           executorType: dto.executorType,
-          executorId: dto.executorId,
+          executorId: normalizedExecutorId,
         });
       }
 
@@ -996,10 +996,13 @@ export class OrchestrationService {
           sourceTier,
           targetTier,
           executorType: dto.executorType,
-          executorId: dto.executorId,
+          executorId: normalizedExecutorId,
         });
       }
     }
+
+    const nextStatus = requiresExplicitExecutor && hasExplicitExecutor ? 'assigned' : 'pending';
+    const nextExecutorId = dto.executorType === 'unassigned' ? undefined : normalizedExecutorId;
 
     const updated = await this.orchestrationTaskModel
       .findOneAndUpdate(
@@ -1008,10 +1011,10 @@ export class OrchestrationService {
           $set: {
             assignment: {
               executorType: dto.executorType,
-              executorId: dto.executorId,
+              executorId: nextExecutorId,
               reason: dto.reason,
             },
-            status: dto.executorType === 'unassigned' ? 'pending' : 'assigned',
+            status: nextStatus,
           },
           $push: {
             runLogs: {
@@ -1020,7 +1023,7 @@ export class OrchestrationService {
               message: 'Task reassigned',
               metadata: {
                 executorType: dto.executorType,
-                executorId: dto.executorId,
+                executorId: nextExecutorId,
                 reason: dto.reason,
                 sourceAgentId: dto.sourceAgentId,
               },
@@ -1038,7 +1041,7 @@ export class OrchestrationService {
       await this.updatePlanSessionTask(planId, taskId, {
         status: updated.status,
         executorType: dto.executorType,
-        executorId: dto.executorId,
+        executorId: nextExecutorId,
       });
     }
 
