@@ -9,8 +9,7 @@ export class InternalApiClient {
   private readonly orchestrationBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly backendBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly agentsBaseUrl = process.env.AGENTS_SERVICE_URL || 'http://localhost:3002/api';
-  private readonly engineeringIntelligenceBaseUrl =
-    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004/api';
+  private readonly engineeringIntelligenceBaseUrl = this.resolveEiBaseUrl();
   private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
 
   constructor() {
@@ -63,7 +62,7 @@ export class InternalApiClient {
     body?: any,
   ): Promise<any> {
     const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    return this.callApi({
+    return this.callApiWithRetry({
       system: 'EI',
       errorCode: 'ei_api_request_failed',
       method,
@@ -84,6 +83,21 @@ export class InternalApiClient {
       method,
       endpoint,
       url: `${this.backendBaseUrl}/meetings${endpoint}`,
+      body,
+    });
+  }
+
+  async callInnerMessageApi(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+    endpoint: string,
+    body?: any,
+  ): Promise<any> {
+    return this.callApi({
+      system: 'InnerMessage',
+      errorCode: 'inner_message_api_request_failed',
+      method,
+      endpoint,
+      url: `${this.backendBaseUrl}/inner-messages${endpoint}`,
       body,
     });
   }
@@ -148,6 +162,44 @@ export class InternalApiClient {
       }
       throw error;
     }
+  }
+
+  private async callApiWithRetry(args: {
+    system: string;
+    errorCode: string;
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    endpoint: string;
+    url: string;
+    body?: any;
+  }): Promise<any> {
+    const maxRetry = Math.max(0, Math.floor(Number(process.env.AGENTS_INTERNAL_API_RETRY_MAX || 1)));
+    const retryDelayMs = Math.max(100, Math.floor(Number(process.env.AGENTS_INTERNAL_API_RETRY_DELAY_MS || 300)));
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.callApi(args);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const shouldRetry =
+          attempt < maxRetry &&
+          (message.includes(' returned 502;') ||
+            message.includes(' returned 503;') ||
+            message.includes(' returned 504;') ||
+            message.includes(' returned unknown;'));
+        if (!shouldRetry) {
+          throw error;
+        }
+        this.logger.warn(
+          `${args.system} API transient failure, retrying ${args.method} ${args.endpoint} (attempt ${attempt + 2}/${maxRetry + 1})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+      }
+    }
+  }
+
+  private resolveEiBaseUrl(): string {
+    const raw = String(process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004').trim();
+    const normalized = raw.replace(/\/+$/, '');
+    return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
   }
 
   private summarizeApiErrorBody(body: unknown): string {

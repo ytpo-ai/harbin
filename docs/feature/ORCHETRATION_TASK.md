@@ -88,6 +88,7 @@
 - Orchestration 在执行 `agent` 任务时改为提交 `Agent Task` 异步任务（`POST /agents/tasks`），不再同步阻塞等待 `executeTaskDetailed`。
 - 编排侧优先通过 Agent Task SSE 事件流（`GET /agents/tasks/:taskId/events`）等待终态，异常时回退到状态查询（`GET /agents/tasks/:taskId`）轮询。
 - 该改造避免计划编排请求被长耗时模型推理拖住，从链路层消除同步等待导致的 504 风险。
+- 异步任务会额外透传 `sessionContext.runtimeTaskType/runtimeChannelHint`，供 Agents Runtime 按任务类型在 `opencode/native` 间路由（编码类默认 OpenCode，研究/评审/外部动作默认 native）。
 
 #### Orchestration 服务拆分（Plan D）
 
@@ -104,6 +105,13 @@
 - `PlannerService` 已接入 Resolver：计划拆解 Prompt 可通过模板版本管理，不再仅依赖代码硬编码。
 - 会议执行策略 Prompt 已接入 Resolver：meeting 场景的 system policy 支持模板化发布与回滚。
 - 新增 Prompt 管理接口与前端页面，支持草稿、发布、回滚、版本对比与审计。
+- Prompt 管理页新增“系统 Prompt 草稿创建”入口，支持新增 `scene + role` 模板组合。
+- Prompt 管理页筛选项改为“基于数据库现有值”的下拉选择（`scene/role/status`），降低手输误筛。
+- Prompt 模板新增 `description` 字段，用于标注模板作用与适用场景。
+- Prompt 管理页新增“复制”能力：从既有版本回填所有字段，允许全量修改后保存为新草稿。
+- Prompt 管理页新增“删除版本”能力：支持删除 `draft/archived`，保护 `published` 版本不可删。
+- Prompt 管理页收敛为“列表优先”：版本列表提供图标化快捷操作（编辑/删除/复制/发布），编辑器与日志迁移至详情页。
+- 版本列表发布操作支持按状态切换为“发布/取消发布”；详情页移除“回滚当前版本”按钮，仅保留编辑与发布。
 
 #### 任务调试 MCP
 

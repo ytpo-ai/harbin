@@ -117,13 +117,13 @@ type MemoType = 'knowledge' | 'standard';
 |------|------|------|
 | GET | `/api/memos` | 分页查询备忘录 |
 | POST | `/api/memos/search` | 按 agent + query 检索（支持渐进摘要） |
-| POST | `/api/memos` | 创建备忘录 |
-| PUT | `/api/memos/:id` | 更新备忘录 |
-| DELETE | `/api/memos/:id` | 删除备忘录 |
+| POST | `/api/memos` | 创建备忘录（异步入队，返回 202 + requestId） |
+| PUT | `/api/memos/:id` | 更新备忘录（异步入队，返回 202 + requestId） |
+| DELETE | `/api/memos/:id` | 删除备忘录（异步入队，返回 202 + requestId） |
 | GET | `/api/memos/:id/versions` | 查看版本历史 |
 | POST | `/api/memos/behavior` | 写入 Redis 事件流（不直接落库） |
-| POST | `/api/memos/todos/upsert` | 创建/更新 TODO |
-| PUT | `/api/memos/todos/:id/status` | 更新 TODO 状态 |
+| POST | `/api/memos/todos/upsert` | 创建/更新 TODO（异步入队） |
+| PUT | `/api/memos/todos/:id/status` | 更新 TODO 状态（异步入队） |
 | POST | `/api/memos/events/flush` | 触发 Redis 聚合入库 |
 | GET | `/api/memos/aggregation/status` | 查看聚合状态 |
 | POST | `/api/memos/aggregation/full` | 手动触发全量聚合（Identity + Evaluation） |
@@ -153,6 +153,10 @@ type MemoType = 'knowledge' | 'standard';
 - Redis 聚合命令队列 key：`queue:memo:aggregation:commands`
 - Redis 聚合命令死信 key：`queue:memo:aggregation:dead-letter`
 - Redis 聚合结果通道：`memo:aggregation:result`
+- Redis 写命令队列 key：`queue:memo:write:commands`
+- Redis 写命令死信 key：`queue:memo:write:dead-letter`
+- Redis 写命令结果通道：`memo:write:result`
+- 业务链路（runtime/tool/controller/agent-executor）不再同步执行 memo 落库，统一改为写命令入队并由消费者异步处理。
 - `MemoAggregationService` 负责事件监听与聚合能力编排，不再内置定时器
 - 定时触发由编排调度模块统一承接（系统 schedule seed 数据驱动）：
   - 事件队列 flush 周期：`MEMO_AGGREGATION_INTERVAL_MS`（默认 60s）
@@ -204,6 +208,7 @@ type MemoType = 'knowledge' | 'standard';
 | `AGENTSESSION_MEMO_SNAPSHOT_PLAN.md` | AgentSession memo快照计划 |
 | `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_PLAN.md` | Identity/Evaluation开发计划 |
 | `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
+| `MEMO_ASYNC_WRITE_QUEUE_PLAN.md` | memo 写入全链路异步化（Redis Queue）方案 |
 
 ### 开发总结 (docs/development/)
 
@@ -243,6 +248,8 @@ type MemoType = 'knowledge' | 'standard';
 | `modules/memos/memo.module.ts` | Memo 模块依赖注入配置 |
 | `modules/memos/memo.controller.ts` | REST API 控制器，处理所有 memo 相关请求 |
 | `modules/memos/memo.service.ts` | 核心业务逻辑，CRUD、搜索、版本管理 |
+| `modules/memos/memo-write-queue.service.ts` | memo 写命令生产者，统一入队封装 |
+| `modules/memos/memo-write-command-consumer.service.ts` | memo 写命令消费者（重试/去重/死信） |
 | `modules/memos/memo-task-todo.service.ts` | TODO 状态归一化、读写聚合、内容渲染 |
 | `modules/memos/memo-task-history.service.ts` | History 状态归一化、timeline 去重与合并策略 |
 | `modules/memos/memo.service.spec.ts` | 单元测试 |

@@ -6,6 +6,7 @@ import {
   ControlMeetingMessageDto,
   ParticipantIdentity,
   MeetingSpeakingMode,
+  SaveMeetingSummaryDto,
 } from './meeting.service';
 import { MeetingType, MeetingStatus } from '../../shared/schemas/meeting.schema';
 
@@ -80,6 +81,21 @@ export class MeetingController {
     };
   }
 
+  @Get(':id/detail')
+  async getMeetingDetail(@Param('id') id: string) {
+    const meeting = await this.meetingService.getMeetingDetail(id);
+    if (!meeting) {
+      return {
+        success: false,
+        message: '会议不存在',
+      };
+    }
+    return {
+      success: true,
+      data: meeting,
+    };
+  }
+
   @Post(':id/start')
   async startMeeting(
     @Param('id') id: string,
@@ -106,17 +122,28 @@ export class MeetingController {
   @Post(':id/generate-summary')
   async generateSummary(
     @Param('id') id: string,
-    @Body() payload?: { generatorAgentId?: string; skipIfExists?: boolean },
+    @Body() payload: SaveMeetingSummaryDto,
   ) {
-    const result = await this.meetingService.generateMeetingSummary(id, {
-      generatorAgentId: payload?.generatorAgentId,
-      skipIfExists: payload?.skipIfExists ?? true,
-    });
+    const result = await this.meetingService.generateMeetingSummary(id, payload);
 
     return {
       success: true,
       data: result,
-      message: result.generated ? '会议总结已生成' : '会议总结无需重复生成',
+      message: result.generated ? '会议总结已写入' : '会议总结无需重复写入',
+    };
+  }
+
+  @Put(':id/summary')
+  async saveSummary(
+    @Param('id') id: string,
+    @Body() payload: SaveMeetingSummaryDto,
+  ) {
+    const result = await this.meetingService.generateMeetingSummary(id, payload);
+
+    return {
+      success: true,
+      data: result,
+      message: result.generated ? '会议总结已写入' : '会议总结无需重复写入',
     };
   }
 

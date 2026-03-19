@@ -180,26 +180,109 @@ export const orchestrationService = {
       onError?: () => void;
     },
   ): () => void {
-    const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
     const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
     const streamUrl = `${baseURL}/orchestration/plans/${encodeURIComponent(planId)}/events${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
-    const source = new EventSource(streamUrl);
+    const controller = new AbortController();
+    let stopped = false;
+    let retryTimer: number | null = null;
 
-    source.onmessage = (raw) => {
-      try {
-        const payload = JSON.parse(raw.data || '{}');
-        handlers.onEvent(payload);
-      } catch {
-        // ignore invalid payload
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
       }
     };
 
-    source.onerror = () => {
-      handlers.onError?.();
+    const scheduleReconnect = () => {
+      if (stopped) {
+        return;
+      }
+      clearRetryTimer();
+      retryTimer = window.setTimeout(() => {
+        void connect();
+      }, 1500);
     };
 
+    const connect = async () => {
+      if (stopped) {
+        return;
+      }
+      try {
+        const response = await fetch(streamUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`SSE stream failed with status ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let currentData: string[] = [];
+
+        const flushEvent = () => {
+          if (!currentData.length) {
+            return;
+          }
+          const raw = currentData.join('\n').trim();
+          currentData = [];
+          if (!raw) {
+            return;
+          }
+          try {
+            const payload = JSON.parse(raw);
+            handlers.onEvent(payload);
+          } catch {
+            // ignore invalid payload
+          }
+        };
+
+        while (!stopped) {
+          const { value, done } = await reader.read();
+          if (done) {
+            flushEvent();
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line) {
+              flushEvent();
+              continue;
+            }
+            if (line.startsWith('data:')) {
+              currentData.push(line.slice(5).trimStart());
+            }
+          }
+        }
+
+        if (!stopped) {
+          handlers.onError?.();
+          scheduleReconnect();
+        }
+      } catch {
+        if (stopped || controller.signal.aborted) {
+          return;
+        }
+        handlers.onError?.();
+        scheduleReconnect();
+      }
+    };
+
+    void connect();
+
     return () => {
-      source.close();
+      stopped = true;
+      clearRetryTimer();
+      controller.abort();
     };
   },
 

@@ -18,6 +18,8 @@ import { EvaluationAggregationService } from './evaluation-aggregation.service';
 import { MemoTaskTodoService } from './memo-task-todo.service';
 import { MemoTaskHistoryService } from './memo-task-history.service';
 import { MemoAggregationCommandConsumerService } from './memo-aggregation-command-consumer.service';
+import { MemoWriteQueueService } from './memo-write-queue.service';
+import { MemoWriteCommandConsumerService } from './memo-write-command-consumer.service';
 
 @Module({
   imports: [
@@ -43,7 +45,9 @@ import { MemoAggregationCommandConsumerService } from './memo-aggregation-comman
     MemoTaskTodoService,
     MemoTaskHistoryService,
     MemoAggregationCommandConsumerService,
+    MemoWriteQueueService,
+    MemoWriteCommandConsumerService,
   ],
-  exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService],
+  exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService, MemoWriteQueueService],
 })
 export class MemoModule {}

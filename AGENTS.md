@@ -18,7 +18,7 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
 ## OpenCode Endpoint 优先级提示
 
-请优先阅读 `docs/TIP.MD`。其中定义了 Agent 任务执行时 OpenCode endpoint 的强制优先级与排障要点。
+请优先阅读 `docs/TIP.MD`。
 
 ## 需求处理流程协议
 
@@ -30,6 +30,7 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 1. 接到开发需求后，先找到对应的 **2级功能文档**
 2. 如果功能文档存在且信息足够，则 **不必扫描代码文件**
 3. 如果功能文档信息不足，再补充文档或查看代码
+4. 项目新增资源数据时，一定先问询资源添加给哪个app/module
 
 ### 任务类型判定规则（Plan / Fix）
 

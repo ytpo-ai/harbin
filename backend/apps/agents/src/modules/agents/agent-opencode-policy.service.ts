@@ -18,6 +18,11 @@ export interface OpenCodeExecutionConfig {
   endpointRef?: string;
   authEnable: boolean;
   requestTimeoutMs?: number;
+  taskRouting?: {
+    opencodeTaskTypes: string[];
+    nativeTaskTypes: string[];
+    defaultChannel: 'native' | 'opencode';
+  };
   modelPolicy: {
     bound?: OpenCodeModelBinding;
     fallback: OpenCodeModelBinding[];
@@ -136,6 +141,8 @@ export class AgentOpenCodePolicyService {
         ? Math.floor(Number(requestTimeoutMsRaw))
         : undefined;
 
+    const taskRouting = this.parseTaskRoutingConfig(execution as Record<string, unknown>);
+
     const modelPolicyRaw = (execution as Record<string, unknown>).modelPolicy;
     if (modelPolicyRaw !== undefined && !this.isPlainObject(modelPolicyRaw)) {
       throw new BadRequestException('agent.config.execution.modelPolicy must be a JSON object');
@@ -165,10 +172,68 @@ export class AgentOpenCodePolicyService {
       endpointRef,
       authEnable,
       requestTimeoutMs,
+      taskRouting,
       modelPolicy: {
         bound,
         fallback,
       },
+    };
+  }
+
+  private parseTaskRoutingConfig(execution: Record<string, unknown>): OpenCodeExecutionConfig['taskRouting'] {
+    const raw = execution.taskRouting ?? execution.task_type_routing;
+    if (raw === undefined || raw === null) {
+      return undefined;
+    }
+    if (!this.isPlainObject(raw)) {
+      throw new BadRequestException('agent.config.execution.taskRouting must be a JSON object');
+    }
+
+    const parseTaskTypes = (value: unknown, fieldPath: string): string[] => {
+      if (value === undefined || value === null) {
+        return [];
+      }
+      if (!Array.isArray(value)) {
+        throw new BadRequestException(`${fieldPath} must be an array of strings`);
+      }
+      const normalized = value
+        .map((item, index) => {
+          if (typeof item !== 'string') {
+            throw new BadRequestException(`${fieldPath}[${index}] must be a string`);
+          }
+          return item.trim().toLowerCase();
+        })
+        .filter(Boolean);
+      return Array.from(new Set(normalized));
+    };
+
+    const opencodeTaskTypes = parseTaskTypes(
+      (raw as Record<string, unknown>).opencodeTaskTypes ?? (raw as Record<string, unknown>).opencode_task_types,
+      'agent.config.execution.taskRouting.opencodeTaskTypes',
+    );
+    const nativeTaskTypes = parseTaskTypes(
+      (raw as Record<string, unknown>).nativeTaskTypes ?? (raw as Record<string, unknown>).native_task_types,
+      'agent.config.execution.taskRouting.nativeTaskTypes',
+    );
+
+    const defaultChannelRaw =
+      (raw as Record<string, unknown>).defaultChannel ?? (raw as Record<string, unknown>).default_channel;
+    let defaultChannel: 'native' | 'opencode' = 'native';
+    if (defaultChannelRaw !== undefined && defaultChannelRaw !== null) {
+      if (typeof defaultChannelRaw !== 'string') {
+        throw new BadRequestException('agent.config.execution.taskRouting.defaultChannel must be a string');
+      }
+      const normalized = defaultChannelRaw.trim().toLowerCase();
+      if (normalized !== 'native' && normalized !== 'opencode') {
+        throw new BadRequestException('agent.config.execution.taskRouting.defaultChannel must be native or opencode');
+      }
+      defaultChannel = normalized as 'native' | 'opencode';
+    }
+
+    return {
+      opencodeTaskTypes,
+      nativeTaskTypes,
+      defaultChannel,
     };
   }
 

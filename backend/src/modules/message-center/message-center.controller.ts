@@ -91,7 +91,6 @@ export class MessageCenterController {
     return {
       success: true,
       data: await this.messageCenterService.listInnerMessages({
-        receiverAgentId: currentEmployee.receiverAgentId || '',
         page: page ? Number(page) : undefined,
         pageSize: pageSize ? Number(pageSize) : undefined,
         mode,

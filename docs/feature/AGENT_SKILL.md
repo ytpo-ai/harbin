@@ -66,6 +66,7 @@
 | 文件 | 说明 |
 |------|------|
 | `technical/AGENT_SKILL_DB_REDIS_PROGRESSIVE_LOADING_DESIGN.md` | Skill 元数据/正文分层与 DB+Redis 技术设计 |
+| `technical/AGENT_SKILL_PROGRESSIVE_LOADING_RUNTIME_DESIGN.md` | Skill 渐进式加载运行时路由、冲突处理与可观测设计 |
 | `api/agents-api.md` | Skills API 现状与渐进式加载接口契约 |
 
 ---

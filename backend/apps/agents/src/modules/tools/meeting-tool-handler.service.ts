@@ -30,10 +30,35 @@ export class MeetingToolHandler {
     const endpoint = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const result = await this.internalApiClient.callMeetingApi('GET', endpoint);
 
+    const meetings = Array.isArray(result)
+      ? result.map((item: any) => {
+          if (!item || typeof item !== 'object') return item;
+          const { messages, ...lightweight } = item;
+          return lightweight;
+        })
+      : [];
+
     return {
       action: 'list_meetings',
-      total: result?.length || 0,
-      meetings: result,
+      total: meetings.length,
+      meetings,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  async getMeetingDetail(params: { meetingId?: string }): Promise<any> {
+    if (!params?.meetingId?.trim()) {
+      throw new Error('meeting_get_detail requires meetingId');
+    }
+
+    const meetingId = params.meetingId.trim();
+    const result = await this.internalApiClient.callMeetingApi('GET', `/${meetingId}/detail`);
+    const meeting = result?.data || result;
+
+    return {
+      action: 'get_detail',
+      meetingId,
+      meeting,
       fetchedAt: new Date().toISOString(),
     };
   }
@@ -97,23 +122,35 @@ export class MeetingToolHandler {
     };
   }
 
-  async generateMeetingSummary(
-    params: { meetingId?: string; skipIfExists?: boolean },
+  async saveMeetingSummary(
+    params: {
+      meetingId?: string;
+      summary?: string;
+      actionItems?: string[];
+      decisions?: string[];
+      overwrite?: boolean;
+    },
     agentId?: string,
   ): Promise<any> {
     if (!params?.meetingId?.trim()) {
-      throw new Error('meeting_generate_summary requires meetingId');
+      throw new Error('meeting_save_summary requires meetingId');
+    }
+    if (!params?.summary?.trim()) {
+      throw new Error('meeting_save_summary requires summary');
     }
 
     const meetingId = params.meetingId.trim();
-    const result = await this.internalApiClient.callMeetingApi('POST', `/${meetingId}/generate-summary`, {
-      generatorAgentId: agentId,
-      skipIfExists: params.skipIfExists ?? true,
+    const result = await this.internalApiClient.callMeetingApi('PUT', `/${meetingId}/summary`, {
+      summary: params.summary.trim(),
+      actionItems: Array.isArray(params.actionItems) ? params.actionItems : [],
+      decisions: Array.isArray(params.decisions) ? params.decisions : [],
+      overwrite: Boolean(params.overwrite),
+      generatedByAgentId: agentId,
     });
     const summaryResult = result?.data || result;
 
     return {
-      action: 'generate_summary',
+      action: 'save_summary',
       meetingId,
       generated: Boolean(summaryResult?.generated),
       reason: summaryResult?.reason,

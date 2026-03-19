@@ -109,7 +109,6 @@ const PlanDetail: React.FC = () => {
   const [isReplanModalOpen, setIsReplanModalOpen] = useState(false);
   const [replanPlannerAgentId, setReplanPlannerAgentId] = useState('');
   const [isReplanPending, setIsReplanPending] = useState(false);
-  const [replanRequestedAt, setReplanRequestedAt] = useState<number | null>(null);
   const [lastAsyncReplanError, setLastAsyncReplanError] = useState('');
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
   const [debugTaskId, setDebugTaskId] = useState('');
@@ -159,11 +158,18 @@ const PlanDetail: React.FC = () => {
             setStreamTaskIds((prev) => (prev.includes(generatedTaskId) ? prev : [...prev, generatedTaskId]));
           }
           setStreamHint(`正在生成任务 (${event.data?.index || 0}/${event.data?.total || '-'})`);
+          if (isReplanPending) {
+            setPromptHint(`重新编排任务生成中 (${event.data?.index || 0}/${event.data?.total || '-'})`);
+          }
           void queryClient.invalidateQueries(['orchestration-plan', planId]);
           return;
         }
         if (event.type === 'plan.completed') {
           setStreamHint('任务生成完成');
+          if (isReplanPending) {
+            setIsReplanPending(false);
+            setPromptHint('重新编排已完成，任务结构已覆盖更新');
+          }
           void Promise.all([
             queryClient.invalidateQueries('orchestration-plans'),
             queryClient.invalidateQueries(['orchestration-plan', planId]),
@@ -172,11 +178,18 @@ const PlanDetail: React.FC = () => {
         }
         if (event.type === 'plan.failed') {
           setStreamHint(`任务生成失败: ${event.data?.error || 'unknown error'}`);
+          if (isReplanPending) {
+            setIsReplanPending(false);
+            setPromptHint(`重新编排失败：${event.data?.error || 'unknown error'}`);
+          }
           void queryClient.invalidateQueries(['orchestration-plan', planId]);
           return;
         }
         if (event.type === 'plan.status.changed' && event.data?.status === 'drafting') {
           setStreamHint('任务生成中...');
+          if (isReplanPending) {
+            setPromptHint('重新编排中：已清空旧任务，正在流式生成新任务...');
+          }
         }
       },
       onError: () => {
@@ -192,7 +205,7 @@ const PlanDetail: React.FC = () => {
       setStreamConnected(false);
       unsubscribe();
     };
-  }, [planId, queryClient]);
+  }, [isReplanPending, planId, queryClient]);
 
   const { data: agents = [] } = useQuery('plan-detail-agents', () => agentService.getAgents());
   const { data: employees = [] } = useQuery('plan-detail-employees', () => employeeService.getEmployees());
@@ -291,10 +304,30 @@ const PlanDetail: React.FC = () => {
     {
       onMutate: () => {
         setIsReplanModalOpen(false);
-        setPromptHint('正在重新编排，请稍候...');
+        setPromptHint('正在重新编排：正在清空旧任务...');
         setIsReplanPending(true);
-        setReplanRequestedAt(Date.now());
         setLastAsyncReplanError(String(planDetail?.metadata?.asyncReplanError || ''));
+        setStreamTaskIds([]);
+        setStreamHint('重新编排已启动，等待新任务流式返回...');
+        queryClient.setQueryData(['orchestration-plan', planId], (prev: any) => {
+          if (!prev) {
+            return prev;
+          }
+          return {
+            ...prev,
+            status: 'drafting',
+            taskIds: [],
+            tasks: [],
+            stats: {
+              ...(prev.stats || {}),
+              totalTasks: 0,
+              completedTasks: 0,
+              failedTasks: 0,
+              waitingHumanTasks: 0,
+            },
+          };
+        });
+        void queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
       onSuccess: async () => {
         setPromptHint('重新编排任务已提交，正在后台处理中...');
@@ -321,27 +354,31 @@ const PlanDetail: React.FC = () => {
       return;
     }
 
-    const replannedAtRaw = String(planDetail.metadata?.replannedAt || '');
-    if (!replannedAtRaw || !replanRequestedAt) return;
+    if (planDetail.status === 'planned') {
+      setIsReplanPending(false);
+      setPromptHint('重新编排已完成，任务结构已覆盖更新');
+      Promise.all([
+        queryClient.invalidateQueries('orchestration-plans'),
+        queryClient.invalidateQueries(['orchestration-plan', planId]),
+      ]);
+      return;
+    }
 
-    const replannedAt = new Date(replannedAtRaw).getTime();
-    if (Number.isNaN(replannedAt)) return;
-    if (replannedAt < replanRequestedAt - 1000) return;
+    if (planDetail.status === 'failed') {
+      setIsReplanPending(false);
+      setPromptHint(`重新编排失败：${currentAsyncError || '计划编排失败'}`);
+      return;
+    }
 
-    setIsReplanPending(false);
-    setPromptHint('重新编排已完成，任务结构已覆盖更新');
-    window.alert('编排完成');
-    Promise.all([
-      queryClient.invalidateQueries('orchestration-plans'),
-      queryClient.invalidateQueries(['orchestration-plan', planId]),
-    ]);
+    if (planDetail.status === 'drafting' && (planDetail.stats?.totalTasks || 0) === 0) {
+      setPromptHint('重新编排中：旧任务已删除，等待新任务生成...');
+    }
   }, [
     isReplanPending,
     lastAsyncReplanError,
     planDetail,
     planId,
     queryClient,
-    replanRequestedAt,
   ]);
 
   const retryTaskMutation = useMutation((taskId: string) => orchestrationService.retryTask(taskId), {

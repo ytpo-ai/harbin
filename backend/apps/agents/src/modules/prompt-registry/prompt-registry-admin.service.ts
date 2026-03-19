@@ -5,12 +5,12 @@ import {
   PromptTemplate,
   PromptTemplateDocument,
   PromptTemplateStatus,
-} from '../../../../../src/shared/schemas/prompt-template.schema';
+} from '../../schemas/prompt-template.schema';
 import {
   PromptTemplateAudit,
   PromptTemplateAuditDocument,
-} from '../../../../../src/shared/schemas/prompt-template-audit.schema';
-import { PromptResolverService } from '../../../../../src/modules/prompt-registry/prompt-resolver.service';
+} from '../../schemas/prompt-template-audit.schema';
+import { PromptResolverService } from './prompt-resolver.service';
 
 @Injectable()
 export class PromptRegistryAdminService {
@@ -48,6 +48,76 @@ export class PromptRegistryAdminService {
       .exec();
   }
 
+  async listTemplateFilters() {
+    const [sceneRolePairs, statuses] = await Promise.all([
+      this.promptTemplateModel
+        .aggregate<{ _id: { scene: string; role: string } }>([
+          {
+            $match: {
+              scene: { $type: 'string', $nin: ['', null] },
+              role: { $type: 'string', $nin: ['', null] },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                scene: '$scene',
+                role: '$role',
+              },
+            },
+          },
+          {
+            $sort: {
+              '_id.scene': 1,
+              '_id.role': 1,
+            },
+          },
+        ])
+        .exec(),
+      this.promptTemplateModel.distinct('status', { status: { $type: 'string', $nin: ['', null] } }).exec(),
+    ]);
+
+    const sceneRoleMap: Record<string, string[]> = {};
+    for (const pair of sceneRolePairs) {
+      const scene = String(pair?._id?.scene || '').trim();
+      const role = String(pair?._id?.role || '').trim();
+      if (!scene || !role) {
+        continue;
+      }
+      if (!sceneRoleMap[scene]) {
+        sceneRoleMap[scene] = [];
+      }
+      if (!sceneRoleMap[scene].includes(role)) {
+        sceneRoleMap[scene].push(role);
+      }
+    }
+
+    const scenes = Object.keys(sceneRoleMap).sort((a, b) => a.localeCompare(b));
+    for (const scene of scenes) {
+      sceneRoleMap[scene] = sceneRoleMap[scene].sort((a, b) => a.localeCompare(b));
+    }
+
+    const roles = Array.from(
+      new Set(
+        Object.values(sceneRoleMap)
+          .flat()
+          .map((item) => item.trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    const normalizedStatuses = Array.from(
+      new Set(statuses.map((item) => String(item || '').trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b));
+
+    return {
+      scenes,
+      roles,
+      statuses: normalizedStatuses,
+      sceneRoleMap,
+    };
+  }
+
   async getEffectiveTemplate(input: { scene: string; role: string; sessionOverride?: string }) {
     const scene = String(input.scene || '').trim();
     const role = String(input.role || '').trim();
@@ -62,15 +132,29 @@ export class PromptRegistryAdminService {
     });
   }
 
+  async getTemplateById(templateId: string) {
+    const normalizedId = String(templateId || '').trim();
+    if (!normalizedId) {
+      throw new BadRequestException('templateId is required');
+    }
+
+    const template = await this.promptTemplateModel.findById(normalizedId).lean().exec();
+    if (!template) {
+      throw new NotFoundException('template not found');
+    }
+    return template;
+  }
+
   async saveDraft(input: {
     scene: string;
     role: string;
     content: string;
+    description?: string;
     baseVersion?: number;
     summary?: string;
     operatorId?: string;
   }) {
-    const normalized = this.normalizeSceneRoleContent(input.scene, input.role, input.content);
+    const normalized = this.normalizeDraftInput(input.scene, input.role, input.content, input.description);
     const latest = await this.getLatestVersion(normalized.scene, normalized.role);
     const nextVersion = (latest?.version || 0) + 1;
     const summary = String(input.summary || '').trim();
@@ -91,6 +175,7 @@ export class PromptRegistryAdminService {
       version: nextVersion,
       status: 'draft',
       content: normalized.content,
+      description: normalized.description,
       updatedBy: String(input.operatorId || '').trim() || undefined,
       updatedAt: new Date(),
     });
@@ -130,7 +215,13 @@ export class PromptRegistryAdminService {
     target.updatedAt = new Date();
     await target.save();
 
-    await this.promptResolverService.refreshPublishedCache(scene, role);
+    await this.promptResolverService.cachePublishedTemplate({
+      scene,
+      role,
+      content: target.content,
+      version,
+      updatedAt: target.updatedAt,
+    });
     await this.createAudit({
       scene,
       role,
@@ -138,6 +229,40 @@ export class PromptRegistryAdminService {
       version,
       operatorId: input.operatorId,
       summary: String(input.summary || '').trim() || `发布模板 v${version}`,
+    });
+
+    return target;
+  }
+
+  async unpublish(input: { scene: string; role: string; version: number; summary?: string; operatorId?: string }) {
+    const scene = String(input.scene || '').trim();
+    const role = String(input.role || '').trim();
+    const version = Number(input.version || 0);
+    if (!scene || !role || !version) {
+      throw new BadRequestException('scene, role, version are required');
+    }
+
+    const target = await this.promptTemplateModel.findOne({ scene, role, version }).exec();
+    if (!target) {
+      throw new NotFoundException(`template version not found: ${version}`);
+    }
+    if (target.status !== 'published') {
+      throw new BadRequestException('only published template can be unpublished');
+    }
+
+    target.status = 'archived';
+    target.updatedBy = String(input.operatorId || '').trim() || target.updatedBy;
+    target.updatedAt = new Date();
+    await target.save();
+
+    await this.promptResolverService.clearPublishedCache(scene, role);
+    await this.createAudit({
+      scene,
+      role,
+      action: 'unpublish',
+      version,
+      operatorId: input.operatorId,
+      summary: String(input.summary || '').trim() || `取消发布模板 v${version}`,
     });
 
     return target;
@@ -167,11 +292,18 @@ export class PromptRegistryAdminService {
       version: nextVersion,
       status: 'published',
       content: target.content,
+      description: target.description,
       updatedBy: String(input.operatorId || '').trim() || undefined,
       updatedAt: new Date(),
     });
 
-    await this.promptResolverService.refreshPublishedCache(scene, role);
+    await this.promptResolverService.cachePublishedTemplate({
+      scene,
+      role,
+      content: created.content,
+      version: nextVersion,
+      updatedAt: created.updatedAt,
+    });
     await this.createAudit({
       scene,
       role,
@@ -250,14 +382,47 @@ export class PromptRegistryAdminService {
     return this.promptTemplateAuditModel.find(filter).sort({ createdAt: -1 }).limit(limit).lean().exec();
   }
 
-  private normalizeSceneRoleContent(scene: string, role: string, content: string) {
+  async deleteTemplate(input: { templateId: string }) {
+    const templateId = String(input.templateId || '').trim();
+    if (!templateId) {
+      throw new BadRequestException('templateId is required');
+    }
+
+    const target = await this.promptTemplateModel.findById(templateId).exec();
+    if (!target) {
+      throw new NotFoundException('template not found');
+    }
+
+    if (target.status === 'published') {
+      throw new BadRequestException('published template cannot be deleted');
+    }
+
+    await this.promptTemplateModel.deleteOne({ _id: target._id }).exec();
+
+    return {
+      deleted: true,
+      templateId,
+      scene: target.scene,
+      role: target.role,
+      version: target.version,
+      status: target.status,
+    };
+  }
+
+  private normalizeDraftInput(scene: string, role: string, content: string, description?: string) {
     const normalizedScene = String(scene || '').trim();
     const normalizedRole = String(role || '').trim();
     const normalizedContent = String(content || '').trim();
+    const normalizedDescription = String(description || '').trim();
     if (!normalizedScene || !normalizedRole || !normalizedContent) {
       throw new BadRequestException('scene, role, content are required');
     }
-    return { scene: normalizedScene, role: normalizedRole, content: normalizedContent };
+    return {
+      scene: normalizedScene,
+      role: normalizedRole,
+      content: normalizedContent,
+      description: normalizedDescription || undefined,
+    };
   }
 
   private async getLatestVersion(scene: string, role: string): Promise<PromptTemplateDocument | null> {
@@ -267,7 +432,7 @@ export class PromptRegistryAdminService {
   private async createAudit(input: {
     scene: string;
     role: string;
-    action: 'create_draft' | 'publish' | 'rollback';
+    action: 'create_draft' | 'publish' | 'unpublish' | 'rollback';
     version: number;
     fromVersion?: number;
     operatorId?: string;

@@ -94,6 +94,6 @@ describe('IdentityAggregationService', () => {
     const content = createPayload.content;
     expect(content).toContain('**Agent 名称**：Alex');
     expect(content).toContain('  - unknown.tool');
-    expect(content.match(/  - unknown\.tool/g)?.length).toBe(1);
+    expect(content.match(/ {2}- unknown\.tool/g)?.length).toBe(1);
   });
 });

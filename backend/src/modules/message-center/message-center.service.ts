@@ -24,7 +24,7 @@ export interface CreateSystemMessageInput {
 }
 
 export interface ListInnerMessagesQuery {
-  receiverAgentId: string;
+  receiverAgentId?: string;
   page?: number;
   pageSize?: number;
   mode?: InnerMessageMode;
@@ -88,24 +88,15 @@ export class MessageCenterService {
   }
 
   async listInnerMessages(query: ListInnerMessagesQuery) {
-    if (!query.receiverAgentId?.trim()) {
-      return {
-        total: 0,
-        page: 1,
-        pageSize: Math.max(1, Math.min(Number(query.pageSize || 20), 100)),
-        totalPages: 0,
-        items: [],
-        fetchedAt: new Date().toISOString(),
-      };
-    }
-
     const page = Math.max(1, Math.min(Number(query.page || 1), 10000));
     const pageSize = Math.max(1, Math.min(Number(query.pageSize || 20), 100));
     const skip = (page - 1) * pageSize;
 
-    const filter: Record<string, any> = {
-      receiverAgentId: query.receiverAgentId,
-    };
+    const filter: Record<string, any> = {};
+
+    if (query.receiverAgentId?.trim()) {
+      filter.receiverAgentId = query.receiverAgentId;
+    }
 
     if (query.mode) {
       filter.mode = query.mode;

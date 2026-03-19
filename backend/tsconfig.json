@@ -23,6 +23,13 @@
     "paths": {
       "@/*": ["src/*"],
       "@shared/*": ["src/shared/*"],
+      "@agent/*": ["apps/agents/src/*"],
+      "@agents/*": ["apps/agents/src/*"],
+      "@gateway/*": ["apps/gateway/src/*"],
+      "@ws/*": ["apps/ws/src/*"],
+      "@ei/*": ["apps/ei/src/*"],
+      "@legacy/*": ["src/*"],
+      "@legecy/*": ["src/*"],
       "@libs/contracts": ["libs/contracts/src/index"],
       "@libs/contracts/*": ["libs/contracts/src/*"],
       "@libs/auth": ["libs/auth/src/index"],

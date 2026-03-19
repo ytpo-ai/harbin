@@ -16,7 +16,9 @@ import { AgentExecutionService } from './agent-execution.service';
 import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
-import { PromptRegistryModule } from '../../../../../src/modules/prompt-registry/prompt-registry.module';
+import { AgentRoleService } from './agent-role.service';
+import { AgentExecutorService } from './agent-executor.service';
+import { PromptRegistryModule as PromptRegistryCoreModule } from '../prompt-registry/prompt-registry.module';
 
 @Module({
   imports: [
@@ -32,10 +34,18 @@ import { PromptRegistryModule } from '../../../../../src/modules/prompt-registry
     MemoModule,
     RuntimeModule,
     OpenCodeModule,
-    PromptRegistryModule,
+    PromptRegistryCoreModule,
   ],
   controllers: [AgentController],
-  providers: [AgentService, AgentExecutionService, AgentOrchestrationIntentService, AgentOpenCodePolicyService, AgentMcpProfileService],
+  providers: [
+    AgentService,
+    AgentExecutionService,
+    AgentOrchestrationIntentService,
+    AgentOpenCodePolicyService,
+    AgentMcpProfileService,
+    AgentRoleService,
+    AgentExecutorService,
+  ],
   exports: [AgentService],
 })
 export class AgentModule {}

@@ -144,7 +144,7 @@
 - 会话模型支持 `meeting/task` 两类，并可按 `meetingId` 或 `taskId` 复用会话。
 - system 消息写入时进行内容归一化与上下文键去重，避免重复注入提示词。
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
-- runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），将备忘录摘要挂载到 session 侧缓存。
+- runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），并改为通过 Redis 队列异步写入 session 缓存，避免主链路同步落库阻塞。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
 - legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
@@ -152,7 +152,7 @@
   - `modules/agents/agent-opencode-policy.service.ts`（OpenCode gate/budget 策略）
   - `modules/agents/agent-orchestration-intent.service.ts`（会议编排意图与强制工具映射）
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
-- Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理，并由 `agent.service.ts` 统一模板渲染读取（不通过 resolver 覆盖 Agent prompt），减少内联硬编码。
+- Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
 - Agent Task Worker 会透传 `sessionContext.runtimeTaskType/runtimeChannelHint` 到 `context.runtimeRouting`，用于异步任务执行时的 runtime 通道路由。
 - 当路由命中 `opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
@@ -177,6 +177,7 @@
 | `AGENT_EXECUTE_IDENTIFIER_COMPAT_PLAN.md` | Agent 执行入口 `id/_id` 双标识兼容修复计划 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 | `AGENT_PROMPT_RESOLVER_REFACTOR_PLAN.md` | Agent Prompt 文案集中化与模板渲染接入计划 |
+| `PROMPT_RESOLVE_REDIS_GUARD_PLAN.md` | Prompt 发布写 Redis 与执行阶段 Redis 门禁回退计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -200,6 +201,7 @@
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | OpenCode 执行事实层与 EI 分析层分层设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | local/ecds 多环境协同与 ingest 同步设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |
+| `plan/MEMO_ASYNC_WRITE_QUEUE_PLAN.md` | memo 写入异步化改造方案 |
 
 ---
 
@@ -215,6 +217,7 @@
 | `runtime-persistence.service.ts` | run/message/part/outbox/session/审计持久化实现 |
 | `hook-dispatcher.service.ts` | Hook 事件分发、重试、flush 与指标 |
 | `runtime-action-log-sync.service.ts` | Runtime 状态钩子同步写入 Agent Action Logs |
+| `runtime-memo-snapshot-queue.service.ts` | Session memoSnapshot 异步写入队列消费服务 |
 | `contracts/runtime-event.contract.ts` | 运行时事件契约（zod） |
 | `contracts/runtime-run.contract.ts` | run 与工具事件输入契约 |
 | `contracts/runtime-control.contract.ts` | 控制面与运维接口入参契约 |

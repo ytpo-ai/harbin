@@ -1,4 +1,4 @@
-import { PromptResolverService } from '../src/modules/prompt-registry/prompt-resolver.service';
+import { PromptResolverService } from '../apps/agents/src/modules/prompt-registry/prompt-resolver.service';
 
 describe('PromptResolverService', () => {
   const createService = () => {
@@ -74,5 +74,51 @@ describe('PromptResolverService', () => {
       version: 2,
       updatedAt: '2026-03-18T10:00:00.000Z',
     });
+  });
+
+  it('uses redis only in cacheOnly mode and skips db', async () => {
+    const { service, promptTemplateModel, redisService } = createService();
+    redisService.get.mockResolvedValue(
+      JSON.stringify({
+        content: 'cache-only-content',
+        version: 5,
+        updatedAt: '2026-03-18T11:00:00.000Z',
+      }),
+    );
+
+    const result = await service.resolve({
+      scene: 'meeting',
+      role: 'execution-policy',
+      defaultContent: 'default',
+      cacheOnly: true,
+    });
+
+    expect(result).toEqual({
+      content: 'cache-only-content',
+      source: 'redis_cache',
+      version: 5,
+      updatedAt: '2026-03-18T11:00:00.000Z',
+    });
+    expect(promptTemplateModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it('returns default in cacheOnly mode when redis misses even if db has data', async () => {
+    const { service, promptTemplateModel, findOneExec, redisService } = createService();
+    findOneExec.mockResolvedValue({
+      content: 'db-content',
+      version: 6,
+      updatedAt: new Date('2026-03-18T12:00:00.000Z'),
+    });
+    redisService.get.mockResolvedValue(null);
+
+    const result = await service.resolve({
+      scene: 'meeting',
+      role: 'execution-policy',
+      defaultContent: 'default',
+      cacheOnly: true,
+    });
+
+    expect(result).toEqual({ content: 'default', source: 'code_default' });
+    expect(promptTemplateModel.findOne).not.toHaveBeenCalled();
   });
 });

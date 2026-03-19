@@ -28,7 +28,7 @@ import { TaskClassificationService } from './services/task-classification.servic
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { InnerMessageModule } from '../inner-message/inner-message.module';
-import { PromptRegistryModule } from '../prompt-registry/prompt-registry.module';
+import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-registry/prompt-registry.module';
 
 @Module({
   imports: [

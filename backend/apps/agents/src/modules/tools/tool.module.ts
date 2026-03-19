@@ -9,6 +9,7 @@ import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/sche
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/api-key.schema';
+import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import {
   AgentToolCredential,
   AgentToolCredentialSchema,
@@ -52,9 +53,10 @@ import { AgentToolAuthGuard } from './agent-tool-auth.guard';
       { name: Employee.name, schema: EmployeeSchema },
       { name: OperationLog.name, schema: OperationLogSchema },
       { name: ApiKey.name, schema: ApiKeySchema },
+      { name: Skill.name, schema: SkillSchema },
       { name: AgentToolCredential.name, schema: AgentToolCredentialSchema },
       { name: AgentToolTokenRevocation.name, schema: AgentToolTokenRevocationSchema },
-    ])
+    ]),
   ],
   controllers: [ToolController],
   providers: [

@@ -72,6 +72,23 @@ const resolveTierByRole = (role?: EmployeeRole): EmployeeTier => {
   return ROLE_TIER_MAP[role] || 'operations';
 };
 
+const EMPLOYEE_ROLE_OPTIONS: Array<{ id: EmployeeRole; name: string; tier: EmployeeTier }> = EMPLOYEE_ROLES
+  .map((item) => {
+    const roleId = item.id as EmployeeRole;
+    return {
+      id: roleId,
+      name: item.name,
+      tier: ROLE_TIER_MAP[roleId],
+    };
+  });
+
+const getRoleOptionsByTier = (tier: EmployeeTier): Array<{ id: EmployeeRole; name: string }> => {
+  return EMPLOYEE_ROLE_OPTIONS.filter((item) => item.tier === tier).map((item) => ({
+    id: item.id,
+    name: item.name,
+  }));
+};
+
 const EmployeeManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'employees' | 'invitations' | 'login'>('employees');
@@ -380,6 +397,7 @@ const EmployeeList: React.FC<{
     role: EmployeeRole.JUNIOR,
     tier: resolveTierByRole(EmployeeRole.JUNIOR),
   });
+  const createRoleOptions = getRoleOptionsByTier(normalizeTier(formData.tier));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -461,7 +479,7 @@ const EmployeeList: React.FC<{
                   }}
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                 >
-                  {EMPLOYEE_ROLES.map((role) => (
+                  {createRoleOptions.map((role) => (
                     <option key={role.id} value={role.id}>{role.name}</option>
                   ))}
                 </select>
@@ -472,7 +490,15 @@ const EmployeeList: React.FC<{
                 <select
                   required
                   value={formData.tier || 'operations'}
-                  onChange={(e) => setFormData({ ...formData, tier: normalizeTier(e.target.value) })}
+                  onChange={(e) => {
+                    const nextTier = normalizeTier(e.target.value);
+                    const nextOptions = getRoleOptionsByTier(nextTier);
+                    const currentRole = formData.role as EmployeeRole | undefined;
+                    const nextRole = currentRole && nextOptions.some((item) => item.id === currentRole)
+                      ? currentRole
+                      : nextOptions[0]?.id;
+                    setFormData({ ...formData, tier: nextTier, role: nextRole });
+                  }}
                   className="w-full border border-gray-300 rounded-md px-3 py-2"
                 >
                   <option value="leadership">leadership（高管层）</option>
@@ -513,6 +539,7 @@ const EmployeeRow: React.FC<{
 }> = ({ employee, onUpdate, isUpdating }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [formData, setFormData] = useState<UpdateEmployeeDto>({});
+  const editRoleOptions = getRoleOptionsByTier(normalizeTier(formData.tier || employee.tier || resolveTierByRole(employee.role)));
 
   const hasKnownRole = EMPLOYEE_ROLES.some((item) => item.id === employee.role);
 
@@ -654,7 +681,7 @@ const EmployeeRow: React.FC<{
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     {!hasKnownRole && <option value="">保持原角色（{employee.role}）</option>}
-                    {EMPLOYEE_ROLES.map((role) => (
+                    {editRoleOptions.map((role) => (
                       <option key={role.id} value={role.id}>{role.name}</option>
                     ))}
                   </select>
@@ -663,7 +690,15 @@ const EmployeeRow: React.FC<{
                   <label className="block text-sm font-medium text-gray-700 mb-1">层级 Tier</label>
                   <select
                     value={formData.tier || 'operations'}
-                    onChange={(e) => setFormData({ ...formData, tier: normalizeTier(e.target.value) })}
+                    onChange={(e) => {
+                      const nextTier = normalizeTier(e.target.value);
+                      const nextOptions = getRoleOptionsByTier(nextTier);
+                      const currentRole = formData.role as EmployeeRole | undefined;
+                      const nextRole = currentRole && nextOptions.some((item) => item.id === currentRole)
+                        ? currentRole
+                        : nextOptions[0]?.id;
+                      setFormData({ ...formData, tier: nextTier, role: nextRole });
+                    }}
                     className="w-full border border-gray-300 rounded-md px-3 py-2"
                   >
                     <option value="leadership">leadership（高管层）</option>

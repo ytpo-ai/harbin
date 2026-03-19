@@ -114,7 +114,7 @@ export class AgentTaskWorker implements OnModuleInit {
         id: task.id,
         title: `Agent Task ${task.id}`,
         description: task.prompt,
-        type: 'agent_task',
+        type: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
         priority: 'medium',
         status: 'pending',
         assignedAgents: [task.agentId],
@@ -142,6 +142,12 @@ export class AgentTaskWorker implements OnModuleInit {
             });
           },
           {
+            sessionContext: task.sessionContext || {},
+            runtimeRouting: {
+              taskType: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
+              preferredChannel: this.resolvePreferredExecutionChannel(task.sessionContext),
+              source: 'agent_task_session_context',
+            },
             opencodeRuntime: {
               endpoint: serve?.baseUrl,
               authEnable: serve?.authEnable,
@@ -234,6 +240,7 @@ export class AgentTaskWorker implements OnModuleInit {
         progress: 100,
         currentStep: status,
         resultSummary: {
+          response: executeResult.response,
           responseLength: executeResult.response.length,
         },
         finishedAt: new Date(),
@@ -453,5 +460,45 @@ export class AgentTaskWorker implements OnModuleInit {
 
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private resolveRuntimeTaskType(prompt: string, sessionContext?: Record<string, unknown>): string {
+    const fromContext =
+      this.readString(sessionContext?.runtimeTaskType) || this.readString(sessionContext?.taskType) || undefined;
+    if (fromContext) {
+      return fromContext.toLowerCase();
+    }
+
+    const text = String(prompt || '').toLowerCase();
+    if (
+      text.includes('code') ||
+      text.includes('implement') ||
+      text.includes('fix') ||
+      text.includes('refactor') ||
+      text.includes('开发') ||
+      text.includes('编码') ||
+      text.includes('修复')
+    ) {
+      return 'development';
+    }
+
+    return 'general';
+  }
+
+  private resolvePreferredExecutionChannel(sessionContext?: Record<string, unknown>): 'native' | 'opencode' | undefined {
+    const candidate =
+      this.readString(sessionContext?.runtimeChannelHint) || this.readString(sessionContext?.preferredRuntimeChannel);
+    if (!candidate) {
+      return undefined;
+    }
+    const normalized = candidate.toLowerCase();
+    if (normalized === 'native' || normalized === 'opencode') {
+      return normalized;
+    }
+    return undefined;
+  }
+
+  private readString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 }

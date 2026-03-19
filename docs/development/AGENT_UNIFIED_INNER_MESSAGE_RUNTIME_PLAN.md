@@ -35,7 +35,7 @@
 
 ### 2.3 移除会议模块硬编码消费挂载
 
-- `backend/src/modules/meetings/meeting.module.ts` 中移除 `MeetingSummaryAutomationService` provider，防止与统一桥接链路重复消费。
+- `backend/src/modules/meetings/meeting.module.ts` 中移除旧自动化消费器 provider，防止与统一桥接链路重复消费。
 
 ## 3. 验证结果
 
@@ -52,3 +52,9 @@
 
 - 影响：内部消息进入 Agent 自主处理闭环，会议总结能力可由 Agent 主动调用并可扩展到更多事件类型。
 - 建议：下一步可将 `inner:inbox:*` 事件消费与 Runtime Hook 指标打通，补充消息处理 SLA 监控（处理时延、重试率、死信率）。
+
+## 5. v2 调整（单层执行链）
+
+- `meeting.generate-summary` 不再在服务端内部再次 `executeTask`，避免“收件任务内二次派发任务”。
+- 增加 `meeting.get-detail` 与 `meeting.save-summary` MCP 组合：Agent 在同一执行链中自行读取会议详情、生成总结并回写。
+- `meeting.list-meetings` MCP 输出改为轻量列表，不再返回 `messages` 明细。

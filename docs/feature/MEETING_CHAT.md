@@ -147,6 +147,7 @@ enum ParticipantRole {
 | GET | `/meetings/stats` | 获取会议统计 |
 | GET | `/meetings/by-participant/:participantId` | 获取参与者参与的会议 |
 | GET | `/meetings/:id` | 获取会议详情 |
+| GET | `/meetings/:id/detail` | 获取会议详情（含消息明细） |
 | GET | `/meetings/:id/agent-states` | 获取 Agent 状态 |
 | POST | `/meetings/:id/start` | 开始会议 |
 | POST | `/meetings/:id/end` | 结束会议 |
@@ -247,7 +248,7 @@ enum ParticipantRole {
 
 | 文件 | 功能 |
 |------|------|
-| `modules/tools/tool.service.ts` | MCP 工具定义与实现，包含 meeting.list、meeting.sendMessage、meeting.updateStatus、meeting.generateSummary |
+| `modules/tools/tool.service.ts` | MCP 工具定义与实现，包含 meeting.list、meeting.getDetail、meeting.sendMessage、meeting.updateStatus、meeting.saveSummary |
 
 ---
 
@@ -258,9 +259,10 @@ enum ParticipantRole {
 | 工具 ID | 名称 | 功能 | 所需权限 |
 |---------|------|------|----------|
 | `builtin.sys-mg.mcp.meeting.list-meetings` | Meeting MCP List | 查询当前会议列表 | meeting_read |
+| `builtin.sys-mg.mcp.meeting.get-detail` | Meeting MCP Get Detail | 查询会议详情与消息 | meeting_read |
 | `builtin.sys-mg.mcp.meeting.send-message` | Meeting MCP Send Message | 向会议发送消息 | meeting_write |
 | `builtin.sys-mg.mcp.meeting.update-status` | Meeting MCP Update Status | 修改会议状态 (start/end/pause/resume) | meeting_write |
-| `builtin.sys-mg.mcp.meeting.generate-summary` | Meeting MCP Generate Summary | 触发会议总结生成 | meeting_write |
+| `builtin.sys-mg.mcp.meeting.save-summary` | Meeting MCP Save Summary | 写入会议总结 | meeting_write |
 
 > 说明：会议 MCP 工具按当前系统单租户模式运行，不依赖 organization/tenant/workspace 上下文。
 
@@ -286,12 +288,21 @@ enum ParticipantRole {
 | meetingId | string | 是 | 会议 ID |
 | action | string | 是 | 操作 (start/end/pause/resume) |
 
-#### 4.1.4 meeting.generateSummary 参数
+#### 4.1.4 meeting.getDetail 参数
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | meetingId | string | 是 | 会议 ID |
-| skipIfExists | boolean | 否 | 已有总结时是否跳过（默认 true） |
+
+#### 4.1.5 meeting.saveSummary 参数
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| meetingId | string | 是 | 会议 ID |
+| summary | string | 是 | 总结正文 |
+| actionItems | string[] | 否 | 行动项列表 |
+| decisions | string[] | 否 | 决策列表 |
+| overwrite | boolean | 否 | 已有总结时是否覆盖（默认 false） |
 
 ### 4.2 会议监控 (Meeting Monitor)
 

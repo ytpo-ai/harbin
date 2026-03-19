@@ -4,8 +4,8 @@ import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../shared/types';
-import { PromptResolverService } from '../prompt-registry/prompt-resolver.service';
-import { PROMPT_ROLES, PROMPT_SCENES } from '../prompt-registry/prompt-resolver.constants';
+import { PromptResolverService } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.service';
+import { PROMPT_ROLES, PROMPT_SCENES } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.constants';
 
 interface PlannerTaskDraft {
   title: string;

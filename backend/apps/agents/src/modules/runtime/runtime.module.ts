@@ -17,6 +17,7 @@ import { RuntimeActionLogSyncService } from './runtime-action-log-sync.service';
 import { RuntimeEiSyncService } from './runtime-ei-sync.service';
 import { RuntimeController } from './runtime.controller';
 import { MemoModule } from '../memos/memo.module';
+import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 
 @Module({
   imports: [
@@ -32,7 +33,21 @@ import { MemoModule } from '../memos/memo.module';
     ]),
   ],
   controllers: [RuntimeController],
-  providers: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService, RuntimeEiSyncService],
-  exports: [RuntimePersistenceService, HookDispatcherService, RuntimeOrchestratorService, RuntimeActionLogSyncService, RuntimeEiSyncService],
+  providers: [
+    RuntimePersistenceService,
+    HookDispatcherService,
+    RuntimeOrchestratorService,
+    RuntimeActionLogSyncService,
+    RuntimeEiSyncService,
+    RuntimeMemoSnapshotQueueService,
+  ],
+  exports: [
+    RuntimePersistenceService,
+    HookDispatcherService,
+    RuntimeOrchestratorService,
+    RuntimeActionLogSyncService,
+    RuntimeEiSyncService,
+    RuntimeMemoSnapshotQueueService,
+  ],
 })
 export class RuntimeModule {}

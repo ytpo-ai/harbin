@@ -52,6 +52,20 @@ const formatDateTime = (value?: string) => {
   return date.toLocaleString();
 };
 
+const extractErrorMessage = (error: unknown, fallback: string) => {
+  const message = (error as any)?.response?.data?.message;
+  if (typeof message === 'string' && message.trim()) {
+    return message;
+  }
+  if (Array.isArray(message) && typeof message[0] === 'string' && message[0].trim()) {
+    return message[0];
+  }
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
+};
+
 const Orchestration: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -332,6 +346,32 @@ const Orchestration: React.FC = () => {
     },
   });
 
+  const handleDeletePlan = async (planId: string) => {
+    if (!planId) {
+      return;
+    }
+    try {
+      const linkedSchedules = await schedulerService.findSchedulesByPlanId(planId);
+      if (linkedSchedules.length > 0) {
+        alert(`该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先在定时服务管理中删除关联的定时服务。`);
+        return;
+      }
+    } catch (error) {
+      console.error('检查关联定时服务失败:', error);
+    }
+
+    const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
+    if (!ok) {
+      return;
+    }
+
+    try {
+      await deletePlanMutation.mutateAsync(planId);
+    } catch (error) {
+      alert(extractErrorMessage(error, '删除失败，请稍后重试'));
+    }
+  };
+
   const reassignMutation = useMutation(
     ({
       taskId,
@@ -499,14 +539,27 @@ const Orchestration: React.FC = () => {
                     <td className="px-4 py-3 text-slate-700">{plan.stats.completedTasks}/{plan.stats.totalTasks}</td>
                     <td className="px-4 py-3 text-slate-700">{formatDateTime(plan.updatedAt)}</td>
                     <td className="px-4 py-3">
-                      <button
-                        onClick={() => window.open(`/orchestration/plans/${plan._id}`, '_blank')}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
-                        title="查看详情"
-                        aria-label="查看详情"
-                      >
-                        <EyeIcon className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => window.open(`/orchestration/plans/${plan._id}`, '_blank')}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 text-slate-700 hover:bg-slate-100"
+                          title="查看详情"
+                          aria-label="查看详情"
+                        >
+                          <EyeIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            void handleDeletePlan(plan._id);
+                          }}
+                          disabled={deletePlanMutation.isLoading}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                          title="删除计划"
+                          aria-label="删除计划"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -690,20 +743,9 @@ const Orchestration: React.FC = () => {
                       <PlayIcon className="h-3.5 w-3.5" /> 运行计划
                     </button>
                     <button
-                      onClick={async () => {
+                      onClick={() => {
                         if (!selectedPlanId) return;
-                        try {
-                          const linkedSchedules = await schedulerService.findSchedulesByPlanId(selectedPlanId);
-                          if (linkedSchedules.length > 0) {
-                            alert(`该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先在定时服务管理中删除关联的定时服务。`);
-                            return;
-                          }
-                        } catch (error) {
-                          console.error('检查关联定时服务失败:', error);
-                        }
-                        const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
-                        if (!ok) return;
-                        deletePlanMutation.mutate(selectedPlanId);
+                        void handleDeletePlan(selectedPlanId);
                       }}
                       disabled={!selectedPlanId || deletePlanMutation.isLoading}
                       className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"

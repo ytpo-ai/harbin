@@ -18,7 +18,7 @@ export class InnerMessage {
   @Prop({ required: true })
   eventType: string;
 
-  @Prop({ required: true })
+  @Prop({ default: 'system' })
   senderAgentId: string;
 
   @Prop({ required: true })

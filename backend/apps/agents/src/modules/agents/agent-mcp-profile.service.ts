@@ -281,9 +281,10 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
     role: 'meeting-assistant',
     tools: [
       'builtin.sys-mg.mcp.meeting.list-meetings',
+      'builtin.sys-mg.mcp.meeting.get-detail',
       'builtin.sys-mg.mcp.meeting.send-message',
       'builtin.sys-mg.mcp.meeting.update-status',
-      'builtin.sys-mg.mcp.meeting.generate-summary',
+      'builtin.sys-mg.mcp.meeting.save-summary',
       INNER_MESSAGE_TOOL_IDS.sendInternalMessage,
     ],
     permissions: ['meeting_monitoring', 'inactivity_warning', 'automatic_meeting_end'],

@@ -77,7 +77,7 @@ interface SubscriptionRouteRecord {
   source?: string;
 }
 
-interface EventDefinitionRecord {
+export interface EventDefinitionRecord {
   eventType: string;
   domain: string;
   status: string;

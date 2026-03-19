@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { TaskModule } from './modules/tasks/task.module';
 import { HRModule } from './modules/hr/hr.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
@@ -48,7 +47,6 @@ import jwtConfig from './config/jwt.config';
     MessageCenterModule,
     InnerMessageModule,
     AgentClientModule,
-    TaskModule,
     HRModule,
     RolesModule,
     ApiKeysModule,

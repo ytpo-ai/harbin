@@ -2,13 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeStatus } from '../../shared/schemas/employee.schema';
-import { TaskService } from '../tasks/task.service';
 
 @Injectable()
 export class HRService {
   constructor(
     @InjectModel(Employee.name) private readonly employeeModel: Model<EmployeeDocument>,
-    private readonly taskService: TaskService,
   ) {}
 
   async generatePerformanceReport(agentId: string): Promise<any> {
@@ -122,18 +120,6 @@ export class HRService {
 
   async recommendHiring(): Promise<any[]> {
     const recommendations: any[] = [];
-    const tasks = await this.taskService.getAllTasks();
-    const backlogTasks = tasks.filter((task) => task.status === 'pending' || task.status === 'in_progress');
-
-    if (backlogTasks.length > 20) {
-      recommendations.push({
-        type: 'workload',
-        currentBacklog: backlogTasks.length,
-        recommendedNewHires: Math.ceil(backlogTasks.length / 10),
-        suggestedRoles: ['junior', 'senior'],
-        priority: 'high',
-      });
-    }
 
     const departmentStats = await this.employeeModel.aggregate([
       { $match: { status: EmployeeStatus.ACTIVE, departmentId: { $exists: true, $ne: null } } },

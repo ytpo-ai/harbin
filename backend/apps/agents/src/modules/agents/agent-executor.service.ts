@@ -1,40 +1,27 @@
+import { createHash } from 'crypto';
+
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { createHash } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
-import { Agent } from '../../../../../src/shared/schemas/agent.schema';
-import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
-import { ModelService } from '../models/model.service';
-import { ApiKeyService } from '../../../../../src/modules/api-keys/api-key.service';
-import { Task, ChatMessage, AIModel } from '../../../../../src/shared/types';
-import { ToolService } from '../tools/tool.service';
-import { MemoService } from '../memos/memo.service';
-import { MemoEventBusService } from '../memos/memo-event-bus.service';
-import { MemoWriteQueueService } from '../memos/memo-write-queue.service';
-import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
-import { RuntimeEiSyncService } from '../runtime/runtime-ei-sync.service';
-import { OpenCodeExecutionService } from '../opencode/opencode-execution.service';
+
 import { RedisService } from '@libs/infra';
-import { AgentExecutionService } from './agent-execution.service';
-import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
-import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
-import { AgentRoleService } from './agent-role.service';
-import { AGENT_PROMPTS, AgentPromptTemplate } from '../prompt-registry/agent-prompt-catalog';
-import { PromptResolverService } from '../prompt-registry/prompt-resolver.service';
-import {
-  MODEL_ADD_TOOL_ID,
-  MODEL_LIST_TOOL_ID,
-  MODEL_MANAGEMENT_AGENT_NAME,
-} from './model-management-agent.constants';
-import {
-  AgentContext,
-  ExecuteTaskResult,
-  EnabledAgentSkillContext,
-  SystemContextFingerprintRecord,
-  TaskInfoSnapshot,
-  IdentityMemoSnapshotItem,
-} from './agent.types';
+import { ApiKeyService } from '@legacy/modules/api-keys/api-key.service';
+import { Agent } from '@legacy/shared/schemas/agent.schema';
+import { Task, ChatMessage, AIModel } from '@legacy/shared/types';
+
+import { MemoEventBusService } from '@agent/modules/memos/memo-event-bus.service';
+import { MemoService } from '@agent/modules/memos/memo.service';
+import { MemoWriteQueueService } from '@agent/modules/memos/memo-write-queue.service';
+import { ModelService } from '@agent/modules/models/model.service';
+import { OpenCodeExecutionService } from '@agent/modules/opencode/opencode-execution.service';
+import { AGENT_PROMPTS, AgentPromptTemplate } from '@agent/modules/prompt-registry/agent-prompt-catalog';
+import { PromptResolverService } from '@agent/modules/prompt-registry/prompt-resolver.service';
+import { RuntimeEiSyncService } from '@agent/modules/runtime/runtime-ei-sync.service';
+import { RuntimeOrchestratorService, RuntimeRunContext } from '@agent/modules/runtime/runtime-orchestrator.service';
+import { ToolService } from '@agent/modules/tools/tool.service';
+import { Skill, SkillDocument } from '@agent/schemas/agent-skill.schema';
+
 import {
   MEMO_MCP_SEARCH_TOOL_ID,
   MEMO_MCP_APPEND_TOOL_ID,
@@ -47,6 +34,23 @@ import {
   compactLogText,
   toLogError,
 } from './agent.constants';
+import { AgentExecutionService } from './agent-execution.service';
+import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
+import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
+import { AgentRoleService } from './agent-role.service';
+import {
+  AgentContext,
+  ExecuteTaskResult,
+  EnabledAgentSkillContext,
+  SystemContextFingerprintRecord,
+  TaskInfoSnapshot,
+  IdentityMemoSnapshotItem,
+} from './agent.types';
+import {
+  MODEL_ADD_TOOL_ID,
+  MODEL_LIST_TOOL_ID,
+  MODEL_MANAGEMENT_AGENT_NAME,
+} from './model-management-agent.constants';
 
 const DEFAULT_OPENCODE_TASK_TYPES = new Set([
   'code',
@@ -70,6 +74,7 @@ type ExecutionChannel = 'native' | 'opencode';
 export class AgentExecutorService {
   private readonly logger = new Logger(AgentExecutorService.name);
 
+  // 记录关键阶段耗时，便于线上排障和性能观测。
   private debugTiming(taskId: string, stage: string, startedAt: number, extras?: Record<string, unknown>): void {
     const extraText = extras
       ? Object.entries(extras)
@@ -81,6 +86,7 @@ export class AgentExecutorService {
     );
   }
 
+  // 注入 Agent 执行所需依赖（模型、工具、记忆、运行时、策略等）。
   constructor(
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
@@ -102,6 +108,7 @@ export class AgentExecutorService {
 
   // ---- public execution methods ----
 
+  // 兼容旧接口：执行任务并仅返回文本结果。
   async executeTask(
     agent: Agent,
     agentId: string,
@@ -112,12 +119,14 @@ export class AgentExecutorService {
     return detailed.response;
   }
 
+  // 执行任务并返回完整运行信息（响应、runId、sessionId）。
   async executeTaskDetailed(
     agent: Agent,
     agentId: string,
     task: Task,
     context?: Partial<AgentContext>,
   ): Promise<ExecuteTaskResult> {
+    // 初始化任务运行上下文，并补齐 taskId。
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
     const runtimeAgentId = this.agentExecutionService.resolveRuntimeAgentId(agent as any, agentId);
@@ -125,6 +134,7 @@ export class AgentExecutorService {
       `[task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${compactLogText(task.title)}" type=${task.type} priority=${task.priority} modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'} hasCustomApiKey=${Boolean(agent.apiKeyId)}`,
     );
 
+    // 异步写入待办/行为记忆，不阻塞主执行链路。
     void this.runMemoOperation('task_start_upsert_todo', taskId, async () => {
       await this.memoWriteQueue.queueUpsertTaskTodo(agent.id || agentId, {
         id: taskId,
@@ -157,6 +167,7 @@ export class AgentExecutorService {
       ...context,
     };
 
+    // 预处理阶段：加载技能、拼接消息、解析执行路由。
     const preExecutionStartAt = Date.now();
     const skillsStartAt = Date.now();
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
@@ -202,6 +213,7 @@ export class AgentExecutorService {
       },
     };
 
+    // 在 Runtime 中登记一次新的运行，建立 run/session 追踪。
     const startRuntimeExecutionAt = Date.now();
     const runtimeContext = await this.agentExecutionService.startRuntimeExecution({
       runtimeAgentId,
@@ -234,6 +246,7 @@ export class AgentExecutorService {
     });
 
     try {
+      // OpenCode 渠道先执行预算闸门，避免超预算运行。
       if (executionChannel === 'opencode' && openCodeExecutionConfig) {
         await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       }
@@ -246,6 +259,7 @@ export class AgentExecutorService {
         keySource: customApiKey ? 'custom' : 'system',
       });
 
+      // 按路由选择执行引擎：opencode 或 native(tool-calling)。
       if (executionChannel === 'opencode' && openCodeExecutionConfig) {
         const sessionConfig: Record<string, unknown> = {
           metadata: {
@@ -281,6 +295,7 @@ export class AgentExecutorService {
         });
 
         response = openCodeResult.response;
+        // 会议类任务若返回空洞内容，触发一次兜底重试。
         if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(response)) {
           this.logger.warn(`[task_empty_response_retry] taskId=${taskId} channel=opencode attempt=1`);
           await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
@@ -323,6 +338,7 @@ export class AgentExecutorService {
         );
       }
 
+      // 会议类任务最终兜底：保证最小可用回执。
       if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(response)) {
         response = await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyMeetingResponseFallback);
       }
@@ -331,6 +347,7 @@ export class AgentExecutorService {
         `[task_success] agent=${agent.name} taskId=${taskId} responseLength=${response.length} durationMs=${Date.now() - taskStartAt}`,
       );
 
+      // 成功后异步写入完成行为与 todo 状态，并触发 memo 事件。
       void this.runMemoOperation('task_complete_record_behavior', taskId, async () => {
         await this.memoWriteQueue.queueRecordBehavior({
           agentId: agent.id || agentId,
@@ -369,6 +386,7 @@ export class AgentExecutorService {
         },
       });
 
+      // 落 runtime 成功态并安排 EI 数据同步。
       await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, response);
       await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
 
@@ -393,6 +411,7 @@ export class AgentExecutorService {
           tags: [task.type, 'task_failed'],
         });
       });
+      // 控制面中断（取消/暂停/已完成）不重复标记为运行失败。
       const normalizedError = logError.message.toLowerCase();
       const controlInterrupted =
         normalizedError.includes('cancelled') ||
@@ -412,10 +431,12 @@ export class AgentExecutorService {
       }
       throw error;
     } finally {
+      // 无论成功失败均释放 runtime 资源，避免占用泄漏。
       await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
     }
   }
 
+  // 流式执行任务：按 token 增量回调，同时返回最终聚合结果。
   async executeTaskWithStreaming(
     agent: Agent,
     agentId: string,
@@ -438,6 +459,7 @@ export class AgentExecutorService {
       ...context,
     };
 
+    // 与 detailed 模式一致的预处理：技能、消息、路由、runtime。
     const preExecutionStartAt = Date.now();
     const skillsStartAt = Date.now();
     const enabledSkills = await this.getEnabledSkillsForAgent(agent, agentId);
@@ -516,10 +538,12 @@ export class AgentExecutorService {
     let streamSequence = 1;
     let runtimeInterrupted = false;
     try {
+      // OpenCode 流式模式同样受预算闸门控制。
       if (executionChannel === 'opencode' && openCodeExecutionConfig) {
         await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       }
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
+      // OpenCode 流式桥接：实时消费 delta 并上送调用方。
       if (executionChannel === 'opencode' && openCodeExecutionConfig) {
         const resolvedOpenCodeRuntime = this.resolveOpenCodeRuntimeOptions(openCodeExecutionConfig, context?.opencodeRuntime);
         this.logResolvedOpenCodeRuntime(taskId, 'streaming', resolvedOpenCodeRuntime);
@@ -568,12 +592,14 @@ export class AgentExecutorService {
           },
         });
 
+        // 某些提供方可能只返回最终 response，这里做一次兼容补发。
         if (!fullResponse && openCodeResult.response) {
           fullResponse = openCodeResult.response;
           tokenChunks += 1;
           onToken(openCodeResult.response);
         }
 
+        // 会议类空响应重试，避免最终内容无意义。
         if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(fullResponse)) {
           this.logger.warn(`[stream_task_empty_response_retry] taskId=${taskId} channel=opencode attempt=1`);
           await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
@@ -618,6 +644,7 @@ export class AgentExecutorService {
           }
         }
       } else {
+        // Native 流式：边收 token 边写 runtime delta 事件。
         const resolveApiKeyStartAt = Date.now();
         const customApiKey = await this.resolveCustomApiKey(agent, taskId, 'stream_task');
         this.debugTiming(taskId, 'stream_prepare.resolve_custom_api_key', resolveApiKeyStartAt, {
@@ -636,6 +663,7 @@ export class AgentExecutorService {
             fullResponse += token;
             tokenChunks += 1;
             onToken(token);
+            // 低频轮询运行状态，支持中断尽快生效。
             if (tokenChunks % 20 === 0) {
               void this.runtimeOrchestrator.assertRunnable(runtimeContext.runId).catch(() => {
                 runtimeInterrupted = true;
@@ -664,6 +692,7 @@ export class AgentExecutorService {
         );
       }
 
+      // 流式最终兜底，确保会议场景输出不为空洞。
       if (this.isMeetingLikeTask(task, context) && this.isMeaninglessAssistantResponse(fullResponse)) {
         const emptyMeetingResponseFallback = await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyMeetingResponseFallback);
         fullResponse = emptyMeetingResponseFallback;
@@ -690,6 +719,7 @@ export class AgentExecutorService {
       }
       throw error;
     } finally {
+      // 释放流式 runtime 资源。
       await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
     }
 
@@ -721,6 +751,7 @@ export class AgentExecutorService {
     };
   }
 
+  // 快速探活：验证模型配置与 API Key 是否可用。
   async testAgentConnection(
     agent: Agent,
     options?: { model?: AIModel; apiKeyId?: string },
@@ -760,6 +791,7 @@ export class AgentExecutorService {
       },
     ];
 
+    // 统一模型测试执行器，含 20s 超时保护。
     const runModelTest = async (customApiKey?: string) => {
       this.modelService.registerProvider(modelConfig, customApiKey);
       const startTime = Date.now();
@@ -778,6 +810,7 @@ export class AgentExecutorService {
       };
     };
 
+    // 判定模型不存在类错误，便于返回更可操作提示。
     const isModelNotFoundError = (message: string): boolean => {
       const lower = (message || '').toLowerCase();
       return (
@@ -789,11 +822,13 @@ export class AgentExecutorService {
       );
     };
 
+    // 判定鉴权类错误（401/unauthorized）。
     const isAuthError = (message: string): boolean => {
       const lower = (message || '').toLowerCase();
       return lower.includes('401') || lower.includes('invalid authentication') || lower.includes('unauthorized');
     };
 
+    // 统一提供商别名，避免 key/provider 比较误判。
     const normalizeProvider = (provider?: string): string => {
       const value = (provider || '').trim().toLowerCase();
       if (value === 'kimi') return 'moonshot';
@@ -804,6 +839,7 @@ export class AgentExecutorService {
     const keyId = options?.apiKeyId?.trim() || undefined;
 
     try {
+      // 优先按用户指定 key 测试；失败时按规则尝试系统 key 回退。
       if (keyId) {
         const selectedApiKey = await this.apiKeyService.getApiKey(keyId);
         if (!selectedApiKey) {
@@ -932,6 +968,7 @@ export class AgentExecutorService {
     }
   }
 
+  // 取消 runtime run（由系统 actor 发起）。
   async cancelRuntimeRun(runId: string, reason?: string): Promise<void> {
     if (!String(runId || '').trim()) {
       return;
@@ -943,6 +980,7 @@ export class AgentExecutorService {
     });
   }
 
+  // 取消 OpenCode 会话。
   async cancelOpenCodeSession(
     sessionId: string,
     runtime?: {
@@ -962,6 +1000,7 @@ export class AgentExecutorService {
 
   // ---- private execution methods ----
 
+  // 解析最终执行路由：native 或 opencode。
   private async resolveExecutionRoute(
     agent: Agent,
     task: Task,
@@ -976,6 +1015,7 @@ export class AgentExecutorService {
     const taskType = this.resolveExecutionTaskType(task, context);
     const preferredChannel = this.resolvePreferredExecutionChannel(context);
 
+    // Agent 未开启 OpenCode 时直接走 native。
     if (!openCodeExecutionConfig) {
       this.logger.log(
         `[execution_route] agent=${agent.name} taskType=${taskType} channel=native source=opencode_disabled opencodeEnabled=false`,
@@ -988,10 +1028,12 @@ export class AgentExecutorService {
       };
     }
 
+    // 上下文显式偏好优先级最高。
     if (preferredChannel) {
       return await this.finalizeExecutionRoute(agent, taskType, preferredChannel, `context_preferred_${preferredChannel}`, openCodeExecutionConfig);
     }
 
+    // 其次使用配置化 task routing 规则。
     const routing = openCodeExecutionConfig.taskRouting;
     if (routing) {
       if (routing.opencodeTaskTypes.includes(taskType)) {
@@ -1009,11 +1051,13 @@ export class AgentExecutorService {
       );
     }
 
+    // 最后按内置任务类型白名单回退。
     const fallbackChannel: ExecutionChannel = DEFAULT_OPENCODE_TASK_TYPES.has(taskType) ? 'opencode' : 'native';
     const fallbackSource = fallbackChannel === 'opencode' ? 'default_task_type_opencode' : 'default_task_type_native';
     return this.finalizeExecutionRoute(agent, taskType, fallbackChannel, fallbackSource, openCodeExecutionConfig);
   }
 
+  // 在返回路由前执行必要的 gate 校验与日志记录。
   private async finalizeExecutionRoute(
     agent: Agent,
     taskType: string,
@@ -1043,6 +1087,7 @@ export class AgentExecutorService {
     };
   }
 
+  // 汇总多来源 taskType，并标准化为小写值。
   private resolveExecutionTaskType(task: Task, context?: Partial<AgentContext>): string {
     const candidates = [
       context?.runtimeRouting?.taskType,
@@ -1059,6 +1104,7 @@ export class AgentExecutorService {
     return 'general';
   }
 
+  // 解析上下文中的渠道偏好提示。
   private resolvePreferredExecutionChannel(context?: Partial<AgentContext>): ExecutionChannel | null {
     const candidates = [
       context?.runtimeRouting?.preferredChannel,
@@ -1074,10 +1120,12 @@ export class AgentExecutorService {
     return null;
   }
 
+  // 安全字符串收敛，避免非字符串污染路由判断。
   private asString(value: unknown): string | undefined {
     return typeof value === 'string' ? value : undefined;
   }
 
+  // Native 执行核心：模型生成 + 工具调用多轮闭环。
   private async executeWithToolCalling(
     agent: Agent,
     task: Task,
@@ -1114,6 +1162,7 @@ export class AgentExecutorService {
       : '';
     const toolRoundLimitMessage = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolRoundLimitMessage);
 
+    // 针对模型管理 Agent 的确定性捷径，减少模型幻觉。
     const deterministicModelManagementResult = await this.tryHandleModelManagementDeterministically(
       agent,
       task,
@@ -1125,6 +1174,7 @@ export class AgentExecutorService {
       return deterministicModelManagementResult;
     }
 
+    // 会务编排类意图可强制直达工具，提升成功率。
     const forcedOrchestrationAction = this.agentOrchestrationIntentService.extractForcedOrchestrationAction(
       task,
       messages,
@@ -1161,6 +1211,7 @@ export class AgentExecutorService {
       }
     }
 
+    // 多轮循环：模型 -> 解析工具调用 -> 执行工具 -> 回灌结果。
     for (let round = 0; round <= maxToolRounds; round++) {
       if (runtimeContext) {
         await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
@@ -1203,6 +1254,7 @@ export class AgentExecutorService {
         throw error;
       }
 
+      // 若未识别到工具调用，则尝试返回最终答案。
       const toolCall = this.extractToolCall(response);
       if (!toolCall) {
         if (this.shouldForceModelManagementGrounding(agent, task, messages, response, executedToolIds)) {
@@ -1236,6 +1288,7 @@ export class AgentExecutorService {
       });
 
       const normalizedToolCallId = normalizeToolId(toolCall.tool);
+      // 工具权限校验：未授权工具直接驳回并提示模型改写。
       if (!assignedToolIds.has(normalizedToolCallId)) {
         this.logger.warn(
           `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId}`,
@@ -1252,6 +1305,7 @@ export class AgentExecutorService {
 
       const toolCallId = `toolcall-${uuidv4()}`;
       let runtimeToolPartId: string | undefined;
+      // 执行工具并将结果写回消息上下文，供下一轮模型消费。
       try {
         if (runtimeContext) {
           runtimeToolPartId = await this.runtimeOrchestrator.recordToolPending({
@@ -1353,6 +1407,7 @@ export class AgentExecutorService {
           timestamp: new Date(),
         });
 
+        // 参数契约错误时附加修复指令，引导模型自我修正参数。
         if (this.isToolInputErrorMessage(message)) {
           const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
           if (inputContract?.schema) {
@@ -1371,6 +1426,7 @@ export class AgentExecutorService {
 
   // ---- message building ----
 
+  // 组装发送给模型的完整消息栈（system/user/history/memory/tools/skills）。
   async buildMessages(
     agent: Agent,
     task: Task,
@@ -1380,6 +1436,7 @@ export class AgentExecutorService {
     const buildStartAt = Date.now();
     const taskId = String(task.id || 'unknown');
     const messages: ChatMessage[] = [];
+    // 会议类任务会附加更强的执行约束与空响应兜底策略。
     const meetingLikeTask = this.isMeetingLikeTask(task, context);
     const loadIdentityStartAt = Date.now();
     const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
@@ -1389,6 +1446,7 @@ export class AgentExecutorService {
     const previousSystemMessages = (context.previousMessages || []).filter((message) => message?.role === 'system');
     const previousNonSystemMessages = (context.previousMessages || []).filter((message) => message?.role !== 'system');
 
+    // 1) 注入 Agent 基础 system prompt。
     messages.push({
       role: 'system',
       content: agent.systemPrompt,
@@ -1397,6 +1455,7 @@ export class AgentExecutorService {
 
     const contextScope = this.resolveSystemContextScope(agent, task, context);
 
+    // 2) 注入身份记忆，并通过指纹做增量下发降低 token 开销。
     if (identityMemos.length > 0) {
       const identityContent = identityMemos
         .map((memo) => {
@@ -1435,6 +1494,7 @@ export class AgentExecutorService {
       }
     }
 
+    // 3) 非会议类任务注入任务信息块（同样支持增量更新）。
     if (!meetingLikeTask) {
       const descAlreadyInHistory =
         task.description &&
@@ -1471,6 +1531,7 @@ export class AgentExecutorService {
       }
     }
 
+    // 4) 注入技能元信息，并按匹配度按需激活技能全文。
     if (enabledSkills.length > 0) {
       const skillLines = enabledSkills
         .map(
@@ -1529,6 +1590,7 @@ export class AgentExecutorService {
       }
     }
 
+    // 5) 注入已分配工具清单与工具策略提示。
     const loadToolsStartAt = Date.now();
     const allowedToolIds = await this.agentRoleService.getAllowedToolIds(agent);
     const assignedTools = await this.toolService.getToolsByIds(allowedToolIds);
@@ -1550,12 +1612,6 @@ export class AgentExecutorService {
         timestamp: new Date(),
       });
 
-      messages.push({
-        role: 'system',
-        content: await this.resolveAgentPromptContent(AGENT_PROMPTS.toolPriorityInstruction),
-        timestamp: new Date(),
-      });
-
       const toolPromptMessages = this.buildToolPromptMessages(assignedTools);
       if (toolPromptMessages.length > 0) {
         messages.push({
@@ -1568,6 +1624,7 @@ export class AgentExecutorService {
       }
     }
 
+    // 6) 注入团队上下文，支持多 Agent 协作。
     if (context.teamContext) {
       messages.push({
         role: 'system',
@@ -1576,6 +1633,7 @@ export class AgentExecutorService {
       });
     }
 
+    // 7) 会议类任务注入会议执行规范模板。
     if (meetingLikeTask) {
       const meetingPolicyStartAt = Date.now();
       const meetingExecutionPolicyTemplate = await this.resolveAgentPromptTemplate(
@@ -1604,8 +1662,10 @@ export class AgentExecutorService {
       });
     }
 
+    // 8) 追加历史 system 消息，保持跨轮一致性。
     messages.push(...previousSystemMessages);
 
+    // 9) 检索任务相关记忆摘要并注入。
     const memoryContextStartAt = Date.now();
     const memoryContext = await this.memoService.getTaskMemoryContext(
       agent.id || '',
@@ -1624,6 +1684,7 @@ export class AgentExecutorService {
       });
     }
 
+    // 10) 最后追加非 system 历史消息，形成完整上下文。
     messages.push(...previousNonSystemMessages);
 
     this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
@@ -1636,6 +1697,7 @@ export class AgentExecutorService {
 
   // ---- private helpers ----
 
+  // 生成工具策略提示，并做去重与稳定排序。
   buildToolPromptMessages(
     assignedTools: Array<{
       id?: string;
@@ -1660,6 +1722,7 @@ export class AgentExecutorService {
       });
   }
 
+  // 获取 Agent 启用技能：先查缓存，未命中再查库并回填缓存。
   private async getEnabledSkillsForAgent(agent: Agent, agentId: string): Promise<EnabledAgentSkillContext[]> {
     const candidateAgentIds = uniqueStrings([agentId, agent.id || '']);
     if (!candidateAgentIds.length) {
@@ -1714,10 +1777,12 @@ export class AgentExecutorService {
     return contexts;
   }
 
+  // 构建启用技能缓存 key。
   private agentEnabledSkillCacheKey(agentId: string): string {
     return `agent:enabled-skills:${agentId}`;
   }
 
+  // 判断是否需要把技能全文注入到本次上下文中。
   private shouldActivateSkillContent(
     skill: EnabledAgentSkillContext,
     task: Task,
@@ -1749,6 +1814,7 @@ export class AgentExecutorService {
     return false;
   }
 
+  // 计算系统上下文作用域，用于做分场景指纹缓存。
   private resolveSystemContextScope(
     agent: { id?: string; _id?: { toString?: () => string } },
     task: Task,
@@ -1771,14 +1837,17 @@ export class AgentExecutorService {
     return `ephemeral:${agentId}:${this.hashFingerprint(`${task.title || ''}|${task.type || ''}|${task.teamId || ''}`)}`;
   }
 
+  // 构建系统上下文指纹缓存 key。
   private systemContextFingerprintCacheKey(scope: string, blockType: string): string {
     return `agent:system-context-fingerprint:${scope}:${blockType}`;
   }
 
+  // 计算稳定指纹，用于变更检测。
   private hashFingerprint(input: string): string {
     return createHash('sha256').update(String(input || '')).digest('hex');
   }
 
+  // 根据指纹判断是“全量注入”还是“增量注入”，避免重复发送大段 system 文本。
   private async resolveSystemContextBlockContent(options: {
     scope: string;
     blockType: string;
@@ -1825,6 +1894,7 @@ export class AgentExecutorService {
     }
   }
 
+  // 生成任务信息差异文本。
   buildTaskInfoDelta(previous: TaskInfoSnapshot, current: TaskInfoSnapshot): string {
     const changes: string[] = [];
     if (previous.title !== current.title) {
@@ -1844,6 +1914,7 @@ export class AgentExecutorService {
     return changes.join('\n');
   }
 
+  // 生成身份记忆差异文本（新增/更新/移除）。
   private buildIdentityMemoDelta(
     previous: IdentityMemoSnapshotItem[],
     current: IdentityMemoSnapshotItem[],
@@ -1881,6 +1952,7 @@ export class AgentExecutorService {
     return lines.join('\n');
   }
 
+  // 解析 OpenCode 运行时地址与鉴权开关，遵循固定优先级。
   resolveOpenCodeRuntimeOptions(
     executionConfig: {
       endpoint?: string;
@@ -1940,6 +2012,7 @@ export class AgentExecutorService {
     };
   }
 
+  // 记录 OpenCode 运行时解析结果，便于定位来源与配置覆盖。
   private logResolvedOpenCodeRuntime(
     taskId: string,
     mode: 'detailed' | 'streaming',
@@ -1954,6 +2027,7 @@ export class AgentExecutorService {
     );
   }
 
+  // 判断是否属于会议类任务（taskType/teamContext 任一命中即视为会议场景）。
   isMeetingLikeTask(
     task: Task,
     context?: {
@@ -1964,6 +2038,7 @@ export class AgentExecutorService {
     return task.type === 'meeting' || context?.taskType === 'meeting' || Boolean(context?.teamContext?.meetingId);
   }
 
+  // 渲染模板默认内容（代码内置版本）。
   private renderAgentPrompt<TPayload>(
     template: AgentPromptTemplate<TPayload>,
     payload?: TPayload,
@@ -1972,6 +2047,7 @@ export class AgentExecutorService {
     return buildDefaultContent(payload);
   }
 
+  // 解析 Prompt 模板：优先缓存发布版本，失败回退代码默认。
   private async resolveAgentPromptTemplate<TPayload>(
     template: AgentPromptTemplate<TPayload>,
     payload?: TPayload,
@@ -2011,6 +2087,7 @@ export class AgentExecutorService {
     }
   }
 
+  // 获取模板最终内容（仅返回 content）。
   private async resolveAgentPromptContent<TPayload>(
     template: AgentPromptTemplate<TPayload>,
     payload?: TPayload,
@@ -2019,6 +2096,7 @@ export class AgentExecutorService {
     return resolved.content;
   }
 
+  // 判定回复是否“空洞/无意义”（空串、仅符号等）。
   isMeaninglessAssistantResponse(response: string | undefined): boolean {
     const normalized = String(response || '').trim();
     if (!normalized) {
@@ -2030,6 +2108,7 @@ export class AgentExecutorService {
     return /^[\s\-—–_.…]+$/.test(normalized);
   }
 
+  // 判定是否属于可重试的生成错误（超时/限流/临时网络错误）。
   private shouldRetryGenerationError(error: unknown): boolean {
     const message = toLogError(error).message.toLowerCase();
     return (
@@ -2044,6 +2123,7 @@ export class AgentExecutorService {
     );
   }
 
+  // 判定是否为模型超时错误。
   private isModelTimeoutError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error || '');
     const lower = message.toLowerCase();
@@ -2055,6 +2135,7 @@ export class AgentExecutorService {
     );
   }
 
+  // 确保 task 具备运行所需字段（id/messages）。
   private ensureTaskRuntime(task: Task): string {
     const existingTaskId = typeof task?.id === 'string' ? task.id.trim() : '';
     if (existingTaskId) {
@@ -2073,6 +2154,7 @@ export class AgentExecutorService {
     return generatedTaskId;
   }
 
+  // 异步执行 memo 操作并统一记录成功/失败日志，不抛出主流程异常。
   private runMemoOperation(label: string, taskId: string, operation: () => Promise<void>): void {
     const startedAt = Date.now();
     void operation()
@@ -2087,6 +2169,7 @@ export class AgentExecutorService {
       });
   }
 
+  // 解析 Agent 自定义 API Key；不可用时回退系统 Key。
   private async resolveCustomApiKey(
     agent: { apiKeyId?: string; name: string },
     taskId: string,
@@ -2107,6 +2190,7 @@ export class AgentExecutorService {
     return undefined;
   }
 
+  // 提取最新用户输入，作为 OpenCode taskPrompt 首选来源。
   private resolveLatestUserContent(task: Task, messages: ChatMessage[]): string {
     const latestUserMessage = [...(task.messages || []), ...(messages || [])]
       .reverse()
@@ -2115,6 +2199,7 @@ export class AgentExecutorService {
     return latestUserMessage || task.description || task.title || '';
   }
 
+  // 判断模型管理 Agent 是否出现“未调工具却宣称成功”的风险，需要强制 grounding。
   private shouldForceModelManagementGrounding(
     agent: Agent,
     task: Task,
@@ -2180,6 +2265,7 @@ export class AgentExecutorService {
     return false;
   }
 
+  // 对模型管理场景做确定性执行（add/list），减少对 LLM 文本判断的依赖。
   private async tryHandleModelManagementDeterministically(
     agent: Agent,
     task: Task,
@@ -2218,6 +2304,7 @@ export class AgentExecutorService {
       return '我已收到添加请求，但没有识别到明确的模型 ID（例如 gpt-5.3-codex）。请提供要添加的模型 ID，我将立即执行并回传结果。';
     }
 
+    // “添加好了吗”优先走列表核验，返回存在/缺失明细。
     if (asksAddStatus && assignedToolIds.has(MODEL_LIST_TOOL_ID)) {
       try {
         const listExecution = await this.toolService.executeTool(
@@ -2245,10 +2332,12 @@ export class AgentExecutorService {
       }
     }
 
+    // 非确认添加或无添加权限时，交回普通对话流程处理。
     if (!isConfirmAdd || !assignedToolIds.has(MODEL_ADD_TOOL_ID)) {
       return null;
     }
 
+    // 批量执行 add，并在有 list 权限时做二次核验。
     const addResults: Array<{ model: string; created: boolean; message: string }> = [];
     for (const model of targets) {
       const provider = this.inferProviderFromModelId(model);
@@ -2308,6 +2397,7 @@ export class AgentExecutorService {
     }
   }
 
+  // 从上下文文本中提取候选模型 ID（正则匹配主流命名）。
   private extractRequestedModelsFromConversation(task: Task, messages: ChatMessage[]): string[] {
     const collector = [
       task.title || '',
@@ -2323,6 +2413,7 @@ export class AgentExecutorService {
     return Array.from(new Set(matches.map((item) => item.trim().toLowerCase())));
   }
 
+  // 根据模型 ID 前缀推断 provider。
   private inferProviderFromModelId(modelId: string): string {
     const value = String(modelId || '').toLowerCase();
     if (value.startsWith('gpt-') || value.startsWith('o1')) return 'openai';
@@ -2337,6 +2428,7 @@ export class AgentExecutorService {
     return 'custom';
   }
 
+  // 把模型 ID 转换为展示名（Title Case）。
   private toModelDisplayName(model: string): string {
     return String(model || '')
       .split('-')
@@ -2345,6 +2437,7 @@ export class AgentExecutorService {
       .join(' ');
   }
 
+  // 从模型回复中解析工具调用（兼容闭合标签/未闭合标签/裸 JSON）。
   private extractToolCall(response: string): { tool: string; parameters: any } | null {
     const closedTagMatch = response.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
     if (closedTagMatch) {
@@ -2363,6 +2456,7 @@ export class AgentExecutorService {
     return null;
   }
 
+  // 识别工具参数错误提示，用于触发参数修复指令。
   private isToolInputErrorMessage(message: string): boolean {
     const normalized = String(message || '').toLowerCase();
     if (!normalized) return false;
@@ -2375,6 +2469,7 @@ export class AgentExecutorService {
     return false;
   }
 
+  // 构造参数修复提示词：约束模型仅输出合法 tool_call。
   private buildToolInputRepairInstruction(
     normalizedToolId: string,
     schema: Record<string, unknown>,
@@ -2391,6 +2486,7 @@ export class AgentExecutorService {
     ].join('\n');
   }
 
+  // 解析 tool_call 负载，自动去掉 markdown 包裹并容错截取 JSON 主体。
   private parseToolCallPayload(payload: string): { tool: string; parameters: any } | null {
     const cleaned = payload.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
     const candidates = [cleaned];
@@ -2421,18 +2517,21 @@ export class AgentExecutorService {
     return null;
   }
 
+  // 清除回复中的 tool_call 标记，仅保留给用户的自然语言内容。
   private stripToolCallMarkup(content: string): string {
     const withoutClosedBlocks = content.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '');
     const withoutDanglingBlocks = withoutClosedBlocks.replace(/<tool_call>\s*[\s\S]*$/gi, '');
     return withoutDanglingBlocks.trim();
   }
 
+  // 生成任务结果摘要（限长）用于 memo 记录。
   private buildTaskResultMemo(response: string): string {
     const normalized = String(response || '').replace(/\s+/g, ' ').trim();
     if (normalized.length <= 800) return normalized;
     return `${normalized.slice(0, 797)}...`;
   }
 
+  // 获取工具调用最大轮次，优先环境变量配置。
   private getMaxToolRounds(): number {
     const configuredRounds = Number(process.env.MAX_TOOL_ROUNDS);
     if (Number.isFinite(configuredRounds) && configuredRounds > 0) {
@@ -2441,6 +2540,7 @@ export class AgentExecutorService {
     return DEFAULT_MAX_TOOL_ROUNDS;
   }
 
+  // 抽取工具执行结果中的 data 载荷，统一返回结构。
   private extractToolResultPayload(execution: any): any {
     const result = execution?.result;
     if (result && typeof result === 'object' && 'data' in result) {

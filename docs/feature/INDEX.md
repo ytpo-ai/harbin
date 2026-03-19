@@ -10,7 +10,7 @@
 | **orchestration** | 任务编排 | ✅ |
 | **meeting** | 会议协作 | ✅ |
 | **engineering-intelligence** | 工程智能 ｜ ✅ |
-| **hr** | HR 管理 | ✅ |
+| **hr** | HR 管理 | ⚠️ 精简中 |
 | **gateway** | 网关 ｜ ✅ |
 
 ---
@@ -33,6 +33,7 @@
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
 | `orchestration/task` | 任务管理 | `docs/feature/ORCHETRATION_TASK.md` |
+| `orchestration/prompt_registry` | Prompt 模板管理 | `docs/feature/ORCHETRATION_TASK.md` |
 | `orchestration.workflow` | 工作流编排 | (待完善) |
 | `orchestration.scheduler` | 定时调度 | `docs/feature/ORCHETRATION_SCHEDULER.md` |
 
@@ -56,6 +57,8 @@
 | `hr/hr_account` | 账户管理 | (待完善) |
 | `hr/hr_kpi` | KPI 考核 | (待完善) |
 
+> 注：legacy `tasks` 模块（`/tasks`）已下线；HR 侧已移除对该模块的内部依赖。
+
 ### 6. 网关模块 (gateway)
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
@@ -66,6 +69,11 @@
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
 | `message-center/system_notifications` | 系统通知中心 | `docs/feature/MESSAGE_CENTER.md` |
+
+### 8. 系统管理模块 (system)
+| 2级功能 | 说明 | 功能文档 |
+|---------|------|----------|
+| `system/ui_management` | UI 管理（图标管理） | `docs/feature/SYSTEM_UI_MANAGEMENT.md` |
 
 ---
 
@@ -89,6 +97,7 @@
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
 | `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |
+| `docs/feature/SYSTEM_UI_MANAGEMENT.md` | system/ui_management |
 
 ### 待完善的功能文档
 

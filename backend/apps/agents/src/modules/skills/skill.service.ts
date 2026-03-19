@@ -48,7 +48,7 @@ interface SkillListFilters {
   search?: string;
 }
 
-interface SkillPagedResult {
+export interface SkillPagedResult {
   items: Skill[];
   total: number;
   page: number;

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, Query, Req, UnauthorizedException } from '@nestjs/common';
 import { PromptRegistryAdminService } from './prompt-registry-admin.service';
 import { decodeUserContext, verifyEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
@@ -28,6 +28,16 @@ export class PromptRegistryController {
     });
   }
 
+  @Get('templates/filters')
+  async listTemplateFilters(
+    @Req() req?: any,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    this.resolveOperatorId(req, internalContext, internalSignature);
+    return this.promptRegistryAdminService.listTemplateFilters();
+  }
+
   @Get('templates/effective')
   async getEffectiveTemplate(
     @Query('scene') scene: string,
@@ -43,7 +53,8 @@ export class PromptRegistryController {
 
   @Post('templates/draft')
   async saveDraft(
-    @Body() body: { scene?: string; role?: string; content?: string; baseVersion?: number; summary?: string },
+    @Body()
+    body: { scene?: string; role?: string; content?: string; description?: string; baseVersion?: number; summary?: string },
     @Req() req?: any,
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
@@ -53,6 +64,7 @@ export class PromptRegistryController {
       scene: String(body.scene || ''),
       role: String(body.role || ''),
       content: String(body.content || ''),
+      description: body.description,
       baseVersion: typeof body.baseVersion === 'number' ? body.baseVersion : undefined,
       summary: body.summary,
       operatorId,
@@ -68,6 +80,23 @@ export class PromptRegistryController {
   ) {
     const operatorId = this.resolveOperatorId(req, internalContext, internalSignature);
     return this.promptRegistryAdminService.publish({
+      scene: String(body.scene || ''),
+      role: String(body.role || ''),
+      version: Number(body.version || 0),
+      summary: body.summary,
+      operatorId,
+    });
+  }
+
+  @Post('templates/unpublish')
+  async unpublish(
+    @Body() body: { scene?: string; role?: string; version?: number; summary?: string },
+    @Req() req?: any,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const operatorId = this.resolveOperatorId(req, internalContext, internalSignature);
+    return this.promptRegistryAdminService.unpublish({
       scene: String(body.scene || ''),
       role: String(body.role || ''),
       version: Number(body.version || 0),
@@ -112,6 +141,17 @@ export class PromptRegistryController {
     });
   }
 
+  @Get('templates/:id')
+  async getTemplateById(
+    @Param('id') id: string,
+    @Req() req?: any,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    this.resolveOperatorId(req, internalContext, internalSignature);
+    return this.promptRegistryAdminService.getTemplateById(String(id || ''));
+  }
+
   @Get('audits')
   async listAudits(
     @Query('scene') scene: string | undefined,
@@ -127,6 +167,17 @@ export class PromptRegistryController {
       role,
       limit: Number(limit || 50),
     });
+  }
+
+  @Delete('templates/:id')
+  async deleteTemplate(
+    @Param('id') id: string,
+    @Req() req?: any,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    this.resolveOperatorId(req, internalContext, internalSignature);
+    return this.promptRegistryAdminService.deleteTemplate({ templateId: String(id || '') });
   }
 
   private resolveOperatorId(req?: any, encoded?: string, signature?: string): string {

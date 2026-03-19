@@ -14,6 +14,7 @@ import { RuntimeEvent, RuntimeEventType } from './contracts/runtime-event.contra
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { MemoService } from '../memos/memo.service';
+import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 
 export interface RuntimeRunContext {
   runId: string;
@@ -30,6 +31,17 @@ export class RuntimeOrchestratorService {
   private readonly logger = new Logger(RuntimeOrchestratorService.name);
   private readonly lockTails = new Map<string, Promise<void>>();
   private readonly memoSnapshotRefreshMs = Number(process.env.AGENT_SESSION_MEMO_REFRESH_MS || 60_000);
+
+  private debugTiming(runOrTaskId: string, stage: string, startedAt: number, extras?: Record<string, unknown>): void {
+    const extraText = extras
+      ? Object.entries(extras)
+          .map(([key, value]) => `${key}=${String(value)}`)
+          .join(' ')
+      : '';
+    this.logger.debug(
+      `[timing_debug] runOrTaskId=${runOrTaskId} stage=${stage} durationMs=${Date.now() - startedAt}${extraText ? ` ${extraText}` : ''}`,
+    );
+  }
 
   private extractInitialSystemMessages(metadata: Record<string, unknown>): string[] {
     const raw = metadata?.initialSystemMessages;
@@ -53,10 +65,13 @@ export class RuntimeOrchestratorService {
     private readonly persistence: RuntimePersistenceService,
     private readonly hookDispatcher: HookDispatcherService,
     private readonly memoService: MemoService,
+    private readonly memoSnapshotQueue: RuntimeMemoSnapshotQueueService,
   ) {}
 
   async startRun(rawInput: RuntimeStartRunInput): Promise<RuntimeRunContext> {
+    const startRunAt = Date.now();
     const input = RuntimeStartRunInputSchema.parse(rawInput);
+    const runOrTaskId = input.taskId || input.sessionId || `ephemeral-${input.agentId}`;
     const metadataRecord = { ...(input.metadata || {}) } as Record<string, unknown>;
     const initialSystemMessages = this.extractInitialSystemMessages(metadataRecord);
     if (Object.prototype.hasOwnProperty.call(metadataRecord, 'initialSystemMessages')) {
@@ -67,6 +82,7 @@ export class RuntimeOrchestratorService {
     const meetingContext = metadataRecord?.meetingContext as
       | { meetingId?: string; agendaId?: string; latestSummary?: string }
       | undefined;
+    const ensureSessionAt = Date.now();
 
     if (meetingContext?.meetingId) {
       ensuredSession = await this.persistence.getOrCreateMeetingSession(
@@ -104,16 +120,22 @@ export class RuntimeOrchestratorService {
         },
       });
     }
+    this.debugTiming(runOrTaskId, 'start_run.ensure_session', ensureSessionAt, { sessionId: ensuredSession.id });
 
     const sessionId = ensuredSession.id;
 
+    const refreshMemoSnapshotAt = Date.now();
     await this.refreshSessionMemoSnapshot(ensuredSession, input.agentId);
+    this.debugTiming(runOrTaskId, 'start_run.refresh_session_memo_snapshot', refreshMemoSnapshotAt, { sessionId });
 
     const traceId = `trace-${uuidv4()}`;
     const lockKey = this.getLockKey(input.agentId, sessionId, input.taskId);
+    const acquireLockAt = Date.now();
     const release = await this.acquireLock(lockKey);
+    this.debugTiming(runOrTaskId, 'start_run.acquire_lock', acquireLockAt, { lockKey });
 
     let resumed = false;
+    const loadOrCreateRunAt = Date.now();
     let run = await this.persistence.findLatestActiveRun(input.agentId, sessionId, input.taskId);
     if (!run) {
       run = await this.persistence.createRun({
@@ -130,7 +152,12 @@ export class RuntimeOrchestratorService {
       resumed = true;
       this.logger.log(`Resuming active run runId=${run.id} lockKey=${lockKey}`);
     }
+    this.debugTiming(runOrTaskId, 'start_run.load_or_create_run', loadOrCreateRunAt, {
+      runId: run.id,
+      resumed,
+    });
 
+    const seedMessageAt = Date.now();
     let userMessage = await this.persistence.findLatestMessageByRunAndRole(run.id, 'user');
     if (!userMessage) {
       let sequence = 1;
@@ -172,7 +199,13 @@ export class RuntimeOrchestratorService {
         endedAt: new Date(),
       });
     }
+    this.debugTiming(runOrTaskId, 'start_run.seed_initial_messages', seedMessageAt, {
+      runId: run.id,
+      hasUserMessage: Boolean(userMessage),
+      initialSystemMessageCount: initialSystemMessages.length,
+    });
 
+    const emitLifecycleEventsAt = Date.now();
     if (resumed) {
       await this.emitEvent({
         eventType: 'run.resumed',
@@ -203,7 +236,12 @@ export class RuntimeOrchestratorService {
         },
       });
     }
+    this.debugTiming(runOrTaskId, 'start_run.emit_lifecycle_events', emitLifecycleEventsAt, {
+      runId: run.id,
+      resumed,
+    });
 
+    const stepStartedEventAt = Date.now();
     const currentStep = await this.persistence.incrementRunStep(run.id);
     await this.emitEvent({
       eventType: 'run.step.started',
@@ -218,8 +256,21 @@ export class RuntimeOrchestratorService {
         step: currentStep,
       },
     });
+    this.debugTiming(runOrTaskId, 'start_run.emit_step_started', stepStartedEventAt, {
+      runId: run.id,
+      step: currentStep,
+    });
 
+    const appendRunToSessionAt = Date.now();
     await this.persistence.appendRunToSession(sessionId, run.id);
+    this.debugTiming(runOrTaskId, 'start_run.append_run_to_session', appendRunToSessionAt, {
+      runId: run.id,
+      sessionId,
+    });
+    this.debugTiming(runOrTaskId, 'start_run.total', startRunAt, {
+      runId: run.id,
+      sessionId,
+    });
 
     return {
       runId: run.id,
@@ -922,21 +973,35 @@ export class RuntimeOrchestratorService {
     session: { id?: string; ownerId?: string; ownerType?: string },
     agentId: string,
   ): Promise<void> {
+    const refreshStartAt = Date.now();
     const ownerId = session.ownerId || agentId;
     if (!ownerId || session.ownerType !== 'agent') return;
 
+    const loadExistingAt = Date.now();
     const existing = await this.persistence.getSessionMemoSnapshot(session.id || '');
+    this.debugTiming(session.id || ownerId, 'memo_snapshot.load_existing', loadExistingAt, {
+      hasExisting: Boolean(existing),
+    });
     const existingRefreshedAt = existing?.refreshedAt ? Date.parse(existing.refreshedAt) : 0;
     if (Number.isFinite(existingRefreshedAt) && Date.now() - existingRefreshedAt <= this.memoSnapshotRefreshMs) {
+      this.debugTiming(session.id || ownerId, 'memo_snapshot.skip_recent', refreshStartAt, {
+        refreshedAt: existing?.refreshedAt || 'unknown',
+      });
       return;
     }
 
     try {
+      const loadMemoDataAt = Date.now();
       const [identityResult, todoResult, topicResult] = await Promise.all([
         this.memoService.getIdentityMemos(ownerId),
         this.memoService.listMemos({ agentId: ownerId, memoKind: 'todo', page: 1, pageSize: 2 }),
         this.memoService.listMemos({ agentId: ownerId, memoKind: 'topic', page: 1, pageSize: 5 }),
       ]);
+      this.debugTiming(session.id || ownerId, 'memo_snapshot.fetch_memo_data', loadMemoDataAt, {
+        identityCount: identityResult.length,
+        todoCount: todoResult.items.length,
+        topicCount: topicResult.items.length,
+      });
 
       const snapshot = {
         agentId: ownerId,
@@ -967,11 +1032,21 @@ export class RuntimeOrchestratorService {
         })),
       };
 
-      await this.persistence.updateSessionMemoSnapshot(session.id || '', snapshot);
-      this.logger.log(`[memoSnapshot] session=${session.id} agent=${ownerId} refreshed`);
+      const enqueueSnapshotAt = Date.now();
+      const queued = await this.memoSnapshotQueue.enqueueSnapshotUpdate(session.id || '', snapshot);
+      this.debugTiming(session.id || ownerId, 'memo_snapshot.enqueue_update', enqueueSnapshotAt, {
+        requestId: queued.requestId,
+      });
+      this.logger.log(`[memoSnapshot] session=${session.id} agent=${ownerId} queued requestId=${queued.requestId}`);
+      this.debugTiming(session.id || ownerId, 'memo_snapshot.total', refreshStartAt, {
+        ownerId,
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`[memoSnapshot] session=${session.id} failed: ${message}`);
+      this.debugTiming(session.id || ownerId, 'memo_snapshot.failed', refreshStartAt, {
+        ownerId,
+      });
     }
   }
 }

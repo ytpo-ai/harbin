@@ -21,7 +21,7 @@ export interface MeetingEvent {
 
 type MeetingAgentState = 'thinking' | 'idle';
 
-interface MeetingAgentStatePayload {
+export interface MeetingAgentStatePayload {
   agentId: string;
   state: MeetingAgentState;
   updatedAt: string;
@@ -75,6 +75,14 @@ export interface MeetingMessageDto {
 
 export interface ControlMeetingMessageDto {
   employeeId: string;
+}
+
+export interface SaveMeetingSummaryDto {
+  summary: string;
+  actionItems?: string[];
+  decisions?: string[];
+  overwrite?: boolean;
+  generatedByAgentId?: string;
 }
 
 @Injectable()
@@ -1615,6 +1623,10 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     return this.meetingModel.findOne({ id: meetingId }).exec();
   }
 
+  async getMeetingDetail(meetingId: string): Promise<Meeting | null> {
+    return this.getMeeting(meetingId);
+  }
+
   async getMeetingAgentStates(meetingId: string): Promise<MeetingAgentStatePayload[]> {
     const meeting = await this.getMeeting(meetingId);
     if (!meeting) {
@@ -2126,66 +2138,28 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     }
   }
 
-  async generateMeetingSummary(
-    meetingId: string,
-    options?: { generatorAgentId?: string; skipIfExists?: boolean },
-  ): Promise<{ generated: boolean; reason?: string }> {
+  async generateMeetingSummary(meetingId: string, payload: SaveMeetingSummaryDto): Promise<{ generated: boolean; reason?: string }> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) {
       return { generated: false, reason: 'meeting_not_found' };
     }
 
-    if (!meeting.messages.length) {
-      return { generated: false, reason: 'empty_messages' };
-    }
-
     this.ensureMeetingCompatibility(meeting);
 
+    const summaryContent = String(payload?.summary || '').trim();
+    if (!summaryContent) {
+      return { generated: false, reason: 'empty_summary' };
+    }
+
     const existingSummaryContent = String(meeting.summary?.content || '').trim();
-    if (options?.skipIfExists && existingSummaryContent && meeting.summary?.generatedAt) {
+    if (!payload?.overwrite && existingSummaryContent && meeting.summary?.generatedAt) {
       return { generated: false, reason: 'already_generated' };
     }
 
-    const meetingContent = meeting.messages
-      .filter((message) => message.senderType !== 'system')
-      .map((message) => `${message.senderId}: ${message.content}`)
-      .join('\n');
-
-    const prompt = `请根据以下会议讨论内容生成一个简洁的会议总结：\n\n会议标题：${meeting.title}\n\n讨论内容：\n${meetingContent}\n\n请提供：\n1. 会议摘要（2-3句话）\n2. 行动项（如果有的话）\n3. 达成的决定（如果有的话）`;
-
-    let summary = '';
-    const generatorAgentId =
-      String(options?.generatorAgentId || '').trim() ||
-      (meeting.hostType === 'agent' ? String(meeting.hostId || '').trim() : '');
-
-    if (generatorAgentId) {
-      const task = {
-        title: '生成会议总结',
-        description: prompt,
-        type: 'analysis',
-        priority: 'medium',
-        status: 'in_progress',
-        assignedAgents: [generatorAgentId],
-        teamId: meetingId,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-            timestamp: new Date(),
-          },
-        ],
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      summary = await this.agentClientService.executeTask(generatorAgentId, task as any);
-    } else {
-      summary = `会议 "${meeting.title}" 已结束。\n\n讨论内容涉及多个议题，参与者积极交流。具体行动项和决策请参考会议记录。`;
-    }
-
     meeting.summary = {
-      content: summary,
-      actionItems: [],
-      decisions: [],
+      content: summaryContent,
+      actionItems: this.normalizeSummaryItems(payload?.actionItems),
+      decisions: this.normalizeSummaryItems(payload?.decisions),
       generatedAt: new Date(),
     };
 
@@ -2194,12 +2168,24 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     this.emitEvent(meetingId, {
       type: 'summary_generated',
       meetingId,
-      data: { summary },
+      data: {
+        summary: summaryContent,
+        generatedByAgentId: String(payload?.generatedByAgentId || '').trim() || undefined,
+      },
       timestamp: new Date(),
     });
 
     this.logger.log(`Generated summary for meeting ${meetingId}`);
     return { generated: true };
+  }
+
+  private normalizeSummaryItems(values?: string[]): string[] {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    return values
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
   }
 
   /**

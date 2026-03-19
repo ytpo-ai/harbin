@@ -14,7 +14,8 @@ export class RequirementToolHandler {
     limit?: number;
   }): string {
     const query = new URLSearchParams();
-    if (params?.status) query.append('status', String(params.status).trim());
+    const normalizedStatus = this.normalizeRequirementStatus(params?.status);
+    if (normalizedStatus) query.append('status', normalizedStatus);
     if (params?.assigneeAgentId) query.append('assigneeAgentId', String(params.assigneeAgentId).trim());
     if (params?.localProjectId) query.append('localProjectId', String(params.localProjectId).trim());
     if (params?.search) query.append('search', String(params.search).trim());
@@ -24,6 +25,30 @@ export class RequirementToolHandler {
     }
     const text = query.toString();
     return text ? `?${text}` : '';
+  }
+
+  private normalizeRequirementStatus(status?: string):
+    | 'todo'
+    | 'assigned'
+    | 'in_progress'
+    | 'review'
+    | 'done'
+    | 'blocked'
+    | undefined {
+    const value = String(status || '')
+      .trim()
+      .toLowerCase();
+    if (!value) return undefined;
+    const aliases: Record<string, 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked'> = {
+      todo: 'todo',
+      assigned: 'assigned',
+      in_progress: 'in_progress',
+      inprogress: 'in_progress',
+      review: 'review',
+      done: 'done',
+      blocked: 'blocked',
+    };
+    return aliases[value];
   }
 
   async listRequirements(

@@ -9,8 +9,10 @@ export class RedisService implements OnModuleDestroy {
   private readonly logger = createServiceLogger(RedisService.name);
   private readonly redisUrl = this.buildRedisUrl();
   private readonly sanitizedRedisUrl = this.sanitizeRedisUrl(this.redisUrl);
+  private readonly slowOpThresholdMs = Math.max(1, Number(process.env.REDIS_SLOW_OP_THRESHOLD_MS || 200));
   private readonly publisher: Redis;
   private readonly subscriber: Redis;
+  private readonly blockingClient: Redis;
   private readonly listeners = new Map<string, Set<MessageListener>>();
   private ready = false;
 
@@ -24,6 +26,7 @@ export class RedisService implements OnModuleDestroy {
 
     this.publisher = new Redis(this.redisUrl, redisOptions);
     this.subscriber = new Redis(this.redisUrl, redisOptions);
+    this.blockingClient = new Redis(this.redisUrl, redisOptions);
 
     this.publisher.on('error', (err) => {
       this.ready = false;
@@ -33,6 +36,11 @@ export class RedisService implements OnModuleDestroy {
     this.subscriber.on('error', (err) => {
       this.ready = false;
       this.logger.warn(`Redis subscriber unavailable: ${err.message}`);
+    });
+
+    this.blockingClient.on('error', (err) => {
+      this.ready = false;
+      this.logger.warn(`Redis blocking client unavailable: ${err.message}`);
     });
 
     this.subscriber.on('message', (channel, message) => {
@@ -74,6 +82,7 @@ export class RedisService implements OnModuleDestroy {
     try {
       await this.publisher.connect();
       await this.subscriber.connect();
+      await this.blockingClient.connect();
       this.ready = true;
       this.logger.log(`Redis connected: ${this.sanitizedRedisUrl}`);
     } catch (error) {
@@ -103,16 +112,38 @@ export class RedisService implements OnModuleDestroy {
 
   async set(key: string, value: string, ttlSeconds?: number): Promise<void> {
     if (!this.ready) return;
-    if (ttlSeconds && ttlSeconds > 0) {
-      await this.publisher.set(key, value, 'EX', ttlSeconds);
+    const startedAt = Date.now();
+    try {
+      if (ttlSeconds && ttlSeconds > 0) {
+        await this.publisher.set(key, value, 'EX', ttlSeconds);
+      } else {
+        await this.publisher.set(key, value);
+      }
+      this.logSlowRedisOp('set', key, startedAt, {
+        ttlSeconds: ttlSeconds && ttlSeconds > 0 ? ttlSeconds : undefined,
+        valueBytes: Buffer.byteLength(value || '', 'utf8'),
+      });
       return;
+    } catch (error) {
+      this.logRedisOpError('set', key, startedAt, error);
+      throw error;
     }
-    await this.publisher.set(key, value);
   }
 
   async get(key: string): Promise<string | null> {
     if (!this.ready) return null;
-    return this.publisher.get(key);
+    const startedAt = Date.now();
+    try {
+      const value = await this.publisher.get(key);
+      this.logSlowRedisOp('get', key, startedAt, {
+        hit: Boolean(value),
+        valueBytes: value ? Buffer.byteLength(value, 'utf8') : 0,
+      });
+      return value;
+    } catch (error) {
+      this.logRedisOpError('get', key, startedAt, error);
+      throw error;
+    }
   }
 
   async del(key: string): Promise<number> {
@@ -139,7 +170,18 @@ export class RedisService implements OnModuleDestroy {
 
   async lpush(key: string, value: string): Promise<number> {
     if (!this.ready) return 0;
-    return this.publisher.lpush(key, value);
+    const startedAt = Date.now();
+    try {
+      const nextLength = await this.publisher.lpush(key, value);
+      this.logSlowRedisOp('lpush', key, startedAt, {
+        valueBytes: Buffer.byteLength(value || '', 'utf8'),
+        nextLength,
+      });
+      return nextLength;
+    } catch (error) {
+      this.logRedisOpError('lpush', key, startedAt, error);
+      throw error;
+    }
   }
 
   async sadd(key: string, members: string[]): Promise<number> {
@@ -208,11 +250,24 @@ export class RedisService implements OnModuleDestroy {
 
   async brpop(key: string, timeoutSeconds = 1): Promise<string | null> {
     if (!this.ready) return null;
-    const response = await this.publisher.brpop(key, timeoutSeconds);
-    if (!response || response.length < 2) {
-      return null;
+    const startedAt = Date.now();
+    try {
+      const response = await this.blockingClient.brpop(key, timeoutSeconds);
+      const hit = Boolean(response && response.length >= 2);
+      if (hit) {
+        this.logSlowRedisOp('brpop', key, startedAt, {
+          timeoutSeconds,
+          hit,
+        });
+      }
+      if (!response || response.length < 2) {
+        return null;
+      }
+      return response[1] || null;
+    } catch (error) {
+      this.logRedisOpError('brpop', key, startedAt, error);
+      throw error;
     }
-    return response[1] || null;
   }
 
   async subscribe(channel: string, listener: MessageListener): Promise<void> {
@@ -243,6 +298,37 @@ export class RedisService implements OnModuleDestroy {
     return this.ready;
   }
 
+  private normalizeKeyForLog(key: string): string {
+    const normalized = String(key || '').trim();
+    if (!normalized) return 'empty';
+    if (normalized.length <= 96) return normalized;
+    return `${normalized.slice(0, 96)}...`;
+  }
+
+  private logSlowRedisOp(op: string, key: string, startedAt: number, extras?: Record<string, unknown>): void {
+    const durationMs = Date.now() - startedAt;
+    if (durationMs < this.slowOpThresholdMs) {
+      return;
+    }
+    const extraText = extras
+      ? Object.entries(extras)
+          .filter(([, value]) => value !== undefined)
+          .map(([name, value]) => `${name}=${String(value)}`)
+          .join(' ')
+      : '';
+    this.logger.warn(
+      `[redis_slow_op] op=${op} key=${this.normalizeKeyForLog(key)} durationMs=${durationMs} publisherStatus=${this.publisher.status} subscriberStatus=${this.subscriber.status} blockingStatus=${this.blockingClient.status} ready=${this.ready}${extraText ? ` ${extraText}` : ''}`,
+    );
+  }
+
+  private logRedisOpError(op: string, key: string, startedAt: number, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error || 'unknown');
+    const durationMs = Date.now() - startedAt;
+    this.logger.warn(
+      `[redis_op_failed] op=${op} key=${this.normalizeKeyForLog(key)} durationMs=${durationMs} publisherStatus=${this.publisher.status} subscriberStatus=${this.subscriber.status} blockingStatus=${this.blockingClient.status} ready=${this.ready} error=${message}`,
+    );
+  }
+
   async onModuleDestroy(): Promise<void> {
     try {
       if (this.publisher.status === 'ready') {
@@ -250,6 +336,9 @@ export class RedisService implements OnModuleDestroy {
       }
       if (this.subscriber.status === 'ready') {
         await this.subscriber.quit();
+      }
+      if (this.blockingClient.status === 'ready') {
+        await this.blockingClient.quit();
       }
     } catch {
       // noop

@@ -261,6 +261,18 @@ const MessageCenter: React.FC = () => {
     }
   };
 
+  const handleManualRefresh = async () => {
+    if (activeTab === 'system') {
+      await queryClient.invalidateQueries('message-center-page-system');
+      await queryClient.invalidateQueries('message-center-unread-count');
+      return;
+    }
+
+    if (activeTab === 'inner') {
+      await queryClient.invalidateQueries('message-center-page-inner');
+    }
+  };
+
   const saveSubscription = async () => {
     if (!selectedSubscriberAgentId) {
       setSubscriptionError('请先选择一个需要监听的 Agent。');
@@ -314,17 +326,29 @@ const MessageCenter: React.FC = () => {
             <h1 className="text-lg font-semibold text-gray-900">消息中心</h1>
             <p className="text-sm text-gray-600 mt-1">统一查看系统消息、内部消息与消息监听配置，支持筛选和分页。</p>
           </div>
-          {activeTab === 'system' && (
-            <button
-              type="button"
-              onClick={() => markAllMutation.mutate()}
-              disabled={markAllMutation.isLoading}
-              className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-            >
-              <CheckIcon className="h-4 w-4" />
-              全部已读
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {(activeTab === 'system' || activeTab === 'inner') && (
+              <button
+                type="button"
+                onClick={handleManualRefresh}
+                className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50"
+              >
+                刷新
+              </button>
+            )}
+
+            {activeTab === 'system' && (
+              <button
+                type="button"
+                onClick={() => markAllMutation.mutate()}
+                disabled={markAllMutation.isLoading}
+                className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              >
+                <CheckIcon className="h-4 w-4" />
+                全部已读
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="mt-4 flex items-center gap-2">
@@ -444,9 +468,7 @@ const MessageCenter: React.FC = () => {
                 <option value="*">全部域通配</option>
               </select>
 
-              <div className="flex items-center text-sm text-gray-500 px-1">
-                共 {innerData?.total || 0} 条，仅展示当前账号绑定 Agent 的接收消息
-              </div>
+              <div className="flex items-center text-sm text-gray-500 px-1">共 {innerData?.total || 0} 条</div>
             </>
           ) : (
             <>

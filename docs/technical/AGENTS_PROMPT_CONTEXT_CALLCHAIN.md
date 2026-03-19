@@ -189,7 +189,79 @@ sequenceDiagram
 - 误区 3：OpenCode 与 native 路径都吃同一份 `messages`。  
   实际：OpenCode 核心输入走 `taskPrompt`，native/streaming 才直接用 `messages`。
 
-## 8. 代码索引（快速跳转）
+## 8. Prompt Registry 已注册场景与默认 Prompt
+
+系统通过 `PromptResolverService` 对以下 `scene + role` 组合进行动态解析。  
+解析优先级：`session override > DB(published) > Redis cache > code default`。  
+当高优先级来源无内容时，自动回退到下方列出的 **code default**（代码硬编码默认值）。
+
+### 8.1 场景与角色枚举
+
+定义位置：`backend/src/modules/prompt-registry/prompt-resolver.constants.ts`
+
+| scene | role | 用途 | 调用位置 |
+|---|---|---|---|
+| `meeting` | `meeting-execution-policy` | 会议执行策略（分配闭环、回执格式、确认规则） | `agent.service.ts:1615` |
+| `orchestration` | `planner-task-decomposition` | 计划编排任务拆解（需求→JSON 任务清单） | `planner.service.ts:244` |
+
+### 8.2 默认 Prompt 内容
+
+#### `meeting` / `meeting-execution-policy`
+
+来源常量：`DEFAULT_MEETING_EXECUTION_POLICY_PROMPT`（`agent.service.ts:204`）
+
+```text
+会议执行规则：
+1) 一次确认后自动执行：用户已明确同意时，直接执行，不再二次确认语气或文案。
+2) 分配类动作按闭环顺序执行：先 requirement 状态/分配，再发送通知。
+3) 回执必须三段式：动作1（已分配）+ 动作2（已通知）+ 下一步检查点（预计时间）。
+4) 通知默认使用短版开工文案；仅当用户明确要求时再补充验收细节。
+5) 分配类动作目标 1 轮闭环，最晚不超过 2 轮。
+```
+
+**注入时机**：`buildMessages()` 中检测到 `meetingLikeTask` 为 true 时注入为 system 消息。  
+**会话覆盖**：支持 `teamContext.promptOverrides` 作为 `sessionOverride`。  
+**去重策略**：通过 `resolveSystemContextBlockContent()` 做 fingerprint + delta 注入，内容无变化不重复注入。
+
+#### `orchestration` / `planner-task-decomposition`
+
+来源常量：`DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT`（`planner.service.ts:24`）
+
+```text
+将用户需求拆解为可执行任务清单并返回 JSON。
+需求: {{prompt}}
+输出规则:
+1) 仅输出 JSON，不要附加解释。
+2) JSON 结构: {"mode":"sequential|parallel|hybrid","tasks":[{"title":"","description":"","priority":"low|medium|high|urgent","dependencies":[0]}]}
+3) tasks 数量 3-8 条。
+4) dependencies 为当前任务依赖的前置任务索引数组。
+5) mode 优先使用 {{mode}}。
+5.1) {{requirementScope}}
+6) 若存在发送邮件/外部动作任务，优先依赖"邮件草稿/内容生成"任务，而不是"校对/润色"任务，避免过度阻塞。
+7) 若需求涉及编排/分配/通知，最后一个任务应为"汇总输出编排结果 JSON"。
+```
+
+**模板变量**：
+
+| 变量 | 说明 | 来源 |
+|---|---|---|
+| `{{prompt}}` | 用户原始需求文本 | `planFromPrompt()` 入参 |
+| `{{mode}}` | 执行模式：`sequential` / `parallel` / `hybrid` | 入参或默认 `hybrid` |
+| `{{requirementScope}}` | 需求范围约束（有 requirementId 时提示围绕该需求闭环） | `resolvePlannerTaskPrompt()` 内部拼装 |
+
+**渲染逻辑**：`renderPlannerPromptTemplate()` 替换占位符；若模板缺少某占位符，自动在末尾补齐兜底行，保证兼容旧模板。
+
+### 8.3 新增场景指引
+
+若需新增 `scene + role` 组合：
+
+1. 在 `prompt-resolver.constants.ts` 的 `PROMPT_SCENES` / `PROMPT_ROLES` 中注册枚举值。
+2. 在业务代码中定义 `DEFAULT_xxx_PROMPT` 常量作为 code default。
+3. 调用 `promptResolver.resolve({ scene, role, defaultContent })` 获取最终内容。
+4. 在 Prompt 管理页（`/prompt-registry`）创建草稿并发布，即可覆盖代码默认值。
+5. 更新本文档第 8 节的场景矩阵与默认 Prompt 内容。
+
+## 9. 代码索引（快速跳转）
 
 - `backend/apps/agents/src/modules/agents/agent.controller.ts:160`
 - `backend/apps/agents/src/modules/agents/agent.service.ts:748`

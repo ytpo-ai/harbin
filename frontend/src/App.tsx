@@ -25,6 +25,9 @@ import Skills from './pages/Skills';
 import OperationLogs from './pages/OperationLogs';
 import Memos from './pages/Memos';
 import MessageCenter from './pages/MessageCenter';
+import PromptRegistry from './pages/PromptRegistry';
+import PromptRegistryDetail from './pages/PromptRegistryDetail';
+import UiManagement from './pages/UiManagement';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -79,10 +82,13 @@ function App() {
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/orchestration/plans/:id" element={<ProtectedRoute><PlanDetail /></ProtectedRoute>} />
             <Route path="/scheduler" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
+            <Route path="/prompt-registry" element={<ProtectedRoute><PromptRegistry /></ProtectedRoute>} />
+            <Route path="/prompt-registry/templates/:templateId" element={<ProtectedRoute><PromptRegistryDetail /></ProtectedRoute>} />
             <Route path="/skills" element={<ProtectedRoute><Skills /></ProtectedRoute>} />
             <Route path="/operation-logs" element={<ProtectedRoute><OperationLogs /></ProtectedRoute>} />
             <Route path="/memos" element={<ProtectedRoute><Memos /></ProtectedRoute>} />
             <Route path="/message-center" element={<ProtectedRoute><MessageCenter /></ProtectedRoute>} />
+            <Route path="/ui-management" element={<ProtectedRoute><UiManagement /></ProtectedRoute>} />
             <Route path="/engineering-intelligence" element={<Navigate to="/ei" replace />} />
             <Route path="/engineering-intelligence/*" element={<Navigate to="/ei" replace />} />
             <Route path="/ei" element={<ProtectedRoute><ProjectManagement /></ProtectedRoute>} />

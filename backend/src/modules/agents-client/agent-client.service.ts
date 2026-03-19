@@ -10,7 +10,7 @@ import {
 import { RedisService } from '@libs/infra';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
-import { Agent, Task, AIModel, ToolExecution } from '../../shared/types';
+import { Agent, AgentExecutionTask, AIModel, ToolExecution } from '../../shared/types';
 import { AgentActionLogService } from '../agent-action-logs/agent-action-log.service';
 import { AgentActionContextType } from '../../shared/schemas/agent-action-log.schema';
 
@@ -160,7 +160,7 @@ export class AgentClientService {
 
   async executeTaskDetailed(
     agentId: string,
-    task: Task,
+    task: AgentExecutionTask,
     context?: any,
   ): Promise<{ response: string; runId?: string; sessionId?: string }> {
     const startedAt = Date.now();
@@ -302,7 +302,7 @@ export class AgentClientService {
     return this.compactLogText(payload, 300) || 'none';
   }
 
-  async executeTask(agentId: string, task: Task, context?: any): Promise<string> {
+  async executeTask(agentId: string, task: AgentExecutionTask, context?: any): Promise<string> {
     const result = await this.executeTaskDetailed(agentId, task, context);
     return result.response;
   }
@@ -495,7 +495,7 @@ export class AgentClientService {
     return 'chat';
   }
 
-  private resolveContextId(context?: any, task?: Task): string | undefined {
+  private resolveContextId(context?: any, task?: AgentExecutionTask): string | undefined {
     const teamContext = context?.teamContext;
     if (teamContext?.meetingId) return teamContext.meetingId;
     if (teamContext?.planId) return teamContext.planId;
@@ -507,7 +507,7 @@ export class AgentClientService {
     return rawTask?._id?.toString ? rawTask._id.toString() : undefined;
   }
 
-  private buildActionLabel(task: Task, contextType: AgentActionContextType, mode: AgentExecutionMode): string {
+  private buildActionLabel(task: AgentExecutionTask, contextType: AgentActionContextType, mode: AgentExecutionMode): string {
     const taskType = task?.type ? task.type : 'task';
     const action = mode === 'chat' ? 'chat_execution' : 'task_execution';
     return `${action}:${contextType}:${taskType}`;

@@ -3,20 +3,28 @@ import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
   HomeIcon,
   UserGroupIcon,
+  Squares2X2Icon,
+  CommandLineIcon,
+  FolderIcon,
+  IdentificationIcon,
   VideoCameraIcon,
   WrenchScrewdriverIcon,
   CpuChipIcon,
   KeyIcon,
+  ShieldCheckIcon,
   ArrowRightOnRectangleIcon,
   CodeBracketIcon,
   SparklesIcon,
   BoltIcon,
   DocumentTextIcon,
+  ClipboardDocumentListIcon,
+  PresentationChartLineIcon,
   BookOpenIcon,
   ClockIcon,
   ChartBarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronDownIcon,
   BellIcon,
   EnvelopeOpenIcon,
 } from '@heroicons/react/24/outline';
@@ -29,6 +37,58 @@ import {
   MessageCenterUpdatedDetail,
 } from '../services/messageCenterService';
 import { wsService } from '../services/wsService';
+
+const topLevelNavigation = [
+  { name: '仪表板', href: '/', icon: HomeIcon },
+  { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
+];
+
+const groupedNavigation = [
+  {
+    name: '智能体管理',
+    icon: Squares2X2Icon,
+    items: [
+      { name: 'Agent', href: '/agents', icon: CommandLineIcon },
+      { name: 'Skill', href: '/skills', icon: BoltIcon },
+      { name: 'Tools', href: '/tools', icon: WrenchScrewdriverIcon },
+      { name: 'LLM', href: '/models', icon: CpuChipIcon },
+      { name: 'Prompt', href: '/prompt-registry', icon: DocumentTextIcon },
+      { name: 'Memory', href: '/memos', icon: BookOpenIcon },
+    ],
+  },
+  {
+    name: '研发智能',
+    icon: SparklesIcon,
+    items: [
+      { name: '项目管理', href: '/ei', icon: FolderIcon },
+      { name: '工程统计', href: '/ei/statistics', icon: ChartBarIcon },
+      { name: '需求管理', href: '/ei/requirements', icon: ClipboardDocumentListIcon },
+      { name: '智能研发看板', href: '/ei/board', icon: PresentationChartLineIcon },
+      { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
+      { name: 'Agent任务流', href: '/agent-task-runner', icon: BoltIcon },
+    ],
+  },
+  {
+    name: '任务计划',
+    icon: DocumentTextIcon,
+      items: [
+        { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
+        { name: '定时服务', href: '/scheduler', icon: ClockIcon },
+      ],
+    },
+  {
+    name: '系统管理',
+    icon: ShieldCheckIcon,
+    items: [
+      { name: 'UI管理', href: '/ui-management', icon: Squares2X2Icon },
+      { name: '消息中心', href: '/message-center', icon: BellIcon },
+      { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
+      { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
+      { name: '人力资源', href: '/hr', icon: UserGroupIcon },
+      { name: '角色管理', href: '/roles', icon: IdentificationIcon },
+    ],
+  },
+];
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -253,62 +313,53 @@ const Layout: React.FC = () => {
     navigate('/login');
   };
 
-  const topLevelNavigation = [
-    { name: '仪表板', href: '/', icon: HomeIcon },
-    { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
-  ];
-
-  const groupedNavigation = [
-    {
-      name: '智能体管理',
-      icon: UserGroupIcon,
-      items: [
-        { name: 'Agent管理', href: '/agents', icon: UserGroupIcon },
-        { name: 'Skills管理', href: '/skills', icon: BoltIcon },
-        { name: '工具管理', href: '/tools', icon: WrenchScrewdriverIcon },
-        { name: '模型管理', href: '/models', icon: CpuChipIcon },
-        { name: '备忘录', href: '/memos', icon: BookOpenIcon },
-      ],
-    },
-    {
-      name: '研发智能',
-      icon: SparklesIcon,
-      items: [
-        { name: '项目管理', href: '/ei', icon: SparklesIcon },
-        { name: '工程统计', href: '/ei/statistics', icon: ChartBarIcon },
-        { name: '需求管理', href: '/ei/requirements', icon: DocumentTextIcon },
-        { name: '智能研发看板', href: '/ei/board', icon: ChartBarIcon },
-        { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
-        { name: 'Agent任务流', href: '/agent-task-runner', icon: BoltIcon },
-      ],
-    },
-    {
-      name: '任务计划',
-      icon: DocumentTextIcon,
-      items: [
-        { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
-        { name: '定时服务', href: '/scheduler', icon: ClockIcon },
-      ],
-    },
-    {
-      name: '系统管理',
-      icon: KeyIcon,
-      items: [
-        { name: '消息中心', href: '/message-center', icon: BellIcon },
-        { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
-        { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
-        { name: '人力资源', href: '/hr', icon: UserGroupIcon },
-        { name: '角色管理', href: '/roles', icon: UserGroupIcon },
-      ],
-    },
-  ];
-
   const isItemActive = (href: string) =>
     href === '/'
       ? location.pathname === '/'
       : href === '/ei'
         ? location.pathname === '/ei'
         : location.pathname.startsWith(href);
+
+  const [expandedSectionState, setExpandedSectionState] = useState<Record<string, boolean>>(
+    () =>
+      groupedNavigation.reduce<Record<string, boolean>>((acc, section) => {
+        acc[section.name] = true;
+        return acc;
+      }, {}),
+  );
+
+  useEffect(() => {
+    const pathname = location.pathname;
+    const activeSection = groupedNavigation.find((section) =>
+      section.items.some((item) =>
+        item.href === '/'
+          ? pathname === '/'
+          : item.href === '/ei'
+            ? pathname === '/ei'
+            : pathname.startsWith(item.href),
+      ),
+    );
+    if (!activeSection) {
+      return;
+    }
+
+    setExpandedSectionState((prev) => {
+      if (prev[activeSection.name]) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [activeSection.name]: true,
+      };
+    });
+  }, [location.pathname]);
+
+  const toggleSectionExpanded = (sectionName: string) => {
+    setExpandedSectionState((prev) => ({
+      ...prev,
+      [sectionName]: !prev[sectionName],
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -376,48 +427,58 @@ const Layout: React.FC = () => {
 
             {groupedNavigation.map((section) => {
               const isSectionActive = section.items.some((item) => isItemActive(item.href));
+              const isSectionExpanded = expandedSectionState[section.name] ?? true;
 
               return (
                 <div key={section.name} className="space-y-2">
                   {isSidebarExpanded && (
-                    <div
+                    <button
+                      type="button"
+                      onClick={() => toggleSectionExpanded(section.name)}
                       className={`flex items-center px-2 text-xs font-semibold uppercase tracking-wide ${
                         isSectionActive ? 'text-primary-600' : 'text-gray-400'
-                      }`}
+                      } w-full rounded-md py-1.5 hover:bg-gray-50 transition-colors`}
                     >
                       <section.icon className="mr-2 h-4 w-4" />
-                      {section.name}
+                      <span className="flex-1 text-left">{section.name}</span>
+                      {isSectionExpanded ? (
+                        <ChevronDownIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRightIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                  {(!isSidebarExpanded || isSectionExpanded) && (
+                    <div className={`space-y-1 ${isSidebarExpanded ? 'pl-2' : ''}`}>
+                      {section.items.map((item) => {
+                        const isActive = isItemActive(item.href);
+
+                        const className = `group flex items-center py-2 text-sm font-medium rounded-md transition-colors ${
+                          isSidebarExpanded ? 'px-2' : 'px-2 justify-center'
+                        } ${
+                          isActive
+                            ? 'bg-primary-100 text-primary-700'
+                            : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                        }`;
+
+                        const iconClass = `${isSidebarExpanded ? 'mr-3' : ''} h-5 w-5 ${
+                          isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
+                        }`;
+
+                        return (
+                          <Link
+                            key={`${section.name}-${item.name}`}
+                            to={item.href}
+                            className={className}
+                            title={!isSidebarExpanded ? item.name : undefined}
+                          >
+                            <item.icon className={iconClass} aria-hidden="true" />
+                            {isSidebarExpanded && item.name}
+                          </Link>
+                        );
+                      })}
                     </div>
                   )}
-                  <div className={`space-y-1 ${isSidebarExpanded ? 'pl-2' : ''}`}>
-                    {section.items.map((item) => {
-                      const isActive = isItemActive(item.href);
-
-                      const className = `group flex items-center py-2 text-sm font-medium rounded-md transition-colors ${
-                        isSidebarExpanded ? 'px-2' : 'px-2 justify-center'
-                      } ${
-                        isActive
-                          ? 'bg-primary-100 text-primary-700'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                      }`;
-
-                      const iconClass = `${isSidebarExpanded ? 'mr-3' : ''} h-5 w-5 ${
-                        isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
-                      }`;
-
-                      return (
-                        <Link
-                          key={`${section.name}-${item.name}`}
-                          to={item.href}
-                          className={className}
-                          title={!isSidebarExpanded ? item.name : undefined}
-                        >
-                          <item.icon className={iconClass} aria-hidden="true" />
-                          {isSidebarExpanded && item.name}
-                        </Link>
-                      );
-                    })}
-                  </div>
                 </div>
               );
             })}

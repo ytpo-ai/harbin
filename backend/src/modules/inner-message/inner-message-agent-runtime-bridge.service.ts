@@ -127,8 +127,20 @@ export class InnerMessageAgentRuntimeBridgeService {
     const senderAgentId = String(message?.senderAgentId || '').trim() || 'system';
     const title = String(message?.title || '').trim();
     const content = String(message?.content || '').trim();
+    const isMeetingEndedEvent = eventType === 'meeting.ended';
 
     const payloadJson = Object.keys(payload).length ? JSON.stringify(payload, null, 2) : '{}';
+    const meetingEndedPolicy = isMeetingEndedEvent
+      ? [
+          '',
+          'meeting.ended 强制动作：',
+          'A) 必须先调用 builtin.sys-mg.mcp.meeting.get-detail 获取会议信息与完整消息。',
+          'B) 基于会议详情生成 summary/actionItems/decisions。',
+          'C) 必须调用 builtin.sys-mg.mcp.meeting.save-summary 落库（overwrite=false）。',
+          'D) 若返回 already_generated，回执“会议总结已存在，无需重复写入”。',
+          'E) 禁止只回复文本而不调用保存工具。',
+        ].join('\n')
+      : '';
 
     return [
       '你收到一条内部协作消息，请基于你的身份、能力与已授权工具自主完成处理。',
@@ -142,11 +154,13 @@ export class InnerMessageAgentRuntimeBridgeService {
       `content: ${content}`,
       'payload:',
       payloadJson,
+      meetingEndedPolicy,
       '',
       '要求：',
       '1) 若消息需要业务动作，直接调用相关工具完成。',
-      '2) 若信息不足，先做最小可行响应并指出缺失信息。',
-      '3) 输出简洁处理结果。',
+      '2) meeting.ended 场景需要完成“读取会议详情 + 写入会议总结”的完整闭环。',
+      '3) 若信息不足，先做最小可行响应并指出缺失信息。',
+      '4) 输出简洁处理结果。',
     ].join('\n');
   }
 }
