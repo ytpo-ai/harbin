@@ -1,0 +1,24 @@
+import { RepoToolHandler } from './repo-tool-handler.service';
+
+describe('RepoToolHandler parseCommand', () => {
+  const parseCommand = (command: string): string[] => {
+    const handler = new RepoToolHandler() as any;
+    return handler.parseCommand(command);
+  };
+
+  it('parses single quoted arguments', () => {
+    expect(parseCommand("grep 'repo-read' docs/development/CODE_DOCS_MCP_PLAN.md")).toEqual([
+      'grep',
+      'repo-read',
+      'docs/development/CODE_DOCS_MCP_PLAN.md',
+    ]);
+  });
+
+  it('parses double quoted arguments', () => {
+    expect(parseCommand('git log --since="1 day ago" -5')).toEqual(['git', 'log', '--since=1 day ago', '-5']);
+  });
+
+  it('keeps pipe as literal argument instead of shell operator', () => {
+    expect(parseCommand('ls docs | wc -l')).toEqual(['ls', 'docs', '|', 'wc', '-l']);
+  });
+});

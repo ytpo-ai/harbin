@@ -260,9 +260,54 @@ export class RepoToolHandler {
   }
 
   private parseCommand(command: string): string[] {
-    return command
-      .match(/(?:[^\s"]+|"[^"]*")+/g)
-      ?.map((part) => part.replace(/^"|"$/g, '')) || [];
+    const parts: string[] = [];
+    let current = '';
+    let inSingleQuote = false;
+    let inDoubleQuote = false;
+    let escaped = false;
+
+    for (const char of command) {
+      if (escaped) {
+        current += char;
+        escaped = false;
+        continue;
+      }
+
+      if (char === '\\') {
+        escaped = true;
+        continue;
+      }
+
+      if (char === "'" && !inDoubleQuote) {
+        inSingleQuote = !inSingleQuote;
+        continue;
+      }
+
+      if (char === '"' && !inSingleQuote) {
+        inDoubleQuote = !inDoubleQuote;
+        continue;
+      }
+
+      if (/\s/.test(char) && !inSingleQuote && !inDoubleQuote) {
+        if (current) {
+          parts.push(current);
+          current = '';
+        }
+        continue;
+      }
+
+      current += char;
+    }
+
+    if (escaped) {
+      current += '\\';
+    }
+
+    if (current) {
+      parts.push(current);
+    }
+
+    return parts;
   }
 
   private async resolveWorkspaceRoot(): Promise<string> {
