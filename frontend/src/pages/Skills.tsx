@@ -259,10 +259,10 @@ const Skills: React.FC = () => {
   });
 
   const assignSkillMutation = useMutation(skillService.assignSkillToAgent, {
-    onSuccess: () => {
-      if (bindingAgentId) queryClient.invalidateQueries(['agent-skills', bindingAgentId]);
+    onSuccess: (_result, variables) => {
+      queryClient.invalidateQueries(['agent-skills', variables.agentId]);
       queryClient.invalidateQueries('all-skill-agents');
-      alert('Agent 绑定已保存');
+      alert(variables.enabled === false ? 'Agent 已解除绑定' : 'Agent 绑定已保存');
     },
   });
 
@@ -556,6 +556,7 @@ const SkillDetailDrawer: React.FC<{
   onAssign: (payload: {
     agentId: string;
     skillId: string;
+    enabled?: boolean;
   }) => void;
 }> = ({
   open,
@@ -802,11 +803,26 @@ const SkillDetailDrawer: React.FC<{
             <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
               <p className="mb-2 text-sm font-medium text-gray-700">已绑定 Agent</p>
               {skillAgentsData && skillAgentsData.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="space-y-2">
                   {skillAgentsData.map((item) => (
-                    <span key={item.agentId} className="rounded bg-primary-50 px-2 py-1 text-xs text-primary-700">
-                      {item.agentName}
-                    </span>
+                    <div key={item.agentId} className="flex items-center justify-between gap-2 rounded bg-white px-3 py-2">
+                      <span className="text-xs text-primary-700">{item.agentName}</span>
+                      <button
+                        onClick={() => {
+                          if (!skill) return;
+                          if (!window.confirm(`确认解除绑定 Agent ${item.agentName} ?`)) return;
+                          onAssign({
+                            agentId: item.agentId,
+                            skillId: skill.id,
+                            enabled: false,
+                          });
+                        }}
+                        disabled={bindingSaving}
+                        className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100 disabled:opacity-60"
+                      >
+                        {bindingSaving ? '处理中...' : '解除绑定'}
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : (
