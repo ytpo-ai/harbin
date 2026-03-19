@@ -8,6 +8,8 @@ import { GatewayUserContext } from '@libs/contracts';
 import { AgentTask, AgentTaskDocument, AgentTaskStatus } from '../../schemas/agent-task.schema';
 import { RuntimePersistenceService } from '../runtime/runtime-persistence.service';
 import { RuntimeOrchestratorService } from '../runtime/runtime-orchestrator.service';
+import { HookPipelineService } from '../runtime/hooks/hook-pipeline.service';
+import { LifecycleHookContext, LifecyclePhase } from '../runtime/hooks/lifecycle-hook.types';
 import { AgentTaskEvent, AgentTaskEventSchema, CreateAgentTaskBody } from './contracts/agent-task.contract';
 import { RuntimeSseStreamService } from './runtime-sse-stream.service';
 
@@ -28,6 +30,7 @@ export class AgentTaskService {
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
     private readonly redisService: RedisService,
     private readonly sseStreamService: RuntimeSseStreamService,
+    private readonly hookPipeline: HookPipelineService,
   ) {}
 
   async createTask(body: CreateAgentTaskBody, userContext: GatewayUserContext): Promise<{
@@ -87,6 +90,13 @@ export class AgentTaskService {
 
     await this.redisService.lpush(this.queueKey, JSON.stringify({ taskId: created.id }));
 
+    // 触发 task.created lifecycle hooks
+    void this.runTaskPipeline('task.created', {
+      taskId: created.id,
+      agentId: body.agentId,
+      payload: { task: { id: created.id, prompt: body.task, agentId: body.agentId, status: 'queued' } },
+    });
+
     return {
       taskId: created.id,
       status: created.status,
@@ -138,6 +148,15 @@ export class AgentTaskService {
         status: 'cancelling',
         cancelRequested: true,
       },
+    });
+
+    // 触发 task.cancelled lifecycle hooks
+    void this.runTaskPipeline('task.cancelled', {
+      taskId: task.id,
+      agentId: task.agentId,
+      runId: task.runId,
+      sessionId: task.sessionId,
+      payload: { task: { id: task.id, agentId: task.agentId }, reason: reason || 'user_cancel' },
     });
 
     return {
@@ -372,6 +391,41 @@ export class AgentTaskService {
       return Math.floor(lastSequence);
     }
     return this.resolveLastSequenceFromEventId(taskId, lastEventId);
+  }
+
+  // ---- Lifecycle Hook Pipeline ----
+
+  /**
+   * 触发 task 维度的 lifecycle hooks。
+   * 使用 void 调用（fire-and-forget），不阻塞主链路。
+   */
+  async runTaskPipeline(
+    phase: LifecyclePhase,
+    input: {
+      taskId: string;
+      agentId: string;
+      runId?: string;
+      sessionId?: string;
+      traceId?: string;
+      payload: Record<string, unknown>;
+    },
+  ) {
+    try {
+      const context: LifecycleHookContext = {
+        phase,
+        runId: input.runId || '',
+        agentId: input.agentId,
+        taskId: input.taskId,
+        sessionId: input.sessionId,
+        traceId: input.traceId || `trace-task-${input.taskId}`,
+        timestamp: Date.now(),
+        payload: input.payload,
+      };
+      await this.hookPipeline.run(context);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`[task_pipeline_error] phase=${phase} taskId=${input.taskId} error=${message}`);
+    }
   }
 
   private assertTaskPermission(task: AgentTaskDocument, userContext: GatewayUserContext): void {

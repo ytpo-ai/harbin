@@ -101,6 +101,13 @@ export class AgentTaskWorker implements OnModuleInit {
         },
       });
 
+      // 触发 task.running lifecycle hooks
+      void this.taskService.runTaskPipeline('task.running', {
+        taskId,
+        agentId: task.agentId,
+        payload: { task: { id: taskId, agentId: task.agentId, prompt: task.prompt }, attempt: nextAttempt },
+      });
+
       const freshTask = await this.taskService.getTaskById(taskId);
       const now = Date.now();
       const startedAtMs = freshTask?.startedAt ? new Date(freshTask.startedAt).getTime() : now;
@@ -261,6 +268,19 @@ export class AgentTaskWorker implements OnModuleInit {
           attempt: nextAttempt,
         },
       });
+
+      // 触发 task.completed lifecycle hooks
+      void this.taskService.runTaskPipeline('task.completed', {
+        taskId,
+        agentId: task.agentId,
+        runId: executeResult.runId,
+        sessionId: executeResult.sessionId,
+        payload: {
+          task: { id: taskId, agentId: task.agentId },
+          response: executeResult.response,
+          attempt: nextAttempt,
+        },
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'unknown');
       const latestTask = await this.taskService.getTaskById(taskId);
@@ -319,6 +339,18 @@ export class AgentTaskWorker implements OnModuleInit {
           status,
           error: message,
           errorCode,
+        },
+      });
+
+      // 触发 task.failed lifecycle hooks
+      void this.taskService.runTaskPipeline('task.failed', {
+        taskId,
+        agentId: task.agentId,
+        payload: {
+          task: { id: taskId, agentId: task.agentId },
+          error: message,
+          errorCode,
+          attempt: nextAttempt,
         },
       });
     } finally {

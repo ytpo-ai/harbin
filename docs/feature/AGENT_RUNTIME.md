@@ -105,9 +105,56 @@
 - 非法迁移会抛错，防止工具状态污染。
 - 工具事件载荷统一包含 `toolId/toolName/params`（兼容保留 `input` 别名），其中 `params` 会对敏感键（如 `password/token/secret`）做脱敏后写入日志。
 
-### 1.4 Hook 外发与恢复机制
+### 1.4 Lifecycle Hook 标准化体系
 
-- Dispatcher：`hook-dispatcher.service.ts`
+#### 1.4.1 统一 Hook 协议
+
+所有生命周期 hooks 统一实现 `LifecycleHook` 接口，覆盖四个维度：
+
+| 维度 | 阶段（Phase） | 接入点 |
+|------|--------------|--------|
+| Task | `task.created` / `task.running` / `task.completed` / `task.failed` / `task.cancelled` | `AgentTaskService` + `AgentTaskWorker` |
+| Step | `step.before` / `step.after` | `AgentExecutorService` |
+| ToolCall | `toolcall.pending` / `toolcall.running` / `toolcall.completed` / `toolcall.failed` | `RuntimeOrchestratorService` |
+| Permission | `permission.asked` / `permission.replied` / `permission.denied` | `RuntimeOrchestratorService` |
+
+- 协议定义：`modules/runtime/hooks/lifecycle-hook.types.ts`
+- 每个 hook 具有 `id`（唯一标识）、`phases`（适用阶段）、`priority`（优先级，越小越先执行）、`enabled`（运行时开关）
+- 执行结果 `LifecycleHookResult` 支持 `action: continue|skip|abort` + `appendMessages` + `mutatedPayload` + `metadata`
+
+#### 1.4.2 HookRegistry 动态注册中心
+
+- 实现位置：`modules/runtime/hooks/hook-registry.service.ts`
+- 支持 `register(hook)` / `unregister(hookId)` 动态管理
+- 通过 `LIFECYCLE_HOOKS_TOKEN` multi provider 自动发现已注册 hooks
+- `provideLifecycleHook(HookClass)` 辅助函数简化注册
+- `listAll()` 提供运维可观测性
+
+#### 1.4.3 HookPipeline 调度器
+
+- 实现位置：`modules/runtime/hooks/hook-pipeline.service.ts`
+- 按优先级串行执行该阶段所有匹配 hooks
+- 单个 hook 异常不阻塞 pipeline（记录到 metadata 后继续）
+- `mutatedPayload` 在 hooks 间累积传递
+- `abort` 可中止后续执行
+- 内置耗时日志与执行轨迹
+
+#### 1.4.4 现有 Step Hooks 迁移
+
+- `AgentBeforeStepOptimizationHook` 和 `AgentAfterStepEvaluationHook` 已同时实现 `LifecycleHook` 接口
+- `AgentExecutorService` 中原有的 `agentBeforeStepHooks[]` / `agentAfterStepHooks[]` 硬编码数组已替换为 `HookPipelineService.run()` 调用
+- 旧的 `AgentBeforeStepHook` / `AgentAfterStepHook` 接口保留，用于向后兼容
+
+#### 1.4.5 插件化扩展
+
+新增 hook 只需：
+1. 创建 `@Injectable()` 类实现 `LifecycleHook` 接口
+2. 在对应 Module 的 `providers` 中添加 `provideLifecycleHook(MyHook)`
+3. 无需修改任何核心服务代码
+
+### 1.5 Hook 外发与恢复机制（Dispatcher）
+
+- Dispatcher：`hook-dispatcher.service.ts`（与 Lifecycle Hook Pipeline 独立，负责异步通知）
 - 默认通道：
   - Agent 级：`agent-runtime:{agentId}`
 - 分发语义：at-least-once；消费者侧需按 `eventId` 去重，必要时结合 `(runId, sequence)` 做顺序校验。
@@ -121,7 +168,11 @@
 - 同步写入的工具事件会在 `details` 顶层透出 `toolId/toolName/params`，便于系统进程日志与任务维度日志直接检索。
 - 大 payload 防护：同步 legacy 前会对超大 `payload`（尤其 `tool.completed.payload.output`）做截断摘要，写入 `outputPreview/outputSize/outputTruncated`，避免请求体过大导致 `413`。
 
-### 1.5 控制面与运行维护
+**Pipeline vs Dispatcher 职责区分**：
+- `HookPipelineService`：**同步拦截层**，在状态变更前执行，可修改行为（abort/inject/mutate）
+- `HookDispatcherService`：**异步通知层**，在状态变更后执行，负责 RuntimeEvent pub/sub 外发
+
+### 1.6 控制面与运行维护
 
 内部 API 前缀：`/agents/runtime`
 
@@ -139,7 +190,7 @@
 - 角色要求：`system/admin/owner`
 - `purge-legacy` 仅 `system` 角色可执行，且必须携带 `confirm=DELETE_LEGACY_RUNTIME_DATA`
 
-### 1.6 Session 与上下文协同
+### 1.7 Session 与上下文协同
 
 - 会话模型支持 `meeting/task` 两类，并可按 `meetingId` 或 `taskId` 复用会话。
 - system 消息写入时进行内容归一化与上下文键去重，避免重复注入提示词。
@@ -150,6 +201,13 @@
 - Agent 主执行链路已按职责拆分协作：
   - `modules/agents/agent-execution.service.ts`（runtime 生命周期模板与收尾）
   - `modules/agents/agent-opencode-policy.service.ts`（OpenCode gate/budget 策略）
+  - `modules/agents/agent-before-step-optimization.hook.ts`（step 进入前语义优化 Hook，实现 `LifecycleHook` 接口，phase=`step.before`）
+  - `modules/agents/agent-after-step-evaluation.hook.ts`（step 完成后语义评估 Hook，实现 `LifecycleHook` 接口，phase=`step.after`）
+  - `modules/agents/agent-executor-step-hooks.types.ts`（旧 before/after Hook 协议类型，保留向后兼容）
+  - `modules/runtime/hooks/lifecycle-hook.types.ts`（统一 Lifecycle Hook 协议定义，覆盖 Task/Step/ToolCall/Permission 四维度）
+  - `modules/runtime/hooks/hook-registry.service.ts`（Hook 动态注册中心）
+  - `modules/runtime/hooks/hook-pipeline.service.ts`（Hook 调度器，串行执行 + 容错 + 可观测）
+  - `agent-executor.service.ts` 通过 `HookPipelineService.run()` 统一调度 step hooks，不再维护硬编码数组。
   - `modules/agents/agent-orchestration-intent.service.ts`（会议编排意图与强制工具映射）
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
 - Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
@@ -175,9 +233,11 @@
 | `AGENT_TASK_SSE_MULTI_SERVE_PLAN.md` | Agent Task SSE 化与 Multi-Serve OpenCode 接入计划 |
 | `AGENT_CONFIG_JSON_EXTENSION_PLAN.md` | Agent `config` 字段扩展与运行时解析计划 |
 | `AGENT_EXECUTE_IDENTIFIER_COMPAT_PLAN.md` | Agent 执行入口 `id/_id` 双标识兼容修复计划 |
+| `AGENT_EXECUTOR_ENGINE_ROUTING_PLAN.md` | Agent Executor Engine 路由重构计划（按 mode/channel 分发执行实例） |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连改造计划 |
 | `AGENT_PROMPT_RESOLVER_REFACTOR_PLAN.md` | Agent Prompt 文案集中化与模板渲染接入计划 |
 | `PROMPT_RESOLVE_REDIS_GUARD_PLAN.md` | Prompt 发布写 Redis 与执行阶段 Redis 门禁回退计划 |
+| `AGENT_LIFECYCLE_HOOK_STANDARDIZATION_PLAN.md` | Agent Lifecycle Hook 标准化设计计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -195,9 +255,11 @@
 | 文件 | 说明 |
 |------|------|
 | `technical/AGENT_RUNTIME_HOOKS_GUIDE.md` | Hook 消费幂等、重放与可观测性实践 |
+| `technical/AGENT_LIFECYCLE_HOOK_TECHNICAL_DESIGN.md` | Lifecycle Hook 标准化体系技术设计（Registry + Pipeline） |
 | `technical/AGENT_RUNTIME_WORKFLOW_TECHNICAL_DESIGN.md` | Runtime 工作流技术设计 |
 | `technical/OPENCODE_AGENT_TASK_SSE_WORKER_TECHNICAL_DESIGN.md` | OpenCode 长任务抗超时技术设计（Worker + SSE） |
 | `technical/AGENT_TASK_SSE_MULTI_SERVE_TECHNICAL_DESIGN.md` | Agent Task SSE 化与 Multi-Serve OpenCode 技术设计 |
+| `technical/AGENT_EXECUTOR_ENGINE_ROUTING_TECHNICAL_DESIGN.md` | Agent Executor Engine 路由分层与扩展机制技术设计 |
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | OpenCode 执行事实层与 EI 分析层分层设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | local/ecds 多环境协同与 ingest 同步设计 |
 | `api/agents-api.md` | Runtime Hooks 与 Run Control API 清单 |
@@ -215,7 +277,12 @@
 | `runtime.controller.ts` | Runtime 控制面与运维 API |
 | `runtime-orchestrator.service.ts` | run 生命周期编排、事件写入、工具状态迁移 |
 | `runtime-persistence.service.ts` | run/message/part/outbox/session/审计持久化实现 |
-| `hook-dispatcher.service.ts` | Hook 事件分发、重试、flush 与指标 |
+| `hook-dispatcher.service.ts` | Hook 事件异步分发（Redis pub/sub）、重试、flush 与指标 |
+| `hooks/lifecycle-hook.types.ts` | 统一 Lifecycle Hook 协议定义（LifecycleHook 接口、Phase 枚举、Payload 类型） |
+| `hooks/hook-registry.service.ts` | Hook 动态注册中心（register/unregister/自动发现） |
+| `hooks/hook-pipeline.service.ts` | Hook 调度器（串行执行、优先级排序、容错降级、可观测） |
+| `hooks/lifecycle-hook.helpers.ts` | Hook 辅助工具（provideLifecycleHook 注册函数） |
+| `hooks/index.ts` | hooks 模块统一导出 |
 | `runtime-action-log-sync.service.ts` | Runtime 状态钩子同步写入 Agent Action Logs |
 | `runtime-memo-snapshot-queue.service.ts` | Session memoSnapshot 异步写入队列消费服务 |
 | `contracts/runtime-event.contract.ts` | 运行时事件契约（zod） |
@@ -241,8 +308,18 @@
 | `modules/agents/agent-prompts.ts` | Agent Prompt 清单（symbol/context/scene/role/defaultContent）与默认模板构造 |
 | `modules/agents/agent-execution.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
 | `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
+| `modules/agents/agent-before-step-optimization.hook.ts` | step 进入前语义优化 Hook（LLM 判断） |
+| `modules/agents/agent-after-step-evaluation.hook.ts` | step 完成后语义评估 Hook（LLM 评审） |
+| `modules/agents/agent-executor-step-hooks.types.ts` | step Hook 协议类型定义 |
 | `modules/agents/agent-orchestration-intent.service.ts` | 会议编排意图识别与强制工具调用映射 |
 | `modules/agents/agent-mcp-profile.service.ts` | MCP profile 读写、映射与权限集下沉服务 |
+| `modules/agents/executor-engines/agent-executor-engine.interface.ts` | Agent Executor Engine 协议定义 |
+| `modules/agents/executor-engines/agent-executor-engine.types.ts` | Engine 执行上下文与路由类型定义 |
+| `modules/agents/executor-engines/agent-executor-engine.router.ts` | 按 mode/channel 路由执行引擎 |
+| `modules/agents/executor-engines/native-agent-executor.engine.ts` | native + detailed 执行引擎 |
+| `modules/agents/executor-engines/native-streaming-agent-executor.engine.ts` | native + streaming 执行引擎 |
+| `modules/agents/executor-engines/opencode-agent-executor.engine.ts` | opencode + detailed 执行引擎 |
+| `modules/agents/executor-engines/opencode-streaming-agent-executor.engine.ts` | opencode + streaming 执行引擎 |
 | `modules/agent-tasks/agent-task.controller.ts` | Agent Task 异步任务 API（create/get/cancel/SSE） |
 | `modules/agent-tasks/agent-task.service.ts` | Agent Task 状态管理、幂等、事件续传与权限校验 |
 | `modules/agent-tasks/agent-task.worker.ts` | 异步 Worker 消费队列并驱动 runtime + OpenCode 执行 |

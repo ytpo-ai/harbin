@@ -13,6 +13,8 @@ import {
 import { RuntimeEvent, RuntimeEventType } from './contracts/runtime-event.contract';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
+import { HookPipelineService } from './hooks/hook-pipeline.service';
+import { LifecycleHookContext } from './hooks/lifecycle-hook.types';
 import { MemoService } from '../memos/memo.service';
 import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 
@@ -64,6 +66,7 @@ export class RuntimeOrchestratorService {
   constructor(
     private readonly persistence: RuntimePersistenceService,
     private readonly hookDispatcher: HookDispatcherService,
+    private readonly hookPipeline: HookPipelineService,
     private readonly memoService: MemoService,
     private readonly memoSnapshotQueue: RuntimeMemoSnapshotQueueService,
   ) {}
@@ -471,6 +474,9 @@ export class RuntimeOrchestratorService {
       throw new Error(`Runtime run not found: ${input.runId}`);
     }
 
+    // 触发 permission.asked lifecycle hooks
+    await this.runPermissionPipeline('permission.asked', input);
+
     const sequence = await this.persistence.incrementRunStep(input.runId);
     await this.emitEvent({
       eventType: 'permission.asked',
@@ -497,6 +503,10 @@ export class RuntimeOrchestratorService {
     if (!run) {
       throw new Error(`Runtime run not found: ${input.runId}`);
     }
+
+    // 触发 permission.replied / permission.denied lifecycle hooks
+    const phase = input.approved ? 'permission.replied' : 'permission.denied';
+    await this.runPermissionPipeline(phase, input);
 
     const sequence = await this.persistence.incrementRunStep(input.runId);
     await this.emitEvent({
@@ -670,6 +680,31 @@ export class RuntimeOrchestratorService {
 
   async recordToolPending(rawInput: RuntimeToolEventInput & { traceId: string; sequence: number; messageId: string }): Promise<string> {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
+
+    // 触发 toolcall.pending lifecycle hooks
+    const pipelineResult = await this.runToolCallPipeline('toolcall.pending', input, rawInput);
+    if (pipelineResult.aborted) {
+      throw new Error(`ToolCall pending blocked by hook: ${pipelineResult.abortedBy}`);
+    }
+    // hook 请求取消
+    if (pipelineResult.cancelRequested) {
+      await this.cancelRunWithActor(input.runId, {
+        actorId: 'lifecycle-hook',
+        actorType: 'system',
+        reason: pipelineResult.cancelReason || 'cancelled_by_toolcall_hook',
+      });
+      throw new Error(`Runtime run cancelled by toolcall hook: ${pipelineResult.cancelReason || pipelineResult.cancelRequestedBy}`);
+    }
+    // hook 请求暂停
+    if (pipelineResult.pauseRequested) {
+      await this.pauseRunWithActor(input.runId, {
+        actorId: 'lifecycle-hook',
+        actorType: 'system',
+        reason: pipelineResult.pauseReason || 'paused_by_toolcall_hook',
+      });
+      throw new Error(`Runtime run paused by toolcall hook: ${pipelineResult.pauseReason || pipelineResult.pauseRequestedBy}`);
+    }
+
     const part = await this.persistence.createPart({
       runId: input.runId,
       messageId: rawInput.messageId,
@@ -707,6 +742,10 @@ export class RuntimeOrchestratorService {
 
   async recordToolRunning(rawInput: RuntimeToolEventInput & { traceId: string; sequence: number; messageId: string; partId: string }): Promise<void> {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
+
+    // 触发 toolcall.running lifecycle hooks
+    await this.runToolCallPipeline('toolcall.running', input, rawInput);
+
     const transitioned = await this.persistence.transitionPartStatus(rawInput.partId, 'pending', 'running', {
       startedAt: new Date(),
       metadata: {
@@ -739,6 +778,10 @@ export class RuntimeOrchestratorService {
 
   async recordToolCompleted(rawInput: RuntimeToolEventInput & { traceId: string; sequence: number; messageId: string; partId?: string }): Promise<void> {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
+
+    // 触发 toolcall.completed lifecycle hooks
+    await this.runToolCallPipeline('toolcall.completed', input, rawInput);
+
     const partId = rawInput.partId;
     if (partId) {
       const transitioned = await this.persistence.transitionPartStatus(partId, 'running', 'completed', {
@@ -776,6 +819,10 @@ export class RuntimeOrchestratorService {
 
   async recordToolFailed(rawInput: RuntimeToolEventInput & { traceId: string; sequence: number; messageId: string; partId?: string }): Promise<void> {
     const input = RuntimeToolEventInputSchema.parse(rawInput);
+
+    // 触发 toolcall.failed lifecycle hooks
+    await this.runToolCallPipeline('toolcall.failed', input, rawInput);
+
     const partId = rawInput.partId;
     if (partId) {
       const fromStatuses: Array<'pending' | 'running'> = ['running', 'pending'];
@@ -918,6 +965,55 @@ export class RuntimeOrchestratorService {
         this.lockTails.delete(lockKey);
       }
     };
+  }
+
+  // ---- Lifecycle Hook Pipeline 辅助方法 ----
+
+  private async runToolCallPipeline(
+    phase: 'toolcall.pending' | 'toolcall.running' | 'toolcall.completed' | 'toolcall.failed',
+    input: RuntimeToolEventInput,
+    rawInput: { traceId: string; messageId?: string; partId?: string },
+  ) {
+    const context: LifecycleHookContext = {
+      phase,
+      runId: input.runId,
+      agentId: input.agentId,
+      taskId: input.taskId,
+      sessionId: input.sessionId,
+      traceId: rawInput.traceId,
+      timestamp: Date.now(),
+      payload: {
+        toolId: input.toolId,
+        toolCallId: input.toolCallId,
+        toolName: input.toolName,
+        input: input.input,
+        output: input.output,
+        error: input.error,
+        partId: rawInput.partId,
+        messageId: rawInput.messageId,
+      },
+    };
+    return this.hookPipeline.run(context);
+  }
+
+  private async runPermissionPipeline(
+    phase: 'permission.asked' | 'permission.replied' | 'permission.denied',
+    input: { runId: string; agentId: string; sessionId?: string; taskId?: string; traceId: string; approved?: boolean; payload: Record<string, unknown> },
+  ) {
+    const context: LifecycleHookContext = {
+      phase,
+      runId: input.runId,
+      agentId: input.agentId,
+      taskId: input.taskId,
+      sessionId: input.sessionId,
+      traceId: input.traceId,
+      timestamp: Date.now(),
+      payload: {
+        ...input.payload,
+        approved: input.approved,
+      },
+    };
+    return this.hookPipeline.run(context);
   }
 
   private async emitEvent(input: {

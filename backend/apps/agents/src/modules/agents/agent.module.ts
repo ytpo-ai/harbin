@@ -13,12 +13,20 @@ import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { OpenCodeModule } from '../opencode/opencode.module';
 import { AgentExecutionService } from './agent-execution.service';
+import { AgentAfterStepEvaluationHook } from './agent-after-step-evaluation.hook';
+import { AgentBeforeStepOptimizationHook } from './agent-before-step-optimization.hook';
 import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
 import { AgentRoleService } from './agent-role.service';
 import { AgentExecutorService } from './agent-executor.service';
 import { PromptRegistryModule as PromptRegistryCoreModule } from '../prompt-registry/prompt-registry.module';
+import { AgentExecutorEngineRouter } from './executor-engines/agent-executor-engine.router';
+import { NativeAgentExecutorEngine } from './executor-engines/native-agent-executor.engine';
+import { NativeStreamingAgentExecutorEngine } from './executor-engines/native-streaming-agent-executor.engine';
+import { OpencodeAgentExecutorEngine } from './executor-engines/opencode-agent-executor.engine';
+import { OpencodeStreamingAgentExecutorEngine } from './executor-engines/opencode-streaming-agent-executor.engine';
+import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
 
 @Module({
   imports: [
@@ -40,10 +48,20 @@ import { PromptRegistryModule as PromptRegistryCoreModule } from '../prompt-regi
   providers: [
     AgentService,
     AgentExecutionService,
+    // Step hooks 注册到统一 LifecycleHook Registry
+    AgentBeforeStepOptimizationHook,
+    AgentAfterStepEvaluationHook,
+    provideLifecycleHook(AgentBeforeStepOptimizationHook),
+    provideLifecycleHook(AgentAfterStepEvaluationHook),
     AgentOrchestrationIntentService,
     AgentOpenCodePolicyService,
     AgentMcpProfileService,
     AgentRoleService,
+    AgentExecutorEngineRouter,
+    NativeAgentExecutorEngine,
+    NativeStreamingAgentExecutorEngine,
+    OpencodeAgentExecutorEngine,
+    OpencodeStreamingAgentExecutorEngine,
     AgentExecutorService,
   ],
   exports: [AgentService],
