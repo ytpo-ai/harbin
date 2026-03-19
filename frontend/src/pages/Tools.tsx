@@ -109,6 +109,100 @@ const resolveToolPrompt = (tool?: Partial<Tool> | null): string => {
   return typeof matched === 'string' ? matched : '';
 };
 
+const resolveToolInputSchema = (tool?: Partial<Tool> | null): Record<string, any> | null => {
+  const explicitSchema = (tool as any)?.inputSchema;
+  if (explicitSchema && typeof explicitSchema === 'object') {
+    return explicitSchema as Record<string, any>;
+  }
+
+  const legacyParameters = (tool as any)?.implementation?.parameters;
+  if (!legacyParameters || typeof legacyParameters !== 'object') {
+    return null;
+  }
+
+  const properties: Record<string, any> = {};
+  const required: string[] = [];
+  for (const [key, rawConfig] of Object.entries(legacyParameters as Record<string, any>)) {
+    if (!rawConfig || typeof rawConfig !== 'object') continue;
+    properties[key] = {
+      type: rawConfig.type || 'string',
+      description: rawConfig.description,
+      enum: Array.isArray(rawConfig.enum) ? rawConfig.enum : undefined,
+      default: rawConfig.default,
+    };
+    if (rawConfig.required) {
+      required.push(key);
+    }
+  }
+
+  return {
+    type: 'object',
+    properties,
+    required,
+    additionalProperties: false,
+  };
+};
+
+const parseSchemaText = (value: string, label: string): Record<string, any> => {
+  const raw = value.trim();
+  if (!raw) {
+    return { type: 'object', properties: {} };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(`${label} 不是合法 JSON`);
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} 必须是 JSON 对象`);
+  }
+  return parsed as Record<string, any>;
+};
+
+const stringifySchema = (value: unknown): string => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return JSON.stringify({ type: 'object', properties: {} }, null, 2);
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return JSON.stringify({ type: 'object', properties: {} }, null, 2);
+  }
+};
+
+const normalizeExecutionParameters = (parameters: Record<string, any>, schema?: Record<string, any> | null) => {
+  if (!schema || typeof schema !== 'object') {
+    return parameters;
+  }
+
+  const properties = schema.properties;
+  if (!properties || typeof properties !== 'object') {
+    return parameters;
+  }
+
+  const normalized: Record<string, any> = { ...parameters };
+  for (const [key, rawConfig] of Object.entries(properties as Record<string, any>)) {
+    const current = normalized[key];
+    if (typeof current !== 'string') continue;
+    if (!rawConfig || typeof rawConfig !== 'object') continue;
+
+    const type = Array.isArray(rawConfig.type) ? rawConfig.type[0] : rawConfig.type;
+    if (type === 'object' || type === 'array') {
+      const trimmed = current.trim();
+      if (!trimmed) continue;
+      try {
+        normalized[key] = JSON.parse(trimmed);
+      } catch {
+        throw new Error(`参数 ${key} 需要合法 JSON`);
+      }
+    }
+  }
+
+  return normalized;
+};
+
 const Tools: React.FC = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'tools' | 'logs' | 'permissionSets'>('tools');
@@ -121,11 +215,31 @@ const Tools: React.FC = () => {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [copiedToolId, setCopiedToolId] = useState('');
 
-  const { data: tools, isLoading } = useQuery(['tool-registry'], () => toolService.getToolRegistry());
-  const { data: executions } = useQuery('tool-executions', () => toolService.getToolExecutions());
-  const { data: stats } = useQuery('tool-stats', toolService.getToolExecutionStats);
-  const { data: toolPermissionSets } = useQuery('agentToolPermissionSets', agentService.getToolPermissionSets);
+  const { data: tools, isLoading, refetch: refetchTools } = useQuery(['tool-registry'], () => toolService.getToolRegistry());
+  const { data: executions, refetch: refetchExecutions } = useQuery('tool-executions', () => toolService.getToolExecutions());
+  const { data: stats, refetch: refetchStats } = useQuery('tool-stats', toolService.getToolExecutionStats);
+  const { data: toolPermissionSets, refetch: refetchToolPermissionSets } = useQuery(
+    'agentToolPermissionSets',
+    agentService.getToolPermissionSets,
+  );
   const { data: agents } = useQuery('agents', agentService.getAgents);
+
+  useEffect(() => {
+    if (activeTab === 'tools') {
+      void refetchTools();
+      void refetchExecutions();
+      void refetchStats();
+      return;
+    }
+    if (activeTab === 'logs') {
+      void refetchExecutions();
+      void refetchStats();
+      return;
+    }
+    if (activeTab === 'permissionSets') {
+      void refetchToolPermissionSets();
+    }
+  }, [activeTab, refetchExecutions, refetchStats, refetchToolPermissionSets, refetchTools]);
 
   const upsertPermissionSetMutation = useMutation(
     ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'> }) =>
@@ -766,18 +880,33 @@ const ToolActionDrawer: React.FC<{
   isSaving: boolean;
   isDeprecating: boolean;
 }> = ({ tool, agents, tab, onTabChange, onClose, onSave, onDeprecate, isSaving, isDeprecating }) => {
+  const toolKey = getToolKey(tool);
+  const { data: toolDetail, isFetching: isLoadingToolDetail } = useQuery(
+    ['tool-detail', toolKey],
+    () => toolService.getTool(toolKey),
+    {
+      enabled: Boolean(toolKey),
+      staleTime: 0,
+    },
+  );
+
+  const effectiveTool = toolDetail || tool;
+  const inputSchema = resolveToolInputSchema(effectiveTool);
+
   const [parameters, setParameters] = useState<any>({});
   const [agentId, setAgentId] = useState('');
   const [isExecuting, setIsExecuting] = useState(false);
   const [result, setResult] = useState<any>(null);
 
-  const [name, setName] = useState(tool.name || '');
-  const [description, setDescription] = useState(tool.description || '');
-  const [category, setCategory] = useState(tool.category || '');
-  const [type, setType] = useState(tool.type || 'custom');
-  const [enabled, setEnabled] = useState(tool.enabled !== false);
-  const [status, setStatus] = useState<Tool['status']>(tool.status || 'active');
-  const [prompt, setPrompt] = useState(resolveToolPrompt(tool));
+  const [name, setName] = useState(effectiveTool.name || '');
+  const [description, setDescription] = useState(effectiveTool.description || '');
+  const [category, setCategory] = useState(effectiveTool.category || '');
+  const [type, setType] = useState(effectiveTool.type || 'custom');
+  const [enabled, setEnabled] = useState(effectiveTool.enabled !== false);
+  const [status, setStatus] = useState<Tool['status']>(effectiveTool.status || 'active');
+  const [prompt, setPrompt] = useState(resolveToolPrompt(effectiveTool));
+  const [inputSchemaText, setInputSchemaText] = useState(stringifySchema(inputSchema));
+  const [outputSchemaText, setOutputSchemaText] = useState(stringifySchema((effectiveTool as any)?.outputSchema));
 
   useEffect(() => {
     setParameters({});
@@ -785,19 +914,22 @@ const ToolActionDrawer: React.FC<{
     setIsExecuting(false);
     setResult(null);
 
-    setName(tool.name || '');
-    setDescription(tool.description || '');
-    setCategory(tool.category || '');
-    setType(tool.type || 'custom');
-    setEnabled(tool.enabled !== false);
-    setStatus(tool.status || 'active');
-    setPrompt(resolveToolPrompt(tool));
-  }, [tool]);
+    setName(effectiveTool.name || '');
+    setDescription(effectiveTool.description || '');
+    setCategory(effectiveTool.category || '');
+    setType(effectiveTool.type || 'custom');
+    setEnabled(effectiveTool.enabled !== false);
+    setStatus(effectiveTool.status || 'active');
+    setPrompt(resolveToolPrompt(effectiveTool));
+    setInputSchemaText(stringifySchema(resolveToolInputSchema(effectiveTool)));
+    setOutputSchemaText(stringifySchema((effectiveTool as any)?.outputSchema));
+  }, [effectiveTool]);
 
   const handleExecute = async () => {
     setIsExecuting(true);
     try {
-      const executionResult = await toolService.executeTool(getToolKey(tool), agentId, parameters);
+      const executionParameters = normalizeExecutionParameters(parameters, inputSchema);
+      const executionResult = await toolService.executeTool(getToolKey(effectiveTool), agentId, executionParameters);
       setResult({
         ...executionResult,
         success: executionResult.status === 'completed',
@@ -813,14 +945,47 @@ const ToolActionDrawer: React.FC<{
   };
 
   const renderParameterInputs = () => {
-    const implementation = (tool as any).implementation;
-    if (!implementation?.parameters) return null;
-    return Object.entries(implementation.parameters).map(([key, config]: [string, any]) => (
+    if (!inputSchema?.properties || typeof inputSchema.properties !== 'object') {
+      return (
+        <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+          当前工具未声明参数 Schema，可直接执行空参数。
+        </div>
+      );
+    }
+
+    const required = new Set(Array.isArray(inputSchema.required) ? inputSchema.required.map((item: unknown) => String(item)) : []);
+    return Object.entries(inputSchema.properties as Record<string, any>).map(([key, config]) => (
       <div key={key} className="mb-4">
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          {key} {config.required && <span className="text-red-500">*</span>}
+          {key} {required.has(key) && <span className="text-red-500">*</span>}
         </label>
-        {config.type === 'string' ? (
+        {Array.isArray(config.enum) && config.enum.length > 0 ? (
+          <select
+            value={parameters[key] ?? ''}
+            onChange={(e) => setParameters({ ...parameters, [key]: e.target.value })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+          >
+            <option value="">请选择</option>
+            {config.enum.map((item: unknown) => {
+              const value = String(item);
+              return (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              );
+            })}
+          </select>
+        ) : config.type === 'boolean' ? (
+          <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={Boolean(parameters[key])}
+              onChange={(e) => setParameters({ ...parameters, [key]: e.target.checked })}
+              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            {config.description || '布尔值'}
+          </label>
+        ) : config.type === 'string' ? (
           <input
             type="text"
             value={parameters[key] || ''}
@@ -828,13 +993,21 @@ const ToolActionDrawer: React.FC<{
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             placeholder={config.description || `Enter ${key}`}
           />
-        ) : config.type === 'number' ? (
+        ) : config.type === 'number' || config.type === 'integer' ? (
           <input
             type="number"
             value={parameters[key] || ''}
             onChange={(e) => setParameters({ ...parameters, [key]: Number(e.target.value) })}
             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             placeholder={config.description || `Enter ${key}`}
+          />
+        ) : config.type === 'object' || config.type === 'array' ? (
+          <textarea
+            value={parameters[key] || ''}
+            onChange={(e) => setParameters({ ...parameters, [key]: e.target.value })}
+            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-xs"
+            rows={4}
+            placeholder={config.description || `请输入 ${key} 的 JSON`}
           />
         ) : (
           <textarea
@@ -856,8 +1029,8 @@ const ToolActionDrawer: React.FC<{
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h3 className="text-lg font-semibold text-gray-900">{tool.name}</h3>
-              <p className="text-xs text-gray-500 mt-1">{getToolKey(tool) || '—'}</p>
+              <h3 className="text-lg font-semibold text-gray-900">{effectiveTool.name}</h3>
+              <p className="text-xs text-gray-500 mt-1">{getToolKey(effectiveTool) || '—'}</p>
             </div>
             <button onClick={onClose} className="px-3 py-1.5 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50">
               关闭
@@ -882,7 +1055,10 @@ const ToolActionDrawer: React.FC<{
         <div className="p-6">
           {tab === 'execute' ? (
             <div className="space-y-4">
-              <p className="text-sm text-gray-600">{tool.description}</p>
+              <p className="text-sm text-gray-600">{effectiveTool.description}</p>
+              {isLoadingToolDetail && (
+                <p className="text-xs text-gray-500">正在同步工具详情...</p>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">选择执行Agent</label>
                 <select
@@ -921,6 +1097,12 @@ const ToolActionDrawer: React.FC<{
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-600">
+                <div className="rounded-md bg-gray-50 px-3 py-2">Provider: {effectiveTool.provider || '—'}</div>
+                <div className="rounded-md bg-gray-50 px-3 py-2">Namespace: {getNamespaceLabel(effectiveTool.namespace)}</div>
+                <div className="rounded-md bg-gray-50 px-3 py-2">Toolkit: {getToolkitLabel(getToolkitValue(effectiveTool))}</div>
+                <div className="rounded-md bg-gray-50 px-3 py-2">Action: {effectiveTool.action || '—'}</div>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">名称</label>
                 <input
@@ -1001,6 +1183,24 @@ const ToolActionDrawer: React.FC<{
                   className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">输入参数 Schema（JSON）</label>
+                <textarea
+                  value={inputSchemaText}
+                  onChange={(e) => setInputSchemaText(e.target.value)}
+                  rows={8}
+                  className="block w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-xs focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">输出参数 Schema（JSON，可选）</label>
+                <textarea
+                  value={outputSchemaText}
+                  onChange={(e) => setOutputSchemaText(e.target.value)}
+                  rows={6}
+                  className="block w-full border border-gray-300 rounded-md px-3 py-2 font-mono text-xs focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                />
+              </div>
 
               <div className="mt-2 p-4 border border-red-200 rounded-md bg-red-50">
                 <h4 className="text-sm font-semibold text-red-800">危险操作</h4>
@@ -1021,8 +1221,18 @@ const ToolActionDrawer: React.FC<{
 
               <div className="flex justify-end">
                 <button
-                  onClick={() =>
-                    onSave({
+                  onClick={() => {
+                    let nextInputSchema: Record<string, any>;
+                    let nextOutputSchema: Record<string, any>;
+                    try {
+                      nextInputSchema = parseSchemaText(inputSchemaText, '输入参数 Schema');
+                      nextOutputSchema = parseSchemaText(outputSchemaText, '输出参数 Schema');
+                    } catch (error) {
+                      alert(error instanceof Error ? error.message : 'Schema 格式错误');
+                      return;
+                    }
+
+                    const updates: Partial<Tool> & Record<string, any> = {
                       name: name.trim(),
                       description: description.trim(),
                       category: category.trim(),
@@ -1030,8 +1240,11 @@ const ToolActionDrawer: React.FC<{
                       enabled,
                       status,
                       prompt: prompt.trim() || undefined,
-                    })
-                  }
+                      inputSchema: nextInputSchema,
+                      outputSchema: nextOutputSchema,
+                    };
+                    onSave(updates);
+                  }}
                   disabled={isSaving || isDeprecating || isExecuting || !name.trim() || !description.trim()}
                   className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
                 >
