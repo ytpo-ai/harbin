@@ -14,6 +14,7 @@ import { ComposioService } from './composio.service';
 import { WebToolsService } from './web-tools.service';
 import { ModelManagementService } from '../models/model-management.service';
 import { MemoService } from '../memos/memo.service';
+import { MemoWriteQueueService } from '../memos/memo-write-queue.service';
 import { InternalApiClient } from './internal-api-client.service';
 import { ToolGovernanceService } from './tool-governance.service';
 import { OrchestrationToolHandler } from './orchestration-tool-handler.service';
@@ -86,6 +87,11 @@ interface ParsedToolIdentity {
   action: string;
 }
 
+interface ToolInputContract {
+  toolId: string;
+  schema: Record<string, unknown>;
+}
+
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
@@ -105,6 +111,7 @@ export class ToolService {
     private webToolsService: WebToolsService,
     private modelManagementService: ModelManagementService,
     private memoService: MemoService,
+    private memoWriteQueue: MemoWriteQueueService,
     private internalApiClient: InternalApiClient,
     private toolGovernanceService: ToolGovernanceService,
     private orchestrationToolHandler: OrchestrationToolHandler,
@@ -727,6 +734,17 @@ export class ToolService {
     return this.toToolView(tool);
   }
 
+  async getToolInputContract(toolId: string): Promise<ToolInputContract | null> {
+    const tool = await this.getTool(toolId);
+    if (!tool) return null;
+    const schema = this.normalizeToolInputSchema((tool as any).inputSchema, (tool as any).implementation?.parameters);
+    if (!schema) return null;
+    return {
+      toolId: String(tool.canonicalId || tool.id || '').trim(),
+      schema,
+    };
+  }
+
   async getToolsByIds(toolIds: string[]): Promise<Tool[]> {
     if (!toolIds.length) return [];
     const normalizedToolIds = Array.from(new Set(toolIds.map((item) => String(item || '').trim()).filter(Boolean)));
@@ -1078,6 +1096,70 @@ export class ToolService {
     }
   }
 
+  private normalizeToolInputSchema(inputSchema?: unknown, implementationParameters?: unknown): Record<string, unknown> | null {
+    const explicit = this.toJsonSchemaObject(inputSchema);
+    if (explicit) return explicit;
+    const fallback = this.toJsonSchemaObject(implementationParameters);
+    if (fallback) return fallback;
+    return null;
+  }
+
+  private toJsonSchemaObject(raw: unknown): Record<string, unknown> | null {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return null;
+    }
+
+    const candidate = raw as Record<string, unknown>;
+    const hasJsonSchemaShape =
+      candidate.properties !== undefined ||
+      candidate.required !== undefined ||
+      candidate.additionalProperties !== undefined;
+
+    if (hasJsonSchemaShape) {
+      const properties =
+        candidate.properties && typeof candidate.properties === 'object' && !Array.isArray(candidate.properties)
+          ? (candidate.properties as Record<string, unknown>)
+          : {};
+      const required = Array.isArray(candidate.required)
+        ? candidate.required.map((item) => String(item || '').trim()).filter(Boolean)
+        : [];
+      const additionalProperties =
+        typeof candidate.additionalProperties === 'boolean' ? candidate.additionalProperties : true;
+      return {
+        type: 'object',
+        properties,
+        required,
+        additionalProperties,
+      };
+    }
+
+    const properties = Object.entries(candidate).reduce<Record<string, unknown>>((acc, [key, value]) => {
+      const normalizedKey = String(key || '').trim();
+      if (!normalizedKey) return acc;
+      if (typeof value === 'string') {
+        acc[normalizedKey] = { type: value.trim().toLowerCase() || 'string' };
+        return acc;
+      }
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        const item = value as Record<string, unknown>;
+        const type = String(item.type || '').trim().toLowerCase();
+        acc[normalizedKey] = type ? { ...item, type } : { ...item };
+      }
+      return acc;
+    }, {});
+
+    if (!Object.keys(properties).length) {
+      return null;
+    }
+
+    return {
+      type: 'object',
+      properties,
+      required: [],
+      additionalProperties: true,
+    };
+  }
+
   private normalizeToolResult(rawResult: any, traceId: string) {
     return {
       success: true,
@@ -1209,12 +1291,15 @@ export class ToolService {
         return this.skillToolHandler.createSkillByMcp(parameters);
       case 'builtin.sys-mg.mcp.meeting.list-meetings':
         return this.meetingToolHandler.listMeetings(parameters);
+      case 'builtin.sys-mg.mcp.meeting.get-detail':
+        return this.meetingToolHandler.getMeetingDetail(parameters);
       case 'builtin.sys-mg.mcp.meeting.send-message':
         return this.meetingToolHandler.sendMeetingMessage(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.meeting.update-status':
         return this.meetingToolHandler.updateMeetingStatus(parameters);
       case 'builtin.sys-mg.mcp.meeting.generate-summary':
-        return this.meetingToolHandler.generateMeetingSummary(parameters, agentId);
+      case 'builtin.sys-mg.mcp.meeting.save-summary':
+        return this.meetingToolHandler.saveMeetingSummary(parameters, agentId);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
@@ -1377,7 +1462,7 @@ export class ToolService {
       const useDivider = existing.memoKind === 'achievement' || existing.memoKind === 'criticism';
       const existingContent = String(existing.content || '').trim();
       const nextContent = params.content.trim();
-      const updated = await this.memoService.updateMemo(existing.id, {
+      const queued = await this.memoWriteQueue.queueUpdateMemo(existing.id, {
         content: useDivider
           ? existingContent
             ? `${existingContent}\n\n—\n\n${nextContent}`
@@ -1390,12 +1475,13 @@ export class ToolService {
         skipRolePermissionCheck: true,
       });
       return {
-        action: 'updated',
-        memo: updated,
+        action: 'queued_update',
+        memoId: existing.id,
+        requestId: queued.requestId,
       };
     }
 
-    const created = await this.memoService.createMemo({
+    const queued = await this.memoWriteQueue.queueCreateMemo({
       agentId: resolvedTargetAgentId,
       title: params.title?.trim() || 'Runtime memo',
       content: params.content.trim(),
@@ -1414,8 +1500,8 @@ export class ToolService {
     });
 
     return {
-      action: 'created',
-      memo: created,
+      action: 'queued_create',
+      requestId: queued.requestId,
     };
   }
 

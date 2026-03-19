@@ -45,6 +45,10 @@
 16. 工具分发架构：`ToolService` 逐步转为编排层，具体域逻辑拆分至 `InternalApiClient`、`ToolGovernanceService` 及多类 handler（orchestration/requirement/repo/model/skill/audit/meeting）。
 17. 内置工具目录治理：`builtin-tool-catalog.ts` 承载内置工具清单，`builtin-tool-definitions.ts` 承载常量与清理列表，减少 `tool.service.ts` 静态数据耦合。
 18. 鉴权升级：新增 Agent Credential + JWT token exchange，`POST /tools/:id/execute` 在 `hybrid/jwt-strict` 模式下支持 Bearer token 并在执行入口统一执行 scope/白名单/requiredPermissions 校验。
+19. 内部消息工具：新增 `builtin.sys-mg.mcp.inner-message.send-internal-message`，Agent 可直连 legacy `/inner-messages/direct` 发内部消息，并返回 `messageId/status/sentAt` 作为发送回执。
+20. 手动 seed 支持 `--mode=append|sync`：`append` 仅追加新内置工具/新 profile，并对已存在 profile 仅追加 `tools`；默认 `sync` 保持全量对齐行为。
+21. 会议分配执行提示：`requirement.update-status / requirement.assign / send-internal-message` 增加闭环执行 prompt（一次确认即执行、先分配后通知、三段式回执、默认短版通知）。
+22. 工具参数契约按需注入：运行时默认仅注入工具目录（id/name/description）；当出现参数错误时，仅对当前失败工具回填 `inputSchema` 做修正重试，避免把全部工具 schema 常驻到上下文。
 
 ---
 

@@ -143,6 +143,116 @@ describe('ToolService skill master mcp', () => {
   });
 });
 
+describe('ToolService internal message mcp', () => {
+  it('sends direct internal message and returns messageId receipt', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.internalApiClient = {
+      callInnerMessageApi: jest.fn().mockResolvedValue({
+        success: true,
+        data: {
+          messageId: 'msg-001',
+          status: 'sent',
+          sentAt: '2026-03-17T04:00:00.000Z',
+        },
+      }),
+    };
+
+    const result = await service['sendInternalMessage'](
+      {
+        receiverAgentId: 'agent-van',
+        title: 'Hi',
+        content: 'Hello',
+      },
+      'agent-kim',
+    );
+
+    expect(service.internalApiClient.callInnerMessageApi).toHaveBeenCalledWith(
+      'POST',
+      '/direct',
+      expect.objectContaining({
+        senderAgentId: 'agent-kim',
+        receiverAgentId: 'agent-van',
+        eventType: 'inner.direct',
+        title: 'Hi',
+        content: 'Hello',
+        source: 'agent-mcp.send_internal_message',
+      }),
+    );
+    expect(result.sent).toBe(true);
+    expect(result.messageId).toBe('msg-001');
+  });
+
+  it('throws when execution agentId is missing', async () => {
+    const service = Object.create(ToolService.prototype);
+    await expect(
+      service['sendInternalMessage']({ receiverAgentId: 'agent-van', title: 'Hi', content: 'Hello' }, undefined),
+    ).rejects.toThrow('send_internal_message requires execution agentId');
+  });
+});
+
+describe('ToolService tool input contract normalization', () => {
+  it('returns normalized JSON schema from explicit inputSchema', async () => {
+    const service = Object.create(ToolService.prototype) as any;
+    service.getTool = jest.fn().mockResolvedValue({
+      id: 'legacy.tool.id',
+      canonicalId: 'builtin.sys-mg.mcp.inner-message.send-internal-message',
+      inputSchema: {
+        type: 'object',
+        required: ['receiverAgentId', 'title', 'content'],
+        additionalProperties: false,
+        properties: {
+          receiverAgentId: { type: 'string' },
+          title: { type: 'string' },
+          content: { type: 'string' },
+        },
+      },
+      implementation: { parameters: {} },
+    });
+
+    const result = await service.getToolInputContract('builtin.sys-mg.mcp.inner-message.send-internal-message');
+
+    expect(result?.toolId).toBe('builtin.sys-mg.mcp.inner-message.send-internal-message');
+    expect(result?.schema).toEqual({
+      type: 'object',
+      required: ['receiverAgentId', 'title', 'content'],
+      additionalProperties: false,
+      properties: {
+        receiverAgentId: { type: 'string' },
+        title: { type: 'string' },
+        content: { type: 'string' },
+      },
+    });
+  });
+
+  it('converts legacy parameter map into JSON schema', async () => {
+    const service = Object.create(ToolService.prototype) as any;
+    service.getTool = jest.fn().mockResolvedValue({
+      id: 'builtin.sys-mg.mcp.test.tool',
+      inputSchema: {},
+      implementation: {
+        parameters: {
+          query: 'string',
+          limit: 'number',
+          filters: { type: 'object' },
+        },
+      },
+    });
+
+    const result = await service.getToolInputContract('builtin.sys-mg.mcp.test.tool');
+
+    expect(result?.schema).toEqual({
+      type: 'object',
+      required: [],
+      additionalProperties: true,
+      properties: {
+        query: { type: 'string' },
+        limit: { type: 'number' },
+        filters: { type: 'object' },
+      },
+    });
+  });
+});
+
 describe('ToolService getToolRegistry prompt field', () => {
   it('includes prompt in registry item when tool has prompt', async () => {
     const service = Object.create(ToolService.prototype);
@@ -254,6 +364,118 @@ describe('ToolService agent master create agent mcp', () => {
     await expect(service['createAgentByMcp']({ roleId: 'role-1', modelId: 'm1' })).rejects.toThrow(
       'agent_master_create_agent requires name',
     );
+  });
+});
+
+describe('ToolService agents mcp list enrichment', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('returns tools with permission slugs and skills metadata', async () => {
+    const service = Object.create(ToolService.prototype);
+    service.normalizeStringArray = ToolService.prototype['normalizeStringArray'];
+    service.agentModel = {
+      find: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([
+          {
+            id: 'agent-1',
+            name: 'Agent One',
+            roleId: 'role-1',
+            capabilities: ['analysis'],
+            tools: ['tool.direct'],
+            skills: ['skill-1'],
+            permissions: ['perm.direct'],
+            isActive: true,
+          },
+        ]),
+      }),
+    };
+    service.agentProfileModel = {
+      find: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue([
+          {
+            roleCode: 'executive-lead',
+            role: 'executive-lead',
+            tools: ['tool.profile'],
+            permissions: ['perm.profile'],
+            permissionsManual: [],
+            permissionsDerived: [],
+            capabilities: [],
+            exposed: true,
+          },
+        ]),
+      }),
+    };
+    service.toolModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              {
+                id: 'tool.direct',
+                name: 'Direct Tool',
+                description: 'direct',
+                requiredPermissions: [{ id: 'perm.direct' }],
+              },
+              {
+                id: 'tool.profile',
+                name: 'Profile Tool',
+                description: 'profile',
+                requiredPermissions: [{ id: 'perm.missing' }],
+              },
+            ]),
+          }),
+        }),
+      }),
+    };
+    service.skillModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue([
+              { id: 'skill-1', name: 'Skill One', description: 'skill-desc' },
+            ]),
+          }),
+        }),
+      }),
+    };
+    service.memoService = {
+      getFirstMemoContentMapByKind: jest.fn().mockResolvedValue(new Map([['agent-1', 'identity-1']])),
+    };
+
+    jest.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        code: 'executive-lead',
+        name: 'Executive Lead',
+        permissions: ['perm.role'],
+      },
+    } as any);
+
+    const result = await service['getAgentsMcpList']({ includeHidden: false, limit: 10 });
+
+    expect(result.visible).toBe(1);
+    expect(result.agents[0].tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'tool.direct',
+          permissionSlugs: ['perm.direct'],
+          hasPermission: true,
+        }),
+        expect.objectContaining({
+          id: 'tool.profile',
+          permissionSlugs: ['perm.missing'],
+          hasPermission: false,
+        }),
+      ]),
+    );
+    expect(result.agents[0].skills).toEqual([
+      {
+        id: 'skill-1',
+        name: 'Skill One',
+        description: 'skill-desc',
+      },
+    ]);
   });
 });
 
