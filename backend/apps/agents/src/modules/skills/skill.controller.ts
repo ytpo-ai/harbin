@@ -112,9 +112,17 @@ export class SkillController {
   }
 
   @Get(':id')
-  async getSkill(@Param('id') id: string, @Query('includeContent') includeContent?: string) {
+  async getSkill(
+    @Param('id') id: string,
+    @Query('includeContent') includeContent?: string,
+    @Query('includeMetadata') includeMetadata?: string,
+  ) {
     const shouldIncludeContent = includeContent === 'true' || includeContent === '1';
-    return this.skillService.getSkillById(id, { includeContent: shouldIncludeContent });
+    const shouldIncludeMetadata = includeMetadata === 'true' || includeMetadata === '1';
+    return this.skillService.getSkillById(id, {
+      includeContent: shouldIncludeContent,
+      includeMetadata: shouldIncludeMetadata,
+    });
   }
 
   @Put(':id')

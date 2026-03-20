@@ -59,11 +59,23 @@ const formatCategory = (category: string) => {
   return categoryLabelMap[category] || category;
 };
 
-const extractMetadataMarkdown = (metadata: Skill['metadata']) => {
-  if (metadata && typeof metadata === 'object' && typeof (metadata as any).markdown === 'string') {
-    return String((metadata as any).markdown || '');
+const formatMetadataJson = (metadata: Skill['metadata']) => {
+  if (!metadata || typeof metadata !== 'object') return '{}';
+  try {
+    return JSON.stringify(metadata, null, 2);
+  } catch {
+    return '{}';
   }
-  return '';
+};
+
+const parseMetadataJson = (metadataText: string): Record<string, any> => {
+  const trimmed = metadataText.trim();
+  if (!trimmed) return {};
+  const parsed = JSON.parse(trimmed);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('metadata 必须是 JSON 对象');
+  }
+  return parsed as Record<string, any>;
 };
 
 const patchSkillInCache = (cached: SkillQueryCache, skillId: string, updates: Partial<Skill>): SkillQueryCache => {
@@ -96,7 +108,6 @@ const Skills: React.FC = () => {
   });
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'detail' | 'binding'>('detail');
-  const [bindingAgentId, setBindingAgentId] = useState('');
   const [isDiscoverDrawerOpen, setIsDiscoverDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [operationMenuOpen, setOperationMenuOpen] = useState(false);
@@ -141,7 +152,7 @@ const Skills: React.FC = () => {
 
   const { data: activeSkillDetail, isFetching: activeSkillLoading } = useQuery(
     ['skill-detail', activeSkillId],
-    () => skillService.getSkillById(activeSkillId as string, { includeContent: true }),
+    () => skillService.getSkillById(activeSkillId as string, { includeContent: true, includeMetadata: true }),
     { enabled: !!activeSkillId },
   );
 
@@ -177,11 +188,6 @@ const Skills: React.FC = () => {
     const next = params.toString();
     if (next !== searchParams.toString()) setSearchParams(params, { replace: true });
   }, [statusFilter, categoryFilter, searchKeyword, currentPage, pageSize, searchParams, setSearchParams]);
-
-  useEffect(() => {
-    if (!activeSkillId || bindingAgentId || agents.length === 0) return;
-    setBindingAgentId(agents[0].id);
-  }, [activeSkillId, bindingAgentId, agents]);
 
   useEffect(() => {
     if (!operationMenuOpen) return;
@@ -253,18 +259,11 @@ const Skills: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries('skills-paged');
       queryClient.invalidateQueries('skills-all');
-      if (bindingAgentId) queryClient.invalidateQueries(['agent-skills', bindingAgentId]);
       if (activeSkillId) setActiveSkillId(null);
     },
   });
 
-  const assignSkillMutation = useMutation(skillService.assignSkillToAgent, {
-    onSuccess: (_result, variables) => {
-      queryClient.invalidateQueries(['agent-skills', variables.agentId]);
-      queryClient.invalidateQueries('all-skill-agents');
-      alert(variables.enabled === false ? 'Agent 已解除绑定' : 'Agent 绑定已保存');
-    },
-  });
+  const assignSkillMutation = useMutation(skillService.assignSkillToAgent);
 
   const discoverMutation = useMutation(skillService.discoverSkills, {
     onSuccess: (result) => {
@@ -512,8 +511,6 @@ const Skills: React.FC = () => {
         agents={agents}
         activeTab={activeTab}
         onChangeTab={setActiveTab}
-        bindingAgentId={bindingAgentId}
-        onChangeBindingAgentId={setBindingAgentId}
         skillAgentsData={activeSkillId && allSkillAgents[activeSkillId] ? allSkillAgents[activeSkillId] : []}
         saving={updateSkillMutation.isLoading}
         bindingSaving={assignSkillMutation.isLoading}
@@ -522,7 +519,29 @@ const Skills: React.FC = () => {
           if (!activeSkillId) return;
           await updateSkillMutation.mutateAsync({ id: activeSkillId, updates });
         }}
-        onAssign={(payload) => assignSkillMutation.mutate(payload)}
+        onSaveBinding={async ({ skillId, selectedAgentIds, initialAgentIds }) => {
+          const selectedSet = new Set(selectedAgentIds);
+          const initialSet = new Set(initialAgentIds);
+
+          const toBind = selectedAgentIds.filter((agentId) => !initialSet.has(agentId));
+          const toUnbind = initialAgentIds.filter((agentId) => !selectedSet.has(agentId));
+
+          if (toBind.length === 0 && toUnbind.length === 0) {
+            return { bound: 0, unbound: 0 };
+          }
+
+          await Promise.all([
+            ...toBind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId })),
+            ...toUnbind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId, enabled: false })),
+          ]);
+
+          queryClient.invalidateQueries('all-skill-agents');
+
+          return {
+            bound: toBind.length,
+            unbound: toUnbind.length,
+          };
+        }}
       />
 
       <SkillDiscoveryDrawer
@@ -550,18 +569,16 @@ const SkillDetailDrawer: React.FC<{
   agents: Array<{ id: string; name: string }>;
   activeTab: 'detail' | 'binding';
   onChangeTab: (tab: 'detail' | 'binding') => void;
-  bindingAgentId: string;
-  onChangeBindingAgentId: (agentId: string) => void;
   skillAgentsData: Array<{ agentId: string; agentName: string }>;
   saving: boolean;
   bindingSaving: boolean;
   onClose: () => void;
   onSave: (updates: Partial<Skill>) => Promise<void>;
-  onAssign: (payload: {
-    agentId: string;
+  onSaveBinding: (payload: {
     skillId: string;
-    enabled?: boolean;
-  }) => void;
+    selectedAgentIds: string[];
+    initialAgentIds: string[];
+  }) => Promise<{ bound: number; unbound: number }>;
 }> = ({
   open,
   skill,
@@ -569,14 +586,12 @@ const SkillDetailDrawer: React.FC<{
   agents,
   activeTab,
   onChangeTab,
-  bindingAgentId,
-  onChangeBindingAgentId,
   skillAgentsData,
   saving,
   bindingSaving,
   onClose,
   onSave,
-  onAssign,
+  onSaveBinding,
 }) => {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const [saveError, setSaveError] = useState('');
@@ -597,6 +612,8 @@ const SkillDetailDrawer: React.FC<{
   });
   const [tagsText, setTagsText] = useState('');
   const [metadataText, setMetadataText] = useState('');
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
+  const [submittingBinding, setSubmittingBinding] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -631,9 +648,26 @@ const SkillDetailDrawer: React.FC<{
       contentType: skill.contentType || 'text/markdown',
     });
     setTagsText((skill.tags || []).join(','));
-    setMetadataText(extractMetadataMarkdown(skill.metadata));
+    setMetadataText(formatMetadataJson(skill.metadata));
     setSaveError('');
   }, [skill?.id, skill]);
+
+  useEffect(() => {
+    if (!open || !skill) return;
+    setSelectedAgentIds(skillAgentsData.map((item) => item.agentId));
+  }, [open, skill?.id, skillAgentsData]);
+
+  const initialAgentIds = useMemo(
+    () => Array.from(new Set(skillAgentsData.map((item) => item.agentId))),
+    [skillAgentsData],
+  );
+
+  const selectedAgentSet = useMemo(() => new Set(selectedAgentIds), [selectedAgentIds]);
+  const allVisibleSelected = agents.length > 0 && agents.every((agent) => selectedAgentSet.has(agent.id));
+  const hasBindingChanges = useMemo(() => {
+    if (selectedAgentIds.length !== initialAgentIds.length) return true;
+    return initialAgentIds.some((agentId) => !selectedAgentSet.has(agentId));
+  }, [initialAgentIds, selectedAgentIds.length, selectedAgentSet]);
 
   if (!open) return null;
 
@@ -686,13 +720,13 @@ const SkillDetailDrawer: React.FC<{
                 <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" rows={3} placeholder="描述" />
               </div>
               <div className="md:col-span-2">
-                <label className="mb-1 block text-xs font-medium text-gray-600">metadata (markdown)</label>
+                <label className="mb-1 block text-xs font-medium text-gray-600">metadata (JSON)</label>
                 <textarea
                   value={metadataText}
                   onChange={(e) => setMetadataText(e.target.value)}
                   className="w-full rounded-md border border-gray-300 px-3 py-2 font-mono text-xs"
                   rows={6}
-                  placeholder="metadata markdown"
+                  placeholder='{"author":"opencode"}'
                 />
               </div>
               <div className="md:col-span-2">
@@ -750,6 +784,7 @@ const SkillDetailDrawer: React.FC<{
                   }
                   setSaveError('');
                   try {
+                    const metadata = parseMetadataJson(metadataText);
                     await onSave({
                       ...form,
                       name: form.name.trim(),
@@ -758,7 +793,7 @@ const SkillDetailDrawer: React.FC<{
                       provider: form.provider.trim() || 'system',
                       version: form.version.trim() || '1.0.0',
                       tags: tagsText.split(',').map((item) => item.trim()).filter(Boolean),
-                      metadata: { markdown: metadataText.trim() },
+                      metadata,
                     });
                   } catch (error) {
                     const message = (error as any)?.response?.data?.message || (error as Error).message || '保存失败，请稍后重试';
@@ -774,64 +809,71 @@ const SkillDetailDrawer: React.FC<{
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-3">
-              <select
-                value={bindingAgentId}
-                onChange={(e) => onChangeBindingAgentId(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
-              >
-                <option value="">选择 Agent</option>
-                {agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>{agent.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-sm text-gray-700">已选择 {selectedAgentIds.length} / {agents.length} 个 Agent</p>
               <button
                 onClick={() => {
-                  if (!bindingAgentId || !skill) {
-                    alert('请选择 Agent');
-                    return;
-                  }
-                  onAssign({
-                    agentId: bindingAgentId,
-                    skillId: skill.id,
-                  });
+                  setSelectedAgentIds(allVisibleSelected ? [] : agents.map((agent) => agent.id));
                 }}
-                disabled={bindingSaving}
-                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+                className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-100"
               >
-                {bindingSaving ? '绑定中...' : '绑定 Agent'}
+                {allVisibleSelected ? '取消全选' : '全选当前列表'}
               </button>
             </div>
-            <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
-              <p className="mb-2 text-sm font-medium text-gray-700">已绑定 Agent</p>
-              {skillAgentsData && skillAgentsData.length > 0 ? (
-                <div className="space-y-2">
-                  {skillAgentsData.map((item) => (
-                    <div key={item.agentId} className="flex items-center justify-between gap-2 rounded bg-white px-3 py-2">
-                      <span className="text-xs text-primary-700">{item.agentName}</span>
-                      <button
-                        onClick={() => {
-                          if (!skill) return;
-                          if (!window.confirm(`确认解除绑定 Agent ${item.agentName} ?`)) return;
-                          onAssign({
-                            agentId: item.agentId,
-                            skillId: skill.id,
-                            enabled: false,
-                          });
-                        }}
-                        disabled={bindingSaving}
-                        className="rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-600 hover:bg-red-100 disabled:opacity-60"
-                      >
-                        {bindingSaving ? '处理中...' : '解除绑定'}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-xs text-gray-500">暂无绑定</p>
-              )}
+
+            <div className="max-h-80 space-y-2 overflow-y-auto rounded-md border border-gray-200 p-2">
+              {agents.map((agent) => (
+                <label key={agent.id} className="flex cursor-pointer items-center justify-between rounded-md px-2 py-2 hover:bg-gray-50">
+                  <span className="text-sm text-gray-700">{agent.name}</span>
+                  <input
+                    type="checkbox"
+                    checked={selectedAgentSet.has(agent.id)}
+                    onChange={(event) => {
+                      setSelectedAgentIds((prev) => {
+                        const next = new Set(prev);
+                        if (event.target.checked) next.add(agent.id);
+                        else next.delete(agent.id);
+                        return Array.from(next);
+                      });
+                    }}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                </label>
+              ))}
+              {agents.length === 0 && <p className="px-2 py-3 text-xs text-gray-500">暂无可选 Agent</p>}
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-gray-500">全选仅作用于当前可见列表</p>
+              <button
+                onClick={async () => {
+                  if (!skill) {
+                    return;
+                  }
+                  try {
+                    setSubmittingBinding(true);
+                    const result = await onSaveBinding({
+                      skillId: skill.id,
+                      selectedAgentIds,
+                      initialAgentIds,
+                    });
+                    if (result.bound === 0 && result.unbound === 0) {
+                      alert('未检测到绑定变更');
+                      return;
+                    }
+                    alert(`绑定已保存：新增 ${result.bound}，解除 ${result.unbound}`);
+                  } catch (error) {
+                    const message = (error as any)?.response?.data?.message || (error as Error).message || '绑定保存失败，请稍后重试';
+                    alert(message);
+                  } finally {
+                    setSubmittingBinding(false);
+                  }
+                }}
+                disabled={bindingSaving || submittingBinding || !hasBindingChanges}
+                className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+              >
+                {bindingSaving || submittingBinding ? '保存中...' : '保存绑定'}
+              </button>
             </div>
           </div>
         )}
@@ -963,7 +1005,7 @@ const SkillFormModal: React.FC<{
       contentType: 'text/markdown',
     });
     setTagsText('');
-    setMetadataText('');
+    setMetadataText('{}');
   }, [open]);
 
   if (!open) return null;
@@ -1005,7 +1047,7 @@ const SkillFormModal: React.FC<{
             onChange={(e) => setMetadataText(e.target.value)}
             className="rounded-md border border-gray-300 px-3 py-2 font-mono text-xs md:col-span-2"
             rows={5}
-            placeholder="metadata markdown"
+            placeholder='{"author":"opencode"}'
           />
         </div>
 
@@ -1017,16 +1059,22 @@ const SkillFormModal: React.FC<{
                 alert('name 和 description 必填');
                 return;
               }
-              onSubmit({
-                ...form,
-                name: form.name.trim(),
-                description: form.description.trim(),
-                category: form.category.trim() || '通用',
-                provider: form.provider.trim() || 'system',
-                version: form.version.trim() || '1.0.0',
-                tags: tagsText.split(',').map((item) => item.trim()).filter(Boolean),
-                metadata: { markdown: metadataText.trim() },
-              });
+              try {
+                const metadata = parseMetadataJson(metadataText);
+                onSubmit({
+                  ...form,
+                  name: form.name.trim(),
+                  description: form.description.trim(),
+                  category: form.category.trim() || '通用',
+                  provider: form.provider.trim() || 'system',
+                  version: form.version.trim() || '1.0.0',
+                  tags: tagsText.split(',').map((item) => item.trim()).filter(Boolean),
+                  metadata,
+                });
+              } catch (error) {
+                const message = error instanceof Error ? error.message : 'metadata JSON 格式错误';
+                alert(message);
+              }
             }}
             disabled={loading}
             className="rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"

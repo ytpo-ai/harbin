@@ -36,10 +36,11 @@ export const skillService = {
     return response.data;
   },
 
-  async getSkillById(skillId: string, options?: { includeContent?: boolean }): Promise<Skill> {
+  async getSkillById(skillId: string, options?: { includeContent?: boolean; includeMetadata?: boolean }): Promise<Skill> {
     const response = await api.get(`/skills/${skillId}`, {
       params: {
         includeContent: options?.includeContent ? 'true' : undefined,
+        includeMetadata: options?.includeMetadata ? 'true' : undefined,
       },
     });
     return response.data;
