@@ -4,14 +4,15 @@ import { Model } from 'mongoose';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import {
   Skill,
   SkillDocument,
   SkillSourceType,
   SkillStatus,
+  PlanningRule,
 } from '../../schemas/agent-skill.schema';
-import { SkillDocSyncService } from './skill-doc-sync.service';
+import { LoadedSkillDoc, SkillDocLoaderService } from './skill-doc-loader.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
 import { RedisService } from '@libs/infra';
 
@@ -31,6 +32,7 @@ interface CreateSkillInput {
   metadata?: Record<string, any>;
   content?: string;
   contentType?: string;
+  planningRules?: PlanningRule[];
 }
 
 interface SkillReadOptions {
@@ -56,6 +58,14 @@ export interface SkillPagedResult {
   totalPages: number;
 }
 
+interface SkillDocSyncResult {
+  scanned: number;
+  inserted: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+}
+
 @Injectable()
 export class SkillService {
   private readonly logger = new Logger(SkillService.name);
@@ -66,7 +76,7 @@ export class SkillService {
   constructor(
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
-    private readonly skillDocSyncService: SkillDocSyncService,
+    private readonly skillDocLoaderService: SkillDocLoaderService,
     private readonly memoEventBus: MemoEventBusService,
     private readonly redisService: RedisService,
   ) {}
@@ -119,7 +129,6 @@ export class SkillService {
       });
     }
 
-    await this.syncSkillDocsSafely(skill as unknown as Skill);
     return skill;
   }
 
@@ -269,9 +278,6 @@ export class SkillService {
       throw new NotFoundException(`Skill not found: ${skillId}`);
     }
 
-    if (existed.slug !== skill.slug) {
-      await this.removeSkillDocSafely(existed.slug);
-    }
     await this.invalidateSkillCaches(existed as unknown as Skill);
     await this.cacheSkillIndex(skill as unknown as Skill);
     await this.cacheSkillDetail(skill as unknown as Skill, false);
@@ -286,7 +292,6 @@ export class SkillService {
         contentUpdatedAt: (skill as any).contentUpdatedAt,
       });
     }
-    await this.syncSkillDocsSafely(skill as unknown as Skill);
     await this.invalidateEnabledSkillCacheBySkillIds([skillId]);
     return skill;
   }
@@ -298,8 +303,6 @@ export class SkillService {
     await this.invalidateSkillCaches(existed as unknown as Skill);
     await this.skillModel.deleteOne({ id: skillId }).exec();
     await this.agentModel.updateMany({ skills: skillId }, { $pull: { skills: skillId } }).exec();
-    await this.removeSkillDocSafely(existed.slug);
-    await this.rebuildIndexSafely();
     return true;
   }
 
@@ -328,7 +331,6 @@ export class SkillService {
       memoKinds: ['identity', 'custom'],
     });
     await this.invalidateEnabledSkillCacheByAgentIds([agentId]);
-    await this.rebuildIndexSafely();
     return {
       agentId,
       skillId,
@@ -464,7 +466,6 @@ export class SkillService {
         added += 1;
         await this.cacheSkillIndex(created as unknown as Skill);
         await this.cacheSkillDetail(created as unknown as Skill, false);
-        await this.syncSkillDocsSafely(created as unknown as Skill);
       } else {
         existed.description = candidate.description;
         existed.tags = candidate.tags;
@@ -479,11 +480,8 @@ export class SkillService {
         updated += 1;
         await this.cacheSkillIndex(existed as unknown as Skill);
         await this.cacheSkillDetail(existed as unknown as Skill, false);
-        await this.syncSkillDocsSafely(existed as unknown as Skill);
       }
     }
-
-    await this.rebuildIndexSafely();
     return {
       query,
       totalFound: items.length,
@@ -493,16 +491,25 @@ export class SkillService {
     };
   }
 
-  async rebuildSkillDocs(): Promise<{ skills: number }> {
-    const skills = await this.skillModel.find().sort({ name: 1 }).exec();
-
-    for (const skill of skills) {
-      await this.syncSkillDocsSafely(skill as unknown as Skill);
-    }
-    await this.rebuildIndexSafely();
-    return {
-      skills: skills.length,
+  async syncSkillDocsToDb(): Promise<SkillDocSyncResult> {
+    const docs = await this.skillDocLoaderService.loadDocs();
+    const result: SkillDocSyncResult = {
+      scanned: docs.length,
+      inserted: 0,
+      updated: 0,
+      skipped: 0,
+      failed: 0,
     };
+
+    for (const doc of docs) {
+      const synced = await this.syncSingleSkillDoc(doc);
+      result.inserted += synced.inserted;
+      result.updated += synced.updated;
+      result.skipped += synced.skipped;
+      result.failed += synced.failed;
+    }
+
+    return result;
   }
 
   private normalizeSlug(value: string): string {
@@ -697,29 +704,156 @@ export class SkillService {
     return this.agentModel.findOne({ id: agentId }).exec();
   }
 
-  private async syncSkillDocsSafely(skill: Skill): Promise<void> {
+  private async syncSingleSkillDoc(doc: LoadedSkillDoc): Promise<{
+    inserted: number;
+    updated: number;
+    skipped: number;
+    failed: number;
+  }> {
+    const slug = this.normalizeSkillDocSlug(doc);
+    const name = doc.name?.trim();
+    const description = doc.description?.trim();
+    if (!slug || !name || !description) {
+      this.logger.warn(`Skip invalid skill doc: ${doc.filePath}`);
+      return { inserted: 0, updated: 0, skipped: 1, failed: 0 };
+    }
+
     try {
-      await this.skillDocSyncService.syncSkill(skill);
+      const existed = await this.skillModel.findOne({ slug }).exec();
+      const payload = this.buildSkillDocUpdatePayload(doc, {
+        slug,
+        name,
+        description,
+      });
+
+      if (!existed) {
+        const created = await this.skillModel.create({
+          id: uuidv4(),
+          ...payload,
+        });
+        await this.cacheSkillIndex(created as unknown as Skill);
+        await this.cacheSkillDetail(created as unknown as Skill, false);
+        if (payload.content && payload.contentHash) {
+          await this.cacheSkillContent(created.id, payload.contentHash, {
+            content: payload.content,
+            contentType: payload.contentType,
+            contentHash: payload.contentHash,
+            contentSize: payload.contentSize,
+            contentUpdatedAt: payload.contentUpdatedAt,
+          });
+        }
+        return { inserted: 1, updated: 0, skipped: 0, failed: 0 };
+      }
+
+      const contentChanged = String((existed as any).contentHash || '') !== String(payload.contentHash || '');
+      const metadataChanged = this.hasMetadataChanged(existed, payload);
+      if (!contentChanged && !metadataChanged) {
+        return { inserted: 0, updated: 0, skipped: 1, failed: 0 };
+      }
+
+      const updated = await this.skillModel.findOneAndUpdate({ id: existed.id }, payload, { new: true }).exec();
+      if (!updated) {
+        return { inserted: 0, updated: 0, skipped: 0, failed: 1 };
+      }
+      await this.invalidateSkillCaches(existed as unknown as Skill);
+      await this.cacheSkillIndex(updated as unknown as Skill);
+      await this.cacheSkillDetail(updated as unknown as Skill, false);
+      if (payload.content && payload.contentHash) {
+        await this.cacheSkillContent(updated.id, payload.contentHash, {
+          content: payload.content,
+          contentType: payload.contentType,
+          contentHash: payload.contentHash,
+          contentSize: payload.contentSize,
+          contentUpdatedAt: payload.contentUpdatedAt,
+        });
+      }
+      await this.invalidateEnabledSkillCacheBySkillIds([updated.id]);
+      return { inserted: 0, updated: 1, skipped: 0, failed: 0 };
     } catch (error) {
-      this.skillDocSyncService.reportSyncError(error, `Failed to sync skill doc ${skill.slug}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed syncing skill doc ${doc.filePath}: ${message}`);
+      return { inserted: 0, updated: 0, skipped: 0, failed: 1 };
     }
   }
 
-  private async removeSkillDocSafely(slug: string): Promise<void> {
+  private normalizeSkillDocSlug(doc: LoadedSkillDoc): string | null {
+    const source = doc.slug?.trim() || doc.name?.trim();
+    if (!source) return null;
     try {
-      await this.skillDocSyncService.removeSkill(slug);
-    } catch (error) {
-      this.skillDocSyncService.reportSyncError(error, `Failed to remove skill doc ${slug}`);
+      return this.normalizeSlug(source);
+    } catch {
+      return null;
     }
   }
 
-  private async rebuildIndexSafely(): Promise<void> {
-    try {
-      const skills = await this.skillModel.find().sort({ name: 1 }).exec();
-      await this.skillDocSyncService.rebuildIndex(skills as unknown as Skill[]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      this.logger.warn(`Skill index rebuild skipped: ${message}`);
+  private buildSkillDocUpdatePayload(
+    doc: LoadedSkillDoc,
+    normalized: { slug: string; name: string; description: string },
+  ): Record<string, any> {
+    const now = new Date();
+    return {
+      slug: normalized.slug,
+      name: normalized.name,
+      description: normalized.description,
+      category: doc.category?.trim() || 'general',
+      tags: this.uniqueStrings(doc.tags || []),
+      sourceType: doc.sourceType || 'manual',
+      sourceUrl: doc.sourceUrl?.trim(),
+      provider: doc.provider?.trim() || 'system',
+      version: doc.version?.trim() || '1.0.0',
+      status: doc.status || 'active',
+      confidenceScore: this.normalizeScore(doc.confidenceScore ?? 60),
+      discoveredBy: doc.discoveredBy?.trim() || 'SkillDocSync',
+      metadata: doc.metadata || {},
+      metadataUpdatedAt: now,
+      planningRules: doc.planningRules || [],
+      content: doc.content,
+      contentType: doc.contentType || 'text/markdown',
+      contentHash: doc.contentHash,
+      contentSize: doc.contentSize || 0,
+      contentUpdatedAt: doc.content ? now : undefined,
+      lastVerifiedAt: now,
+      updatedAt: now,
+    };
+  }
+
+  private hasMetadataChanged(existed: SkillDocument, next: Record<string, any>): boolean {
+    const keys: Array<keyof SkillDocument | string> = [
+      'name',
+      'slug',
+      'description',
+      'category',
+      'sourceType',
+      'sourceUrl',
+      'provider',
+      'version',
+      'status',
+      'confidenceScore',
+      'discoveredBy',
+      'contentType',
+      'contentSize',
+      'contentHash',
+    ];
+    for (const key of keys) {
+      if (String((existed as any)[key] || '') !== String(next[key] || '')) {
+        return true;
+      }
     }
+
+    const existedTags = this.uniqueStrings(((existed as any).tags || []).map((tag: any) => String(tag || '')));
+    const nextTags = this.uniqueStrings((next.tags || []).map((tag: any) => String(tag || '')));
+    if (JSON.stringify(existedTags) !== JSON.stringify(nextTags)) {
+      return true;
+    }
+
+    const existedMetadata = (existed as any).metadata || {};
+    const nextMetadata = next.metadata || {};
+    if (JSON.stringify(existedMetadata) !== JSON.stringify(nextMetadata)) {
+      return true;
+    }
+
+    const existedPlanningRules = (existed as any).planningRules || [];
+    const nextPlanningRules = next.planningRules || [];
+    return JSON.stringify(existedPlanningRules) !== JSON.stringify(nextPlanningRules);
   }
 }

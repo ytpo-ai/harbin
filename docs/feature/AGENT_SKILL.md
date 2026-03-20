@@ -6,6 +6,7 @@
 
 - 提供统一的技能库（Skill Library）管理能力，支持创建、更新、下线与检索。
 - 提供 Agent 与 Skill 的绑定能力，基于 `Agent.skills` 维护启用技能列表。
+- 采用“文档主导 + DB 运行时消费”模式，以 `docs/skill/*.md` 为技能配置事实来源。
 - 采用“元数据先行 + 正文按需加载”的渐进式加载策略，降低列表与路由链路负载。
 
 ### 1.2 数据结构
@@ -24,7 +25,7 @@
 - `deprecated`：已弃用，不建议新绑定或推荐。
 - `disabled`：禁用下线，不参与推荐与新绑定。
 
-目标演进（DB + Redis，无文件系统依赖）：
+目标演进（文档配置 + DB + Redis）：
 
 - `metadata`：用于技能识别、路由和列表展示的轻量元数据（frontmatter 映射）。
 - `content`：技能正文（Markdown），仅在命中技能执行时按需加载。
@@ -33,12 +34,18 @@
 ### 1.3 核心逻辑
 
 1. Skill 管理：通过 `/skills` 完成技能增删改查与筛选。
-2. 绑定管理：通过 `/skills/assign` 维护 `Agent.skills`，支持绑定与解绑（`enabled=false`）。
+2. 文档同步：通过 `/skills/docs/sync` 扫描 `docs/skill/*.md` 并按 `slug` 同步入库（insert/update/skip）。
+3. 绑定管理：通过 `/skills/assign` 维护 `Agent.skills`，支持绑定与解绑（`enabled=false`）。
 4. 渐进式加载（按需激活）：
    - 列表/路由阶段只读取 skill 元数据（name/description/metadata/status/tags）。
    - 执行阶段先注入 skill 摘要，再根据任务上下文触发 `shouldActivateSkillContent`。
-   - 命中激活条件时才读取 `content` 注入 prompt，并受 `SKILL_CONTENT_MAX_INJECT_LENGTH` 截断保护。
-   - content 加载失败时仅告警，不阻断任务执行（fail-open）。
+    - 命中激活条件时才读取 `content` 注入 prompt，并受 `SKILL_CONTENT_MAX_INJECT_LENGTH` 截断保护。
+    - content 加载失败时仅告警，不阻断任务执行（fail-open）。
+   - 当前内置场景映射：
+     - 会议执行与异常：`meeting-sensitive-planner`、`meeting-resilience`
+     - 模型管理 grounding：`model-management-grounding`
+     - 通用运行时基线：`agent-runtime-baseline`
+     - Before-Step 强制动作模板：`forced-action-template`
 5. 缓存策略：
    - Redis 缓存索引元数据（高频、轻量）。
    - Redis 按 `contentHash` 缓存正文（按需、可失效）。
@@ -78,9 +85,9 @@
 | 文件 | 功能 |
 |------|------|
 | `skill.module.ts` | Skills 模块装配 |
-| `skill.controller.ts` | Skill CRUD、绑定、建议、文档重建接口 |
-| `skill.service.ts` | 技能库、绑定、推荐、审核、索引重建核心逻辑 |
-| `skill-doc-sync.service.ts` | 现有文档同步能力（后续计划去文件系统依赖） |
+| `skill.controller.ts` | Skill CRUD、绑定、检索、文档同步接口 |
+| `skill.service.ts` | 技能库、绑定、检索、文档入库同步核心逻辑 |
+| `skill-doc-loader.service.ts` | 文档扫描与 frontmatter/content 解析能力 |
 | `../agents/agent.service.ts` | Agent 执行消息构建；Skill 摘要注入与按需 content 激活 |
 
 ### 领域 Schema (backend/apps/agents/src/schemas/)
@@ -94,7 +101,7 @@
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Skills.tsx` | Skills 列表筛选、折叠操作面板（检索/文档重建）、详情抽屉编辑、Agent 绑定 Tab |
+| `pages/Skills.tsx` | Skills 列表筛选、折叠操作面板（检索/文档同步）、详情抽屉编辑、Agent 绑定 Tab |
 | `services/skillService.ts` | Skills 相关 API 封装 |
 
 前端交互约定（2026-03 更新）：

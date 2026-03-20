@@ -106,9 +106,9 @@ export class SkillController {
     return this.skillService.discoverSkillsFromInternet(body);
   }
 
-  @Post('docs/rebuild')
-  async rebuildDocs() {
-    return this.skillService.rebuildSkillDocs();
+  @Post('docs/sync')
+  async syncDocs() {
+    return this.skillService.syncSkillDocsToDb();
   }
 
   @Get(':id')

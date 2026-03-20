@@ -34,11 +34,8 @@ describe('SkillService', () => {
       find: jest.fn(),
       updateMany: jest.fn(),
     };
-    const skillDocSyncService = {
-      syncSkill: jest.fn(),
-      removeSkill: jest.fn(),
-      rebuildIndex: jest.fn(),
-      reportSyncError: jest.fn(),
+    const skillDocLoaderService = {
+      loadDocs: jest.fn().mockResolvedValue([]),
     };
     const memoEventBus = {
       emit: jest.fn(),
@@ -52,12 +49,12 @@ describe('SkillService', () => {
     const service = new SkillService(
       skillModel as any,
       agentModel as any,
-      skillDocSyncService as any,
+      skillDocLoaderService as any,
       memoEventBus as any,
       redisService as any,
     );
 
-    return { service, skillModel, agentModel, skillDocSyncService, memoEventBus, redisService };
+    return { service, skillModel, agentModel, skillDocLoaderService, memoEventBus, redisService };
   };
 
   it('stores content hash metadata when creating skill', async () => {
@@ -106,6 +103,35 @@ describe('SkillService', () => {
 
     expect(result.content).toBe('# cached');
     expect(skillModel.findOne).not.toHaveBeenCalled();
+  });
+
+  it('syncs skill docs from markdown into db', async () => {
+    const { service, skillModel, skillDocLoaderService } = createService();
+    skillDocLoaderService.loadDocs.mockResolvedValueOnce([
+      {
+        filePath: '/tmp/docs/skill/runtime.md',
+        name: 'Agent Runtime Baseline',
+        slug: 'agent-runtime-baseline',
+        description: 'Runtime baseline skill',
+        category: 'general',
+        tags: ['runtime'],
+        metadata: { author: 'test' },
+        content: '# Runtime',
+        contentType: 'text/markdown',
+        contentHash: 'hash-1',
+        contentSize: 9,
+      },
+    ]);
+    skillModel.findOne.mockReturnValue(queryResult(null));
+    skillModel.create.mockImplementation(async (payload: any) => ({ ...payload }));
+
+    const result = await service.syncSkillDocsToDb();
+
+    expect(result.scanned).toBe(1);
+    expect(result.inserted).toBe(1);
+    expect(result.updated).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(skillModel.create).toHaveBeenCalled();
   });
 
   it('assigns skill by writing into agent.skills', async () => {

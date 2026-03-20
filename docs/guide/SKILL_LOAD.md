@@ -23,7 +23,7 @@
 | 1 | `/Users/van/Workspace/harbin/backend/apps/agents/src/schemas/agent-skill.schema.ts` | Skill 数据模型定义 (Mongoose Schema) |
 | 2 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.service.ts` | Skill 核心业务逻辑服务 (725行) |
 | 3 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.controller.ts` | Skill REST API 控制器 |
-| 4 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill-doc-sync.service.ts` | Skill 文档同步服务 (磁盘 Markdown 文件生成) |
+| 4 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill-doc-loader.service.ts` | Skill 文档加载服务（扫描 docs/skill 并解析 frontmatter + content） |
 | 5 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.module.ts` | Skill 模块注册 |
 | 6 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.service.spec.ts` | 单测 |
 | 7 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent.service.ts` | Agent 服务 -- 含 skill 加载/注入 prompt 的核心逻辑 |
@@ -233,15 +233,13 @@ const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(`
 // 清除 agent 的 enabled-skills 缓存
 ```
 
-### 3.7 文档同步机制
+### 3.7 文档同步机制（2026-03 更新）
 
-每次 create/update/delete skill 时，会调用 `SkillDocSyncService` 将 skill 元数据同步到磁盘 Markdown 文件:
-- 单个 skill -> `{baseDir}/library/{slug}.md`
-- 索引 -> `{baseDir}/README.md`
-
-baseDir 的决定逻辑 (`skill-doc-sync.service.ts` line 23-35):
-- 优先使用 `AGENT_DATA_ROOT` 环境变量下的 `skills/` 目录
-- 默认为 `{workspaceRoot}/docs/skills/`
+当前为“文档主导”模式：
+- 同步入口：`POST /skills/docs/sync`
+- 扫描目录：默认 `{workspaceRoot}/docs/skill`，可通过 `SKILL_DOCS_DIR` 覆盖
+- 同步策略：按 `slug` upsert 到 `agent_skills`（insert / update / skip）
+- Skill 正文来自文档主体 Markdown，metadata/tags/planningRules 等来自 frontmatter
 
 ---
 
@@ -586,7 +584,7 @@ identity-aggregation.service.ts line 225-237 中生成的 "技能矩阵" Markdow
 | `getSkillAgents()` | GET | `/skills/skills/{skillId}/agents` | 获取 skill 绑定的 agents |
 | `getAllSkillAgents()` | GET | `/skills/all-skill-agents` | 获取所有 skill-agent 绑定关系 |
 | `discoverSkills()` | POST | `/skills/manager/discover` | GitHub 发现 |
-| `rebuildDocs()` | POST | `/skills/docs/rebuild` | 重建文档 |
+| `syncDocs()` | POST | `/skills/docs/sync` | 同步文档到 DB |
 
 ### 9.2 前端页面
 

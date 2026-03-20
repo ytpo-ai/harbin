@@ -275,9 +275,13 @@ const Skills: React.FC = () => {
     },
   });
 
-  const rebuildDocsMutation = useMutation(skillService.rebuildDocs, {
+  const syncDocsMutation = useMutation(skillService.syncDocs, {
     onSuccess: (result) => {
-      alert(`文档重建完成：skills=${result.skills}`);
+      alert(
+        `同步完成：scanned=${result.scanned}, inserted=${result.inserted}, updated=${result.updated}, skipped=${result.skipped}, failed=${result.failed}`,
+      );
+      queryClient.invalidateQueries('skills-paged');
+      queryClient.invalidateQueries('skills-all');
     },
   });
 
@@ -294,7 +298,7 @@ const Skills: React.FC = () => {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Skills 管理</h1>
-          <p className="mt-1 text-sm text-gray-500">管理技能库、Agent 绑定与文档重建</p>
+          <p className="mt-1 text-sm text-gray-500">管理技能库、Agent 绑定与文档同步</p>
         </div>
         <div className="relative flex items-center gap-2">
           <button
@@ -334,14 +338,14 @@ const Skills: React.FC = () => {
               <button
                 onClick={() => {
                   setOperationMenuOpen(false);
-                  rebuildDocsMutation.mutate();
+                  syncDocsMutation.mutate();
                 }}
-                disabled={rebuildDocsMutation.isLoading}
+                disabled={syncDocsMutation.isLoading}
                 className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-60"
                 role="menuitem"
               >
                 <BookOpenIcon className="mr-2 h-4 w-4" />
-                {rebuildDocsMutation.isLoading ? '重建中...' : '重建 Skills 文档'}
+                {syncDocsMutation.isLoading ? '同步中...' : '同步文档到 DB'}
               </button>
             </div>
           )}

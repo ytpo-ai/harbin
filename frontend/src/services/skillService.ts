@@ -84,8 +84,8 @@ export const skillService = {
     return response.data;
   },
 
-  async rebuildDocs(): Promise<{ skills: number }> {
-    const response = await api.post('/skills/docs/rebuild');
+  async syncDocs(): Promise<{ scanned: number; inserted: number; updated: number; skipped: number; failed: number }> {
+    const response = await api.post('/skills/docs/sync');
     return response.data;
   },
 };

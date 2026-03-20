@@ -206,7 +206,7 @@ Profile 字段说明：
 - `POST /skills/assign`：为 Agent 绑定/解绑技能（写入 `Agent.skills`）
 - `GET /skills/agents/:agentId`：查询 Agent 技能清单
 - `POST /skills/manager/discover`：联网检索并入库技能
-- `POST /skills/docs/rebuild`：重建技能文档（默认 `docs/skills`，配置 `AGENT_DATA_ROOT` 后写入 `$AGENT_DATA_ROOT/skills`）
+- `POST /skills/docs/sync`：同步技能文档到 DB（默认扫描 `docs/skill`，可通过 `SKILL_DOCS_DIR` 覆盖）
 - `GET /skills/:id/content`：按需读取技能正文（渐进式加载）
 
 Skill 渐进式加载（DB + Redis）契约：
