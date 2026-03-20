@@ -13,9 +13,8 @@ import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { OpenCodeModule } from '../opencode/opencode.module';
 import { AgentExecutionService } from './agent-execution.service';
-import { AgentAfterStepEvaluationHook } from './agent-after-step-evaluation.hook';
-import { AgentBeforeStepOptimizationHook } from './agent-before-step-optimization.hook';
-import { AgentOrchestrationIntentService } from './agent-orchestration-intent.service';
+import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
+import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
 import { AgentRoleService } from './agent-role.service';
@@ -27,6 +26,7 @@ import { NativeStreamingAgentExecutorEngine } from './executor-engines/native-st
 import { OpencodeAgentExecutorEngine } from './executor-engines/opencode-agent-executor.engine';
 import { OpencodeStreamingAgentExecutorEngine } from './executor-engines/opencode-streaming-agent-executor.engine';
 import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
+import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 
 @Module({
   imports: [
@@ -40,6 +40,7 @@ import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
     ApiKeysModule,
     ToolModule,
     MemoModule,
+    AgentActionLogModule,
     RuntimeModule,
     OpenCodeModule,
     PromptRegistryCoreModule,
@@ -53,7 +54,6 @@ import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
     AgentAfterStepEvaluationHook,
     provideLifecycleHook(AgentBeforeStepOptimizationHook),
     provideLifecycleHook(AgentAfterStepEvaluationHook),
-    AgentOrchestrationIntentService,
     AgentOpenCodePolicyService,
     AgentMcpProfileService,
     AgentRoleService,

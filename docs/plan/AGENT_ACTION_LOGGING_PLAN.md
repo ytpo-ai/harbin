@@ -54,3 +54,36 @@
 ### Risks/Dependencies
 - 跨服务调用依赖 `BACKEND_SERVICE_URL` 与内部签名校验。
 - hook 高频事件需做白名单控制，避免写入 `llm.delta` 导致日志爆量。
+
+## Phase 4 (Migrate Agent Action Logs to apps/agents)
+### Goal
+将 `agent-action-logs` 的 schema / service / API 从 legacy backend 迁移到 `backend/apps/agents`，移除 runtime 到 legacy(3001) 的主动同步依赖。
+
+### Steps
+1. 在 `apps/agents` 新增 `agent-action-log` schema（集合 `agent_action_logs`），保留 `sourceEventId` 唯一幂等索引。
+2. 在 `apps/agents` 新增 `AgentActionLogService`，迁移 runtime event -> action log 的映射与查询逻辑。
+3. 在 `apps/agents` 新增 `AgentActionLogController`，提供兼容接口：`GET /agent-action-logs`、`POST /agent-action-logs/internal/runtime-hooks`。
+4. 将 `RuntimeActionLogSyncService` 从跨服务 HTTP 调用改为本地 service 调用，去除对 `LEGACY_SERVICE_URL` 的强依赖。
+5. 将新模块接入 `AgentsAppModule/RuntimeModule`，并确保不改变现有 runtime 分发与 outbox 语义。
+6. 更新功能/API/日常记录文档，标注迁移后的能力归属与兼容说明。
+
+### Impacts
+- `backend/apps/agents`：新增 action-log 模块与 schema；runtime 日志同步链路改为本地调用。
+- `backend/src`：legacy `agent-action-logs` 进入兼容/下线阶段（按后续灰度安排）。
+- MongoDB：`agent_action_logs` 索引需与既有线上约束保持一致。
+
+### Risks/Dependencies
+- 若 legacy 与 agents 使用不同 Mongo 连接，需执行数据回填或双写过渡。
+- 查询接口鉴权模型由 agents 内部上下文中间件承接，调用方需保证请求头一致。
+- 迁移期间要避免重复写入，继续依赖 `sourceEventId` 幂等去重。
+
+## Phase 5 (Action Origin Convergence)
+### Goal
+将 Agent Action 的产生入口收敛到 `apps/agents`，移除 legacy 侧 action log 主动写入逻辑。
+
+### Steps
+1. 在 agents `POST /agents/:id/execute` 控制器内补齐 `started/completed/failed` action log 记录。
+2. 在 agents `POST /tools/:id/execute` 控制器内补齐聊天场景 `chat_tool_call` action log 记录（基于 `executionContext` 判定）。
+3. legacy `AgentClientService` 移除 `agent-action-logs` 写入逻辑，仅保留业务调用与上下文透传。
+4. 删除过渡期内部写入接口 `POST /agent-action-logs/internal/record`，避免形成新的跨服务日志写入依赖。
+5. 重新验证 legacy/agents/gateway 构建，确保迁移后调用链可用。

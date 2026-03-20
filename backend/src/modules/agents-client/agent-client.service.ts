@@ -11,8 +11,6 @@ import { RedisService } from '@libs/infra';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { Agent, AgentExecutionTask, AIModel, ToolExecution } from '../../shared/types';
-import { AgentActionLogService } from '../agent-action-logs/agent-action-log.service';
-import { AgentActionContextType } from '../../shared/schemas/agent-action-log.schema';
 
 export interface AgentMemoSnapshotItem {
   id: string;
@@ -71,7 +69,6 @@ export class AgentClientService {
   private readonly timeout = Number(process.env.AGENTS_CLIENT_TIMEOUT_MS || 20000);
 
   constructor(
-    private readonly agentActionLogService: AgentActionLogService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -169,23 +166,6 @@ export class AgentClientService {
     const contextType = this.resolveContextType(context);
     const contextId = this.resolveContextId(context, task);
     const contextSessionId = this.resolveAgentSessionId(context);
-    const chatTitle = this.resolveChatTitle(context);
-    const actionLabel = this.buildActionLabel(task, contextType, executionMode);
-    await this.agentActionLogService.record({
-      agentId,
-      contextType,
-      contextId,
-      action: actionLabel,
-      status: 'started',
-      details: {
-        taskId: task.id,
-        taskTitle: task.title,
-        taskType: task.type,
-        executionMode,
-        agentSessionId: contextSessionId,
-        meetingTitle: chatTitle,
-      },
-    });
 
     try {
       this.logger.log(
@@ -216,24 +196,6 @@ export class AgentClientService {
         `[agents_execute_response] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=success durationMs=${Date.now() - startedAt} runId=${response.data?.runId || 'none'} sessionId=${response.data?.sessionId || 'none'} responseLength=${(response.data?.response || '').length}`,
       );
 
-      await this.agentActionLogService.record({
-        agentId,
-        contextType,
-        contextId,
-        action: actionLabel,
-        status: 'completed',
-        durationMs: Date.now() - startedAt,
-        details: {
-          taskId: task.id,
-          taskTitle: task.title,
-          taskType: task.type,
-          executionMode,
-          agentSessionId: response.data?.sessionId || contextSessionId,
-          meetingTitle: chatTitle,
-          runId: response.data?.runId,
-          sessionId: response.data?.sessionId,
-        },
-      });
       return {
         response: response.data?.response || '',
         runId: response.data?.runId,
@@ -252,23 +214,6 @@ export class AgentClientService {
       this.logger.error(
         `[agents_execute_failed] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=${status || 'unknown'} durationMs=${Date.now() - startedAt} error=${this.compactLogText(message)} detail="${errorDetail}"`,
       );
-      await this.agentActionLogService.record({
-        agentId,
-        contextType,
-        contextId,
-        action: actionLabel,
-        status: 'failed',
-        durationMs: Date.now() - startedAt,
-        details: {
-          taskId: task.id,
-          taskTitle: task.title,
-          taskType: task.type,
-          executionMode,
-          agentSessionId: contextSessionId,
-          meetingTitle: chatTitle,
-          error: message,
-        },
-      });
       throw error;
     }
   }
@@ -487,7 +432,7 @@ export class AgentClientService {
     throw new Error(`Async agent task SSE stream ended before terminal event: ${taskId}`);
   }
 
-  private resolveContextType(context?: any): AgentActionContextType {
+  private resolveContextType(context?: any): 'chat' | 'orchestration' {
     const teamContext = context?.teamContext;
     if (!teamContext) return 'chat';
     if (teamContext.planId) return 'orchestration';
@@ -505,12 +450,6 @@ export class AgentClientService {
     if (task?.id) return task.id;
     const rawTask = task as { _id?: { toString?: () => string } } | undefined;
     return rawTask?._id?.toString ? rawTask._id.toString() : undefined;
-  }
-
-  private buildActionLabel(task: AgentExecutionTask, contextType: AgentActionContextType, mode: AgentExecutionMode): string {
-    const taskType = task?.type ? task.type : 'task';
-    const action = mode === 'chat' ? 'chat_execution' : 'task_execution';
-    return `${action}:${contextType}:${taskType}`;
   }
 
   private resolveExecutionMode(context?: any): AgentExecutionMode {
@@ -533,23 +472,16 @@ export class AgentClientService {
     return undefined;
   }
 
-  private resolveChatTitle(context?: any): string | undefined {
-    const candidates = [
-      context?.teamContext?.meetingTitle,
-      context?.teamContext?.title,
-    ];
-    for (const value of candidates) {
-      if (typeof value === 'string' && value.trim()) {
-        return value.trim();
-      }
-    }
-    return undefined;
-  }
-
-  async executeTool(toolId: string, agentId: string, parameters: any, taskId?: string): Promise<any> {
+  async executeTool(
+    toolId: string,
+    agentId: string,
+    parameters: any,
+    taskId?: string,
+    executionContext?: Record<string, unknown>,
+  ): Promise<any> {
     const response = await axios.post<any>(
       `${this.baseUrl}/api/tools/${toolId}/execute`,
-      { agentId, parameters, taskId },
+      { agentId, parameters, taskId, executionContext },
       {
         headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
@@ -567,67 +499,19 @@ export class AgentClientService {
       source?: string;
     },
   ): Promise<any> {
-    const startedAt = Date.now();
     const context = options?.context;
-    const contextType = this.resolveContextType(context);
-    const contextId = this.resolveContextId(context);
-    const agentSessionId = this.resolveAgentSessionId(context);
-    const chatTitle = this.resolveChatTitle(context);
     const source = options?.source || 'chat_query';
-
-    await this.agentActionLogService.record({
+    return this.executeTool(
+      toolId,
       agentId,
-      contextType,
-      contextId,
-      action: 'chat_tool_call',
-      status: 'started',
-      details: {
-        toolId,
+      parameters,
+      context?.teamContext?.taskId,
+      {
+        ...(context || {}),
         source,
         executionMode: 'chat',
-        agentSessionId,
-        meetingTitle: chatTitle,
       },
-    });
-
-    try {
-      const result = await this.executeTool(toolId, agentId, parameters, context?.teamContext?.taskId);
-      await this.agentActionLogService.record({
-        agentId,
-        contextType,
-        contextId,
-        action: 'chat_tool_call',
-        status: 'completed',
-        durationMs: Date.now() - startedAt,
-        details: {
-          toolId,
-          source,
-          executionMode: 'chat',
-          agentSessionId,
-          meetingTitle: chatTitle,
-        },
-      });
-      return result;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      await this.agentActionLogService.record({
-        agentId,
-        contextType,
-        contextId,
-        action: 'chat_tool_call',
-        status: 'failed',
-        durationMs: Date.now() - startedAt,
-        details: {
-          toolId,
-          source,
-          executionMode: 'chat',
-          agentSessionId,
-          meetingTitle: chatTitle,
-          error: message,
-        },
-      });
-      throw error;
-    }
+    );
   }
 
   async testAgentConnection(

@@ -2,11 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
+  AgentActionContextType,
   AgentActionLog,
   AgentActionLogDocument,
-  AgentActionContextType,
   AgentActionStatus,
-} from '../../shared/schemas/agent-action-log.schema';
+} from '../../schemas/agent-action-log.schema';
 
 export interface QueryAgentActionLogsParams {
   from?: string;
@@ -241,10 +241,7 @@ export class AgentActionLogService {
     }
     if (params.status?.trim()) {
       const status = params.status.trim();
-      filter.$or = [
-        { 'details.status': status },
-        { status },
-      ];
+      filter.$or = [{ 'details.status': status }, { status }];
     }
 
     if (from || to) {

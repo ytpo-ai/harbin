@@ -16,6 +16,7 @@ import { SkillModule } from './modules/skills/skill.module';
 import { MemoModule } from './modules/memos/memo.module';
 import { AgentTaskModule } from './modules/agent-tasks/agent-task.module';
 import { PromptRegistryAdminModule } from './modules/prompt-registry/prompt-registry-admin.module';
+import { AgentActionLogModule } from './modules/action-logs/agent-action-log.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PromptRegistryAdminModule } from './modules/prompt-registry/prompt-regi
     ApiKeysModule,
     AgentTaskModule,
     PromptRegistryAdminModule,
+    AgentActionLogModule,
     AgentModule,
     SkillModule,
     MemoModule,

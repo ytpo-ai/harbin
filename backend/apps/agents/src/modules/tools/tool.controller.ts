@@ -3,13 +3,69 @@ import { ToolService } from './tool.service';
 import { Tool } from '../../../../../src/shared/types';
 import { AgentToolAuthService } from './agent-tool-auth.service';
 import { AgentToolAuthGuard } from './agent-tool-auth.guard';
+import { AgentActionLogService } from '../action-logs/agent-action-log.service';
+import { AgentActionContextType } from '../../schemas/agent-action-log.schema';
 
 @Controller('tools')
 export class ToolController {
   constructor(
     private readonly toolService: ToolService,
     private readonly agentToolAuthService: AgentToolAuthService,
+    private readonly agentActionLogService: AgentActionLogService,
   ) {}
+
+  private resolveContextType(context?: any): AgentActionContextType {
+    const teamContext = context?.teamContext;
+    if (!teamContext) return 'chat';
+    if (teamContext.planId) return 'orchestration';
+    if (teamContext.taskId || teamContext.orchestrationTaskId || teamContext.taskKey) return 'orchestration';
+    return 'chat';
+  }
+
+  private resolveContextId(context?: any, fallbackTaskId?: string): string | undefined {
+    const teamContext = context?.teamContext;
+    if (teamContext?.meetingId) return teamContext.meetingId;
+    if (teamContext?.planId) return teamContext.planId;
+    if (teamContext?.taskId) return teamContext.taskId;
+    if (teamContext?.orchestrationTaskId) return teamContext.orchestrationTaskId;
+    if (teamContext?.taskKey) return teamContext.taskKey;
+    if (fallbackTaskId) return fallbackTaskId;
+    return undefined;
+  }
+
+  private resolveAgentSessionId(context?: any): string | undefined {
+    const candidates = [
+      context?.agentSessionId,
+      context?.sessionId,
+      context?.teamContext?.agentSessionId,
+      context?.teamContext?.sessionId,
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private resolveChatTitle(context?: any): string | undefined {
+    const candidates = [
+      context?.teamContext?.meetingTitle,
+      context?.teamContext?.title,
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
+
+  private shouldRecordChatToolAction(executionContext?: any): boolean {
+    const source = String(executionContext?.source || '').trim().toLowerCase();
+    const executionMode = String(executionContext?.executionMode || '').trim().toLowerCase();
+    return source === 'chat_query' || executionMode === 'chat';
+  }
 
   @Get()
   getAllTools() {
@@ -104,6 +160,7 @@ export class ToolController {
       executionContext?: any;
     }
   ) {
+    const startedAt = Date.now();
     const authContext = req.agentToolAuth as
       | {
           mode?: 'jwt' | 'internal-context' | 'legacy';
@@ -134,15 +191,80 @@ export class ToolController {
         role: body.executionContext?.actor?.role || (authContext?.mode === 'jwt' ? 'agent-token' : 'system'),
       },
     };
+    const shouldRecordAction = this.shouldRecordChatToolAction(executionContext);
+    const actionContextType = this.resolveContextType(executionContext);
+    const actionContextId = this.resolveContextId(executionContext, body.taskId);
+    const actionSessionId = this.resolveAgentSessionId(executionContext);
+    const chatTitle = this.resolveChatTitle(executionContext);
+    const source = String(executionContext?.source || 'chat_query');
 
-    const execution = await this.toolService.executeTool(id, resolvedAgentId, body.parameters, body.taskId, executionContext);
-    const executionPayload = (execution as any)?.toObject ? (execution as any).toObject() : execution;
-    const resolvedToolId = executionPayload.resolvedToolId || executionPayload.toolId || id;
-    return {
-      ...executionPayload,
-      requestedToolId: id,
-      resolvedToolId,
-    };
+    if (shouldRecordAction) {
+      await this.agentActionLogService.record({
+        agentId: resolvedAgentId,
+        contextType: actionContextType,
+        contextId: actionContextId,
+        action: 'chat_tool_call',
+        status: 'started',
+        details: {
+          toolId: id,
+          source,
+          executionMode: 'chat',
+          agentSessionId: actionSessionId,
+          meetingTitle: chatTitle,
+        },
+      });
+    }
+
+    try {
+      const execution = await this.toolService.executeTool(id, resolvedAgentId, body.parameters, body.taskId, executionContext);
+      const executionPayload = (execution as any)?.toObject ? (execution as any).toObject() : execution;
+      const resolvedToolId = executionPayload.resolvedToolId || executionPayload.toolId || id;
+
+      if (shouldRecordAction) {
+        await this.agentActionLogService.record({
+          agentId: resolvedAgentId,
+          contextType: actionContextType,
+          contextId: actionContextId,
+          action: 'chat_tool_call',
+          status: 'completed',
+          durationMs: Date.now() - startedAt,
+          details: {
+            toolId: resolvedToolId,
+            source,
+            executionMode: 'chat',
+            agentSessionId: actionSessionId,
+            meetingTitle: chatTitle,
+          },
+        });
+      }
+
+      return {
+        ...executionPayload,
+        requestedToolId: id,
+        resolvedToolId,
+      };
+    } catch (error) {
+      if (shouldRecordAction) {
+        const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+        await this.agentActionLogService.record({
+          agentId: resolvedAgentId,
+          contextType: actionContextType,
+          contextId: actionContextId,
+          action: 'chat_tool_call',
+          status: 'failed',
+          durationMs: Date.now() - startedAt,
+          details: {
+            toolId: id,
+            source,
+            executionMode: 'chat',
+            agentSessionId: actionSessionId,
+            meetingTitle: chatTitle,
+            error: message,
+          },
+        });
+      }
+      throw error;
+    }
   }
 
   @Post('auth/credentials')

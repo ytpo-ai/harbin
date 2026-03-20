@@ -4,7 +4,7 @@
 
 - 对外入口：`http://localhost:3100/api`
 - 服务角色：记录 Agent 在会议/计划/任务中的行为日志
-- 实现位置：`backend/src/modules/agent-action-logs/agent-action-log.controller.ts`
+- 实现位置：`backend/apps/agents/src/modules/action-logs/agent-action-log.controller.ts`
 
 ## 查询 Agent 行为日志
 

@@ -37,6 +37,7 @@ import { AuditToolHandler } from './audit-tool-handler.service';
 import { MeetingToolHandler } from './meeting-tool-handler.service';
 import { AgentToolAuthService } from './agent-tool-auth.service';
 import { AgentToolAuthGuard } from './agent-tool-auth.guard';
+import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AgentToolAuthGuard } from './agent-tool-auth.guard';
     ModelModule,
     MemoModule,
     SkillModule,
+    AgentActionLogModule,
     MongooseModule.forFeature([
       { name: Tool.name, schema: ToolSchema },
       { name: Toolkit.name, schema: ToolkitSchema },

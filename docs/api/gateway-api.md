@@ -14,7 +14,7 @@
 - `/api/skills/**` -> Agents 服务（3002）
 - `/api/models/**` -> Agents 服务（3002）
 - `/api/model-management/**` -> Agents 服务（3002）
-- `/api/agent-action-logs/**` -> Legacy 服务（3001）
+- `/api/agent-action-logs/**` -> Agents 服务（3002）
 - 其他 `/api/**` -> Legacy 服务（3001）
 
 ## 内部安全头

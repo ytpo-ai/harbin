@@ -13,7 +13,6 @@ import { OrchestrationSchedulerModule } from './modules/orchestration/scheduler/
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
-import { AgentActionLogModule } from './modules/agent-action-logs/agent-action-log.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
 import { InnerMessageModule } from './modules/inner-message/inner-message.module';
 import { InfraModule } from '@libs/infra';
@@ -42,7 +41,6 @@ import jwtConfig from './config/jwt.config';
       inject: [ConfigService],
     }),
     OperationLogModule,
-    AgentActionLogModule,
     MessagesModule,
     MessageCenterModule,
     InnerMessageModule,

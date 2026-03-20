@@ -20,11 +20,13 @@ import { MemoModule } from '../memos/memo.module';
 import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 import { HookRegistryService } from './hooks/hook-registry.service';
 import { HookPipelineService } from './hooks/hook-pipeline.service';
+import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 
 @Module({
   imports: [
     InfraModule,
     MemoModule,
+    AgentActionLogModule,
     MongooseModule.forFeature([
       { name: AgentRun.name, schema: AgentRunSchema },
       { name: AgentMessage.name, schema: AgentMessageSchema },

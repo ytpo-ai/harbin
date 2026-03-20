@@ -1,14 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import axios from 'axios';
-import { encodeUserContext, signEncodedContext } from '@libs/auth';
-import { GatewayUserContext } from '@libs/contracts';
+import { AgentActionLogService } from '../action-logs/agent-action-log.service';
 import { RuntimeEvent } from './contracts/runtime-event.contract';
 
 @Injectable()
 export class RuntimeActionLogSyncService {
-  private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
-  private readonly contextSecret = String(process.env.INTERNAL_CONTEXT_SECRET || '').trim();
-  private readonly timeout = Number(process.env.RUNTIME_ACTION_LOG_SYNC_TIMEOUT_MS || 8000);
   private readonly maxPayloadChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_PAYLOAD_CHARS || 12000);
   private readonly maxToolOutputChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_TOOL_OUTPUT_CHARS || 8000);
   private readonly previewChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_PREVIEW_CHARS || 2000);
@@ -30,11 +25,7 @@ export class RuntimeActionLogSyncService {
     'permission.denied',
   ]);
 
-  constructor() {
-    if (!this.contextSecret) {
-      throw new Error('INTERNAL_CONTEXT_SECRET is required');
-    }
-  }
+  constructor(private readonly agentActionLogService: AgentActionLogService) {}
 
   async syncRuntimeEvent(event: RuntimeEvent): Promise<void> {
     if (!this.allowedEventTypes.has(event.eventType)) {
@@ -42,28 +33,21 @@ export class RuntimeActionLogSyncService {
     }
 
     const payload = this.compactPayloadForSync(event);
-    await axios.post(
-      `${this.legacyBaseUrl}/agent-action-logs/internal/runtime-hooks`,
-      {
-        eventId: event.eventId,
-        eventType: event.eventType,
-        agentId: event.agentId,
-        sessionId: event.sessionId,
-        runId: event.runId,
-        taskId: event.taskId,
-        messageId: event.messageId,
-        partId: event.partId,
-        toolCallId: event.toolCallId,
-        sequence: event.sequence,
-        timestamp: event.timestamp,
-        traceId: event.traceId,
-        payload,
-      },
-      {
-        headers: this.buildSignedHeaders(event),
-        timeout: this.timeout,
-      },
-    );
+    await this.agentActionLogService.recordRuntimeHookEvent({
+      eventId: event.eventId,
+      eventType: event.eventType,
+      agentId: event.agentId,
+      sessionId: event.sessionId,
+      runId: event.runId,
+      taskId: event.taskId,
+      messageId: event.messageId,
+      partId: event.partId,
+      toolCallId: event.toolCallId,
+      sequence: event.sequence,
+      timestamp: event.timestamp,
+      traceId: event.traceId,
+      payload,
+    });
   }
 
   private compactPayloadForSync(event: RuntimeEvent): Record<string, unknown> {
@@ -148,23 +132,6 @@ export class RuntimeActionLogSyncService {
       paramsTruncated: true,
       paramsSize: paramsText.length,
       paramsPreview: paramsText.slice(0, this.previewChars),
-    };
-  }
-
-  private buildSignedHeaders(event: RuntimeEvent): Record<string, string> {
-    const now = Date.now();
-    const context: GatewayUserContext = {
-      employeeId: 'agents-service',
-      role: 'system',
-      issuedAt: now,
-      expiresAt: now + 60 * 1000,
-    };
-    const encoded = encodeUserContext(context);
-    const signature = signEncodedContext(encoded, this.contextSecret);
-    return {
-      'x-user-context': encoded,
-      'x-user-signature': signature,
-      'content-type': 'application/json',
     };
   }
 

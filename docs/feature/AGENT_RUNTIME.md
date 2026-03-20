@@ -164,7 +164,7 @@
   - 发布失败标记 `failed`，并按指数退避设置 `nextRetryAt`
   - 定时 flush 自动重试
 - replay：支持按 `eventTypes/fromSequence/toSequence/channel/limit` 重放 run 事件。
-- 状态钩子同步日志：`HookDispatcher` 在分发成功链路内同步调用 legacy `agent-action-logs` 内部接口，写入 `agent_action_logs`，并以 `sourceEventId=eventId` 做幂等。
+- 状态钩子同步日志：`HookDispatcher` 在分发成功链路内同步调用 agents 应用内 `AgentActionLogService`，写入 `agent_action_logs`，并以 `sourceEventId=eventId` 做幂等。
 - 同步写入的工具事件会在 `details` 顶层透出 `toolId/toolName/params`，便于系统进程日志与任务维度日志直接检索。
 - 大 payload 防护：同步 legacy 前会对超大 `payload`（尤其 `tool.completed.payload.output`）做截断摘要，写入 `outputPreview/outputSize/outputTruncated`，避免请求体过大导致 `413`。
 
@@ -208,7 +208,7 @@
   - `modules/runtime/hooks/hook-registry.service.ts`（Hook 动态注册中心）
   - `modules/runtime/hooks/hook-pipeline.service.ts`（Hook 调度器，串行执行 + 容错 + 可观测）
   - `agent-executor.service.ts` 通过 `HookPipelineService.run()` 统一调度 step hooks，不再维护硬编码数组。
-  - `modules/agents/agent-orchestration-intent.service.ts`（会议编排意图与强制工具映射）
+  - `modules/agents/agent-orchestration-intent.service.ts`（历史项，文件已于 2026-03-19 删除）
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
 - Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
 - Agent Task Worker 会透传 `sessionContext.runtimeTaskType/runtimeChannelHint` 到 `context.runtimeRouting`，用于异步任务执行时的 runtime 通道路由。
@@ -311,7 +311,7 @@
 | `modules/agents/agent-before-step-optimization.hook.ts` | step 进入前语义优化 Hook（LLM 判断） |
 | `modules/agents/agent-after-step-evaluation.hook.ts` | step 完成后语义评估 Hook（LLM 评审） |
 | `modules/agents/agent-executor-step-hooks.types.ts` | step Hook 协议类型定义 |
-| `modules/agents/agent-orchestration-intent.service.ts` | 会议编排意图识别与强制工具调用映射 |
+| `modules/agents/agent-orchestration-intent.service.ts` | 历史项：会议编排意图识别与强制工具调用映射（文件已于 2026-03-19 删除） |
 | `modules/agents/agent-mcp-profile.service.ts` | MCP profile 读写、映射与权限集下沉服务 |
 | `modules/agents/executor-engines/agent-executor-engine.interface.ts` | Agent Executor Engine 协议定义 |
 | `modules/agents/executor-engines/agent-executor-engine.types.ts` | Engine 执行上下文与路由类型定义 |
