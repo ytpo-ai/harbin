@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
-import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
+import { AgentProfile, AgentProfileSchema } from '@agent/schemas/agent-profile.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
+import { AgentRole, AgentRoleSchema } from '../../schemas/agent-role.schema';
 import { AgentService } from './agent.service';
 import { AgentController } from './agent.controller';
 import { ModelModule } from '../models/model.module';
@@ -35,6 +36,7 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
       { name: AgentProfile.name, schema: AgentProfileSchema },
       { name: AgentRun.name, schema: AgentRunSchema },
       { name: Skill.name, schema: SkillSchema },
+      { name: AgentRole.name, schema: AgentRoleSchema },
     ]),
     ModelModule,
     ApiKeysModule,

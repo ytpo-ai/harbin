@@ -4,12 +4,13 @@ import { ConfigModule } from '@nestjs/config';
 import { Tool, ToolSchema } from '../../schemas/tool.schema';
 import { Toolkit, ToolkitSchema } from '../../schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionSchema } from '../../schemas/tool-execution.schema';
-import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
-import { AgentProfile, AgentProfileSchema } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
+import { AgentProfile, AgentProfileSchema } from '@agent/schemas/agent-profile.schema';
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/api-key.schema';
 import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
+import { AgentRole, AgentRoleSchema } from '../../schemas/agent-role.schema';
 import {
   AgentToolCredential,
   AgentToolCredentialSchema,
@@ -56,6 +57,7 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
       { name: OperationLog.name, schema: OperationLogSchema },
       { name: ApiKey.name, schema: ApiKeySchema },
       { name: Skill.name, schema: SkillSchema },
+      { name: AgentRole.name, schema: AgentRoleSchema },
       { name: AgentToolCredential.name, schema: AgentToolCredentialSchema },
       { name: AgentToolTokenRevocation.name, schema: AgentToolTokenRevocationSchema },
     ]),

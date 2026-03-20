@@ -119,12 +119,32 @@ OpenCode 相关（规划中）：
 - `tier` 枚举：`leadership | operations | temporary`。
 - 未显式传入 `tier` 时按 `role.code -> tier` 映射自动回填。
 - 若显式传入 `tier` 与角色映射不一致，后端返回 `400 Bad Request`。
-- 角色主数据来源为 legacy Roles 模块（`/roles`），agents service 仅保存引用。
+- 角色主数据来源为 agents 服务内 `agent_roles` 集合（`/agents/roles*`）。
 
 工具白名单约束：
 
 - `Agent.tools` 必须满足：`Agent.tools ⊆ MCPProfile.tools(role.code)`。
 - 若创建/更新时提交超出白名单的工具，后端返回 `400 Bad Request`。
+
+## Inner Messages（`/inner-messages`）
+
+- `POST /inner-messages/direct`：内部协作直发消息（先落库 `sent`，再入 Redis 分发队列）
+- `POST /inner-messages/publish`：发布事件消息（按订阅关系匹配后生成订阅消息并分发）
+- `PATCH /inner-messages/:messageId/ack`：接收方 ACK（更新为 `delivered` 或 `processing`）
+- `PATCH /inner-messages/:messageId/processed`：接收方处理完成（更新为 `processed`）
+
+## Inner Message Subscriptions（`/inner-message-subscriptions`）
+
+- `POST /inner-message-subscriptions`：创建或更新订阅（按 `subscriberAgentId + eventType` 幂等）
+- `GET /inner-message-subscriptions`：查询订阅列表（支持 `subscriberAgentId/eventType/isActive`）
+- `GET /inner-message-subscriptions/event-definitions`：查询事件定义（优先来自 Redis 事件注册表，支持 `domain/keyword/limit`）
+- `POST /inner-message-subscriptions/rebuild-index`：重建订阅 Redis 路由索引（运维/排障）
+
+说明：Inner Message 主实现已迁移到 agents 服务；legacy 侧编排/会议通过 `AgentClientService` 转发任务与会议事件到该路由。
+
+## Message Center（`/message-center`）
+
+- `GET /message-center/inner-messages`：内部消息只读分页查询（支持 `page/pageSize/mode/status/eventType`）
 
 ## Agent MCP（`/agents/mcp`）
 
@@ -164,14 +184,17 @@ Profile 字段说明：
 - 若角色权限集不存在，服务端使用默认 profile（`exposed=false`）。
 - 更新 profile 工具集合时，服务端会自动重算并回填 `permissionsDerived`。
 
-## Agent Roles Proxy（`/agents/roles`）
+## Agent Roles（`/agents/roles`）
 
-- `GET /agents/roles?status=active|inactive`：查询 HR 角色列表（跨服务代理）
-- `GET /agents/roles/:id`：查询单个 HR 角色（跨服务代理）
+- `GET /agents/roles?status=active|inactive`：查询角色列表
+- `GET /agents/roles/:id`：查询单个角色
+- `POST /agents/roles`：创建角色
+- `PUT /agents/roles/:id`：更新角色
+- `DELETE /agents/roles/:id`：删除角色
 
 说明：
 
-- 此接口不持有角色主数据，仅代理 legacy HR 角色查询能力。
+- 此接口由 agents 服务直接持有与管理角色主数据（不再依赖 legacy `/roles` 代理）。
 - 返回结构中包含 `tier` 字段（`leadership | operations | temporary`）。
 
 ## Skills（`/skills`）

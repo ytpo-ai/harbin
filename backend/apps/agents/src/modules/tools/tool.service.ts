@@ -2,13 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
 import { Tool, ToolDocument } from '../../schemas/tool.schema';
 import { Toolkit, ToolkitDocument } from '../../schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../schemas/tool-execution.schema';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { normalizeAgentRoleTier } from '../../../../../src/shared/role-tier';
-import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { AgentProfile, AgentProfileDocument } from '@agent/schemas/agent-profile.schema';
+import { AgentRole, AgentRoleDocument } from '../../schemas/agent-role.schema';
 import { ApiKey, ApiKeyDocument } from '../../../../../src/shared/schemas/api-key.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { ComposioService } from './composio.service';
@@ -96,7 +96,6 @@ interface ToolInputContract {
 @Injectable()
 export class ToolService {
   private readonly logger = new Logger(ToolService.name);
-  private readonly backendBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001/api';
   private readonly rolePermissionCacheTtlMs = Math.max(30_000, Number(process.env.TOOL_ROLE_PERMISSION_CACHE_TTL_MS || 300_000));
   private readonly rolePermissionCache = new Map<string, { roleCode?: string; permissions: string[]; expiresAt: number }>();
 
@@ -106,6 +105,7 @@ export class ToolService {
     @InjectModel(ToolExecution.name) private executionModel: Model<ToolExecutionDocument>,
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
     @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
+    @InjectModel(AgentRole.name) private agentRoleModel: Model<AgentRoleDocument>,
     @InjectModel(ApiKey.name) private apiKeyModel: Model<ApiKeyDocument>,
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private composioService: ComposioService,
@@ -1001,13 +1001,13 @@ export class ToolService {
     };
 
     try {
-      const roleResp = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(normalizedRoleId)}`, {
-        headers: this.internalApiClient.buildSignedHeaders(),
-        timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
-      });
-      const role = roleResp?.data || {};
-      result.roleCode = String(role.code || '').trim() || undefined;
-      result.permissions = this.normalizeStringArray(role.permissions || role.capabilities || []);
+      const role = await this.agentRoleModel
+        .findOne({ id: normalizedRoleId })
+        .select({ code: 1, capabilities: 1 })
+        .lean()
+        .exec();
+      result.roleCode = String((role as any)?.code || '').trim() || undefined;
+      result.permissions = this.normalizeStringArray((role as any)?.capabilities || []);
     } catch {
       result.roleCode = undefined;
       result.permissions = [];
@@ -1867,34 +1867,17 @@ export class ToolService {
       throw new Error('agent_master_create_agent requires roleId');
     }
 
-    const headers = this.internalApiClient.buildSignedHeaders();
-    const timeout = Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000);
-
-    try {
-      const byIdResponse = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(normalized)}`, {
-        headers,
-        timeout,
-      });
-      const role = byIdResponse?.data || {};
-      const id = String(role.id || '').trim();
-      if (id) {
-        return { roleId: id, matchedBy: 'id' };
-      }
-    } catch {
-      // ignore and fallback to role code resolution
+    const roleById = await this.agentRoleModel.findOne({ id: normalized }).select({ id: 1 }).lean().exec();
+    if ((roleById as any)?.id) {
+      return { roleId: String((roleById as any).id).trim(), matchedBy: 'id' };
     }
 
-    let roles: Array<{ id: string; code: string; name?: string }> = [];
-    try {
-      const rolesResponse = await axios.get(`${this.backendBaseUrl}/roles`, {
-        headers,
-        timeout,
-        params: { status: 'active' },
-      });
-      roles = Array.isArray(rolesResponse?.data) ? rolesResponse.data : [];
-    } catch {
-      roles = [];
-    }
+    const roles = await this.agentRoleModel
+      .find({ status: 'active' })
+      .select({ id: 1, code: 1, name: 1 })
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec() as Array<{ id: string; code: string; name?: string }>;
 
     const roleByCode = roles.find((item) => String(item?.code || '').trim() === normalized);
     if (roleByCode?.id) {
@@ -2191,25 +2174,27 @@ export class ToolService {
       return map;
     }
 
-    await Promise.all(
-      uniqueRoleIds.map(async (roleId) => {
-        try {
-          const response = await axios.get(`${this.backendBaseUrl}/roles/${encodeURIComponent(roleId)}`, {
-            timeout: Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000),
-          });
-          const role = response.data || {};
-          const code = String(role.code || '').trim();
-          const name = String(role.name || role.code || '').trim();
-          const permissions = this.normalizeStringArray(role.permissions || role.capabilities || []);
-          if (code) {
-            map.set(roleId, { name, code, permissions });
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'unknown role fetch error';
-          this.logger.warn(`Failed to resolve role ${roleId} in tools mcp list: ${message}`);
-        }
-      }),
-    );
+    const rows = await this.agentRoleModel
+      .find({ id: { $in: uniqueRoleIds } })
+      .select({ id: 1, code: 1, name: 1, capabilities: 1 })
+      .lean()
+      .exec() as Array<{ id: string; code: string; name?: string; capabilities?: string[] }>;
+
+    for (const role of rows) {
+      const roleId = String(role.id || '').trim();
+      const code = String(role.code || '').trim();
+      const name = String(role.name || role.code || '').trim();
+      const permissions = this.normalizeStringArray(role.capabilities || []);
+      if (roleId && code) {
+        map.set(roleId, { name, code, permissions });
+      }
+    }
+
+    for (const roleId of uniqueRoleIds) {
+      if (!map.has(roleId)) {
+        this.logger.warn(`Failed to resolve role ${roleId} in tools mcp list: role not found`);
+      }
+    }
 
     return map;
   }

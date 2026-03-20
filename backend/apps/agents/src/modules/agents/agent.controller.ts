@@ -5,6 +5,7 @@ import { AgentService } from './agent.service';
 import { Agent, Task, AIModel } from '../../../../../src/shared/types';
 import { AgentActionLogService } from '../action-logs/agent-action-log.service';
 import { AgentActionContextType } from '../../schemas/agent-action-log.schema';
+import { AgentRoleTier } from '../../../../../src/shared/role-tier';
 
 @Controller('agents')
 export class AgentController {
@@ -194,6 +195,46 @@ export class AgentController {
   @Get('roles/:id')
   async getRoleById(@Param('id') id: string) {
     return this.agentService.getRoleById(id);
+  }
+
+  @Post('roles')
+  async createRole(
+    @Body()
+    body: {
+      code: string;
+      name: string;
+      description?: string;
+      capabilities?: string[];
+      tools?: string[];
+      promptTemplate?: string;
+      status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
+    },
+  ) {
+    return this.agentService.createRole(body);
+  }
+
+  @Put('roles/:id')
+  async updateRole(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      code?: string;
+      name?: string;
+      description?: string;
+      capabilities?: string[];
+      tools?: string[];
+      promptTemplate?: string;
+      status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
+    },
+  ) {
+    return this.agentService.updateRole(id, body);
+  }
+
+  @Delete('roles/:id')
+  async deleteRole(@Param('id') id: string) {
+    return this.agentService.deleteRole(id);
   }
 
   @Get(':id')

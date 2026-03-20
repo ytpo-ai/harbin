@@ -1,10 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import axios from 'axios';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
-import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
-import { ToolService } from '../tools/tool.service';
+import { AgentRole, AgentRoleDocument, AgentRoleStatus } from '../../schemas/agent-role.schema';
 import { AgentMcpProfileService } from './agent-mcp-profile.service';
 import {
   AgentBusinessRole,
@@ -19,45 +16,32 @@ import {
   normalizeToolIds,
   uniqueStrings,
 } from './agent.constants';
-import { getTierByAgentRoleCode } from '../../../../../src/shared/role-tier';
+import {
+  AgentRoleTier,
+  getTierByAgentRoleCode,
+  hasPresetTierByAgentRoleCode,
+  normalizeAgentRoleTier,
+} from '../../../../../src/shared/role-tier';
 
 @Injectable()
 export class AgentRoleService {
   private readonly logger = new Logger(AgentRoleService.name);
-  private readonly roleRegistryBaseUrl = (
-    process.env.ROLE_REGISTRY_BASE_URL ||
-    process.env.LEGACY_SERVICE_URL ||
-    'http://localhost:3001/api'
-  ).replace(/\/$/, '');
-  private readonly roleRequestTimeoutMs = Number(process.env.AGENT_ROLE_REQUEST_TIMEOUT_MS || 8000);
 
   constructor(
-    @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
-    @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
-    private readonly toolService: ToolService,
+    @InjectModel(AgentRole.name) private roleModel: Model<AgentRoleDocument>,
     private readonly agentMcpProfileService: AgentMcpProfileService,
   ) {}
 
-  // ---- public role HTTP methods ----
+  // ---- public role methods ----
 
-  async getAvailableRoles(options?: { status?: 'active' | 'inactive' }): Promise<AgentBusinessRole[]> {
-    const params: Record<string, string> = {};
+  async getAvailableRoles(options?: { status?: AgentRoleStatus }): Promise<AgentBusinessRole[]> {
+    const filter: Record<string, unknown> = {};
     if (options?.status) {
-      params.status = options.status;
+      filter.status = options.status;
     }
 
-    try {
-      const response = await axios.get(`${this.roleRegistryBaseUrl}/roles`, {
-        params,
-        timeout: this.roleRequestTimeoutMs,
-      });
-      const rows = Array.isArray(response.data) ? response.data : [];
-      return rows.map((row) => this.normalizeRoleTier(row));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to fetch roles from role registry';
-      this.logger.warn(`Fetch roles failed: ${message}`);
-      throw new BadRequestException('Failed to fetch roles from role registry');
-    }
+    const rows = await this.roleModel.find(filter).sort({ updatedAt: -1 }).lean().exec();
+    return rows.map((row) => this.normalizeRoleTier(row as AgentBusinessRole));
   }
 
   async getRoleById(roleId: string): Promise<AgentBusinessRole | null> {
@@ -66,19 +50,143 @@ export class AgentRoleService {
       return null;
     }
 
-    try {
-      const response = await axios.get(`${this.roleRegistryBaseUrl}/roles/${encodeURIComponent(normalizedRoleId)}`, {
-        timeout: this.roleRequestTimeoutMs,
-      });
-      return response.data ? this.normalizeRoleTier(response.data) : null;
-    } catch (error: any) {
-      if (error?.response?.status === 404) {
-        return null;
-      }
-      const message = error instanceof Error ? error.message : 'Failed to fetch role from role registry';
-      this.logger.warn(`Fetch role by id failed: ${message}`);
-      throw new BadRequestException('Failed to validate role with role registry');
+    const role = await this.roleModel.findOne({ id: normalizedRoleId }).lean().exec();
+    return role ? this.normalizeRoleTier(role as AgentBusinessRole) : null;
+  }
+
+  async createRole(input: {
+    code: string;
+    name: string;
+    description?: string;
+    capabilities?: string[];
+    tools?: string[];
+    promptTemplate?: string;
+    status?: AgentRoleStatus;
+    tier?: AgentRoleTier;
+  }): Promise<AgentBusinessRole> {
+    const code = String(input?.code || '').trim();
+    const name = String(input?.name || '').trim();
+    if (!code) {
+      throw new BadRequestException('Role code is required');
     }
+    if (!name) {
+      throw new BadRequestException('Role name is required');
+    }
+
+    const existing = await this.roleModel.findOne({ code }).lean().exec();
+    if (existing) {
+      throw new BadRequestException(`Role code already exists: ${code}`);
+    }
+
+    const normalizedTier = normalizeAgentRoleTier(input?.tier);
+    if (input?.tier !== undefined && !normalizedTier) {
+      throw new BadRequestException('Role tier must be one of leadership, operations, temporary');
+    }
+    if (normalizedTier && hasPresetTierByAgentRoleCode(code) && normalizedTier !== getTierByAgentRoleCode(code)) {
+      throw new BadRequestException(`Role tier mismatch with code ${code}: expected ${getTierByAgentRoleCode(code)}`);
+    }
+
+    const role = await this.roleModel.create({
+      code,
+      name,
+      tier: normalizedTier || getTierByAgentRoleCode(code),
+      description: String(input?.description || '').trim(),
+      capabilities: this.normalizeStringArray(input?.capabilities),
+      tools: this.normalizeStringArray(input?.tools),
+      promptTemplate: String(input?.promptTemplate || '').trim(),
+      status: input?.status === 'inactive' ? 'inactive' : 'active',
+    });
+    return this.normalizeRoleTier(role.toObject() as AgentBusinessRole);
+  }
+
+  async updateRole(
+    roleId: string,
+    updates: {
+      code?: string;
+      name?: string;
+      description?: string;
+      capabilities?: string[];
+      tools?: string[];
+      promptTemplate?: string;
+      status?: AgentRoleStatus;
+      tier?: AgentRoleTier;
+    },
+  ): Promise<AgentBusinessRole> {
+    const normalizedRoleId = String(roleId || '').trim();
+    if (!normalizedRoleId) {
+      throw new BadRequestException('Role id is required');
+    }
+
+    const role = await this.roleModel.findOne({ id: normalizedRoleId }).exec();
+    if (!role) {
+      throw new NotFoundException(`Role not found: ${normalizedRoleId}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'code')) {
+      const nextCode = String(updates.code || '').trim();
+      if (!nextCode) {
+        throw new BadRequestException('Role code cannot be empty');
+      }
+      const duplicate = await this.roleModel.findOne({ code: nextCode, id: { $ne: normalizedRoleId } }).lean().exec();
+      if (duplicate) {
+        throw new BadRequestException(`Role code already exists: ${nextCode}`);
+      }
+      role.code = nextCode;
+      if (!Object.prototype.hasOwnProperty.call(updates, 'tier')) {
+        role.tier = getTierByAgentRoleCode(nextCode);
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'tier')) {
+      const nextTier = normalizeAgentRoleTier(updates.tier);
+      if (!nextTier) {
+        throw new BadRequestException('Role tier must be one of leadership, operations, temporary');
+      }
+      if (hasPresetTierByAgentRoleCode(role.code) && nextTier !== getTierByAgentRoleCode(role.code)) {
+        throw new BadRequestException(`Role tier mismatch with code ${role.code}: expected ${getTierByAgentRoleCode(role.code)}`);
+      }
+      role.tier = nextTier;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'name')) {
+      const nextName = String(updates.name || '').trim();
+      if (!nextName) {
+        throw new BadRequestException('Role name cannot be empty');
+      }
+      role.name = nextName;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'description')) {
+      role.description = String(updates.description || '').trim();
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'capabilities')) {
+      role.capabilities = this.normalizeStringArray(updates.capabilities);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'tools')) {
+      role.tools = this.normalizeStringArray(updates.tools);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(updates, 'promptTemplate')) {
+      role.promptTemplate = String(updates.promptTemplate || '').trim();
+    }
+
+    if (updates.status === 'active' || updates.status === 'inactive') {
+      role.status = updates.status;
+    }
+
+    const saved = await role.save();
+    return this.normalizeRoleTier(saved.toObject() as AgentBusinessRole);
+  }
+
+  async deleteRole(roleId: string): Promise<{ deleted: boolean }> {
+    const normalizedRoleId = String(roleId || '').trim();
+    if (!normalizedRoleId) {
+      throw new BadRequestException('Role id is required');
+    }
+    const result = await this.roleModel.deleteOne({ id: normalizedRoleId }).exec();
+    return { deleted: result.deletedCount === 1 };
   }
 
   async assertRoleExists(roleId: string): Promise<AgentBusinessRole> {
@@ -164,7 +272,7 @@ export class AgentRoleService {
     return merged;
   }
 
-  // ---- MCP profile assembly (depends on role HTTP) ----
+  // ---- MCP profile assembly ----
 
   async getMcpAgents(
     allAgents: any[],
@@ -245,5 +353,9 @@ export class AgentRoleService {
       ...role,
       tier,
     };
+  }
+
+  private normalizeStringArray(items?: unknown[]): string[] {
+    return Array.from(new Set((Array.isArray(items) ? items : []).map((item) => String(item || '').trim()).filter(Boolean)));
   }
 }

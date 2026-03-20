@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, Logger, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
-import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
+import { AgentProfile, AgentProfileDocument } from '@agent/schemas/agent-profile.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { ModelService } from '../models/model.service';
 import { Task, AIModel } from '../../../../../src/shared/types';
@@ -378,6 +378,41 @@ export class AgentService {
 
   async getRoleById(roleId: string) {
     return this.agentRoleService.getRoleById(roleId);
+  }
+
+  async createRole(
+    input: {
+      code: string;
+      name: string;
+      description?: string;
+      capabilities?: string[];
+      tools?: string[];
+      promptTemplate?: string;
+      status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
+    },
+  ) {
+    return this.agentRoleService.createRole(input);
+  }
+
+  async updateRole(
+    roleId: string,
+    updates: {
+      code?: string;
+      name?: string;
+      description?: string;
+      capabilities?: string[];
+      tools?: string[];
+      promptTemplate?: string;
+      status?: 'active' | 'inactive';
+      tier?: AgentRoleTier;
+    },
+  ) {
+    return this.agentRoleService.updateRole(roleId, updates);
+  }
+
+  async deleteRole(roleId: string) {
+    return this.agentRoleService.deleteRole(roleId);
   }
 
   async getAgentsMcpMap() {

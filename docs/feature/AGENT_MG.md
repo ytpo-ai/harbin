@@ -35,6 +35,7 @@
 - 工具选择：白名单模式下，仅可选择当前角色工具权限集中允许的工具。
 - 模型密钥：API Key 按模型 provider 过滤，仅展示匹配且活跃的密钥。
 - Config 兼容：当 `config` 缺失或为空对象时，不影响历史 Agent 管理与执行流程。
+- 角色主数据：由 agents 服务内 `agent_roles` 集合维护，Agent 侧通过 `/agents/roles*` 读取与校验。
 
 ---
 

@@ -47,7 +47,7 @@ export const hrService = {
 
   async getRoles(status?: 'active' | 'inactive'): Promise<HRAgentRole[]> {
     const query = status ? `?status=${status}` : '';
-    const response = await api.get(`/roles${query}`);
+    const response = await api.get(`/agents/roles${query}`);
     return response.data;
   },
 
@@ -61,7 +61,7 @@ export const hrService = {
     status?: 'active' | 'inactive';
     tier?: 'leadership' | 'operations' | 'temporary';
   }): Promise<HRAgentRole> {
-    const response = await api.post('/roles', payload);
+    const response = await api.post('/agents/roles', payload);
     return response.data;
   },
 
@@ -78,12 +78,12 @@ export const hrService = {
       tier?: 'leadership' | 'operations' | 'temporary';
     },
   ): Promise<HRAgentRole> {
-    const response = await api.put(`/roles/${encodeURIComponent(roleId)}`, payload);
+    const response = await api.put(`/agents/roles/${encodeURIComponent(roleId)}`, payload);
     return response.data;
   },
 
   async deleteRole(roleId: string): Promise<{ deleted: boolean }> {
-    const response = await api.delete(`/roles/${encodeURIComponent(roleId)}`);
+    const response = await api.delete(`/agents/roles/${encodeURIComponent(roleId)}`);
     return response.data;
   },
 
