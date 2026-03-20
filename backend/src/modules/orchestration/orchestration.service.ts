@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import axios from 'axios';
 import { Model, Types } from 'mongoose';
 import { Observable, Subject } from 'rxjs';
-import { Agent, AgentDocument } from '../../shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { Tool, ToolDocument } from '../../../apps/agents/src/schemas/tool.schema';
 import {
   OrchestrationPlan,
@@ -30,8 +30,8 @@ import {
   AgentClientService,
   AsyncAgentTaskSnapshot,
 } from '../agents-client/agent-client.service';
-import { InnerMessageService } from '../inner-message/inner-message.service';
 import { PlannerService } from './planner.service';
+import { PlanningContextService } from './services/planning-context.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { TaskClassificationService } from './services/task-classification.service';
 import { TaskOutputValidationService } from './services/task-output-validation.service';
@@ -80,8 +80,8 @@ export class OrchestrationService {
     @InjectModel(OrchestrationSchedule.name)
     private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     private readonly plannerService: PlannerService,
+    private readonly planningContextService: PlanningContextService,
     private readonly agentClientService: AgentClientService,
-    private readonly innerMessageService: InnerMessageService,
     private readonly executorSelectionService: ExecutorSelectionService,
     private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
@@ -224,11 +224,19 @@ export class OrchestrationService {
         phase: 'planning',
       });
 
+      const plannerAgentId = dto.plannerAgentId || plan.strategy?.plannerAgentId;
+      const planningContext = await this.planningContextService.buildPlanningContext({
+        prompt: plan.sourcePrompt,
+        requirementId,
+        plannerAgentId,
+      });
+
       const planningResult = await this.plannerService.planFromPrompt({
         prompt: plan.sourcePrompt,
         mode: dto.mode || plan.strategy?.mode,
-        plannerAgentId: dto.plannerAgentId || plan.strategy?.plannerAgentId,
+        plannerAgentId,
         requirementId,
+        planningContext,
       });
 
       if (!planningResult.tasks?.length) {
@@ -492,11 +500,19 @@ export class OrchestrationService {
         phase: 'replanning',
       });
 
+      const replanPlannerAgentId = plannerAgentId || plan.strategy?.plannerAgentId;
+      const replanContext = await this.planningContextService.buildPlanningContext({
+        prompt,
+        requirementId,
+        plannerAgentId: replanPlannerAgentId,
+      });
+
       const planningResult = await this.plannerService.planFromPrompt({
         prompt,
         mode: fallbackMode,
-        plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
+        plannerAgentId: replanPlannerAgentId,
         requirementId,
+        planningContext: replanContext,
       });
 
       if (!planningResult.tasks?.length) {
@@ -2252,7 +2268,7 @@ export class OrchestrationService {
       return;
     }
 
-    await this.innerMessageService.publishTaskEvent({
+    await this.agentClientService.publishTaskLifecycleEvent({
       eventType: input.eventType,
       taskId,
       planId: input.task.planId,

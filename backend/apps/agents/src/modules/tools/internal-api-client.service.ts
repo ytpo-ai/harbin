@@ -97,7 +97,7 @@ export class InternalApiClient {
       errorCode: 'inner_message_api_request_failed',
       method,
       endpoint,
-      url: `${this.backendBaseUrl}/inner-messages${endpoint}`,
+      url: `${this.agentsBaseUrl}/inner-messages${endpoint}`,
       body,
     });
   }
@@ -120,6 +120,18 @@ export class InternalApiClient {
   async postEngineeringStatistics(payload: Record<string, unknown>): Promise<any> {
     const response = await axios.post(
       `${this.engineeringIntelligenceBaseUrl}/ei/statistics/snapshots`,
+      payload,
+      {
+        headers: this.buildSignedHeaders(),
+        timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
+      },
+    );
+    return response.data;
+  }
+
+  async postDocsHeatRefresh(payload: Record<string, unknown>): Promise<any> {
+    const response = await axios.post(
+      `${this.engineeringIntelligenceBaseUrl}/ei/docs-heat/refresh`,
       payload,
       {
         headers: this.buildSignedHeaders(),

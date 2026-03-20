@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AgentProfile, AgentProfileDocument } from '../../../../../src/shared/schemas/agent-profile.schema';
-import { Agent } from '../../../../../src/shared/schemas/agent.schema';
+import { AgentProfile, AgentProfileDocument } from '@agents/schemas/agent-profile.schema';
+import { Agent } from '@agent/schemas/agent.schema';
 import { ToolService } from '../tools/tool.service';
 import type { AgentMcpMapProfile, AgentMcpProfile, AgentMcpToolSummary, AgentToolPermissionSet } from './agent.types';
 
@@ -89,10 +89,33 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
     roleCode: 'executive-lead',
     role: 'executive-lead',
     tools: [
+      'composio.communication.mcp.gmail.send-email',
+      'composio.communication.mcp.slack.send-message',
       'builtin.web-retrieval.internal.web-search.exa',
       'builtin.web-retrieval.internal.web-fetch.fetch',
+      'composio.web-retrieval.mcp.web-search.serp',
       'builtin.data-analysis.internal.content-analysis.extract',
+      'builtin.sys-mg.internal.agent-master.create-agent',
       'builtin.sys-mg.internal.agent-master.list-agents',
+      'builtin.sys-mg.internal.memory.append-memo',
+      'builtin.sys-mg.internal.memory.search-memo',
+      'builtin.sys-mg.internal.rd-related.docs-read',
+      'builtin.sys-mg.internal.rd-related.docs-write',
+      'builtin.sys-mg.internal.rd-related.repo-read',
+      'builtin.sys-mg.internal.rd-related.updates-read',
+      'builtin.sys-mg.mcp.audit.list-human-operation-log',
+      'builtin.sys-mg.mcp.meeting.generate-summary',
+      'builtin.sys-mg.mcp.meeting.get-detail',
+      'builtin.sys-mg.mcp.meeting.list-meetings',
+      'builtin.sys-mg.mcp.meeting.save-summary',
+      'builtin.sys-mg.mcp.meeting.send-message',
+      'builtin.sys-mg.mcp.meeting.update-status',
+      'builtin.sys-mg.mcp.model-admin.add-model',
+      'builtin.sys-mg.mcp.model-admin.list-models',
+      'builtin.sys-mg.mcp.skill-master.create-skill',
+      'builtin.sys-mg.mcp.skill-master.list-skills',
+      'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run',
+      'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run',
       ORCHESTRATION_TOOL_IDS.createPlan,
       ORCHESTRATION_TOOL_IDS.updatePlan,
       ORCHESTRATION_TOOL_IDS.runPlan,
@@ -339,15 +362,6 @@ export class AgentMcpProfileService {
           .updateOne(
             { roleCode: seed.roleCode },
             {
-              $setOnInsert: {
-                role: seed.role,
-                permissions,
-                permissionsManual: manualPermissions,
-                permissionsDerived,
-                capabilities: permissions,
-                exposed: seed.exposed,
-                description: seed.description || '',
-              },
               $set: {
                 role: seed.role,
                 permissions,

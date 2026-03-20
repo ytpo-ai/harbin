@@ -1,4 +1,4 @@
-import { Agent } from '@legacy/shared/schemas/agent.schema';
+import { Agent } from '@agent/schemas/agent.schema';
 import { AIModel, ChatMessage, Task } from '@legacy/shared/types';
 import { MessageFilter } from '@agent/modules/runtime/hooks/lifecycle-hook.types';
 

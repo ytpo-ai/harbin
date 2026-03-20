@@ -6,7 +6,6 @@ import { MeetingController } from './meeting.controller';
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { EmployeeModule } from '../employees/employee.module';
 import { MessagesModule } from '../messages/messages.module';
-import { InnerMessageModule } from '../inner-message/inner-message.module';
 
 @Module({
   imports: [
@@ -14,7 +13,6 @@ import { InnerMessageModule } from '../inner-message/inner-message.module';
     AgentClientModule,
     EmployeeModule,
     MessagesModule,
-    InnerMessageModule,
   ],
   controllers: [MeetingController],
   providers: [MeetingService],

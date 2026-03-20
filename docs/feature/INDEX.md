@@ -49,6 +49,7 @@
 |---------|------|----------|
 | `engineering-intelligence/code_self_awareness` | 自我感知 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
 | `engineering-intelligence/code_self_evolution` | 自动进化 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
+| `engineering-intelligence/docs_heat` | 文档热度统计 | `docs/feature/ENGINEERING_INTELLIGENCE.md` §1.11 |
 
 ### 5. HR 模块 (hr)
 

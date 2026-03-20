@@ -42,7 +42,10 @@ export class GatewayProxyService {
       originalUrl.startsWith('/api/models') ||
       originalUrl.startsWith('/api/model-management') ||
       originalUrl.startsWith('/api/prompt-registry') ||
-      originalUrl.startsWith('/api/agent-action-logs')
+      originalUrl.startsWith('/api/agent-action-logs') ||
+      originalUrl.startsWith('/api/inner-messages') ||
+      originalUrl.startsWith('/api/inner-message-subscriptions') ||
+      originalUrl.startsWith('/api/message-center/inner-messages')
     ) {
       return this.agentsBaseUrl;
     }

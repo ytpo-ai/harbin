@@ -1,4 +1,5 @@
 import { AgentService } from './agent.service';
+import { BadRequestException, Logger } from '@nestjs/common';
 
 describe('AgentService agent lookup query', () => {
   it('uses id lookup for non-ObjectId identifiers', () => {
@@ -18,5 +19,26 @@ describe('AgentService agent lookup query', () => {
         { id: '507f1f77bcf86cd799439011' },
       ],
     });
+  });
+});
+
+describe('AgentService tier resolution', () => {
+  it('throws for mismatched tier by default', () => {
+    const service = Object.create(AgentService.prototype) as AgentService;
+
+    expect(() =>
+      service['resolveAgentTierOrThrow']('operations', 'executive-lead', 'leadership'),
+    ).toThrow(BadRequestException);
+  });
+
+  it('coerces mismatched tier when coercion is enabled', () => {
+    const service = Object.create(AgentService.prototype) as AgentService;
+    (service as any).logger = new Logger('AgentServiceTest');
+    jest.spyOn((service as any).logger, 'warn').mockImplementation(() => undefined);
+
+    const tier = service['resolveAgentTierOrThrow']('operations', 'executive-lead', 'leadership', true);
+
+    expect(tier).toBe('leadership');
+    expect((service as any).logger.warn).toHaveBeenCalled();
   });
 });

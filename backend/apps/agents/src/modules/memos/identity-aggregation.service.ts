@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { AgentMemo, AgentMemoDocument } from '../../schemas/agent-memo.schema';
 

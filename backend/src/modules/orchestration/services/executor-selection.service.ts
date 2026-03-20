@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { Agent, AgentDocument } from '../../../shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { Tool, ToolDocument } from '../../../../apps/agents/src/schemas/tool.schema';
 import {
   Employee,
@@ -9,13 +9,13 @@ import {
   EmployeeStatus,
   EmployeeType,
 } from '../../../shared/schemas/employee.schema';
-import { AgentRole, AgentRoleDocument } from '../../../shared/schemas/agent-role.schema';
+import { AgentRole, AgentRoleDocument } from '@agent/schemas/agent-role.schema';
 import {
   AgentRoleTier,
   canDelegateAcrossTier,
   getTierByAgentRoleCode,
   normalizeAgentRoleTier,
-} from '../../../shared/role-tier';
+} from '@legacy/shared/role-tier';
 import { TaskClassificationService } from './task-classification.service';
 
 // ---------------------------------------------------------------------------
@@ -66,13 +66,13 @@ const TASK_TOOL_HINTS: Record<string, string[]> = {
   planning: ['orchestration', 'requirement'],
 };
 
-/** Score dimension weights */
-const W_ROLE = 40;
-const W_TOOL = 30;
-const W_CAPABILITY = 20;
-const W_KEYWORD = 10;
+/** Score dimension weights (configurable via env) */
+const W_ROLE = parseInt(process.env.EXECUTOR_WEIGHT_ROLE || '40', 10);
+const W_TOOL = parseInt(process.env.EXECUTOR_WEIGHT_TOOL || '30', 10);
+const W_CAPABILITY = parseInt(process.env.EXECUTOR_WEIGHT_CAPABILITY || '20', 10);
+const W_KEYWORD = parseInt(process.env.EXECUTOR_WEIGHT_KEYWORD || '10', 10);
 
-const MIN_SCORE_THRESHOLD = 10;
+const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD || '10', 10);
 
 // ---------------------------------------------------------------------------
 // Service

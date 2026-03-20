@@ -205,6 +205,22 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
+        id: 'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run',
+        name: 'Docs Heat Run',
+        description: 'Trigger docs heat refresh and return summary',
+        type: 'data_analysis' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'rd_statistics_run', name: 'RD Statistics Run', level: 'basic' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            topN: 'number',
+            triggeredBy: 'string',
+          },
+        },
+      },
+      {
         id: AGENT_LIST_TOOL_ID,
         name: 'Agents MCP List',
         description: 'List current agents, roles, and capability summaries from MCP visibility rules',

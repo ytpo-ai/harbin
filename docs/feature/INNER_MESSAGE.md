@@ -57,6 +57,7 @@
 |------|------|
 | `plan/AGENT_COLLAB_MESSAGE_REDIS_PLAN.md` | Agent 协作消息 Redis 化实施计划 |
 | `plan/AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | 内部消息统一桥接到 Agent Runtime 执行链计划 |
+| `plan/INNER_MESSAGE_MIGRATE_TO_AGENTS_PLAN.md` | Inner Message 迁移到 Agents 模块计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -75,25 +76,26 @@
 
 | 文件 | 说明 |
 |------|------|
-| `api/legacy-api.md` | Agent 消息与订阅管理接口清单 |
+| `api/legacy-api.md` | legacy 与 agents 服务边界说明（含迁移注记） |
+| `api/agents-api.md` | agents 服务 API 清单（含 inner-message 路由） |
 
 ## 3. 相关代码文件
 
-### 后端（legacy）
+### 后端（agents）
 
 | 路径 | 功能 |
 |------|------|
-| `backend/src/modules/inner-message/inner-message.controller.ts` | 直发/发布/ACK/订阅接口 |
-| `backend/src/modules/inner-message/inner-message.service.ts` | 消息落库、订阅匹配、状态流转、入队 |
-| `backend/src/modules/inner-message/inner-message-dispatcher.service.ts` | Redis 分发消费者（重试/死信） |
-| `backend/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts` | 内部消息到 Agent Runtime 执行链桥接 |
-| `backend/src/modules/inner-message/inner-message-collaboration-automation.service.ts` | 任务事件到拟人协作消息的自动编排 |
-| `backend/src/modules/inner-message/inner-message.module.ts` | 模块装配 |
+| `backend/apps/agents/src/modules/inner-message/inner-message.controller.ts` | 直发/发布/ACK/订阅接口 |
+| `backend/apps/agents/src/modules/inner-message/inner-message.service.ts` | 消息落库、订阅匹配、状态流转、入队 |
+| `backend/apps/agents/src/modules/inner-message/inner-message-dispatcher.service.ts` | Redis 分发消费者（重试/死信） |
+| `backend/apps/agents/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts` | 内部消息到 Agent Runtime 执行链桥接 |
+| `backend/apps/agents/src/modules/inner-message/inner-message-collaboration-automation.service.ts` | 任务事件到拟人协作消息的自动编排 |
+| `backend/apps/agents/src/modules/inner-message/inner-message.module.ts` | 模块装配 |
 | `backend/src/shared/schemas/inner-message.schema.ts` | Inner Message 模型 |
 | `backend/src/shared/schemas/inner-message-subscription.schema.ts` | 订阅模型 |
-| `backend/src/modules/orchestration/orchestration.service.ts` | 分配/完成事件的消息联动 |
+| `backend/src/modules/orchestration/orchestration.service.ts` | 通过 `AgentClientService` 发布任务事件到 agents 内消息模块 |
 | `backend/src/modules/message-center/message-center.controller.ts` | 内部消息分页查询转发接口 |
 | `backend/apps/agents/src/modules/tools/tool.service.ts` | `send_internal_message` 工具执行与参数校验 |
-| `backend/apps/agents/src/modules/tools/internal-api-client.service.ts` | 内部消息 API 调用封装 |
+| `backend/apps/agents/src/modules/tools/internal-api-client.service.ts` | 工具侧内部消息 API 调用封装（已切换 agents 路由） |
 | `backend/apps/agents/src/modules/tools/builtin-tool-catalog.ts` | 内置工具 seed（含 send_internal_message） |
 | `frontend/src/pages/MessageCenter.tsx` | 内部消息 Tab 展示 |

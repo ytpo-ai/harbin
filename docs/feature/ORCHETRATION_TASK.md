@@ -96,7 +96,37 @@
   - `TaskClassificationService`
   - `TaskOutputValidationService`
   - `ExecutorSelectionService`
+  - `PlanningContextService`（Planning Context Pipeline，见下文）
+  - `SceneOptimizationService`（场景化后处理，见下文）
 - 计划创建与重规划复用共享任务创建流程，减少重复实现。
+
+#### Planning Context Pipeline（计划编排上下文增强）
+
+- 计划拆解前新增 Context Enrichment 阶段，为 Planner 提供决策所需的结构化上下文：
+  - **Agent Manifest**：聚合所有活跃 Agent 的名称、角色、层级、能力标签、工具列表，供 Planner 生成与执行者能力匹配的任务
+  - **Requirement Detail**：通过 EI 服务获取关联需求的标题、描述、优先级、标签
+  - **Planning Constraints**：从 Planner Agent 的 enabled skills 中提取 `planningRules` 约束规则和 skill content 中的约束性章节
+- Planner Prompt 模板新增 `{{agentManifest}}`、`{{requirementDetail}}`、`{{planningConstraints}}` 变量
+- 所有 context 提取均为 best-effort，失败不阻断计划创建
+- 支持通过环境变量配置 Agent Manifest 最大长度（`PLANNER_AGENT_MANIFEST_MAX_LENGTH`）、Requirement 详情长度（`PLANNER_REQUIREMENT_DETAIL_MAX_LENGTH`）
+
+#### Skill Planning Rules（技能级计划约束）
+
+- `agent_skills` Schema 新增可选字段 `planningRules: PlanningRule[]`
+- 每条 `PlanningRule` 定义：`type`（`task_count | forbidden_task_pattern | required_task_pattern | dependency_rule | description_quality`）+ `rule`（人类可读）+ `validate`（可选的正则或 JSON Schema）
+- 约束注入流程：Planning Context Pipeline 从 Planner Agent 的 skills 中提取 planningRules → 格式化为 `{{planningConstraints}}` → 注入 Planner Prompt
+- 输出后校验：Planner 返回 JSON 后，`validateAgainstSkillConstraints()` 逐条检查 task 是否违反 `forbidden_task_pattern`，违反的 task 被自动移除；`task_count` 超限的自动截断
+- 安全兜底：若所有 task 被校验移除，回退到校验前的原始结果
+
+#### SceneOptimizationRule（场景化后处理 Pipeline）
+
+- 将原有硬编码的 email 依赖优化抽象为 `SceneOptimizationRule` 接口
+- 内置两条规则：
+  - `builtin:email`：邮件场景 draft → review → send 依赖链优化
+  - `builtin:code_dev`：开发场景 design → implement → test 依赖链优化
+- 支持运行时通过 `SceneOptimizationService.registerRule()` 动态注册新规则
+- Task Description Quality Validator：检查 description 最小长度、文件路径模式覆盖率、禁止纯模板复述
+- 所有 magic number 外置为环境变量（`PLANNER_MAX_TASKS`、`PLANNER_MAX_TITLE_LENGTH`、`PLANNER_MAX_DESCRIPTION_LENGTH`、`PLANNER_MIN_DESCRIPTION_LENGTH`、`EXECUTOR_WEIGHT_*`、`EXECUTOR_MIN_SCORE_THRESHOLD`）
 
 #### Prompt Registry（会议/编排 Prompt 可运营）
 
@@ -162,6 +192,7 @@
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 编排与调度去重复/职责边界重构计划 |
 | `ORCHESTRATION_EXECUTOR_SELECTION_SKILL_ACTIVATION_PLAN.md` | 执行者能力路由重构 + Skill 渐进激活修复方案 |
 | `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
+| `ORCHESTRATION_PLANNING_QUALITY_OPTIMIZATION_PLAN.md` | 编排计划质量优化方案（Context Pipeline + Skill Constraints + SceneOptimizationRule） |
 
 ### 开发总结 (docs/development/)
 
@@ -199,6 +230,8 @@
 | `services/task-classification.service.ts` | 任务分类能力 |
 | `services/task-output-validation.service.ts` | 输出质量与证明校验能力 |
 | `services/executor-selection.service.ts` | 执行者选择与能力匹配 |
+| `services/planning-context.service.ts` | 计划编排上下文增强（Agent Manifest + Requirement Detail + Skill Constraints） |
+| `services/scene-optimization.service.ts` | 场景化后处理 Pipeline（SceneOptimizationRule + Quality Validator） |
 
 > 注意：原有的 `session-manager.service.ts` 已移除，会话管理已迁移到 `apps/agents` 侧的 AgentSession。
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Agent, AgentDocument } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { MemoDomainEvent, MemoDomainEventName, MemoEventBusService } from './memo-event-bus.service';
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';

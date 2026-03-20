@@ -14,6 +14,7 @@ import {
 type SystemSeedName =
   | 'meeting-monitor'
   | 'engineering-statistics'
+  | 'docs-heat'
   | 'cto-daily-requirement-triage'
   | 'memo-event-flush'
   | 'memo-full-aggregation';
@@ -21,6 +22,7 @@ type SystemSeedName =
 const SYSTEM_SEED_ORDER: SystemSeedName[] = [
   'meeting-monitor',
   'engineering-statistics',
+  'docs-heat',
   'cto-daily-requirement-triage',
   'memo-event-flush',
   'memo-full-aggregation',
@@ -30,6 +32,8 @@ const systemMeetingMonitorScheduleName = 'system-meeting-monitor';
 const systemMeetingMonitorPlanKey = 'system-meeting-monitor';
 const systemEngineeringStatisticsScheduleName = 'system-engineering-statistics';
 const systemEngineeringStatisticsPlanKey = 'system-engineering-statistics';
+const systemDocsHeatScheduleName = 'system-docs-heat';
+const systemDocsHeatPlanKey = 'system-docs-heat';
 const systemCtoDailyRequirementTriageScheduleName = 'system-cto-daily-requirement-triage';
 const systemCtoDailyRequirementTriagePlanKey = 'system-cto-daily-requirement-triage';
 const systemMemoEventFlushScheduleName = 'system-memo-event-flush';
@@ -37,6 +41,7 @@ const systemMemoEventFlushPlanKey = 'system-memo-event-flush';
 const systemMemoFullAggregationScheduleName = 'system-memo-full-aggregation';
 const systemMemoFullAggregationPlanKey = 'system-memo-full-aggregation';
 const engineeringStatisticsToolId = 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run';
+const docsHeatToolId = 'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run';
 
 export async function seedSystemSchedules(
   app: INestApplicationContext,
@@ -56,6 +61,11 @@ export async function seedSystemSchedules(
     }
     if (seed === 'engineering-statistics') {
       const schedule = await ensureEngineeringStatisticsSchedule(scheduleModel, planModel);
+      if (schedule) created.push(schedule);
+      continue;
+    }
+    if (seed === 'docs-heat') {
+      const schedule = await ensureDocsHeatSchedule(scheduleModel, planModel);
       if (schedule) created.push(schedule);
       continue;
     }
@@ -80,6 +90,89 @@ export async function seedSystemSchedules(
     enabled: created.filter((schedule) => schedule.enabled).length,
     seeded: selected,
   };
+}
+
+async function ensureDocsHeatSchedule(
+  scheduleModel: Model<OrchestrationScheduleDocument>,
+  planModel: Model<OrchestrationPlanDocument>,
+): Promise<OrchestrationScheduleDocument | null> {
+  const plan = await ensureSystemPlan(planModel, {
+    systemKey: systemDocsHeatPlanKey,
+    linkedScheduleName: systemDocsHeatScheduleName,
+    title: '系统文档热度统计计划',
+    sourcePrompt: '系统内置计划：执行文档热度统计工具，刷新 docs 热度排行。',
+  });
+  const planId = getEntityId(plan as unknown as Record<string, unknown>);
+  const existing = await scheduleModel.findOne({ name: systemDocsHeatScheduleName }).exec();
+
+  const cronExpression = String(process.env.DOCS_HEAT_CRON || '0 */2 * * *').trim();
+  const timezone = String(process.env.DOCS_HEAT_TIMEZONE || 'Asia/Shanghai').trim() || 'Asia/Shanghai';
+  const targetAgentId = String(process.env.DOCS_HEAT_AGENT_ID || 'meeting-assistant').trim();
+
+  const input = {
+    prompt: '系统内置计划：触发文档热度统计工具，刷新 docs 热度排行。',
+    payload: {
+      toolId: docsHeatToolId,
+      toolParameters: {
+        topN: 20,
+        triggeredBy: 'system-schedule',
+      },
+    },
+  };
+
+  if (existing) {
+    await scheduleModel
+      .updateOne(
+        { _id: getEntityId(existing as unknown as Record<string, unknown>) },
+        {
+          $set: {
+            planId,
+            schedule: {
+              type: 'cron',
+              expression: cronExpression,
+              timezone,
+            },
+            target: {
+              executorType: 'agent',
+              executorId: targetAgentId,
+            },
+            input,
+          },
+        },
+      )
+      .exec();
+    return scheduleModel.findOne({ _id: getEntityId(existing as unknown as Record<string, unknown>) }).exec();
+  }
+
+  return new scheduleModel({
+    name: systemDocsHeatScheduleName,
+    description: '系统内置：定时触发文档热度统计',
+    planId,
+    schedule: {
+      type: 'cron',
+      expression: cronExpression,
+      timezone,
+    },
+    target: {
+      executorType: 'agent',
+      executorId: targetAgentId,
+    },
+    input,
+    enabled: true,
+    status: 'idle',
+    nextRunAt: computeNextRunAt({
+      type: 'cron',
+      expression: cronExpression,
+      timezone,
+    }),
+    stats: {
+      totalRuns: 0,
+      successRuns: 0,
+      failedRuns: 0,
+      skippedRuns: 0,
+    },
+    createdBy: 'system',
+  }).save();
 }
 
 async function ensureMeetingMonitorSchedule(

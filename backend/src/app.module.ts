@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { HRModule } from './modules/hr/hr.module';
-import { RolesModule } from './modules/roles/roles.module';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module';
 import { MeetingModule } from './modules/meetings/meeting.module';
 import { EmployeeModule } from './modules/employees/employee.module';
@@ -14,7 +13,6 @@ import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
-import { InnerMessageModule } from './modules/inner-message/inner-message.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -43,10 +41,8 @@ import jwtConfig from './config/jwt.config';
     OperationLogModule,
     MessagesModule,
     MessageCenterModule,
-    InnerMessageModule,
     AgentClientModule,
     HRModule,
-    RolesModule,
     ApiKeysModule,
     MeetingModule,
     EmployeeModule,

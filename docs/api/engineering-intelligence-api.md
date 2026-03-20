@@ -74,6 +74,22 @@
 - `GET /ei/statistics/snapshots/latest` (`active`)
 - `GET /ei/statistics/snapshots/:snapshotId` (`active`)
 
+### 8) Docs Heat（文档热度）
+
+- `POST /ei/docs-heat/refresh` (`active`)
+  - 请求体：`topN?`、`triggeredBy?`。
+- `GET /ei/docs-heat/ranking` (`active`)
+  - 查询参数：`window=8h|1d|7d`、`topN?`。
+- `GET /ei/docs-heat/latest` (`active`)
+  - 作用：查询最近一次热度统计运行状态。
+
+### 9) EI Config（通用配置）
+
+- `GET /ei/config?section=docsHeat` (`active`)
+  - 作用：读取文档热度配置段。
+- `PUT /ei/config/docs-heat` (`active`)
+  - 请求体：`weights[]`、`excludes[]`、`defaultWeight`、`topN`、`updatedBy?`。
+
 ## 兼容路径映射
 
 - `POST /ei/opencode/runs/sync` (`compat`) -> `POST /ei/sync-batches`
@@ -86,6 +102,8 @@
 
 - `GET /orchestration/schedules/system/engineering-statistics`
 - `POST /orchestration/schedules/system/engineering-statistics/trigger`
+- `GET /orchestration/schedules/system/docs-heat`
+- `POST /orchestration/schedules/system/docs-heat/trigger`
 
 ## 落库集合
 
@@ -95,6 +113,8 @@
 - `ei_project_statistics_snapshots`
 - `ei_requirements`
 - `ei_projects`
+- `ei_doc_commit_facts`
+- `ei_app_configs`
 
 ## 约束
 

@@ -2,7 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
-import { Agent } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent } from '@agent/schemas/agent.schema';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
 import { Task } from '../../../../../src/shared/types';
 

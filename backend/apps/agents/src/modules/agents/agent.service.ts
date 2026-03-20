@@ -186,6 +186,7 @@ export class AgentService {
         hasTierField ? updates.tier : existingAgent.tier,
         targetRole.code,
         targetRole.tier,
+        true,
       );
     }
 
@@ -496,6 +497,7 @@ export class AgentService {
     requestedTier: unknown,
     roleCode?: string,
     roleTier?: unknown,
+    allowTierCoercion = false,
   ): AgentRoleTier {
     const normalizedRequestedTier = normalizeAgentRoleTier(requestedTier);
     if (requestedTier !== undefined && !normalizedRequestedTier) {
@@ -506,6 +508,12 @@ export class AgentService {
     const resolvedTier = normalizedRequestedTier || mappedTier;
 
     if (normalizedRequestedTier && normalizedRequestedTier !== mappedTier) {
+      if (allowTierCoercion) {
+        this.logger.warn(
+          `coerce tier for role ${String(roleCode || '').trim() || 'unknown'}: requested ${normalizedRequestedTier}, applied ${mappedTier}`,
+        );
+        return mappedTier;
+      }
       throw new BadRequestException(
         `tier mismatch for role ${String(roleCode || '').trim() || 'unknown'}: expected ${mappedTier}, got ${normalizedRequestedTier}`,
       );

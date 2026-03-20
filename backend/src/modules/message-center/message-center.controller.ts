@@ -13,7 +13,6 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { MessageCenterService } from './message-center.service';
 import { SystemMessageType } from '../../shared/schemas/system-message.schema';
-import { InnerMessageMode, InnerMessageStatus } from '../../shared/schemas/inner-message.schema';
 
 interface CurrentEmployeeContext {
   employeeId: string;
@@ -73,29 +72,6 @@ export class MessageCenterController {
         pageSize: pageSize ? Number(pageSize) : undefined,
         isRead: normalizedIsRead,
         type,
-      }),
-    };
-  }
-
-  @Get('inner-messages')
-  async listInnerMessages(
-    @Headers('authorization') authHeader: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-    @Query('mode') mode?: InnerMessageMode,
-    @Query('status') status?: InnerMessageStatus,
-    @Query('eventType') eventType?: string,
-  ) {
-    const currentEmployee = await this.resolveCurrentEmployee(authHeader);
-
-    return {
-      success: true,
-      data: await this.messageCenterService.listInnerMessages({
-        page: page ? Number(page) : undefined,
-        pageSize: pageSize ? Number(pageSize) : undefined,
-        mode,
-        status,
-        eventType,
       }),
     };
   }

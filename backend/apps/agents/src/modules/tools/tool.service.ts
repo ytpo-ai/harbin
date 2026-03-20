@@ -1295,6 +1295,8 @@ export class ToolService {
         return this.createAgentByMcp(parameters);
       case 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run':
         return this.runEngineeringStatistics(parameters);
+      case 'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run':
+        return this.runDocsHeat(parameters);
       case 'builtin.sys-mg.mcp.model-admin.list-models':
         return this.modelToolHandler.listSystemModels(parameters);
       case 'builtin.sys-mg.mcp.model-admin.add-model':
@@ -1654,6 +1656,26 @@ export class ToolService {
     return {
       action: 'engineering_statistics_run',
       snapshot: response,
+      fetchedAt: new Date().toISOString(),
+    };
+  }
+
+  private async runDocsHeat(params: {
+    topN?: number;
+    triggeredBy?: string;
+  }): Promise<any> {
+    const payload = {
+      ...(Number.isFinite(Number(params?.topN)) && Number(params?.topN) > 0
+        ? { topN: Math.floor(Number(params?.topN)) }
+        : {}),
+      triggeredBy: params?.triggeredBy || 'agent-mcp',
+    };
+
+    const response = await this.internalApiClient.postDocsHeatRefresh(payload);
+
+    return {
+      action: 'docs_heat_run',
+      result: response,
       fetchedAt: new Date().toISOString(),
     };
   }

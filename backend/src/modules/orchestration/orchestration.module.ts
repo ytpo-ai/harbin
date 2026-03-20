@@ -3,8 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthModule } from '../auth/auth.module';
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
-import { Agent, AgentSchema } from '../../shared/schemas/agent.schema';
-import { AgentRole, AgentRoleSchema } from '../../shared/schemas/agent-role.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
+import { AgentRole, AgentRoleSchema } from '@agent/schemas/agent-role.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanSchema,
@@ -14,6 +14,7 @@ import {
   OrchestrationTaskSchema,
 } from '../../shared/schemas/orchestration-task.schema';
 import { Tool, ToolSchema } from '../../../apps/agents/src/schemas/tool.schema';
+import { Skill, SkillSchema } from '../../../apps/agents/src/schemas/agent-skill.schema';
 import {
   OrchestrationSchedule,
   OrchestrationScheduleSchema,
@@ -27,7 +28,8 @@ import { SessionManagerService } from './session-manager.service';
 import { TaskClassificationService } from './services/task-classification.service';
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
-import { InnerMessageModule } from '../inner-message/inner-message.module';
+import { PlanningContextService } from './services/planning-context.service';
+import { SceneOptimizationService } from './services/scene-optimization.service';
 import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-registry/prompt-registry.module';
 
 @Module({
@@ -35,7 +37,6 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     AuthModule,
     AgentClientModule,
     PromptRegistryModule,
-    InnerMessageModule,
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
@@ -45,6 +46,7 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
       { name: Tool.name, schema: ToolSchema },
       { name: Employee.name, schema: EmployeeSchema },
       { name: AgentRole.name, schema: AgentRoleSchema },
+      { name: Skill.name, schema: SkillSchema },
       { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
     ]),
   ],
@@ -56,6 +58,8 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     TaskClassificationService,
     TaskOutputValidationService,
     ExecutorSelectionService,
+    PlanningContextService,
+    SceneOptimizationService,
   ],
   exports: [OrchestrationService],
 })

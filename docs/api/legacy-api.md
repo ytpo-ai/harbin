@@ -120,6 +120,8 @@ Orchestration 任务改派字段补充：
 
 ## Inner Messages（`/inner-messages`）
 
+> 迁移说明：Inner Message 主实现已迁移到 agents 服务（`http://localhost:3002/api`）。legacy 服务不再承载该路由的主流程，仅保留 message-center 只读聚合能力与编排/会议侧转发调用。
+
 - `POST /inner-messages/direct`：内部协作直发消息（先落库 `sent`，再入 Redis 分发队列）
 - `POST /inner-messages/publish`：发布事件消息（按订阅关系匹配后生成订阅消息并分发）
 - `PATCH /inner-messages/:messageId/ack`：接收方 ACK（更新为 `delivered` 或 `processing`）

@@ -196,6 +196,8 @@
 - system 消息写入时进行内容归一化与上下文键去重，避免重复注入提示词。
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），并改为通过 Redis 队列异步写入 session 缓存，避免主链路同步落库阻塞。
+- Agent 详情页 Session 抽屉支持消息正文 5 行折叠、按条展开与 parts 数量/明细查看，便于排查结构化消息轨迹。
+- Session 抽屉头部提供刷新图标按钮，可手动重载当前 Session 详情与列表数据。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
 - legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
@@ -330,3 +332,4 @@
 | `backend/src/modules/agent-action-logs/agent-action-log.controller.ts` | Runtime hook 内部写入入口与查询接口 |
 | `backend/src/modules/agents-client/agent-client.service.ts` | legacy 后端对 Agents Runtime/Task/Session/Memo 的统一客户端封装（已合并 models/tools client 能力） |
 | `backend/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts` | inner-message 到 Agent Runtime 的统一桥接执行 |
+| `frontend/src/pages/AgentDetail.tsx` | Agent Session 抽屉消息轨迹展示（正文折叠、parts 展开、手动刷新） |

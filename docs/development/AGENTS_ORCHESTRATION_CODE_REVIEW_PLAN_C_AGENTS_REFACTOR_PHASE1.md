@@ -122,7 +122,7 @@
 ### 7.1 Agent 深拆分：策略与意图下沉
 
 - 新增 `AgentOpenCodePolicyService`：下沉 OpenCode gate/budget 策略（配置解析、门禁校验、配额审批暂停/恢复）。
-- 新增 `AgentOrchestrationIntentService`：下沉会议编排意图识别、强制工具映射与结果文案。
+- 新增 `AgentOrchestrationIntentService`：下沉会议编排意图识别、强制工具映射与结果文案（历史项，文件已于 2026-03-19 删除）。
 
 ### 7.2 Agent 深拆分：MCP Profile 领域下沉
 

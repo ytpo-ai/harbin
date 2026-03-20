@@ -7,6 +7,12 @@ metadata:
   language: zh-CN
   parent_skill: cto-rd-workflow
   load_mode: on-demand
+  tags:
+    - cto
+    - rd-workflow
+    - appendix
+    - trigger-rules
+    - output-templates
 ---
 
 # CTO 研发流程 Skill（附录版）

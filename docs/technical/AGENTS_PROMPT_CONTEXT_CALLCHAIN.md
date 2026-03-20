@@ -25,7 +25,7 @@
 | `systemPrompt` | Agent 配置字段 | `buildMessages()` 首条 system 消息 | 是 | 是（session system messages） | `backend/apps/agents/src/modules/agents/agent.service.ts:1144` |
 | `tool.prompt` | Tool 配置/内置目录 | `buildToolPromptMessages()` -> system 消息追加 | 是 | 是（session system messages） | `backend/apps/agents/src/modules/agents/agent.service.ts:1203`, `backend/apps/agents/src/modules/agents/agent.service.ts:1265` |
 | `taskPrompt` | 最近 user 消息（无则 description/title） | OpenCode 执行入参 | 否（不走 messages 队列） | 间接（run.userContent） | `backend/apps/agents/src/modules/agents/agent.service.ts:821`, `backend/apps/agents/src/modules/opencode/opencode-execution.service.ts:30`, `backend/apps/agents/src/modules/opencode/opencode.adapter.ts:41` |
-| `orchestration create prompt` | 会议/用户指令 | orchestration tool payload `prompt` | 否 | 否（由编排服务侧处理） | `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:80`, `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:216` |
+| `orchestration create prompt` | 会议/用户指令 | orchestration tool payload `prompt` | 否 | 否（由编排服务侧处理） | `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:80`（历史项，文件已于 2026-03-19 删除）, `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:216` |
 | `orchestration update prompt` | 用户更新计划入参 | orchestration API payload `sourcePrompt` | 否 | 否（由编排服务侧处理） | `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:294`, `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:299` |
 
 ## 4. 调用链图
@@ -98,7 +98,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant I as AgentOrchestrationIntentService
+    participant I as AgentOrchestrationIntentService_Deprecated
     participant S as AgentService
     participant T as OrchestrationToolHandler
     participant API as Internal Orchestration API
@@ -161,7 +161,7 @@ sequenceDiagram
 
 关键位置：
 
-- `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:80`
+- `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:80`（历史项，文件已于 2026-03-19 删除）
 - `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:192`
 - `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:216`
 - `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:299`
@@ -272,7 +272,7 @@ sequenceDiagram
 - `backend/apps/agents/src/modules/agents/agent-execution.service.ts:98`
 - `backend/apps/agents/src/modules/opencode/opencode-execution.service.ts:26`
 - `backend/apps/agents/src/modules/opencode/opencode.adapter.ts:38`
-- `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:73`
+- `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:73`（历史项，文件已于 2026-03-19 删除）
 - `backend/apps/agents/src/modules/tools/orchestration-tool-handler.service.ts:175`
 - `backend/apps/agents/src/modules/tools/builtin-tool-catalog.ts:88`
 - `backend/apps/agents/src/modules/tools/tool.service.ts:445`

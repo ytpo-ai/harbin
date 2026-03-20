@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { InfraModule } from '@libs/infra';
-import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
-import { AgentMessage, AgentMessageSchema } from '../../schemas/agent-message.schema';
-import { AgentPart, AgentPartSchema } from '../../schemas/agent-part.schema';
-import { AgentEventOutbox, AgentEventOutboxSchema } from '../../schemas/agent-event-outbox.schema';
+import { AgentRun, AgentRunSchema } from '@agent/schemas/agent-run.schema';
+import { AgentMessage, AgentMessageSchema } from '@agent/schemas/agent-message.schema';
+import { AgentPart, AgentPartSchema } from '@agent/schemas/agent-part.schema';
+import { AgentEventOutbox, AgentEventOutboxSchema } from '@agent/schemas/agent-event-outbox.schema';
 import {
   AgentRuntimeMaintenanceAudit,
   AgentRuntimeMaintenanceAuditSchema,
-} from '../../schemas/agent-runtime-maintenance-audit.schema';
-import { AgentSession, AgentSessionSchema } from '../../schemas/agent-session.schema';
+} from '@agent/schemas/agent-runtime-maintenance-audit.schema';
+import { AgentSession, AgentSessionSchema } from '@agent/schemas/agent-session.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';

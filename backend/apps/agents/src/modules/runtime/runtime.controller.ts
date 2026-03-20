@@ -472,7 +472,7 @@ export class RuntimeController {
 
   @Get('sessions/:id')
   async getSession(@Param('id') id: string) {
-    const session = await this.persistence.getSessionById(id);
+    const session = await this.persistence.getSessionDetailById(id);
     if (!session) {
       throw new NotFoundException('Session not found');
     }

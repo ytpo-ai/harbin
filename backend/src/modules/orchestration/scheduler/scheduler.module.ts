@@ -4,15 +4,15 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AuthModule } from '../../auth/auth.module';
 import { AgentClientModule } from '../../agents-client/agent-client.module';
 import { OrchestrationModule } from '../orchestration.module';
-import { Agent, AgentSchema } from '../../../shared/schemas/agent.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import {
   OrchestrationSchedule,
   OrchestrationScheduleSchema,
-} from '../../../shared/schemas/orchestration-schedule.schema';
+} from '@legacy/shared/schemas/orchestration-schedule.schema';
 import {
   OrchestrationTask,
   OrchestrationTaskSchema,
-} from '../../../shared/schemas/orchestration-task.schema';
+} from '@legacy/shared/schemas/orchestration-task.schema';
 import { SchedulerController } from './scheduler.controller';
 import { SchedulerService } from './scheduler.service';
 

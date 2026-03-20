@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { RedisService } from '@libs/infra';
 import { ApiKeyService } from '@legacy/modules/api-keys/api-key.service';
-import { Agent } from '@legacy/shared/schemas/agent.schema';
+import { Agent } from '@agent/schemas/agent.schema';
 import { Task, ChatMessage, AIModel } from '@legacy/shared/types';
 
 import { MemoEventBusService } from '@agent/modules/memos/memo-event-bus.service';
@@ -37,8 +37,8 @@ import {
   toLogError,
 } from './agent.constants';
 import { AgentExecutionService } from './agent-execution.service';
-import { AgentAfterStepEvaluationHook } from './agent-after-step-evaluation.hook';
-import { AgentBeforeStepOptimizationHook } from './agent-before-step-optimization.hook';
+import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
+import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
 import {
   AgentExecutorAfterStepHookResult,
   AgentExecutorBeforeStepHookResult,
@@ -55,6 +55,7 @@ import {
   isMeaninglessAssistantResponse,
   isMeetingLikeTask,
   isModelTimeoutError,
+  getToolInputPreflightError,
   isToolInputErrorMessage,
   shouldRetryGenerationError,
   stripToolCallMarkup,
@@ -1011,7 +1012,7 @@ export class AgentExecutorService {
         const forcedToolCall = beforeStepHookResult.forcedToolCall;
         messages.push({
           role: 'system',
-          content: `执行前优化建议：你已确认用户存在明确意图。请立即调用 <tool_call>{"tool":"${forcedToolCall.tool}","parameters":${JSON.stringify(forcedToolCall.parameters)}} </tool_call> 并等待工具结果后再回复。`,
+          content: await this.buildForcedToolCallInstruction(agent, forcedToolCall),
           timestamp: new Date(),
         });
       }
@@ -1143,6 +1144,25 @@ export class AgentExecutorService {
         continue;
       }
 
+      const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
+      const preflightInputError = getToolInputPreflightError(inputContract?.schema, toolCall.parameters);
+      if (preflightInputError && inputContract?.schema) {
+        this.logger.warn(
+          `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
+        );
+        messages.push({
+          role: 'system',
+          content: buildToolInputRepairInstruction(
+            normalizedToolCallId,
+            inputContract.schema,
+            toolCall.parameters || {},
+            preflightInputError,
+          ),
+          timestamp: new Date(),
+        });
+        continue;
+      }
+
       const toolCallId = `toolcall-${uuidv4()}`;
       let runtimeToolPartId: string | undefined;
       const runtimeToolEventBase = runtimeContext
@@ -1225,11 +1245,15 @@ export class AgentExecutorService {
 
         // 参数契约错误时附加修复指令，引导模型自我修正参数。
         if (isToolInputErrorMessage(message)) {
-          const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
-          if (inputContract?.schema) {
+          const latestInputContract = inputContract || (await this.toolService.getToolInputContract(normalizedToolCallId));
+          if (latestInputContract?.schema) {
             messages.push({
               role: 'system',
-              content: buildToolInputRepairInstruction(normalizedToolCallId, inputContract.schema, toolCall.parameters || {}),
+              content: buildToolInputRepairInstruction(
+                normalizedToolCallId,
+                latestInputContract.schema,
+                toolCall.parameters || {},
+              ),
               timestamp: new Date(),
             });
           }
@@ -1262,7 +1286,14 @@ export class AgentExecutorService {
     const previousSystemMessages = (context.previousMessages || []).filter((message) => message?.role === 'system');
     const previousNonSystemMessages = (context.previousMessages || []).filter((message) => message?.role !== 'system');
 
-    // 1) 注入 Agent 基础 system prompt。
+    // 1) 注入 Agent 工作准则（固定首条 system prompt）。
+    messages.push({
+      role: 'system',
+      content: await this.resolveAgentPromptContent(AGENT_PROMPTS.agentWorkingGuideline),
+      timestamp: new Date(),
+    });
+
+    // 2) 注入 Agent 基础 system prompt。
     messages.push({
       role: 'system',
       content: agent.systemPrompt,
@@ -1271,7 +1302,7 @@ export class AgentExecutorService {
 
     const contextScope = this.resolveSystemContextScope(agent, task, context);
 
-    // 2) 注入身份记忆，并通过指纹做增量下发降低 token 开销。
+    // 3) 注入身份记忆，并通过指纹做增量下发降低 token 开销。
     if (identityMemos.length > 0) {
       const identityContent = identityMemos
         .map((memo) => {
@@ -1310,7 +1341,7 @@ export class AgentExecutorService {
       }
     }
 
-    // 3) 非会议类任务注入任务信息块（同样支持增量更新）。
+    // 4) 非会议类任务注入任务信息块（同样支持增量更新）。
     if (!meetingLikeTask) {
       const descAlreadyInHistory =
         task.description &&
@@ -1347,7 +1378,7 @@ export class AgentExecutorService {
       }
     }
 
-    // 4) 注入技能元信息，并按匹配度按需激活技能全文。
+    // 5) 注入技能元信息，并按匹配度按需激活技能全文。
     if (enabledSkills.length > 0) {
       const skillLines = enabledSkills
         .map(
@@ -1360,12 +1391,12 @@ export class AgentExecutorService {
         role: 'system',
         content:
           `Enabled Skills for this agent:\n${skillLines}\n\n` +
-          '请优先基于以上已启用技能的能力边界来拆解与执行任务，并在输出中体现对应技能的方法论。',
+          '以下为技能索引。请按任务上下文激活并严格遵循对应技能方法论。',
         timestamp: new Date(),
       });
 
       for (const skill of enabledSkills) {
-        if (this.shouldActivateSkillContent(skill, task)) {
+        if (this.shouldActivateSkillContent(skill, task, context)) {
           const loadSkillContentStartAt = Date.now();
           try {
             const skillDoc = await this.skillModel
@@ -1406,7 +1437,7 @@ export class AgentExecutorService {
       }
     }
 
-    // 5) 注入已分配工具清单与工具策略提示。
+    // 6) 注入已分配工具清单与工具策略提示。
     const loadToolsStartAt = Date.now();
     const allowedToolIds = await this.agentRoleService.getAllowedToolIds(agent);
     const assignedTools = await this.toolService.getToolsByIds(allowedToolIds);
@@ -1440,7 +1471,7 @@ export class AgentExecutorService {
       }
     }
 
-    // 6) 注入团队上下文，支持多 Agent 协作。
+    // 7) 注入团队上下文，支持多 Agent 协作。
     if (context.teamContext) {
       messages.push({
         role: 'system',
@@ -1449,7 +1480,7 @@ export class AgentExecutorService {
       });
     }
 
-    // 7) 会议类任务注入会议执行规范模板。
+    // 8) 会议类任务注入会议执行规范模板。
     if (meetingLikeTask) {
       const meetingPolicyStartAt = Date.now();
       const meetingExecutionPolicyTemplate = await this.resolveAgentPromptTemplate(
@@ -1478,10 +1509,27 @@ export class AgentExecutorService {
       });
     }
 
-    // 8) 追加历史 system 消息，保持跨轮一致性。
-    messages.push(...previousSystemMessages);
+    // 10) 追加历史 system 消息，保持跨轮一致性（跳过本轮已注入的重复内容）。
+    const injectedSystemContents = new Set(
+      messages
+        .filter((message) => message.role === 'system')
+        .map((message) => String(message.content || '').trim())
+        .filter((content) => content.length > 0),
+    );
+    const uniquePreviousSystemMessages = previousSystemMessages.filter((message) => {
+      const normalized = String(message?.content || '').trim();
+      if (!normalized) {
+        return false;
+      }
+      if (injectedSystemContents.has(normalized)) {
+        return false;
+      }
+      injectedSystemContents.add(normalized);
+      return true;
+    });
+    messages.push(...uniquePreviousSystemMessages);
 
-    // 9) 检索任务相关记忆摘要并注入。
+    // 11) 检索任务相关记忆摘要并注入。
     // const memoryContextStartAt = Date.now();
     // const memoryContext = await this.memoService.getTaskMemoryContext(
     //   agent.id || '',
@@ -1500,7 +1548,7 @@ export class AgentExecutorService {
     //   });
     // }
 
-    // 10) 最后追加非 system 历史消息，形成完整上下文。
+    // 12) 最后追加非 system 历史消息，形成完整上下文。
     messages.push(...previousNonSystemMessages);
 
     this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
@@ -1602,9 +1650,19 @@ export class AgentExecutorService {
   private shouldActivateSkillContent(
     skill: EnabledAgentSkillContext,
     task: Task,
+    context?: AgentContext,
   ): boolean {
+    const meetingLike = isMeetingLikeTask(task, context);
     const taskText = `${task.title || ''} ${task.description || ''} ${task.type || ''}`.toLowerCase();
     const tags = (skill.tags || []).map((t) => t.toLowerCase());
+    const skillName = String(skill.name || '').toLowerCase();
+
+    if (meetingLike) {
+      const meetingPinnedSkills = ['meeting-resilience', 'meeting-sensitive-planner'];
+      if (meetingPinnedSkills.some((signal) => skillName.includes(signal) || tags.some((tag) => tag.includes(signal)))) {
+        return true;
+      }
+    }
 
     if (task.type && tags.some((tag) => tag.includes(task.type!))) {
       return true;
@@ -1628,6 +1686,73 @@ export class AgentExecutorService {
     }
 
     return false;
+  }
+
+  private async buildForcedToolCallInstruction(
+    agent: Agent,
+    forcedToolCall: NonNullable<AgentExecutorBeforeStepHookResult['forcedToolCall']>,
+  ): Promise<string> {
+    const renderedFromSkill = await this.renderForcedToolCallInstructionFromSkill(agent, forcedToolCall);
+    if (renderedFromSkill) {
+      return renderedFromSkill;
+    }
+
+    return this.resolveAgentPromptContent(AGENT_PROMPTS.forcedToolCallInstruction, {
+      tool: forcedToolCall.tool,
+      parametersJson: JSON.stringify(forcedToolCall.parameters || {}),
+    });
+  }
+
+  private async renderForcedToolCallInstructionFromSkill(
+    agent: Agent,
+    forcedToolCall: NonNullable<AgentExecutorBeforeStepHookResult['forcedToolCall']>,
+  ): Promise<string | null> {
+    const skillIds = uniqueStrings((agent.skills || []).filter(Boolean));
+    if (!skillIds.length) {
+      return null;
+    }
+
+    try {
+      const skills = await this.skillModel
+        .find(
+          { id: { $in: skillIds }, status: { $in: ['active', 'experimental'] } },
+          { id: 1, name: 1, tags: 1, content: 1 },
+        )
+        .lean()
+        .exec();
+      const target = (skills || []).find((skill: any) => {
+        const name = String(skill?.name || '').toLowerCase();
+        const tags = Array.isArray(skill?.tags) ? skill.tags.map((tag: unknown) => String(tag || '').toLowerCase()) : [];
+        const signals = ['forced-action-template', 'forced-tool-call'];
+        return signals.some((signal) => name.includes(signal) || tags.some((tag) => tag.includes(signal)));
+      }) as any;
+
+      const rawTemplate = String(target?.content || '').trim();
+      if (!rawTemplate) {
+        return null;
+      }
+
+      const truncatedTemplate =
+        rawTemplate.length > SKILL_CONTENT_MAX_INJECT_LENGTH
+          ? rawTemplate.slice(0, SKILL_CONTENT_MAX_INJECT_LENGTH) + '\n\n[... 内容已截断，可通过工具查询完整版本]'
+          : rawTemplate;
+
+      const parametersJson = JSON.stringify(forcedToolCall.parameters || {});
+      const rendered = truncatedTemplate
+        .replace(/\{\{tool\}\}/g, forcedToolCall.tool)
+        .replace(/\{\{parameters\}\}/g, parametersJson)
+        .trim();
+      if (!rendered) {
+        return null;
+      }
+
+      return rendered;
+    } catch (error) {
+      this.logger.warn(
+        `[forced_tool_call_skill_template_load_failed] agent=${agent.id || 'unknown'} error=${toLogError(error).message}`,
+      );
+      return null;
+    }
   }
 
   // 计算系统上下文作用域，用于做分场景指纹缓存。

@@ -49,6 +49,7 @@ const groupedNavigation = [
     icon: Squares2X2Icon,
     items: [
       { name: 'Agent', href: '/agents', icon: CommandLineIcon },
+      { name: 'Role', href: '/roles', icon: IdentificationIcon },
       { name: 'Skill', href: '/skills', icon: BoltIcon },
       { name: 'Tools', href: '/tools', icon: WrenchScrewdriverIcon },
       { name: 'LLM', href: '/models', icon: CpuChipIcon },
@@ -85,7 +86,6 @@ const groupedNavigation = [
       { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
       { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
       { name: '人力资源', href: '/hr', icon: UserGroupIcon },
-      { name: '角色管理', href: '/roles', icon: IdentificationIcon },
     ],
   },
 ];

@@ -118,7 +118,147 @@
 - 开发类任务新增 `CODE_EXECUTION_PROOF` warning 校验，用于自动验收 build/test/lint 与代码变更证据。
 - 系统内置定时计划新增 `system-cto-daily-requirement-triage`，每日 10:00 触发 CTO Agent 执行需求整理与研发分发。
 
-### 1.9 消息中心联动（本轮新增）
+### 1.11 文档热度统计（本轮新增）
+
+#### 1.11.1 功能目标
+
+通过扫描 `docs/` 目录下文档的 Git commit 记录，统计文档写入频率，计算文档热度排名，使 CTO 能在工程统计页面直观了解当前研发集中在哪个方向、哪些功能正在密集开发。
+
+后续阶段将基于热度 TopN 自动预加载到 CTO Agent 记忆中，使其日常工作时无需每次读文件即可了解研发动态（本期不实现记忆预加载）。
+
+#### 1.11.2 前端展示
+
+- 在现有 `工程统计` 页面新增 Tab：`工程规模统计 | 文档热度`。
+- 文档热度 Tab 内容：
+  - 时间窗口切换：`8H / 1D / 7D`。
+  - TopN 排行表格：`排名 / 文档路径 / 写入次数 / 写入频率 / 最近更新时间 / 热度分`。
+  - Top 1-3 高亮标记。
+  - "触发统计"按钮（走 Orchestration Schedule trigger）。
+  - 上次统计时间 + 运行状态。
+  - "权重配置"入口（齿轮图标），打开抽屉/弹窗管理目录权重、排除路径、默认 TopN。
+
+#### 1.11.3 热度指标
+
+- `writeCount`：窗口内文档被 commit 命中的次数。
+- `writeFreq`：`writeCount / windowHours`。
+- `lastWrittenAt`：窗口内最近一次 commit 时间。
+- `heatScore`：`writeFreq * weight * recencyDecay`。
+  - `recencyDecay = exp(-hoursSinceLastWrite / windowHours)`。
+  - `weight` 由目录权重配置决定。
+
+#### 1.11.4 目录权重（页面可配置）
+
+默认权重：
+
+| 目录 | 权重 | 说明 |
+|------|------|------|
+| `docs/features/**` | 1.5 | 功能文档，核心研发方向 |
+| `docs/dailylog/**` | 1.2 | 每日进度，CTO 判断研发节奏 |
+| `docs/plan/**` | 0.8 | 计划文档 |
+| `docs/issue/**` | 1.0 | 修复记录 |
+| `docs/**` | 1.0 | 其他文档（兜底） |
+
+- 匹配规则：从上往下 glob 匹配，命中第一个即停止；未命中走 `defaultWeight`。
+- 支持增删权重行、调整排除路径、修改默认 TopN。
+- 配置变更即时生效（下次统计使用新配置）。
+
+#### 1.11.5 数据存储
+
+**Redis（主存储，在线查询路径）**
+
+| Key | 内容 | TTL |
+|-----|------|-----|
+| `ei:docs-heat:v1:ranking:8h` | 8H 窗口 TopN JSON 数组 | 8 天 |
+| `ei:docs-heat:v1:ranking:1d` | 1D 窗口 TopN JSON 数组 | 8 天 |
+| `ei:docs-heat:v1:ranking:7d` | 7D 窗口 TopN JSON 数组 | 8 天 |
+| `ei:docs-heat:v1:latest` | 最近运行状态（runId/status/startedAt/completedAt/error） | 不过期 |
+| `ei:app-config:v1` | EI 通用配置缓存 | 不过期 |
+
+**Mongo `ei_doc_commit_facts`（事实表，防 Redis 重启丢数据）**
+
+```typescript
+{
+  commitSha: string,       // 索引
+  docPath: string,         // 索引
+  committedAt: Date,       // 索引（窗口查询）
+  author: string,
+  // 复合唯一索引: (commitSha, docPath)
+}
+```
+
+- 每次 schedule 扫描 commit 后先写 facts 表（upsert by sha+path）。
+- Redis 重启后从 facts 表按窗口聚合重算并回填 Redis。
+- facts 表保留 30 天，超期由定时任务清理。
+
+**Mongo `ei_app_configs`（通用配置持久化）**
+
+```typescript
+{
+  configId: "default",
+  docsHeat: {
+    weights: [
+      { pattern: "docs/features/**", weight: 1.5, label: "功能文档" },
+      { pattern: "docs/dailylog/**", weight: 1.2, label: "每日进度" },
+      { pattern: "docs/plan/**",     weight: 0.8, label: "计划文档" },
+      { pattern: "docs/issue/**",    weight: 1.0, label: "修复记录" },
+      { pattern: "docs/**",          weight: 1.0, label: "其他文档" },
+    ],
+    excludes: [],
+    defaultWeight: 1.0,
+    topN: 20,
+    updatedAt: Date,
+    updatedBy: string,
+  },
+  // 后续扩展其他 EI 配置段
+  updatedAt: Date,
+}
+```
+
+- 启动时加载顺序：Redis -> Mongo -> 代码内置默认值。
+- PUT 操作同时写 Mongo + Redis。
+
+#### 1.11.6 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/ei/docs-heat/refresh` | 执行一次扫描+计算 |
+| GET | `/ei/docs-heat/ranking` | 读 TopN（`?window=8h|1d|7d&topN=20`） |
+| GET | `/ei/docs-heat/latest` | 最近运行状态 |
+| GET | `/ei/config` | 读 EI 通用配置（`?section=docsHeat`） |
+| PUT | `/ei/config/docs-heat` | 更新文档热度配置段 |
+
+#### 1.11.7 扫描与计算流程
+
+1. Schedule 触发 -> Agent Tool `docs-heat-run` -> EI API `POST /ei/docs-heat/refresh`。
+2. EI 执行 `git log --since=7d --name-only --pretty=format:<sha>|<ts>|<author>`（按最大窗口一次扫描）。
+3. 解析 commit，过滤 `docs/**/*.md` 文件。
+4. 写入 Mongo `ei_doc_commit_facts`（upsert by sha+path）。
+5. 从 facts 按 8H/1D/7D 三窗口聚合。
+6. 读取 `ei_app_configs.docsHeat` 权重配置。
+7. 计算 `heatScore`，排序取 TopN。
+8. 写入 Redis ranking + latest。
+9. 返回 summary。
+
+**Redis 降级读取**：
+```
+GET ranking -> Redis 有值 -> 返回
+           -> Redis 为空 -> 从 Mongo facts 聚合重算 -> 写回 Redis -> 返回
+```
+
+#### 1.11.8 Schedule 编排接入
+
+- 新增 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.docs-heat-run`。
+- 新增系统 schedule：`system-docs-heat`（独立于现有 `system-engineering-statistics`）。
+- 建议默认 cron：每 2 小时执行一次。
+- 前端"触发统计"按钮调用：`POST /orchestration/schedules/system/docs-heat/trigger`。
+
+#### 1.11.9 约束
+
+- 不引入/透传 `organizationId`。
+- 前端保留在主应用 `frontend/` 内，不新增独立前端工程。
+- 本期不实现 LLM 摘要、不写入 CTO 记忆、不生成 Context Pack。
+
+### 1.12 消息中心联动（本轮新增）
 
 - 消息中心能力归属 legacy 主 backend（`backend/src/modules/message-center`），不落在 EI 独立服务中。
 - EI 仅负责在统计完成后通过 Hook 调用 legacy：`POST /api/message-center/hooks/engineering-statistics`。
@@ -140,6 +280,7 @@
 | `plan/ENGINEERING_INTELLIGENCE_REQUIREMENT_MANAGEMENT_PLAN.md` | 研发智能需求管理（Issue 协作）计划 |
 | `plan/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造计划 |
 | `plan/CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
+| `plan/EI_DOCS_HEAT_PLAN.md` | 文档热度统计功能开发计划 |
 
 ### 技术文档 (docs/technical/)
 
@@ -189,3 +330,8 @@
 | 路径 | 功能 |
 |------|------|
 | `frontend/src/pages/` | 主前端中的工程智能页面与分析展示入口 |
+| `backend/apps/ei/src/schemas/ei-doc-commit-fact.schema.ts` | 文档 commit 事实表模型（docs-heat） |
+| `backend/apps/ei/src/schemas/ei-app-config.schema.ts` | EI 通用配置表模型 |
+| `backend/apps/ei/src/services/docs-heat.service.ts` | 文档热度统计核心服务 |
+| `backend/apps/ei/src/controllers/docs-heat.controller.ts` | 文档热度 API 控制器 |
+| `backend/apps/ei/src/controllers/config.controller.ts` | EI 通用配置 API 控制器 |

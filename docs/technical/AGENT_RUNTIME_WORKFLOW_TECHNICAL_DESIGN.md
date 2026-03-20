@@ -144,9 +144,7 @@
 
 ### 7.2 分发机制
 
-- 默认 channel：
-  - 有组织：`agent-runtime:{organizationId}`
-  - 否则：`agent-runtime:{agentId}`
+- 默认 channel：`agent-runtime:{agentId}`
 - Redis 不可用会标记 outbox failed
 - dispatcher 每 2 秒 flush 一次可派发事件
 

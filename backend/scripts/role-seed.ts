@@ -1,7 +1,7 @@
 import { INestApplicationContext } from '@nestjs/common';
 import { getModelToken } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { AgentRole, AgentRoleDocument } from '../src/shared/schemas/agent-role.schema';
+import { AgentRole, AgentRoleDocument } from '../apps/agents/src/schemas/agent-role.schema';
 import { getTierByAgentRoleCode } from '../src/shared/role-tier';
 
 interface AgentTypeRoleSeed {

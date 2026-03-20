@@ -125,8 +125,8 @@ enum ParticipantRole {
 - 会议结束时由 Meeting Service 发布 `meeting.ended` inner message，并由统一 Agent Runtime 消息桥接触发 `meeting-assistant` 执行；是否生成总结由 Agent 自主决策并可调用 `meeting.generate-summary` 工具。
 - 会议执行链路引入系统上下文去重：`任务信息` 与 `身份与职责` 使用 fingerprint + delta 注入，内容无变化不重复注入，变更时仅注入增量
 - 会议场景默认不再注入固定 `任务信息` block；当 identity 已存在时跳过重复 `systemPrompt`，避免与身份定义重合
-- 会议分配执行遵循闭环规则：用户一次确认后自动执行，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
-- 会议异常兜底：当生成结果为空（如 `-`）时自动重试一次，仍为空则返回“操作进行中，1 分钟内补充回执。”
+- 会议分配执行遵循闭环规则：优先由 `meeting-sensitive-planner` 技能约束“一次确认后自动执行”，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
+- 会议异常兜底：优先由 `meeting-resilience` 技能处理空回复/生成异常；未命中技能时自动重试一次，仍为空则返回“操作进行中，1 分钟内补充回执。”
 - 系统消息入会顺序调整：优先注入会话历史 system 上下文，再注入工具/技能说明，降低会话阅读与追踪混乱
 - Runtime 会话落盘顺序优化：首轮运行先落盘 system 上下文，再落盘触发 user 消息，避免 user 消息长期固定在顶部影响排查
 - 工具可用清单展示精简为 `name | description`，减少大 JSON 参数块对会话上下文的噪音

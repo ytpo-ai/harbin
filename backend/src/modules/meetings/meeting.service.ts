@@ -9,7 +9,6 @@ import { Agent, ChatMessage } from '../../shared/types';
 import { RedisService } from '@libs/infra';
 import { v4 as uuidv4 } from 'uuid';
 import { MessagesService } from '../messages/messages.service';
-import { InnerMessageService } from '../inner-message/inner-message.service';
 import { MEETING_ENDED_EVENT_TYPE } from './meeting-inner-message.constants';
 
 export interface MeetingEvent {
@@ -107,7 +106,6 @@ export class MeetingService {
     private readonly employeeService: EmployeeService,
     private readonly redisService: RedisService,
     private readonly messagesService: MessagesService,
-    private readonly innerMessageService: InnerMessageService,
   ) {}
 
   private normalizeSpeakingMode(mode?: string): MeetingSpeakingMode {
@@ -2116,7 +2114,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
     const dedupKey = `${MEETING_ENDED_EVENT_TYPE}:${meetingId}:${endedAt}`;
 
     try {
-      await this.innerMessageService.publishMessage({
+      await this.agentClientService.publishInnerMessage({
         senderAgentId: this.meetingSummaryEventSenderAgentId,
         eventType: MEETING_ENDED_EVENT_TYPE,
         title: `会议结束：${meeting.title}`,

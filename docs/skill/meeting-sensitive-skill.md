@@ -8,6 +8,11 @@ metadata:
   applies_to:
     - meeting-chat
     - multi-agent-collaboration
+  tags:
+    - meeting
+    - orchestration-planning
+    - approval-gated-execution
+    - schedule
   capabilities:
     - semantic-signal-detection
     - plan-orchestration
@@ -42,6 +47,13 @@ metadata:
   - 一次性计划（Plan）
   - 周期计划（Recurring Plan）
   - 定时计划（Scheduled Plan）
+
+### 1.1 会议执行策略（一次确认后自动执行）
+
+- 当用户已经明确同意（例如“可以执行”“按这个方案做”），直接进入执行动作，不再追加二次确认。
+- 执行前允许一次必要澄清：仅在关键参数缺失且无法安全执行时发起。
+- 执行后回执优先采用三段式：`已分配`、`已通知`、`下一检查点`。
+- 若同轮次出现冲突指令，以用户最新明确指令为准，并在回执中说明覆盖关系。
 
 ---
 

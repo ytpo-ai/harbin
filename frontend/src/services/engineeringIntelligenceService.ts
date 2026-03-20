@@ -86,6 +86,46 @@ export interface EngineeringStatisticsSnapshot {
   updatedAt?: string;
 }
 
+export type DocsHeatWindow = '8h' | '1d' | '7d';
+
+export interface DocsHeatRankingRow {
+  rank: number;
+  path: string;
+  writeCount: number;
+  writeFreq: number;
+  lastWrittenAt: string;
+  heatScore: number;
+  weight: number;
+}
+
+export interface DocsHeatLatest {
+  runId: string;
+  status: 'running' | 'success' | 'failed';
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+  summary?: {
+    scannedCommits: number;
+    scannedDocWrites: number;
+    upsertedFacts: number;
+  };
+}
+
+export interface DocsHeatWeightRule {
+  pattern: string;
+  weight: number;
+  label?: string;
+}
+
+export interface DocsHeatConfig {
+  weights: DocsHeatWeightRule[];
+  excludes: string[];
+  defaultWeight: number;
+  topN: number;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export type RequirementStatus = 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
 export type RequirementPriority = 'low' | 'medium' | 'high' | 'critical';
 export type RequirementActorType = 'human' | 'agent' | 'system';
@@ -219,6 +259,49 @@ export const engineeringIntelligenceService = {
     const response = await api.get('/ei/statistics/snapshots', {
       params: { limit },
     });
+    return response.data;
+  },
+
+  async getDocsHeatRanking(window: DocsHeatWindow, topN: number): Promise<{
+    window: DocsHeatWindow;
+    topN: number;
+    ranking: DocsHeatRankingRow[];
+    source: 'redis' | 'mongo-recompute';
+  }> {
+    const response = await api.get('/ei/docs-heat/ranking', {
+      params: {
+        window,
+        topN,
+      },
+    });
+    return response.data;
+  },
+
+  async getDocsHeatLatest(): Promise<DocsHeatLatest | null> {
+    const response = await api.get('/ei/docs-heat/latest');
+    return response.data;
+  },
+
+  async triggerDocsHeat(payload?: { topN?: number; triggeredBy?: string }): Promise<any> {
+    const response = await api.post('/ei/docs-heat/refresh', payload || {});
+    return response.data;
+  },
+
+  async getEiConfig(section?: 'docsHeat'): Promise<{ section?: string; docsHeat?: DocsHeatConfig; configId?: string }> {
+    const response = await api.get('/ei/config', {
+      params: section ? { section } : undefined,
+    });
+    return response.data;
+  },
+
+  async updateDocsHeatConfig(payload: {
+    weights: DocsHeatWeightRule[];
+    excludes: string[];
+    defaultWeight: number;
+    topN: number;
+    updatedBy?: string;
+  }): Promise<{ configId: string; docsHeat: DocsHeatConfig }> {
+    const response = await api.put('/ei/config/docs-heat', payload);
     return response.data;
   },
 

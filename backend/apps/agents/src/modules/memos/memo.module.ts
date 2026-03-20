@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Agent, AgentSchema } from '../../../../../src/shared/schemas/agent.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { Tool, ToolSchema } from '../../schemas/tool.schema';
 import { AgentMemo, AgentMemoSchema } from '../../schemas/agent-memo.schema';
 import { AgentMemoVersion, AgentMemoVersionSchema } from '../../schemas/agent-memo-version.schema';

@@ -92,6 +92,11 @@ export interface TriggerEngineeringStatisticsPayload {
   triggeredBy?: string;
 }
 
+export interface TriggerDocsHeatPayload {
+  topN?: number;
+  triggeredBy?: string;
+}
+
 export const schedulerService = {
   async createSchedule(payload: CreateSchedulePayload): Promise<OrchestrationSchedule> {
     const response = await api.post('/orchestration/schedules', payload);
@@ -144,6 +149,20 @@ export const schedulerService = {
     scheduleId: string;
   }> {
     const response = await api.post('/orchestration/schedules/system/engineering-statistics/trigger', payload || {});
+    return response.data;
+  },
+
+  async getSystemDocsHeatSchedule(): Promise<OrchestrationSchedule> {
+    const response = await api.get('/orchestration/schedules/system/docs-heat');
+    return response.data;
+  },
+
+  async triggerSystemDocsHeat(payload?: TriggerDocsHeatPayload): Promise<{
+    accepted: boolean;
+    status: string;
+    scheduleId: string;
+  }> {
+    const response = await api.post('/orchestration/schedules/system/docs-heat/trigger', payload || {});
     return response.data;
   },
 

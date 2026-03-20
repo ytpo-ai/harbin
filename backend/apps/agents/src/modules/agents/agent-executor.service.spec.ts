@@ -1,4 +1,12 @@
 import { AgentExecutorService } from './agent-executor.service';
+import {
+  buildToolInputRepairInstruction,
+  getToolInputPreflightError,
+  isMeaninglessAssistantResponse,
+  isToolInputErrorMessage,
+  resolveOpenCodeRuntimeOptions,
+} from './agent-executor.helpers';
+import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catalog';
 
 describe('AgentExecutorService tool prompt messages', () => {
   it('collects and sorts non-empty tool prompts', () => {
@@ -28,8 +36,7 @@ describe('AgentExecutorService tool prompt messages', () => {
 
 describe('AgentExecutorService OpenCode runtime resolution', () => {
   it('prefers agent config endpoint over runtime endpoint', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-    const result = service['resolveOpenCodeRuntimeOptions'](
+    const result = resolveOpenCodeRuntimeOptions(
       {
         endpoint: 'http://config-endpoint:4098',
         endpointRef: 'http://config-endpoint-ref:4098',
@@ -50,8 +57,7 @@ describe('AgentExecutorService OpenCode runtime resolution', () => {
   });
 
   it('falls back to env default when no endpoint is provided', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-    const result = service['resolveOpenCodeRuntimeOptions'](
+    const result = resolveOpenCodeRuntimeOptions(
       {
         authEnable: false,
       },
@@ -70,14 +76,12 @@ describe('AgentExecutorService OpenCode runtime resolution', () => {
 
 describe('AgentExecutorService meeting response guard', () => {
   it('detects empty or dash-only responses as meaningless', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-
-    expect(service['isMeaninglessAssistantResponse']('')).toBe(true);
-    expect(service['isMeaninglessAssistantResponse']('   ')).toBe(true);
-    expect(service['isMeaninglessAssistantResponse']('-')).toBe(true);
-    expect(service['isMeaninglessAssistantResponse']('—')).toBe(true);
-    expect(service['isMeaninglessAssistantResponse']('...')).toBe(true);
-    expect(service['isMeaninglessAssistantResponse']('已完成分配并通知')).toBe(false);
+    expect(isMeaninglessAssistantResponse('')).toBe(true);
+    expect(isMeaninglessAssistantResponse('   ')).toBe(true);
+    expect(isMeaninglessAssistantResponse('-')).toBe(true);
+    expect(isMeaninglessAssistantResponse('—')).toBe(true);
+    expect(isMeaninglessAssistantResponse('...')).toBe(true);
+    expect(isMeaninglessAssistantResponse('已完成分配并通知')).toBe(false);
   });
 
   it('builds task info delta when key fields changed', () => {
@@ -170,18 +174,204 @@ describe('AgentExecutorService prompt resolve redis guard', () => {
   });
 });
 
+describe('AgentExecutorService system prompt ordering', () => {
+  it('injects agent working guideline as first system prompt', async () => {
+    const service = Object.create(AgentExecutorService.prototype) as any;
+    service.memoService = {
+      getIdentityMemos: jest.fn().mockResolvedValue([]),
+    };
+    service.redisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+    };
+    service.agentRoleService = {
+      getAllowedToolIds: jest.fn().mockResolvedValue([]),
+    };
+    service.toolService = {
+      getToolsByIds: jest.fn().mockResolvedValue([]),
+    };
+    service.resolveAgentPromptContent = jest.fn().mockImplementation((template: any, payload?: any) => {
+      if (payload) {
+        return template.buildDefaultContent(payload);
+      }
+      return template.buildDefaultContent();
+    });
+
+    const messages = await service.buildMessages(
+      {
+        id: 'agent-1',
+        systemPrompt: '你是一个专注交付结果的工程 Agent。',
+      },
+      {
+        id: 'task-1',
+        title: '实现接口',
+        description: '新增 agent runtime 接口',
+        type: 'engineering',
+        priority: 'high',
+      },
+      {
+        task: {
+          id: 'task-1',
+          title: '实现接口',
+          description: '新增 agent runtime 接口',
+          type: 'engineering',
+          priority: 'high',
+        },
+        previousMessages: [],
+        workingMemory: new Map(),
+      },
+      [],
+    );
+
+    expect(messages[0]).toMatchObject({
+      role: 'system',
+      content: AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent(),
+    });
+    expect(messages[1]).toMatchObject({
+      role: 'system',
+      content: '你是一个专注交付结果的工程 Agent。',
+    });
+  });
+
+  it('does not duplicate baseline system prompts from previous messages', async () => {
+    const service = Object.create(AgentExecutorService.prototype) as any;
+    service.memoService = {
+      getIdentityMemos: jest.fn().mockResolvedValue([]),
+    };
+    service.redisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+    };
+    service.agentRoleService = {
+      getAllowedToolIds: jest.fn().mockResolvedValue([]),
+    };
+    service.toolService = {
+      getToolsByIds: jest.fn().mockResolvedValue([]),
+    };
+    service.resolveAgentPromptContent = jest.fn().mockImplementation((template: any, payload?: any) => {
+      if (payload) {
+        return template.buildDefaultContent(payload);
+      }
+      return template.buildDefaultContent();
+    });
+
+    const workingGuideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
+    const baseSystemPrompt = '你是一个专注交付结果的工程 Agent。';
+
+    const messages = await service.buildMessages(
+      {
+        id: 'agent-1',
+        systemPrompt: baseSystemPrompt,
+      },
+      {
+        id: 'task-1',
+        title: '实现接口',
+        description: '新增 agent runtime 接口',
+        type: 'engineering',
+        priority: 'high',
+      },
+      {
+        task: {
+          id: 'task-1',
+          title: '实现接口',
+          description: '新增 agent runtime 接口',
+          type: 'engineering',
+          priority: 'high',
+        },
+        previousMessages: [
+          { role: 'system', content: workingGuideline },
+          { role: 'system', content: baseSystemPrompt },
+          { role: 'system', content: '历史保留系统提示' },
+        ],
+        workingMemory: new Map(),
+      },
+      [],
+    );
+
+    const systemContents = messages
+      .filter((message: any) => message.role === 'system')
+      .map((message: any) => String(message.content));
+
+    expect(systemContents.filter((content) => content === workingGuideline)).toHaveLength(1);
+    expect(systemContents.filter((content) => content === baseSystemPrompt)).toHaveLength(1);
+    expect(systemContents.filter((content) => content === '历史保留系统提示')).toHaveLength(1);
+  });
+
+  it('keeps system prompt cardinality stable across repeated rounds', async () => {
+    const service = Object.create(AgentExecutorService.prototype) as any;
+    service.memoService = {
+      getIdentityMemos: jest.fn().mockResolvedValue([]),
+    };
+    service.redisService = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(true),
+    };
+    service.agentRoleService = {
+      getAllowedToolIds: jest.fn().mockResolvedValue([]),
+    };
+    service.toolService = {
+      getToolsByIds: jest.fn().mockResolvedValue([]),
+    };
+    service.resolveAgentPromptContent = jest.fn().mockImplementation((template: any, payload?: any) => {
+      if (payload) {
+        return template.buildDefaultContent(payload);
+      }
+      return template.buildDefaultContent();
+    });
+
+    const agent = {
+      id: 'agent-1',
+      systemPrompt: '你是一个专注交付结果的工程 Agent。',
+    };
+    const task = {
+      id: 'task-1',
+      title: '实现接口',
+      description: '新增 agent runtime 接口',
+      type: 'engineering',
+      priority: 'high',
+    };
+
+    const firstRoundMessages = await service.buildMessages(
+      agent,
+      task,
+      {
+        task,
+        previousMessages: [],
+        workingMemory: new Map(),
+      },
+      [],
+    );
+
+    const secondRoundMessages = await service.buildMessages(
+      agent,
+      task,
+      {
+        task,
+        previousMessages: firstRoundMessages,
+        workingMemory: new Map(),
+      },
+      [],
+    );
+
+    const guideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
+    const round2SystemContents = secondRoundMessages
+      .filter((message: any) => message.role === 'system')
+      .map((message: any) => String(message.content));
+
+    expect(round2SystemContents.filter((content) => content === guideline)).toHaveLength(1);
+    expect(round2SystemContents.filter((content) => content === agent.systemPrompt)).toHaveLength(1);
+  });
+});
+
 describe('AgentExecutorService tool input repair helpers', () => {
   it('detects parameter-related tool errors', () => {
-    const service = Object.create(AgentExecutorService.prototype) as any;
-
-    expect(service['isToolInputErrorMessage']('Invalid tool parameters: missing required field')).toBe(true);
-    expect(service['isToolInputErrorMessage']('send_internal_message requires title and content')).toBe(true);
-    expect(service['isToolInputErrorMessage']('network timeout')).toBe(false);
+    expect(isToolInputErrorMessage('Invalid tool parameters: missing required field')).toBe(true);
+    expect(isToolInputErrorMessage('send_internal_message requires title and content')).toBe(true);
+    expect(isToolInputErrorMessage('network timeout')).toBe(false);
   });
 
   it('builds concise tool input repair instruction', () => {
-    const service = Object.create(AgentExecutorService.prototype) as any;
-    const content = service['buildToolInputRepairInstruction'](
+    const content = buildToolInputRepairInstruction(
       'builtin.sys-mg.mcp.inner-message.send-internal-message',
       {
         type: 'object',
@@ -195,11 +385,43 @@ describe('AgentExecutorService tool input repair helpers', () => {
       {
         receiverAgentId: 'agent-1',
       },
+      "missing required field 'title'",
     );
 
+    expect(content).toContain('错误原因：');
     expect(content).toContain('inputSchema=');
     expect(content).toContain('lastParameters=');
     expect(content).toContain('<tool_call>');
     expect(content).toContain('send-internal-message');
+  });
+
+  it('detects preflight required-field and unknown-field errors', () => {
+    const schema = {
+      type: 'object',
+      required: ['receiverAgentId', 'title', 'content'],
+      additionalProperties: false,
+      properties: {
+        receiverAgentId: { type: 'string' },
+        title: { type: 'string' },
+        content: { type: 'string' },
+      },
+    };
+
+    expect(getToolInputPreflightError(schema, { receiverAgentId: 'a1' })).toContain("missing required field 'title'");
+    expect(
+      getToolInputPreflightError(schema, {
+        receiverAgentId: 'a1',
+        title: 'hello',
+        content: 'world',
+        toAgentId: 'legacy',
+      }),
+    ).toContain('unknown fields');
+    expect(
+      getToolInputPreflightError(schema, {
+        receiverAgentId: 'a1',
+        title: 'hello',
+        content: 'world',
+      }),
+    ).toBeNull();
   });
 });

@@ -79,6 +79,25 @@ export interface AgentRuntimeSessionMessage {
   timestamp: string;
 }
 
+export interface AgentRuntimeSessionPart {
+  id: string;
+  runId: string;
+  taskId?: string;
+  messageId: string;
+  sequence: number;
+  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event';
+  status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+  toolId?: string;
+  toolCallId?: string;
+  input?: unknown;
+  output?: unknown;
+  content?: string;
+  error?: string;
+  startedAt?: string;
+  endedAt?: string;
+  timestamp: string;
+}
+
 export interface AgentRuntimeSession {
   _id?: string;
   id: string;
@@ -89,6 +108,7 @@ export interface AgentRuntimeSession {
   status: 'active' | 'archived' | 'closed';
   runIds?: string[];
   messages: AgentRuntimeSessionMessage[];
+  parts?: AgentRuntimeSessionPart[];
   planContext?: {
     linkedPlanId?: string;
     linkedTaskId?: string;

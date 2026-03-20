@@ -79,7 +79,7 @@
      - `parseOpenCodeExecutionConfig`
      - `assertOpenCodeExecutionGate`
      - `applyAgentBudgetGate`
-   - 新增 `AgentOrchestrationIntentService`，下沉会议编排意图识别与强制工具调用映射：
+   - 新增 `AgentOrchestrationIntentService`，下沉会议编排意图识别与强制工具调用映射（历史项，文件已于 2026-03-19 删除）：
      - `extractForcedOrchestrationAction`
      - `hasMeetingOrchestrationIntent`
      - `formatForcedOrchestrationAnswer`

@@ -61,6 +61,7 @@
 | `AGENT_SKILL_MANAGER_PLAN.md` | Agent Skill Manager 初始实现计划（已归档） |
 | `AGENT_SKILL_BIND_DUPKEY_FIX_PLAN.md` | Agent 技能绑定唯一索引冲突修复计划 |
 | `AGENT_SKILL_DB_REDIS_PROGRESSIVE_LOADING_PLAN.md` | Skill 正文 DB 内嵌与 Redis 渐进式加载实施计划 |
+| `SKILL_BINDING_CHECKBOX_SELECT_ALL_PLAN.md` | Skill 详情页 Agent 绑定勾选化与全选交互优化计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -108,5 +109,5 @@
 
 - Skill 列表项默认信息降噪（描述限高 + 渐隐），通过「查看详情」进入右侧抽屉。
 - 右侧抽屉分为「详情 / Agent 绑定」两个 Tab，详情支持直接保存。
-- 「Agent 绑定」Tab 支持绑定与解除绑定（解除绑定复用 `/skills/assign` 且 `enabled=false`）。
+- 「Agent 绑定」Tab 采用 Agent 列表勾选模式，支持单项勾选、当前可见列表全选/取消全选，并按差异批量提交绑定与解绑（解绑复用 `/skills/assign` 且 `enabled=false`）。
 - 状态与分类展示中文文案，筛选项同样使用中文显示（传参仍保持后端枚举值）。

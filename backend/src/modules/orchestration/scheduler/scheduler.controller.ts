@@ -157,6 +157,24 @@ export class SchedulerController {
     return this.schedulerService.getOrCreateEngineeringStatisticsSchedule();
   }
 
+  @Post('system/docs-heat/trigger')
+  async triggerSystemDocsHeat(
+    @Body() dto: Record<string, any>,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.schedulerService.triggerSystemDocsHeat({
+      topN: dto?.topN,
+      triggeredBy: dto?.triggeredBy || 'frontend-button',
+    });
+  }
+
+  @Get('system/docs-heat')
+  async getSystemDocsHeatSchedule(@Headers('authorization') authHeader: string) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.schedulerService.getOrCreateDocsHeatSchedule();
+  }
+
   @Get(':id/history')
   async history(
     @Param('id') scheduleId: string,

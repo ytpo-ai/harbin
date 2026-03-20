@@ -61,6 +61,28 @@ export interface AsyncAgentTaskCompletionResult {
   snapshot?: AsyncAgentTaskSnapshot;
 }
 
+interface PublishInnerMessageInput {
+  senderAgentId?: string;
+  eventType: string;
+  title: string;
+  content: string;
+  payload?: Record<string, any>;
+  source?: string;
+  dedupKey?: string;
+  maxAttempts?: number;
+}
+
+interface PublishTaskLifecycleEventInput {
+  eventType: string;
+  taskId: string;
+  planId?: string;
+  status?: string;
+  senderAgentId?: string;
+  payload?: Record<string, any>;
+  title?: string;
+  content?: string;
+}
+
 @Injectable()
 export class AgentClientService {
   private readonly logger = new Logger(AgentClientService.name);
@@ -512,6 +534,44 @@ export class AgentClientService {
         executionMode: 'chat',
       },
     );
+  }
+
+  async publishInnerMessage(input: PublishInnerMessageInput): Promise<any> {
+    const response = await axios.post(
+      `${this.baseUrl}/api/inner-messages/publish`,
+      input,
+      {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: this.timeout,
+      },
+    );
+    return response.data;
+  }
+
+  async publishTaskLifecycleEvent(input: PublishTaskLifecycleEventInput): Promise<any> {
+    const response = await axios.post(
+      `${this.baseUrl}/api/inner-messages/publish`,
+      {
+        senderAgentId: input.senderAgentId || 'orchestration-system',
+        eventType: input.eventType,
+        title: input.title || `Task Event: ${input.eventType}`,
+        content: input.content || `Task ${input.taskId} emitted event ${input.eventType}`,
+        payload: {
+          taskId: input.taskId,
+          planId: input.planId,
+          status: input.status,
+          ...(input.payload || {}),
+        },
+        source: 'orchestration',
+        dedupKey: `${input.eventType}:${input.taskId}:${input.status || 'na'}`,
+      },
+      {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: this.timeout,
+      },
+    );
+
+    return response.data;
   }
 
   async testAgentConnection(

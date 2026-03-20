@@ -7,6 +7,7 @@ type SeedName =
   | 'builtin-tools'
   | 'default-model-registry'
   | 'system-schedules'
+  | 'docs-heat'
   | 'meeting-monitor'
   | 'agent-roles';
 
@@ -18,6 +19,7 @@ const ALL_SEEDS: SeedName[] = [
   'builtin-tools',
   'default-model-registry',
   'system-schedules',
+  'docs-heat',
   'meeting-monitor',
   'agent-roles',
 ];
@@ -82,7 +84,7 @@ async function run(): Promise<void> {
   const needsAgentsApp = selectedSeeds.some((seed) =>
     ['mcp-profiles', 'model-management-agent', 'builtin-tools', 'default-model-registry'].includes(seed),
   );
-  const needsLegacyApp = selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules', 'agent-roles'].includes(seed));
+  const needsLegacyApp = selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed));
 
   const {
     AgentsAppModule,
@@ -160,12 +162,20 @@ async function run(): Promise<void> {
 
       if (seed === 'meeting-monitor') {
         if (!legacyApp) throw new Error('Legacy app context not initialized');
-        await seedSystemSchedules(legacyApp, { only: ['meeting-monitor'] });
+        const result = await seedSystemSchedules(legacyApp, { only: ['meeting-monitor'] });
+        console.log(`[seed] meeting-monitor: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
       }
 
       if (seed === 'system-schedules') {
         if (!legacyApp) throw new Error('Legacy app context not initialized');
-        await seedSystemSchedules(legacyApp);
+        const result = await seedSystemSchedules(legacyApp);
+        console.log(`[seed] system-schedules: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
+      }
+
+      if (seed === 'docs-heat') {
+        if (!legacyApp) throw new Error('Legacy app context not initialized');
+        const result = await seedSystemSchedules(legacyApp, { only: ['docs-heat'] });
+        console.log(`[seed] docs-heat: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
       }
 
       if (seed === 'agent-roles') {
@@ -192,7 +202,7 @@ function loadAgentsSeedDependencies() {
   const { ToolService } = localRequire('../apps/agents/src/modules/tools/tool.service');
   const { ModelManagementService } = localRequire('../apps/agents/src/modules/models/model-management.service');
   const { getModelToken } = localRequire('@nestjs/mongoose');
-  const { Agent } = localRequire('../src/shared/schemas/agent.schema');
+  const { Agent } = localRequire('../apps/agents/src/schemas/agent.schema');
   const { AVAILABLE_MODELS } = localRequire('../src/config/models');
   const {
     MODEL_MANAGEMENT_AGENT_NAME,

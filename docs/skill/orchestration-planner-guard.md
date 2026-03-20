@@ -9,6 +9,12 @@ metadata:
     - orchestration
     - cto-triage
     - multi-agent-planning
+  tags:
+    - orchestration
+    - planning
+    - assignment-guard
+    - capability-check
+    - auditable-output
   capabilities:
     - role-based-assignment
     - capability-and-permission-check

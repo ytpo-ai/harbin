@@ -14,6 +14,18 @@ import {
 import { RuntimeEvent, RuntimeEventSchema } from './contracts/runtime-event.contract';
 import { AgentSession, AgentSessionDocument } from '../../schemas/agent-session.schema';
 
+type SessionPartView = Pick<
+  AgentPart,
+  'id' | 'runId' | 'messageId' | 'sequence' | 'type' | 'status' | 'toolId' | 'toolCallId' | 'input' | 'output' | 'content' | 'error' | 'startedAt' | 'endedAt'
+> & {
+  taskId?: string;
+  timestamp: Date;
+};
+
+export type AgentSessionDetailView = AgentSession & {
+  parts: SessionPartView[];
+};
+
 @Injectable()
 export class RuntimePersistenceService {
   private readonly maxSessionMessages = Number(process.env.AGENT_SESSION_MAX_MESSAGES || 1200);
@@ -469,6 +481,67 @@ export class RuntimePersistenceService {
 
   async getSessionById(sessionId: string): Promise<AgentSession | null> {
     return this.sessionModel.findOne({ id: sessionId }).exec();
+  }
+
+  async getSessionDetailById(sessionId: string): Promise<AgentSessionDetailView | null> {
+    const session = await this.sessionModel.findOne({ id: sessionId }).lean<AgentSession>().exec();
+    if (!session) return null;
+
+    const runTaskMap = new Map<string, string | undefined>();
+    const runIds = Array.isArray(session.runIds)
+      ? session.runIds.filter((runId): runId is string => typeof runId === 'string' && runId.trim().length > 0)
+      : [];
+    if (runIds.length > 0) {
+      const runs = await this.runModel
+        .find({ id: { $in: runIds } })
+        .select({ id: 1, taskId: 1 })
+        .lean<Array<{ id: string; taskId?: string }>>()
+        .exec();
+      for (const run of runs) {
+        runTaskMap.set(run.id, run.taskId);
+      }
+    }
+
+    const messageIds = (Array.isArray(session.messages) ? session.messages : [])
+      .map((message) => message?.id)
+      .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.trim().length > 0);
+
+    if (!messageIds.length) {
+      return {
+        ...(session as AgentSession),
+        parts: [],
+      };
+    }
+
+    const parts = await this.partModel
+      .find({ messageId: { $in: messageIds } })
+      .sort({ createdAt: 1, sequence: 1 })
+      .lean<Array<AgentPart & { createdAt?: Date; updatedAt?: Date }>>()
+      .exec();
+
+    const projectedParts: SessionPartView[] = parts.map((part) => ({
+      id: part.id,
+      runId: part.runId,
+      taskId: runTaskMap.get(part.runId),
+      messageId: part.messageId,
+      sequence: part.sequence,
+      type: part.type,
+      status: part.status,
+      toolId: part.toolId,
+      toolCallId: part.toolCallId,
+      input: part.input,
+      output: part.output,
+      content: part.content,
+      error: part.error,
+      startedAt: part.startedAt,
+      endedAt: part.endedAt,
+      timestamp: part.updatedAt || part.endedAt || part.startedAt || part.createdAt || new Date(),
+    }));
+
+    return {
+      ...(session as AgentSession),
+      parts: projectedParts,
+    };
   }
 
   async listSessions(options?: {

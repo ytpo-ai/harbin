@@ -80,7 +80,7 @@
 **依赖注入**:
 - `AgentRoleService`（新建）
 - `AgentExecutionService`（已有）
-- `AgentOrchestrationIntentService`（已有）
+- `AgentOrchestrationIntentService`（历史项，文件已于 2026-03-19 删除）
 - `AgentOpenCodePolicyService`（已有）
 - `ModelService`、`ApiKeyService`、`ToolService`
 - `MemoService`、`MemoEventBusService`

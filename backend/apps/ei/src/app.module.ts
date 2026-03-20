@@ -16,6 +16,8 @@ import {
   EiProjectStatisticsSnapshotSchema,
 } from './schemas/ei-project-statistics-snapshot.schema';
 import { EiRequirement, EiRequirementSchema } from './schemas/ei-requirement.schema';
+import { EiDocCommitFact, EiDocCommitFactSchema } from './schemas/ei-doc-commit-fact.schema';
+import { EiAppConfig, EiAppConfigSchema } from './schemas/ei-app-config.schema';
 import { RdTask, RdTaskSchema } from '../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectSchema } from '../../../src/shared/schemas/ei-project.schema';
 import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.schema';
@@ -29,6 +31,8 @@ import { EiRequirementsController } from './controllers/requirements.controller'
 import { EiTasksController } from './controllers/tasks.controller';
 import { EiProjectsController } from './controllers/projects.controller';
 import { EiOpencodeController } from './controllers/opencode.controller';
+import { DocsHeatController } from './controllers/docs-heat.controller';
+import { EiConfigController } from './controllers/config.controller';
 import { EiRepositoriesService } from './services/repositories.service';
 import { EiOpencodeSyncService } from './services/opencode-sync.service';
 import { EiStatisticsService } from './services/statistics.service';
@@ -38,6 +42,8 @@ import { OpencodeService } from './services/opencode-client.service';
 import { EiTasksService } from './services/tasks.service';
 import { EiProjectsService } from './services/projects.service';
 import { EiOpencodeService } from './services/opencode.service';
+import { DocsHeatService } from './services/docs-heat.service';
+import { EiAppConfigService } from './services/ei-app-config.service';
 
 @Module({
   imports: [
@@ -68,6 +74,8 @@ import { EiOpencodeService } from './services/opencode.service';
       { name: EiOpenCodeRunAnalytics.name, schema: EiOpenCodeRunAnalyticsSchema },
       { name: EiProjectStatisticsSnapshot.name, schema: EiProjectStatisticsSnapshotSchema },
       { name: EiRequirement.name, schema: EiRequirementSchema },
+      { name: EiDocCommitFact.name, schema: EiDocCommitFactSchema },
+      { name: EiAppConfig.name, schema: EiAppConfigSchema },
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },
       { name: Employee.name, schema: EmployeeSchema },
@@ -81,6 +89,8 @@ import { EiOpencodeService } from './services/opencode.service';
     EiTasksController,
     EiProjectsController,
     EiOpencodeController,
+    DocsHeatController,
+    EiConfigController,
   ],
   providers: [
     EngineeringIntelligence,
@@ -93,6 +103,8 @@ import { EiOpencodeService } from './services/opencode.service';
     EiTasksService,
     EiProjectsService,
     EiOpencodeService,
+    DocsHeatService,
+    EiAppConfigService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

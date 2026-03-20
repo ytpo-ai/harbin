@@ -85,7 +85,7 @@
 | 优先级 | 提取目标 | 预计行数 | 复杂度 | 说明 |
 |--------|---------|---------|--------|------|
 | **P0** | `AgentExecutionService` | ~1,130 | 高 | 提取执行链路三大方法 (`executeTask*`) + 工具调用循环 + 消息构建 + 预算检查。**最大价值拆分** |
-| **P1** | `AgentOrchestrationIntentService` | ~400 | 中 | 提取 `extractForcedOrchestrationAction` 等 8 个意图识别方法。纯无状态分类逻辑 |
+| **P1** | `AgentOrchestrationIntentService` | ~400 | 中 | 提取 `extractForcedOrchestrationAction` 等 8 个意图识别方法。纯无状态分类逻辑（历史项，文件已于 2026-03-19 删除） |
 | **P1** | `AgentModelManagementService` | ~450 | 中 | 提取 `testAgentConnection` (221行) + Model Management 确定性处理 (133行) |
 | **P2** | `AgentMcpProfileService` | ~455 | 中 | 提取 MCP Profile CRUD + 种子数据 + 权限集管理 |
 | **P2** | `OpenCodeExecutionConfigService` | ~130 | 低 | 提取 OpenCode 执行门禁 + 配置解析 |
@@ -208,7 +208,7 @@ P1 （高价值，中等复杂度）
 ├── tool.service.ts: 提取 RequirementToolHandler（-280行）
 ├── tool.service.ts: 提取 RepoToolHandler（-280行）
 ├── tool.service.ts: 提取 ToolGovernanceService（-150行）
-├── agent.service.ts: 提取 AgentOrchestrationIntentService（-400行）
+├── agent.service.ts: 提取 AgentOrchestrationIntentService（-400行，历史项，文件已于 2026-03-19 删除）
 ├── agent.service.ts: 提取 AgentModelManagementService（-450行）
 ├── memo.service.ts: 提取 MemoTaskTodoService（-250行）
 └── memo.service.ts: 提取 MemoTaskHistoryService（-230行）

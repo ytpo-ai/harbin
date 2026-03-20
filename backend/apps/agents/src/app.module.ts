@@ -17,6 +17,8 @@ import { MemoModule } from './modules/memos/memo.module';
 import { AgentTaskModule } from './modules/agent-tasks/agent-task.module';
 import { PromptRegistryAdminModule } from './modules/prompt-registry/prompt-registry-admin.module';
 import { AgentActionLogModule } from './modules/action-logs/agent-action-log.module';
+import { InnerMessageModule } from './modules/inner-message/inner-message.module';
+import { MessageCenterModule } from './modules/message-center/message-center.module';
 
 @Module({
   imports: [
@@ -42,6 +44,8 @@ import { AgentActionLogModule } from './modules/action-logs/agent-action-log.mod
     AgentTaskModule,
     PromptRegistryAdminModule,
     AgentActionLogModule,
+    InnerMessageModule,
+    MessageCenterModule,
     AgentModule,
     SkillModule,
     MemoModule,
