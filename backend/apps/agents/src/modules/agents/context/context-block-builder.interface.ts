@@ -7,6 +7,27 @@ export type ScenarioType = 'orchestration' | 'meeting' | 'chat';
 
 export type ContextLayer = 'identity' | 'toolset' | 'domain' | 'collaboration' | 'task' | 'memory';
 
+export type MessageScope = 'run' | 'session';
+
+export type BlockStability = 'static' | 'semi-static' | 'dynamic';
+
+export interface ContextBlockMeta {
+  scope: MessageScope;
+  stability: BlockStability;
+}
+
+export interface AssembledContextBlockMeta extends ContextBlockMeta {
+  layer: ContextLayer;
+  messageCount: number;
+  systemMessageCount: number;
+}
+
+export interface AssembledContext {
+  messages: ChatMessage[];
+  systemBlockCount: number;
+  blockMetas: AssembledContextBlockMeta[];
+}
+
 export interface ContextBuildInput {
   agent: Agent;
   task: Task;
@@ -29,6 +50,7 @@ export interface ContextBuildInput {
 
 export interface ContextBlockBuilder {
   readonly layer: ContextLayer;
+  readonly meta: ContextBlockMeta;
   shouldInject(input: ContextBuildInput): boolean;
   build(input: ContextBuildInput): Promise<ChatMessage[]>;
 }

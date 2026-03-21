@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 
 import { RedisService } from '@libs/infra';
+import { DebugTimingProvider } from '@libs/common';
 import { ApiKeyService } from '@legacy/modules/api-keys/api-key.service';
 import { Agent } from '@agent/schemas/agent.schema';
 import { Task, ChatMessage, AIModel } from '@legacy/shared/types';
@@ -36,7 +37,7 @@ import {
   compactLogText,
   toLogError,
 } from './agent.constants';
-import { AgentExecutionService } from './agent-execution.service';
+import { AgentExecutorRuntimeService } from './agent-executor-runtime.service';
 import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
 import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
 import {
@@ -85,21 +86,15 @@ const DEFAULT_OPENCODE_TASK_TYPES = new Set([
 @Injectable()
 export class AgentExecutorService {
   private readonly logger = new Logger(AgentExecutorService.name);
-  private readonly debugTimingEnabled = this.readEnvBoolean('AGENT_DEBUG_TIMING', false);
 
-  // 记录关键阶段耗时，便于线上排障和性能观测。
   private debugTiming(taskId: string, stage: string, startedAt: number, extras?: Record<string, unknown>): void {
-    if (!this.debugTimingEnabled) {
-      return;
-    }
-    const extraText = extras
-      ? Object.entries(extras)
-          .map(([key, value]) => `${key}=${String(value)}`)
-          .join(' ')
-      : '';
-    this.logger.debug(
-      `[timing_debug] taskId=${taskId} stage=${stage} durationMs=${Date.now() - startedAt}${extraText ? ` ${extraText}` : ''}`,
-    );
+    this.debugTimingProvider.log({
+      traceId: taskId,
+      stage,
+      startedAt,
+      extras,
+      traceFieldName: 'taskId',
+    });
   }
 
   // 注入 Agent 执行所需依赖（模型、工具、记忆、运行时、策略等）。
@@ -115,7 +110,7 @@ export class AgentExecutorService {
     private readonly runtimeEiSyncService: RuntimeEiSyncService,
     private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
-    private readonly agentExecutionService: AgentExecutionService,
+    private readonly agentExecutorRuntimeService: AgentExecutorRuntimeService,
     private readonly beforeStepOptimizationHook: AgentBeforeStepOptimizationHook,
     private readonly afterStepEvaluationHook: AgentAfterStepEvaluationHook,
     private readonly agentExecutorEngineRouter: AgentExecutorEngineRouter,
@@ -126,6 +121,7 @@ export class AgentExecutorService {
     private readonly contextAssembler: ContextAssemblerService,
     private readonly contextFingerprintService: ContextFingerprintService,
     private readonly contextStrategyService: ContextStrategyService,
+    private readonly debugTimingProvider: DebugTimingProvider,
   ) {}
 
   /**
@@ -236,7 +232,7 @@ export class AgentExecutorService {
     // 初始化任务运行上下文，并补齐 taskId。
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
-    const runtimeAgentId = this.agentExecutionService.resolveRuntimeAgentId(agent as any, agentId);
+    const runtimeAgentId = this.agentExecutorRuntimeService.resolveRuntimeAgentId(agent as any, agentId);
     this.logger.log(
       `[task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${compactLogText(task.title)}" type=${task.type} priority=${task.priority} modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'} hasCustomApiKey=${Boolean(agent.apiKeyId)}`,
     );
@@ -288,7 +284,7 @@ export class AgentExecutorService {
       if (executionChannel === 'opencode' && openCodeExecutionConfig) {
         await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       }
-      const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
+      const modelConfig = this.agentExecutorRuntimeService.buildModelConfig(agent.model as any);
       const engine = this.agentExecutorEngineRouter.resolve('detailed', executionChannel);
       const { response: engineResponse } = await engine.execute({
         mode: 'detailed',
@@ -334,7 +330,7 @@ export class AgentExecutorService {
       this.appendAssistantMessage(task, response, agent, enabledSkills);
 
       // 落 runtime 成功态并安排 EI 数据同步。
-      await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, response);
+      await this.agentExecutorRuntimeService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, response);
       await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
 
       return {
@@ -360,13 +356,13 @@ export class AgentExecutorService {
         );
       });
       if (!controlInterrupted) {
-        await this.agentExecutionService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
+        await this.agentExecutorRuntimeService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
         await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {
       // 无论成功失败均释放 runtime 资源，避免占用泄漏。
-      await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
+      await this.agentExecutorRuntimeService.releaseRuntimeExecution(runtimeContext);
     }
   }
 
@@ -380,7 +376,7 @@ export class AgentExecutorService {
   ): Promise<ExecuteTaskResult> {
     const taskStartAt = Date.now();
     const taskId = this.ensureTaskRuntime(task);
-    const runtimeAgentId = this.agentExecutionService.resolveRuntimeAgentId(agent as any, agentId);
+    const runtimeAgentId = this.agentExecutorRuntimeService.resolveRuntimeAgentId(agent as any, agentId);
     this.logger.log(
       `[stream_task_start] agent=${agent.name} agentId=${runtimeAgentId} taskId=${taskId} title="${compactLogText(task.title)}" modelId=${agent.model?.id || 'unknown'} provider=${agent.model?.provider || 'unknown'}`,
     );
@@ -420,7 +416,7 @@ export class AgentExecutorService {
         await this.agentOpenCodePolicyService.applyAgentBudgetGate(agent, runtimeAgentId, task, runtimeContext, context);
       }
       await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
-      const modelConfig = this.agentExecutionService.buildModelConfig(agent.model as any);
+      const modelConfig = this.agentExecutorRuntimeService.buildModelConfig(agent.model as any);
       const engine = this.agentExecutorEngineRouter.resolve('streaming', executionChannel);
       const engineResult = await engine.execute({
         mode: 'streaming',
@@ -450,7 +446,7 @@ export class AgentExecutorService {
         onToken(emptyMeetingResponseFallback);
       }
 
-      await this.agentExecutionService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, fullResponse);
+      await this.agentExecutorRuntimeService.completeRuntimeExecution(runtimeContext, runtimeAgentId, taskId, fullResponse);
       await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
     } catch (error) {
       const logError = toLogError(error);
@@ -460,13 +456,13 @@ export class AgentExecutorService {
       );
       const controlInterrupted = this.isControlInterruptedError(logError.message);
       if (!controlInterrupted) {
-        await this.agentExecutionService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
+        await this.agentExecutorRuntimeService.failRuntimeExecution(runtimeContext, runtimeAgentId, taskId, logError.message);
         await this.runtimeEiSyncService.scheduleRunSync(runtimeContext.runId);
       }
       throw error;
     } finally {
       // 释放流式 runtime 资源。
-      await this.agentExecutionService.releaseRuntimeExecution(runtimeContext);
+      await this.agentExecutorRuntimeService.releaseRuntimeExecution(runtimeContext);
     }
 
     this.logger.log(
@@ -746,7 +742,7 @@ export class AgentExecutorService {
     );
 
     const startRuntimeExecutionAt = Date.now();
-    const runtimeContext = await this.agentExecutionService.startRuntimeExecution({
+    const runtimeContext = await this.agentExecutorRuntimeService.startRuntimeExecution({
       runtimeAgentId: input.runtimeAgentId,
       agentName: input.agent.name,
       task: input.task,
@@ -768,9 +764,6 @@ export class AgentExecutorService {
       traceId: runtimeContext.traceId,
     });
 
-    const appendSystemMessagesAt = Date.now();
-    await this.agentExecutionService.appendSystemMessagesToSession(runtimeContext, messages, input.agent.id || input.agentId);
-    this.debugTiming(input.taskId, `${config.stagePrefix}.append_system_messages`, appendSystemMessagesAt, { count: messages.length });
     this.debugTiming(input.taskId, `${config.stagePrefix}.total_before_model`, preExecutionStartAt, {
       channel: executionChannel,
       routeSource: routeDecision.source,
@@ -1314,7 +1307,7 @@ export class AgentExecutorService {
           ? 'orchestration'
           : 'chat';
 
-    const messages = await this.contextAssembler.assemble({
+    const assembledContext = await this.contextAssembler.assemble({
       agent,
       task,
       context,
@@ -1335,9 +1328,11 @@ export class AgentExecutorService {
         runSummaries: sessionContext.runSummaries,
       },
     });
+    const messages = assembledContext.messages;
 
     this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
       totalMessages: messages.length,
+      systemBlockCount: assembledContext.systemBlockCount,
       scenarioType,
     });
     return messages;
@@ -1676,20 +1671,6 @@ export class AgentExecutorService {
 
     this.logger.warn(`[${logPrefix}_api_key] taskId=${taskId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
     return undefined;
-  }
-
-  private readEnvBoolean(name: string, fallback: boolean): boolean {
-    const value = String(process.env[name] || '').trim().toLowerCase();
-    if (!value) {
-      return fallback;
-    }
-    if (['1', 'true', 'yes', 'on'].includes(value)) {
-      return true;
-    }
-    if (['0', 'false', 'no', 'off'].includes(value)) {
-      return false;
-    }
-    return fallback;
   }
 
   // 获取工具调用最大轮次，优先环境变量配置。

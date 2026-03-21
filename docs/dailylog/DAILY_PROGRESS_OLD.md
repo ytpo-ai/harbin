@@ -8,6 +8,31 @@
 
 ## 每日进度
 
+### 2026-03-22
+
+**完成事项**
+
+- 落地 system context 分层架构：ContextAssembler 改为只拼接 builder 产出的 system 与非 system 历史，彻底丢弃 `previousMessages` 中的 system。
+- 为 context builder 增加 `scope/stability` 元数据，并新增 `AssembledContext` 输出（含 `systemBlockCount`、`blockMetas`）。
+- 扩展 fingerprint 覆盖：Identity 基线、Domain、Collaboration、Toolset 规格接入抑制；保留 Task/Identity memo 的增量注入能力。
+- 会议链路去多源注入：`buildMeetingResponseContext`、`catchUpAgent` 不再向 task.messages 注入 system prompt。
+- Runtime 持久化分层：`startRun` 不再创建 system AgentMessage；执行准备阶段不再把 system 写入 session history；system 快照保留在 `run.metadata.initialSystemMessages`。
+- 扩展 system context key 分类并补充单测，覆盖协作/会议简报/任务/工具/记忆等语义前缀。
+
+**影响范围**
+
+- 后端 Context 模块：builder 接口、组装器、fingerprint util/service。
+- 后端 Runtime 模块：run 启动消息落盘策略与 session 持久化边界。
+- 后端 Meeting 模块：会议响应与入会 catch-up 上下文构建逻辑。
+- 文档：补充分层架构 guide，并同步更新 Agent Runtime/Meeting Chat 功能说明。
+
+**关联文档**
+
+- `docs/plan/SYSTEM_CONTEXT_LAYERED_ARCHITECTURE_PLAN.md`
+- `docs/guide/SYSTEM_CONTEXT_LAYERED_ARCHITECTURE.MD`
+- `docs/feature/AGENT_RUNTIME.md`
+- `docs/feature/MEETING_CHAT.md`
+
 ### 2026-03-09
 
 **完成事项**

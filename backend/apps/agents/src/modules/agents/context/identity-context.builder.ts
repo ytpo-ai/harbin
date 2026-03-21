@@ -8,6 +8,7 @@ import { ContextPromptService } from './context-prompt.service';
 @Injectable()
 export class IdentityContextBuilder implements ContextBlockBuilder {
   readonly layer = 'identity' as const;
+  readonly meta = { scope: 'run', stability: 'semi-static' } as const;
 
   constructor(
     private readonly contextPromptService: ContextPromptService,
@@ -20,16 +21,32 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
 
   async build(input: ContextBuildInput): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
-    messages.push({
-      role: 'system',
-      content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline),
-      timestamp: new Date(),
+    const guidelineContent = await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline);
+    const systemPromptContent = String(input.agent.systemPrompt || '').trim();
+    const identityBaseSnapshot = {
+      guidelineHash: this.contextFingerprintService.hashFingerprint(guidelineContent),
+      systemPromptHash: this.contextFingerprintService.hashFingerprint(systemPromptContent),
+    };
+    const identityBaseContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
+      scope: input.contextScope,
+      blockType: 'identity-base',
+      fullContent: `${guidelineContent}\n\n${systemPromptContent}`,
+      snapshot: identityBaseSnapshot,
     });
-    messages.push({
-      role: 'system',
-      content: input.agent.systemPrompt,
-      timestamp: new Date(),
-    });
+    if (identityBaseContent) {
+      messages.push({
+        role: 'system',
+        content: guidelineContent,
+        timestamp: new Date(),
+      });
+      if (systemPromptContent) {
+        messages.push({
+          role: 'system',
+          content: systemPromptContent,
+          timestamp: new Date(),
+        });
+      }
+    }
 
     if (!input.identityMemos.length) {
       return messages;

@@ -13,6 +13,7 @@ import {
 } from '../../schemas/agent-runtime-maintenance-audit.schema';
 import { RuntimeEvent, RuntimeEventSchema } from './contracts/runtime-event.contract';
 import { AgentSession, AgentSessionDocument } from '../../schemas/agent-session.schema';
+import { buildSystemContextKey, normalizeSystemContent } from '../agents/context/context-fingerprint.util';
 
 type SessionPartView = Pick<
   AgentPart,
@@ -30,43 +31,11 @@ export type AgentSessionDetailView = AgentSession & {
 export class RuntimePersistenceService {
   private readonly maxSessionMessages = Number(process.env.AGENT_SESSION_MAX_MESSAGES || 1200);
 
-  private normalizeSystemContent(content: string): string {
-    return String(content || '').replace(/\s+/g, ' ').trim();
-  }
-
   private normalizeMessageContent(content: unknown): string {
     if (content === null || content === undefined) {
       return '';
     }
     return typeof content === 'string' ? content : String(content);
-  }
-
-  private buildSystemContextKey(content: string): string | null {
-    const normalized = this.normalizeSystemContent(content);
-    if (!normalized) return null;
-
-    if (normalized.startsWith('团队上下文:')) {
-      const jsonPart = normalized.slice('团队上下文:'.length).trim();
-      try {
-        const parsed = JSON.parse(jsonPart) as { meetingId?: string; meetingTitle?: string };
-        if (parsed.meetingId) {
-          return `team_context:${parsed.meetingId}`;
-        }
-        if (parsed.meetingTitle) {
-          return `team_context:title:${parsed.meetingTitle}`;
-        }
-      } catch {
-        // fallback below
-      }
-      return `team_context:raw:${normalized}`;
-    }
-
-    const meetingTitleMatch = normalized.match(/^你正在参加一个会议，会议标题是"([^"]+)"。?/);
-    if (meetingTitleMatch?.[1]) {
-      return `meeting_brief:${meetingTitleMatch[1]}`;
-    }
-
-    return null;
   }
 
   constructor(
@@ -497,9 +466,9 @@ export class RuntimePersistenceService {
     const existingMessages = Array.isArray(existingSession?.messages) ? existingSession.messages : [];
     for (const msg of existingMessages) {
       if (msg?.role === 'system' && typeof msg?.content === 'string' && msg.content.trim().length > 0) {
-        const normalized = this.normalizeSystemContent(msg.content);
+        const normalized = normalizeSystemContent(msg.content);
         existingSystemContents.add(normalized);
-        const contextKey = this.buildSystemContextKey(msg.content);
+        const contextKey = buildSystemContextKey(msg.content);
         if (contextKey) {
           existingContextKeys.add(contextKey);
         }
@@ -507,13 +476,13 @@ export class RuntimePersistenceService {
     }
 
     const dedupedMessages = messages.filter((msg) => {
-      const normalized = this.normalizeSystemContent(msg.content);
+      const normalized = normalizeSystemContent(msg.content);
       if (!normalized) return false;
       if (existingSystemContents.has(normalized)) {
         return false;
       }
 
-      const contextKey = this.buildSystemContextKey(msg.content);
+      const contextKey = buildSystemContextKey(msg.content);
       if (contextKey && existingContextKeys.has(contextKey)) {
         return false;
       }

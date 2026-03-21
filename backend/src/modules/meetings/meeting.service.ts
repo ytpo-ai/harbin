@@ -239,23 +239,6 @@ export class MeetingService {
     };
   }
 
-  private async buildMeetingContextSystemPrompt(meeting: Meeting, agentId: string): Promise<string> {
-    const participantProfiles = await this.buildParticipantContextProfiles(meeting);
-    const participantSummary = this.formatParticipantContextSummary(participantProfiles);
-    const agentParticipant = meeting.participants.find(
-      (p) => p.participantId === agentId && p.participantType === 'agent',
-    );
-
-    return `你正在参加一个会议，会议标题是"${meeting.title}"。
-${meeting.description ? `会议描述：${meeting.description}` : ''}
-${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
-参与者：${meeting.participants.filter((p) => p.isPresent).length}人在场
-参会人详情：${participantSummary}
-你的角色：${agentParticipant?.role === ParticipantRole.HOST ? '主持人' : '参与者'}
-
-请根据会议上下文自然地参与讨论。保持专业、建设性的态度，发言要简洁明了。`;
-  }
-
   private async getEmployeeOrThrow(employeeId: string) {
     const employee = await this.employeeService.getEmployee(employeeId);
     if (!employee) {
@@ -1876,7 +1859,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       this.logger.log(`Generating response for agent ${agent.name} in meeting ${meetingId}`);
 
-      const contextMessages = await this.buildMeetingResponseContext(meeting, agentId, triggerMessage);
+      const contextMessages = await this.buildMeetingResponseContext(meeting, triggerMessage);
 
       const participantProfiles = await this.buildParticipantContextProfiles(meeting);
       
@@ -1929,22 +1912,11 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
   /**
    * 构建讨论上下文
    */
-  private async buildMeetingResponseContext(
-    meeting: Meeting, 
-    agentId: string, 
-    triggerMessage: MeetingMessage
-  ): Promise<ChatMessage[]> {
+  private async buildMeetingResponseContext(meeting: Meeting, triggerMessage: MeetingMessage): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
 
     const participantProfiles = await this.buildParticipantContextProfiles(meeting);
     const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
-    const meetingContextPrompt = await this.buildMeetingContextSystemPrompt(meeting, agentId);
-
-    messages.push({
-      role: 'system',
-      content: meetingContextPrompt,
-      timestamp: new Date(),
-    });
 
     const recentMessages = meeting.messages.slice(-10);
     for (const msg of recentMessages) {
@@ -1964,28 +1936,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       timestamp: new Date(),
     });
 
-    const isLatestSearch = this.isLatestModelSearchIntent(triggerMessage.content || '');
-    const isModelList = this.isModelListIntent(triggerMessage.content || '');
-    const isMemoRecord = this.isMemoRecordIntent(triggerMessage.content || '');
-
-    if (isLatestSearch && !isMemoRecord) {
-      messages.push({
-        role: 'system',
-        content:
-          '当前用户命中了显式短语命令“[搜索最新openai模型]”。请优先联网搜索并返回候选模型与来源，并在结尾明确询问“是否需要添加到系统？”；未收到明确确认前不要执行模型入库。',
-        timestamp: new Date(),
-      });
-    }
-
-    if (isModelList && !isMemoRecord) {
-      messages.push({
-        role: 'system',
-        content:
-          '当前用户命中了显式短语命令“[当前有哪些模型]”。请先调用模型列表工具获取实时数据，再按 name/provider/model/maxTokens 结构回答，不要返回 Agent 列表。',
-        timestamp: new Date(),
-      });
-    }
-
     return messages;
   }
 
@@ -2004,7 +1954,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
     const participantProfiles = await this.buildParticipantContextProfiles(meeting);
     const participantNameLookup = this.buildParticipantDisplayNameMap(participantProfiles);
-    const meetingContextPrompt = await this.buildMeetingContextSystemPrompt(meeting, participant.id);
     const summary = recentMessages
       .map((m) => `${this.resolveMessageSenderDisplayName(m, participantNameLookup)}: ${m.content}`)
       .join('\n');
@@ -2020,11 +1969,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       assignedAgents: [participant.id],
       teamId: meetingId,
       messages: [
-        {
-          role: 'system',
-          content: meetingContextPrompt,
-          timestamp: new Date(),
-        },
         {
           role: 'user',
           content: prompt,

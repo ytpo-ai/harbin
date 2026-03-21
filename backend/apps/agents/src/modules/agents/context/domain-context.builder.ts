@@ -2,10 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { ChatMessage } from '../../../../../../src/shared/types';
 import { inferDomainTypeFromText } from '../../../../../../src/shared/domain-context/domain-type.util';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
+import { ContextFingerprintService } from './context-fingerprint.service';
 
 @Injectable()
 export class DomainContextBuilder implements ContextBlockBuilder {
   readonly layer = 'domain' as const;
+  readonly meta = { scope: 'run', stability: 'static' } as const;
+
+  constructor(private readonly contextFingerprintService: ContextFingerprintService) {}
 
   shouldInject(input: ContextBuildInput): boolean {
     if (input.scenarioType === 'orchestration') {
@@ -28,11 +32,23 @@ export class DomainContextBuilder implements ContextBlockBuilder {
       ? `\n知识引用:\n${domain.knowledgeRefs.map((item) => `- ${item}`).join('\n')}`
       : '';
 
-    return [{
-      role: 'system',
-      content: `业务领域上下文:\n- domainType: ${domain.domainType || 'general'}\n- description: ${domain.description || ''}${constraints}${refs}`,
-      timestamp: new Date(),
-    }];
+    const content = `业务领域上下文:\n- domainType: ${domain.domainType || 'general'}\n- description: ${domain.description || ''}${constraints}${refs}`;
+    const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
+      scope: input.contextScope,
+      blockType: 'domain',
+      fullContent: content,
+      snapshot: {
+        domainType: String(domain.domainType || 'general').trim(),
+        descriptionHash: this.contextFingerprintService.hashFingerprint(String(domain.description || '')),
+        constraintCount: Array.isArray(domain.constraints) ? domain.constraints.length : 0,
+        refCount: Array.isArray(domain.knowledgeRefs) ? domain.knowledgeRefs.length : 0,
+      },
+    });
+    if (!resolvedContent) {
+      return [];
+    }
+
+    return [{ role: 'system', content, timestamp: new Date() }];
   }
 
   private resolveFallbackDomainType(input: ContextBuildInput): string {

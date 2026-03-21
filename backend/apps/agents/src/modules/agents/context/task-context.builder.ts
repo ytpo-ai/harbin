@@ -8,6 +8,7 @@ import { ContextPromptService } from './context-prompt.service';
 @Injectable()
 export class TaskContextBuilder implements ContextBlockBuilder {
   readonly layer = 'task' as const;
+  readonly meta = { scope: 'run', stability: 'semi-static' } as const;
 
   constructor(
     private readonly contextPromptService: ContextPromptService,

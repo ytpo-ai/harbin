@@ -17,6 +17,7 @@ import { HookPipelineService } from './hooks/hook-pipeline.service';
 import { LifecycleHookContext } from './hooks/lifecycle-hook.types';
 import { MemoService } from '../memos/memo.service';
 import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
+import { DebugTimingProvider } from '@libs/common';
 
 export interface RuntimeRunContext {
   runId: string;
@@ -35,14 +36,13 @@ export class RuntimeOrchestratorService {
   private readonly memoSnapshotRefreshMs = Number(process.env.AGENT_SESSION_MEMO_REFRESH_MS || 60_000);
 
   private debugTiming(runOrTaskId: string, stage: string, startedAt: number, extras?: Record<string, unknown>): void {
-    const extraText = extras
-      ? Object.entries(extras)
-          .map(([key, value]) => `${key}=${String(value)}`)
-          .join(' ')
-      : '';
-    this.logger.debug(
-      `[timing_debug] runOrTaskId=${runOrTaskId} stage=${stage} durationMs=${Date.now() - startedAt}${extraText ? ` ${extraText}` : ''}`,
-    );
+    this.debugTimingProvider.log({
+      traceId: runOrTaskId,
+      stage,
+      startedAt,
+      extras,
+      traceFieldName: 'runOrTaskId',
+    });
   }
 
   private extractInitialSystemMessages(metadata: Record<string, unknown>): string[] {
@@ -69,6 +69,7 @@ export class RuntimeOrchestratorService {
     private readonly hookPipeline: HookPipelineService,
     private readonly memoService: MemoService,
     private readonly memoSnapshotQueue: RuntimeMemoSnapshotQueueService,
+    private readonly debugTimingProvider: DebugTimingProvider,
   ) {}
 
   async startRun(rawInput: RuntimeStartRunInput): Promise<RuntimeRunContext> {
@@ -77,9 +78,6 @@ export class RuntimeOrchestratorService {
     const runOrTaskId = input.taskId || input.sessionId || `ephemeral-${input.agentId}`;
     const metadataRecord = { ...(input.metadata || {}) } as Record<string, unknown>;
     const initialSystemMessages = this.extractInitialSystemMessages(metadataRecord);
-    if (Object.prototype.hasOwnProperty.call(metadataRecord, 'initialSystemMessages')) {
-      delete metadataRecord.initialSystemMessages;
-    }
 
     let ensuredSession;
     const meetingContext = metadataRecord?.meetingContext as
@@ -186,29 +184,13 @@ export class RuntimeOrchestratorService {
     const seedMessageAt = Date.now();
     let userMessage = await this.persistence.findLatestMessageByRunAndRole(run.id, 'user');
     if (!userMessage) {
-      let sequence = 1;
-      for (const systemContent of initialSystemMessages) {
-        await this.persistence.createMessage({
-          runId: run.id,
-          agentId: input.agentId,
-          sessionId,
-          taskId: input.taskId,
-          role: 'system',
-          sequence,
-          content: systemContent,
-          status: 'completed',
-          metadata: { source: 'runtime.startRun.initial_system' },
-        });
-        sequence += 1;
-      }
-
       userMessage = await this.persistence.createMessage({
         runId: run.id,
         agentId: input.agentId,
         sessionId,
         taskId: input.taskId,
         role: 'user',
-        sequence,
+        sequence: 1,
         content: input.userContent || input.taskDescription,
         status: 'completed',
         metadata: { source: 'runtime.startRun' },
@@ -1090,6 +1072,7 @@ export class RuntimeOrchestratorService {
     await this.hookDispatcher.dispatch(event);
   }
 
+  /** @deprecated Kept for compatibility; new runs do not persist system messages into session history. */
   async appendSystemMessagesToSession(
     sessionId: string,
     messages: Array<{

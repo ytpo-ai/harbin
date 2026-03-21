@@ -6,6 +6,7 @@ import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.
 @Injectable()
 export class MemoryContextBuilder implements ContextBlockBuilder {
   readonly layer = 'memory' as const;
+  readonly meta = { scope: 'run', stability: 'dynamic' } as const;
 
   constructor(private readonly memoService: MemoService) {}
 

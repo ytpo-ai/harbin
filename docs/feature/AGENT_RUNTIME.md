@@ -193,7 +193,8 @@
 ### 1.7 Session 与上下文协同
 
 - 会话模型支持 `meeting/task` 两类，并可按 `meetingId` 或 `taskId` 复用会话。
-- system 消息写入时进行内容归一化与上下文键去重，避免重复注入提示词。
+- system context 改为 run 级 envelope：由 ContextAssembler 动态组装并仅发送给 LLM，不再写入 `session.messages` 与 `agent_messages`。
+- `run.metadata.initialSystemMessages` 保留 system 快照用于审计查询，替代 message 集合中的 system 文档沉积。
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），并改为通过 Redis 队列异步写入 session 缓存，避免主链路同步落库阻塞。
 - Agent 详情页 Session 抽屉支持消息正文 5 行折叠、按条展开与 parts 数量/明细查看，便于排查结构化消息轨迹。
@@ -201,7 +202,8 @@
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
 - legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
-  - `modules/agents/agent-execution.service.ts`（runtime 生命周期模板与收尾）
+  - `backend/libs/common/src/debug-timing.provider.ts`（`debugTiming` 统一 Provider，集中开关读取与耗时日志格式，供执行链路复用）
+  - `modules/agents/agent-executor-runtime.service.ts`（runtime 生命周期模板与收尾）
   - `modules/agents/agent-opencode-policy.service.ts`（OpenCode gate/budget 策略）
   - `modules/agents/agent-before-step-optimization.hook.ts`（step 进入前语义优化 Hook，实现 `LifecycleHook` 接口，phase=`step.before`）
   - `modules/agents/agent-after-step-evaluation.hook.ts`（step 完成后语义评估 Hook，实现 `LifecycleHook` 接口，phase=`step.after`）
@@ -249,7 +251,7 @@
 | `AGENT_MESSAGE_CONTENT_VALIDATION_PLAN.md` | AgentMessage content 必填校验修复与写入链路一致性说明 |
 | `OPENCODE_TODO_ROUND1_EXECUTION_PLAN.md` | OpenCode Round1（config/门禁/同步/补偿）开发总结 |
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
-| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agent 执行链路公共能力提取（AgentExecutionService）开发沉淀 |
+| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agent 执行链路公共能力提取（AgentExecutorRuntimeService）开发沉淀 |
 | `AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | inner-message 统一桥接 Agent Runtime 执行链开发总结 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
@@ -308,7 +310,7 @@
 |------|------|
 | `modules/agents/agent.service.ts` | Agent 执行链路接入 runtime（start/assert/complete/fail/tool events） |
 | `modules/agents/agent-prompts.ts` | Agent Prompt 清单（symbol/context/scene/role/defaultContent）与默认模板构造 |
-| `modules/agents/agent-execution.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
+| `modules/agents/agent-executor-runtime.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
 | `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
 | `modules/agents/agent-before-step-optimization.hook.ts` | step 进入前语义优化 Hook（LLM 判断） |
 | `modules/agents/agent-after-step-evaluation.hook.ts` | step 完成后语义评估 Hook（LLM 评审） |

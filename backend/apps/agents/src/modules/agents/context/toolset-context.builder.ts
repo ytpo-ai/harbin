@@ -3,16 +3,19 @@ import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catal
 import { ChatMessage } from '../../../../../../src/shared/types';
 import { SKILL_CONTENT_MAX_INJECT_LENGTH, normalizeToolId } from '../agent.constants';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
+import { ContextFingerprintService } from './context-fingerprint.service';
 import { ContextPromptService } from './context-prompt.service';
 import { ContextStrategyService } from './context-strategy.service';
 
 @Injectable()
 export class ToolsetContextBuilder implements ContextBlockBuilder {
   readonly layer = 'toolset' as const;
+  readonly meta = { scope: 'run', stability: 'dynamic' } as const;
 
   constructor(
     private readonly contextPromptService: ContextPromptService,
     private readonly contextStrategyService: ContextStrategyService,
+    private readonly contextFingerprintService: ContextFingerprintService,
   ) {}
 
   shouldInject(): boolean {
@@ -63,21 +66,41 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         return `- ${id} | ${name} | ${description}`;
       });
 
-      messages.push({
-        role: 'system',
-        content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolInjectionInstruction, { toolSpecs }),
-        timestamp: new Date(),
-      });
+      const toolSpecContent = await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolInjectionInstruction, { toolSpecs });
 
       const toolPromptMessages = this.contextStrategyService.buildToolPromptMessages(input.shared.assignedTools);
-      if (toolPromptMessages.length > 0) {
+      const toolStrategyContent =
+        toolPromptMessages.length > 0
+          ? await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolStrategyWrapper, {
+              toolPromptMessages,
+            })
+          : '';
+
+      const shouldInjectToolsetSpec = await this.contextFingerprintService.resolveSystemContextBlockContent({
+        scope: input.contextScope,
+        blockType: 'toolset-spec',
+        fullContent: `${toolSpecContent}\n\n${toolStrategyContent}`,
+        snapshot: {
+          toolIdsSorted: input.shared.assignedTools
+            .map((tool) => String(tool.canonicalId || normalizeToolId(tool.id) || '').trim())
+            .filter((id) => id.length > 0)
+            .sort(),
+        },
+      });
+
+      if (shouldInjectToolsetSpec) {
         messages.push({
           role: 'system',
-          content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolStrategyWrapper, {
-            toolPromptMessages,
-          }),
+          content: toolSpecContent,
           timestamp: new Date(),
         });
+        if (toolStrategyContent) {
+          messages.push({
+            role: 'system',
+            content: toolStrategyContent,
+            timestamp: new Date(),
+          });
+        }
       }
     }
 
