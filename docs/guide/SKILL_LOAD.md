@@ -5,7 +5,7 @@
 2. agent.service.ts 中所有引用 skill 的地方（搜索 skill, enabledSkills, getEnabledSkills）
 3. 是否存在"按需加载 skill content"的逻辑（即不是一次性全部加载，而是在特定条件下才加载 content）
 4. skill 的 metadata 结构（是否有 triggers, activation conditions 等字段）
-5. agent-execution.service.ts 中是否有 skill 相关的执行逻辑
+5. agent-executor-runtime.service.ts 中是否有 skill 相关的执行逻辑
 6. 是否有 skill 的 proficiency 评估机制（beginner/intermediate/expert）
 7. 前端 skill 管理的相关代码（搜索 skill 相关的前端组件和 API 调用）
 8. skill content 的实际数据示例（如果能通过代码推断的话）
@@ -27,7 +27,7 @@
 | 5 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.module.ts` | Skill 模块注册 |
 | 6 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.service.spec.ts` | 单测 |
 | 7 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent.service.ts` | Agent 服务 -- 含 skill 加载/注入 prompt 的核心逻辑 |
-| 8 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-execution.service.ts` | Agent 运行时执行服务 (不含 skill 逻辑) |
+| 8 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts` | Agent 运行时执行服务 (不含 skill 逻辑) |
 | 9 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/tools/skill-tool-handler.service.ts` | MCP 工具侧 skill 操作 handler |
 | 10 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/tools/tool.service.ts` | 工具分发 -- 含 skill-master 工具路由 |
 | 11 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/memos/identity-aggregation.service.ts` | 身份聚合 -- 含 skill 矩阵输出 |
@@ -502,11 +502,11 @@ metadata:
 
 ---
 
-## 七、agent-execution.service.ts 中的 Skill 逻辑
+## 七、agent-executor-runtime.service.ts 中的 Skill 逻辑
 
-**文件**: `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-execution.service.ts` (157行)
+**文件**: `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts` (157行)
 
-**结论: agent-execution.service.ts 中没有任何 skill 相关逻辑。**
+**结论: agent-executor-runtime.service.ts 中没有任何 skill 相关逻辑。**
 
 该服务仅负责:
 - 解析 runtimeAgentId

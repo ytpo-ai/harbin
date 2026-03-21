@@ -36,7 +36,7 @@
 sequenceDiagram
     participant C as AgentController
     participant S as AgentService
-    participant E as AgentExecutionService
+    participant E as AgentExecutorRuntimeService
     participant M as ModelService
     participant R as RuntimeOrchestrator
 
@@ -61,7 +61,7 @@ sequenceDiagram
 sequenceDiagram
     participant C as Stream/Controller
     participant S as AgentService
-    participant E as AgentExecutionService
+    participant E as AgentExecutorRuntimeService
     participant M as ModelService
     participant R as RuntimeOrchestrator
 
@@ -123,7 +123,7 @@ sequenceDiagram
 
 - `backend/apps/agents/src/modules/agents/agent.service.ts:224`
 - `backend/apps/agents/src/modules/agents/agent.service.ts:1144`
-- `backend/apps/agents/src/modules/agents/agent-execution.service.ts:67`
+- `backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts:67`
 
 ### 5.2 工具提示词（tool.prompt）注入
 
@@ -172,11 +172,11 @@ sequenceDiagram
 
 1. **System Prompt 注入是否生效**
    - 查看 runtime session 中追加的 system 消息（来源标记 `source=buildMessages`）。
-   - 关键入口：`backend/apps/agents/src/modules/agents/agent-execution.service.ts:67`。
+   - 关键入口：`backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts:67`。
 
 2. **用户 Prompt（taskPrompt/userContent）是否生效**
    - 查看 run 的 `userContent`（来自 `resolveLatestUserContent`）。
-   - 关键入口：`backend/apps/agents/src/modules/agents/agent-execution.service.ts:105`。
+   - 关键入口：`backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts:105`。
 
 ## 7. 常见误区
 
@@ -268,8 +268,8 @@ sequenceDiagram
 - `backend/apps/agents/src/modules/agents/agent.service.ts:1133`
 - `backend/apps/agents/src/modules/agents/agent.service.ts:1203`
 - `backend/apps/agents/src/modules/agents/agent.service.ts:1757`
-- `backend/apps/agents/src/modules/agents/agent-execution.service.ts:54`
-- `backend/apps/agents/src/modules/agents/agent-execution.service.ts:98`
+- `backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts:54`
+- `backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts:98`
 - `backend/apps/agents/src/modules/opencode/opencode-execution.service.ts:26`
 - `backend/apps/agents/src/modules/opencode/opencode.adapter.ts:38`
 - `backend/apps/agents/src/modules/agents/agent-orchestration-intent.service.ts:73`（历史项，文件已于 2026-03-19 删除）

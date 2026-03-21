@@ -13,7 +13,7 @@ import { ToolModule } from '../tools/tool.module';
 import { MemoModule } from '../memos/memo.module';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { OpenCodeModule } from '../opencode/opencode.module';
-import { AgentExecutionService } from './agent-execution.service';
+import { AgentExecutorRuntimeService } from './agent-executor-runtime.service';
 import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
 import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
@@ -52,7 +52,7 @@ import { ContextModule } from './context/context.module';
   controllers: [AgentController],
   providers: [
     AgentService,
-    AgentExecutionService,
+    AgentExecutorRuntimeService,
     // Step hooks 注册到统一 LifecycleHook Registry
     AgentBeforeStepOptimizationHook,
     AgentAfterStepEvaluationHook,

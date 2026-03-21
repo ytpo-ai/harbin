@@ -188,7 +188,7 @@ async selectExecutor(title: string, description: string):
 
 #### 核心文件
 - `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent.service.ts` L1313-1427 (`buildMessages`)
-- `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-execution.service.ts` L54-72 (`appendSystemMessagesToSession`)
+- `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts` L54-72 (`appendSystemMessagesToSession`)
 - `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/runtime/runtime-persistence.service.ts` L364-441 (`appendSystemMessagesToSession` + 去重逻辑)
 
 #### buildMessages 完整流程 (agent.service.ts L1313-1427)
@@ -359,7 +359,7 @@ Skill content 通过两级缓存管理：
 | resolveLatestUserContent | 同上 | L1937-1943 |
 | Session 消息去重 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/runtime/runtime-persistence.service.ts` | L364-441 |
 | 去重辅助方法 | 同上 | L21-57 |
-| appendSystemMessagesToSession (bridge) | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-execution.service.ts` | L54-72 |
+| appendSystemMessagesToSession (bridge) | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts` | L54-72 |
 | Skill Schema | `/Users/van/Workspace/harbin/backend/apps/agents/src/schemas/agent-skill.schema.ts` | L1-87 |
 | Skill Content 读取 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.service.ts` | L180-228 |
 | Orchestration 任务 Schema | `/Users/van/Workspace/harbin/backend/src/shared/schemas/orchestration-task.schema.ts` | L54-60 |

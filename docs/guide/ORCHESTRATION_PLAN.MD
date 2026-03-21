@@ -102,7 +102,7 @@
 | 文件 | 职责 |
 |------|------|
 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent.service.ts` | **Agent 核心服务**，`buildMessages()` 构建 system prompt，`executeTask()` 执行任务 |
-| `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-execution.service.ts` | 运行时执行上下文管理 |
+| `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/agents/agent-executor-runtime.service.ts` | 运行时执行上下文管理 |
 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/runtime/runtime-persistence.service.ts` | Session 消息持久化，去重（`buildSystemContextKey`） |
 
 ### 前端
@@ -294,7 +294,7 @@ buildMessages(agent, task, context, enabledSkills)
 
 **prompt 可能重复的原因分析**：
 
-1. **`appendSystemMessagesToSession`** (`agent-execution.service.ts` L54-71)：在 `startRuntimeExecution` 之后，会将所有 system messages 再次追加到 Session 中。如果 Session 被复用（同一个 `sessionId`），历史中已有的 system messages 会与新追加的重叠。
+1. **`appendSystemMessagesToSession`** (`agent-executor-runtime.service.ts` L54-71)：在 `startRuntimeExecution` 之后，会将所有 system messages 再次追加到 Session 中。如果 Session 被复用（同一个 `sessionId`），历史中已有的 system messages 会与新追加的重叠。
 
 2. **`runtime-persistence.service.ts :: buildSystemContextKey`** (L32-57)：这个方法尝试通过 content 生成去重 key，但仅处理了 `团队上下文:` 和会议标题两种模式，**大部分 system message（如工具声明、技能列表、任务描述）没有去重 key**，因此不会被去重。
 
