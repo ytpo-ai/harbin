@@ -83,8 +83,15 @@ export class RuntimeOrchestratorService {
 
     let ensuredSession;
     const meetingContext = metadataRecord?.meetingContext as
-      | { meetingId?: string; agendaId?: string; latestSummary?: string }
+      | { meetingId?: string; agendaId?: string; meetingType?: string; latestSummary?: string }
       | undefined;
+    const planId = typeof metadataRecord?.planId === 'string' ? metadataRecord.planId : undefined;
+    const domainContext = (metadataRecord?.domainContext && typeof metadataRecord.domainContext === 'object')
+      ? (metadataRecord.domainContext as Record<string, unknown>)
+      : undefined;
+    const collaborationContext = (metadataRecord?.collaborationContext && typeof metadataRecord.collaborationContext === 'object')
+      ? (metadataRecord.collaborationContext as Record<string, unknown>)
+      : undefined;
     const ensureSessionAt = Date.now();
 
     if (meetingContext?.meetingId) {
@@ -95,7 +102,19 @@ export class RuntimeOrchestratorService {
         {
           meetingId: meetingContext.meetingId,
           agendaId: meetingContext.agendaId,
+          meetingType: meetingContext.meetingType,
           latestSummary: meetingContext.latestSummary,
+        },
+      );
+    } else if (planId) {
+      ensuredSession = await this.persistence.getOrCreatePlanSession(
+        planId,
+        input.agentId,
+        input.taskTitle,
+        {
+          currentTaskId: input.taskId,
+          domainContext: domainContext as any,
+          collaborationContext,
         },
       );
     } else if (input.taskId) {
@@ -104,23 +123,27 @@ export class RuntimeOrchestratorService {
         input.agentId,
         input.taskTitle,
         {
-          linkedPlanId: typeof metadataRecord?.planId === 'string' ? metadataRecord.planId : undefined,
+          linkedPlanId: planId,
           linkedTaskId: input.taskId,
+          currentTaskId: input.taskId,
           latestTaskInput: input.taskDescription,
         },
       );
     } else {
       ensuredSession = await this.persistence.ensureSession({
         sessionId: input.sessionId,
-        sessionType: 'task',
+        sessionType: 'chat',
         ownerType: 'agent',
         ownerId: input.agentId,
         title: input.taskTitle,
         planContext: {
-          linkedPlanId: typeof metadataRecord?.planId === 'string' ? metadataRecord.planId : undefined,
+          linkedPlanId: planId,
           linkedTaskId: input.taskId,
+          currentTaskId: input.taskId,
           latestTaskInput: input.taskDescription,
         },
+        domainContext: domainContext as any,
+        collaborationContext,
       });
     }
     this.debugTiming(runOrTaskId, 'start_run.ensure_session', ensureSessionAt, { sessionId: ensuredSession.id });
@@ -265,7 +288,7 @@ export class RuntimeOrchestratorService {
     });
 
     const appendRunToSessionAt = Date.now();
-    await this.persistence.appendRunToSession(sessionId, run.id);
+    await this.persistence.appendRunToSession(sessionId, run.id, { taskId: input.taskId });
     this.debugTiming(runOrTaskId, 'start_run.append_run_to_session', appendRunToSessionAt, {
       runId: run.id,
       sessionId,
@@ -597,7 +620,20 @@ export class RuntimeOrchestratorService {
     });
 
     if (input.sessionId) {
-      await this.persistence.appendRunToSession(input.sessionId, input.runId, input.assistantContent);
+      await this.persistence.appendRunToSession(input.sessionId, input.runId, {
+        latestTaskOutput: input.assistantContent,
+        taskId: input.taskId,
+      });
+      await this.persistence.appendRunSummary(input.sessionId, {
+        runId: input.runId,
+        taskId: input.taskId,
+        taskTitle: input.metadata?.taskTitle ? String(input.metadata.taskTitle) : undefined,
+        objective: input.metadata?.taskObjective ? String(input.metadata.taskObjective) : undefined,
+        outcome: this.buildOutcomeSummary(input.assistantContent),
+        keyOutputs: this.buildKeyOutputs(input.assistantContent),
+        openIssues: this.extractOpenIssues(input.assistantContent),
+        completedAt: new Date(),
+      });
     }
 
     await this.emitEvent({
@@ -625,7 +661,7 @@ export class RuntimeOrchestratorService {
     });
 
     if (input.sessionId) {
-      await this.persistence.appendRunToSession(input.sessionId, input.runId);
+      await this.persistence.appendRunToSession(input.sessionId, input.runId, { taskId: input.taskId });
     }
 
     await this.emitEvent({
@@ -1144,5 +1180,33 @@ export class RuntimeOrchestratorService {
         ownerId,
       });
     }
+  }
+
+  private buildOutcomeSummary(content: string): string {
+    const normalized = String(content || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) {
+      return 'No assistant output';
+    }
+    return normalized.length > 280 ? `${normalized.slice(0, 280)}...` : normalized;
+  }
+
+  private buildKeyOutputs(content: string): string[] {
+    const lines = String(content || '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('- ') || line.startsWith('1.') || line.startsWith('2.') || line.startsWith('3.'))
+      .map((line) => line.replace(/^(-\s+|\d+\.\s+)/, '').trim())
+      .filter(Boolean);
+    return lines.slice(0, 6);
+  }
+
+  private extractOpenIssues(content: string): string[] {
+    const normalized = String(content || '');
+    const signals = ['TODO', '待办', '后续', '风险', '问题'];
+    const matched = normalized
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => signals.some((signal) => line.includes(signal)));
+    return matched.slice(0, 4);
   }
 }

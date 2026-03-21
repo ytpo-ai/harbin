@@ -50,6 +50,21 @@ export class OrchestrationPlan {
 
   @Prop({ type: Object })
   metadata?: Record<string, any>;
+
+  @Prop(raw({
+    domainType: { type: String },
+    description: { type: String },
+    constraints: [{ type: String }],
+    knowledgeRefs: [{ type: String }],
+    metadata: { type: Object },
+  }))
+  domainContext?: {
+    domainType?: string;
+    description?: string;
+    constraints?: string[];
+    knowledgeRefs?: string[];
+    metadata?: Record<string, unknown>;
+  };
 }
 
 export const OrchestrationPlanSchema = SchemaFactory.createForClass(OrchestrationPlan);

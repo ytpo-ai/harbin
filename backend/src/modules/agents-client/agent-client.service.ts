@@ -793,6 +793,7 @@ export class AgentClientService {
     meetingContext?: {
       meetingId: string;
       agendaId?: string;
+      meetingType?: string;
       latestSummary?: string;
     },
   ): Promise<any> {
@@ -838,6 +839,39 @@ export class AgentClientService {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to get/create task session: ${message}`);
+      return null;
+    }
+  }
+
+  async getOrCreatePlanSession(
+    planId: string,
+    agentId: string,
+    title: string,
+    options?: {
+      currentTaskId?: string;
+      domainContext?: {
+        domainType?: string;
+        description?: string;
+        constraints?: string[];
+        knowledgeRefs?: string[];
+        metadata?: Record<string, unknown>;
+      };
+      collaborationContext?: Record<string, unknown>;
+    },
+  ): Promise<any> {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/api/agents/runtime/sessions/plan`,
+        { planId, agentId, title, ...options },
+        {
+          headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+          timeout: this.timeout,
+        },
+      );
+      return response.data;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      this.logger.warn(`Failed to get/create plan session: ${message}`);
       return null;
     }
   }

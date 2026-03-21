@@ -8,8 +8,8 @@ export class AgentSession {
   @Prop({ required: true, unique: true })
   id: string;
 
-  @Prop({ enum: ['meeting', 'task'], required: true })
-  sessionType: 'meeting' | 'task';
+  @Prop({ enum: ['meeting', 'task', 'chat'], required: true })
+  sessionType: 'meeting' | 'task' | 'chat';
 
   @Prop({ enum: ['agent', 'employee', 'system'], default: 'agent' })
   ownerType: 'agent' | 'employee' | 'system';
@@ -55,6 +55,8 @@ export class AgentSession {
 
   @Prop(raw({
     linkedPlanId: { type: String },
+    currentTaskId: { type: String },
+    completedTaskIds: [{ type: String }],
     linkedTaskId: { type: String },
     latestTaskInput: { type: String },
     latestTaskOutput: { type: String },
@@ -62,6 +64,8 @@ export class AgentSession {
   }))
   planContext?: {
     linkedPlanId?: string;
+    currentTaskId?: string;
+    completedTaskIds?: string[];
     linkedTaskId?: string;
     latestTaskInput?: string;
     latestTaskOutput?: string;
@@ -71,13 +75,57 @@ export class AgentSession {
   @Prop(raw({
     meetingId: { type: String },
     agendaId: { type: String },
+    meetingType: { type: String },
     latestSummary: { type: String },
   }))
   meetingContext?: {
     meetingId?: string;
     agendaId?: string;
+    meetingType?: string;
     latestSummary?: string;
   };
+
+  @Prop(raw({
+    domainType: { type: String },
+    description: { type: String },
+    constraints: [{ type: String }],
+    knowledgeRefs: [{ type: String }],
+    metadata: { type: Object },
+  }))
+  domainContext?: {
+    domainType?: string;
+    description?: string;
+    constraints?: string[];
+    knowledgeRefs?: string[];
+    metadata?: Record<string, unknown>;
+  };
+
+  @Prop({ type: Object })
+  collaborationContext?: Record<string, unknown>;
+
+  @Prop({
+    type: [{
+      runId: { type: String, required: true },
+      taskId: { type: String },
+      taskTitle: { type: String },
+      objective: { type: String },
+      outcome: { type: String },
+      keyOutputs: [{ type: String }],
+      openIssues: [{ type: String }],
+      completedAt: { type: Date },
+    }],
+    default: [],
+  })
+  runSummaries: {
+    runId: string;
+    taskId?: string;
+    taskTitle?: string;
+    objective?: string;
+    outcome?: string;
+    keyOutputs?: string[];
+    openIssues?: string[];
+    completedAt?: Date;
+  }[];
 
   @Prop({ type: Object })
   metadata?: Record<string, unknown>;
@@ -121,3 +169,4 @@ export const AgentSessionSchema = SchemaFactory.createForClass(AgentSession);
 AgentSessionSchema.index({ ownerType: 1, ownerId: 1, createdAt: -1 });
 AgentSessionSchema.index({ status: 1, lastActiveAt: -1 });
 AgentSessionSchema.index({ 'planContext.linkedPlanId': 1, 'planContext.linkedTaskId': 1 });
+AgentSessionSchema.index({ 'planContext.linkedPlanId': 1, ownerId: 1, sessionType: 1 });

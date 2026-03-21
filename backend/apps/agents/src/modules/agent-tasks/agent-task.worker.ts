@@ -150,6 +150,19 @@ export class AgentTaskWorker implements OnModuleInit {
           },
           {
             sessionContext: task.sessionContext || {},
+            teamContext: {
+              sessionId: this.readString(task.sessionContext?.sessionId),
+              planId: this.readString(task.sessionContext?.planId),
+              taskId: this.readString(task.sessionContext?.orchestrationTaskId) || task.id,
+              domainContext:
+                task.sessionContext?.domainContext && typeof task.sessionContext.domainContext === 'object'
+                  ? (task.sessionContext.domainContext as Record<string, unknown>)
+                  : undefined,
+              collaborationContext:
+                task.sessionContext?.collaborationContext && typeof task.sessionContext.collaborationContext === 'object'
+                  ? (task.sessionContext.collaborationContext as Record<string, unknown>)
+                  : undefined,
+            },
             runtimeRouting: {
               taskType: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
               preferredChannel: this.resolvePreferredExecutionChannel(task.sessionContext),

@@ -435,7 +435,7 @@ export class RuntimeController {
     @Query('ownerType') ownerType?: 'agent' | 'employee' | 'system',
     @Query('ownerId') ownerId?: string,
     @Query('status') status?: 'active' | 'archived' | 'closed',
-    @Query('sessionType') sessionType?: 'meeting' | 'task',
+    @Query('sessionType') sessionType?: 'meeting' | 'task' | 'chat',
     @Query('keyword') keyword?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
@@ -484,12 +484,14 @@ export class RuntimeController {
     @Body()
     body: {
       sessionId?: string;
-      sessionType?: 'meeting' | 'task';
+      sessionType?: 'meeting' | 'task' | 'chat';
       ownerType?: 'agent' | 'employee' | 'system';
       ownerId: string;
       title: string;
       planContext?: {
         linkedPlanId?: string;
+        currentTaskId?: string;
+        completedTaskIds?: string[];
         linkedTaskId?: string;
         latestTaskInput?: string;
         latestTaskOutput?: string;
@@ -498,8 +500,17 @@ export class RuntimeController {
       meetingContext?: {
         meetingId?: string;
         agendaId?: string;
+        meetingType?: string;
         latestSummary?: string;
       };
+      domainContext?: {
+        domainType?: string;
+        description?: string;
+        constraints?: string[];
+        knowledgeRefs?: string[];
+        metadata?: Record<string, unknown>;
+      };
+      collaborationContext?: Record<string, unknown>;
       metadata?: Record<string, unknown>;
     },
   ) {
@@ -511,6 +522,8 @@ export class RuntimeController {
       title: body.title,
       planContext: body.planContext,
       meetingContext: body.meetingContext,
+      domainContext: body.domainContext,
+      collaborationContext: body.collaborationContext,
       metadata: body.metadata,
     });
     return session;
@@ -526,6 +539,7 @@ export class RuntimeController {
       meetingContext?: {
         meetingId: string;
         agendaId?: string;
+        meetingType?: string;
         latestSummary?: string;
       };
     },
@@ -535,6 +549,37 @@ export class RuntimeController {
       body.agentId,
       body.title,
       body.meetingContext,
+    );
+    return session;
+  }
+
+  @Post('sessions/plan')
+  async getOrCreatePlanSession(
+    @Body()
+    body: {
+      planId: string;
+      agentId: string;
+      title: string;
+      currentTaskId?: string;
+      domainContext?: {
+        domainType?: string;
+        description?: string;
+        constraints?: string[];
+        knowledgeRefs?: string[];
+        metadata?: Record<string, unknown>;
+      };
+      collaborationContext?: Record<string, unknown>;
+    },
+  ) {
+    const session = await this.persistence.getOrCreatePlanSession(
+      body.planId,
+      body.agentId,
+      body.title,
+      {
+        currentTaskId: body.currentTaskId,
+        domainContext: body.domainContext,
+        collaborationContext: body.collaborationContext,
+      },
     );
     return session;
   }

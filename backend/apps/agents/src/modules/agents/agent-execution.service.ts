@@ -17,7 +17,11 @@ interface RuntimeExecutionOptions {
     sessionId?: string;
     meetingId?: string;
     agendaId?: string;
+    meetingType?: string;
+    planId?: string;
     latestSummary?: string;
+    domainContext?: Record<string, unknown>;
+    collaborationContext?: Record<string, unknown>;
   };
 }
 
@@ -95,8 +99,18 @@ export class AgentExecutionService {
       metadata.meetingContext = {
         meetingId: teamContext.meetingId,
         agendaId: teamContext.agendaId,
+        meetingType: teamContext.meetingType,
         latestSummary: teamContext.latestSummary,
       };
+    }
+    if (teamContext?.planId) {
+      metadata.planId = teamContext.planId;
+    }
+    if (teamContext?.domainContext && typeof teamContext.domainContext === 'object') {
+      metadata.domainContext = teamContext.domainContext;
+    }
+    if (teamContext?.collaborationContext && typeof teamContext.collaborationContext === 'object') {
+      metadata.collaborationContext = teamContext.collaborationContext;
     }
 
     return this.runtimeOrchestrator.startRun({

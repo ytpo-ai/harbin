@@ -28,6 +28,7 @@ import { OpencodeAgentExecutorEngine } from './executor-engines/opencode-agent-e
 import { OpencodeStreamingAgentExecutorEngine } from './executor-engines/opencode-streaming-agent-executor.engine';
 import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
+import { ContextModule } from './context/context.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
     RuntimeModule,
     OpenCodeModule,
     PromptRegistryCoreModule,
+    ContextModule,
   ],
   controllers: [AgentController],
   providers: [

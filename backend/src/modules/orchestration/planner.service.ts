@@ -113,6 +113,11 @@ export class PlannerService {
           mode: 'planning',
           format: 'json',
         },
+        collaborationContext: {
+          mode: 'planning',
+          format: 'json',
+          roleInPlan: 'planner',
+        },
       });
       const parsed = this.tryParseJson(response);
       if (!parsed?.tasks || !Array.isArray(parsed.tasks) || parsed.tasks.length === 0) {

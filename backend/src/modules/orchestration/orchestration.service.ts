@@ -99,6 +99,10 @@ export class OrchestrationService {
     const plan = await new this.orchestrationPlanModel({
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,
+      domainContext: {
+        domainType: 'development',
+        description: prompt.slice(0, 500),
+      },
       status: 'drafting',
       strategy: {
         plannerAgentId: dto.plannerAgentId,
@@ -469,6 +473,10 @@ export class OrchestrationService {
             $set: {
               title,
               sourcePrompt: prompt,
+              domainContext: {
+                domainType: 'development',
+                description: prompt.slice(0, 500),
+              },
               status: 'drafting',
               strategy: {
                 plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
@@ -1346,6 +1354,11 @@ export class OrchestrationService {
     const isReviewTask = this.taskClassificationService.isReviewTask(task.title, task.description);
     const dependencyContext = await this.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.getRetryFailureHint(task);
+    const planDomainContext = await this.resolvePlanDomainContext(planId);
+    const collaborationContext = this.buildOrchestrationCollaborationContext(task, {
+      dependencyContext,
+      executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
+    });
 
     await this.orchestrationTaskModel
       .updateOne(
@@ -1473,7 +1486,8 @@ export class OrchestrationService {
       }
     }
 
-    const requestedSessionId = `orch-task-${taskId}`;
+    let requestedSessionId = `plan-${planId}-${assignment.executorId || 'unassigned'}`;
+    let planSessionSnapshot: any = null;
     const runtimeTaskType = this.resolveAgentRuntimeTaskType(task.title, task.description, {
       isExternalAction,
       isResearchTask,
@@ -1491,6 +1505,22 @@ export class OrchestrationService {
     const agentTaskIdempotencyKey = `orch:${planId}:${taskId}:${new Date().getTime()}`;
 
     try {
+      if (assignment.executorType === 'agent' && assignment.executorId) {
+        planSessionSnapshot = await this.agentClientService.getOrCreatePlanSession(
+          planId,
+          assignment.executorId,
+          task.title,
+          {
+            currentTaskId: taskId,
+            domainContext: planDomainContext,
+            collaborationContext,
+          },
+        );
+        if (planSessionSnapshot?.id) {
+          requestedSessionId = String(planSessionSnapshot.id);
+        }
+      }
+
       const accepted = await this.agentClientService.createAsyncAgentTask({
         agentId: assignment.executorId,
         prompt: taskPrompt,
@@ -1500,6 +1530,14 @@ export class OrchestrationService {
           planId,
           orchestrationTaskId: taskId,
           sessionId: requestedSessionId,
+          teamContext: {
+            planId,
+            sessionId: requestedSessionId,
+            taskId,
+          },
+          domainContext: planDomainContext,
+          collaborationContext,
+          runSummaries: Array.isArray(planSessionSnapshot?.runSummaries) ? planSessionSnapshot.runSummaries : [],
           dependencies: task.dependencyTaskIds,
           dependencyContext,
           runtimeTaskType,
@@ -2624,6 +2662,39 @@ export class OrchestrationService {
     }
 
     return { valid: true };
+  }
+
+  private async resolvePlanDomainContext(planId: string): Promise<Record<string, unknown> | undefined> {
+    const plan = await this.orchestrationPlanModel
+      .findOne({ _id: planId })
+      .select({ domainContext: 1, sourcePrompt: 1 })
+      .lean<{ domainContext?: Record<string, unknown>; sourcePrompt?: string }>()
+      .exec();
+    if (plan?.domainContext && typeof plan.domainContext === 'object') {
+      return plan.domainContext;
+    }
+    if (!plan?.sourcePrompt) {
+      return undefined;
+    }
+    return {
+      domainType: 'development',
+      description: String(plan.sourcePrompt).slice(0, 500),
+    };
+  }
+
+  private buildOrchestrationCollaborationContext(
+    task: OrchestrationTask,
+    options: { dependencyContext: string; executorAgentId?: string },
+  ): Record<string, unknown> {
+    return {
+      mode: 'orchestration',
+      roleInPlan: 'execute_assigned_task',
+      currentTaskId: this.getEntityId(task as any),
+      currentTaskTitle: task.title,
+      executorAgentId: options.executorAgentId,
+      dependencies: task.dependencyTaskIds || [],
+      upstreamOutputs: options.dependencyContext,
+    };
   }
 
   private tryParseJson(content: string): any | null {

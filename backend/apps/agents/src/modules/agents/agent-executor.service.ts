@@ -23,6 +23,7 @@ import { HookPipelineService } from '@agent/modules/runtime/hooks/hook-pipeline.
 import { LifecycleHookContext } from '@agent/modules/runtime/hooks/lifecycle-hook.types';
 import { ToolService } from '@agent/modules/tools/tool.service';
 import { Skill, SkillDocument } from '@agent/schemas/agent-skill.schema';
+import { ContextAssemblerService } from './context/context-assembler.service';
 
 import {
   MEMO_MCP_SEARCH_TOOL_ID,
@@ -126,6 +127,7 @@ export class AgentExecutorService {
     private readonly agentRoleService: AgentRoleService,
     private readonly promptResolverService: PromptResolverService,
     private readonly hookPipeline: HookPipelineService,
+    private readonly contextAssembler: ContextAssemblerService,
   ) {}
 
   /**
@@ -1008,6 +1010,7 @@ export class AgentExecutorService {
           });
         }
       }
+      
       if (beforeStepHookResult.forcedToolCall) {
         const forcedToolCall = beforeStepHookResult.forcedToolCall;
         messages.push({
@@ -1275,169 +1278,12 @@ export class AgentExecutorService {
   ): Promise<ChatMessage[]> {
     const buildStartAt = Date.now();
     const taskId = String(task.id || 'unknown');
-    const messages: ChatMessage[] = [];
-    // 会议类任务会附加更强的执行约束与空响应兜底策略。
-    const meetingLikeTask = isMeetingLikeTask(task, context);
     const loadIdentityStartAt = Date.now();
     const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
     this.debugTiming(taskId, 'build_messages.load_identity_memos', loadIdentityStartAt, {
       identityMemoCount: identityMemos.length,
     });
-    const previousSystemMessages = (context.previousMessages || []).filter((message) => message?.role === 'system');
-    const previousNonSystemMessages = (context.previousMessages || []).filter((message) => message?.role !== 'system');
 
-    // 1) 注入 Agent 工作准则（固定首条 system prompt）。
-    messages.push({
-      role: 'system',
-      content: await this.resolveAgentPromptContent(AGENT_PROMPTS.agentWorkingGuideline),
-      timestamp: new Date(),
-    });
-
-    // 2) 注入 Agent 基础 system prompt。
-    messages.push({
-      role: 'system',
-      content: agent.systemPrompt,
-      timestamp: new Date(),
-    });
-
-    const contextScope = this.resolveSystemContextScope(agent, task, context);
-
-    // 3) 注入身份记忆，并通过指纹做增量下发降低 token 开销。
-    if (identityMemos.length > 0) {
-      const identityContent = identityMemos
-        .map((memo) => {
-          const content = String(memo.content || '');
-          const topic = memo.payload?.topic ? String(memo.payload.topic) : '';
-          return `## ${memo.title}${topic ? ` (${topic})` : ''}\n\n${content}`;
-        })
-        .join('\n\n---\n\n');
-      const identitySnapshot: IdentityMemoSnapshotItem[] = identityMemos
-        .map((memo) => ({
-          title: String(memo.title || '').trim(),
-          topic: memo.payload?.topic ? String(memo.payload.topic).trim() : '',
-          contentHash: this.hashFingerprint(String(memo.content || '')),
-        }))
-        .sort((a, b) => `${a.title}:${a.topic}`.localeCompare(`${b.title}:${b.topic}`));
-      const identityMessage = await this.resolveSystemContextBlockContent({
-        scope: contextScope,
-        blockType: 'identity',
-        fullContent: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
-        snapshot: {
-          items: identitySnapshot,
-        },
-        buildDelta: (previous, current) =>
-          this.buildIdentityMemoDelta(
-            Array.isArray((previous as any)?.items) ? ((previous as any).items as IdentityMemoSnapshotItem[]) : [],
-            Array.isArray((current as any)?.items) ? ((current as any).items as IdentityMemoSnapshotItem[]) : [],
-          ),
-        deltaPrefix: '【身份与职责增量更新】',
-      });
-      if (identityMessage) {
-        messages.push({
-          role: 'system',
-          content: identityMessage,
-          timestamp: new Date(),
-        });
-      }
-    }
-
-    // 4) 非会议类任务注入任务信息块（同样支持增量更新）。
-    if (!meetingLikeTask) {
-      const descAlreadyInHistory =
-        task.description &&
-        task.description.length > 50 &&
-        context.previousMessages.some(
-          (msg) =>
-            msg.role === 'user' &&
-            typeof msg.content === 'string' &&
-            msg.content.includes(task.description.slice(0, 100)),
-        );
-      const taskInfoSnapshot: TaskInfoSnapshot = {
-        title: String(task.title || '').trim(),
-        description: String(task.description || '').trim(),
-        type: String(task.type || '').trim(),
-        priority: String(task.priority || '').trim(),
-      };
-      const fullTaskInfoContent = descAlreadyInHistory
-        ? `任务信息:\n标题: ${taskInfoSnapshot.title}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`
-        : `任务信息:\n标题: ${taskInfoSnapshot.title}\n描述: ${taskInfoSnapshot.description}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`;
-      const taskInfoContent = await this.resolveSystemContextBlockContent({
-        scope: contextScope,
-        blockType: 'task-info',
-        fullContent: fullTaskInfoContent,
-        snapshot: taskInfoSnapshot,
-        buildDelta: (previous, current) => this.buildTaskInfoDelta(previous as TaskInfoSnapshot, current as TaskInfoSnapshot),
-        deltaPrefix: '任务信息增量更新：',
-      });
-      if (taskInfoContent) {
-        messages.push({
-          role: 'system',
-          content: taskInfoContent,
-          timestamp: new Date(),
-        });
-      }
-    }
-
-    // 5) 注入技能元信息，并按匹配度按需激活技能全文。
-    if (enabledSkills.length > 0) {
-      const skillLines = enabledSkills
-        .map(
-          (skill) =>
-            `- ${skill.name} (id=${skill.id}, proficiency=${skill.proficiencyLevel}) | description=${skill.description} | tags=${(skill.tags || []).join(', ') || 'N/A'}`,
-        )
-        .join('\n');
-
-      messages.push({
-        role: 'system',
-        content:
-          `Enabled Skills for this agent:\n${skillLines}\n\n` +
-          '以下为技能索引。请按任务上下文激活并严格遵循对应技能方法论。',
-        timestamp: new Date(),
-      });
-
-      for (const skill of enabledSkills) {
-        if (this.shouldActivateSkillContent(skill, task, context)) {
-          const loadSkillContentStartAt = Date.now();
-          try {
-            const skillDoc = await this.skillModel
-              .findOne({ id: skill.id }, { content: 1, contentSize: 1 })
-              .lean()
-              .exec();
-            const rawContent = (skillDoc as any)?.content;
-            if (rawContent && typeof rawContent === 'string' && rawContent.trim()) {
-              const content =
-                rawContent.length > SKILL_CONTENT_MAX_INJECT_LENGTH
-                  ? rawContent.slice(0, SKILL_CONTENT_MAX_INJECT_LENGTH) +
-                    '\n\n[... 内容已截断，可通过工具查询完整版本]'
-                  : rawContent;
-              messages.push({
-                role: 'system',
-                content: `【激活技能方法论 - ${skill.name}】\n\n${content}`,
-                timestamp: new Date(),
-              });
-              this.logger.log(
-                `[skill_activated] skill=${skill.name} id=${skill.id} contentSize=${rawContent.length} taskType=${task.type}`,
-              );
-            }
-            this.debugTiming(taskId, 'build_messages.load_skill_content', loadSkillContentStartAt, {
-              skillId: skill.id,
-              skillName: skill.name,
-              activated: true,
-            });
-          } catch (err: any) {
-            this.logger.warn(
-              `[skill_content_load_failed] skill=${skill.id} error=${err?.message || err}`,
-            );
-            this.debugTiming(taskId, 'build_messages.load_skill_content_failed', loadSkillContentStartAt, {
-              skillId: skill.id,
-              skillName: skill.name,
-            });
-          }
-        }
-      }
-    }
-
-    // 6) 注入已分配工具清单与工具策略提示。
     const loadToolsStartAt = Date.now();
     const allowedToolIds = await this.agentRoleService.getAllowedToolIds(agent);
     const assignedTools = await this.toolService.getToolsByIds(allowedToolIds);
@@ -1445,117 +1291,63 @@ export class AgentExecutorService {
       allowedToolCount: allowedToolIds.length,
       assignedToolCount: assignedTools.length,
     });
-    if (assignedTools.length > 0) {
-      const toolSpecs = assignedTools.map((tool) => {
-        const id = (tool as any).canonicalId || normalizeToolId((tool as any).id);
-        const name = String(tool.name || '').trim() || 'Unnamed Tool';
-        const description = String(tool.description || '').trim() || 'No description';
-        return `- ${id} | ${name} | ${description}`;
-      });
 
-      messages.push({
-        role: 'system',
-        content: await this.resolveAgentPromptContent(AGENT_PROMPTS.toolInjectionInstruction, { toolSpecs }),
-        timestamp: new Date(),
-      });
-
-      const toolPromptMessages = this.buildToolPromptMessages(assignedTools);
-      if (toolPromptMessages.length > 0) {
-        messages.push({
-          role: 'system',
-          content: await this.resolveAgentPromptContent(AGENT_PROMPTS.toolStrategyWrapper, {
-            toolPromptMessages,
-          }),
-          timestamp: new Date(),
-        });
+    const skillContents = new Map<string, string>();
+    for (const skill of enabledSkills) {
+      if (!this.shouldActivateSkillContent(skill, task, context)) continue;
+      try {
+        const skillDoc = await this.skillModel.findOne({ id: skill.id }, { content: 1 }).lean().exec();
+        const rawContent = (skillDoc as any)?.content;
+        if (typeof rawContent === 'string' && rawContent.trim()) {
+          skillContents.set(skill.id, rawContent);
+        }
+      } catch {
+        // ignore single skill load failure
       }
     }
 
-    // 7) 注入团队上下文，支持多 Agent 协作。
-    if (context.teamContext) {
-      messages.push({
-        role: 'system',
-        content: `团队上下文: ${JSON.stringify(context.teamContext)}`,
-        timestamp: new Date(),
-      });
-    }
+    const sessionContext = (context.sessionContext || {}) as Record<string, any>;
+    const scenarioType: 'orchestration' | 'meeting' | 'chat' =
+      String(context.teamContext?.meetingId || '').trim()
+        ? 'meeting'
+        : String(context.teamContext?.planId || '').trim()
+          ? 'orchestration'
+          : 'chat';
 
-    // 8) 会议类任务注入会议执行规范模板。
-    if (meetingLikeTask) {
-      const meetingPolicyStartAt = Date.now();
-      const meetingExecutionPolicyTemplate = await this.resolveAgentPromptTemplate(
-        AGENT_PROMPTS.defaultMeetingExecutionPolicyPrompt,
-      );
-      const meetingExecutionPolicy = await this.resolveSystemContextBlockContent({
-        scope: contextScope,
-        blockType: 'meeting-execution-policy',
-        fullContent: meetingExecutionPolicyTemplate.content,
-        snapshot: {
-          version: 'step2-prompt-registry',
-          templateVersion: meetingExecutionPolicyTemplate.version || 'code-default',
-          templateSource: meetingExecutionPolicyTemplate.source,
-          contentHash: this.hashFingerprint(meetingExecutionPolicyTemplate.content),
-        },
-      });
-      if (meetingExecutionPolicy) {
-        messages.push({
-          role: 'system',
-          content: meetingExecutionPolicy,
-          timestamp: new Date(),
-        });
-      }
-      this.debugTiming(taskId, 'build_messages.meeting_execution_policy', meetingPolicyStartAt, {
-        templateVersion: meetingExecutionPolicyTemplate.version || 'code-default',
-      });
-    }
-
-    // 10) 追加历史 system 消息，保持跨轮一致性（跳过本轮已注入的重复内容）。
-    const injectedSystemContents = new Set(
-      messages
-        .filter((message) => message.role === 'system')
-        .map((message) => String(message.content || '').trim())
-        .filter((content) => content.length > 0),
-    );
-    const uniquePreviousSystemMessages = previousSystemMessages.filter((message) => {
-      const normalized = String(message?.content || '').trim();
-      if (!normalized) {
-        return false;
-      }
-      if (injectedSystemContents.has(normalized)) {
-        return false;
-      }
-      injectedSystemContents.add(normalized);
-      return true;
+    const messages = await this.contextAssembler.assemble({
+      agent,
+      task,
+      context,
+      enabledSkills,
+      scenarioType,
+      contextScope: this.resolveSystemContextScope(agent, task, context),
+      identityMemos,
+      helpers: {
+        resolvePromptContent: (template, payload) => this.resolveAgentPromptContent(template as any, payload as any),
+        resolvePromptTemplate: (template, payload) => this.resolveAgentPromptTemplate(template as any, payload as any),
+        resolveSystemContextBlockContent: (options) => this.resolveSystemContextBlockContent(options),
+        hashFingerprint: (input) => this.hashFingerprint(input),
+        buildTaskInfoDelta: (previous, current) => this.buildTaskInfoDelta(previous, current),
+        buildIdentityMemoDelta: (previous, current) => this.buildIdentityMemoDelta(previous, current),
+        shouldActivateSkillContent: (skill, ctxTask, ctx) => this.shouldActivateSkillContent(skill, ctxTask, ctx),
+        buildToolPromptMessages: (tools) => this.buildToolPromptMessages(tools),
+      },
+      shared: {
+        allowedToolIds,
+        assignedTools,
+        skillContents,
+      },
+      persistedContext: {
+        domainContext: sessionContext.domainContext || context.teamContext?.domainContext,
+        collaborationContext: sessionContext.collaborationContext || context.teamContext,
+        runSummaries: sessionContext.runSummaries,
+      },
     });
-    messages.push(...uniquePreviousSystemMessages);
-
-    // 11) 检索任务相关记忆摘要并注入。
-    // const memoryContextStartAt = Date.now();
-    // const memoryContext = await this.memoService.getTaskMemoryContext(
-    //   agent.id || '',
-    //   `${task.title}\n${task.description}\n${task.messages?.slice(-1)[0]?.content || ''}`,
-    // );
-    // this.debugTiming(taskId, 'build_messages.load_task_memory_context', memoryContextStartAt, {
-    //   hasMemoryContext: Boolean(memoryContext),
-    // });
-    // if (memoryContext) {
-    //   messages.push({
-    //     role: 'system',
-    //     content:
-    //       `以下是从备忘录中按需检索到的相关记忆（渐进加载摘要）:\n${memoryContext}\n\n` +
-    //       '请优先参考这些记忆，并在必要时调用 builtin.sys-mg.internal.memory.search-memo 获取更完整上下文；若有新结论可调用 builtin.sys-mg.internal.memory.append-memo 追加沉淀。',
-    //     timestamp: new Date(),
-    //   });
-    // }
-
-    // 12) 最后追加非 system 历史消息，形成完整上下文。
-    messages.push(...previousNonSystemMessages);
 
     this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
       totalMessages: messages.length,
-      meetingLikeTask,
+      scenarioType,
     });
-
     return messages;
   }
 

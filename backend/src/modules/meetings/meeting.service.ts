@@ -230,6 +230,7 @@ export class MeetingService {
       meetingId: meeting.id,
       initiatorId: triggerMessage.senderId,
       meetingType: meeting.type,
+      collaborationMode: 'meeting',
       meetingTitle: meeting.title,
       meetingDescription: meeting.description,
       agenda: meeting.agenda,
@@ -1903,6 +1904,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       const response = await this.agentClientService.executeTask(agentId, task as any, {
         executionMode: 'chat',
         teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
+        collaborationContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
 
       const messageType = this.analyzeMessageType(response);
@@ -2047,6 +2049,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
       const response = await this.agentClientService.executeTask(participant.id, task as any, {
         executionMode: 'chat',
         teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
+        collaborationContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
       await this.sendMessage(meetingId, {
         senderId: participant.id,

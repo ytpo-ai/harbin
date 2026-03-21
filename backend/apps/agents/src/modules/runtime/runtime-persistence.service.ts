@@ -83,12 +83,14 @@ export class RuntimePersistenceService {
 
   async ensureSession(input: {
     sessionId?: string;
-    sessionType?: 'meeting' | 'task';
+    sessionType?: 'meeting' | 'task' | 'chat';
     ownerId: string;
     ownerType?: 'agent' | 'employee' | 'system';
     title: string;
     planContext?: {
       linkedPlanId?: string;
+      currentTaskId?: string;
+      completedTaskIds?: string[];
       linkedTaskId?: string;
       latestTaskInput?: string;
       latestTaskOutput?: string;
@@ -97,8 +99,11 @@ export class RuntimePersistenceService {
     meetingContext?: {
       meetingId?: string;
       agendaId?: string;
+      meetingType?: string;
       latestSummary?: string;
     };
+    domainContext?: AgentSession['domainContext'];
+    collaborationContext?: AgentSession['collaborationContext'];
     metadata?: Record<string, unknown>;
   }): Promise<AgentSession> {
     const sessionId = input.sessionId?.trim() || `session-${uuidv4()}`;
@@ -124,6 +129,8 @@ export class RuntimePersistenceService {
             lastActiveAt: now,
             planContext: input.planContext,
             meetingContext: input.meetingContext,
+            domainContext: input.domainContext,
+            collaborationContext: input.collaborationContext,
           },
         },
         { upsert: true, new: true },
@@ -133,17 +140,23 @@ export class RuntimePersistenceService {
     return updated as AgentSession;
   }
 
-  async appendRunToSession(sessionId: string, runId: string, latestTaskOutput?: string): Promise<void> {
+  async appendRunToSession(sessionId: string, runId: string, options?: { latestTaskOutput?: string; taskId?: string }): Promise<void> {
     const now = new Date();
+    const taskId = options?.taskId;
+    const addToSet: Record<string, unknown> = { runIds: runId };
+    if (taskId) {
+      addToSet['planContext.completedTaskIds'] = taskId;
+    }
     await this.sessionModel
       .updateOne(
         { id: sessionId },
         {
-          $addToSet: { runIds: runId },
+          $addToSet: addToSet,
           $set: {
             lastActiveAt: now,
             'planContext.lastRunId': runId,
-            ...(latestTaskOutput ? { 'planContext.latestTaskOutput': latestTaskOutput } : {}),
+            ...(options?.latestTaskOutput ? { 'planContext.latestTaskOutput': options.latestTaskOutput } : {}),
+            ...(taskId ? { 'planContext.currentTaskId': taskId } : {}),
           },
         },
       )
@@ -157,6 +170,7 @@ export class RuntimePersistenceService {
     meetingContext?: {
       meetingId: string;
       agendaId?: string;
+      meetingType?: string;
       latestSummary?: string;
     },
   ): Promise<AgentSession> {
@@ -193,6 +207,8 @@ export class RuntimePersistenceService {
     title: string,
     planContext?: {
       linkedPlanId?: string;
+      currentTaskId?: string;
+      completedTaskIds?: string[];
       linkedTaskId?: string;
       latestTaskInput?: string;
       latestTaskOutput?: string;
@@ -224,6 +240,93 @@ export class RuntimePersistenceService {
       title,
       planContext,
     });
+  }
+
+  async getOrCreatePlanSession(
+    planId: string,
+    agentId: string,
+    title: string,
+    options?: {
+      currentTaskId?: string;
+      domainContext?: AgentSession['domainContext'];
+      collaborationContext?: AgentSession['collaborationContext'];
+    },
+  ): Promise<AgentSession> {
+    const existing = await this.sessionModel
+      .findOne({
+        'planContext.linkedPlanId': planId,
+        ownerId: agentId,
+        sessionType: 'task',
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const planContext = {
+      linkedPlanId: planId,
+      currentTaskId: options?.currentTaskId,
+    };
+
+    if (existing) {
+      await this.sessionModel.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            lastActiveAt: new Date(),
+            title,
+            planContext,
+            ...(options?.domainContext ? { domainContext: options.domainContext } : {}),
+            ...(options?.collaborationContext ? { collaborationContext: options.collaborationContext } : {}),
+          },
+        },
+      );
+      return this.sessionModel.findById(existing._id).exec() as Promise<AgentSession>;
+    }
+
+    const sessionId = `plan-${planId}-${agentId}`;
+    return this.ensureSession({
+      sessionId,
+      sessionType: 'task',
+      ownerId: agentId,
+      title,
+      planContext,
+      domainContext: options?.domainContext,
+      collaborationContext: options?.collaborationContext,
+    });
+  }
+
+  async appendRunSummary(
+    sessionId: string,
+    summary: {
+      runId: string;
+      taskId?: string;
+      taskTitle?: string;
+      objective?: string;
+      outcome?: string;
+      keyOutputs?: string[];
+      openIssues?: string[];
+      completedAt?: Date;
+    },
+  ): Promise<void> {
+    await this.sessionModel
+      .updateOne(
+        { id: sessionId },
+        {
+          $push: {
+            runSummaries: {
+              runId: summary.runId,
+              taskId: summary.taskId,
+              taskTitle: summary.taskTitle,
+              objective: summary.objective,
+              outcome: summary.outcome,
+              keyOutputs: summary.keyOutputs || [],
+              openIssues: summary.openIssues || [],
+              completedAt: summary.completedAt || new Date(),
+            },
+          },
+          $set: { lastActiveAt: new Date() },
+        },
+      )
+      .exec();
   }
 
   async createRun(input: {
@@ -548,7 +651,7 @@ export class RuntimePersistenceService {
     ownerType?: 'agent' | 'employee' | 'system';
     ownerId?: string;
     status?: 'active' | 'archived' | 'closed';
-    sessionType?: 'meeting' | 'task';
+    sessionType?: 'meeting' | 'task' | 'chat';
     keyword?: string;
     page?: number;
     pageSize?: number;
@@ -594,7 +697,7 @@ export class RuntimePersistenceService {
     ownerType?: 'agent' | 'employee' | 'system';
     ownerId?: string;
     status?: 'active' | 'archived' | 'closed';
-    sessionType?: 'meeting' | 'task';
+    sessionType?: 'meeting' | 'task' | 'chat';
     keyword?: string;
   }): Promise<number> {
     const filter: Record<string, unknown> = {};
