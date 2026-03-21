@@ -2,10 +2,17 @@ import { Injectable } from '@nestjs/common';
 import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catalog';
 import { ChatMessage } from '../../../../../../src/shared/types';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
+import { ContextFingerprintService } from './context-fingerprint.service';
+import { ContextPromptService } from './context-prompt.service';
 
 @Injectable()
 export class IdentityContextBuilder implements ContextBlockBuilder {
   readonly layer = 'identity' as const;
+
+  constructor(
+    private readonly contextPromptService: ContextPromptService,
+    private readonly contextFingerprintService: ContextFingerprintService,
+  ) {}
 
   shouldInject(): boolean {
     return true;
@@ -15,7 +22,7 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
     const messages: ChatMessage[] = [];
     messages.push({
       role: 'system',
-      content: await input.helpers.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline),
+      content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline),
       timestamp: new Date(),
     });
     messages.push({
@@ -40,17 +47,17 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
       .map((memo) => ({
         title: String(memo.title || '').trim(),
         topic: memo.payload?.topic ? String(memo.payload.topic).trim() : '',
-        contentHash: input.helpers.hashFingerprint(String(memo.content || '')),
+        contentHash: this.contextFingerprintService.hashFingerprint(String(memo.content || '')),
       }))
       .sort((a, b) => `${a.title}:${a.topic}`.localeCompare(`${b.title}:${b.topic}`));
 
-    const identityMessage = await input.helpers.resolveSystemContextBlockContent({
+    const identityMessage = await this.contextFingerprintService.resolveSystemContextBlockContent({
       scope: input.contextScope,
       blockType: 'identity',
       fullContent: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
       snapshot: { items: identitySnapshot },
       buildDelta: (previous, current) =>
-        input.helpers.buildIdentityMemoDelta(
+        this.contextFingerprintService.buildIdentityMemoDelta(
           Array.isArray((previous as any)?.items) ? (previous as any).items : [],
           Array.isArray((current as any)?.items) ? (current as any).items : [],
         ),

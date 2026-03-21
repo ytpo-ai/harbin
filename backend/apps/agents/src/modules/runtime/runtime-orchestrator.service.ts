@@ -1183,30 +1183,112 @@ export class RuntimeOrchestratorService {
   }
 
   private buildOutcomeSummary(content: string): string {
-    const normalized = String(content || '').replace(/\s+/g, ' ').trim();
-    if (!normalized) {
+    const raw = String(content || '').trim();
+    if (!raw) {
       return 'No assistant output';
     }
-    return normalized.length > 280 ? `${normalized.slice(0, 280)}...` : normalized;
+
+    const parsed = this.tryParseSummaryJson(raw);
+    const structuredOutcome = String(parsed?.outcome || parsed?.summary || parsed?.result || '').trim();
+    if (structuredOutcome) {
+      return structuredOutcome.length > 420 ? `${structuredOutcome.slice(0, 420)}...` : structuredOutcome;
+    }
+
+    const sections = this.extractTextSections(raw);
+    const preferred = sections.find((section) => section.type === 'paragraph') || sections[0];
+    const normalized = String(preferred?.content || raw).replace(/\s+/g, ' ').trim();
+    return normalized.length > 420 ? `${normalized.slice(0, 420)}...` : normalized;
   }
 
   private buildKeyOutputs(content: string): string[] {
-    const lines = String(content || '')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.startsWith('- ') || line.startsWith('1.') || line.startsWith('2.') || line.startsWith('3.'))
-      .map((line) => line.replace(/^(-\s+|\d+\.\s+)/, '').trim())
+    const raw = String(content || '').trim();
+    if (!raw) return [];
+
+    const parsed = this.tryParseSummaryJson(raw);
+    if (Array.isArray(parsed?.keyOutputs) && parsed.keyOutputs.length > 0) {
+      return parsed.keyOutputs.map((item: unknown) => String(item || '').trim()).filter(Boolean).slice(0, 8);
+    }
+
+    const sections = this.extractTextSections(raw);
+    const candidates = sections
+      .filter((section) => section.type === 'bullet' || section.type === 'numbered' || section.type === 'checklist')
+      .map((section) => section.content.trim())
       .filter(Boolean);
-    return lines.slice(0, 6);
+
+    if (candidates.length > 0) {
+      return Array.from(new Set(candidates)).slice(0, 8);
+    }
+
+    return sections
+      .filter((section) => section.type === 'heading')
+      .map((section) => section.content.trim())
+      .filter(Boolean)
+      .slice(0, 6);
   }
 
   private extractOpenIssues(content: string): string[] {
-    const normalized = String(content || '');
-    const signals = ['TODO', '待办', '后续', '风险', '问题'];
-    const matched = normalized
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => signals.some((signal) => line.includes(signal)));
-    return matched.slice(0, 4);
+    const raw = String(content || '').trim();
+    if (!raw) return [];
+
+    const parsed = this.tryParseSummaryJson(raw);
+    if (Array.isArray(parsed?.openIssues) && parsed.openIssues.length > 0) {
+      return parsed.openIssues.map((item: unknown) => String(item || '').trim()).filter(Boolean).slice(0, 8);
+    }
+
+    const signals = ['TODO', '待办', '后续', '风险', '问题', 'blocked', 'pending', 'follow-up'];
+    return this.extractTextSections(raw)
+      .map((section) => section.content.trim())
+      .filter((line) => {
+        if (!line) return false;
+        if (/^- \[ \]/.test(line)) return true;
+        const lower = line.toLowerCase();
+        return signals.some((signal) => lower.includes(signal.toLowerCase()));
+      })
+      .slice(0, 8);
+  }
+
+  private tryParseSummaryJson(content: string): Record<string, unknown> | null {
+    const trimmed = String(content || '').trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      const fenced = trimmed.match(/```json\s*([\s\S]*?)```/i)?.[1] || trimmed.match(/```\s*([\s\S]*?)```/i)?.[1];
+      if (!fenced) return null;
+      try {
+        const parsed = JSON.parse(fenced.trim());
+        return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+      } catch {
+        return null;
+      }
+    }
+  }
+
+  private extractTextSections(content: string): Array<{ type: 'heading' | 'bullet' | 'numbered' | 'checklist' | 'paragraph'; content: string }> {
+    const lines = String(content || '').split('\n');
+    const sections: Array<{ type: 'heading' | 'bullet' | 'numbered' | 'checklist' | 'paragraph'; content: string }> = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('```')) continue;
+      if (/^#{1,6}\s+/.test(trimmed)) {
+        sections.push({ type: 'heading', content: trimmed.replace(/^#{1,6}\s+/, '').trim() });
+        continue;
+      }
+      if (/^- \[.?\]\s+/.test(trimmed)) {
+        sections.push({ type: 'checklist', content: trimmed.replace(/^- \[.?\]\s+/, '').trim() });
+        continue;
+      }
+      if (/^[-*]\s+/.test(trimmed)) {
+        sections.push({ type: 'bullet', content: trimmed.replace(/^[-*]\s+/, '').trim() });
+        continue;
+      }
+      if (/^\d+\.\s+/.test(trimmed)) {
+        sections.push({ type: 'numbered', content: trimmed.replace(/^\d+\.\s+/, '').trim() });
+        continue;
+      }
+      sections.push({ type: 'paragraph', content: trimmed });
+    }
+    return sections;
   }
 }

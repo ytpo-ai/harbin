@@ -3,10 +3,17 @@ import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catal
 import { ChatMessage } from '../../../../../../src/shared/types';
 import { SKILL_CONTENT_MAX_INJECT_LENGTH, normalizeToolId } from '../agent.constants';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
+import { ContextPromptService } from './context-prompt.service';
+import { ContextStrategyService } from './context-strategy.service';
 
 @Injectable()
 export class ToolsetContextBuilder implements ContextBlockBuilder {
   readonly layer = 'toolset' as const;
+
+  constructor(
+    private readonly contextPromptService: ContextPromptService,
+    private readonly contextStrategyService: ContextStrategyService,
+  ) {}
 
   shouldInject(): boolean {
     return true;
@@ -30,7 +37,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
       });
 
       for (const skill of input.enabledSkills) {
-        if (!input.helpers.shouldActivateSkillContent(skill, input.task, input.context)) {
+        if (!this.contextStrategyService.shouldActivateSkillContent(skill, input.task, input.context)) {
           continue;
         }
         const rawContent = input.shared.skillContents.get(skill.id);
@@ -58,15 +65,15 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
 
       messages.push({
         role: 'system',
-        content: await input.helpers.resolvePromptContent(AGENT_PROMPTS.toolInjectionInstruction, { toolSpecs }),
+        content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolInjectionInstruction, { toolSpecs }),
         timestamp: new Date(),
       });
 
-      const toolPromptMessages = input.helpers.buildToolPromptMessages(input.shared.assignedTools);
+      const toolPromptMessages = this.contextStrategyService.buildToolPromptMessages(input.shared.assignedTools);
       if (toolPromptMessages.length > 0) {
         messages.push({
           role: 'system',
-          content: await input.helpers.resolvePromptContent(AGENT_PROMPTS.toolStrategyWrapper, {
+          content: await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.toolStrategyWrapper, {
             toolPromptMessages,
           }),
           timestamp: new Date(),

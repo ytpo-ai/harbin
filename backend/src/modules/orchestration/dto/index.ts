@@ -35,6 +35,11 @@ export class CreatePlanFromPromptDto {
   @IsOptional()
   @IsString()
   requirementId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  domainType?: string;
 }
 
 export class RunPlanDto {
@@ -64,6 +69,11 @@ export class ReplanPlanDto {
   @IsOptional()
   @IsBoolean()
   autoRun?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  domainType?: string;
 }
 
 export class UpdatePlanDto {
@@ -88,6 +98,11 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  domainType?: string;
 }
 
 export class ReassignTaskDto {

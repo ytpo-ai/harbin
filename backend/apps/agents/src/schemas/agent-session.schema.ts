@@ -8,8 +8,8 @@ export class AgentSession {
   @Prop({ required: true, unique: true })
   id: string;
 
-  @Prop({ enum: ['meeting', 'task', 'chat'], required: true })
-  sessionType: 'meeting' | 'task' | 'chat';
+  @Prop({ enum: ['meeting', 'task', 'plan', 'chat'], required: true })
+  sessionType: 'meeting' | 'task' | 'plan' | 'chat';
 
   @Prop({ enum: ['agent', 'employee', 'system'], default: 'agent' })
   ownerType: 'agent' | 'employee' | 'system';

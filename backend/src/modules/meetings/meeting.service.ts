@@ -1903,7 +1903,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       const response = await this.agentClientService.executeTask(agentId, task as any, {
         executionMode: 'chat',
-        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
         collaborationContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
 
@@ -2048,7 +2047,6 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
 
       const response = await this.agentClientService.executeTask(participant.id, task as any, {
         executionMode: 'chat',
-        teamContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
         collaborationContext: this.buildMeetingTeamContext(meeting, triggerMessage, participantProfiles),
       });
       await this.sendMessage(meetingId, {

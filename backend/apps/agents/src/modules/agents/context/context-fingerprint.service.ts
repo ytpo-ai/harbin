@@ -1,0 +1,142 @@
+import { createHash } from 'crypto';
+import { Injectable } from '@nestjs/common';
+import { RedisService } from '@libs/infra';
+import { SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS, compactLogText } from '../agent.constants';
+import { IdentityMemoSnapshotItem, SystemContextFingerprintRecord, TaskInfoSnapshot } from '../agent.types';
+
+@Injectable()
+export class ContextFingerprintService {
+  resolveSystemContextScope(
+    agent: { id?: string; _id?: { toString?: () => string } },
+    task: { id?: string; title?: string; type?: string; teamId?: string },
+    context?: { teamContext?: Record<string, unknown>; collaborationContext?: Record<string, unknown> },
+  ): string {
+    const agentId = String(agent.id || agent._id?.toString?.() || 'unknown').trim() || 'unknown';
+    const collaborationContext = (context?.collaborationContext || {}) as Record<string, unknown>;
+    const teamContext = (context?.teamContext || {}) as Record<string, unknown>;
+    const mergedContext = { ...collaborationContext, ...teamContext };
+
+    const meetingId = String(mergedContext?.meetingId || '').trim();
+    if (meetingId) {
+      return `meeting:${meetingId}:agent:${agentId}`;
+    }
+    const sessionId = String(mergedContext?.sessionId || '').trim();
+    if (sessionId) {
+      return `session:${sessionId}:agent:${agentId}`;
+    }
+    const taskId = String(task.id || '').trim();
+    if (taskId) {
+      return `task:${taskId}:agent:${agentId}`;
+    }
+    return `ephemeral:${agentId}:${this.hashFingerprint(`${task.title || ''}|${task.type || ''}|${task.teamId || ''}`)}`;
+  }
+
+  hashFingerprint(input: string): string {
+    return createHash('sha256').update(String(input || '')).digest('hex');
+  }
+
+  async resolveSystemContextBlockContent(options: {
+    scope: string;
+    blockType: string;
+    fullContent: string;
+    snapshot: unknown;
+    buildDelta?: (previous: unknown, current: unknown) => string;
+    deltaPrefix?: string;
+  }): Promise<string | null> {
+    const fullContent = String(options.fullContent || '').trim();
+    if (!fullContent) {
+      return null;
+    }
+
+    const normalizedSnapshot = (options.snapshot || {}) as Record<string, unknown>;
+    const fingerprint = this.hashFingerprint(JSON.stringify(normalizedSnapshot));
+    const key = this.systemContextFingerprintCacheKey(options.scope, options.blockType);
+    const nextRecord: SystemContextFingerprintRecord = {
+      fingerprint,
+      snapshot: normalizedSnapshot,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      const cached = await this.redisService.get(key);
+      if (cached) {
+        const parsed = JSON.parse(cached) as SystemContextFingerprintRecord;
+        if (parsed?.fingerprint === fingerprint) {
+          return null;
+        }
+
+        if (options.buildDelta && parsed?.snapshot) {
+          const delta = String(options.buildDelta(parsed.snapshot, normalizedSnapshot) || '').trim();
+          if (delta) {
+            await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
+            return options.deltaPrefix ? `${options.deltaPrefix}\n${delta}` : delta;
+          }
+        }
+      }
+
+      await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
+      return fullContent;
+    } catch {
+      return fullContent;
+    }
+  }
+
+  buildTaskInfoDelta(previous: TaskInfoSnapshot, current: TaskInfoSnapshot): string {
+    const changes: string[] = [];
+    if (previous.title !== current.title) {
+      changes.push(`- 标题：${previous.title || '（空）'} -> ${current.title || '（空）'}`);
+    }
+    if (previous.description !== current.description) {
+      changes.push(
+        `- 描述：${compactLogText(previous.description, 120) || '（空）'} -> ${compactLogText(current.description, 120) || '（空）'}`,
+      );
+    }
+    if (previous.type !== current.type) {
+      changes.push(`- 类型：${previous.type || '（空）'} -> ${current.type || '（空）'}`);
+    }
+    if (previous.priority !== current.priority) {
+      changes.push(`- 优先级：${previous.priority || '（空）'} -> ${current.priority || '（空）'}`);
+    }
+    return changes.join('\n');
+  }
+
+  buildIdentityMemoDelta(previous: IdentityMemoSnapshotItem[], current: IdentityMemoSnapshotItem[]): string {
+    const toMap = (items: IdentityMemoSnapshotItem[]) =>
+      new Map(items.map((item) => [`${item.title}::${item.topic}`, item]));
+    const previousMap = toMap(previous || []);
+    const currentMap = toMap(current || []);
+
+    const added: string[] = [];
+    const updated: string[] = [];
+    const removed: string[] = [];
+
+    for (const [key, next] of currentMap.entries()) {
+      const prev = previousMap.get(key);
+      const label = next.topic ? `${next.title} (${next.topic})` : next.title;
+      if (!prev) {
+        added.push(label);
+        continue;
+      }
+      if (prev.contentHash !== next.contentHash) {
+        updated.push(label);
+      }
+    }
+
+    for (const [key, prev] of previousMap.entries()) {
+      if (currentMap.has(key)) continue;
+      removed.push(prev.topic ? `${prev.title} (${prev.topic})` : prev.title);
+    }
+
+    const lines: string[] = [];
+    if (added.length) lines.push(`- 新增：${added.join('、')}`);
+    if (updated.length) lines.push(`- 更新：${updated.join('、')}`);
+    if (removed.length) lines.push(`- 移除：${removed.join('、')}`);
+    return lines.join('\n');
+  }
+
+  constructor(private readonly redisService: RedisService) {}
+
+  private systemContextFingerprintCacheKey(scope: string, blockType: string): string {
+    return `agent:system-context-fingerprint:${scope}:${blockType}`;
+  }
+}

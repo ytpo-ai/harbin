@@ -83,7 +83,7 @@ export class RuntimePersistenceService {
 
   async ensureSession(input: {
     sessionId?: string;
-    sessionType?: 'meeting' | 'task' | 'chat';
+    sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
     ownerId: string;
     ownerType?: 'agent' | 'employee' | 'system';
     title: string;
@@ -256,7 +256,7 @@ export class RuntimePersistenceService {
       .findOne({
         'planContext.linkedPlanId': planId,
         ownerId: agentId,
-        sessionType: 'task',
+        sessionType: 'plan',
       })
       .sort({ createdAt: -1 })
       .exec();
@@ -285,7 +285,7 @@ export class RuntimePersistenceService {
     const sessionId = `plan-${planId}-${agentId}`;
     return this.ensureSession({
       sessionId,
-      sessionType: 'task',
+      sessionType: 'plan',
       ownerId: agentId,
       title,
       planContext,
@@ -651,7 +651,7 @@ export class RuntimePersistenceService {
     ownerType?: 'agent' | 'employee' | 'system';
     ownerId?: string;
     status?: 'active' | 'archived' | 'closed';
-    sessionType?: 'meeting' | 'task' | 'chat';
+    sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
     keyword?: string;
     page?: number;
     pageSize?: number;
@@ -697,7 +697,7 @@ export class RuntimePersistenceService {
     ownerType?: 'agent' | 'employee' | 'system';
     ownerId?: string;
     status?: 'active' | 'archived' | 'closed';
-    sessionType?: 'meeting' | 'task' | 'chat';
+    sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
     keyword?: string;
   }): Promise<number> {
     const filter: Record<string, unknown> = {};

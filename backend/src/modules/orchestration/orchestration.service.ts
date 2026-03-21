@@ -95,14 +95,12 @@ export class OrchestrationService {
     if (!prompt) {
       throw new BadRequestException('prompt is required');
     }
+    const inferredDomainContext = this.inferDomainContext(prompt, dto.domainType);
     const requirementId = String(dto.requirementId || '').trim() || undefined;
     const plan = await new this.orchestrationPlanModel({
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,
-      domainContext: {
-        domainType: 'development',
-        description: prompt.slice(0, 500),
-      },
+      domainContext: inferredDomainContext,
       status: 'drafting',
       strategy: {
         plannerAgentId: dto.plannerAgentId,
@@ -446,6 +444,7 @@ export class OrchestrationService {
     const plannerAgentId = dto.plannerAgentId?.trim();
     const title = dto.title?.trim() || plan.title || this.derivePlanTitle(prompt);
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
+    const inferredDomainContext = this.inferDomainContext(prompt, dto.domainType);
     const requirementId = this.resolveRequirementIdFromPlan(plan);
     const requirementObjectId = this.resolveRequirementObjectIdFromPlan(plan);
     try {
@@ -473,10 +472,7 @@ export class OrchestrationService {
             $set: {
               title,
               sourcePrompt: prompt,
-              domainContext: {
-                domainType: 'development',
-                description: prompt.slice(0, 500),
-              },
+              domainContext: inferredDomainContext,
               status: 'drafting',
               strategy: {
                 plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
@@ -763,6 +759,9 @@ export class OrchestrationService {
     }
     if (sourcePrompt) {
       updatePayload.sourcePrompt = sourcePrompt;
+      updatePayload.domainContext = this.inferDomainContext(sourcePrompt, dto.domainType || plan.domainContext?.domainType);
+    } else if (dto.domainType) {
+      updatePayload.domainContext = this.inferDomainContext(plan.sourcePrompt || '', dto.domainType);
     }
     if (dto.mode) {
       updatePayload['strategy.mode'] = dto.mode;
@@ -2676,10 +2675,51 @@ export class OrchestrationService {
     if (!plan?.sourcePrompt) {
       return undefined;
     }
+    return this.inferDomainContext(String(plan.sourcePrompt));
+  }
+
+  private inferDomainContext(prompt: string, preferredDomainType?: string): Record<string, unknown> {
+    const normalizedPrompt = String(prompt || '').trim();
+    const domainType = this.inferDomainType(normalizedPrompt, preferredDomainType);
     return {
-      domainType: 'development',
-      description: String(plan.sourcePrompt).slice(0, 500),
+      domainType,
+      description: normalizedPrompt.slice(0, 500),
     };
+  }
+
+  private inferDomainType(prompt: string, preferredDomainType?: string): string {
+    const preferred = String(preferredDomainType || '').trim().toLowerCase();
+    if (preferred) {
+      return preferred;
+    }
+
+    const text = String(prompt || '').toLowerCase();
+    const patterns: Array<{ domainType: string; signals: string[] }> = [
+      {
+        domainType: 'research',
+        signals: ['research', 'investigate', 'analysis', '调研', '分析', 'benchmark'],
+      },
+      {
+        domainType: 'product_planning',
+        signals: ['prd', 'roadmap', 'product', '需求规划', '产品规划', '用户故事'],
+      },
+      {
+        domainType: 'operations',
+        signals: ['ops', 'runbook', 'incident', '运维', '值班', '告警'],
+      },
+      {
+        domainType: 'development',
+        signals: ['develop', 'code', 'implement', 'bug', 'fix', '重构', '开发', '编码', '修复'],
+      },
+    ];
+
+    for (const item of patterns) {
+      if (item.signals.some((signal) => text.includes(signal))) {
+        return item.domainType;
+      }
+    }
+
+    return 'general';
   }
 
   private buildOrchestrationCollaborationContext(

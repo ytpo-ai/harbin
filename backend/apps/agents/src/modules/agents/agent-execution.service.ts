@@ -23,6 +23,7 @@ interface RuntimeExecutionOptions {
     domainContext?: Record<string, unknown>;
     collaborationContext?: Record<string, unknown>;
   };
+  collaborationContext?: Record<string, unknown>;
 }
 
 @Injectable()
@@ -76,7 +77,32 @@ export class AgentExecutionService {
   }
 
   async startRuntimeExecution(options: RuntimeExecutionOptions): Promise<RuntimeRunContext> {
-    const { runtimeAgentId, agentName, task, messages, mode, roleCode, executionChannel, executionData, teamContext } = options;
+    const {
+      runtimeAgentId,
+      agentName,
+      task,
+      messages,
+      mode,
+      roleCode,
+      executionChannel,
+      executionData,
+      teamContext,
+      collaborationContext,
+    } = options;
+    const mergedCollaborationContext: Record<string, unknown> = {
+      ...((collaborationContext || {}) as Record<string, unknown>),
+      ...(((teamContext?.collaborationContext || {}) as Record<string, unknown>) || {}),
+    };
+    const meetingId = String(teamContext?.meetingId || mergedCollaborationContext.meetingId || '').trim();
+    const sessionId =
+      String(teamContext?.sessionId || mergedCollaborationContext.sessionId || '').trim() || undefined;
+    const planId = String(teamContext?.planId || mergedCollaborationContext.planId || '').trim() || undefined;
+    const domainContext =
+      (teamContext?.domainContext && typeof teamContext.domainContext === 'object'
+        ? teamContext.domainContext
+        : mergedCollaborationContext.domainContext && typeof mergedCollaborationContext.domainContext === 'object'
+          ? (mergedCollaborationContext.domainContext as Record<string, unknown>)
+          : undefined) || undefined;
     const metadata: Record<string, unknown> = {
       taskType: task.type,
       taskPriority: task.priority,
@@ -95,29 +121,30 @@ export class AgentExecutionService {
     if (mode === 'streaming') {
       metadata.mode = 'streaming';
     }
-    if (teamContext?.meetingId) {
+    if (meetingId) {
       metadata.meetingContext = {
-        meetingId: teamContext.meetingId,
-        agendaId: teamContext.agendaId,
-        meetingType: teamContext.meetingType,
-        latestSummary: teamContext.latestSummary,
+        meetingId,
+        agendaId: String(teamContext?.agendaId || mergedCollaborationContext.agendaId || '').trim() || undefined,
+        meetingType: String(teamContext?.meetingType || mergedCollaborationContext.meetingType || '').trim() || undefined,
+        latestSummary:
+          String(teamContext?.latestSummary || mergedCollaborationContext.latestSummary || '').trim() || undefined,
       };
     }
-    if (teamContext?.planId) {
-      metadata.planId = teamContext.planId;
+    if (planId) {
+      metadata.planId = planId;
     }
-    if (teamContext?.domainContext && typeof teamContext.domainContext === 'object') {
-      metadata.domainContext = teamContext.domainContext;
+    if (domainContext) {
+      metadata.domainContext = domainContext;
     }
-    if (teamContext?.collaborationContext && typeof teamContext.collaborationContext === 'object') {
-      metadata.collaborationContext = teamContext.collaborationContext;
+    if (Object.keys(mergedCollaborationContext).length > 0) {
+      metadata.collaborationContext = mergedCollaborationContext;
     }
 
     return this.runtimeOrchestrator.startRun({
       agentId: runtimeAgentId,
       agentName,
       taskId: task.id,
-      sessionId: typeof teamContext?.sessionId === 'string' ? teamContext.sessionId : undefined,
+      sessionId,
       taskTitle: task.title,
       taskDescription: task.description,
       userContent: this.resolveLatestUserContent(task, messages),

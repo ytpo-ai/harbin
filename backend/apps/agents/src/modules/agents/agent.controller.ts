@@ -37,7 +37,7 @@ export class AgentController {
   }
 
   private resolveContextType(context?: any): AgentActionContextType {
-    const teamContext = context?.teamContext;
+    const teamContext = context?.teamContext || context?.collaborationContext;
     if (!teamContext) return 'chat';
     if (teamContext.planId) return 'orchestration';
     if (teamContext.taskId || teamContext.orchestrationTaskId || teamContext.taskKey) return 'orchestration';
@@ -45,7 +45,7 @@ export class AgentController {
   }
 
   private resolveContextId(context?: any, task?: Task): string | undefined {
-    const teamContext = context?.teamContext;
+    const teamContext = context?.teamContext || context?.collaborationContext;
     if (teamContext?.meetingId) return teamContext.meetingId;
     if (teamContext?.planId) return teamContext.planId;
     if (teamContext?.taskId) return teamContext.taskId;
@@ -67,6 +67,8 @@ export class AgentController {
       context?.sessionId,
       context?.teamContext?.agentSessionId,
       context?.teamContext?.sessionId,
+      context?.collaborationContext?.agentSessionId,
+      context?.collaborationContext?.sessionId,
     ];
     for (const value of candidates) {
       if (typeof value === 'string' && value.trim()) {
@@ -80,6 +82,8 @@ export class AgentController {
     const candidates = [
       context?.teamContext?.meetingTitle,
       context?.teamContext?.title,
+      context?.collaborationContext?.meetingTitle,
+      context?.collaborationContext?.title,
     ];
     for (const value of candidates) {
       if (typeof value === 'string' && value.trim()) {

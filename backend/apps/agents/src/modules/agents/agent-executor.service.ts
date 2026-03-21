@@ -1,5 +1,3 @@
-import { createHash } from 'crypto';
-
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -24,6 +22,8 @@ import { LifecycleHookContext } from '@agent/modules/runtime/hooks/lifecycle-hoo
 import { ToolService } from '@agent/modules/tools/tool.service';
 import { Skill, SkillDocument } from '@agent/schemas/agent-skill.schema';
 import { ContextAssemblerService } from './context/context-assembler.service';
+import { ContextFingerprintService } from './context/context-fingerprint.service';
+import { ContextStrategyService } from './context/context-strategy.service';
 
 import {
   MEMO_MCP_SEARCH_TOOL_ID,
@@ -31,7 +31,6 @@ import {
   DEFAULT_MAX_TOOL_ROUNDS,
   SKILL_CONTENT_MAX_INJECT_LENGTH,
   AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS,
-  SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS,
   normalizeToolId,
   uniqueStrings,
   compactLogText,
@@ -65,9 +64,6 @@ import {
   AgentContext,
   ExecuteTaskResult,
   EnabledAgentSkillContext,
-  SystemContextFingerprintRecord,
-  TaskInfoSnapshot,
-  IdentityMemoSnapshotItem,
 } from './agent.types';
 
 const DEFAULT_OPENCODE_TASK_TYPES = new Set([
@@ -128,6 +124,8 @@ export class AgentExecutorService {
     private readonly promptResolverService: PromptResolverService,
     private readonly hookPipeline: HookPipelineService,
     private readonly contextAssembler: ContextAssemblerService,
+    private readonly contextFingerprintService: ContextFingerprintService,
+    private readonly contextStrategyService: ContextStrategyService,
   ) {}
 
   /**
@@ -758,6 +756,7 @@ export class AgentExecutorService {
       executionChannel,
       executionData,
       teamContext: input.context?.teamContext,
+      collaborationContext: input.context?.collaborationContext,
     });
     this.debugTiming(input.taskId, `${config.stagePrefix}.start_runtime_execution`, startRuntimeExecutionAt, {
       runId: runtimeContext.runId,
@@ -1294,7 +1293,7 @@ export class AgentExecutorService {
 
     const skillContents = new Map<string, string>();
     for (const skill of enabledSkills) {
-      if (!this.shouldActivateSkillContent(skill, task, context)) continue;
+      if (!this.contextStrategyService.shouldActivateSkillContent(skill, task, context)) continue;
       try {
         const skillDoc = await this.skillModel.findOne({ id: skill.id }, { content: 1 }).lean().exec();
         const rawContent = (skillDoc as any)?.content;
@@ -1306,11 +1305,14 @@ export class AgentExecutorService {
       }
     }
 
+    const collaborationContext = (context.collaborationContext || {}) as Record<string, any>;
+    const teamContext = (context.teamContext || {}) as Record<string, any>;
+    const mergedContext = { ...collaborationContext, ...teamContext };
     const sessionContext = (context.sessionContext || {}) as Record<string, any>;
     const scenarioType: 'orchestration' | 'meeting' | 'chat' =
-      String(context.teamContext?.meetingId || '').trim()
+      String(mergedContext.meetingId || '').trim()
         ? 'meeting'
-        : String(context.teamContext?.planId || '').trim()
+        : String(mergedContext.planId || '').trim()
           ? 'orchestration'
           : 'chat';
 
@@ -1320,26 +1322,19 @@ export class AgentExecutorService {
       context,
       enabledSkills,
       scenarioType,
-      contextScope: this.resolveSystemContextScope(agent, task, context),
+      contextScope: this.contextFingerprintService.resolveSystemContextScope(agent, task, {
+        teamContext,
+        collaborationContext,
+      }),
       identityMemos,
-      helpers: {
-        resolvePromptContent: (template, payload) => this.resolveAgentPromptContent(template as any, payload as any),
-        resolvePromptTemplate: (template, payload) => this.resolveAgentPromptTemplate(template as any, payload as any),
-        resolveSystemContextBlockContent: (options) => this.resolveSystemContextBlockContent(options),
-        hashFingerprint: (input) => this.hashFingerprint(input),
-        buildTaskInfoDelta: (previous, current) => this.buildTaskInfoDelta(previous, current),
-        buildIdentityMemoDelta: (previous, current) => this.buildIdentityMemoDelta(previous, current),
-        shouldActivateSkillContent: (skill, ctxTask, ctx) => this.shouldActivateSkillContent(skill, ctxTask, ctx),
-        buildToolPromptMessages: (tools) => this.buildToolPromptMessages(tools),
-      },
       shared: {
         allowedToolIds,
         assignedTools,
         skillContents,
       },
       persistedContext: {
-        domainContext: sessionContext.domainContext || context.teamContext?.domainContext,
-        collaborationContext: sessionContext.collaborationContext || context.teamContext,
+        domainContext: sessionContext.domainContext || mergedContext.domainContext,
+        collaborationContext: sessionContext.collaborationContext || context.collaborationContext || context.teamContext,
         runSummaries: sessionContext.runSummaries,
       },
     });
@@ -1352,31 +1347,6 @@ export class AgentExecutorService {
   }
 
   // ---- private helpers ----
-
-  // 生成工具策略提示，并做去重与稳定排序。
-  buildToolPromptMessages(
-    assignedTools: Array<{
-      id?: string;
-      canonicalId?: string;
-      prompt?: string;
-    }>,
-  ): string[] {
-    const seen = new Set<string>();
-    return assignedTools
-      .map((tool) => {
-        const toolId = String(tool.canonicalId || tool.id || '').trim();
-        const prompt = String(tool.prompt || '').trim();
-        return { toolId, prompt };
-      })
-      .filter((item) => item.toolId && item.prompt)
-      .sort((a, b) => a.toolId.localeCompare(b.toolId))
-      .map((item) => `工具使用策略（${item.toolId}）:\n${item.prompt}`)
-      .filter((message) => {
-        if (seen.has(message)) return false;
-        seen.add(message);
-        return true;
-      });
-  }
 
   // 获取 Agent 启用技能：先查缓存，未命中再查库并回填缓存。
   private async getEnabledSkillsForAgent(agent: Agent, agentId: string): Promise<EnabledAgentSkillContext[]> {
@@ -1436,48 +1406,6 @@ export class AgentExecutorService {
   // 构建启用技能缓存 key。
   private agentEnabledSkillCacheKey(agentId: string): string {
     return `agent:enabled-skills:${agentId}`;
-  }
-
-  // 判断是否需要把技能全文注入到本次上下文中。
-  private shouldActivateSkillContent(
-    skill: EnabledAgentSkillContext,
-    task: Task,
-    context?: AgentContext,
-  ): boolean {
-    const meetingLike = isMeetingLikeTask(task, context);
-    const taskText = `${task.title || ''} ${task.description || ''} ${task.type || ''}`.toLowerCase();
-    const tags = (skill.tags || []).map((t) => t.toLowerCase());
-    const skillName = String(skill.name || '').toLowerCase();
-
-    if (meetingLike) {
-      const meetingPinnedSkills = ['meeting-resilience', 'meeting-sensitive-planner'];
-      if (meetingPinnedSkills.some((signal) => skillName.includes(signal) || tags.some((tag) => tag.includes(signal)))) {
-        return true;
-      }
-    }
-
-    if (task.type && tags.some((tag) => tag.includes(task.type!))) {
-      return true;
-    }
-
-    if (task.type === 'planning') {
-      const planningSignals = ['planning', 'orchestration', 'guard', 'planner'];
-      if (tags.some((tag) => planningSignals.some((s) => tag.includes(s)))) {
-        return true;
-      }
-    }
-
-    const skillSignals = [skill.name.toLowerCase(), ...tags];
-    let hitCount = 0;
-    for (const signal of skillSignals) {
-      const words = signal.split(/[\s\-_]+/).filter((w) => w.length >= 3);
-      if (words.some((word) => taskText.includes(word))) {
-        hitCount++;
-      }
-      if (hitCount >= 2) return true;
-    }
-
-    return false;
   }
 
   private async buildForcedToolCallInstruction(
@@ -1545,144 +1473,6 @@ export class AgentExecutorService {
       );
       return null;
     }
-  }
-
-  // 计算系统上下文作用域，用于做分场景指纹缓存。
-  private resolveSystemContextScope(
-    agent: { id?: string; _id?: { toString?: () => string } },
-    task: Task,
-    context?: { teamContext?: any },
-  ): string {
-    const agentId = String(agent.id || agent._id?.toString?.() || 'unknown').trim() || 'unknown';
-    const teamContext = context?.teamContext || {};
-    const meetingId = String(teamContext?.meetingId || '').trim();
-    if (meetingId) {
-      return `meeting:${meetingId}:agent:${agentId}`;
-    }
-    const sessionId = String(teamContext?.sessionId || '').trim();
-    if (sessionId) {
-      return `session:${sessionId}:agent:${agentId}`;
-    }
-    const taskId = String(task.id || '').trim();
-    if (taskId) {
-      return `task:${taskId}:agent:${agentId}`;
-    }
-    return `ephemeral:${agentId}:${this.hashFingerprint(`${task.title || ''}|${task.type || ''}|${task.teamId || ''}`)}`;
-  }
-
-  // 构建系统上下文指纹缓存 key。
-  private systemContextFingerprintCacheKey(scope: string, blockType: string): string {
-    return `agent:system-context-fingerprint:${scope}:${blockType}`;
-  }
-
-  // 计算稳定指纹，用于变更检测。
-  private hashFingerprint(input: string): string {
-    return createHash('sha256').update(String(input || '')).digest('hex');
-  }
-
-  // 根据指纹判断是“全量注入”还是“增量注入”，避免重复发送大段 system 文本。
-  private async resolveSystemContextBlockContent(options: {
-    scope: string;
-    blockType: string;
-    fullContent: string;
-    snapshot: unknown;
-    buildDelta?: (previous: unknown, current: unknown) => string;
-    deltaPrefix?: string;
-  }): Promise<string | null> {
-    const fullContent = String(options.fullContent || '').trim();
-    if (!fullContent) {
-      return null;
-    }
-
-    const normalizedSnapshot = (options.snapshot || {}) as Record<string, unknown>;
-    const fingerprint = this.hashFingerprint(JSON.stringify(normalizedSnapshot));
-    const key = this.systemContextFingerprintCacheKey(options.scope, options.blockType);
-    const nextRecord: SystemContextFingerprintRecord = {
-      fingerprint,
-      snapshot: normalizedSnapshot,
-      updatedAt: new Date().toISOString(),
-    };
-
-    try {
-      const cached = await this.redisService.get(key);
-      if (cached) {
-        const parsed = JSON.parse(cached) as SystemContextFingerprintRecord;
-        if (parsed?.fingerprint === fingerprint) {
-          return null;
-        }
-
-        if (options.buildDelta && parsed?.snapshot) {
-          const delta = String(options.buildDelta(parsed.snapshot, normalizedSnapshot) || '').trim();
-          if (delta) {
-            await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
-            return options.deltaPrefix ? `${options.deltaPrefix}\n${delta}` : delta;
-          }
-        }
-      }
-
-      await this.redisService.set(key, JSON.stringify(nextRecord), SYSTEM_CONTEXT_FINGERPRINT_TTL_SECONDS);
-      return fullContent;
-    } catch {
-      return fullContent;
-    }
-  }
-
-  // 生成任务信息差异文本。
-  buildTaskInfoDelta(previous: TaskInfoSnapshot, current: TaskInfoSnapshot): string {
-    const changes: string[] = [];
-    if (previous.title !== current.title) {
-      changes.push(`- 标题：${previous.title || '（空）'} -> ${current.title || '（空）'}`);
-    }
-    if (previous.description !== current.description) {
-      changes.push(
-        `- 描述：${compactLogText(previous.description, 120) || '（空）'} -> ${compactLogText(current.description, 120) || '（空）'}`,
-      );
-    }
-    if (previous.type !== current.type) {
-      changes.push(`- 类型：${previous.type || '（空）'} -> ${current.type || '（空）'}`);
-    }
-    if (previous.priority !== current.priority) {
-      changes.push(`- 优先级：${previous.priority || '（空）'} -> ${current.priority || '（空）'}`);
-    }
-    return changes.join('\n');
-  }
-
-  // 生成身份记忆差异文本（新增/更新/移除）。
-  private buildIdentityMemoDelta(
-    previous: IdentityMemoSnapshotItem[],
-    current: IdentityMemoSnapshotItem[],
-  ): string {
-    const toMap = (items: IdentityMemoSnapshotItem[]) =>
-      new Map(items.map((item) => [`${item.title}::${item.topic}`, item]));
-    const previousMap = toMap(previous || []);
-    const currentMap = toMap(current || []);
-
-    const added: string[] = [];
-    const updated: string[] = [];
-    const removed: string[] = [];
-
-    for (const [key, next] of currentMap.entries()) {
-      const prev = previousMap.get(key);
-      const label = next.topic ? `${next.title} (${next.topic})` : next.title;
-      if (!prev) {
-        added.push(label);
-        continue;
-      }
-      if (prev.contentHash !== next.contentHash) {
-        updated.push(label);
-      }
-    }
-
-    for (const [key, prev] of previousMap.entries()) {
-      if (currentMap.has(key)) continue;
-      removed.push(prev.topic ? `${prev.title} (${prev.topic})` : prev.title);
-    }
-
-    const lines: string[] = [];
-    if (added.length) lines.push(`- 新增：${added.join('、')}`);
-    if (updated.length) lines.push(`- 更新：${updated.join('、')}`);
-    if (removed.length) lines.push(`- 移除：${removed.join('、')}`);
-    return lines.join('\n');
   }
 
   // 记录 OpenCode 运行时解析结果，便于定位来源与配置覆盖。

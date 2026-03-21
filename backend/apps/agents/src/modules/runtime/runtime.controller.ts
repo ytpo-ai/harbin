@@ -435,7 +435,7 @@ export class RuntimeController {
     @Query('ownerType') ownerType?: 'agent' | 'employee' | 'system',
     @Query('ownerId') ownerId?: string,
     @Query('status') status?: 'active' | 'archived' | 'closed',
-    @Query('sessionType') sessionType?: 'meeting' | 'task' | 'chat',
+    @Query('sessionType') sessionType?: 'meeting' | 'task' | 'plan' | 'chat',
     @Query('keyword') keyword?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
@@ -484,7 +484,7 @@ export class RuntimeController {
     @Body()
     body: {
       sessionId?: string;
-      sessionType?: 'meeting' | 'task' | 'chat';
+      sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
       ownerType?: 'agent' | 'employee' | 'system';
       ownerId: string;
       title: string;
