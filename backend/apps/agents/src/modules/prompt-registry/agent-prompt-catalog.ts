@@ -62,7 +62,7 @@ export const AGENT_PROMPTS = {
     scene: 'agent-runtime',
     role: 'tool-strategy-wrapper',
     buildDefaultContent: ({ toolPromptMessages }: { toolPromptMessages: string[] }) =>
-      `工具使用策略（按工具聚合）:\n\n${toolPromptMessages.join('\n\n')}`,
+      `当可能使用工具得到时，必须尝试使用工具，不能直接返回text（重要）!!!  \n使用工具工具使用策略（按工具聚合）:\n\n${toolPromptMessages.join('\n\n')}`,
   } as AgentPromptTemplate<{ toolPromptMessages: string[] }>,
 
   emptyMeetingResponseFallback: staticPrompt(

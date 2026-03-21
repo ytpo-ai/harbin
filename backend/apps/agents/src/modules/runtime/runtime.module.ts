@@ -13,7 +13,7 @@ import { AgentSession, AgentSessionSchema } from '@agent/schemas/agent-session.s
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
-import { RuntimeActionLogSyncService } from './runtime-action-log-sync.service';
+import { RuntimeActionLogIngestionService } from './runtime-action-log.service';
 import { RuntimeEiSyncService } from './runtime-ei-sync.service';
 import { RuntimeController } from './runtime.controller';
 import { MemoModule } from '../memos/memo.module';
@@ -21,6 +21,7 @@ import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.s
 import { HookRegistryService } from './hooks/hook-registry.service';
 import { HookPipelineService } from './hooks/hook-pipeline.service';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
+import { DebugTimingProvider } from '@libs/common';
 
 @Module({
   imports: [
@@ -41,21 +42,23 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
     RuntimePersistenceService,
     HookDispatcherService,
     RuntimeOrchestratorService,
-    RuntimeActionLogSyncService,
+    RuntimeActionLogIngestionService,
     RuntimeEiSyncService,
     RuntimeMemoSnapshotQueueService,
     HookRegistryService,
     HookPipelineService,
+    DebugTimingProvider,
   ],
   exports: [
     RuntimePersistenceService,
     HookDispatcherService,
     RuntimeOrchestratorService,
-    RuntimeActionLogSyncService,
+    RuntimeActionLogIngestionService,
     RuntimeEiSyncService,
     RuntimeMemoSnapshotQueueService,
     HookRegistryService,
     HookPipelineService,
+    DebugTimingProvider,
   ],
 })
 export class RuntimeModule {}

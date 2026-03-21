@@ -48,7 +48,7 @@ export class DomainContextBuilder implements ContextBlockBuilder {
       return [];
     }
 
-    return [{ role: 'system', content, timestamp: new Date() }];
+    return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
   }
 
   private resolveFallbackDomainType(input: ContextBuildInput): string {

@@ -64,6 +64,6 @@
 
 | 文件 | 功能 |
 |------|------|
-| `backend/apps/agents/src/modules/agents/agent.service.ts` | MCP Profile seed 中 Agent 管理工具引用维护 |
+| `backend/scripts/mcp-profile-seed.ts` | MCP Profile seed 数据与落库逻辑（manual-seed 入口调用） |
 | `backend/apps/agents/src/modules/agents/agent-mcp-profile.service.ts` | MCP Profile 读写、权限自动派生、role profile 能力聚合 |
-| `backend/src/shared/schemas/agent-profile.schema.ts` | MCP Profile 持久化结构（permissions/manual/derived 兼容字段） |
+| `backend/apps/agents/src/schemas/agent-profile.schema.ts` | MCP Profile 持久化结构（permissions/manual/derived 兼容字段） |

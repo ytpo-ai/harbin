@@ -306,11 +306,6 @@ export const agentService = {
     return response.data;
   },
 
-  async resetToolPermissionSetsBySystemRoles(): Promise<{ totalRoles: number; resetCount: number; missingRoleCodes: string[] }> {
-    const response = await api.post('/agents/tool-permission-sets/reset-system-roles');
-    return response.data;
-  },
-
   async getAgentRuntimeSessions(query: AgentRuntimeSessionListQuery): Promise<AgentRuntimeSessionListResponse> {
     const params = new URLSearchParams();
     Object.entries(query).forEach(([key, value]) => {

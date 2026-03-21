@@ -5,11 +5,11 @@ import { CronJob } from 'cron';
 import {
   OrchestrationSchedule,
   OrchestrationScheduleDocument,
-} from '../src/shared/schemas/orchestration-schedule.schema';
+} from '../../src/shared/schemas/orchestration-schedule.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
-} from '../src/shared/schemas/orchestration-plan.schema';
+} from '../../src/shared/schemas/orchestration-plan.schema';
 
 type SystemSeedName =
   | 'meeting-monitor'

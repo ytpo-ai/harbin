@@ -233,7 +233,7 @@ describe('AgentExecutorService system prompt ordering', () => {
     });
   });
 
-  it('does not duplicate baseline system prompts from previous messages', async () => {
+  it('does not retain legacy system prompts from previous history', async () => {
     const service = Object.create(AgentExecutorService.prototype) as any;
     service.memoService = {
       getIdentityMemos: jest.fn().mockResolvedValue([]),
@@ -248,15 +248,30 @@ describe('AgentExecutorService system prompt ordering', () => {
     service.toolService = {
       getToolsByIds: jest.fn().mockResolvedValue([]),
     };
-    service.resolveAgentPromptContent = jest.fn().mockImplementation((template: any, payload?: any) => {
-      if (payload) {
-        return template.buildDefaultContent(payload);
-      }
-      return template.buildDefaultContent();
-    });
+    service.contextStrategyService = {
+      shouldActivateSkillContent: jest.fn().mockReturnValue(false),
+    };
+    service.skillModel = {
+      findOne: jest.fn().mockReturnValue({ lean: () => ({ exec: async () => null }) }),
+    };
+    service.contextFingerprintService = {
+      resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
+    };
+    service.debugTiming = jest.fn();
 
     const workingGuideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
     const baseSystemPrompt = '你是一个专注交付结果的工程 Agent。';
+    service.contextAssembler = {
+      assemble: jest.fn().mockResolvedValue({
+        messages: [
+          { role: 'system', content: workingGuideline },
+          { role: 'system', content: baseSystemPrompt },
+          { role: 'user', content: 'hello' },
+        ],
+        systemBlockCount: 2,
+        blockMetas: [],
+      }),
+    };
 
     const messages = await service.buildMessages(
       {
@@ -294,10 +309,10 @@ describe('AgentExecutorService system prompt ordering', () => {
 
     expect(systemContents.filter((content) => content === workingGuideline)).toHaveLength(1);
     expect(systemContents.filter((content) => content === baseSystemPrompt)).toHaveLength(1);
-    expect(systemContents.filter((content) => content === '历史保留系统提示')).toHaveLength(1);
+    expect(systemContents.filter((content) => content === '历史保留系统提示')).toHaveLength(0);
   });
 
-  it('keeps system prompt cardinality stable across repeated rounds', async () => {
+  it('uses change-driven system blocks across repeated rounds', async () => {
     const service = Object.create(AgentExecutorService.prototype) as any;
     service.memoService = {
       getIdentityMemos: jest.fn().mockResolvedValue([]),
@@ -312,12 +327,16 @@ describe('AgentExecutorService system prompt ordering', () => {
     service.toolService = {
       getToolsByIds: jest.fn().mockResolvedValue([]),
     };
-    service.resolveAgentPromptContent = jest.fn().mockImplementation((template: any, payload?: any) => {
-      if (payload) {
-        return template.buildDefaultContent(payload);
-      }
-      return template.buildDefaultContent();
-    });
+    service.contextStrategyService = {
+      shouldActivateSkillContent: jest.fn().mockReturnValue(false),
+    };
+    service.skillModel = {
+      findOne: jest.fn().mockReturnValue({ lean: () => ({ exec: async () => null }) }),
+    };
+    service.contextFingerprintService = {
+      resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
+    };
+    service.debugTiming = jest.fn();
 
     const agent = {
       id: 'agent-1',
@@ -329,6 +348,25 @@ describe('AgentExecutorService system prompt ordering', () => {
       description: '新增 agent runtime 接口',
       type: 'engineering',
       priority: 'high',
+    };
+    const guideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
+    service.contextAssembler = {
+      assemble: jest
+        .fn()
+        .mockResolvedValueOnce({
+          messages: [
+            { role: 'system', content: guideline },
+            { role: 'system', content: agent.systemPrompt },
+            { role: 'user', content: 'hello' },
+          ],
+          systemBlockCount: 2,
+          blockMetas: [],
+        })
+        .mockResolvedValueOnce({
+          messages: [{ role: 'user', content: 'follow-up' }],
+          systemBlockCount: 0,
+          blockMetas: [],
+        }),
     };
 
     const firstRoundMessages = await service.buildMessages(
@@ -353,13 +391,12 @@ describe('AgentExecutorService system prompt ordering', () => {
       [],
     );
 
-    const guideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
     const round2SystemContents = secondRoundMessages
       .filter((message: any) => message.role === 'system')
       .map((message: any) => String(message.content));
 
-    expect(round2SystemContents.filter((content) => content === guideline)).toHaveLength(1);
-    expect(round2SystemContents.filter((content) => content === agent.systemPrompt)).toHaveLength(1);
+    expect(round2SystemContents.filter((content) => content === guideline)).toHaveLength(0);
+    expect(round2SystemContents.filter((content) => content === agent.systemPrompt)).toHaveLength(0);
   });
 });
 

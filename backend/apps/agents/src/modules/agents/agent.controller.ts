@@ -167,11 +167,6 @@ export class AgentController {
     return this.agentService.upsertToolPermissionSet(roleCode, body);
   }
 
-  @Post('tool-permission-sets/reset-system-roles')
-  async resetToolPermissionSetsBySystemRoles() {
-    return this.agentService.resetToolPermissionSetsBySystemRoles();
-  }
-
   @Post('mcp/migrate-tool-ids')
   async migrateMcpToolIdsToCanonical() {
     return this.agentService.migrateAllToolIdsToCanonical();

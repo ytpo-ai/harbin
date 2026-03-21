@@ -3,7 +3,7 @@ import { AgentActionLogService } from '../action-logs/agent-action-log.service';
 import { RuntimeEvent } from './contracts/runtime-event.contract';
 
 @Injectable()
-export class RuntimeActionLogSyncService {
+export class RuntimeActionLogIngestionService {
   private readonly maxPayloadChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_PAYLOAD_CHARS || 12000);
   private readonly maxToolOutputChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_MAX_TOOL_OUTPUT_CHARS || 8000);
   private readonly previewChars = Number(process.env.RUNTIME_ACTION_LOG_SYNC_PREVIEW_CHARS || 2000);

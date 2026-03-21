@@ -44,12 +44,6 @@ export class AgentService {
     private readonly agentExecutorService: AgentExecutorService,
   ) {}
 
-  // ---- seed ----
-
-  async seedMcpProfileSeeds(mode: 'sync' | 'append' = 'sync'): Promise<void> {
-    await this.agentMcpProfileService.ensureMcpProfileSeeds(mode);
-  }
-
   // ---- CRUD ----
 
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
@@ -442,10 +436,6 @@ export class AgentService {
     updates: Partial<Pick<import('./agent.types').AgentMcpMapProfile, 'tools' | 'permissions' | 'capabilities' | 'exposed' | 'description'>>,
   ) {
     return this.agentRoleService.upsertToolPermissionSet(roleCode, updates);
-  }
-
-  async resetToolPermissionSetsBySystemRoles() {
-    return this.agentRoleService.resetToolPermissionSetsBySystemRoles();
   }
 
   // ---- facade: delegate to AgentMcpProfileService ----

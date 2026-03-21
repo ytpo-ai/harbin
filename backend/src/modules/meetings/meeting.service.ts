@@ -1930,9 +1930,21 @@ export class MeetingService {
 
     const triggerSenderName = this.resolveMessageSenderDisplayName(triggerMessage, participantNameLookup);
 
+    let responseInstruction = '请对此做出回应。';
+    const isMemoRecord = this.isMemoRecordIntent(triggerMessage.content || '');
+    const isLatestSearch = this.isLatestModelSearchIntent(triggerMessage.content || '');
+    const isModelList = this.isModelListIntent(triggerMessage.content || '');
+    if (isLatestSearch && !isMemoRecord) {
+      responseInstruction +=
+        ' 当前用户命中了显式短语命令“[搜索最新openai模型]”，请优先联网搜索并返回候选模型与来源，并在结尾明确询问“是否需要添加到系统？”，未收到明确确认前不要执行模型入库。';
+    } else if (isModelList && !isMemoRecord) {
+      responseInstruction +=
+        ' 当前用户命中了显式短语命令“[当前有哪些模型]”，请先调用模型列表工具获取实时数据，再按 name/provider/model/maxTokens 结构回答，不要返回 Agent 列表。';
+    }
+
     messages.push({
       role: 'user',
-      content: `[新消息] ${triggerSenderName}: ${triggerMessage.content}\n\n请对此做出回应。`,
+      content: `[新消息] ${triggerSenderName}: ${triggerMessage.content}\n\n${responseInstruction}`,
       timestamp: new Date(),
     });
 

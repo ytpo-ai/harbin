@@ -76,10 +76,11 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
             })
           : '';
 
-      const shouldInjectToolsetSpec = await this.contextFingerprintService.resolveSystemContextBlockContent({
+      const combinedToolsetSpecContent = `${toolSpecContent}\n\n${toolStrategyContent}`;
+      const resolvedToolsetSpecContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
         scope: input.contextScope,
         blockType: 'toolset-spec',
-        fullContent: `${toolSpecContent}\n\n${toolStrategyContent}`,
+        fullContent: combinedToolsetSpecContent,
         snapshot: {
           toolIdsSorted: input.shared.assignedTools
             .map((tool) => String(tool.canonicalId || normalizeToolId(tool.id) || '').trim())
@@ -88,7 +89,16 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         },
       });
 
-      if (shouldInjectToolsetSpec) {
+      if (resolvedToolsetSpecContent) {
+        if (resolvedToolsetSpecContent !== combinedToolsetSpecContent) {
+          messages.push({
+            role: 'system',
+            content: resolvedToolsetSpecContent,
+            timestamp: new Date(),
+          });
+          return messages;
+        }
+
         messages.push({
           role: 'system',
           content: toolSpecContent,

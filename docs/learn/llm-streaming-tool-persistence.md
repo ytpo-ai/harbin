@@ -44,6 +44,7 @@ flowchart TD
   C -- stop --> O[返回 assistant 消息]
 ```
 
+
 ### 1.3 关键状态机
 
 工具 part 在 `MessageV2` 中是显式状态机：
@@ -54,6 +55,32 @@ flowchart TD
 - `error`：执行失败或中断
 
 这个状态机使 UI、恢复、审计都可以只依赖持久化数据，而不用依赖 provider 原始流。
+
+
+### 1.4 ReAct 流程图
+
+用户输入
+    ↓
+createUserMessage() → 写入 message 到存储
+    ↓
+loop() 进入 ReAct 循环
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ for (step = 0; ; step++) {                         │
+│   1. 读取历史消息 ( compacted )                   │
+│   2. 检查是否结束 ( finish !== "tool-calls" )     │
+│   3. 创建新 assistant message                     │
+│   4. processor.process() → streamText()            │
+│      ├─ reasoning-start/delta/end (推理)           │
+│      ├─ tool-call (模型决定调用工具)               │
+│      │   └─ AI SDK 自动执行工具                    │
+│      │       └─ tool-result (结果注入消息流)       │
+│      ├─ text-delta (最终回复)                     │
+│      └─ finish-step                                │
+│   5. 结果判断: continue / stop / compact          │
+└─────────────────────────────────────────────────────┘
+    ↓
+返回最后一条 assistant message
 
 ---
 

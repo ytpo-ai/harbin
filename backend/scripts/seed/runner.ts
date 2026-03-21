@@ -81,14 +81,11 @@ async function run(): Promise<void> {
     console.log('[seed] --force enabled');
   }
 
-  const needsAgentsApp = selectedSeeds.some((seed) =>
-    ['mcp-profiles', 'model-management-agent', 'builtin-tools', 'default-model-registry'].includes(seed),
-  );
+  const needsAgentsApp = selectedSeeds.some((seed) => ['model-management-agent', 'builtin-tools', 'default-model-registry'].includes(seed));
   const needsLegacyApp = selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed));
 
   const {
     AgentsAppModule,
-    AgentService,
     ToolService,
     ModelManagementService,
     getModelToken,
@@ -103,7 +100,6 @@ async function run(): Promise<void> {
     ? loadAgentsSeedDependencies()
     : {
         AgentsAppModule: null,
-        AgentService: null,
         ToolService: null,
         ModelManagementService: null,
         getModelToken: null,
@@ -132,8 +128,9 @@ async function run(): Promise<void> {
       console.log(`[seed] start ${seed}`);
 
       if (seed === 'mcp-profiles') {
-        if (!agentsApp) throw new Error('Agents app context not initialized');
-        await agentsApp.get(AgentService).seedMcpProfileSeeds(mode);
+        const { seedMcpProfiles } = localRequire('./mcp-profile');
+        const result = await seedMcpProfiles(mode);
+        console.log(`[seed] mcp-profiles: mode=${result.mode}, seeded=${result.seeded}`);
       }
 
       if (seed === 'model-management-agent') {
@@ -197,23 +194,21 @@ async function run(): Promise<void> {
 }
 
 function loadAgentsSeedDependencies() {
-  const { AgentsAppModule } = localRequire('../apps/agents/src/app.module');
-  const { AgentService } = localRequire('../apps/agents/src/modules/agents/agent.service');
-  const { ToolService } = localRequire('../apps/agents/src/modules/tools/tool.service');
-  const { ModelManagementService } = localRequire('../apps/agents/src/modules/models/model-management.service');
+  const { AgentsAppModule } = localRequire('../../apps/agents/src/app.module');
+  const { ToolService } = localRequire('../../apps/agents/src/modules/tools/tool.service');
+  const { ModelManagementService } = localRequire('../../apps/agents/src/modules/models/model-management.service');
   const { getModelToken } = localRequire('@nestjs/mongoose');
-  const { Agent } = localRequire('../apps/agents/src/schemas/agent.schema');
-  const { AVAILABLE_MODELS } = localRequire('../src/config/models');
+  const { Agent } = localRequire('../../apps/agents/src/schemas/agent.schema');
+  const { AVAILABLE_MODELS } = localRequire('../../src/config/models');
   const {
     MODEL_MANAGEMENT_AGENT_NAME,
     MODEL_MANAGEMENT_ROLE_ID,
     MODEL_MANAGEMENT_AGENT_TOOLS,
     MODEL_MANAGEMENT_AGENT_DESCRIPTION,
     MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
-  } = localRequire('../apps/agents/src/modules/agents/model-management-agent.constants');
+  } = localRequire('../../apps/agents/src/modules/agents/model-management-agent.constants');
   return {
     AgentsAppModule,
-    AgentService,
     ToolService,
     ModelManagementService,
     getModelToken,
@@ -320,9 +315,9 @@ async function seedModelManagementAgentRecord(
 }
 
 function loadLegacySeedDependencies() {
-  const { AppModule } = localRequire('../src/app.module');
-  const { seedSystemSchedules } = localRequire('./system-schedule-seed');
-  const { seedAgentRoles } = localRequire('./role-seed');
+  const { AppModule } = localRequire('../../src/app.module');
+  const { seedSystemSchedules } = localRequire('./system-schedule');
+  const { seedAgentRoles } = localRequire('./role');
   return {
     AppModule,
     seedSystemSchedules,

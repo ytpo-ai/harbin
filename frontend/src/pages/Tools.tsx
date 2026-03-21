@@ -252,16 +252,6 @@ const Tools: React.FC = () => {
     },
   );
 
-  const resetPermissionSetMutation = useMutation(agentService.resetToolPermissionSetsBySystemRoles, {
-    onSuccess: (result) => {
-      queryClient.invalidateQueries('agentToolPermissionSets');
-      const missing = (result.missingRoleCodes || []).length
-        ? `\n缺失角色: ${(result.missingRoleCodes || []).join(', ')}`
-        : '';
-      alert(`已按系统角色重置工具权限集。\n重置数量: ${result.resetCount}/${result.totalRoles}${missing}`);
-    },
-  });
-
   const updateToolMutation = useMutation(
     ({ toolId, updates }: { toolId: string; updates: Partial<Tool> }) => toolService.updateTool(toolId, updates),
     {
@@ -745,13 +735,6 @@ const Tools: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500">共 {toolPermissionSets?.length || 0} 个权限集</span>
-              <button
-                onClick={() => resetPermissionSetMutation.mutate()}
-                disabled={resetPermissionSetMutation.isLoading}
-                className="inline-flex items-center px-3 py-1.5 border border-primary-200 text-xs font-medium rounded text-primary-700 bg-primary-50 hover:bg-primary-100 disabled:opacity-50"
-              >
-                {resetPermissionSetMutation.isLoading ? '重置中...' : '按系统角色重置数据'}
-              </button>
             </div>
           </div>
           <div className="overflow-x-auto">

@@ -326,15 +326,6 @@ export class AgentRoleService {
     return this.agentMcpProfileService.upsertToolPermissionSet(roleCode, updates, roles as any);
   }
 
-  async resetToolPermissionSetsBySystemRoles(): Promise<{
-    totalRoles: number;
-    resetCount: number;
-    missingRoleCodes: string[];
-  }> {
-    const roles = await this.getAvailableRoles();
-    return this.agentMcpProfileService.resetToolPermissionSetsBySystemRoles(roles as any);
-  }
-
   // ---- private helpers ----
 
   private normalizeAgentEntity(agent: any): any {

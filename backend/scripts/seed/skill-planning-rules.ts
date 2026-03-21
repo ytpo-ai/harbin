@@ -2,17 +2,16 @@
  * Seed planningRules for the cto-rd-workflow skill.
  *
  * Usage:
- *   npx ts-node scripts/seed-skill-planning-rules.ts
- *   npx ts-node scripts/seed-skill-planning-rules.ts --dry-run
+ *   npx ts-node scripts/seed/skill-planning-rules.ts
+ *   npx ts-node scripts/seed/skill-planning-rules.ts --dry-run
  *
  * This script finds the cto-rd-workflow skill by slug and sets its
  * `planningRules` field with structured constraints that the
  * PlanningContextService and PlannerService can machine-validate.
  */
 
-import { existsSync, readFileSync } from 'fs';
-import { resolve } from 'path';
 import mongoose, { Schema } from 'mongoose';
+import { bootstrapEnv, getMongoUri } from '../shared/env-loader';
 
 // ---------------------------------------------------------------------------
 // Planning Rules definition for cto-rd-workflow
@@ -73,35 +72,7 @@ const skillSchema = new Schema(
 
 const SkillModel = mongoose.model('SkillPlanningRulesSeed', skillSchema);
 
-function loadEnvFromFile(filePath: string): void {
-  if (!existsSync(filePath)) return;
-  const content = readFileSync(filePath, 'utf8');
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith('#')) continue;
-    const eqIndex = line.indexOf('=');
-    if (eqIndex <= 0) continue;
 
-    const key = line.slice(0, eqIndex).trim();
-    if (!key || process.env[key] !== undefined) continue;
-
-    let value = line.slice(eqIndex + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    process.env[key] = value;
-  }
-}
-
-function bootstrapEnv(): void {
-  const root = resolve(__dirname, '..');
-  loadEnvFromFile(resolve(root, '.env'));
-  loadEnvFromFile(resolve(root, '.env.development'));
-  loadEnvFromFile(resolve(root, '.env.local'));
-}
 
 // ---------------------------------------------------------------------------
 // Main
@@ -110,7 +81,7 @@ function bootstrapEnv(): void {
 async function run(): Promise<void> {
   bootstrapEnv();
   const dryRun = process.argv.includes('--dry-run');
-  const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/ai-agent-team';
+  const mongoUri = getMongoUri();
 
   console.log(`[seed-skill-planning-rules] Connecting to ${mongoUri.replace(/\/\/[^@]*@/, '//***@')}`);
   await mongoose.connect(mongoUri);

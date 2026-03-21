@@ -57,7 +57,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       if (!resolvedContent) {
         return [];
       }
-      return [{ role: 'system', content: fullContent, timestamp: new Date() }];
+      return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
     }
 
     if (input.scenarioType === 'orchestration') {
@@ -86,7 +86,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       if (!resolvedContent) {
         return [];
       }
-      return [{ role: 'system', content: fullContent, timestamp: new Date() }];
+      return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
     }
 
     const chat = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
@@ -103,6 +103,6 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
     if (!resolvedContent) {
       return [];
     }
-    return [{ role: 'system', content: fullContent, timestamp: new Date() }];
+    return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
   }
 }

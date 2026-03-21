@@ -176,7 +176,6 @@ Profile 字段说明：
 
 - `GET /agents/tool-permission-sets`：按 HR 系统角色查询工具权限集
 - `PUT /agents/tool-permission-sets/:roleCode`：更新指定角色的工具权限集
-- `POST /agents/tool-permission-sets/reset-system-roles`：按系统角色默认种子重置权限集
 
 说明：
 

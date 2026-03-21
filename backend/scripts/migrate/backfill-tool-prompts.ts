@@ -62,7 +62,7 @@ function loadEnvFromFile(filePath: string): void {
 }
 
 function bootstrapEnv(): void {
-  const root = resolve(__dirname, '..');
+  const root = resolve(__dirname, '../..');
   loadEnvFromFile(resolve(root, '.env'));
   loadEnvFromFile(resolve(root, '.env.development'));
   loadEnvFromFile(resolve(root, '.env.local'));
