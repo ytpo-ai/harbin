@@ -6,21 +6,21 @@ import { IdentityMemoSnapshotItem, SystemContextFingerprintRecord, TaskInfoSnaps
 
 @Injectable()
 export class ContextFingerprintService {
+  constructor(private readonly redisService: RedisService) {}
+
   resolveSystemContextScope(
     agent: { id?: string; _id?: { toString?: () => string } },
     task: { id?: string; title?: string; type?: string; teamId?: string },
-    context?: { teamContext?: Record<string, unknown>; collaborationContext?: Record<string, unknown> },
+    context?: { collaborationContext?: Record<string, unknown> },
   ): string {
     const agentId = String(agent.id || agent._id?.toString?.() || 'unknown').trim() || 'unknown';
     const collaborationContext = (context?.collaborationContext || {}) as Record<string, unknown>;
-    const teamContext = (context?.teamContext || {}) as Record<string, unknown>;
-    const mergedContext = { ...collaborationContext, ...teamContext };
 
-    const meetingId = String(mergedContext?.meetingId || '').trim();
+    const meetingId = String(collaborationContext?.meetingId || '').trim();
     if (meetingId) {
       return `meeting:${meetingId}:agent:${agentId}`;
     }
-    const sessionId = String(mergedContext?.sessionId || '').trim();
+    const sessionId = String(collaborationContext?.sessionId || '').trim();
     if (sessionId) {
       return `session:${sessionId}:agent:${agentId}`;
     }
@@ -133,8 +133,6 @@ export class ContextFingerprintService {
     if (removed.length) lines.push(`- 移除：${removed.join('、')}`);
     return lines.join('\n');
   }
-
-  constructor(private readonly redisService: RedisService) {}
 
   private systemContextFingerprintCacheKey(scope: string, blockType: string): string {
     return `agent:system-context-fingerprint:${scope}:${blockType}`;

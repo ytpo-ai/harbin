@@ -455,20 +455,20 @@ export class AgentClientService {
   }
 
   private resolveContextType(context?: any): 'chat' | 'orchestration' {
-    const teamContext = context?.teamContext;
-    if (!teamContext) return 'chat';
-    if (teamContext.planId) return 'orchestration';
-    if (teamContext.taskId || teamContext.orchestrationTaskId || teamContext.taskKey) return 'orchestration';
+    const collaborationContext = context?.collaborationContext;
+    if (!collaborationContext) return 'chat';
+    if (collaborationContext.planId) return 'orchestration';
+    if (collaborationContext.taskId || collaborationContext.orchestrationTaskId || collaborationContext.taskKey) return 'orchestration';
     return 'chat';
   }
 
   private resolveContextId(context?: any, task?: AgentExecutionTask): string | undefined {
-    const teamContext = context?.teamContext;
-    if (teamContext?.meetingId) return teamContext.meetingId;
-    if (teamContext?.planId) return teamContext.planId;
-    if (teamContext?.taskId) return teamContext.taskId;
-    if (teamContext?.orchestrationTaskId) return teamContext.orchestrationTaskId;
-    if (teamContext?.taskKey) return teamContext.taskKey;
+    const collaborationContext = context?.collaborationContext;
+    if (collaborationContext?.meetingId) return collaborationContext.meetingId;
+    if (collaborationContext?.planId) return collaborationContext.planId;
+    if (collaborationContext?.taskId) return collaborationContext.taskId;
+    if (collaborationContext?.orchestrationTaskId) return collaborationContext.orchestrationTaskId;
+    if (collaborationContext?.taskKey) return collaborationContext.taskKey;
     if (task?.id) return task.id;
     const rawTask = task as { _id?: { toString?: () => string } } | undefined;
     return rawTask?._id?.toString ? rawTask._id.toString() : undefined;
@@ -483,8 +483,8 @@ export class AgentClientService {
     const candidates = [
       context?.agentSessionId,
       context?.sessionId,
-      context?.teamContext?.agentSessionId,
-      context?.teamContext?.sessionId,
+      context?.collaborationContext?.agentSessionId,
+      context?.collaborationContext?.sessionId,
     ];
     for (const value of candidates) {
       if (typeof value === 'string' && value.trim()) {
@@ -527,7 +527,7 @@ export class AgentClientService {
       toolId,
       agentId,
       parameters,
-      context?.teamContext?.taskId,
+      context?.collaborationContext?.taskId,
       {
         ...(context || {}),
         source,

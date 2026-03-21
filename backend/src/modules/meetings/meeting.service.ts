@@ -695,7 +695,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
           source: 'meeting.operation_log_intent',
           context: {
             executionMode: 'chat',
-            teamContext: {
+            collaborationContext: {
               meetingId,
               meetingTitle,
             },
@@ -741,7 +741,7 @@ ${meeting.agenda ? `会议议程：${meeting.agenda}` : ''}
           source: 'meeting.agent_list_intent',
           context: {
             executionMode: 'chat',
-            teamContext: {
+            collaborationContext: {
               meetingId,
               meetingTitle,
             },

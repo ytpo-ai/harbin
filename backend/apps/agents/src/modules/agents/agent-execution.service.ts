@@ -13,16 +13,6 @@ interface RuntimeExecutionOptions {
   roleCode?: string;
   executionChannel: 'native' | 'opencode';
   executionData: Record<string, unknown>;
-  teamContext?: {
-    sessionId?: string;
-    meetingId?: string;
-    agendaId?: string;
-    meetingType?: string;
-    planId?: string;
-    latestSummary?: string;
-    domainContext?: Record<string, unknown>;
-    collaborationContext?: Record<string, unknown>;
-  };
   collaborationContext?: Record<string, unknown>;
 }
 
@@ -86,23 +76,18 @@ export class AgentExecutionService {
       roleCode,
       executionChannel,
       executionData,
-      teamContext,
       collaborationContext,
     } = options;
     const mergedCollaborationContext: Record<string, unknown> = {
       ...((collaborationContext || {}) as Record<string, unknown>),
-      ...(((teamContext?.collaborationContext || {}) as Record<string, unknown>) || {}),
     };
-    const meetingId = String(teamContext?.meetingId || mergedCollaborationContext.meetingId || '').trim();
-    const sessionId =
-      String(teamContext?.sessionId || mergedCollaborationContext.sessionId || '').trim() || undefined;
-    const planId = String(teamContext?.planId || mergedCollaborationContext.planId || '').trim() || undefined;
+    const meetingId = String(mergedCollaborationContext.meetingId || '').trim();
+    const sessionId = String(mergedCollaborationContext.sessionId || '').trim() || undefined;
+    const planId = String(mergedCollaborationContext.planId || '').trim() || undefined;
     const domainContext =
-      (teamContext?.domainContext && typeof teamContext.domainContext === 'object'
-        ? teamContext.domainContext
-        : mergedCollaborationContext.domainContext && typeof mergedCollaborationContext.domainContext === 'object'
-          ? (mergedCollaborationContext.domainContext as Record<string, unknown>)
-          : undefined) || undefined;
+      mergedCollaborationContext.domainContext && typeof mergedCollaborationContext.domainContext === 'object'
+        ? (mergedCollaborationContext.domainContext as Record<string, unknown>)
+        : undefined;
     const metadata: Record<string, unknown> = {
       taskType: task.type,
       taskPriority: task.priority,
@@ -124,10 +109,9 @@ export class AgentExecutionService {
     if (meetingId) {
       metadata.meetingContext = {
         meetingId,
-        agendaId: String(teamContext?.agendaId || mergedCollaborationContext.agendaId || '').trim() || undefined,
-        meetingType: String(teamContext?.meetingType || mergedCollaborationContext.meetingType || '').trim() || undefined,
-        latestSummary:
-          String(teamContext?.latestSummary || mergedCollaborationContext.latestSummary || '').trim() || undefined,
+        agendaId: String(mergedCollaborationContext.agendaId || '').trim() || undefined,
+        meetingType: String(mergedCollaborationContext.meetingType || '').trim() || undefined,
+        latestSummary: String(mergedCollaborationContext.latestSummary || '').trim() || undefined,
       };
     }
     if (planId) {

@@ -150,7 +150,7 @@ export class AgentTaskWorker implements OnModuleInit {
           },
           {
             sessionContext: task.sessionContext || {},
-            teamContext: {
+            collaborationContext: {
               sessionId: this.readString(task.sessionContext?.sessionId),
               planId: this.readString(task.sessionContext?.planId),
               taskId: this.readString(task.sessionContext?.orchestrationTaskId) || task.id,

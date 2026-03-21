@@ -253,14 +253,14 @@ export class AgentExecutorService {
     });
 
     this.logger.log(
-      `[task_context] taskId=${taskId} previousMessages=${task.messages?.length || 0} hasTeamContext=${Boolean(context?.teamContext)}`,
+      `[task_context] taskId=${taskId} previousMessages=${task.messages?.length || 0} hasCollaborationContext=${Boolean(context?.collaborationContext)}`,
     );
 
     const agentContext: AgentContext = {
       task,
       previousMessages: task.messages || [],
       workingMemory: new Map(),
-      teamContext: context?.teamContext,
+      collaborationContext: context?.collaborationContext,
       ...context,
     };
 
@@ -389,7 +389,7 @@ export class AgentExecutorService {
       task,
       previousMessages: task.messages || [],
       workingMemory: new Map(),
-      teamContext: context?.teamContext,
+      collaborationContext: context?.collaborationContext,
       ...context,
     };
 
@@ -755,7 +755,6 @@ export class AgentExecutorService {
       roleCode,
       executionChannel,
       executionData,
-      teamContext: input.context?.teamContext,
       collaborationContext: input.context?.collaborationContext,
     });
     this.debugTiming(input.taskId, `${config.stagePrefix}.start_runtime_execution`, startRuntimeExecutionAt, {
@@ -921,7 +920,7 @@ export class AgentExecutorService {
     modelConfig: AIModel,
     runtimeContext?: RuntimeRunContext,
     executionContext?: {
-      teamContext?: any;
+      collaborationContext?: Record<string, unknown>;
       actor?: {
         employeeId?: string;
         role?: string;
@@ -1306,8 +1305,7 @@ export class AgentExecutorService {
     }
 
     const collaborationContext = (context.collaborationContext || {}) as Record<string, any>;
-    const teamContext = (context.teamContext || {}) as Record<string, any>;
-    const mergedContext = { ...collaborationContext, ...teamContext };
+    const mergedContext = { ...collaborationContext };
     const sessionContext = (context.sessionContext || {}) as Record<string, any>;
     const scenarioType: 'orchestration' | 'meeting' | 'chat' =
       String(mergedContext.meetingId || '').trim()
@@ -1323,7 +1321,6 @@ export class AgentExecutorService {
       enabledSkills,
       scenarioType,
       contextScope: this.contextFingerprintService.resolveSystemContextScope(agent, task, {
-        teamContext,
         collaborationContext,
       }),
       identityMemos,
@@ -1334,7 +1331,7 @@ export class AgentExecutorService {
       },
       persistedContext: {
         domainContext: sessionContext.domainContext || mergedContext.domainContext,
-        collaborationContext: sessionContext.collaborationContext || context.collaborationContext || context.teamContext,
+        collaborationContext: sessionContext.collaborationContext || context.collaborationContext,
         runSummaries: sessionContext.runSummaries,
       },
     });

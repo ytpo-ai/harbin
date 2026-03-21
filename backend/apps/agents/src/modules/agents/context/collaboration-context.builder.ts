@@ -10,12 +10,12 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
     if (input.scenarioType === 'orchestration' || input.scenarioType === 'meeting') {
       return true;
     }
-    return Boolean(input.persistedContext?.collaborationContext || input.context.teamContext);
+    return Boolean(input.persistedContext?.collaborationContext || input.context.collaborationContext);
   }
 
   async build(input: ContextBuildInput): Promise<ChatMessage[]> {
     if (input.scenarioType === 'meeting') {
-      const meeting = (input.persistedContext?.collaborationContext || input.context.teamContext || {}) as Record<string, unknown>;
+      const meeting = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
       return [{
         role: 'system',
         content: `协作上下文(会议): ${JSON.stringify({
@@ -33,7 +33,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
     }
 
     if (input.scenarioType === 'orchestration') {
-      const orchestration = (input.persistedContext?.collaborationContext || input.context.teamContext || {}) as Record<string, unknown>;
+      const orchestration = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
       return [{
         role: 'system',
         content: `协作上下文(编排): ${JSON.stringify({
@@ -50,7 +50,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       }];
     }
 
-    const chat = (input.persistedContext?.collaborationContext || input.context.teamContext || {}) as Record<string, unknown>;
+    const chat = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
     if (!Object.keys(chat).length) return [];
     return [{
       role: 'system',

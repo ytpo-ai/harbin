@@ -58,7 +58,7 @@ export class InnerMessageAgentRuntimeBridgeService {
           updatedAt: new Date(),
         },
         {
-          teamContext: {
+          collaborationContext: {
             ...(this.resolveTeamContext(payload) || {}),
           },
           sessionContext: {

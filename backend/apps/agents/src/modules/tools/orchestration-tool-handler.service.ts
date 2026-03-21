@@ -13,25 +13,25 @@ export class OrchestrationToolHandler {
     organizationId?: string;
     executionAgentId?: string;
   } {
-    const teamContext = executionContext?.teamContext || {};
+    const collaborationContext = executionContext?.collaborationContext || {};
     return {
       meetingId:
-        (typeof teamContext.meetingId === 'string' && teamContext.meetingId) ||
+        (typeof collaborationContext.meetingId === 'string' && collaborationContext.meetingId) ||
         (typeof executionContext?.teamId === 'string' && executionContext.teamId) ||
         undefined,
       initiatorId:
-        (typeof teamContext.initiatorId === 'string' && teamContext.initiatorId) ||
-        (typeof teamContext.triggeredBy === 'string' && teamContext.triggeredBy) ||
+        (typeof collaborationContext.initiatorId === 'string' && collaborationContext.initiatorId) ||
+        (typeof collaborationContext.triggeredBy === 'string' && collaborationContext.triggeredBy) ||
         undefined,
       taskType:
         executionContext?.taskType ||
-        (typeof teamContext.meetingType === 'string' ? 'meeting' : undefined),
+        (typeof collaborationContext.meetingType === 'string' ? 'meeting' : undefined),
       organizationId:
-        (typeof teamContext.organizationId === 'string' && teamContext.organizationId) ||
-        (typeof teamContext.orgId === 'string' && teamContext.orgId) ||
+        (typeof collaborationContext.organizationId === 'string' && collaborationContext.organizationId) ||
+        (typeof collaborationContext.orgId === 'string' && collaborationContext.orgId) ||
         undefined,
       executionAgentId:
-        (typeof teamContext.agentId === 'string' && teamContext.agentId) ||
+        (typeof collaborationContext.agentId === 'string' && collaborationContext.agentId) ||
         undefined,
     };
   }

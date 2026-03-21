@@ -23,7 +23,7 @@ export class NativeAgentExecutorEngine implements AgentExecutorEngine {
       input.modelConfig,
       input.runtimeContext,
       {
-        teamContext: input.context?.teamContext,
+        collaborationContext: input.context?.collaborationContext,
         actor: input.context?.actor,
         taskType: input.task.type,
         teamId: input.task.teamId,

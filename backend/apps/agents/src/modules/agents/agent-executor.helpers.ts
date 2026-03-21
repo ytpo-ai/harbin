@@ -20,7 +20,7 @@ export function resolveLatestUserContent(task: Task, messages: ChatMessage[]): s
 export function isMeetingLikeTask(
   task: Task,
   context?: {
-    teamContext?: any;
+    collaborationContext?: any;
     taskType?: string;
   },
 ): boolean {

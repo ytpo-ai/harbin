@@ -19,7 +19,7 @@ export interface ResolvedOpenCodeRuntime {
 }
 
 export interface NativeToolExecutionContext {
-  teamContext?: any;
+  collaborationContext?: Record<string, unknown>;
   actor?: {
     employeeId?: string;
     role?: string;

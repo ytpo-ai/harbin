@@ -109,10 +109,6 @@ export class PlannerService {
 
     try {
       const response = await this.agentClientService.executeTask(plannerAgentId, task, {
-        teamContext: {
-          mode: 'planning',
-          format: 'json',
-        },
         collaborationContext: {
           mode: 'planning',
           format: 'json',

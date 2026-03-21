@@ -9,10 +9,10 @@ export class MeetingToolHandler {
   private resolveMeetingContext(executionContext?: ToolExecutionContext): {
     meetingId?: string;
   } {
-    const teamContext = executionContext?.teamContext || {};
+    const collaborationContext = executionContext?.collaborationContext || {};
     return {
       meetingId:
-        (typeof teamContext.meetingId === 'string' && teamContext.meetingId) ||
+        (typeof collaborationContext.meetingId === 'string' && collaborationContext.meetingId) ||
         (typeof executionContext?.teamId === 'string' && executionContext.teamId) ||
         undefined,
     };

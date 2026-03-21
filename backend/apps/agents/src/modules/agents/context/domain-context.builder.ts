@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ChatMessage } from '../../../../../../src/shared/types';
+import { inferDomainTypeFromText } from '../../../../../../src/shared/domain-context/domain-type.util';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
 
 @Injectable()
@@ -35,19 +36,8 @@ export class DomainContextBuilder implements ContextBlockBuilder {
   }
 
   private resolveFallbackDomainType(input: ContextBuildInput): string {
-    const text = `${input.task.title || ''} ${input.task.description || ''} ${input.task.type || ''}`.toLowerCase();
-    if (['research', 'analysis', '调研', '分析'].some((signal) => text.includes(signal))) {
-      return 'research';
-    }
-    if (['prd', 'roadmap', 'product', '产品', '需求'].some((signal) => text.includes(signal))) {
-      return 'product_planning';
-    }
-    if (['ops', 'incident', 'runbook', '运维', '告警'].some((signal) => text.includes(signal))) {
-      return 'operations';
-    }
-    if (['develop', 'code', 'implement', 'fix', '开发', '编码', '修复'].some((signal) => text.includes(signal))) {
-      return 'development';
-    }
-    return 'general';
+    return inferDomainTypeFromText({
+      prompt: `${input.task.title || ''} ${input.task.description || ''} ${input.task.type || ''}`,
+    });
   }
 }
