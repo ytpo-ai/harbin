@@ -23,13 +23,76 @@ type SessionPartView = Pick<
   timestamp: Date;
 };
 
+type SessionMessageView = Pick<
+  AgentMessage,
+  | 'id'
+  | 'runId'
+  | 'taskId'
+  | 'parentMessageId'
+  | 'role'
+  | 'sequence'
+  | 'content'
+  | 'status'
+  | 'metadata'
+  | 'modelID'
+  | 'providerID'
+  | 'finish'
+  | 'tokens'
+  | 'cost'
+  | 'stepIndex'
+> & {
+  timestamp: Date;
+};
+
 export type AgentSessionDetailView = AgentSession & {
+  messages: SessionMessageView[];
   parts: SessionPartView[];
+};
+
+type InitialSystemMessageRecord = {
+  content: string;
+  metadata?: Record<string, unknown>;
 };
 
 @Injectable()
 export class RuntimePersistenceService {
   private readonly maxSessionMessages = Number(process.env.AGENT_SESSION_MAX_MESSAGES || 1200);
+
+  private normalizeInitialSystemMessages(input: unknown): InitialSystemMessageRecord[] {
+    if (!Array.isArray(input)) {
+      return [];
+    }
+    const seen = new Set<string>();
+    const normalized: InitialSystemMessageRecord[] = [];
+    for (const item of input) {
+      if (typeof item === 'string') {
+        const content = item.trim();
+        if (!content || seen.has(content)) {
+          continue;
+        }
+        seen.add(content);
+        normalized.push({ content });
+        continue;
+      }
+      if (!item || typeof item !== 'object') {
+        continue;
+      }
+      const content = String((item as { content?: unknown }).content || '').trim();
+      if (!content || seen.has(content)) {
+        continue;
+      }
+      const metadata = (item as { metadata?: unknown }).metadata;
+      const normalizedMetadata = metadata && typeof metadata === 'object'
+        ? ({ ...(metadata as Record<string, unknown>) } as Record<string, unknown>)
+        : undefined;
+      seen.add(content);
+      normalized.push({
+        content,
+        ...(normalizedMetadata ? { metadata: normalizedMetadata } : {}),
+      });
+    }
+    return normalized;
+  }
 
   private normalizeMessageContent(content: unknown): string {
     if (content === null || content === undefined) {
@@ -49,6 +112,10 @@ export class RuntimePersistenceService {
     @InjectModel(AgentSession.name)
     private readonly sessionModel: Model<AgentSessionDocument>,
   ) {}
+
+  private normalizeTokenValue(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
 
   async ensureSession(input: {
     sessionId?: string;
@@ -91,7 +158,7 @@ export class RuntimePersistenceService {
             status: 'active',
             runIds: [],
             memoIds: [],
-            messages: [],
+            messageIds: [],
             metadata: input.metadata || {},
           },
           $set: {
@@ -217,22 +284,32 @@ export class RuntimePersistenceService {
     title: string,
     options?: {
       currentTaskId?: string;
+      orchestrationRunId?: string;
       domainContext?: AgentSession['domainContext'];
       collaborationContext?: AgentSession['collaborationContext'];
     },
   ): Promise<AgentSession> {
+    const orchRunId = options?.orchestrationRunId;
+
+    // Build lookup filter: isolate by orchestrationRunId when present
+    const lookupFilter: Record<string, unknown> = {
+      'planContext.linkedPlanId': planId,
+      ownerId: agentId,
+      sessionType: 'plan',
+    };
+    if (orchRunId) {
+      lookupFilter['planContext.orchestrationRunId'] = orchRunId;
+    }
+
     const existing = await this.sessionModel
-      .findOne({
-        'planContext.linkedPlanId': planId,
-        ownerId: agentId,
-        sessionType: 'plan',
-      })
+      .findOne(lookupFilter)
       .sort({ createdAt: -1 })
       .exec();
 
-    const planContext = {
+    const planContext: Record<string, unknown> = {
       linkedPlanId: planId,
       currentTaskId: options?.currentTaskId,
+      ...(orchRunId ? { orchestrationRunId: orchRunId } : {}),
     };
 
     if (existing) {
@@ -251,7 +328,9 @@ export class RuntimePersistenceService {
       return this.sessionModel.findById(existing._id).exec() as Promise<AgentSession>;
     }
 
-    const sessionId = `plan-${planId}-${agentId}`;
+    const sessionId = orchRunId
+      ? `plan-${planId}-${agentId}-run-${orchRunId}`
+      : `plan-${planId}-${agentId}`;
     return this.ensureSession({
       sessionId,
       sessionType: 'plan',
@@ -377,6 +456,20 @@ export class RuntimePersistenceService {
     content?: unknown;
     status?: 'pending' | 'streaming' | 'completed' | 'error';
     metadata?: Record<string, unknown>;
+    parentMessageId?: string;
+    modelID?: string;
+    providerID?: string;
+    finish?: 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'paused' | 'max-rounds';
+    tokens?: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      total?: number;
+    };
+    cost?: number;
+    stepIndex?: number;
   }): Promise<AgentMessage> {
     const messageContent = this.normalizeMessageContent(input.content);
     const message = new this.messageModel({
@@ -387,55 +480,98 @@ export class RuntimePersistenceService {
     });
     const saved = await message.save();
     if (input.sessionId) {
-      await this.appendMessageToSession(input.sessionId, {
-        id: saved.id,
-        runId: input.runId,
-        taskId: input.taskId,
-        role: input.role,
-        content: messageContent,
-        status: input.status || 'completed',
-        metadata: input.metadata,
-      });
+      await this.appendMessageIdToSession(input.sessionId, saved.id);
     }
     return saved;
   }
 
-  async appendMessageToSession(
-    sessionId: string,
+  async bulkCreateMessageWithParts(
     message: {
-      id?: string;
-      runId?: string;
+      runId: string;
+      agentId: string;
+      sessionId?: string;
       taskId?: string;
       role: 'system' | 'user' | 'assistant' | 'tool';
+      sequence: number;
       content?: unknown;
       status?: 'pending' | 'streaming' | 'completed' | 'error';
       metadata?: Record<string, unknown>;
+      parentMessageId?: string;
+      modelID?: string;
+      providerID?: string;
+      finish?: 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'paused' | 'max-rounds';
+      tokens?: {
+        input?: number;
+        output?: number;
+        reasoning?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        total?: number;
+      };
+      cost?: number;
+      stepIndex?: number;
     },
-  ): Promise<void> {
-    const now = new Date();
-    const messageContent = this.normalizeMessageContent(message.content);
-    const payload = {
-      id: message.id,
-      runId: message.runId,
-      taskId: message.taskId,
-      role: message.role,
-      content: messageContent,
-      status: message.status || 'completed',
-      metadata: message.metadata,
-      timestamp: now,
+    parts: Array<{
+      sequence: number;
+      type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
+      status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+      toolId?: string;
+      toolCallId?: string;
+      input?: unknown;
+      output?: unknown;
+      content?: string;
+      metadata?: Record<string, unknown>;
+      error?: string;
+      startedAt?: Date;
+      endedAt?: Date;
+    }>,
+  ): Promise<{ message: AgentMessage; parts: AgentPart[] }> {
+    const createdMessage = await this.createMessage(message);
+    const createdParts = await Promise.all(
+      parts.map((part) =>
+        this.createPart({
+          runId: message.runId,
+          messageId: createdMessage.id,
+          sequence: part.sequence,
+          type: part.type,
+          status: part.status,
+          toolId: part.toolId,
+          toolCallId: part.toolCallId,
+          input: part.input,
+          output: part.output,
+          content: part.content,
+          metadata: part.metadata,
+          error: part.error,
+          startedAt: part.startedAt,
+          endedAt: part.endedAt,
+        }),
+      ),
+    );
+
+    return {
+      message: createdMessage,
+      parts: createdParts,
     };
+  }
+
+  async appendMessageIdToSession(sessionId: string, messageId: string): Promise<void> {
+    const normalizedMessageId = String(messageId || '').trim();
+    if (!normalizedMessageId) {
+      return;
+    }
+    const now = new Date();
     await this.sessionModel
       .updateOne(
         { id: sessionId },
         {
           $push: {
-            messages:
+            messageIds:
               this.maxSessionMessages > 0
                 ? {
-                    $each: [payload],
+                    $each: [normalizedMessageId],
                     $slice: -this.maxSessionMessages,
                   }
-                : payload,
+                : normalizedMessageId,
           },
           $set: {
             lastActiveAt: now,
@@ -454,75 +590,36 @@ export class RuntimePersistenceService {
     }>,
   ): Promise<void> {
     if (!messages.length) return;
+    const normalized = messages
+      .map((msg) => ({
+        role: msg.role,
+        content: normalizeSystemContent(msg.content),
+        metadata: msg.metadata,
+      }))
+      .filter((msg) => msg.content.length > 0)
+      .slice(0, 10);
 
-    const existingSession = await this.sessionModel
-      .findOne({ id: sessionId })
-      .select({ messages: { $slice: -300 } })
-      .lean<{ messages?: AgentSession['messages'] }>()
-      .exec();
+    if (!normalized.length) return;
 
-    const existingSystemContents = new Set<string>();
-    const existingContextKeys = new Set<string>();
-    const existingMessages = Array.isArray(existingSession?.messages) ? existingSession.messages : [];
-    for (const msg of existingMessages) {
-      if (msg?.role === 'system' && typeof msg?.content === 'string' && msg.content.trim().length > 0) {
-        const normalized = normalizeSystemContent(msg.content);
-        existingSystemContents.add(normalized);
-        const contextKey = buildSystemContextKey(msg.content);
-        if (contextKey) {
-          existingContextKeys.add(contextKey);
-        }
-      }
-    }
-
-    const dedupedMessages = messages.filter((msg) => {
-      const normalized = normalizeSystemContent(msg.content);
-      if (!normalized) return false;
-      if (existingSystemContents.has(normalized)) {
-        return false;
-      }
-
-      const contextKey = buildSystemContextKey(msg.content);
-      if (contextKey && existingContextKeys.has(contextKey)) {
-        return false;
-      }
-
-      existingSystemContents.add(normalized);
-      if (contextKey) {
-        existingContextKeys.add(contextKey);
-      }
-      return true;
-    });
-
-    if (!dedupedMessages.length) {
-      return;
-    }
-
-    const now = new Date();
-    const payloads = dedupedMessages.map((msg) => ({
-      id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      role: msg.role,
-      content: msg.content,
-      status: 'completed' as const,
-      metadata: msg.metadata,
-      timestamp: now,
-    }));
-    await this.sessionModel
-      .updateOne(
-        { id: sessionId },
-        {
-          $push: {
-            messages: {
-              $each: payloads,
-              $slice: -this.maxSessionMessages,
-            },
+    const runId = `system-run-${sessionId}`;
+    await Promise.all(
+      normalized.map((msg, index) =>
+        this.createMessage({
+          runId,
+          agentId: 'system',
+          sessionId,
+          role: 'system',
+          sequence: index + 1,
+          content: msg.content,
+          status: 'completed',
+          metadata: {
+            ...(msg.metadata || {}),
+            source: 'runtime.appendSystemMessagesToSession',
+            contextKey: buildSystemContextKey(msg.content),
           },
-          $set: {
-            lastActiveAt: now,
-          },
-        },
-      )
-      .exec();
+        }),
+      ),
+    );
   }
 
   async getSessionMemoSnapshot(sessionId: string): Promise<{
@@ -560,36 +657,140 @@ export class RuntimePersistenceService {
     if (!session) return null;
 
     const runTaskMap = new Map<string, string | undefined>();
+    const runStartedAtMap = new Map<string, Date | undefined>();
+    const runInitialSystemMessagesMap = new Map<string, InitialSystemMessageRecord[]>();
     const runIds = Array.isArray(session.runIds)
       ? session.runIds.filter((runId): runId is string => typeof runId === 'string' && runId.trim().length > 0)
       : [];
     if (runIds.length > 0) {
       const runs = await this.runModel
         .find({ id: { $in: runIds } })
-        .select({ id: 1, taskId: 1 })
-        .lean<Array<{ id: string; taskId?: string }>>()
+        .select({ id: 1, taskId: 1, metadata: 1, startedAt: 1, createdAt: 1 })
+        .lean<Array<{ id: string; taskId?: string; metadata?: Record<string, unknown>; startedAt?: Date; createdAt?: Date }>>()
         .exec();
       for (const run of runs) {
         runTaskMap.set(run.id, run.taskId);
+        runStartedAtMap.set(run.id, run.startedAt || run.createdAt);
+        const initialSystemMessages = this.normalizeInitialSystemMessages(run.metadata?.initialSystemMessages);
+        runInitialSystemMessagesMap.set(run.id, initialSystemMessages);
       }
     }
 
-    const messageIds = (Array.isArray(session.messages) ? session.messages : [])
-      .map((message) => message?.id)
+    const messageIds = (Array.isArray(session.messageIds) ? session.messageIds : [])
       .filter((messageId): messageId is string => typeof messageId === 'string' && messageId.trim().length > 0);
 
-    if (!messageIds.length) {
-      return {
-        ...(session as AgentSession),
-        parts: [],
-      };
+    const messages = messageIds.length
+      ? await this.messageModel
+          .find({ id: { $in: messageIds } })
+          .sort({ createdAt: 1, sequence: 1 })
+          .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
+          .exec()
+      : [];
+
+    const supplementalMessages = runIds.length
+      ? await this.messageModel
+          .find({
+            runId: { $in: runIds },
+            id: { $nin: messageIds },
+            role: { $in: ['system', 'user'] },
+          })
+          .sort({ createdAt: 1, sequence: 1 })
+          .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
+          .exec()
+      : [];
+
+    const mergedMessageMap = new Map<string, AgentMessage & { createdAt?: Date; updatedAt?: Date }>();
+    for (const message of messages) {
+      mergedMessageMap.set(message.id, message);
+    }
+    for (const message of supplementalMessages) {
+      mergedMessageMap.set(message.id, message);
+    }
+    const mergedMessages = Array.from(mergedMessageMap.values()).sort((a, b) => {
+      const at = (a.updatedAt || a.createdAt || new Date(0)).getTime();
+      const bt = (b.updatedAt || b.createdAt || new Date(0)).getTime();
+      if (at !== bt) return at - bt;
+      return (a.sequence ?? 0) - (b.sequence ?? 0);
+    });
+
+    const projectedMessages: SessionMessageView[] = mergedMessages.map((message) => ({
+      id: message.id,
+      runId: message.runId,
+      taskId: message.taskId,
+      parentMessageId: message.parentMessageId,
+      role: message.role,
+      sequence: message.sequence,
+      content: message.content,
+      status: message.status,
+      metadata: message.metadata,
+      modelID: message.modelID,
+      providerID: message.providerID,
+      finish: message.finish,
+      tokens: message.tokens
+        ? {
+            input: this.normalizeTokenValue(message.tokens.input),
+            output: this.normalizeTokenValue(message.tokens.output),
+            reasoning: this.normalizeTokenValue(message.tokens.reasoning),
+            cacheRead: this.normalizeTokenValue(message.tokens.cacheRead),
+            cacheWrite: this.normalizeTokenValue(message.tokens.cacheWrite),
+            total: this.normalizeTokenValue(message.tokens.total),
+          }
+        : undefined,
+      cost: this.normalizeTokenValue(message.cost),
+      stepIndex: this.normalizeTokenValue(message.stepIndex),
+      timestamp: message.updatedAt || message.createdAt || new Date(),
+    }));
+
+    const existingSystemFingerprint = new Set(
+      projectedMessages
+        .filter((message) => message.role === 'system')
+        .map((message) => `${message.runId || 'run:unknown'}::${message.content}`),
+    );
+
+    for (const runId of runIds) {
+      const initialSystemMessages = runInitialSystemMessagesMap.get(runId) || [];
+      if (!initialSystemMessages.length) {
+        continue;
+      }
+      initialSystemMessages.forEach((message, index) => {
+        const fingerprint = `${runId}::${message.content}`;
+        if (existingSystemFingerprint.has(fingerprint)) {
+          return;
+        }
+        existingSystemFingerprint.add(fingerprint);
+        projectedMessages.push({
+          id: `virtual-system-${runId}-${index + 1}`,
+          runId,
+          taskId: runTaskMap.get(runId),
+          role: 'system',
+          sequence: index + 1,
+          content: message.content,
+          status: 'completed',
+          metadata: {
+            ...(message.metadata || {}),
+            source: 'runtime.run.metadata.initialSystemMessages',
+          },
+          timestamp: runStartedAtMap.get(runId) || new Date(),
+        });
+      });
     }
 
-    const parts = await this.partModel
-      .find({ messageId: { $in: messageIds } })
-      .sort({ createdAt: 1, sequence: 1 })
-      .lean<Array<AgentPart & { createdAt?: Date; updatedAt?: Date }>>()
-      .exec();
+    projectedMessages.sort((a, b) => {
+      const at = (a.timestamp || new Date(0)).getTime();
+      const bt = (b.timestamp || new Date(0)).getTime();
+      if (at !== bt) return at - bt;
+      return (a.sequence ?? 0) - (b.sequence ?? 0);
+    });
+
+    const partMessageIds = mergedMessages.map((message) => message.id);
+
+    const parts = partMessageIds.length
+      ? await this.partModel
+          .find({ messageId: { $in: partMessageIds } })
+          .sort({ createdAt: 1, sequence: 1 })
+          .lean<Array<AgentPart & { createdAt?: Date; updatedAt?: Date }>>()
+          .exec()
+      : [];
 
     const projectedParts: SessionPartView[] = parts.map((part) => ({
       id: part.id,
@@ -612,8 +813,93 @@ export class RuntimePersistenceService {
 
     return {
       ...(session as AgentSession),
+      messages: projectedMessages,
       parts: projectedParts,
     };
+  }
+
+  async listSessionMessagesById(sessionId: string): Promise<SessionMessageView[]> {
+    const session = await this.sessionModel.findOne({ id: sessionId }).lean<AgentSession>().exec();
+    if (!session) {
+      return [];
+    }
+    const messageIds = Array.isArray(session.messageIds)
+      ? session.messageIds.filter((messageId): messageId is string => typeof messageId === 'string' && messageId.trim().length > 0)
+      : [];
+    if (!messageIds.length) {
+      return [];
+    }
+    const messages = await this.messageModel
+      .find({ id: { $in: messageIds } })
+      .sort({ createdAt: 1, sequence: 1 })
+      .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
+      .exec();
+    return messages.map((message) => ({
+      id: message.id,
+      runId: message.runId,
+      taskId: message.taskId,
+      parentMessageId: message.parentMessageId,
+      role: message.role,
+      sequence: message.sequence,
+      content: message.content,
+      status: message.status,
+      metadata: message.metadata,
+      modelID: message.modelID,
+      providerID: message.providerID,
+      finish: message.finish,
+      tokens: message.tokens,
+      cost: message.cost,
+      stepIndex: message.stepIndex,
+      timestamp: message.updatedAt || message.createdAt || new Date(),
+    }));
+  }
+
+  async listMessageParts(messageId: string): Promise<AgentPart[]> {
+    return this.partModel.find({ messageId }).sort({ createdAt: 1, sequence: 1 }).exec();
+  }
+
+  async listRunMessagesWithParts(runId: string): Promise<Array<SessionMessageView & { parts: AgentPart[] }>> {
+    const messages = await this.messageModel
+      .find({ runId })
+      .sort({ createdAt: 1, sequence: 1 })
+      .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
+      .exec();
+    if (!messages.length) {
+      return [];
+    }
+    const messageIds = messages.map((message) => message.id);
+    const parts = await this.partModel
+      .find({ messageId: { $in: messageIds } })
+      .sort({ createdAt: 1, sequence: 1 })
+      .lean<AgentPart[]>()
+      .exec();
+
+    const partMap = new Map<string, AgentPart[]>();
+    for (const part of parts) {
+      const list = partMap.get(part.messageId) || [];
+      list.push(part);
+      partMap.set(part.messageId, list);
+    }
+
+    return messages.map((message) => ({
+      id: message.id,
+      runId: message.runId,
+      taskId: message.taskId,
+      parentMessageId: message.parentMessageId,
+      role: message.role,
+      sequence: message.sequence,
+      content: message.content,
+      status: message.status,
+      metadata: message.metadata,
+      modelID: message.modelID,
+      providerID: message.providerID,
+      finish: message.finish,
+      tokens: message.tokens,
+      cost: message.cost,
+      stepIndex: message.stepIndex,
+      timestamp: message.updatedAt || message.createdAt || new Date(),
+      parts: partMap.get(message.id) || [],
+    }));
   }
 
   async listSessions(options?: {
@@ -733,7 +1019,7 @@ export class RuntimePersistenceService {
     runId: string;
     messageId: string;
     sequence: number;
-    type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event';
+    type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
     status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
     toolId?: string;
     toolCallId?: string;

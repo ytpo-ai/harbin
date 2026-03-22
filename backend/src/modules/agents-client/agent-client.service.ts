@@ -849,6 +849,7 @@ export class AgentClientService {
     title: string,
     options?: {
       currentTaskId?: string;
+      orchestrationRunId?: string;
       domainContext?: {
         domainType?: string;
         description?: string;

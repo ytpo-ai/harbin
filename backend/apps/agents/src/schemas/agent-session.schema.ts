@@ -29,32 +29,12 @@ export class AgentSession {
   @Prop({ type: [String], default: [] })
   memoIds: string[];
 
-  @Prop({
-    type: [{
-      id: { type: String },
-      runId: { type: String },
-      taskId: { type: String },
-      role: { type: String, enum: ['system', 'user', 'assistant', 'tool'], required: true },
-      content: { type: String, required: true },
-      status: { type: String, enum: ['pending', 'streaming', 'completed', 'error'], default: 'completed' },
-      metadata: { type: Object },
-      timestamp: { type: Date, default: Date.now },
-    }],
-    default: [],
-  })
-  messages: {
-    id?: string;
-    runId?: string;
-    taskId?: string;
-    role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string;
-    status?: 'pending' | 'streaming' | 'completed' | 'error';
-    metadata?: Record<string, unknown>;
-    timestamp: Date;
-  }[];
+  @Prop({ type: [String], default: [] })
+  messageIds: string[];
 
   @Prop(raw({
     linkedPlanId: { type: String },
+    orchestrationRunId: { type: String },
     currentTaskId: { type: String },
     completedTaskIds: [{ type: String }],
     linkedTaskId: { type: String },
@@ -64,6 +44,7 @@ export class AgentSession {
   }))
   planContext?: {
     linkedPlanId?: string;
+    orchestrationRunId?: string;
     currentTaskId?: string;
     completedTaskIds?: string[];
     linkedTaskId?: string;
@@ -170,3 +151,4 @@ AgentSessionSchema.index({ ownerType: 1, ownerId: 1, createdAt: -1 });
 AgentSessionSchema.index({ status: 1, lastActiveAt: -1 });
 AgentSessionSchema.index({ 'planContext.linkedPlanId': 1, 'planContext.linkedTaskId': 1 });
 AgentSessionSchema.index({ 'planContext.linkedPlanId': 1, ownerId: 1, sessionType: 1 });
+AgentSessionSchema.index({ 'planContext.linkedPlanId': 1, 'planContext.orchestrationRunId': 1, ownerId: 1, sessionType: 1 });

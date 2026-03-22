@@ -154,6 +154,7 @@ export class AgentTaskWorker implements OnModuleInit {
               sessionId: this.readString(task.sessionContext?.sessionId),
               planId: this.readString(task.sessionContext?.planId),
               taskId: this.readString(task.sessionContext?.orchestrationTaskId) || task.id,
+              orchestrationRunId: this.readString(task.sessionContext?.runId),
               domainContext:
                 task.sessionContext?.domainContext && typeof task.sessionContext.domainContext === 'object'
                   ? (task.sessionContext.domainContext as Record<string, unknown>)
@@ -294,6 +295,8 @@ export class AgentTaskWorker implements OnModuleInit {
           attempt: nextAttempt,
         },
       });
+
+      await this.safeMarkAgentIdle(task.agentId, task.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'unknown');
       const latestTask = await this.taskService.getTaskById(taskId);
@@ -366,10 +369,21 @@ export class AgentTaskWorker implements OnModuleInit {
           attempt: nextAttempt,
         },
       });
+
+      await this.safeMarkAgentIdle(task.agentId, task.id);
     } finally {
       if (serveId) {
         this.serveRouter.markServeRelease(serveId);
       }
+    }
+  }
+
+  private async safeMarkAgentIdle(agentId: string, taskId: string): Promise<void> {
+    try {
+      await this.taskService.markAgentTaskToolIdle(agentId, taskId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(`[agent_runtime_status] failed to set idle taskId=${taskId} agentId=${agentId}: ${message}`);
     }
   }
 

@@ -63,9 +63,7 @@ import {
 import { AgentRoleTier, canDelegateAcrossTier, normalizeAgentRoleTier } from '../../shared/role-tier';
 import { inferDomainTypeFromText } from '../../shared/domain-context/domain-type.util';
 
-const FULLY_EDITABLE_PLAN_STATUSES: OrchestrationPlanStatus[] = ['draft', 'planned', 'failed'];
-const PARTIALLY_EDITABLE_PLAN_STATUSES: OrchestrationPlanStatus[] = ['paused'];
-const PARTIALLY_EDITABLE_TASK_STATUSES: OrchestrationTaskStatus[] = ['pending', 'assigned', 'blocked', 'failed', 'cancelled'];
+const FULLY_EDITABLE_PLAN_STATUSES: OrchestrationPlanStatus[] = ['draft', 'planned'];
 
 @Injectable()
 export class OrchestrationService {
@@ -424,8 +422,8 @@ export class OrchestrationService {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Async create plan failed';
-      await this.setPlanStatus(planId, 'failed');
-      await this.setPlanSessionStatus(planId, 'failed');
+      await this.setPlanStatus(planId, 'draft');
+      await this.setPlanSessionStatus(planId, 'draft');
       await this.orchestrationPlanModel
         .updateOne(
           { _id: planId },
@@ -447,7 +445,17 @@ export class OrchestrationService {
   }
 
   async listPlans(): Promise<OrchestrationPlan[]> {
-    return this.orchestrationPlanModel.find({}).sort({ createdAt: -1 }).exec();
+    const plans = await this.orchestrationPlanModel.find({}).sort({ createdAt: -1 }).exec();
+    return plans.map((plan) => {
+      const normalizedStatus = this.normalizePlanStatus(plan.status, plan.taskIds?.length);
+      if (normalizedStatus === plan.status) {
+        return plan;
+      }
+      return {
+        ...plan.toObject(),
+        status: normalizedStatus,
+      } as OrchestrationPlan;
+    });
   }
 
   async replanPlan(planId: string, dto: ReplanPlanDto): Promise<any> {
@@ -455,7 +463,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    if (plan.status === 'running') {
+    if (await this.isPlanRunActive(planId)) {
       throw new BadRequestException('Plan is running and cannot be replanned');
     }
 
@@ -701,8 +709,8 @@ export class OrchestrationService {
       return this.getPlanById(planId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Async replan failed';
-      await this.setPlanStatus(planId, 'failed');
-      await this.setPlanSessionStatus(planId, 'failed');
+      await this.setPlanStatus(planId, 'draft');
+      await this.setPlanSessionStatus(planId, 'draft');
       await this.orchestrationPlanModel
         .updateOne(
           { _id: planId },
@@ -766,7 +774,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    if (plan.status === 'running') {
+    if (await this.isPlanRunActive(planId)) {
       throw new BadRequestException('Plan is running and cannot be edited');
     }
 
@@ -884,8 +892,11 @@ export class OrchestrationService {
         .sort({ startedAt: -1 })
         .exec();
 
+    const normalizedStatus = this.normalizePlanStatus(plan.status, tasks.length);
+
     return {
       ...plan.toObject(),
+      status: normalizedStatus,
       tasks,
       planSession,
       lastRun,
@@ -938,7 +949,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan);
+    await this.assertPlanEditable(plan);
 
     const title = String(dto.title || '').trim();
     const description = String(dto.description || '').trim();
@@ -1032,7 +1043,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan, task);
+    await this.assertPlanEditable(plan, task);
 
     if (task.status === 'in_progress' || task.status === 'completed' || task.status === 'waiting_human') {
       throw new BadRequestException(`Task in "${task.status}" status cannot be deleted`);
@@ -1091,7 +1102,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan);
+    await this.assertPlanEditable(plan);
 
     const nextTaskIds = this.normalizeTaskIdList(dto.taskIds);
     const tasks = await this.listTasksByPlan(planId);
@@ -1150,7 +1161,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan);
+    await this.assertPlanEditable(plan);
 
     const updates = Array.isArray(dto.updates) ? dto.updates : [];
     if (!updates.length) {
@@ -1186,7 +1197,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan);
+    await this.assertPlanEditable(plan);
 
     const sourceTask = await this.orchestrationTaskModel
       .findOne({ _id: sourceTaskId, planId })
@@ -1292,8 +1303,28 @@ export class OrchestrationService {
       this.runPlan(planId, dto)
         .catch(async (error) => {
           const message = error instanceof Error ? error.message : 'Async plan run failed';
-          await this.setPlanStatus(planId, 'failed');
-          await this.setPlanSessionStatus(planId, 'failed');
+
+          const latestRunningRun = await this.orchestrationRunModel
+            .findOne({ planId, status: 'running' })
+            .sort({ startedAt: -1 })
+            .exec();
+          if (latestRunningRun) {
+            await this.orchestrationRunModel
+              .updateOne(
+                { _id: this.getEntityId(latestRunningRun as any) },
+                {
+                  $set: {
+                    status: 'failed',
+                    error: message,
+                    completedAt: new Date(),
+                  },
+                },
+              )
+              .exec();
+          }
+
+          await this.setPlanStatus(planId, 'planned');
+          await this.setPlanSessionStatus(planId, 'planned');
           await this.orchestrationPlanModel
             .updateOne(
               { _id: planId },
@@ -1341,8 +1372,8 @@ export class OrchestrationService {
       await this.tryUpdateRequirementStatus(requirementId, 'in_progress', 'orchestration plan started');
     }
 
-    await this.setPlanStatus(planId, 'running');
-    await this.setPlanSessionStatus(planId, 'running');
+    await this.setPlanStatus(planId, 'planned');
+    await this.setPlanSessionStatus(planId, 'planned');
 
     const startedAt = new Date();
     const run = await new this.orchestrationRunModel({
@@ -1460,12 +1491,7 @@ export class OrchestrationService {
         .exec();
     }
 
-    const nextPlanStatus: OrchestrationPlanStatus =
-      runStatus === 'completed'
-        ? 'completed'
-        : stats.waitingHumanTasks > 0
-          ? 'paused'
-          : 'failed';
+    const nextPlanStatus: OrchestrationPlanStatus = 'planned';
     await this.setPlanStatus(planId, nextPlanStatus);
     await this.setPlanSessionStatus(planId, nextPlanStatus);
     await this.refreshPlanStats(planId);
@@ -1478,7 +1504,7 @@ export class OrchestrationService {
       completedAt,
     });
 
-    if (requirementId && nextPlanStatus === 'completed') {
+    if (requirementId && runStatus === 'completed') {
       await this.tryUpdateRequirementStatus(requirementId, 'review', 'orchestration plan passed auto review gate');
       await this.tryUpdateRequirementStatus(requirementId, 'done', 'orchestration plan completed');
     }
@@ -1961,7 +1987,8 @@ export class OrchestrationService {
       throw new NotFoundException('Task not found');
     }
 
-    const execution = await this.executeTaskNode(planId, refreshedTask);
+    const debugRunId = `debug-${Date.now()}`;
+    const execution = await this.executeTaskNode(planId, refreshedTask, { orchestrationRunId: debugRunId });
 
     await this.refreshPlanStats(planId);
     const latest = await this.getPlanById(planId);
@@ -1997,7 +2024,7 @@ export class OrchestrationService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
-    this.assertPlanEditable(plan, task);
+    await this.assertPlanEditable(plan, task);
 
     if (task.status === 'in_progress' || task.status === 'completed') {
       throw new BadRequestException(`Task in "${task.status}" status cannot be edited`);
@@ -2085,6 +2112,7 @@ export class OrchestrationService {
   private async executeTaskNode(
     planId: string,
     task: OrchestrationTask,
+    options?: { orchestrationRunId?: string },
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const taskId = this.getEntityId(task as Record<string, any>);
     const assignment = task.assignment || { executorType: 'unassigned' as const };
@@ -2252,6 +2280,7 @@ export class OrchestrationService {
           task.title,
           {
             currentTaskId: taskId,
+            orchestrationRunId: options?.orchestrationRunId,
             domainContext: planDomainContext,
             collaborationContext,
           },
@@ -2268,6 +2297,7 @@ export class OrchestrationService {
         sessionContext: {
           source: 'orchestration',
           planId,
+          runId: options?.orchestrationRunId,
           orchestrationTaskId: taskId,
           sessionId: requestedSessionId,
           domainContext: planDomainContext,
@@ -2618,6 +2648,7 @@ export class OrchestrationService {
           runTask.title,
           {
             currentTaskId: runTaskId,
+            orchestrationRunId: runId,
             domainContext: planDomainContext,
             collaborationContext,
           },
@@ -2864,9 +2895,18 @@ export class OrchestrationService {
     if (tasks.some((task) => task.status === 'failed')) {
       return 'failed';
     }
-    if (tasks.some((task) => task.status === 'waiting_human')) {
-      return 'failed';
+
+    if (tasks.some((task) => task.status === 'in_progress')) {
+      return 'running';
     }
+    if (tasks.some((task) => task.status === 'waiting_human')) {
+      return 'running';
+    }
+
+    if (tasks.some((task) => task.status === 'pending' || task.status === 'assigned' || task.status === 'blocked')) {
+      return 'running';
+    }
+
     return 'failed';
   }
 
@@ -2939,7 +2979,7 @@ export class OrchestrationService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
-    const scopeId = task.planId || `schedule-${taskId}`;
+    const scopeId = task.planId || '';
     return this.executeTaskNode(scopeId, task);
   }
 
@@ -2950,26 +2990,25 @@ export class OrchestrationService {
     return task.planId;
   }
 
-  private assertPlanEditable(
+  private async assertPlanEditable(
     plan: OrchestrationPlan,
-    task?: OrchestrationTask,
-  ): 'full' | 'partial' {
-    if (FULLY_EDITABLE_PLAN_STATUSES.includes(plan.status)) {
-      return 'full';
-    }
-    if (PARTIALLY_EDITABLE_PLAN_STATUSES.includes(plan.status)) {
-      if (!task) {
-        throw new BadRequestException(`Plan in "${plan.status}" status allows task-level partial editing only`);
-      }
-      if (!PARTIALLY_EDITABLE_TASK_STATUSES.includes(task.status)) {
-        throw new BadRequestException(
-          `Task in "${task.status}" status cannot be edited when plan is "${plan.status}"`,
-        );
-      }
-      return 'partial';
+    _task?: OrchestrationTask,
+  ): Promise<'full'> {
+    const planId = this.getEntityId(plan as any);
+    if (planId && await this.isPlanRunActive(planId)) {
+      throw new BadRequestException('Plan is running and cannot be edited');
     }
 
-    throw new BadRequestException(`Plan in "${plan.status}" status cannot be edited`);
+    const normalizedStatus = this.normalizePlanStatus(plan.status, plan.taskIds?.length);
+    if (FULLY_EDITABLE_PLAN_STATUSES.includes(normalizedStatus)) {
+      return 'full';
+    }
+
+    if (normalizedStatus === 'drafting') {
+      throw new BadRequestException('Plan is drafting and cannot be edited');
+    }
+
+    throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot be edited`);
   }
 
   private normalizeTaskIdList(taskIds?: string[]): string[] {
@@ -3485,19 +3524,7 @@ export class OrchestrationService {
 
   private derivePlanStatus(tasks: OrchestrationTask[]): OrchestrationPlanStatus {
     if (!tasks.length) {
-      return 'failed';
-    }
-    if (tasks.every((task) => task.status === 'completed')) {
-      return 'completed';
-    }
-    if (tasks.some((task) => task.status === 'failed')) {
-      return 'failed';
-    }
-    if (tasks.some((task) => task.status === 'waiting_human')) {
-      return 'paused';
-    }
-    if (tasks.some((task) => task.status === 'in_progress')) {
-      return 'running';
+      return 'draft';
     }
     return 'planned';
   }
@@ -3522,16 +3549,7 @@ export class OrchestrationService {
     planId: string,
     status: OrchestrationPlanStatus,
   ): Promise<void> {
-    const mappedStatus =
-      status === 'completed'
-        ? 'completed'
-        : status === 'failed'
-          ? 'failed'
-          : status === 'paused'
-            ? 'active'
-            : status === 'running'
-              ? 'active'
-              : 'active';
+    const mappedStatus = status === 'drafting' ? 'active' : 'active';
     await this.planSessionModel
       .updateOne(
         { planId },
@@ -3542,6 +3560,25 @@ export class OrchestrationService {
         },
       )
       .exec();
+  }
+
+  private normalizePlanStatus(status?: string, taskCount = 0): OrchestrationPlanStatus {
+    if (status === 'draft' || status === 'drafting' || status === 'planned') {
+      return status;
+    }
+    if (status === 'failed' && taskCount === 0) {
+      return 'draft';
+    }
+    return 'planned';
+  }
+
+  private async isPlanRunActive(planId: string): Promise<boolean> {
+    const runningRun = await this.orchestrationRunModel
+      .findOne({ planId, status: 'running' })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+    return Boolean(runningRun);
   }
 
   private async updatePlanSessionTask(
@@ -3558,6 +3595,10 @@ export class OrchestrationService {
       agentRunId?: string;
     },
   ): Promise<void> {
+    if (!String(planId || '').trim()) {
+      return;
+    }
+
     const setPayload: Record<string, any> = {
       'tasks.$.updatedAt': new Date(),
     };

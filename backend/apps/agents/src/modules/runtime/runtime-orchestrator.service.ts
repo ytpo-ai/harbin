@@ -18,6 +18,13 @@ import { LifecycleHookContext } from './hooks/lifecycle-hook.types';
 import { MemoService } from '../memos/memo.service';
 import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 import { DebugTimingProvider } from '@libs/common';
+import { RedisService } from '@libs/infra';
+import {
+  AGENT_TASK_RUNTIME_STATUS_INDEX_KEY,
+  AGENT_TASK_RUNTIME_STATUS_TTL_SECONDS,
+  AgentTaskRuntimeToolStatus,
+  buildAgentRuntimeStatusKey,
+} from '../agent-tasks/agent-task-runtime-status.util';
 
 export interface RuntimeRunContext {
   runId: string;
@@ -45,20 +52,42 @@ export class RuntimeOrchestratorService {
     });
   }
 
-  private extractInitialSystemMessages(metadata: Record<string, unknown>): string[] {
+  private extractInitialSystemMessages(
+    metadata: Record<string, unknown>,
+  ): Array<{ content: string; metadata?: Record<string, unknown> }> {
     const raw = metadata?.initialSystemMessages;
     if (!Array.isArray(raw)) {
       return [];
     }
     const seen = new Set<string>();
     return raw
-      .map((item) => String(item || '').trim())
-      .filter((item) => item.length > 0)
+      .map((item) => {
+        if (typeof item === 'string') {
+          const content = item.trim();
+          return content ? { content } : null;
+        }
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const content = String((item as { content?: unknown }).content || '').trim();
+        if (!content) {
+          return null;
+        }
+        const metadata = (item as { metadata?: unknown }).metadata;
+        const normalizedMetadata = metadata && typeof metadata === 'object'
+          ? ({ ...(metadata as Record<string, unknown>) } as Record<string, unknown>)
+          : undefined;
+        return {
+          content,
+          ...(normalizedMetadata ? { metadata: normalizedMetadata } : {}),
+        };
+      })
+      .filter((item): item is { content: string; metadata?: Record<string, unknown> } => Boolean(item))
       .filter((item) => {
-        if (seen.has(item)) {
+        if (seen.has(item.content)) {
           return false;
         }
-        seen.add(item);
+        seen.add(item.content);
         return true;
       });
   }
@@ -70,6 +99,7 @@ export class RuntimeOrchestratorService {
     private readonly memoService: MemoService,
     private readonly memoSnapshotQueue: RuntimeMemoSnapshotQueueService,
     private readonly debugTimingProvider: DebugTimingProvider,
+    private readonly redisService: RedisService,
   ) {}
 
   async startRun(rawInput: RuntimeStartRunInput): Promise<RuntimeRunContext> {
@@ -78,6 +108,7 @@ export class RuntimeOrchestratorService {
     const runOrTaskId = input.taskId || input.sessionId || `ephemeral-${input.agentId}`;
     const metadataRecord = { ...(input.metadata || {}) } as Record<string, unknown>;
     const initialSystemMessages = this.extractInitialSystemMessages(metadataRecord);
+    metadataRecord.initialSystemMessages = initialSystemMessages;
 
     let ensuredSession;
     const meetingContext = metadataRecord?.meetingContext as
@@ -105,12 +136,16 @@ export class RuntimeOrchestratorService {
         },
       );
     } else if (planId) {
+      const orchestrationRunId = typeof (collaborationContext as any)?.orchestrationRunId === 'string'
+        ? (collaborationContext as any).orchestrationRunId
+        : undefined;
       ensuredSession = await this.persistence.getOrCreatePlanSession(
         planId,
         input.agentId,
         input.taskTitle,
         {
           currentTaskId: input.taskId,
+          orchestrationRunId,
           domainContext: domainContext as any,
           collaborationContext,
         },
@@ -572,29 +607,53 @@ export class RuntimeOrchestratorService {
 
   async completeRun(rawInput: RuntimeCompleteRunInput & { traceId: string }): Promise<void> {
     const input = RuntimeCompleteRunInputSchema.parse(rawInput);
-    const assistantMessage = await this.persistence.createMessage({
-      runId: input.runId,
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      taskId: input.taskId,
-      role: 'assistant',
-      sequence: 2,
-      content: input.assistantContent,
-      status: 'completed',
-      metadata: input.metadata,
-    });
-
-    const part = await this.persistence.createPart({
-      runId: input.runId,
-      messageId: assistantMessage.id,
-      sequence: 1,
-      type: 'text',
-      status: 'completed',
-      content: input.assistantContent,
-      startedAt: new Date(),
-      endedAt: new Date(),
-      metadata: input.metadata,
-    });
+    const latestAssistantMessage = await this.persistence.findLatestMessageByRunAndRole(input.runId, 'assistant');
+    if (!latestAssistantMessage) {
+      const latestUserMessage = await this.persistence.findLatestMessageByRunAndRole(input.runId, 'user');
+      await this.persistence.bulkCreateMessageWithParts(
+        {
+          runId: input.runId,
+          agentId: input.agentId,
+          sessionId: input.sessionId,
+          taskId: input.taskId,
+          role: 'assistant',
+          sequence: 2,
+          content: input.assistantContent,
+          status: 'completed',
+          parentMessageId: latestUserMessage?.id,
+          finish: 'stop',
+          metadata: {
+            source: 'runtime.completeRun.fallback',
+          },
+        },
+        [
+          {
+            sequence: 1,
+            type: 'step_start',
+            status: 'completed',
+            metadata: { source: 'runtime.completeRun.fallback' },
+            startedAt: new Date(),
+            endedAt: new Date(),
+          },
+          {
+            sequence: 2,
+            type: 'text',
+            status: 'completed',
+            content: input.assistantContent,
+            startedAt: new Date(),
+            endedAt: new Date(),
+          },
+          {
+            sequence: 3,
+            type: 'step_finish',
+            status: 'completed',
+            metadata: { finish: 'stop' },
+            startedAt: new Date(),
+            endedAt: new Date(),
+          },
+        ],
+      );
+    }
 
     await this.persistence.updateRun(input.runId, {
       status: 'completed',
@@ -624,8 +683,6 @@ export class RuntimeOrchestratorService {
       sessionId: input.sessionId,
       runId: input.runId,
       taskId: input.taskId,
-      messageId: assistantMessage.id,
-      partId: part.id,
       traceId: rawInput.traceId,
       sequence: 999999,
       payload: {
@@ -736,15 +793,12 @@ export class RuntimeOrchestratorService {
       metadata: input.metadata,
     });
 
-    await this.emitEvent({
+    await this.emitToolEventWithRuntimeStatus({
       eventType: 'tool.pending',
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      runId: input.runId,
-      taskId: input.taskId,
+      status: 'pending',
+      runtimeInput: input,
       messageId: rawInput.messageId,
       partId: part.id,
-      toolCallId: input.toolCallId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: this.buildToolEventPayload({
@@ -774,15 +828,12 @@ export class RuntimeOrchestratorService {
       throw new Error(`Invalid tool part transition pending->running for partId=${rawInput.partId}`);
     }
 
-    await this.emitEvent({
+    await this.emitToolEventWithRuntimeStatus({
       eventType: 'tool.running',
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      runId: input.runId,
-      taskId: input.taskId,
+      status: 'running',
+      runtimeInput: input,
       messageId: rawInput.messageId,
       partId: rawInput.partId,
-      toolCallId: input.toolCallId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: this.buildToolEventPayload({
@@ -812,15 +863,12 @@ export class RuntimeOrchestratorService {
       }
     }
 
-    await this.emitEvent({
+    await this.emitToolEventWithRuntimeStatus({
       eventType: 'tool.completed',
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      runId: input.runId,
-      taskId: input.taskId,
+      status: 'completed',
+      runtimeInput: input,
       messageId: rawInput.messageId,
-      partId: partId,
-      toolCallId: input.toolCallId,
+      partId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: {
@@ -858,15 +906,12 @@ export class RuntimeOrchestratorService {
       }
     }
 
-    await this.emitEvent({
+    await this.emitToolEventWithRuntimeStatus({
       eventType: 'tool.failed',
-      agentId: input.agentId,
-      sessionId: input.sessionId,
-      runId: input.runId,
-      taskId: input.taskId,
+      status: 'failed',
+      runtimeInput: input,
       messageId: rawInput.messageId,
       partId,
-      toolCallId: input.toolCallId,
       traceId: rawInput.traceId,
       sequence: rawInput.sequence,
       payload: {
@@ -879,6 +924,59 @@ export class RuntimeOrchestratorService {
         error: input.error,
       },
     });
+  }
+
+  private async emitToolEventWithRuntimeStatus(input: {
+    eventType: 'tool.pending' | 'tool.running' | 'tool.completed' | 'tool.failed';
+    status: AgentTaskRuntimeToolStatus;
+    runtimeInput: RuntimeToolEventInput;
+    messageId: string;
+    partId?: string;
+    traceId: string;
+    sequence: number;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const runtimeInput = input.runtimeInput;
+    await this.emitEvent({
+      eventType: input.eventType,
+      agentId: runtimeInput.agentId,
+      sessionId: runtimeInput.sessionId,
+      runId: runtimeInput.runId,
+      taskId: runtimeInput.taskId,
+      messageId: input.messageId,
+      partId: input.partId,
+      toolCallId: runtimeInput.toolCallId,
+      traceId: input.traceId,
+      sequence: input.sequence,
+      payload: input.payload,
+    });
+
+    await this.recordAgentToolRuntimeStatus(runtimeInput, input.status);
+  }
+
+  private async recordAgentToolRuntimeStatus(input: RuntimeToolEventInput, status: AgentTaskRuntimeToolStatus): Promise<void> {
+    const agentId = String(input.agentId || '').trim();
+    if (!agentId || !this.redisService?.isReady?.()) {
+      return;
+    }
+
+    const payload = {
+      agentId,
+      taskId: input.taskId ? String(input.taskId).trim() : undefined,
+      toolId: String(input.toolId || '').trim(),
+      toolName: String(input.toolName || input.toolId || '').trim(),
+      status,
+      updatedAt: new Date().toISOString(),
+      source: 'agent_task_tool' as const,
+    };
+
+    try {
+      await this.redisService.set(buildAgentRuntimeStatusKey(agentId), JSON.stringify(payload), AGENT_TASK_RUNTIME_STATUS_TTL_SECONDS);
+      await this.redisService.sadd(AGENT_TASK_RUNTIME_STATUS_INDEX_KEY, [agentId]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(`[agent_runtime_status] failed to write status agentId=${agentId} status=${status}: ${message}`);
+    }
   }
 
   private buildToolEventPayload(input: {

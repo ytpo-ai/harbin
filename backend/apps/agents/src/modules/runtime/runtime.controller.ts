@@ -561,6 +561,7 @@ export class RuntimeController {
       agentId: string;
       title: string;
       currentTaskId?: string;
+      orchestrationRunId?: string;
       domainContext?: {
         domainType?: string;
         description?: string;
@@ -577,6 +578,7 @@ export class RuntimeController {
       body.title,
       {
         currentTaskId: body.currentTaskId,
+        orchestrationRunId: body.orchestrationRunId,
         domainContext: body.domainContext,
         collaborationContext: body.collaborationContext,
       },
@@ -614,20 +616,64 @@ export class RuntimeController {
     @Param('id') id: string,
     @Body()
     body: {
+      messageId?: string;
+      runId?: string;
+      agentId?: string;
       role: 'system' | 'user' | 'assistant' | 'tool';
       content?: unknown;
       status?: 'pending' | 'streaming' | 'completed' | 'error';
       metadata?: Record<string, unknown>;
     },
   ) {
-    await this.persistence.appendMessageToSession(id, {
-      role: body.role,
-      content: body.content ?? '',
-      status: body.status,
-      metadata: body.metadata,
-    });
+    const messageId = String(body.messageId || '').trim();
+    if (messageId) {
+      await this.persistence.appendMessageIdToSession(id, messageId);
+    } else if (body.runId && body.agentId) {
+      await this.persistence.createMessage({
+        runId: body.runId,
+        agentId: body.agentId,
+        sessionId: id,
+        role: body.role,
+        sequence: 0,
+        content: body.content ?? '',
+        status: body.status,
+        metadata: body.metadata,
+      });
+    } else {
+      throw new NotFoundException('messageId or (runId + agentId) is required');
+    }
     const session = await this.persistence.getSessionById(id);
     return session;
+  }
+
+  @Get('sessions/:sessionId/messages')
+  async getSessionMessages(@Param('sessionId') sessionId: string) {
+    const messages = await this.persistence.listSessionMessagesById(sessionId);
+    return {
+      sessionId,
+      total: messages.length,
+      messages,
+    };
+  }
+
+  @Get('messages/:messageId/parts')
+  async getMessageParts(@Param('messageId') messageId: string) {
+    const parts = await this.persistence.listMessageParts(messageId);
+    return {
+      messageId,
+      total: parts.length,
+      parts,
+    };
+  }
+
+  @Get('runs/:runId/messages')
+  async getRunMessages(@Param('runId') runId: string) {
+    const messages = await this.persistence.listRunMessagesWithParts(runId);
+    return {
+      runId,
+      total: messages.length,
+      messages,
+    };
   }
 
   @Post('sessions/:id/archive')
