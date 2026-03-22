@@ -28,6 +28,7 @@ import MessageCenter from './pages/MessageCenter';
 import PromptRegistry from './pages/PromptRegistry';
 import PromptRegistryDetail from './pages/PromptRegistryDetail';
 import UiManagement from './pages/UiManagement';
+import Usage from './pages/Usage';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -73,6 +74,7 @@ function App() {
             <Route path="/agents/:agentId" element={<ProtectedRoute><AgentDetail /></ProtectedRoute>} />
             <Route path="/tools" element={<ProtectedRoute><Tools /></ProtectedRoute>} />
             <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
+            <Route path="/usage" element={<ProtectedRoute><Usage /></ProtectedRoute>} />
             <Route path="/hr" element={<ProtectedRoute><EmployeeManagement /></ProtectedRoute>} />
             <Route path="/roles" element={<ProtectedRoute><HRManagement /></ProtectedRoute>} />
             <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />

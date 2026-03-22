@@ -2,6 +2,16 @@ import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common'
 import { ModelManagementService, ModelSettings, FounderModelSelection } from './model-management.service';
 import { AIModel } from '../../../../../src/shared/types';
 
+type ModelPayload = AIModel & {
+  cost?: {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    reasoning?: number;
+  };
+};
+
 @Controller('model-management')
 export class ModelManagementController {
   constructor(private readonly modelManagementService: ModelManagementService) {}
@@ -27,12 +37,12 @@ export class ModelManagementController {
   }
 
   @Post('models')
-  createModel(@Body() modelData: Omit<AIModel, 'id'>) {
+  createModel(@Body() modelData: Omit<ModelPayload, 'id'>) {
     return this.modelManagementService.createModel(modelData);
   }
 
   @Put('models/:id')
-  updateModel(@Param('id') id: string, @Body() updates: Partial<AIModel>) {
+  updateModel(@Param('id') id: string, @Body() updates: Partial<ModelPayload>) {
     return this.modelManagementService.updateModel(id, updates);
   }
 

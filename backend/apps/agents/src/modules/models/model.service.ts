@@ -1,13 +1,71 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AIV2Provider, AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider } from '@libs/models';
+import { AIV2Provider, AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider, ProviderChatResult } from '@libs/models';
 import { AIModel, ChatMessage } from '../../../../../src/shared/types';
+import { ModelPricingService } from './model-pricing.service';
+
+export interface ModelChatResult {
+  response: string;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    totalTokens: number;
+  };
+  finishReason?: 'stop' | 'tool_calls' | 'length' | 'content_filter';
+  cost?: number;
+}
 
 @Injectable()
 export class ModelService {
   private readonly logger = new Logger(ModelService.name);
   private providers = new Map<string, BaseAIProvider>();
 
-  constructor() {
+  private normalizeFinishReason(reason: unknown): ModelChatResult['finishReason'] {
+    if (typeof reason !== 'string' || !reason.trim()) {
+      return undefined;
+    }
+    const normalized = reason.trim().toLowerCase();
+    if (normalized === 'stop' || normalized === 'tool_calls' || normalized === 'length' || normalized === 'content_filter') {
+      return normalized as ModelChatResult['finishReason'];
+    }
+    if (normalized === 'tool-calls') {
+      return 'tool_calls';
+    }
+    return undefined;
+  }
+
+  private normalizeUsage(providerName: string, usage: ProviderChatResult['usage']): ModelChatResult['usage'] {
+    if (!usage) {
+      return undefined;
+    }
+
+    const inputTokens = Number(usage.inputTokens || 0);
+    const outputTokens = Number(usage.outputTokens || 0);
+    const reasoningTokens = Number(usage.reasoningTokens || 0) || undefined;
+    const cacheRead = Number(usage.cachedInputTokens || 0) || undefined;
+    const cacheWrite = Number(usage.cacheWriteTokens || 0) || undefined;
+
+    const cacheInInputProviders = new Set(['openai', 'openrouter']);
+    const includesCacheInInput = cacheInInputProviders.has(providerName.toLowerCase());
+    const adjustedInputTokens = includesCacheInInput
+      ? Math.max(0, inputTokens - (cacheRead || 0) - (cacheWrite || 0))
+      : inputTokens;
+
+    const totalTokens = adjustedInputTokens + outputTokens + (reasoningTokens || 0);
+
+    return {
+      inputTokens: adjustedInputTokens,
+      outputTokens,
+      reasoningTokens,
+      cacheRead,
+      cacheWrite,
+      totalTokens,
+    };
+  }
+
+  constructor(private readonly modelPricingService: ModelPricingService) {
     // 注册所有可用的模型提供商
   }
 
@@ -126,9 +184,32 @@ export class ModelService {
     return provider;
   }
 
-  async chat(modelId: string, messages: ChatMessage[], options?: any): Promise<string> {
+  async chat(modelId: string, messages: ChatMessage[], options?: any): Promise<ModelChatResult> {
     const provider = this.getProvider(modelId);
-    return provider.chat(messages, options);
+    const result = await provider.chatWithMeta(messages, options);
+    const providerName = String(provider.modelInfo.provider || '').toLowerCase();
+    const usage = this.normalizeUsage(providerName, result.usage);
+
+    let cost = typeof result.cost === 'number' && Number.isFinite(result.cost) ? result.cost : undefined;
+    if (cost === undefined && usage) {
+      const pricing = await this.modelPricingService.getPricing(providerName, provider.modelInfo.model);
+      if (pricing) {
+        cost = this.modelPricingService.calculateCost(pricing, {
+          input: usage.inputTokens,
+          output: usage.outputTokens,
+          reasoning: usage.reasoningTokens,
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+        });
+      }
+    }
+
+    return {
+      response: result.response,
+      usage,
+      finishReason: this.normalizeFinishReason(result.finishReason),
+      cost,
+    };
   }
 
   async streamingChat(

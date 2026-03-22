@@ -75,6 +75,7 @@
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
 | `system/ui_management` | UI 管理（图标管理） | `docs/feature/SYSTEM_UI_MANAGEMENT.md` |
+| `system/usage_billing` | 用量与计费 | `docs/feature/USAGE_BILLING.md` |
 
 ---
 
@@ -99,6 +100,7 @@
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
 | `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |
 | `docs/feature/SYSTEM_UI_MANAGEMENT.md` | system/ui_management |
+| `docs/feature/USAGE_BILLING.md` | system/usage_billing |
 
 ### 待完善的功能文档
 

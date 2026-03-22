@@ -409,6 +409,15 @@ Internal Message MCP 参数约定：
 - `POST /model-management/select-for-founder/:founderType`：为核心角色设置模型
 - `GET /model-management/founder-models`：获取核心角色模型
 
+## Usage Billing（`/usage`）
+
+- `GET /usage/overview?period=week|month`：费用、Token、请求数、活跃模型总览（含上一周期对比）
+- `GET /usage/daily-trend?from=&to=`：按日返回费用趋势
+- `GET /usage/by-agent?from=&to=&limit=10`：按 Agent 聚合排行
+- `GET /usage/by-model?from=&to=&limit=10`：按模型聚合排行
+- `GET /usage/pricing/status`：定价缓存状态（最后刷新时间、模型条数、覆盖条数）
+- `POST /usage/pricing/refresh`：手动刷新 models.dev 定价缓存
+
 ## 备注
 
 - Agent 权限与可见性以角色为准：`agent.roleId -> role.code -> MCP profile`。
@@ -440,6 +449,9 @@ Internal Message MCP 参数约定：
 - `GET /agents/runtime/metrics`：查询 runtime hooks/outbox 指标（发布量、失败量、队列状态、死信摘要）
 - `GET /agents/runtime/sessions?ownerType=&ownerId=&status=&sessionType=&keyword=&page=&pageSize=`：分页查询 session（支持按 Agent 过滤）
 - `GET /agents/runtime/sessions/:id`：查询单个 session 详情（含消息轨迹）
+- `GET /agents/runtime/sessions/:sessionId/messages`：按 session 查询消息列表（基于 `messageIds` 引用反查）
+- `GET /agents/runtime/messages/:messageId/parts`：查询单条 message 的 parts 轨迹
+- `GET /agents/runtime/runs/:runId/messages`：查询 run 下全部消息及其 parts
 - `GET /agents/runtime/outbox/dead-letter?limit=200&organizationId=&runId=&eventType=`：导出失败事件（死信视图，支持筛选；返回 `total/returned/hasMore`）
 - `POST /agents/runtime/outbox/dead-letter/requeue`：批量重投死信（支持 `eventIds` 或筛选条件 + `limit`，可 `dryRun`）
 - `GET /agents/runtime/maintenance/audits?limit=&action=&organizationId=&batchId=`：查询运行维护审计日志

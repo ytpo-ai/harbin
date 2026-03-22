@@ -25,6 +25,16 @@ export interface AddModelResult {
   duplicateBy?: 'id' | 'provider_model';
 }
 
+type ModelCost = {
+  input?: number;
+  output?: number;
+  cache_read?: number;
+  cache_write?: number;
+  reasoning?: number;
+};
+
+type ModelPayload = AIModel & { cost?: ModelCost };
+
 @Injectable()
 export class ModelManagementService {
   private readonly logger = new Logger(ModelManagementService.name);
@@ -69,7 +79,7 @@ export class ModelManagementService {
     return docs.map((item) => this.toAIModel(item));
   }
 
-  async createModel(modelData: Omit<AIModel, 'id'> & { id?: string }): Promise<AIModel> {
+  async createModel(modelData: Omit<ModelPayload, 'id'> & { id?: string }): Promise<ModelPayload> {
     const result = await this.addModelToSystem(modelData);
     if (!result.created) {
       if (result.duplicateBy === 'id') {
@@ -83,7 +93,7 @@ export class ModelManagementService {
     return result.model;
   }
 
-  async addModelToSystem(modelData: Omit<AIModel, 'id'> & { id?: string }): Promise<AddModelResult> {
+  async addModelToSystem(modelData: Omit<ModelPayload, 'id'> & { id?: string }): Promise<AddModelResult> {
     const { id, ...modelWithoutId } = modelData;
     const normalizedProvider = this.normalizeProvider(modelWithoutId.provider);
     const normalizedModel = String(modelWithoutId.model || '').trim().toLowerCase();
@@ -123,7 +133,7 @@ export class ModelManagementService {
       };
     }
 
-    const payload: AIModel = {
+    const payload: ModelPayload = {
       name: normalizedName,
       description: normalizedDescription,
       availability: normalizedAvailability,
@@ -134,6 +144,7 @@ export class ModelManagementService {
       maxTokens: modelWithoutId.maxTokens,
       temperature: modelWithoutId.temperature,
       topP: modelWithoutId.topP,
+      cost: this.normalizeCost(modelWithoutId.cost),
       reasoning: this.normalizeReasoning(modelWithoutId.reasoning),
     };
 
@@ -177,7 +188,7 @@ export class ModelManagementService {
     }
   }
 
-  async updateModel(modelId: string, updates: Partial<AIModel>): Promise<AIModel> {
+  async updateModel(modelId: string, updates: Partial<ModelPayload>): Promise<ModelPayload> {
     const existing = await this.modelRegistryModel.findOne({ id: modelId }).lean().exec();
     if (!existing) {
       throw new NotFoundException(`Model with ID ${modelId} not found`);
@@ -185,7 +196,7 @@ export class ModelManagementService {
 
     const { id, ...updateData } = updates;
 
-    const normalizedUpdateData: Partial<AIModel> = {
+    const normalizedUpdateData: Partial<ModelPayload> = {
       ...updateData,
       provider: updateData.provider ? (this.normalizeProvider(updateData.provider) as AIModel['provider']) : undefined,
       model: updateData.model ? String(updateData.model).trim().toLowerCase() : undefined,
@@ -193,6 +204,7 @@ export class ModelManagementService {
       description: updateData.description === undefined ? undefined : this.normalizeOptionalText(updateData.description),
       availability: updateData.availability === undefined ? undefined : this.normalizeOptionalText(updateData.availability),
       deprecated: updateData.deprecated === undefined ? undefined : Boolean(updateData.deprecated),
+      cost: updateData.cost === undefined ? undefined : this.normalizeCost(updateData.cost),
       reasoning:
         updateData.reasoning === undefined
           ? undefined
@@ -296,7 +308,7 @@ export class ModelManagementService {
     return this.founderModels;
   }
 
-  async getModelById(modelId: string): Promise<AIModel | undefined> {
+  async getModelById(modelId: string): Promise<ModelPayload | undefined> {
     const model = await this.modelRegistryModel.findOne({ id: modelId }).lean().exec();
     return model ? this.toAIModel(model) : undefined;
   }
@@ -314,7 +326,7 @@ export class ModelManagementService {
     return `${normalizedProvider}-${normalizedModel}`;
   }
 
-  private toAIModel(doc: Partial<ModelRegistry>): AIModel {
+  private toAIModel(doc: Partial<ModelRegistry>): ModelPayload {
     return {
       id: String(doc.id || ''),
       name: String(doc.name || ''),
@@ -326,8 +338,30 @@ export class ModelManagementService {
       maxTokens: Number(doc.maxTokens || this.settings.defaultMaxTokens),
       temperature: Number(doc.temperature ?? this.settings.defaultTemperature),
       topP: Number(doc.topP ?? 1),
+      cost: this.normalizeCost(doc.cost),
       reasoning: this.normalizeReasoning(doc.reasoning),
     };
+  }
+
+  private normalizeCost(cost?: ModelCost): ModelCost | undefined {
+    if (!cost || typeof cost !== 'object') {
+      return undefined;
+    }
+
+    const normalized: ModelCost = {};
+    const input = Number(cost.input);
+    const output = Number(cost.output);
+    const cacheRead = Number(cost.cache_read);
+    const cacheWrite = Number(cost.cache_write);
+    const reasoning = Number(cost.reasoning);
+
+    if (Number.isFinite(input)) normalized.input = input;
+    if (Number.isFinite(output)) normalized.output = output;
+    if (Number.isFinite(cacheRead)) normalized.cache_read = cacheRead;
+    if (Number.isFinite(cacheWrite)) normalized.cache_write = cacheWrite;
+    if (Number.isFinite(reasoning)) normalized.reasoning = reasoning;
+
+    return Object.keys(normalized).length > 0 ? normalized : undefined;
   }
 
   private normalizeReasoning(reasoning?: AIModel['reasoning']): AIModel['reasoning'] | undefined {

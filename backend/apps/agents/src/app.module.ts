@@ -19,6 +19,7 @@ import { PromptRegistryAdminModule } from './modules/prompt-registry/prompt-regi
 import { AgentActionLogModule } from './modules/action-logs/agent-action-log.module';
 import { InnerMessageModule } from './modules/inner-message/inner-message.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
+import { UsageModule } from './modules/usage/usage.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { MessageCenterModule } from './modules/message-center/message-center.mod
     AgentActionLogModule,
     InnerMessageModule,
     MessageCenterModule,
+    UsageModule,
     AgentModule,
     SkillModule,
     MemoModule,

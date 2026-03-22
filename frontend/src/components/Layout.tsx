@@ -84,6 +84,7 @@ const groupedNavigation = [
       { name: 'UI管理', href: '/ui-management', icon: Squares2X2Icon },
       { name: '消息中心', href: '/message-center', icon: BellIcon },
       { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
+      { name: '用量与计费', href: '/usage', icon: ChartBarIcon },
       { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
       { name: '人力资源', href: '/hr', icon: UserGroupIcon },
     ],

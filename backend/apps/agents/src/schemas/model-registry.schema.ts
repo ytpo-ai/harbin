@@ -37,6 +37,25 @@ export class ModelRegistry {
 
   @Prop({
     type: {
+      input: { type: Number },
+      output: { type: Number },
+      cache_read: { type: Number },
+      cache_write: { type: Number },
+      reasoning: { type: Number },
+    },
+    _id: false,
+    default: undefined,
+  })
+  cost?: {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    reasoning?: number;
+  };
+
+  @Prop({
+    type: {
       enabled: { type: Boolean, default: false },
       effort: { type: String, enum: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
       verbosity: { type: String, enum: ['low', 'medium', 'high'] },

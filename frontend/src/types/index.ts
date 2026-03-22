@@ -9,6 +9,13 @@ export interface AIModel {
   maxTokens: number;
   temperature?: number;
   topP?: number;
+  cost?: {
+    input?: number;
+    output?: number;
+    cache_read?: number;
+    cache_write?: number;
+    reasoning?: number;
+  };
   reasoning?: {
     enabled: boolean;
     effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
