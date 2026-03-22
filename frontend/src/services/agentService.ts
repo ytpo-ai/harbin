@@ -69,13 +69,28 @@ export interface AgentStreamHandlers {
 }
 
 export interface AgentRuntimeSessionMessage {
-  id?: string;
+  id: string;
   runId?: string;
   taskId?: string;
+  parentMessageId?: string;
   role: 'system' | 'user' | 'assistant' | 'tool';
+  sequence: number;
   content: string;
   status?: 'pending' | 'streaming' | 'completed' | 'error';
   metadata?: Record<string, unknown>;
+  modelID?: string;
+  providerID?: string;
+  finish?: 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'paused' | 'max-rounds';
+  tokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  cost?: number;
+  stepIndex?: number;
   timestamp: string;
 }
 
@@ -85,7 +100,7 @@ export interface AgentRuntimeSessionPart {
   taskId?: string;
   messageId: string;
   sequence: number;
-  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event';
+  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
   status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
   toolId?: string;
   toolCallId?: string;
@@ -101,12 +116,13 @@ export interface AgentRuntimeSessionPart {
 export interface AgentRuntimeSession {
   _id?: string;
   id: string;
-  sessionType: 'meeting' | 'task';
+  sessionType: 'meeting' | 'task' | 'plan' | 'chat';
   ownerType: 'agent' | 'employee' | 'system';
   ownerId: string;
   title: string;
   status: 'active' | 'archived' | 'closed';
   runIds?: string[];
+  messageIds?: string[];
   messages: AgentRuntimeSessionMessage[];
   parts?: AgentRuntimeSessionPart[];
   planContext?: {
@@ -130,7 +146,7 @@ export interface AgentRuntimeSessionListQuery {
   ownerType?: 'agent' | 'employee' | 'system';
   ownerId?: string;
   status?: 'active' | 'archived' | 'closed';
-  sessionType?: 'meeting' | 'task';
+  sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
   keyword?: string;
   page?: number;
   pageSize?: number;
@@ -215,10 +231,49 @@ export interface StreamAgentTaskEventsOptions {
 }
 
 export const agentService = {
+  normalizeAgentList(raw: unknown): Agent[] {
+    const list = Array.isArray(raw)
+      ? raw
+      : Array.isArray((raw as any)?.items)
+        ? (raw as any).items
+        : Array.isArray((raw as any)?.data)
+          ? (raw as any).data
+          : [];
+
+    return list
+      .map((item: any) => {
+        const id = String(item?.id || item?._id || '').trim();
+        if (!id) {
+          return null;
+        }
+        return {
+          ...item,
+          id,
+        } as Agent;
+      })
+      .filter(Boolean) as Agent[];
+  },
+
   // 获取所有agent
   async getAgents(): Promise<Agent[]> {
     const response = await api.get('/agents');
-    return response.data;
+    return agentService.normalizeAgentList(response.data);
+  },
+
+  // 获取可分配agent（优先 active）
+  async getAssignableAgents(): Promise<Agent[]> {
+    try {
+      const response = await api.get('/agents/active');
+      const active = agentService.normalizeAgentList(response.data);
+      if (active.length > 0) {
+        return active;
+      }
+    } catch {
+      // fallback to /agents
+    }
+
+    const all = await agentService.getAgents();
+    return all.filter((agent) => agent.isActive !== false);
   },
 
   // 获取单个agent
@@ -319,6 +374,25 @@ export const agentService = {
 
   async getAgentRuntimeSession(sessionId: string): Promise<AgentRuntimeSession> {
     const response = await api.get(`/agents/runtime/sessions/${encodeURIComponent(sessionId)}`);
+    return response.data;
+  },
+
+  async getRuntimeSessionMessages(sessionId: string): Promise<{ sessionId: string; total: number; messages: AgentRuntimeSessionMessage[] }> {
+    const response = await api.get(`/agents/runtime/sessions/${encodeURIComponent(sessionId)}/messages`);
+    return response.data;
+  },
+
+  async getRuntimeMessageParts(messageId: string): Promise<{ messageId: string; total: number; parts: AgentRuntimeSessionPart[] }> {
+    const response = await api.get(`/agents/runtime/messages/${encodeURIComponent(messageId)}/parts`);
+    return response.data;
+  },
+
+  async getRuntimeRunMessages(runId: string): Promise<{
+    runId: string;
+    total: number;
+    messages: Array<AgentRuntimeSessionMessage & { parts: AgentRuntimeSessionPart[] }>;
+  }> {
+    const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}/messages`);
     return response.data;
   },
 

@@ -144,6 +144,10 @@ export class UpdateTaskDraftDto {
   @IsString()
   @MaxLength(4000)
   description?: string;
+
+  @IsOptional()
+  @IsEnum(['external_action', 'research', 'review', 'development', 'general', 'auto'])
+  runtimeTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general' | 'auto';
 }
 
 export class TaskAssignmentDto {
@@ -243,6 +247,10 @@ export class DebugTaskStepDto extends UpdateTaskDraftDto {
   @IsOptional()
   @IsBoolean()
   resetResult?: boolean;
+
+  @IsOptional()
+  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
+  runtimeTaskTypeOverride?: 'external_action' | 'research' | 'review' | 'development' | 'general';
 }
 
 export class CreateSessionDto {

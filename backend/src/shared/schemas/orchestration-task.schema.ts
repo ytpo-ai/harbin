@@ -13,6 +13,13 @@ export type OrchestrationTaskStatus =
   | 'failed'
   | 'cancelled';
 
+export type OrchestrationTaskRuntimeType =
+  | 'external_action'
+  | 'research'
+  | 'review'
+  | 'development'
+  | 'general';
+
 @Schema({ timestamps: true, collection: 'orchestration_tasks' })
 export class OrchestrationTask {
   @Prop()
@@ -41,6 +48,9 @@ export class OrchestrationTask {
 
   @Prop({ type: [String], default: [] })
   dependencyTaskIds: string[];
+
+  @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
+  runtimeTaskType?: OrchestrationTaskRuntimeType;
 
   @Prop(raw({
     executorType: { type: String, enum: ['agent', 'employee', 'unassigned'], default: 'unassigned' },

@@ -1411,6 +1411,7 @@ export class OrchestrationService {
         status: task.assignment?.executorType === 'unassigned' ? 'pending' : 'assigned',
         assignment: task.assignment,
         dependencyTaskIds: task.dependencyTaskIds || [],
+        runtimeTaskType: (task as any).runtimeTaskType,
         runLogs: [
           {
             timestamp: new Date(),
@@ -1952,7 +1953,22 @@ export class OrchestrationService {
       throw new BadRequestException(`Cannot debug step before dependencies are completed: ${names}`);
     }
 
-    await this.updateTaskDraft(taskId, dto);
+    const shouldUpdateDraft = dto.title !== undefined || dto.description !== undefined;
+    if (shouldUpdateDraft) {
+      await this.updateTaskDraft(taskId, dto);
+    }
+
+    const normalizedRuntimeTaskType = this.normalizeRuntimeTaskTypeOverride(dto.runtimeTaskTypeOverride);
+    if (dto.runtimeTaskTypeOverride !== undefined) {
+      await this.orchestrationTaskModel
+        .updateOne(
+          { _id: taskId },
+          normalizedRuntimeTaskType
+            ? { $set: { runtimeTaskType: normalizedRuntimeTaskType } }
+            : { $unset: { runtimeTaskType: 1 } },
+        )
+        .exec();
+    }
 
     const nextStatus = task.assignment?.executorType === 'unassigned' ? 'pending' : 'assigned';
     await this.orchestrationTaskModel
@@ -1988,7 +2004,10 @@ export class OrchestrationService {
     }
 
     const debugRunId = `debug-${Date.now()}`;
-    const execution = await this.executeTaskNode(planId, refreshedTask, { orchestrationRunId: debugRunId });
+    const execution = await this.executeTaskNode(planId, refreshedTask, {
+      orchestrationRunId: debugRunId,
+      runtimeTaskTypeOverride: dto.runtimeTaskTypeOverride,
+    });
 
     await this.refreshPlanStats(planId);
     const latest = await this.getPlanById(planId);
@@ -2026,7 +2045,16 @@ export class OrchestrationService {
     }
     await this.assertPlanEditable(plan, task);
 
-    if (task.status === 'in_progress' || task.status === 'completed') {
+    const normalizedRuntimeTaskType = this.normalizeRuntimeTaskTypeOverride((dto as any).runtimeTaskType);
+    const hasRuntimeTypeOnlyUpdate =
+      (dto as any).runtimeTaskType !== undefined
+      && dto.title === undefined
+      && dto.description === undefined
+      && (dto as any).priority === undefined
+      && (dto as any).assignment === undefined
+      && (dto as any).dependencyTaskIds === undefined;
+
+    if (task.status === 'in_progress' || (task.status === 'completed' && !hasRuntimeTypeOnlyUpdate)) {
       throw new BadRequestException(`Task in "${task.status}" status cannot be edited`);
     }
 
@@ -2046,6 +2074,13 @@ export class OrchestrationService {
         throw new BadRequestException('description cannot be empty');
       }
       setPayload.description = normalizedDescription;
+    }
+    if ((dto as any).runtimeTaskType !== undefined) {
+      if ((dto as any).runtimeTaskType === 'auto') {
+        setPayload.runtimeTaskType = undefined;
+      } else {
+        setPayload.runtimeTaskType = normalizedRuntimeTaskType;
+      }
     }
     if (dto.priority !== undefined) {
       setPayload.priority = dto.priority;
@@ -2071,11 +2106,18 @@ export class OrchestrationService {
       throw new BadRequestException('At least one updatable field is required');
     }
 
+    const unsetPayload: Record<string, any> = {};
+    if ((dto as any).runtimeTaskType === 'auto') {
+      delete setPayload.runtimeTaskType;
+      unsetPayload.runtimeTaskType = 1;
+    }
+
     const updated = await this.orchestrationTaskModel
       .findOneAndUpdate(
         { _id: taskId },
         {
-          $set: setPayload,
+          ...(Object.keys(setPayload).length ? { $set: setPayload } : {}),
+          ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
           $push: {
             runLogs: {
               timestamp: new Date(),
@@ -2112,7 +2154,10 @@ export class OrchestrationService {
   private async executeTaskNode(
     planId: string,
     task: OrchestrationTask,
-    options?: { orchestrationRunId?: string },
+    options?: {
+      orchestrationRunId?: string;
+      runtimeTaskTypeOverride?: string;
+    },
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const taskId = this.getEntityId(task as Record<string, any>);
     const assignment = task.assignment || { executorType: 'unassigned' as const };
@@ -2120,6 +2165,20 @@ export class OrchestrationService {
     const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(task.title, task.description);
     const isResearchTask = Boolean(researchTaskKind);
     const isReviewTask = this.taskClassificationService.isReviewTask(task.title, task.description);
+    const runtimeTaskTypeOverride = this.normalizeRuntimeTaskTypeOverride(options?.runtimeTaskTypeOverride);
+    const persistedRuntimeTaskType = this.normalizeRuntimeTaskTypeOverride((task as any).runtimeTaskType);
+    const runtimeTaskType =
+      runtimeTaskTypeOverride ||
+      persistedRuntimeTaskType ||
+      this.resolveAgentRuntimeTaskType(task.title, task.description, {
+        isExternalAction,
+        isResearchTask,
+        isReviewTask,
+      });
+    const effectiveIsExternalAction = runtimeTaskType === 'external_action';
+    const effectiveIsResearchTask = runtimeTaskType === 'research';
+    const effectiveIsReviewTask = runtimeTaskType === 'review';
+    const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
     const dependencyContext = await this.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.getRetryFailureHint(task);
     const planDomainContext = await this.resolvePlanDomainContext(planId);
@@ -2202,7 +2261,7 @@ export class OrchestrationService {
     }
 
     if (assignment.executorType !== 'agent' || !assignment.executorId) {
-      if (isExternalAction) {
+      if (effectiveIsExternalAction) {
         await this.markTaskWaitingHuman(taskId, 'External action requires manual handling');
         await this.updatePlanSessionTask(planId, taskId, {
           status: 'waiting_human',
@@ -2234,7 +2293,7 @@ export class OrchestrationService {
       return { status: 'failed', error: 'No agent assigned for execution' };
     }
 
-    if (isExternalAction) {
+    if (effectiveIsExternalAction) {
       const hasEmailCapability = await this.executorSelectionService.hasEmailExecutionCapability(assignment.executorId);
       if (!hasEmailCapability) {
         await this.markTaskWaitingHuman(taskId, 'Agent lacks email tool capability, switched to human review');
@@ -2256,18 +2315,13 @@ export class OrchestrationService {
 
     let requestedSessionId = `plan-${planId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
-    const runtimeTaskType = this.resolveAgentRuntimeTaskType(task.title, task.description, {
-      isExternalAction,
-      isResearchTask,
-      isReviewTask,
-    });
     const runtimeChannelHint: 'native' | 'opencode' = runtimeTaskType === 'development' ? 'opencode' : 'native';
     const taskPrompt = this.buildTaskDescription(task.description, {
       dependencyContext,
-      isExternalAction,
-      isResearchTask,
-      isReviewTask,
-      researchTaskKind: researchTaskKind || undefined,
+      isExternalAction: effectiveIsExternalAction,
+      isResearchTask: effectiveIsResearchTask,
+      isReviewTask: effectiveIsReviewTask,
+      researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
     });
     const agentTaskIdempotencyKey = `orch:${planId}:${taskId}:${new Date().getTime()}`;
@@ -2307,9 +2361,9 @@ export class OrchestrationService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          externalActionValidationRequired: isExternalAction,
-          researchTaskKind,
-          reviewValidationRequired: isReviewTask,
+          externalActionValidationRequired: effectiveIsExternalAction,
+          researchTaskKind: effectiveResearchTaskKind,
+          reviewValidationRequired: effectiveIsReviewTask,
         },
       });
 
@@ -2342,8 +2396,8 @@ export class OrchestrationService {
         throw new Error('Async agent task succeeded but returned empty output');
       }
 
-      if (isResearchTask) {
-        const validation = this.taskOutputValidationService.validateResearchOutput(output, researchTaskKind!);
+      if (effectiveIsResearchTask && effectiveResearchTaskKind) {
+        const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
         if (!validation.valid) {
           const detail = validation.missing?.length
             ? `; missing=${validation.missing.join(',')}`
@@ -2546,6 +2600,18 @@ export class OrchestrationService {
     const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(runTask.title, runTask.description);
     const isResearchTask = Boolean(researchTaskKind);
     const isReviewTask = this.taskClassificationService.isReviewTask(runTask.title, runTask.description);
+    const persistedRuntimeTaskType = this.normalizeRuntimeTaskTypeOverride((runTask as any).runtimeTaskType);
+    const runtimeTaskType =
+      persistedRuntimeTaskType
+      || this.resolveAgentRuntimeTaskType(runTask.title, runTask.description, {
+        isExternalAction,
+        isResearchTask,
+        isReviewTask,
+      });
+    const effectiveIsExternalAction = runtimeTaskType === 'external_action';
+    const effectiveIsResearchTask = runtimeTaskType === 'research';
+    const effectiveIsReviewTask = runtimeTaskType === 'review';
+    const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
     const dependencyContext = await this.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.getRetryFailureHint(runTask as any as OrchestrationTask);
     const planDomainContext = await this.resolvePlanDomainContext(runTask.planId);
@@ -2591,7 +2657,7 @@ export class OrchestrationService {
     }
 
     if (assignment.executorType !== 'agent' || !assignment.executorId) {
-      if (isExternalAction) {
+      if (effectiveIsExternalAction) {
         await this.markRunTaskWaitingHuman(runTaskId, 'External action requires manual handling');
         this.emitPlanStreamEvent(runTask.planId, 'run.task.updated', {
           runId,
@@ -2609,7 +2675,7 @@ export class OrchestrationService {
       return { status: 'failed', error: 'No agent assigned for execution' };
     }
 
-    if (isExternalAction) {
+    if (effectiveIsExternalAction) {
       const hasEmailCapability = await this.executorSelectionService.hasEmailExecutionCapability(assignment.executorId);
       if (!hasEmailCapability) {
         await this.markRunTaskWaitingHuman(runTaskId, 'Agent lacks email tool capability, switched to human review');
@@ -2624,18 +2690,13 @@ export class OrchestrationService {
 
     let requestedSessionId = `run-${runId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
-    const runtimeTaskType = this.resolveAgentRuntimeTaskType(runTask.title, runTask.description, {
-      isExternalAction,
-      isResearchTask,
-      isReviewTask,
-    });
     const runtimeChannelHint: 'native' | 'opencode' = runtimeTaskType === 'development' ? 'opencode' : 'native';
     const taskPrompt = this.buildTaskDescription(runTask.description, {
       dependencyContext,
-      isExternalAction,
-      isResearchTask,
-      isReviewTask,
-      researchTaskKind: researchTaskKind || undefined,
+      isExternalAction: effectiveIsExternalAction,
+      isResearchTask: effectiveIsResearchTask,
+      isReviewTask: effectiveIsReviewTask,
+      researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
     });
     const agentTaskIdempotencyKey = `orch-run:${runId}:${runTaskId}:${new Date().getTime()}`;
@@ -2676,9 +2737,9 @@ export class OrchestrationService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          externalActionValidationRequired: isExternalAction,
-          researchTaskKind,
-          reviewValidationRequired: isReviewTask,
+          externalActionValidationRequired: effectiveIsExternalAction,
+          researchTaskKind: effectiveResearchTaskKind,
+          reviewValidationRequired: effectiveIsReviewTask,
         },
       });
 
@@ -2711,8 +2772,8 @@ export class OrchestrationService {
         throw new Error('Async agent task succeeded but returned empty output');
       }
 
-      if (isResearchTask) {
-        const validation = this.taskOutputValidationService.validateResearchOutput(output, researchTaskKind!);
+      if (effectiveIsResearchTask && effectiveResearchTaskKind) {
+        const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
         if (!validation.valid) {
           const detail = validation.missing?.length
             ? `; missing=${validation.missing.join(',')}`
@@ -3356,6 +3417,25 @@ export class OrchestrationService {
       return 'development';
     }
     return 'general';
+  }
+
+  private normalizeRuntimeTaskTypeOverride(
+    value?: string,
+  ): 'external_action' | 'research' | 'review' | 'development' | 'general' | null {
+    if (!value) {
+      return null;
+    }
+    const normalized = String(value).trim().toLowerCase();
+    if (
+      normalized === 'external_action'
+      || normalized === 'research'
+      || normalized === 'review'
+      || normalized === 'development'
+      || normalized === 'general'
+    ) {
+      return normalized;
+    }
+    return null;
   }
 
   private getRetryFailureHint(task: OrchestrationTask): string {

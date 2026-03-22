@@ -19,5 +19,6 @@ import {
   ],
   controllers: [PromptRegistryController],
   providers: [PromptRegistryAdminService],
+  exports: [PromptRegistryAdminService],
 })
 export class PromptRegistryAdminModule {}

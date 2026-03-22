@@ -1,7 +1,8 @@
 import api from './api';
 
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
-export type PlanStatus = 'draft' | 'drafting' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
+export type DebugRuntimeTaskTypeOverride = 'general' | 'development' | 'research' | 'review' | 'external_action';
+export type PlanStatus = 'draft' | 'drafting' | 'planned';
 export type TaskStatus =
   | 'pending'
   | 'assigned'
@@ -21,6 +22,7 @@ export interface OrchestrationTask {
   status: TaskStatus;
   order: number;
   dependencyTaskIds: string[];
+  runtimeTaskType?: DebugRuntimeTaskTypeOverride;
   assignment: {
     executorType: 'agent' | 'employee' | 'unassigned';
     executorId?: string;
@@ -210,20 +212,35 @@ export interface BatchUpdateTaskItem extends UpdateTaskFullPayload {
   taskId: string;
 }
 
+const normalizePlanStatus = (status: string | undefined, taskCount = 0): PlanStatus => {
+  if (status === 'draft' || status === 'drafting' || status === 'planned') {
+    return status;
+  }
+  if (status === 'failed' && taskCount === 0) {
+    return 'draft';
+  }
+  return 'planned';
+};
+
+const normalizePlan = (plan: OrchestrationPlan): OrchestrationPlan => ({
+  ...plan,
+  status: normalizePlanStatus(plan.status, plan.taskIds?.length || plan.tasks?.length || 0),
+});
+
 export const orchestrationService = {
   async createPlanFromPrompt(payload: CreatePlanFromPromptDto): Promise<OrchestrationPlan> {
     const response = await api.post('/orchestration/plans/from-prompt', payload);
-    return response.data;
+    return normalizePlan(response.data);
   },
 
   async getPlans(): Promise<OrchestrationPlan[]> {
     const response = await api.get('/orchestration/plans');
-    return response.data;
+    return Array.isArray(response.data) ? response.data.map((plan: OrchestrationPlan) => normalizePlan(plan)) : [];
   },
 
   async getPlanById(planId: string): Promise<OrchestrationPlan> {
     const response = await api.get(`/orchestration/plans/${planId}`);
-    return response.data;
+    return normalizePlan(response.data);
   },
 
   subscribePlanEvents(
@@ -406,7 +423,7 @@ export const orchestrationService = {
 
   async updateTaskDraft(
     taskId: string,
-    payload: { title?: string; description?: string },
+    payload: { title?: string; description?: string; runtimeTaskType?: DebugRuntimeTaskTypeOverride | 'auto' },
   ): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/tasks/${taskId}/draft`, payload);
     return response.data;
@@ -453,7 +470,12 @@ export const orchestrationService = {
 
   async debugTaskStep(
     taskId: string,
-    payload: { title?: string; description?: string; resetResult?: boolean },
+    payload: {
+      title?: string;
+      description?: string;
+      resetResult?: boolean;
+      runtimeTaskTypeOverride?: DebugRuntimeTaskTypeOverride;
+    },
   ): Promise<{
     task: OrchestrationTask;
     execution: { status: TaskStatus; result?: string; error?: string };

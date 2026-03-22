@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
-import { OrchestrationTaskStatus } from './orchestration-task.schema';
+import { OrchestrationTaskRuntimeType, OrchestrationTaskStatus } from './orchestration-task.schema';
 
 export type OrchestrationRunTaskDocument = OrchestrationRunTask & Document;
 
@@ -46,6 +46,9 @@ export class OrchestrationRunTask {
 
   @Prop({ type: [String], default: [] })
   dependencyTaskIds: string[];
+
+  @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
+  runtimeTaskType?: OrchestrationTaskRuntimeType;
 
   @Prop(raw({
     summary: { type: String },
