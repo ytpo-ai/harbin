@@ -325,7 +325,10 @@ export class UsageAggregationService implements OnModuleInit {
     return {
       role: 'assistant',
       createdAt: { $gte: range.from, $lte: range.to },
-      cost: { $exists: true, $ne: null },
+      $or: [
+        { cost: { $exists: true, $ne: null } },
+        { 'tokens.total': { $gt: 0 } },
+      ],
     };
   }
 

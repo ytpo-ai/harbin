@@ -41,6 +41,7 @@ export class GatewayProxyService {
       originalUrl.startsWith('/api/memos') ||
       originalUrl.startsWith('/api/models') ||
       originalUrl.startsWith('/api/model-management') ||
+      originalUrl.startsWith('/api/usage') ||
       originalUrl.startsWith('/api/prompt-registry') ||
       originalUrl.startsWith('/api/agent-action-logs') ||
       originalUrl.startsWith('/api/inner-messages') ||

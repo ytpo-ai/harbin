@@ -37,7 +37,9 @@ interface PricingCacheFile {
 export class ModelPricingService implements OnModuleInit {
   private readonly logger = new Logger(ModelPricingService.name);
   private readonly pricingCache = new Map<string, ModelCost>();
+  private readonly overrideCache = new Map<string, { expiresAt: number; cost?: ModelCost }>();
   private readonly cachePath: string;
+  private readonly overrideTtlMs: number;
   private refreshTimer?: NodeJS.Timeout;
   private lastRefreshAt?: Date;
 
@@ -46,9 +48,19 @@ export class ModelPricingService implements OnModuleInit {
     private readonly modelRegistryModel: Model<ModelRegistryDocument>,
   ) {
     const cwd = process.cwd();
-    this.cachePath = path.basename(cwd) === 'backend'
-      ? path.resolve(cwd, '../data/cache/models-pricing.json')
-      : path.resolve(cwd, 'data/cache/models-pricing.json');
+    const configuredPath = String(process.env.MODELS_PRICING_CACHE_PATH || '').trim();
+    if (configuredPath) {
+      this.cachePath = path.isAbsolute(configuredPath)
+        ? configuredPath
+        : path.resolve(cwd, configuredPath);
+    } else {
+      this.cachePath = path.basename(cwd) === 'backend'
+        ? path.resolve(cwd, '../data/cache/models-pricing.json')
+        : path.resolve(cwd, 'data/cache/models-pricing.json');
+    }
+
+    const configuredTtl = Number(process.env.MODEL_PRICING_OVERRIDE_TTL_MS || 300_000);
+    this.overrideTtlMs = Number.isFinite(configuredTtl) && configuredTtl > 0 ? configuredTtl : 300_000;
   }
 
   async onModuleInit(): Promise<void> {
@@ -114,13 +126,26 @@ export class ModelPricingService implements OnModuleInit {
   }
 
   private async getRegistryOverride(provider: string, model: string): Promise<ModelCost | undefined> {
+    const cacheKey = this.getCacheKey(provider, model);
+    const now = Date.now();
+    const cached = this.overrideCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.cost;
+    }
+
     const doc = await this.modelRegistryModel
       .findOne({ provider, model })
       .select({ cost: 1 })
       .lean()
       .exec();
 
-    return this.normalizeCost(doc?.cost);
+    const normalizedCost = this.normalizeCost(doc?.cost);
+    this.overrideCache.set(cacheKey, {
+      expiresAt: now + this.overrideTtlMs,
+      cost: normalizedCost,
+    });
+
+    return normalizedCost;
   }
 
   private async loadFromLocalCache(): Promise<void> {
