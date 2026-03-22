@@ -126,7 +126,13 @@ export class AgentTaskWorker implements OnModuleInit {
         status: 'pending',
         assignedAgents: [task.agentId],
         teamId: 'agent-task',
-        messages: [],
+        messages: [
+          {
+            role: 'user' as const,
+            content: task.prompt,
+            timestamp: new Date(),
+          },
+        ],
       };
 
       let openCodeSessionId: string | undefined;

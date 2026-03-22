@@ -3,6 +3,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ModelService } from '@agent/modules/models/model.service';
 import { RuntimeOrchestratorService } from '@agent/modules/runtime/runtime-orchestrator.service';
 
+import { extractToolCall } from '../agent-executor.helpers';
+
 import { AgentExecutorEngine } from './agent-executor-engine.interface';
 import { AgentExecutorEngineInput, AgentExecutorEngineResult } from './agent-executor-engine.types';
 
@@ -27,6 +29,41 @@ export class NativeStreamingAgentExecutorEngine implements AgentExecutorEngine {
     const customApiKey = await input.resolveCustomApiKey('stream_task');
     this.modelService.ensureProviderWithKey(input.modelConfig, customApiKey);
 
+    // First streaming round
+    const firstRound = await this.streamOnce(input, onToken);
+
+    // Check if model emitted a tool_call — if so, delegate to multi-round tool-calling loop
+    const toolCall = extractToolCall(firstRound.response);
+    if (toolCall && input.executeWithToolCalling) {
+      this.logger.log(
+        `[native_stream_tool_detected] taskId=${input.taskId} tool=${toolCall.tool} — falling back to executeWithToolCalling`,
+      );
+      const response = await input.executeWithToolCalling(
+        input.agent,
+        input.task,
+        input.messages,
+        input.modelConfig,
+        input.runtimeContext,
+        {
+          collaborationContext: input.context?.collaborationContext,
+          actor: input.context?.actor,
+          taskType: input.task.type,
+          teamId: input.task.teamId,
+        },
+      );
+      return { response, tokenChunks: firstRound.tokenChunks };
+    }
+
+    return {
+      response: firstRound.response,
+      tokenChunks: firstRound.tokenChunks,
+    };
+  }
+
+  private async streamOnce(
+    input: AgentExecutorEngineInput,
+    onToken: (token: string) => void,
+  ): Promise<{ response: string; tokenChunks: number }> {
     let fullResponse = '';
     let tokenChunks = 0;
     let streamSequence = 1;
@@ -69,9 +106,6 @@ export class NativeStreamingAgentExecutorEngine implements AgentExecutorEngine {
       },
     );
 
-    return {
-      response: fullResponse,
-      tokenChunks,
-    };
+    return { response: fullResponse, tokenChunks };
   }
 }
