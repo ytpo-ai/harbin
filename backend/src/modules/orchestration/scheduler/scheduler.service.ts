@@ -21,6 +21,10 @@ import {
   OrchestrationTaskDocument,
   OrchestrationTaskStatus,
 } from '../../../shared/schemas/orchestration-task.schema';
+import {
+  OrchestrationRun,
+  OrchestrationRunDocument,
+} from '../../../shared/schemas/orchestration-run.schema';
 import { OrchestrationService } from '../orchestration.service';
 import {
   CreateScheduleDto,
@@ -51,6 +55,8 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly scheduleModel: Model<OrchestrationScheduleDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly taskModel: Model<OrchestrationTaskDocument>,
+    @InjectModel(OrchestrationRun.name)
+    private readonly runModel: Model<OrchestrationRunDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
     private readonly schedulerRegistry: SchedulerRegistry,
@@ -334,10 +340,10 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     return { accepted: true, status: 'triggered' };
   }
 
-  async getScheduleHistory(scheduleId: string, limit = 20): Promise<OrchestrationTask[]> {
+  async getScheduleHistory(scheduleId: string, limit = 20): Promise<OrchestrationRun[]> {
     await this.getScheduleById(scheduleId);
-    return this.taskModel
-      .find({ mode: 'schedule', scheduleId })
+    return this.runModel
+      .find({ scheduleId })
       .sort({ createdAt: -1 })
       .limit(Math.min(Math.max(limit, 1), 100))
       .exec();
@@ -456,7 +462,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       if (!success) {
         await this.recordDeadLetter({
           scheduleId,
-          taskId: executionResult.taskId,
+          taskId: executionResult.taskId || executionResult.runId,
           triggerType,
           reason: executionResult.errorMessage || 'Schedule execution failed',
           attempts: executionResult.attempts,
@@ -466,7 +472,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
           scheduleName: schedule.name,
           triggerType,
           attempts: executionResult.attempts,
-          taskId: executionResult.taskId,
+          taskId: executionResult.taskId || executionResult.runId,
           errorMessage: executionResult.errorMessage,
         });
       }
@@ -484,7 +490,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
                 success,
                 result: executionResult.result || undefined,
                 error: executionResult.errorMessage || undefined,
-                taskId: executionResult.taskId || undefined,
+                taskId: executionResult.taskId || executionResult.runId || undefined,
                 sessionId: executionResult.sessionId || undefined,
                 attempts: executionResult.attempts,
               },
@@ -546,10 +552,11 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     };
   }): Promise<{
     executionStatus: OrchestrationTaskStatus;
-    taskId: string;
-    sessionId: string;
+    taskId?: string;
+    runId?: string;
+    sessionId?: string;
     errorMessage: string;
-    result: string;
+    result?: string;
     attempts: number;
   }> {
     const retryConfig = this.resolveRetryConfig();
@@ -557,17 +564,19 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
 
     let lastResult: {
       executionStatus: OrchestrationTaskStatus;
-      taskId: string;
-      sessionId: string;
+      taskId?: string;
+      runId?: string;
+      sessionId?: string;
       errorMessage: string;
-      result: string;
+      result?: string;
       attempts: number;
     } = {
       executionStatus: 'failed',
-      taskId: '',
-      sessionId: '',
+      taskId: undefined,
+      runId: undefined,
+      sessionId: undefined,
       errorMessage: 'Schedule execution failed',
-      result: '',
+      result: undefined,
       attempts: 0,
     };
 
@@ -605,60 +614,70 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     attempt: number;
   }): Promise<{
     executionStatus: OrchestrationTaskStatus;
-    taskId: string;
-    sessionId: string;
+    taskId?: string;
+    runId?: string;
+    sessionId?: string;
     errorMessage: string;
-    result: string;
+    result?: string;
     attempts: number;
   }> {
     const { schedule, scheduleId, triggerType, startedAt, effectiveInput, attempt } = options;
-    let taskId = '';
-    let sessionId = '';
+    let taskId: string | undefined;
+    let runId: string | undefined;
+    let sessionId: string | undefined;
     let errorMessage = '';
-    let result = '';
+    let result: string | undefined;
     let executionStatus: OrchestrationTaskStatus = 'failed';
 
     try {
-      const task = await new this.taskModel({
-        mode: 'schedule',
-        scheduleId,
-        planId: schedule.planId,
-        title: schedule.name,
-        description: this.buildTaskDescription({
-          ...schedule,
-          input: effectiveInput,
-        } as OrchestrationSchedule),
-        priority: 'medium',
-        status: schedule.target.executorId ? 'assigned' : 'pending',
-        order: 0,
-        dependencyTaskIds: [],
-        assignment: {
-          executorType: 'agent',
-          executorId: schedule.target.executorId,
-          reason: `Triggered by schedule (${triggerType})`,
-        },
-        runLogs: [
-          {
-            timestamp: startedAt,
-            level: 'info',
-            message: `Schedule triggered (${triggerType})`,
-            metadata: {
-              scheduleId,
-              triggerType,
-              attempt,
-            },
+      if (schedule.planId) {
+        const run = await this.orchestrationService.executePlanRun(schedule.planId, 'schedule', {
+          scheduleId,
+          continueOnFailure: true,
+        });
+        runId = this.getEntityId(run as unknown as Record<string, unknown>);
+        executionStatus = run.status === 'completed' ? 'completed' : 'failed';
+        result = run.summary || JSON.stringify(run.stats || {});
+        errorMessage = run.error || '';
+      } else {
+        const task = await new this.taskModel({
+          title: schedule.name,
+          description: this.buildTaskDescription({
+            ...schedule,
+            input: effectiveInput,
+          } as OrchestrationSchedule),
+          priority: 'medium',
+          status: schedule.target.executorId ? 'assigned' : 'pending',
+          order: 0,
+          dependencyTaskIds: [],
+          assignment: {
+            executorType: 'agent',
+            executorId: schedule.target.executorId,
+            reason: `Triggered by schedule (${triggerType})`,
           },
-        ],
-      }).save();
+          runLogs: [
+            {
+              timestamp: startedAt,
+              level: 'info',
+              message: `Schedule triggered (${triggerType})`,
+              metadata: {
+                scheduleId,
+                triggerType,
+                attempt,
+              },
+            },
+          ],
+        }).save();
 
-      taskId = task._id.toString();
-      const execution = await this.executeScheduleTaskByInput(taskId, schedule, effectiveInput);
-      executionStatus = execution.status;
-      result = execution.result || '';
+        taskId = task._id.toString();
+        const execution = await this.executeScheduleTaskByInput(taskId, schedule, effectiveInput);
+        executionStatus = execution.status;
+        result = execution.result || '';
 
-      const latestTask = await this.taskModel.findOne({ _id: taskId }).exec();
-      sessionId = latestTask?.sessionId || '';
-      errorMessage = execution.error || latestTask?.result?.error || '';
+        const latestTask = await this.taskModel.findOne({ _id: taskId }).exec();
+        sessionId = latestTask?.sessionId || '';
+        errorMessage = execution.error || latestTask?.result?.error || '';
+      }
     } catch (error) {
       executionStatus = 'failed';
       errorMessage = error instanceof Error ? error.message : 'Schedule execution failed';
@@ -668,6 +687,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     return {
       executionStatus,
       taskId,
+      runId,
       sessionId,
       errorMessage,
       result,

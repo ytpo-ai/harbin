@@ -19,6 +19,14 @@ import {
   OrchestrationSchedule,
   OrchestrationScheduleSchema,
 } from '../../shared/schemas/orchestration-schedule.schema';
+import {
+  OrchestrationRun,
+  OrchestrationRunSchema,
+} from '../../shared/schemas/orchestration-run.schema';
+import {
+  OrchestrationRunTask,
+  OrchestrationRunTaskSchema,
+} from '../../shared/schemas/orchestration-run-task.schema';
 import { OrchestrationController } from './orchestration.controller';
 import { OrchestrationService } from './orchestration.service';
 import { PlannerService } from './planner.service';
@@ -48,6 +56,8 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
       { name: AgentRole.name, schema: AgentRoleSchema },
       { name: Skill.name, schema: SkillSchema },
       { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
+      { name: OrchestrationRun.name, schema: OrchestrationRunSchema },
+      { name: OrchestrationRunTask.name, schema: OrchestrationRunTaskSchema },
     ]),
   ],
   controllers: [OrchestrationController],

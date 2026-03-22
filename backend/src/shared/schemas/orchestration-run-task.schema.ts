@@ -1,28 +1,25 @@
 import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
-import { Document, Types } from 'mongoose';
+import { Document } from 'mongoose';
+import { OrchestrationTaskStatus } from './orchestration-task.schema';
 
-export type OrchestrationTaskDocument = OrchestrationTask & Document;
+export type OrchestrationRunTaskDocument = OrchestrationRunTask & Document;
 
-export type OrchestrationTaskStatus =
-  | 'pending'
-  | 'assigned'
-  | 'in_progress'
-  | 'blocked'
-  | 'waiting_human'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
-
-@Schema({ timestamps: true, collection: 'orchestration_tasks' })
-export class OrchestrationTask {
+@Schema({ timestamps: true, collection: 'orchestration_run_tasks' })
+export class OrchestrationRunTask {
   @Prop()
   id?: string;
 
-  @Prop()
-  planId?: string;
+  @Prop({ required: true })
+  runId: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'EiRequirement', required: false })
-  requirementId?: Types.ObjectId;
+  @Prop({ required: true })
+  planId: string;
+
+  @Prop({ required: true })
+  sourceTaskId: string;
+
+  @Prop({ required: true })
+  order: number;
 
   @Prop({ required: true })
   title: string;
@@ -36,12 +33,6 @@ export class OrchestrationTask {
   @Prop({ enum: ['pending', 'assigned', 'in_progress', 'blocked', 'waiting_human', 'completed', 'failed', 'cancelled'], default: 'pending' })
   status: OrchestrationTaskStatus;
 
-  @Prop({ default: 0 })
-  order: number;
-
-  @Prop({ type: [String], default: [] })
-  dependencyTaskIds: string[];
-
   @Prop(raw({
     executorType: { type: String, enum: ['agent', 'employee', 'unassigned'], default: 'unassigned' },
     executorId: { type: String },
@@ -52,6 +43,9 @@ export class OrchestrationTask {
     executorId?: string;
     reason?: string;
   };
+
+  @Prop({ type: [String], default: [] })
+  dependencyTaskIds: string[];
 
   @Prop(raw({
     summary: { type: String },
@@ -87,8 +81,8 @@ export class OrchestrationTask {
   completedAt?: Date;
 }
 
-export const OrchestrationTaskSchema = SchemaFactory.createForClass(OrchestrationTask);
+export const OrchestrationRunTaskSchema = SchemaFactory.createForClass(OrchestrationRunTask);
 
-OrchestrationTaskSchema.index({ planId: 1, order: 1 });
-OrchestrationTaskSchema.index({ requirementId: 1, status: 1, updatedAt: -1 });
-OrchestrationTaskSchema.index({ status: 1 });
+OrchestrationRunTaskSchema.index({ runId: 1, order: 1 });
+OrchestrationRunTaskSchema.index({ planId: 1, runId: 1 });
+OrchestrationRunTaskSchema.index({ sourceTaskId: 1 });

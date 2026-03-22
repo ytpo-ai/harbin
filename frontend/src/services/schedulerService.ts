@@ -45,16 +45,19 @@ export interface OrchestrationSchedule {
   updatedAt: string;
 }
 
-export interface ScheduleTaskHistory {
+export interface ScheduleRunHistory {
   _id: string;
-  mode: 'plan' | 'schedule';
+  planId: string;
+  triggerType: 'manual' | 'schedule' | 'autorun';
   scheduleId?: string;
-  title: string;
-  status: 'pending' | 'assigned' | 'in_progress' | 'blocked' | 'waiting_human' | 'completed' | 'failed' | 'cancelled';
-  result?: {
-    output?: string;
-    summary?: string;
-    error?: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  summary?: string;
+  error?: string;
+  stats: {
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    waitingHumanTasks: number;
   };
   startedAt?: string;
   completedAt?: string;
@@ -166,7 +169,7 @@ export const schedulerService = {
     return response.data;
   },
 
-  async getScheduleHistory(scheduleId: string, limit = 20): Promise<ScheduleTaskHistory[]> {
+  async getScheduleHistory(scheduleId: string, limit = 20): Promise<ScheduleRunHistory[]> {
     const response = await api.get(`/orchestration/schedules/${scheduleId}/history`, {
       params: {
         limit,

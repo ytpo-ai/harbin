@@ -32,6 +32,9 @@ export class OrchestrationPlan {
   @Prop({ type: [String], default: [] })
   taskIds: string[];
 
+  @Prop()
+  lastRunId?: string;
+
   @Prop(raw({
     totalTasks: { type: Number, default: 0 },
     completedTasks: { type: Number, default: 0 },

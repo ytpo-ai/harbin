@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Sse,
   UnauthorizedException,
@@ -18,18 +19,23 @@ import { GatewayUserContext } from '@libs/contracts';
 import { AuthService } from '../auth/auth.service';
 import { OrchestrationService } from './orchestration.service';
 import {
+  AddTaskToPlanDto,
   ArchiveSessionDto,
   BatchAppendMessagesDto,
+  BatchUpdateTasksDto,
   DebugTaskStepDto,
   ReplanPlanDto,
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
   CreateSessionDto,
+  ReorderPlanTasksDto,
   ReassignTaskDto,
+  RunHistoryQueryDto,
   RunPlanDto,
   SessionMessageDto,
   SessionQueryDto,
   UpdatePlanDto,
+  UpdateTaskFullDto,
   UpdateTaskDraftDto,
 } from './dto';
 import { SessionManagerService } from './session-manager.service';
@@ -164,6 +170,16 @@ export class OrchestrationController {
     return this.orchestrationService.listTasksByPlan(planId);
   }
 
+  @Post('plans/:planId/tasks')
+  async addTaskToPlan(
+    @Param('planId') planId: string,
+    @Body() dto: AddTaskToPlanDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.addTaskToPlan(planId, dto);
+  }
+
   @Post('plans/:id/run')
   async runPlan(
     @Param('id') planId: string,
@@ -174,6 +190,51 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.runPlanAsync(planId, dto || {});
+  }
+
+  @Get('plans/:id/runs')
+  async listPlanRuns(
+    @Param('id') planId: string,
+    @Query() query: RunHistoryQueryDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.listPlanRuns(planId, query.limit || 20);
+  }
+
+  @Get('plans/:id/runs/latest')
+  async getLatestPlanRun(
+    @Param('id') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.getLatestPlanRun(planId);
+  }
+
+  @Get('runs/:runId')
+  async getRunDetail(
+    @Param('runId') runId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.getRunById(runId);
+  }
+
+  @Get('runs/:runId/tasks')
+  async listRunTasks(
+    @Param('runId') runId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.listRunTasks(runId);
   }
 
   @Post('plans/:id/replan')
@@ -226,6 +287,55 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.updateTaskDraft(taskId, dto);
+  }
+
+  @Patch('tasks/:taskId')
+  async updateTaskFull(
+    @Param('taskId') taskId: string,
+    @Body() dto: UpdateTaskFullDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.updateTaskFull(taskId, dto);
+  }
+
+  @Delete('tasks/:taskId')
+  async removeTaskFromPlan(
+    @Param('taskId') taskId: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.removeTaskFromPlan(taskId);
+  }
+
+  @Put('plans/:planId/tasks/reorder')
+  async reorderPlanTasks(
+    @Param('planId') planId: string,
+    @Body() dto: ReorderPlanTasksDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.reorderPlanTasks(planId, dto);
+  }
+
+  @Put('plans/:planId/tasks/batch-update')
+  async batchUpdateTasks(
+    @Param('planId') planId: string,
+    @Body() dto: BatchUpdateTasksDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.batchUpdateTasks(planId, dto);
+  }
+
+  @Post('plans/:planId/tasks/duplicate/:taskId')
+  async duplicateTask(
+    @Param('planId') planId: string,
+    @Param('taskId') taskId: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    const user = await this.getUserFromAuthHeader(authHeader);
+    return this.orchestrationService.duplicateTask(planId, taskId);
   }
 
   @Post('tasks/:id/debug-run')

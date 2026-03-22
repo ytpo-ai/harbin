@@ -13,6 +13,10 @@ import {
   OrchestrationTask,
   OrchestrationTaskSchema,
 } from '@legacy/shared/schemas/orchestration-task.schema';
+import {
+  OrchestrationRun,
+  OrchestrationRunSchema,
+} from '@legacy/shared/schemas/orchestration-run.schema';
 import { SchedulerController } from './scheduler.controller';
 import { SchedulerService } from './scheduler.service';
 
@@ -25,6 +29,7 @@ import { SchedulerService } from './scheduler.service';
     MongooseModule.forFeature([
       { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
+      { name: OrchestrationRun.name, schema: OrchestrationRunSchema },
       { name: Agent.name, schema: AgentSchema },
     ]),
   ],

@@ -17,7 +17,7 @@ import {
   schedulerService,
   CreateSchedulePayload,
   OrchestrationSchedule,
-  ScheduleTaskHistory,
+  ScheduleRunHistory,
   ScheduleType,
 } from '../services/schedulerService';
 
@@ -206,7 +206,7 @@ const Scheduler: React.FC = () => {
 
   const historyLimit = scheduleDetail?.planId || selectedSchedule?.planId ? 1 : 15;
 
-  const { data: history = [], isFetching: historyLoading } = useQuery<ScheduleTaskHistory[]>(
+  const { data: history = [], isFetching: historyLoading } = useQuery<ScheduleRunHistory[]>(
     ['orchestration-schedule-history', selectedScheduleId, historyLimit],
     () => schedulerService.getScheduleHistory(selectedScheduleId, historyLimit),
     {
@@ -688,10 +688,10 @@ const Scheduler: React.FC = () => {
                               </p>
                             </div>
                             <p className="mt-1 line-clamp-2 text-xs text-slate-600">
-                              {item.result?.output || item.result?.summary || '-'}
+                              {item.summary || '-'}
                             </p>
-                            {item.result?.error && (
-                              <p className="mt-1 text-xs text-rose-600">{item.result.error}</p>
+                            {item.error && (
+                              <p className="mt-1 text-xs text-rose-600">{item.error}</p>
                             )}
                           </div>
                         ))}

@@ -14,9 +14,7 @@ export type TaskStatus =
 
 export interface OrchestrationTask {
   _id: string;
-  mode?: 'plan' | 'schedule';
   planId?: string;
-  scheduleId?: string;
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -60,10 +58,38 @@ export interface OrchestrationPlan {
     waitingHumanTasks: number;
   };
   taskIds: string[];
+  lastRunId?: string;
   tasks?: OrchestrationTask[];
+  lastRun?: OrchestrationRun;
   metadata?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrchestrationRun {
+  _id: string;
+  planId: string;
+  triggerType: 'manual' | 'schedule' | 'autorun';
+  scheduleId?: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  summary?: string;
+  error?: string;
+  stats: {
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    waitingHumanTasks: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrchestrationRunTask extends OrchestrationTask {
+  runId: string;
+  sourceTaskId: string;
 }
 
 export interface AgentSession {
@@ -155,6 +181,33 @@ export interface ReplanPlanDto {
   plannerAgentId?: string;
   mode?: PlanMode;
   autoRun?: boolean;
+}
+
+export interface TaskAssignmentPayload {
+  executorType: 'agent' | 'employee' | 'unassigned';
+  executorId?: string;
+  reason?: string;
+}
+
+export interface AddTaskToPlanPayload {
+  title: string;
+  description: string;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  insertAfterTaskId?: string;
+  dependencyTaskIds?: string[];
+  assignment?: TaskAssignmentPayload;
+}
+
+export interface UpdateTaskFullPayload {
+  title?: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+  dependencyTaskIds?: string[];
+  assignment?: TaskAssignmentPayload;
+}
+
+export interface BatchUpdateTaskItem extends UpdateTaskFullPayload {
+  taskId: string;
 }
 
 export const orchestrationService = {
@@ -308,6 +361,28 @@ export const orchestrationService = {
     return response.data;
   },
 
+  async getPlanRuns(planId: string, limit = 20): Promise<OrchestrationRun[]> {
+    const response = await api.get(`/orchestration/plans/${planId}/runs`, {
+      params: { limit },
+    });
+    return response.data;
+  },
+
+  async getPlanLatestRun(planId: string): Promise<OrchestrationRun | null> {
+    const response = await api.get(`/orchestration/plans/${planId}/runs/latest`);
+    return response.data;
+  },
+
+  async getRunById(runId: string): Promise<OrchestrationRun> {
+    const response = await api.get(`/orchestration/runs/${runId}`);
+    return response.data;
+  },
+
+  async getRunTasks(runId: string): Promise<OrchestrationRunTask[]> {
+    const response = await api.get(`/orchestration/runs/${runId}/tasks`);
+    return response.data;
+  },
+
   async reassignTask(
     taskId: string,
     payload: { executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason?: string },
@@ -334,6 +409,45 @@ export const orchestrationService = {
     payload: { title?: string; description?: string },
   ): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/tasks/${taskId}/draft`, payload);
+    return response.data;
+  },
+
+  async addTaskToPlan(
+    planId: string,
+    payload: AddTaskToPlanPayload,
+  ): Promise<OrchestrationTask> {
+    const response = await api.post(`/orchestration/plans/${planId}/tasks`, payload);
+    return response.data;
+  },
+
+  async deleteTask(taskId: string): Promise<{ success: boolean }> {
+    const response = await api.delete(`/orchestration/tasks/${taskId}`);
+    return response.data;
+  },
+
+  async updateTaskFull(
+    taskId: string,
+    payload: UpdateTaskFullPayload,
+  ): Promise<OrchestrationTask> {
+    const response = await api.patch(`/orchestration/tasks/${taskId}`, payload);
+    return response.data;
+  },
+
+  async reorderTasks(planId: string, taskIds: string[]): Promise<{ success: boolean }> {
+    const response = await api.put(`/orchestration/plans/${planId}/tasks/reorder`, { taskIds });
+    return response.data;
+  },
+
+  async batchUpdateTasks(
+    planId: string,
+    updates: BatchUpdateTaskItem[],
+  ): Promise<OrchestrationTask[]> {
+    const response = await api.put(`/orchestration/plans/${planId}/tasks/batch-update`, { updates });
+    return response.data;
+  },
+
+  async duplicateTask(planId: string, taskId: string): Promise<OrchestrationTask> {
+    const response = await api.post(`/orchestration/plans/${planId}/tasks/duplicate/${taskId}`);
     return response.data;
   },
 

@@ -2,9 +2,11 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsObject,
   IsOptional,
   IsString,
+  Min,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -142,6 +144,99 @@ export class UpdateTaskDraftDto {
   @IsString()
   @MaxLength(4000)
   description?: string;
+}
+
+export class TaskAssignmentDto {
+  @IsEnum(['agent', 'employee', 'unassigned'])
+  executorType: 'agent' | 'employee' | 'unassigned';
+
+  @IsOptional()
+  @IsString()
+  executorId?: string;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class AddTaskToPlanDto {
+  @IsString()
+  @MaxLength(200)
+  title: string;
+
+  @IsString()
+  @MaxLength(4000)
+  description: string;
+
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high', 'urgent'])
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+
+  @IsOptional()
+  @IsString()
+  insertAfterTaskId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dependencyTaskIds?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskAssignmentDto)
+  assignment?: TaskAssignmentDto;
+}
+
+export class UpdateTaskFullDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high', 'urgent'])
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  dependencyTaskIds?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TaskAssignmentDto)
+  assignment?: TaskAssignmentDto;
+}
+
+export class ReorderPlanTasksDto {
+  @IsArray()
+  @IsString({ each: true })
+  taskIds: string[];
+}
+
+export class BatchUpdateTaskItemDto extends UpdateTaskFullDto {
+  @IsString()
+  taskId: string;
+}
+
+export class BatchUpdateTasksDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BatchUpdateTaskItemDto)
+  updates: BatchUpdateTaskItemDto[];
+}
+
+export class RunHistoryQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
 }
 
 export class DebugTaskStepDto extends UpdateTaskDraftDto {
