@@ -36,13 +36,23 @@ import { ModelToolHandler } from './model-tool-handler.service';
 import { SkillToolHandler } from './skill-tool-handler.service';
 import { AuditToolHandler } from './audit-tool-handler.service';
 import { MeetingToolHandler } from './meeting-tool-handler.service';
+import { PromptRegistryToolHandler } from './prompt-registry-tool-handler.service';
+import { PromptTemplate, PromptTemplateSchema } from '../../schemas/prompt-template.schema';
+import {
+  PromptTemplateAudit,
+  PromptTemplateAuditSchema,
+} from '../../schemas/prompt-template-audit.schema';
+import { PromptRegistryAdminService } from '../prompt-registry/prompt-registry-admin.service';
+import { PromptResolverService } from '../prompt-registry/prompt-resolver.service';
 import { AgentToolAuthService } from './agent-tool-auth.service';
 import { AgentToolAuthGuard } from './agent-tool-auth.guard';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
+import { InfraModule } from '@libs/infra';
 
 @Module({
   imports: [
     ConfigModule,
+    InfraModule,
     ModelModule,
     MemoModule,
     SkillModule,
@@ -60,6 +70,8 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
       { name: AgentRole.name, schema: AgentRoleSchema },
       { name: AgentToolCredential.name, schema: AgentToolCredentialSchema },
       { name: AgentToolTokenRevocation.name, schema: AgentToolTokenRevocationSchema },
+      { name: PromptTemplate.name, schema: PromptTemplateSchema },
+      { name: PromptTemplateAudit.name, schema: PromptTemplateAuditSchema },
     ]),
   ],
   controllers: [ToolController],
@@ -77,6 +89,9 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
     SkillToolHandler,
     AuditToolHandler,
     MeetingToolHandler,
+    PromptRegistryToolHandler,
+    PromptResolverService,
+    PromptRegistryAdminService,
     AgentToolAuthService,
     AgentToolAuthGuard,
   ],
@@ -94,6 +109,7 @@ import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
     SkillToolHandler,
     AuditToolHandler,
     MeetingToolHandler,
+    PromptRegistryToolHandler,
     AgentToolAuthService,
     AgentToolAuthGuard,
   ],

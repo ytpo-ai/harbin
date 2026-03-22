@@ -22,3 +22,21 @@ describe('RepoToolHandler parseCommand', () => {
     expect(parseCommand('ls docs | wc -l')).toEqual(['ls', 'docs', '|', 'wc', '-l']);
   });
 });
+
+describe('RepoToolHandler repo writer guards', () => {
+  it('rejects non-https repo url', () => {
+    const handler = new RepoToolHandler() as any;
+    expect(() => handler.validateHttpsRepoUrl('git@github.com:example/repo.git')).toThrow(
+      'repo_writer repoUrl must be a valid HTTPS URL',
+    );
+    expect(() => handler.validateHttpsRepoUrl('ssh://github.com/example/repo.git')).toThrow(
+      'repo_writer only supports HTTPS repository URLs',
+    );
+  });
+
+  it('rejects targetDir path traversal', () => {
+    const handler = new RepoToolHandler() as any;
+    expect(() => handler.normalizeRepoWriterTargetDir('../escape')).toThrow('repo_writer targetDir is invalid');
+    expect(() => handler.normalizeRepoWriterTargetDir('/absolute/path')).toThrow('repo_writer targetDir is invalid');
+  });
+});

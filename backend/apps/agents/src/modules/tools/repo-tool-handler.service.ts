@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { access, appendFile, mkdir, writeFile } from 'fs/promises';
+import { access, appendFile, mkdir, readdir, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { codeDocsReader } from './local-repo-docs-reader.util';
 import { codeUpdatesReader } from './local-repo-updates-reader.util';
-import { RD_DOCS_WRITE_TOOL_ID } from './builtin-tool-definitions';
+import { RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from './builtin-tool-definitions';
 
 const execFileAsync = promisify(execFile);
 
@@ -188,6 +188,91 @@ export class RepoToolHandler {
     };
   }
 
+  async executeRepoWriter(params: {
+    action?: string;
+    repoUrl?: string;
+    branch?: string;
+    targetDir?: string;
+  }): Promise<any> {
+    const action = String(params?.action || '').trim().toLowerCase();
+    if (action !== 'git-clone') {
+      throw new Error('repo_writer only supports action=git-clone');
+    }
+
+    const repoUrl = this.validateHttpsRepoUrl(params?.repoUrl);
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const branch = String(params?.branch || '').trim() || 'main';
+    const timeoutMs = Math.max(5_000, Number(process.env.REPO_WRITER_TIMEOUT_MS || 60_000));
+    const maxRepoSizeMb = Math.max(0, Number(process.env.REPO_WRITER_MAX_REPO_SIZE_MB || 512));
+
+    const repoName = path
+      .basename(new URL(repoUrl).pathname)
+      .replace(/\.git$/i, '')
+      .trim();
+    const targetDir = this.normalizeRepoWriterTargetDir(params?.targetDir || repoName);
+
+    const dataRoot = path.resolve(workspaceRoot, 'data');
+    const reposRoot = path.resolve(dataRoot, 'repos');
+    const localPath = path.resolve(reposRoot, targetDir);
+
+    this.ensureInsideDir(localPath, dataRoot, 'repo_writer target path is outside data directory');
+
+    await mkdir(reposRoot, { recursive: true });
+
+    const localExists = await this.fileExists(localPath);
+    const hasGitRepo = localExists ? await this.isGitRepository(localPath) : false;
+
+    if (localExists && !hasGitRepo) {
+      throw new Error('repo_writer target directory exists but is not a git repository');
+    }
+
+    if (hasGitRepo) {
+      await execFileAsync('git', ['-C', localPath, 'fetch', '--depth', '1', 'origin', branch], {
+        cwd: workspaceRoot,
+        timeout: timeoutMs,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+      await execFileAsync('git', ['-C', localPath, 'checkout', branch], {
+        cwd: workspaceRoot,
+        timeout: timeoutMs,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+      await execFileAsync('git', ['-C', localPath, 'pull', '--ff-only', 'origin', branch], {
+        cwd: workspaceRoot,
+        timeout: timeoutMs,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+    } else {
+      await execFileAsync('git', ['clone', '--depth', '1', '--branch', branch, repoUrl, localPath], {
+        cwd: workspaceRoot,
+        timeout: timeoutMs,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+    }
+
+    const [fileCount, repoSizeBytes] = await Promise.all([
+      this.countGitTrackedFiles(localPath),
+      this.getDirectorySizeBytes(localPath),
+    ]);
+
+    if (maxRepoSizeMb > 0 && repoSizeBytes > maxRepoSizeMb * 1024 * 1024) {
+      throw new Error(`repo_writer repository size exceeds limit (${maxRepoSizeMb}MB)`);
+    }
+
+    return {
+      success: true,
+      toolId: RD_REPO_WRITER_TOOL_ID,
+      action: 'git-clone',
+      repoUrl,
+      branch,
+      localPath,
+      fileCount,
+      repoSizeBytes,
+      updated: hasGitRepo,
+      completedAt: new Date().toISOString(),
+    };
+  }
+
   async executeRepoRead(params: { command: string }): Promise<any> {
     const allowedCommands = ['git log', 'git show', 'git diff', 'cat', 'ls', 'grep', 'head', 'tail', 'find'];
     const command = (params.command || '').trim();
@@ -341,5 +426,80 @@ export class RepoToolHandler {
     } catch {
       return false;
     }
+  }
+
+  private validateHttpsRepoUrl(rawUrl?: string): string {
+    const repoUrl = String(rawUrl || '').trim();
+    if (!repoUrl) {
+      throw new Error('repo_writer requires repoUrl');
+    }
+
+    let parsed: URL;
+    try {
+      parsed = new URL(repoUrl);
+    } catch {
+      throw new Error('repo_writer repoUrl must be a valid HTTPS URL');
+    }
+
+    if (parsed.protocol !== 'https:') {
+      throw new Error('repo_writer only supports HTTPS repository URLs');
+    }
+
+    return parsed.toString();
+  }
+
+  private normalizeRepoWriterTargetDir(rawTargetDir: string): string {
+    const normalized = path.posix
+      .normalize(String(rawTargetDir || '').trim().replace(/\\/g, '/'))
+      .replace(/^\.\//, '')
+      .trim();
+    if (!normalized || normalized === '.' || normalized.includes('..') || path.posix.isAbsolute(normalized)) {
+      throw new Error('repo_writer targetDir is invalid');
+    }
+    return normalized;
+  }
+
+  private ensureInsideDir(targetPath: string, baseDir: string, message: string): void {
+    const resolvedBase = path.resolve(baseDir);
+    const resolvedTarget = path.resolve(targetPath);
+    if (!(resolvedTarget === resolvedBase || resolvedTarget.startsWith(`${resolvedBase}${path.sep}`))) {
+      throw new Error(message);
+    }
+  }
+
+  private async isGitRepository(targetPath: string): Promise<boolean> {
+    return this.fileExists(path.join(targetPath, '.git'));
+  }
+
+  private async countGitTrackedFiles(repoPath: string): Promise<number> {
+    const { stdout } = await execFileAsync('git', ['-C', repoPath, 'ls-files'], {
+      maxBuffer: 5 * 1024 * 1024,
+    });
+    return stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean).length;
+  }
+
+  private async getDirectorySizeBytes(rootDir: string): Promise<number> {
+    let total = 0;
+    const stack = [rootDir];
+    while (stack.length) {
+      const current = stack.pop();
+      if (!current) continue;
+      const entries = await readdir(current, { withFileTypes: true });
+      for (const entry of entries) {
+        const entryPath = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(entryPath);
+          continue;
+        }
+        if (entry.isFile()) {
+          const fileStat = await stat(entryPath);
+          total += fileStat.size;
+        }
+      }
+    }
+    return total;
   }
 }

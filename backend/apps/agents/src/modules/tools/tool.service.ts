@@ -25,16 +25,26 @@ import { ModelToolHandler } from './model-tool-handler.service';
 import { SkillToolHandler } from './skill-tool-handler.service';
 import { AuditToolHandler } from './audit-tool-handler.service';
 import { MeetingToolHandler } from './meeting-tool-handler.service';
+import { PromptRegistryToolHandler } from './prompt-registry-tool-handler.service';
 import { ToolExecutionContext } from './tool-execution-context.type';
 import {
   AGENT_CREATE_TOOL_ID,
   AGENT_LIST_TOOL_ID,
   DEPRECATED_TOOL_IDS,
   LEGACY_AGENT_LIST_TOOL_ID,
+  PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
   RD_DOCS_WRITE_TOOL_ID,
+  RD_REPO_WRITER_TOOL_ID,
   VIRTUAL_TOOL_IDS,
 } from './builtin-tool-definitions';
 import { BUILTIN_TOOLS, IMPLEMENTED_TOOL_IDS } from './builtin-tool-catalog';
+import { RedisService } from '@libs/infra';
+import {
+  AGENT_TASK_RUNTIME_STATUS_INDEX_KEY,
+  buildAgentRuntimeStatusKey,
+  buildIdleAgentRuntimeStatus,
+  parseAgentRuntimeStatus,
+} from '../agent-tasks/agent-task-runtime-status.util';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -113,6 +123,7 @@ export class ToolService {
     private modelManagementService: ModelManagementService,
     private memoService: MemoService,
     private memoWriteQueue: MemoWriteQueueService,
+    private redisService: RedisService,
     private internalApiClient: InternalApiClient,
     private toolGovernanceService: ToolGovernanceService,
     private orchestrationToolHandler: OrchestrationToolHandler,
@@ -122,6 +133,7 @@ export class ToolService {
     private skillToolHandler: SkillToolHandler,
     private auditToolHandler: AuditToolHandler,
     private meetingToolHandler: MeetingToolHandler,
+    private promptRegistryToolHandler: PromptRegistryToolHandler,
   ) {}
 
   async seedBuiltinTools(mode: 'sync' | 'append' = 'sync'): Promise<void> {
@@ -751,7 +763,7 @@ export class ToolService {
     const normalizedToolIds = Array.from(new Set(toolIds.map((item) => String(item || '').trim()).filter(Boolean)));
     return this.toolModel
       .find({
-        enabled: true,
+        enabled: { $ne: false },
         $or: [{ id: { $in: normalizedToolIds } }, { canonicalId: { $in: normalizedToolIds } }],
       })
       .exec();
@@ -1247,6 +1259,7 @@ export class ToolService {
       normalized.startsWith('builtin.sys-mg.mcp.orchestration.') ||
       normalized.startsWith('builtin.sys-mg.mcp.model-admin.') ||
       normalized.startsWith('builtin.sys-mg.mcp.skill-master.') ||
+      normalized.startsWith('builtin.sys-mg.mcp.prompt-registry.') ||
       normalized.startsWith('builtin.sys-mg.mcp.audit.') ||
       normalized.startsWith('builtin.sys-mg.internal.agent-master.')
     );
@@ -1271,6 +1284,11 @@ export class ToolService {
     const requirementDispatch = this.dispatchRequirementToolImplementation(tool.id, parameters, agentId, executionContext);
     if (requirementDispatch) {
       return requirementDispatch;
+    }
+
+    const promptRegistryDispatch = this.dispatchPromptRegistryToolImplementation(tool.id, parameters);
+    if (promptRegistryDispatch) {
+      return promptRegistryDispatch;
     }
 
     switch (tool.id) {
@@ -1331,12 +1349,26 @@ export class ToolService {
     switch (toolId) {
       case 'builtin.sys-mg.internal.rd-related.repo-read':
         return this.repoToolHandler.executeRepoRead(parameters);
+      case RD_REPO_WRITER_TOOL_ID:
+        return this.repoToolHandler.executeRepoWriter(parameters);
       case 'builtin.sys-mg.internal.rd-related.docs-read':
         return this.repoToolHandler.getCodeDocsReader(parameters);
       case RD_DOCS_WRITE_TOOL_ID:
         return this.repoToolHandler.executeDocsWrite(parameters);
       case 'builtin.sys-mg.internal.rd-related.updates-read':
         return this.repoToolHandler.getCodeUpdatesReader(parameters);
+      default:
+        return undefined;
+    }
+  }
+
+  private dispatchPromptRegistryToolImplementation(
+    toolId: string,
+    parameters: any,
+  ): Promise<any> | undefined {
+    switch (toolId) {
+      case PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID:
+        return this.promptRegistryToolHandler.savePromptTemplate(parameters);
       default:
         return undefined;
     }
@@ -2024,9 +2056,10 @@ export class ToolService {
     };
   }
 
-  private async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number }): Promise<any> {
+  private async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number; agentId?: string }): Promise<any> {
     const includeHidden = params?.includeHidden === true;
     const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
+    const targetAgentId = String(params?.agentId || '').trim();
     const agents = await this.agentModel.find().exec();
     const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
     const roleMap = await this.getRoleMapByIds(roleIds);
@@ -2133,7 +2166,10 @@ export class ToolService {
       };
     });
 
-    const visibleAgents = mapped.filter((item) => includeHidden || item.exposed).slice(0, limit);
+    const filtered = targetAgentId
+      ? mapped.filter((item) => String(item.id || '').trim() === targetAgentId)
+      : mapped.filter((item) => includeHidden || item.exposed);
+    const visibleAgents = filtered.slice(0, limit);
     const skillIds = Array.from(new Set(visibleAgents.flatMap((item) => item._skillIds || [])));
     const skills = skillIds.length
       ? await this.skillModel.find({ id: { $in: skillIds } }).select({ id: 1, name: 1, description: 1 }).lean().exec()
@@ -2154,6 +2190,7 @@ export class ToolService {
       visibleAgents.map((item) => String(item.id || '').trim()),
       'identity',
     );
+    const runtimeStatusMap = await this.getAgentRuntimeStatusMap(visibleAgents.map((item) => String(item.id || '').trim()));
     const agentsWithIdentify = visibleAgents.map((item) => {
       const skillsWithMetadata = (item._skillIds || []).map((skillId: string) => {
         const matched = skillMap.get(skillId);
@@ -2177,6 +2214,7 @@ export class ToolService {
         exposed: item.exposed,
         isActive: item.isActive,
         identify: identifyMap.get(String(item.id || '').trim()) || '',
+        runtimeStatus: runtimeStatusMap.get(String(item.id || '').trim()) || buildIdleAgentRuntimeStatus(String(item.id || '').trim()),
       };
     });
 
@@ -2184,9 +2222,40 @@ export class ToolService {
       total: mapped.length,
       visible: agentsWithIdentify.length,
       includeHidden,
+      ...(targetAgentId ? { agentId: targetAgentId } : {}),
       agents: agentsWithIdentify,
       fetchedAt: new Date().toISOString(),
     };
+  }
+
+  private async getAgentRuntimeStatusMap(agentIds: string[]): Promise<Map<string, ReturnType<typeof buildIdleAgentRuntimeStatus>>> {
+    const normalizedIds = Array.from(new Set((agentIds || []).map((item) => String(item || '').trim()).filter(Boolean)));
+    const map = new Map<string, ReturnType<typeof buildIdleAgentRuntimeStatus>>();
+    for (const agentId of normalizedIds) {
+      map.set(agentId, buildIdleAgentRuntimeStatus(agentId));
+    }
+
+    if (!normalizedIds.length || !this.redisService?.isReady?.()) {
+      return map;
+    }
+
+    try {
+      await this.redisService.sadd(AGENT_TASK_RUNTIME_STATUS_INDEX_KEY, normalizedIds);
+      await Promise.all(
+        normalizedIds.map(async (agentId) => {
+          const raw = await this.redisService.get(buildAgentRuntimeStatusKey(agentId));
+          const parsed = parseAgentRuntimeStatus(raw);
+          if (parsed) {
+            map.set(agentId, parsed);
+          }
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(`[agent_runtime_status] failed to read runtime status for list-agents: ${message}`);
+    }
+
+    return map;
   }
 
   private async getRoleMapByIds(roleIds: string[]): Promise<Map<string, { name: string; code: string; permissions: string[] }>> {

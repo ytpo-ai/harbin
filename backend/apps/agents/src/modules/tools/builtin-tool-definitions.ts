@@ -2,6 +2,8 @@ export const AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-master.list-age
 export const LEGACY_AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-admin.list-agents';
 export const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create-agent';
 export const RD_DOCS_WRITE_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-write';
+export const RD_REPO_WRITER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-writer';
+export const PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.save-template';
 
 export const VIRTUAL_TOOL_IDS = [
   'web_search',

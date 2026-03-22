@@ -4,6 +4,24 @@ import { Document } from 'mongoose';
 export type PromptTemplateDocument = PromptTemplate & Document;
 
 export type PromptTemplateStatus = 'draft' | 'published' | 'archived';
+export type PromptTemplateSourceType = 'github' | 'manual' | 'internal';
+
+@Schema({ _id: false })
+export class PromptTemplateSource {
+  @Prop({ required: true, enum: ['github', 'manual', 'internal'] })
+  type: PromptTemplateSourceType;
+
+  @Prop({ trim: true })
+  repo?: string;
+
+  @Prop({ trim: true })
+  path?: string;
+
+  @Prop()
+  importedAt?: Date;
+}
+
+export const PromptTemplateSourceSchema = SchemaFactory.createForClass(PromptTemplateSource);
 
 @Schema({ collection: 'prompt_templates', timestamps: false })
 export class PromptTemplate {
@@ -24,6 +42,15 @@ export class PromptTemplate {
 
   @Prop({ trim: true })
   description?: string;
+
+  @Prop({ trim: true })
+  category?: string;
+
+  @Prop({ type: [String], default: undefined })
+  tags?: string[];
+
+  @Prop({ type: PromptTemplateSourceSchema, required: false })
+  source?: PromptTemplateSource;
 
   @Prop({ trim: true })
   updatedBy?: string;

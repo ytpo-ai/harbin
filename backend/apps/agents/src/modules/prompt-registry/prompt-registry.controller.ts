@@ -54,7 +54,21 @@ export class PromptRegistryController {
   @Post('templates/draft')
   async saveDraft(
     @Body()
-    body: { scene?: string; role?: string; content?: string; description?: string; baseVersion?: number; summary?: string },
+    body: {
+      scene?: string;
+      role?: string;
+      content?: string;
+      description?: string;
+      category?: string;
+      tags?: string[];
+      source?: {
+        type?: 'github' | 'manual' | 'internal';
+        repo?: string;
+        path?: string;
+      };
+      baseVersion?: number;
+      summary?: string;
+    },
     @Req() req?: any,
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
@@ -65,6 +79,16 @@ export class PromptRegistryController {
       role: String(body.role || ''),
       content: String(body.content || ''),
       description: body.description,
+      category: body.category,
+      tags: Array.isArray(body.tags) ? body.tags : undefined,
+      source:
+        body.source?.type
+          ? {
+              type: body.source.type,
+              repo: body.source.repo,
+              path: body.source.path,
+            }
+          : undefined,
       baseVersion: typeof body.baseVersion === 'number' ? body.baseVersion : undefined,
       summary: body.summary,
       operatorId,

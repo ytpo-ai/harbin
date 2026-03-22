@@ -35,7 +35,7 @@
 6. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
 7. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
 8. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
-9. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。
+9. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。`list-agents` 支持可选 `agentId` 精确查询，且返回 `runtimeStatus`（Redis task tool 级状态快照）。
 10. RD 文档工具：`builtin.sys-mg.internal.rd-related.docs-write` 支持在 `docs/**` 下写入 `.md` 文档（`create/update/append`），并内置路径穿越与后缀白名单防护。
 11. 治理约束：结合 Agent/MCP Profile 白名单控制工具可见性与可执行性。
 12. 工具级 Prompt：`tools` 支持 `prompt` 字段，Agent 运行时会按已授权工具自动注入对应 system 提示，不再依赖角色硬编码。
@@ -49,6 +49,8 @@
 20. 手动 seed 支持 `--mode=append|sync`：`append` 仅追加新内置工具/新 profile，并对已存在 profile 仅追加 `tools`；默认 `sync` 保持全量对齐行为。
 21. 会议分配执行提示：`requirement.update-status / requirement.assign / send-internal-message` 增加闭环执行 prompt（一次确认即执行、先分配后通知、三段式回执、默认短版通知）。
 22. 工具参数契约按需注入：运行时默认仅注入工具目录（id/name/description）；当出现参数错误时，仅对当前失败工具回填 `inputSchema` 做修正重试，避免把全部工具 schema 常驻到上下文。
+23. RD 仓库写入工具：新增 `builtin.sys-mg.internal.rd-related.repo-writer`，支持 `git-clone` 到 `data/repos/**`，并内置 HTTPS 协议限制与目录沙箱防护。
+24. Prompt Registry 写入工具：新增 `builtin.sys-mg.mcp.prompt-registry.save-template`，支持单条/批量保存 PromptTemplate，按 `scene+role` 自动递增版本并可选自动发布。
 
 ---
 
@@ -64,6 +66,7 @@
 | `AGENT_TOOL_MANAGEMENT_UI_OPTIMIZATION_PLAN.md` | 工具管理页与调用日志 Tab 展示优化计划 |
 | `TOOL_ID_NAMESPACE_FORMAT_OPTIMIZATION_PLAN.md` | Tool ID 命名层级与 namespace 优化计划 |
 | `RD_RELATED_DOCS_WRITE_MCP_PLAN.md` | RD 文档写入 MCP（docs-write）接入计划 |
+| `PROMPT_IMPORT_REPO_WRITER_TOOL_PLAN.md` | Prompt 批量导入与 repo-writer/save-template 工具接入计划 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_A_SECURITY_AUTH_HOTFIX.md` | 工具鉴权热修与 JWT 凭证化升级计划 |
 
@@ -110,6 +113,7 @@
 | `skill-tool-handler.service.ts` | Skill 类工具处理器 |
 | `audit-tool-handler.service.ts` | 人工操作审计工具处理器 |
 | `meeting-tool-handler.service.ts` | 会议类工具处理器 |
+| `prompt-registry-tool-handler.service.ts` | Prompt 模板批量写入处理器 |
 | `web-tools.service.ts` | Web Search/Web Fetch/Content Extract 内置工具实现 |
 | `exa.service.ts` | Exa 搜索接入（默认 web search provider） |
 | `composio.service.ts` | Composio 工具包接入与调用封装 |

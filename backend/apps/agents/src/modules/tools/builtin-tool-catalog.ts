@@ -2,7 +2,9 @@ import {
   AGENT_CREATE_TOOL_ID,
   AGENT_LIST_TOOL_ID,
   LEGACY_AGENT_LIST_TOOL_ID,
+  PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
   RD_DOCS_WRITE_TOOL_ID,
+  RD_REPO_WRITER_TOOL_ID,
 } from './builtin-tool-definitions';
 
 export const BUILTIN_TOOLS = [
@@ -130,6 +132,31 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
+        id: RD_REPO_WRITER_TOOL_ID,
+        name: 'Repo Writer',
+        description: 'Clone or refresh remote repository into data/repos sandbox directory',
+        prompt:
+          '当你需要导入外部仓库内容时，先调用 builtin.sys-mg.internal.rd-related.repo-writer，action 使用 git-clone，将仓库拉取到 data/repos/ 下，再用 repo-read 继续分析文件。',
+        type: 'file_operation' as const,
+        category: 'Engineering Intelligence',
+        requiredPermissions: [{ id: 'repo_write', name: 'Repository Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            required: ['action', 'repoUrl'],
+            additionalProperties: false,
+            properties: {
+              action: { type: 'string' },
+              repoUrl: { type: 'string' },
+              branch: { type: 'string' },
+              targetDir: { type: 'string' },
+            },
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.internal.rd-related.docs-read',
         name: 'Code Docs Reader',
         description: 'Read raw documentation files from docs/ directory',
@@ -186,6 +213,34 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
+        id: PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
+        name: 'Prompt Registry Save Template',
+        description: 'Create or version prompt templates in prompt registry with optional auto-publish',
+        type: 'data_analysis' as const,
+        category: 'System Intelligence',
+        requiredPermissions: [{ id: 'prompt_write', name: 'Prompt Registry Write', level: 'intermediate' }],
+        tokenCost: 4,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            required: [],
+            additionalProperties: true,
+            properties: {
+              scene: { type: 'string' },
+              role: { type: 'string' },
+              content: { type: 'string' },
+              description: { type: 'string' },
+              category: { type: 'string' },
+              tags: { type: 'array' },
+              source: { type: 'object' },
+              templates: { type: 'array' },
+              autoPublish: { type: 'boolean' },
+            },
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run',
         name: 'Engineering Statistics Run',
         description: 'Trigger engineering statistics snapshot and return summary',
@@ -223,7 +278,7 @@ export const BUILTIN_TOOLS = [
       {
         id: AGENT_LIST_TOOL_ID,
         name: 'Agents MCP List',
-        description: 'List current agents, roles, and capability summaries from MCP visibility rules',
+        description: 'List current agents with role/capability summaries and runtime status from Redis cache',
         prompt:
           '当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 builtin.sys-mg.internal.agent-master.list-agents 工具获取实时名单，再基于工具结果回答。',
         type: 'data_analysis' as const,
@@ -232,7 +287,7 @@ export const BUILTIN_TOOLS = [
         tokenCost: 3,
         implementation: {
           type: 'built_in' as const,
-          parameters: { includeHidden: 'boolean', limit: 'number' },
+          parameters: { includeHidden: 'boolean', limit: 'number', agentId: 'string' },
         },
       },
       {

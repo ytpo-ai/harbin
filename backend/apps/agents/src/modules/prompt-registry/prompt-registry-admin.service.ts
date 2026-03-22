@@ -150,11 +150,27 @@ export class PromptRegistryAdminService {
     role: string;
     content: string;
     description?: string;
+    category?: string;
+    tags?: string[];
+    source?: {
+      type: 'github' | 'manual' | 'internal';
+      repo?: string;
+      path?: string;
+      importedAt?: Date;
+    };
     baseVersion?: number;
     summary?: string;
     operatorId?: string;
   }) {
-    const normalized = this.normalizeDraftInput(input.scene, input.role, input.content, input.description);
+    const normalized = this.normalizeDraftInput({
+      scene: input.scene,
+      role: input.role,
+      content: input.content,
+      description: input.description,
+      category: input.category,
+      tags: input.tags,
+      source: input.source,
+    });
     const latest = await this.getLatestVersion(normalized.scene, normalized.role);
     const nextVersion = (latest?.version || 0) + 1;
     const summary = String(input.summary || '').trim();
@@ -176,6 +192,9 @@ export class PromptRegistryAdminService {
       status: 'draft',
       content: normalized.content,
       description: normalized.description,
+      category: normalized.category,
+      tags: normalized.tags,
+      source: normalized.source,
       updatedBy: String(input.operatorId || '').trim() || undefined,
       updatedAt: new Date(),
     });
@@ -293,6 +312,9 @@ export class PromptRegistryAdminService {
       status: 'published',
       content: target.content,
       description: target.description,
+      category: target.category,
+      tags: target.tags,
+      source: target.source,
       updatedBy: String(input.operatorId || '').trim() || undefined,
       updatedAt: new Date(),
     });
@@ -409,19 +431,65 @@ export class PromptRegistryAdminService {
     };
   }
 
-  private normalizeDraftInput(scene: string, role: string, content: string, description?: string) {
-    const normalizedScene = String(scene || '').trim();
-    const normalizedRole = String(role || '').trim();
-    const normalizedContent = String(content || '').trim();
-    const normalizedDescription = String(description || '').trim();
+  private normalizeDraftInput(input: {
+    scene: string;
+    role: string;
+    content: string;
+    description?: string;
+    category?: string;
+    tags?: string[];
+    source?: {
+      type: 'github' | 'manual' | 'internal';
+      repo?: string;
+      path?: string;
+      importedAt?: Date;
+    };
+  }) {
+    const normalizedScene = String(input.scene || '').trim();
+    const normalizedRole = String(input.role || '').trim();
+    const normalizedContent = String(input.content || '').trim();
+    const normalizedDescription = String(input.description || '').trim();
+    const normalizedCategory = String(input.category || '').trim();
+    const normalizedTags = Array.from(
+      new Set(
+        (Array.isArray(input.tags) ? input.tags : [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    );
     if (!normalizedScene || !normalizedRole || !normalizedContent) {
       throw new BadRequestException('scene, role, content are required');
     }
+
+    let normalizedSource:
+      | {
+          type: 'github' | 'manual' | 'internal';
+          repo?: string;
+          path?: string;
+          importedAt: Date;
+        }
+      | undefined;
+    if (input.source) {
+      const sourceType = String(input.source.type || '').trim() as 'github' | 'manual' | 'internal';
+      if (!sourceType || !['github', 'manual', 'internal'].includes(sourceType)) {
+        throw new BadRequestException('source.type must be github | manual | internal');
+      }
+      normalizedSource = {
+        type: sourceType,
+        repo: String(input.source.repo || '').trim() || undefined,
+        path: String(input.source.path || '').trim() || undefined,
+        importedAt: input.source.importedAt instanceof Date ? input.source.importedAt : new Date(),
+      };
+    }
+
     return {
       scene: normalizedScene,
       role: normalizedRole,
       content: normalizedContent,
       description: normalizedDescription || undefined,
+      category: normalizedCategory || undefined,
+      tags: normalizedTags.length ? normalizedTags : undefined,
+      source: normalizedSource,
     };
   }
 
