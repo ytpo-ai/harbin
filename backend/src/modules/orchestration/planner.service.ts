@@ -146,6 +146,7 @@ export class PlannerService {
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: {
+        planId,
         mode: 'planning',
         format: 'json',
         roleInPlan: 'planner',
@@ -279,6 +280,16 @@ export class PlannerService {
   private buildIncrementalPlannerPrompt(context: IncrementalPlannerContext): string {
     const sections: string[] = [];
 
+    // ── 最高优先级：输出格式强制约束（放在最前面，压制角色 prompt 影响） ──
+    sections.push('[SYSTEM OVERRIDE] 你当前处于 **Planner JSON-only 模式**。');
+    sections.push('此模式下的硬性规则：');
+    sections.push('- 你只能输出一个合法 JSON 对象，绝对禁止输出任何自然语言、问候、确认、解释。');
+    sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
+    sections.push('- 不要回复"好的"、"收到"、"我来执行"等确认性文字。直接输出 JSON。');
+    sections.push('- JSON 必须严格符合以下 schema:');
+    sections.push('  {"task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"..."},"isGoalReached":false,"reasoning":"..."}');
+    sections.push('');
+
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
     sections.push('请确保每一步都可验证、可执行、可被单个执行者独立完成。');
     sections.push('');
@@ -329,15 +340,17 @@ export class PlannerService {
       sections.push('');
     }
 
-    sections.push('## 输出规则');
-    sections.push('1) 仅输出 JSON，不要输出其他解释。');
-    sections.push('2) 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "..."}, "isGoalReached": false, "reasoning": "..."}');
-    sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为空。');
+    sections.push('## 输出规则（严格遵守）');
+    sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
+    sections.push('2) JSON 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "..."}, "isGoalReached": false, "reasoning": "..."}');
+    sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
     sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
     sections.push('6) 你必须从 Agent Manifest 中选择一个真实存在的 agentId，不允许臆造。');
     sections.push('7) 当存在失败原因时，下一步必须体现纠偏策略，避免重复同一路径。');
     sections.push('8) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
+    sections.push('');
+    sections.push('再次强调：你的回复必须以 { 开头，以 } 结尾，中间是合法 JSON。不要输出任何其他内容。');
 
     return sections.join('\n');
   }

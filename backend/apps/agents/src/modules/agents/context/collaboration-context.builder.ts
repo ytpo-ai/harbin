@@ -63,16 +63,31 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
     if (input.scenarioType === 'orchestration') {
       const orchestration = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
       const upstreamOutputs = orchestration.upstreamOutputs || orchestration.dependencyContext || '';
-      const fullContent = `协作上下文(编排): ${JSON.stringify({
-        agentTier: orchestration.agentTier || 'operations',
-        roleInPlan: orchestration.roleInPlan || 'execute_assigned_task',
-        collaborators: orchestration.collaborators || [],
-        delegationRules: orchestration.delegationRules || {
-          canDelegateTo: ['operations', 'temporary'],
-          cannotDelegateTo: ['leadership'],
-        },
-        upstreamOutputs,
-      })}`;
+      const contentParts: string[] = [
+        `协作上下文(编排): ${JSON.stringify({
+          agentTier: orchestration.agentTier || 'operations',
+          roleInPlan: orchestration.roleInPlan || 'execute_assigned_task',
+          collaborators: orchestration.collaborators || [],
+          delegationRules: orchestration.delegationRules || {
+            canDelegateTo: ['operations', 'temporary'],
+            cannotDelegateTo: ['leadership'],
+          },
+          upstreamOutputs,
+        })}`,
+      ];
+
+      // JSON-only mode: 当编排上下文要求 format=json 时，追加强制 JSON 输出约束。
+      // 该指令作为 system prompt 注入，优先级高于 user message，可有效压制角色初始化寒暄。
+      if (String(orchestration.format || '').trim() === 'json') {
+        contentParts.push(
+          '\n[JSON-ONLY MODE] 你当前处于纯 JSON 输出模式。' +
+            '你的回复必须且只能是一个合法 JSON 对象，以 { 开头以 } 结尾。' +
+            '禁止输出任何自然语言文本、问候、确认、解释、markdown fence。' +
+            '违反此规则的回复将被系统丢弃并触发重试。',
+        );
+      }
+
+      const fullContent = contentParts.join('\n');
       const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
         scope: input.contextScope,
         blockType: 'collaboration',
@@ -81,6 +96,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           planId: String(orchestration.planId || '').trim(),
           collaboratorCount: Array.isArray(orchestration.collaborators) ? orchestration.collaborators.length : 0,
           upstreamOutputHash: this.contextFingerprintService.hashFingerprint(JSON.stringify(upstreamOutputs)),
+          format: String(orchestration.format || '').trim() || undefined,
         },
       });
       if (!resolvedContent) {
