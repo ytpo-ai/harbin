@@ -335,6 +335,7 @@ export class PlannerService {
       for (const item of context.completedTasks) {
         sections.push(`- [${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`);
       }
+      sections.push('注意：如果 outputSummary 中出现"无法执行"、"无法完成"、"缺少工具"、"没有权限"等语义，该任务可能是"虚假完成"（被标记 completed 但实际未完成），应视为未完成并重新规划。');
       sections.push('');
     }
 
@@ -356,10 +357,13 @@ export class PlannerService {
 
     sections.push('## 执行者选择规则（关键，严格遵守）');
     sections.push('选择 agentId 时必须按以下优先级判断：');
-    sections.push('A) **工具匹配优先**：查看每个 agent 的"工具"列表，选择拥有本任务所需工具的 agent。工具匹配权重远大于能力标签或角色层级。');
+    sections.push('A) **工具匹配优先（强制）**：先确定本任务需要的工具（如 repo-writer、save-prompt-template、web-search、web-fetch 等），再逐个核对 Agent Manifest 的工具列表。');
+    sections.push('   - 【禁止】将任务分配给缺少所需工具的 agent，即使该 agent 在能力标签或角色层级上更匹配。');
+    sections.push('   - 若无任何 agent 拥有所需工具，必须在 reasoning 明确说明，并给出可执行的替代路径。');
     sections.push('B) **多人有工具时可委派**：若多个 agent 都拥有所需工具，优先选择职级更低/更专注的执行者，让高层级 agent 专注决策。');
     sections.push('C) **仅自己有工具时必须选自己**：若只有标记了"★你自己"的 agent 拥有所需工具，必须选择自己（你的 agentId）执行，不得委派给没有相应工具的 agent。');
     sections.push('D) **无工具需求时按能力匹配**：若任务不依赖特定工具，按能力标签和角色匹配度选择。');
+    sections.push('E) **失败回避**：若某 agent 在本计划中已因"缺少工具"或"工具不匹配"失败，【禁止】再次将同类任务分配给该 agent，必须从失败 agent 列表中排除后重选。');
     sections.push('');
     sections.push('## 输出规则（严格遵守）');
     sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
@@ -368,7 +372,7 @@ export class PlannerService {
     sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
     sections.push('6) 你必须从 Agent Manifest 中选择一个真实存在的 agentId，不允许臆造。');
-    sections.push('7) 当存在失败原因时，下一步必须体现纠偏策略，避免重复同一路径。');
+    sections.push('7) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 更换 taskType；c) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
     sections.push('8) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
     sections.push('9) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');
     sections.push('');

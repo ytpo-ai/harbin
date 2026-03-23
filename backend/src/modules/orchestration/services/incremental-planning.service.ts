@@ -311,7 +311,7 @@ export class IncrementalPlanningService {
       .filter((item) => item.status === 'completed')
       .map((item) => ({
         title: item.title,
-        agentId: item.assignment?.executorId,
+        agentId: String(item.assignment?.executorId || '').trim() || undefined,
         outputSummary: String(item.result?.output || '').slice(0, 500),
       }));
 
@@ -329,7 +329,7 @@ export class IncrementalPlanningService {
       .filter((item) => item.status === 'failed')
       .map((item) => ({
         title: item.title,
-        agentId: item.assignment?.executorId,
+        agentId: String(item.assignment?.executorId || '').trim() || undefined,
         agentTools: failedAgentToolMap.get(String(item.assignment?.executorId || '').trim()) || [],
         error: String(item.result?.error || 'Unknown error'),
       }));
