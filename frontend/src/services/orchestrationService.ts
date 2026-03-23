@@ -74,6 +74,7 @@ export interface OrchestrationPlan {
     currentStep: number;
     totalGenerated: number;
     totalRetries: number;
+    consecutiveFailures?: number;
     totalCost: number;
     isComplete: boolean;
     lastError?: string;

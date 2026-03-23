@@ -131,7 +131,13 @@ export class IncrementalPlanningService {
 
     const config = this.resolveGenerationConfig(plan.generationConfig);
     const state = this.resolveGenerationState(plan.generationState);
-    let { currentStep, totalGenerated, totalRetries, totalCost } = state;
+    let {
+      currentStep,
+      totalGenerated,
+      totalRetries,
+      consecutiveFailures,
+      totalCost,
+    } = state;
 
     if (state.isComplete) {
       return { done: true };
@@ -159,6 +165,7 @@ export class IncrementalPlanningService {
         currentStep,
         totalGenerated,
         totalRetries,
+        consecutiveFailures,
         totalCost,
         isComplete: true,
       });
@@ -167,16 +174,18 @@ export class IncrementalPlanningService {
 
     if (!nextTaskResult.task?.title || !nextTaskResult.task?.description) {
       totalRetries += 1;
+      consecutiveFailures += 1;
       const lastError = 'Planner returned empty task definition';
       await this.updateGenerationState(planId, {
         currentStep,
         totalGenerated,
         totalRetries,
+        consecutiveFailures,
         totalCost,
         isComplete: false,
         lastError,
       });
-      if (totalRetries >= config.maxRetries) {
+      if (consecutiveFailures >= config.maxRetries) {
         await this.failPlanning(planId, lastError);
         return { done: true };
       }
@@ -208,10 +217,12 @@ export class IncrementalPlanningService {
       const merged = await this.tryMergeWithPreviousTask(planId, createdTask);
       currentStep += 1;
       totalGenerated += 1;
+      consecutiveFailures = 0;
       await this.updateGenerationState(planId, {
         currentStep,
         totalGenerated,
         totalRetries,
+        consecutiveFailures,
         totalCost,
         isComplete: false,
         lastError: undefined,
@@ -227,6 +238,7 @@ export class IncrementalPlanningService {
     }
 
     totalRetries += 1;
+    consecutiveFailures += 1;
     totalGenerated += 1;
     currentStep += 1;
 
@@ -235,6 +247,7 @@ export class IncrementalPlanningService {
       currentStep,
       totalGenerated,
       totalRetries,
+      consecutiveFailures,
       totalCost,
       isComplete: false,
       lastError: error,
@@ -245,10 +258,10 @@ export class IncrementalPlanningService {
       step: currentStep,
       taskId: createdTask._id.toString(),
       error,
-      retriesLeft: Math.max(config.maxRetries - totalRetries, 0),
+      retriesLeft: Math.max(config.maxRetries - consecutiveFailures, 0),
     });
 
-    if (totalRetries >= config.maxRetries) {
+    if (consecutiveFailures >= config.maxRetries) {
       await this.failPlanning(
         planId,
         `Task "${createdTask.title}" failed after ${config.maxRetries} retries: ${error}`,
@@ -535,6 +548,7 @@ export class IncrementalPlanningService {
       currentStep: Number(state?.currentStep || 0),
       totalGenerated: Number(state?.totalGenerated || 0),
       totalRetries: Number(state?.totalRetries || 0),
+      consecutiveFailures: Number(state?.consecutiveFailures || 0),
       totalCost: Number(state?.totalCost || 0),
       isComplete: Boolean(state?.isComplete),
       lastError: state?.lastError,

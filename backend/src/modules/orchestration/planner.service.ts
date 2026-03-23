@@ -89,6 +89,9 @@ export class PlannerService {
     private readonly promptResolver: PromptResolverService,
   ) {}
 
+  /**
+   * @deprecated Legacy batch planning path. Incremental planning should use generateNextTask().
+   */
   async planFromPrompt(input: {
     prompt: string;
     mode?: 'sequential' | 'parallel' | 'hybrid';
@@ -166,15 +169,19 @@ export class PlannerService {
           agentId: parsedAgentId,
         }
       : undefined;
+    const validatedTask = parsedTask && parsedTask.agentId ? parsedTask : undefined;
 
     return {
-      task: parsedTask,
+      task: validatedTask,
       isGoalReached: Boolean(parsed.isGoalReached),
-      reasoning: String(parsed.reasoning || '').trim(),
+      reasoning: String(parsed.reasoning || '').trim() || (!validatedTask ? 'Planner did not provide a valid agentId' : ''),
       costTokens: Number.isFinite(parsed.costTokens) ? Number(parsed.costTokens) : undefined,
     };
   }
 
+  /**
+   * @deprecated Legacy batch planning path. Incremental planning should use generateNextTask().
+   */
   private async planByAgent(
     prompt: string,
     plannerAgentId: string,
@@ -236,6 +243,9 @@ export class PlannerService {
     }
   }
 
+  /**
+   * @deprecated Legacy batch planning fallback. Incremental planning should use generateNextTask().
+   */
   private planByHeuristic(prompt: string, mode: 'sequential' | 'parallel' | 'hybrid'): PlannerResult {
     const blocks = prompt
       .split(/[\n。！？!?;；]+/)
@@ -274,6 +284,9 @@ export class PlannerService {
     sections.push('');
     sections.push('## Plan 目标（sourcePrompt 原文）');
     sections.push(context.planGoal);
+    sections.push('');
+    sections.push('## 当前编排进度');
+    sections.push(`已累计执行步骤数: ${context.totalSteps}`);
     sections.push('');
 
     if (context.requirementDetail) {
@@ -324,6 +337,7 @@ export class PlannerService {
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
     sections.push('6) 你必须从 Agent Manifest 中选择一个真实存在的 agentId，不允许臆造。');
     sections.push('7) 当存在失败原因时，下一步必须体现纠偏策略，避免重复同一路径。');
+    sections.push('8) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
 
     return sections.join('\n');
   }

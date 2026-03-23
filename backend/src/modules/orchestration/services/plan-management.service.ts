@@ -80,6 +80,7 @@ export class PlanManagementService {
         currentStep: 0,
         totalGenerated: 0,
         totalRetries: 0,
+        consecutiveFailures: 0,
         totalCost: 0,
         isComplete: false,
       },
@@ -121,11 +122,9 @@ export class PlanManagementService {
     });
 
     if (dto.autoGenerate || dto.autoRun) {
-      setTimeout(() => {
-        this.startGeneration(planId).catch((err) => {
-          this.logger.error(`Incremental planning start failed: ${err.message}`);
-        });
-      }, 0);
+      this.startGeneration(planId).catch((err) => {
+        this.logger.error(`Incremental planning start failed: ${err.message}`);
+      });
     }
 
     return this.getPlanById(planId);
@@ -353,7 +352,7 @@ export class PlanManagementService {
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
     const inferredDomainContext = this.contextService.inferDomainContext(prompt, dto.domainType);
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    const shouldStartGeneration = dto.autoGenerate ?? dto.autoRun ?? true;
+    const shouldStartGeneration = dto.autoGenerate ?? dto.autoRun ?? false;
 
     try {
       await this.orchestrationTaskModel.deleteMany({ planId }).exec();
@@ -396,6 +395,7 @@ export class PlanManagementService {
                 currentStep: 0,
                 totalGenerated: 0,
                 totalRetries: 0,
+                consecutiveFailures: 0,
                 totalCost: 0,
                 isComplete: false,
               },

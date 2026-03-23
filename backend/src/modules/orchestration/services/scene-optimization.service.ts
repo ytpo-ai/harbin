@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,35 +55,10 @@ export { MAX_TASKS, MAX_TITLE_LENGTH, MAX_DESCRIPTION_LENGTH };
 
 @Injectable()
 export class SceneOptimizationService {
-  private readonly logger = new Logger(SceneOptimizationService.name);
-  private readonly rules: SceneOptimizationRule[] = [];
-
-  /**
-   * Register an additional scene optimization rule at runtime.
-   * This allows external modules or DB-loaded configs to extend the pipeline.
-   */
-  registerRule(rule: SceneOptimizationRule): void {
-    const existing = this.rules.findIndex((r) => r.id === rule.id);
-    if (existing >= 0) {
-      this.rules[existing] = rule;
-      this.logger.log(`Updated scene optimization rule: ${rule.id}`);
-    } else {
-      this.rules.push(rule);
-      this.logger.log(`Registered scene optimization rule: ${rule.id}`);
-    }
-  }
-
-  /**
-   * Apply all matching scene optimization rules to the task list.
-   */
   optimizeTasks(tasks: PlannerTaskDraft[]): PlannerTaskDraft[] {
     return tasks;
   }
 
-  /**
-   * Validate task description quality.
-   * Returns warnings for tasks that don't meet quality standards.
-   */
   validateTaskQuality(
     tasks: PlannerTaskDraft[],
     customRules?: TaskQualityRule,

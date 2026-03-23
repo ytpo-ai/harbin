@@ -17,6 +17,7 @@ export interface OrchestrationGenerationState {
   currentStep: number;
   totalGenerated: number;
   totalRetries: number;
+  consecutiveFailures: number;
   totalCost: number;
   isComplete: boolean;
   lastError?: string;
@@ -99,6 +100,7 @@ export class OrchestrationPlan {
     currentStep: { type: Number, default: 0 },
     totalGenerated: { type: Number, default: 0 },
     totalRetries: { type: Number, default: 0 },
+    consecutiveFailures: { type: Number, default: 0 },
     totalCost: { type: Number, default: 0 },
     isComplete: { type: Boolean, default: false },
     lastError: { type: String },
