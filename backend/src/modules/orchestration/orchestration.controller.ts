@@ -176,7 +176,7 @@ export class OrchestrationController {
     @Body() dto: AddTaskToPlanDto,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.addTaskToPlan(planId, dto);
   }
 
@@ -200,7 +200,7 @@ export class OrchestrationController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.listPlanRuns(planId, query.limit || 20);
   }
 
@@ -211,7 +211,7 @@ export class OrchestrationController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.getLatestPlanRun(planId);
   }
 
@@ -222,7 +222,7 @@ export class OrchestrationController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.getRunById(runId);
   }
 
@@ -233,7 +233,7 @@ export class OrchestrationController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.listRunTasks(runId);
   }
 
@@ -247,6 +247,17 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.replanPlanAsync(planId, dto);
+  }
+
+  @Post('plans/:id/generate-next')
+  async generatePlanNext(
+    @Param('id') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.generateNext(planId);
   }
 
   @Post('tasks/:id/reassign')
@@ -295,7 +306,7 @@ export class OrchestrationController {
     @Body() dto: UpdateTaskFullDto,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.updateTaskFull(taskId, dto);
   }
 
@@ -304,7 +315,7 @@ export class OrchestrationController {
     @Param('taskId') taskId: string,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.removeTaskFromPlan(taskId);
   }
 
@@ -314,7 +325,7 @@ export class OrchestrationController {
     @Body() dto: ReorderPlanTasksDto,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.reorderPlanTasks(planId, dto);
   }
 
@@ -324,7 +335,7 @@ export class OrchestrationController {
     @Body() dto: BatchUpdateTasksDto,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.batchUpdateTasks(planId, dto);
   }
 
@@ -334,7 +345,7 @@ export class OrchestrationController {
     @Param('taskId') taskId: string,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.orchestrationService.duplicateTask(planId, taskId);
   }
 

@@ -49,6 +49,9 @@ export class OrchestrationTask {
   @Prop({ type: [String], default: [] })
   dependencyTaskIds: string[];
 
+  @Prop({ type: [String], default: [] })
+  mergedFromTaskIds: string[];
+
   @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
   runtimeTaskType?: OrchestrationTaskRuntimeType;
 

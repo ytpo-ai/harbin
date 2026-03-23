@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import {
   CreatePlanFromPromptDto,
   ReplanPlanDto,
@@ -26,16 +26,14 @@ import {
   OrchestrationRun,
   OrchestrationRunDocument,
 } from '../../../shared/schemas/orchestration-run.schema';
-import { PlannerService } from '../planner.service';
-import { PlanningContextService } from './planning-context.service';
-import { ExecutorSelectionService } from './executor-selection.service';
 import { PlanStatsService } from './plan-stats.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
-import { PlanExecutionService } from './plan-execution.service';
+import { IncrementalPlanningService } from './incremental-planning.service';
 
 @Injectable()
 export class PlanManagementService {
+  private readonly logger = new Logger(PlanManagementService.name);
   private readonly runningPlans = new Set<string>();
 
   constructor(
@@ -49,13 +47,10 @@ export class PlanManagementService {
     private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
-    private readonly plannerService: PlannerService,
-    private readonly planningContextService: PlanningContextService,
-    private readonly executorSelectionService: ExecutorSelectionService,
     private readonly planStatsService: PlanStatsService,
     private readonly contextService: OrchestrationContextService,
     private readonly planEventStreamService: PlanEventStreamService,
-    private readonly planExecutionService: PlanExecutionService,
+    private readonly incrementalPlanningService: IncrementalPlanningService,
   ) {}
 
   async createPlanFromPrompt(createdBy: string, dto: CreatePlanFromPromptDto): Promise<any> {
@@ -70,10 +65,23 @@ export class PlanManagementService {
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,
       domainContext: inferredDomainContext,
-      status: 'drafting',
+      status: 'draft',
       strategy: {
         plannerAgentId: dto.plannerAgentId,
         mode: dto.mode || 'hybrid',
+      },
+      generationMode: 'incremental',
+      generationConfig: {
+        maxRetries: 3,
+        maxCostTokens: 500000,
+        maxTasks: 15,
+      },
+      generationState: {
+        currentStep: 0,
+        totalGenerated: 0,
+        totalRetries: 0,
+        totalCost: 0,
+        isComplete: false,
       },
       stats: {
         totalTasks: 0,
@@ -106,21 +114,19 @@ export class PlanManagementService {
       .exec();
 
     this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
-      status: 'drafting',
-      phase: 'queued',
+      status: 'draft',
+      phase: 'created',
       planId,
       title: plan.title,
     });
 
-    const runKey = `create:${planId}`;
-    this.runningPlans.add(runKey);
-
-    setTimeout(() => {
-      this.generatePlanTasksAsync(planId, dto)
-        .finally(() => {
-          this.runningPlans.delete(runKey);
+    if (dto.autoGenerate || dto.autoRun) {
+      setTimeout(() => {
+        this.startGeneration(planId).catch((err) => {
+          this.logger.error(`Incremental planning start failed: ${err.message}`);
         });
-    }, 0);
+      }, 0);
+    }
 
     return this.getPlanById(planId);
   }
@@ -275,6 +281,59 @@ export class PlanManagementService {
     };
   }
 
+  async startGeneration(planId: string): Promise<{ accepted: boolean }> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const generationMode = plan.generationMode || 'batch';
+    if (generationMode !== 'incremental') {
+      throw new BadRequestException('Only incremental plans support generation start');
+    }
+
+    if (plan.generationState?.isComplete) {
+      throw new BadRequestException('Planning already completed');
+    }
+
+    setTimeout(() => {
+      this.incrementalPlanningService
+        .executeIncrementalPlanning(planId)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Incremental planning failed';
+          this.logger.error(`Incremental planning failed for plan ${planId}: ${message}`);
+        });
+    }, 0);
+
+    return { accepted: true };
+  }
+
+  async generateNext(planId: string): Promise<{ accepted: boolean }> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    if ((plan.generationMode || 'batch') !== 'incremental') {
+      throw new BadRequestException('Only incremental plans support generate-next');
+    }
+
+    if (plan.generationState?.isComplete) {
+      throw new BadRequestException('Planning already completed');
+    }
+
+    setTimeout(() => {
+      this.incrementalPlanningService
+        .executeSinglePlanningStep(planId)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Incremental step failed';
+          this.logger.error(`Incremental step failed for plan ${planId}: ${message}`);
+        });
+    }, 0);
+
+    return { accepted: true };
+  }
+
   async replanPlan(planId: string, dto: ReplanPlanDto): Promise<any> {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {
@@ -294,7 +353,7 @@ export class PlanManagementService {
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
     const inferredDomainContext = this.contextService.inferDomainContext(prompt, dto.domainType);
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    const requirementObjectId = this.contextService.parseRequirementObjectId(requirementId);
+    const shouldStartGeneration = dto.autoGenerate ?? dto.autoRun ?? true;
 
     try {
       await this.orchestrationTaskModel.deleteMany({ planId }).exec();
@@ -322,10 +381,23 @@ export class PlanManagementService {
               title,
               sourcePrompt: prompt,
               domainContext: inferredDomainContext,
-              status: 'drafting',
+              status: 'draft',
               strategy: {
                 plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
                 mode: fallbackMode,
+              },
+              generationMode: 'incremental',
+              generationConfig: {
+                maxRetries: plan.generationConfig?.maxRetries || 3,
+                maxCostTokens: plan.generationConfig?.maxCostTokens || 500000,
+                maxTasks: plan.generationConfig?.maxTasks || 15,
+              },
+              generationState: {
+                currentStep: 0,
+                totalGenerated: 0,
+                totalRetries: 0,
+                totalCost: 0,
+                isComplete: false,
               },
               stats: {
                 totalTasks: 0,
@@ -341,184 +413,29 @@ export class PlanManagementService {
               'metadata.asyncReplanError': 1,
               'metadata.replannedAt': 1,
               'metadata.replanFailedAt': 1,
+              'metadata.planningFailedAt': 1,
+              'metadata.planningCompletedAt': 1,
             },
           },
         )
         .exec();
 
-      await this.planStatsService.setPlanStatus(planId, 'drafting');
+      await this.planStatsService.setPlanStatus(planId, 'draft');
+      await this.planStatsService.setPlanSessionStatus(planId, 'draft');
+      await this.planStatsService.syncPlanSessionTasks(planId);
+
       this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
         planId,
-        status: 'drafting',
-        phase: 'replanning',
+        status: 'draft',
+        phase: 'replan_reset',
       });
 
-      const replanPlannerAgentId = plannerAgentId || plan.strategy?.plannerAgentId;
-      const replanContext = await this.planningContextService.buildPlanningContext({
-        prompt,
-        requirementId,
-        plannerAgentId: replanPlannerAgentId,
-      });
-
-      const planningResult = await this.plannerService.planFromPrompt({
-        prompt,
-        mode: fallbackMode,
-        plannerAgentId: replanPlannerAgentId,
-        requirementId,
-        planningContext: replanContext,
-      });
-
-      if (!planningResult.tasks?.length) {
-        throw new BadRequestException('Planner did not produce any tasks');
-      }
-
-      await this.orchestrationPlanModel
-        .updateOne(
-          { _id: planId },
-          {
-            $set: {
-              strategy: {
-                plannerAgentId: planningResult.plannerAgentId,
-                mode: planningResult.mode,
-              },
-              'metadata.strategyNote': planningResult.strategyNote,
-              'metadata.planningStartedAt': new Date().toISOString(),
-            },
-          },
-        )
-        .exec();
-
-      const idByIndex: string[] = [];
-      const total = planningResult.tasks.length;
-      const replanAssignmentPolicy = this.detectAssignmentPolicy(plan.sourcePrompt);
-
-      for (let i = 0; i < planningResult.tasks.length; i++) {
-        const planningTask = planningResult.tasks[i];
-        const assignment = await this.executorSelectionService.selectExecutor({
-          title: planningTask.title,
-          description: planningTask.description,
-          plannerAgentId: planningResult.plannerAgentId,
-          assignmentPolicy: replanAssignmentPolicy,
-        });
-
-        const createdTask = await new this.orchestrationTaskModel({
+      if (shouldStartGeneration) {
+        await this.startGeneration(planId);
+      } else {
+        this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.replan.ready', {
           planId,
-          ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
-          title: planningTask.title,
-          description: planningTask.description,
-          priority: planningTask.priority,
-          status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
-          order: i,
-          dependencyTaskIds: [],
-          assignment,
-          runLogs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              message: `Task replanned and assigned to ${assignment.executorType}`,
-              metadata: {
-                executorId: assignment.executorId,
-                reason: assignment.reason,
-              },
-            },
-          ],
-        }).save();
-
-        const taskId = createdTask._id.toString();
-        idByIndex.push(taskId);
-
-        const deps = (planningTask.dependencies || [])
-          .map((depIndex) => idByIndex[depIndex])
-          .filter(Boolean);
-
-        if (deps.length) {
-          await this.orchestrationTaskModel
-            .updateOne({ _id: createdTask._id }, { $set: { dependencyTaskIds: deps } })
-            .exec();
-          createdTask.dependencyTaskIds = deps;
-        }
-
-        await this.orchestrationPlanModel
-          .updateOne(
-            { _id: planId },
-            {
-              $push: {
-                taskIds: taskId,
-              },
-              $set: {
-                'stats.totalTasks': idByIndex.length,
-              },
-            },
-          )
-          .exec();
-
-        await this.planSessionModel
-          .updateOne(
-            { planId },
-            {
-              $push: {
-                tasks: {
-                  taskId,
-                  order: createdTask.order,
-                  title: createdTask.title,
-                  status: createdTask.status,
-                  input: planningTask.description || createdTask.description,
-                  executorType: createdTask.assignment?.executorType,
-                  executorId: createdTask.assignment?.executorId,
-                  updatedAt: new Date(),
-                },
-              },
-            },
-          )
-          .exec();
-
-        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.created', {
-          planId,
-          status: createdTask.status,
-          taskTitle: createdTask.title,
-          assignment: createdTask.assignment,
-        });
-
-        this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.task.generated', {
-          planId,
-          index: i + 1,
-          total,
-          task: createdTask.toObject(),
-        });
-      }
-
-      await this.planStatsService.refreshPlanStats(planId);
-      await this.planStatsService.setPlanStatus(planId, 'planned');
-      await this.planStatsService.setPlanSessionStatus(planId, 'planned');
-
-      await this.orchestrationPlanModel
-        .updateOne(
-          { _id: planId },
-          {
-            $set: {
-              'metadata.strategyNote': planningResult.strategyNote,
-              'metadata.replannedAt': new Date().toISOString(),
-              'metadata.planningCompletedAt': new Date().toISOString(),
-            },
-            $unset: {
-              'metadata.asyncReplanError': 1,
-            },
-          },
-        )
-        .exec();
-
-      this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.completed', {
-        planId,
-        status: 'planned',
-        totalTasks: total,
-      });
-
-      if (dto.autoRun) {
-        const autoRun = await this.planExecutionService.executePlanRun(planId, 'autorun', { continueOnFailure: true });
-        this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.autorun.accepted', {
-          planId,
-          status: autoRun.status,
-          runId: this.getEntityId(autoRun as any),
+          status: 'draft',
         });
       }
 
@@ -585,234 +502,8 @@ export class PlanManagementService {
     };
   }
 
-  private async generatePlanTasksAsync(planId: string, dto: CreatePlanFromPromptDto): Promise<void> {
-    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
-    if (!plan) {
-      return;
-    }
-
-    const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    const requirementObjectId = this.contextService.parseRequirementObjectId(requirementId);
-
-    try {
-      await this.planStatsService.setPlanStatus(planId, 'drafting');
-      this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
-        planId,
-        status: 'drafting',
-        phase: 'planning',
-      });
-
-      const plannerAgentId = dto.plannerAgentId || plan.strategy?.plannerAgentId;
-      const planningContext = await this.planningContextService.buildPlanningContext({
-        prompt: plan.sourcePrompt,
-        requirementId,
-        plannerAgentId,
-      });
-
-      const planningResult = await this.plannerService.planFromPrompt({
-        prompt: plan.sourcePrompt,
-        mode: dto.mode || plan.strategy?.mode,
-        plannerAgentId,
-        requirementId,
-        planningContext,
-      });
-
-      if (!planningResult.tasks?.length) {
-        throw new BadRequestException('Planner did not produce any tasks');
-      }
-
-      await this.orchestrationPlanModel
-        .updateOne(
-          { _id: planId },
-          {
-            $set: {
-              strategy: {
-                plannerAgentId: planningResult.plannerAgentId,
-                mode: planningResult.mode,
-              },
-              'metadata.strategyNote': planningResult.strategyNote,
-              'metadata.planningStartedAt': new Date().toISOString(),
-              stats: {
-                totalTasks: 0,
-                completedTasks: 0,
-                failedTasks: 0,
-                waitingHumanTasks: 0,
-              },
-            },
-          },
-        )
-        .exec();
-
-      const idByIndex: string[] = [];
-      const total = planningResult.tasks.length;
-      const assignmentPolicy = this.detectAssignmentPolicy(plan.sourcePrompt);
-
-      for (let i = 0; i < planningResult.tasks.length; i++) {
-        const planningTask = planningResult.tasks[i];
-        const assignment = await this.executorSelectionService.selectExecutor({
-          title: planningTask.title,
-          description: planningTask.description,
-          plannerAgentId: planningResult.plannerAgentId,
-          assignmentPolicy,
-        });
-
-        const createdTask = await new this.orchestrationTaskModel({
-          planId,
-          ...(requirementObjectId ? { requirementId: requirementObjectId } : {}),
-          title: planningTask.title,
-          description: planningTask.description,
-          priority: planningTask.priority,
-          status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
-          order: i,
-          dependencyTaskIds: [],
-          assignment,
-          runLogs: [
-            {
-              timestamp: new Date(),
-              level: 'info',
-              message: `Task created and assigned to ${assignment.executorType}`,
-              metadata: {
-                executorId: assignment.executorId,
-                reason: assignment.reason,
-              },
-            },
-          ],
-        }).save();
-
-        const taskId = createdTask._id.toString();
-        idByIndex.push(taskId);
-
-        const deps = (planningTask.dependencies || [])
-          .map((depIndex) => idByIndex[depIndex])
-          .filter(Boolean);
-
-        if (deps.length) {
-          await this.orchestrationTaskModel
-            .updateOne({ _id: createdTask._id }, { $set: { dependencyTaskIds: deps } })
-            .exec();
-          createdTask.dependencyTaskIds = deps;
-        }
-
-        await this.orchestrationPlanModel
-          .updateOne(
-            { _id: planId },
-            {
-              $push: {
-                taskIds: taskId,
-              },
-              $set: {
-                'stats.totalTasks': idByIndex.length,
-              },
-            },
-          )
-          .exec();
-
-        await this.planSessionModel
-          .updateOne(
-            { planId },
-            {
-              $push: {
-                tasks: {
-                  taskId,
-                  order: createdTask.order,
-                  title: createdTask.title,
-                  status: createdTask.status,
-                  input: planningTask.description || createdTask.description,
-                  executorType: createdTask.assignment?.executorType,
-                  executorId: createdTask.assignment?.executorId,
-                  updatedAt: new Date(),
-                },
-              },
-            },
-          )
-          .exec();
-
-        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.created', {
-          planId,
-          status: createdTask.status,
-          taskTitle: createdTask.title,
-          assignment: createdTask.assignment,
-        });
-
-        this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.task.generated', {
-          planId,
-          index: i + 1,
-          total,
-          task: createdTask.toObject(),
-        });
-      }
-
-      await this.planStatsService.refreshPlanStats(planId);
-      await this.planStatsService.setPlanStatus(planId, 'planned');
-      await this.planStatsService.setPlanSessionStatus(planId, 'planned');
-
-      await this.orchestrationPlanModel
-        .updateOne(
-          { _id: planId },
-          {
-            $set: {
-              'metadata.strategyNote': planningResult.strategyNote,
-              'metadata.planningCompletedAt': new Date().toISOString(),
-            },
-          },
-        )
-        .exec();
-
-      this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.completed', {
-        planId,
-        status: 'planned',
-        totalTasks: total,
-      });
-
-      if (dto.autoRun) {
-        const autoRun = await this.planExecutionService.executePlanRun(planId, 'autorun', { continueOnFailure: true });
-        this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.autorun.accepted', {
-          planId,
-          status: autoRun.status,
-          runId: this.getEntityId(autoRun as any),
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Async create plan failed';
-      await this.planStatsService.setPlanStatus(planId, 'draft');
-      await this.planStatsService.setPlanSessionStatus(planId, 'draft');
-      await this.orchestrationPlanModel
-        .updateOne(
-          { _id: planId },
-          {
-            $set: {
-              'metadata.asyncCreateError': message,
-              'metadata.planningFailedAt': new Date().toISOString(),
-            },
-          },
-        )
-        .exec();
-
-      this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.failed', {
-        planId,
-        status: 'failed',
-        error: message,
-      });
-    }
-  }
-
   private derivePlanTitle(prompt: string): string {
     return prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
-  }
-
-  private detectAssignmentPolicy(prompt: string): 'default' | 'lock_to_planner' {
-    const text = (prompt || '').toLowerCase();
-    const lockSignals = [
-      'assignee 必须',
-      'assignee必须',
-      'all tasks assigned to me',
-      'assignmentpolicy=lock_to_planner',
-      'enforcesingleassignee=true',
-    ];
-    if (lockSignals.some((signal) => text.includes(signal))) return 'lock_to_planner';
-    if (/所有.*任务.*归属.*自身/.test(text)) return 'lock_to_planner';
-    if (/plan\s*tasks.*assignee.*必须.*(cto|planner|自身|自己)/.test(text)) return 'lock_to_planner';
-    return 'default';
   }
 
   private async isPlanRunActive(planId: string): Promise<boolean> {
@@ -824,21 +515,4 @@ export class PlanManagementService {
     return Boolean(runningRun);
   }
 
-  private getEntityId(entity: Record<string, any>): string {
-    if (entity.id) {
-      return String(entity.id);
-    }
-    if (entity._id) {
-      if (typeof entity._id === 'string') {
-        return entity._id;
-      }
-      if (entity._id instanceof Types.ObjectId) {
-        return entity._id.toString();
-      }
-      if (typeof entity._id.toString === 'function') {
-        return entity._id.toString();
-      }
-    }
-    return '';
-  }
 }

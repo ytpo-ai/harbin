@@ -41,6 +41,7 @@ import { SceneOptimizationService } from './services/scene-optimization.service'
 import { PlanManagementService } from './services/plan-management.service';
 import { TaskManagementService } from './services/task-management.service';
 import { PlanExecutionService } from './services/plan-execution.service';
+import { IncrementalPlanningService } from './services/incremental-planning.service';
 import { TaskLifecycleService } from './services/task-lifecycle.service';
 import { PlanStatsService } from './services/plan-stats.service';
 import { PlanEventStreamService } from './services/plan-event-stream.service';
@@ -76,6 +77,7 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     PlanManagementService,
     TaskManagementService,
     PlanExecutionService,
+    IncrementalPlanningService,
     TaskLifecycleService,
     PlanStatsService,
     PlanEventStreamService,

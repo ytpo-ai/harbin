@@ -5,6 +5,22 @@ export type OrchestrationPlanDocument = OrchestrationPlan & Document;
 
 export type OrchestrationMode = 'sequential' | 'parallel' | 'hybrid';
 export type OrchestrationPlanStatus = 'draft' | 'drafting' | 'planned' | 'running' | 'paused' | 'completed' | 'failed';
+export type OrchestrationGenerationMode = 'batch' | 'incremental';
+
+export interface OrchestrationGenerationConfig {
+  maxRetries: number;
+  maxCostTokens: number;
+  maxTasks: number;
+}
+
+export interface OrchestrationGenerationState {
+  currentStep: number;
+  totalGenerated: number;
+  totalRetries: number;
+  totalCost: number;
+  isComplete: boolean;
+  lastError?: string;
+}
 
 @Schema({ timestamps: true, collection: 'orchestration_plans' })
 export class OrchestrationPlan {
@@ -68,6 +84,26 @@ export class OrchestrationPlan {
     knowledgeRefs?: string[];
     metadata?: Record<string, unknown>;
   };
+
+  @Prop({ enum: ['batch', 'incremental'], default: 'incremental' })
+  generationMode: OrchestrationGenerationMode;
+
+  @Prop(raw({
+    maxRetries: { type: Number, default: 3 },
+    maxCostTokens: { type: Number, default: 500000 },
+    maxTasks: { type: Number, default: 15 },
+  }))
+  generationConfig?: OrchestrationGenerationConfig;
+
+  @Prop(raw({
+    currentStep: { type: Number, default: 0 },
+    totalGenerated: { type: Number, default: 0 },
+    totalRetries: { type: Number, default: 0 },
+    totalCost: { type: Number, default: 0 },
+    isComplete: { type: Boolean, default: false },
+    lastError: { type: String },
+  }))
+  generationState?: OrchestrationGenerationState;
 }
 
 export const OrchestrationPlanSchema = SchemaFactory.createForClass(OrchestrationPlan);

@@ -5,7 +5,6 @@ import axios from 'axios';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { AgentRole, AgentRoleDocument } from '@agent/schemas/agent-role.schema';
 import { Tool, ToolDocument } from '../../../../apps/agents/src/schemas/tool.schema';
-import { Skill, SkillDocument, PlanningRule } from '../../../../apps/agents/src/schemas/agent-skill.schema';
 import {
   AgentRoleTier,
   normalizeAgentRoleTier,
@@ -20,8 +19,6 @@ export interface PlanningContext {
   agentManifest: string;
   requirementDetail: string;
   planningConstraints: string;
-  /** Raw planning rules collected from skills, used for post-validation */
-  rawPlanningRules: PlanningRule[];
 }
 
 interface AgentManifestEntry {
@@ -73,7 +70,6 @@ export class PlanningContextService {
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     @InjectModel(AgentRole.name) private readonly agentRoleModel: Model<AgentRoleDocument>,
     @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
-    @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -85,8 +81,9 @@ export class PlanningContextService {
     requirementId?: string;
     plannerAgentId?: string;
   }): Promise<PlanningContext> {
-    let rawPlanningRules: PlanningRule[] = [];
-    const [agentManifest, requirementDetail, constraintsResult] = await Promise.all([
+    void input.prompt;
+    void input.plannerAgentId;
+    const [agentManifest, requirementDetail] = await Promise.all([
       this.buildAgentManifest().catch((err) => {
         this.logger.warn(`Failed to build agent manifest: ${err.message}`);
         return '';
@@ -97,16 +94,13 @@ export class PlanningContextService {
             return '';
           })
         : Promise.resolve(''),
-      input.plannerAgentId
-        ? this.buildPlanningConstraintsWithRules(input.plannerAgentId).catch((err) => {
-            this.logger.warn(`Failed to build planning constraints: ${err.message}`);
-            return { text: '', rules: [] as PlanningRule[] };
-          })
-        : Promise.resolve({ text: '', rules: [] as PlanningRule[] }),
     ]);
 
-    rawPlanningRules = constraintsResult.rules;
-    return { agentManifest, requirementDetail, planningConstraints: constraintsResult.text, rawPlanningRules };
+    return {
+      agentManifest,
+      requirementDetail,
+      planningConstraints: '',
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -270,144 +264,4 @@ export class PlanningContextService {
     }
   }
 
-  // -----------------------------------------------------------------------
-  // Planning Constraints (from planner agent's skills)
-  // -----------------------------------------------------------------------
-
-  private async buildPlanningConstraintsWithRules(
-    plannerAgentId: string,
-  ): Promise<{ text: string; rules: PlanningRule[] }> {
-    const agent = await this.agentModel.findById(plannerAgentId).exec();
-    if (!agent?.skills?.length) {
-      return { text: '', rules: [] };
-    }
-
-    const skills = await this.skillModel
-      .find({
-        id: { $in: agent.skills },
-        status: { $in: ['active', 'experimental'] },
-      })
-      .exec();
-
-    if (!skills.length) {
-      return { text: '', rules: [] };
-    }
-
-    const planningSkills = skills.filter((skill) =>
-      this.isSkillRelevantToPlanning(skill),
-    );
-
-    if (!planningSkills.length) {
-      return { text: '', rules: [] };
-    }
-
-    const constraints: string[] = ['计划编排约束（必须遵守，违反将导致计划被拒绝）:'];
-    const collectedRules: PlanningRule[] = [];
-
-    for (const skill of planningSkills) {
-      // Priority 1: Use planningRules from the dedicated schema field
-      const schemaRules = skill.planningRules;
-      if (Array.isArray(schemaRules) && schemaRules.length) {
-        constraints.push(`\n来源技能: ${skill.name}`);
-        for (const rule of schemaRules) {
-          constraints.push(`- [${rule.type || 'constraint'}] ${rule.rule}`);
-          collectedRules.push(rule);
-        }
-      }
-
-      // Priority 2: Fall back to planningRules in metadata (backward compat)
-      if (!schemaRules?.length) {
-        const metadataRules = (skill.metadata as any)?.planningRules;
-        if (Array.isArray(metadataRules) && metadataRules.length) {
-          constraints.push(`\n来源技能: ${skill.name}`);
-          for (const rule of metadataRules) {
-            constraints.push(`- [${rule.type || 'constraint'}] ${rule.rule}`);
-            collectedRules.push(rule);
-          }
-        }
-      }
-
-      // Priority 3: Extract constraints from skill content (markdown) using structured markers
-      if (skill.content) {
-        const extracted = this.extractConstraintsFromContent(skill.content, skill.name);
-        if (extracted) {
-          constraints.push(extracted);
-        }
-      }
-    }
-
-    // If no actual rules were extracted, return empty
-    if (constraints.length <= 1) {
-      return { text: '', rules: collectedRules };
-    }
-
-    return { text: constraints.join('\n'), rules: collectedRules };
-  }
-
-  private isSkillRelevantToPlanning(skill: SkillDocument): boolean {
-    const tags = (skill.tags || []).map((t) => t.toLowerCase());
-    const planningTags = ['planning', 'orchestration', 'planner', 'guard', 'workflow', 'requirement-planning'];
-    if (tags.some((tag) => planningTags.includes(tag))) {
-      return true;
-    }
-    const nameAndDesc = `${skill.name} ${skill.description}`.toLowerCase();
-    const planningKeywords = ['planning', 'planner', '计划', '编排', '规划', '拆解', 'workflow'];
-    return planningKeywords.some((kw) => nameAndDesc.includes(kw));
-  }
-
-  /**
-   * Extract planning constraints from skill content using section markers.
-   * Looks for sections titled with keywords like "禁止", "约束", "规则", "映射规则" etc.
-   * Also extracts content from "## N. Step 到 Task 映射规则" style sections.
-   */
-  private extractConstraintsFromContent(content: string, skillName: string): string {
-    const lines = content.split('\n');
-    const constraintSections: string[] = [];
-    let inConstraintSection = false;
-    let currentSection: string[] = [];
-    let sectionDepth = 0;
-
-    const constraintHeadingPatterns = [
-      /禁止/i, /约束/i, /规则/i, /映射/i, /红线/i,
-      /forbidden/i, /constraint/i, /rule/i, /mapping/i,
-      /质量红线/i, /必须包含/i, /禁止出现/i, /禁止行为/i,
-    ];
-
-    for (const line of lines) {
-      const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
-      if (headingMatch) {
-        const depth = headingMatch[1].length;
-        const heading = headingMatch[2];
-
-        if (inConstraintSection) {
-          // End current section if we hit a heading at same or higher level
-          if (depth <= sectionDepth) {
-            if (currentSection.length) {
-              constraintSections.push(currentSection.join('\n'));
-            }
-            currentSection = [];
-            inConstraintSection = false;
-          }
-        }
-
-        if (!inConstraintSection && constraintHeadingPatterns.some((p) => p.test(heading))) {
-          inConstraintSection = true;
-          sectionDepth = depth;
-          currentSection = [`[${skillName}] ${heading}:`];
-        }
-      } else if (inConstraintSection) {
-        const trimmed = line.trim();
-        if (trimmed) {
-          currentSection.push(trimmed);
-        }
-      }
-    }
-
-    // Flush last section
-    if (inConstraintSection && currentSection.length) {
-      constraintSections.push(currentSection.join('\n'));
-    }
-
-    return constraintSections.join('\n\n');
-  }
 }

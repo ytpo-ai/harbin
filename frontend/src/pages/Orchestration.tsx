@@ -172,7 +172,7 @@ const Orchestration: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<PlanMode>('hybrid');
-  const [autoRun, setAutoRun] = useState(true);
+  const [autoGenerate, setAutoGenerate] = useState(false);
   const [plannerAgentId, setPlannerAgentId] = useState('');
 
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
@@ -745,7 +745,7 @@ const Orchestration: React.FC = () => {
     setPrompt(plan.sourcePrompt || '');
     setMode(plan.strategy?.mode || 'hybrid');
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
-    setAutoRun(false);
+    setAutoGenerate(false);
     setIsCreateModalOpen(true);
   };
 
@@ -1067,10 +1067,10 @@ const Orchestration: React.FC = () => {
               <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                 <input
                   type="checkbox"
-                  checked={autoRun}
-                  onChange={(event) => setAutoRun(event.target.checked)}
+                  checked={autoGenerate}
+                  onChange={(event) => setAutoGenerate(event.target.checked)}
                 />
-                创建后自动执行
+                创建并生成任务
               </label>
               {createPlanMutation.isError && <p className="text-xs text-rose-600">创建失败，请稍后重试。</p>}
             </div>
@@ -1089,7 +1089,7 @@ const Orchestration: React.FC = () => {
                     title: title.trim() || undefined,
                     plannerAgentId: plannerAgentId || undefined,
                     mode,
-                    autoRun,
+                    autoGenerate,
                   })
                 }
                 disabled={!prompt.trim() || createPlanMutation.isLoading}

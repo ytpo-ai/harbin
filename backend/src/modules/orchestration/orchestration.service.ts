@@ -64,6 +64,14 @@ export class OrchestrationService {
     return this.planManagementService.replanPlanAsync(planId, dto);
   }
 
+  async startGeneration(planId: string): Promise<{ accepted: boolean }> {
+    return this.planManagementService.startGeneration(planId);
+  }
+
+  async generateNext(planId: string): Promise<{ accepted: boolean }> {
+    return this.planManagementService.generateNext(planId);
+  }
+
   async updatePlan(planId: string, dto: UpdatePlanDto): Promise<any> {
     return this.planManagementService.updatePlan(planId, dto);
   }

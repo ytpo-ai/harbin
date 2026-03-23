@@ -64,6 +64,20 @@ export interface OrchestrationPlan {
   tasks?: OrchestrationTask[];
   lastRun?: OrchestrationRun;
   metadata?: Record<string, any>;
+  generationMode?: 'batch' | 'incremental';
+  generationConfig?: {
+    maxRetries: number;
+    maxCostTokens: number;
+    maxTasks: number;
+  };
+  generationState?: {
+    currentStep: number;
+    totalGenerated: number;
+    totalRetries: number;
+    totalCost: number;
+    isComplete: boolean;
+    lastError?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -148,6 +162,7 @@ export interface CreatePlanFromPromptDto {
   plannerAgentId?: string;
   mode?: PlanMode;
   autoRun?: boolean;
+  autoGenerate?: boolean;
 }
 
 export interface RunPlanAcceptedResponse {
@@ -183,6 +198,7 @@ export interface ReplanPlanDto {
   plannerAgentId?: string;
   mode?: PlanMode;
   autoRun?: boolean;
+  autoGenerate?: boolean;
 }
 
 export interface TaskAssignmentPayload {
@@ -375,6 +391,11 @@ export const orchestrationService = {
     const response = await api.post(`/orchestration/plans/${planId}/run`, {
       continueOnFailure,
     });
+    return response.data;
+  },
+
+  async generateNext(planId: string): Promise<{ accepted: boolean }> {
+    const response = await api.post(`/orchestration/plans/${planId}/generate-next`);
     return response.data;
   },
 

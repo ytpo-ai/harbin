@@ -1,19 +1,21 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../shared/types';
+import {
+  OrchestrationPlan,
+  OrchestrationPlanDocument,
+} from '../../shared/schemas/orchestration-plan.schema';
 import { PromptResolverService } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.service';
 import { PROMPT_ROLES, PROMPT_SCENES } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.constants';
 import { PlanningContext } from './services/planning-context.service';
 import {
-  SceneOptimizationService,
   MAX_TASKS,
   MAX_TITLE_LENGTH,
   MAX_DESCRIPTION_LENGTH,
 } from './services/scene-optimization.service';
-import { PlanningRule } from '../../../apps/agents/src/schemas/agent-skill.schema';
 
 interface PlannerTaskDraft {
   title: string;
@@ -27,6 +29,36 @@ interface PlannerResult {
   tasks: PlannerTaskDraft[];
   plannerAgentId?: string;
   strategyNote?: string;
+}
+
+export interface IncrementalPlannerContext {
+  planGoal: string;
+  agentManifest?: string;
+  requirementDetail?: string;
+  planningConstraints?: string;
+  completedTasks: Array<{
+    title: string;
+    agentId?: string;
+    outputSummary: string;
+  }>;
+  failedTasks: Array<{
+    title: string;
+    error: string;
+  }>;
+  totalSteps: number;
+  lastError?: string;
+}
+
+export interface GenerateNextTaskResult {
+  task?: {
+    title: string;
+    description: string;
+    priority: 'low' | 'medium' | 'high' | 'urgent';
+    agentId: string;
+  };
+  isGoalReached: boolean;
+  reasoning: string;
+  costTokens?: number;
 }
 
 const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
@@ -51,9 +83,10 @@ export class PlannerService {
 
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
+    @InjectModel(OrchestrationPlan.name)
+    private readonly planModel: Model<OrchestrationPlanDocument>,
     private readonly agentClientService: AgentClientService,
     private readonly promptResolver: PromptResolverService,
-    private readonly sceneOptimizationService: SceneOptimizationService,
   ) {}
 
   async planFromPrompt(input: {
@@ -80,6 +113,66 @@ export class PlannerService {
     }
 
     return this.planByHeuristic(input.prompt, mode);
+  }
+
+  async generateNextTask(
+    planId: string,
+    context: IncrementalPlannerContext,
+  ): Promise<GenerateNextTaskResult> {
+    const plan = await this.planModel.findById(planId).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim();
+    if (!plannerAgentId) {
+      throw new BadRequestException('Plan has no planner agent configured');
+    }
+
+    const prompt = this.buildIncrementalPlannerPrompt(context);
+    const task: AgentExecutionTask = {
+      title: 'Incremental planning: generate next task',
+      description: prompt,
+      type: 'planning',
+      priority: 'high',
+      status: 'pending',
+      assignedAgents: [plannerAgentId],
+      teamId: 'orchestration',
+      messages: [],
+    };
+
+    const response = await this.agentClientService.executeTask(plannerAgentId, task, {
+      collaborationContext: {
+        mode: 'planning',
+        format: 'json',
+        roleInPlan: 'planner',
+      },
+    });
+
+    const parsed = this.tryParseJson(response);
+    if (!parsed) {
+      return {
+        isGoalReached: false,
+        reasoning: 'Failed to parse planner response',
+      };
+    }
+
+    const parsedAgentId = String(parsed?.task?.agentId || '').trim();
+    const parsedTask = parsed?.task && !Array.isArray(parsed.task)
+      ? {
+          title: String(parsed.task.title || '').trim().slice(0, MAX_TITLE_LENGTH),
+          description: String(parsed.task.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
+          priority: this.normalizePriority(parsed.task.priority),
+          agentId: parsedAgentId,
+        }
+      : undefined;
+
+    return {
+      task: parsedTask,
+      isGoalReached: Boolean(parsed.isGoalReached),
+      reasoning: String(parsed.reasoning || '').trim(),
+      costTokens: Number.isFinite(parsed.costTokens) ? Number(parsed.costTokens) : undefined,
+    };
   }
 
   private async planByAgent(
@@ -120,7 +213,7 @@ export class PlannerService {
         return null;
       }
 
-      let tasks: PlannerTaskDraft[] = parsed.tasks.slice(0, MAX_TASKS).map((item: any, index: number) => ({
+      const tasks: PlannerTaskDraft[] = parsed.tasks.slice(0, MAX_TASKS).map((item: any, index: number) => ({
         title: String(item.title || `子任务 ${index + 1}`).slice(0, MAX_TITLE_LENGTH),
         description: String(item.description || item.title || '').slice(0, MAX_DESCRIPTION_LENGTH),
         priority: this.normalizePriority(item.priority),
@@ -131,29 +224,9 @@ export class PlannerService {
             : [],
       }));
 
-      // Apply skill constraint validation
-      const skillRules = planningContext?.rawPlanningRules || [];
-      if (skillRules.length) {
-        const validation = this.validateAgainstSkillConstraints(tasks, skillRules);
-        tasks = validation.tasks;
-        if (!tasks.length) {
-          this.logger.warn('All tasks removed by skill constraint validation, falling back to pre-validation result');
-          tasks = parsed.tasks.slice(0, MAX_TASKS).map((item: any, index: number) => ({
-            title: String(item.title || `子任务 ${index + 1}`).slice(0, MAX_TITLE_LENGTH),
-            description: String(item.description || item.title || '').slice(0, MAX_DESCRIPTION_LENGTH),
-            priority: this.normalizePriority(item.priority),
-            dependencies: index > 0 ? [index - 1] : [],
-          }));
-        }
-      }
-
-      // Apply scene-based dependency optimization and quality validation
-      const optimizedTasks = this.sceneOptimizationService.optimizeTasks(tasks);
-      this.sceneOptimizationService.validateTaskQuality(optimizedTasks);
-
       return {
         mode: this.normalizeMode(parsed.mode, mode),
-        tasks: optimizedTasks,
+        tasks,
         plannerAgentId,
         strategyNote: 'Generated by planner agent',
       };
@@ -179,7 +252,7 @@ export class PlannerService {
 
     return {
       mode,
-      tasks: this.sceneOptimizationService.optimizeTasks(tasks),
+      tasks,
       strategyNote: 'Generated by heuristic planner fallback',
     };
   }
@@ -191,6 +264,68 @@ export class PlannerService {
       '实现核心功能并补充必要接口',
       '验证结果并整理交付说明',
     ];
+  }
+
+  private buildIncrementalPlannerPrompt(context: IncrementalPlannerContext): string {
+    const sections: string[] = [];
+
+    sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
+    sections.push('请确保每一步都可验证、可执行、可被单个执行者独立完成。');
+    sections.push('');
+    sections.push('## Plan 目标（sourcePrompt 原文）');
+    sections.push(context.planGoal);
+    sections.push('');
+
+    if (context.requirementDetail) {
+      sections.push('## 需求详情');
+      sections.push(context.requirementDetail);
+      sections.push('');
+    }
+
+    if (context.agentManifest) {
+      sections.push('## 可用执行者 (Agent Manifest)');
+      sections.push(context.agentManifest);
+      sections.push('');
+    }
+
+    if (context.planningConstraints) {
+      sections.push('## 编排约束');
+      sections.push(context.planningConstraints);
+      sections.push('');
+    }
+
+    if (context.completedTasks.length > 0) {
+      sections.push('## 已完成任务摘要');
+      for (const item of context.completedTasks) {
+        sections.push(`- [${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`);
+      }
+      sections.push('');
+    }
+
+    if (context.failedTasks.length > 0) {
+      sections.push('## 失败任务（请调整策略）');
+      for (const item of context.failedTasks) {
+        sections.push(`- [${item.title}]: ${item.error}`);
+      }
+      sections.push('');
+    }
+
+    if (context.lastError) {
+      sections.push('## 最近失败原因');
+      sections.push(context.lastError);
+      sections.push('');
+    }
+
+    sections.push('## 输出规则');
+    sections.push('1) 仅输出 JSON，不要输出其他解释。');
+    sections.push('2) 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "..."}, "isGoalReached": false, "reasoning": "..."}');
+    sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为空。');
+    sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
+    sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
+    sections.push('6) 你必须从 Agent Manifest 中选择一个真实存在的 agentId，不允许臆造。');
+    sections.push('7) 当存在失败原因时，下一步必须体现纠偏策略，避免重复同一路径。');
+
+    return sections.join('\n');
   }
 
   private tryParseJson(content: string): any | null {
@@ -236,100 +371,6 @@ export class PlannerService {
       return input;
     }
     return fallback;
-  }
-
-  /**
-   * Validate planner output against skill-defined planning rules.
-   * Returns the filtered task list (forbidden patterns removed) and any violations found.
-   */
-  private validateAgainstSkillConstraints(
-    tasks: PlannerTaskDraft[],
-    rules: PlanningRule[],
-  ): { tasks: PlannerTaskDraft[]; violations: string[] } {
-    if (!rules.length) {
-      return { tasks, violations: [] };
-    }
-
-    const violations: string[] = [];
-    let filtered = [...tasks];
-
-    for (const rule of rules) {
-      switch (rule.type) {
-        case 'forbidden_task_pattern': {
-          if (!rule.validate) break;
-          try {
-            const pattern = new RegExp(rule.validate, 'i');
-            const before = filtered.length;
-            filtered = filtered.filter((task) => {
-              const text = `${task.title} ${task.description}`;
-              const matches = pattern.test(text);
-              if (matches) {
-                violations.push(`Removed task "${task.title}" (forbidden pattern: ${rule.rule})`);
-              }
-              return !matches;
-            });
-            if (before !== filtered.length) {
-              // Reindex dependencies after removal
-              filtered = this.reindexDependencies(filtered);
-            }
-          } catch {
-            this.logger.warn(`Invalid regex in forbidden_task_pattern rule: ${rule.validate}`);
-          }
-          break;
-        }
-        case 'task_count': {
-          if (!rule.validate) break;
-          try {
-            const constraints = JSON.parse(rule.validate);
-            if (constraints.min && filtered.length < constraints.min) {
-              violations.push(`Task count ${filtered.length} below minimum ${constraints.min} (${rule.rule})`);
-            }
-            if (constraints.max && filtered.length > constraints.max) {
-              violations.push(`Task count ${filtered.length} exceeds maximum ${constraints.max}, truncating (${rule.rule})`);
-              filtered = filtered.slice(0, constraints.max);
-              filtered = this.reindexDependencies(filtered);
-            }
-          } catch {
-            this.logger.warn(`Invalid JSON in task_count rule: ${rule.validate}`);
-          }
-          break;
-        }
-        case 'description_quality': {
-          if (!rule.validate) break;
-          try {
-            const pattern = new RegExp(rule.validate, 'i');
-            for (const task of filtered) {
-              if (!pattern.test(task.description)) {
-                violations.push(`Task "${task.title}" description does not match quality pattern (${rule.rule})`);
-              }
-            }
-          } catch {
-            this.logger.warn(`Invalid regex in description_quality rule: ${rule.validate}`);
-          }
-          break;
-        }
-        // required_task_pattern and dependency_rule are advisory — logged but not enforced
-        default:
-          break;
-      }
-    }
-
-    if (violations.length) {
-      this.logger.log(`Planning constraint violations (${violations.length}): ${violations.join('; ')}`);
-    }
-
-    return { tasks: filtered, violations };
-  }
-
-  /**
-   * After removing tasks, reindex dependencies to keep them valid.
-   */
-  private reindexDependencies(tasks: PlannerTaskDraft[]): PlannerTaskDraft[] {
-    // Dependencies are index-based, so after filtering we just ensure they're in range
-    return tasks.map((task, idx) => ({
-      ...task,
-      dependencies: task.dependencies.filter((dep) => dep >= 0 && dep < tasks.length && dep !== idx),
-    }));
   }
 
   private async resolvePlannerTaskPrompt(input: {

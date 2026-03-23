@@ -212,6 +212,7 @@ const PlanDetail: React.FC = () => {
   const [promptHint, setPromptHint] = useState('');
   const [isReplanModalOpen, setIsReplanModalOpen] = useState(false);
   const [replanPlannerAgentId, setReplanPlannerAgentId] = useState('');
+  const [replanAutoGenerate, setReplanAutoGenerate] = useState(true);
   const [isReplanPending, setIsReplanPending] = useState(false);
   const [lastAsyncReplanError, setLastAsyncReplanError] = useState('');
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
@@ -554,29 +555,55 @@ const PlanDetail: React.FC = () => {
     },
   );
 
+  const generateNextMutation = useMutation(
+    (targetPlanId: string) => orchestrationService.generateNext(targetPlanId),
+    {
+      onMutate: () => {
+        setPromptHint('已触发单步生成，等待任务更新...');
+      },
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', planId]),
+        ]);
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : '单步生成失败，请稍后重试';
+        setPromptHint(message);
+      },
+    },
+  );
+
   const replanPlanMutation = useMutation(
     ({
       planId,
       prompt: nextPrompt,
       plannerAgentId,
+      autoGenerate,
     }: {
       planId: string;
       prompt: string;
       plannerAgentId?: string;
+      autoGenerate?: boolean;
     }) =>
       orchestrationService.replanPlan(planId, {
         prompt: nextPrompt,
         mode: modeDraft,
         plannerAgentId,
+        autoGenerate,
       }),
     {
-      onMutate: () => {
+      onMutate: (variables) => {
         setIsReplanModalOpen(false);
         setPromptHint('正在重新编排：正在清空旧任务...');
-        setIsReplanPending(true);
+        setIsReplanPending(Boolean(variables?.autoGenerate));
         setLastAsyncReplanError(String(planDetail?.metadata?.asyncReplanError || ''));
         setStreamTaskIds([]);
-        setStreamHint('重新编排已启动，等待新任务流式返回...');
+        setStreamHint(
+          variables?.autoGenerate
+            ? '重新编排已启动，等待新任务流式返回...'
+            : '重新编排已完成重置，请手动点击“生成下一步”开始增量任务生成。',
+        );
         queryClient.setQueryData(['orchestration-plan', planId], (prev: any) => {
           if (!prev) {
             return prev;
@@ -597,11 +624,18 @@ const PlanDetail: React.FC = () => {
         });
         void queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
-      onSuccess: async () => {
-        setPromptHint('重新编排任务已提交，正在后台处理中...');
+      onSuccess: async (_result, variables) => {
+        setPromptHint(
+          variables?.autoGenerate
+            ? '重新编排任务已提交，正在后台处理中...'
+            : '重新编排已完成重置，可手动逐步生成任务。',
+        );
         setDebugDrawerOpen(false);
         setDebugTaskId('');
         setDebugHint('');
+        if (!variables?.autoGenerate) {
+          setIsReplanPending(false);
+        }
         await queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
       onError: (error) => {
@@ -1020,6 +1054,19 @@ const PlanDetail: React.FC = () => {
               <ArrowPathIcon className="h-4 w-4" /> 刷新
             </button>
             <button
+              onClick={() => planId && generateNextMutation.mutate(planId)}
+              disabled={
+                !planId
+                || generateNextMutation.isLoading
+                || runPlanMutation.isLoading
+                || planDetail.generationState?.isComplete
+              }
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <PlusIcon className="h-4 w-4" />
+              {generateNextMutation.isLoading ? '生成中...' : '生成下一步'}
+            </button>
+            <button
               onClick={() => {
                 if (!planId) return;
                 const nextPrompt = promptDraft.trim();
@@ -1043,6 +1090,7 @@ const PlanDetail: React.FC = () => {
                   return;
                 }
                 setReplanPlannerAgentId(planDetail?.strategy?.plannerAgentId || '');
+                setReplanAutoGenerate(true);
                 setIsReplanModalOpen(true);
               }}
               disabled={!planId || replanPlanMutation.isLoading || isReplanPending || runPlanMutation.isLoading}
@@ -1070,7 +1118,7 @@ const PlanDetail: React.FC = () => {
       </div>
 
       <div className="max-w-7xl mx-auto p-4 space-y-4">
-        <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 rounded-lg border border-slate-200 bg-white p-4 text-sm md:grid-cols-5">
           <div>
             <p className="text-xs text-slate-500">计划状态</p>
             <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-xs ${STATUS_COLOR[planDetail.status] || STATUS_COLOR.pending}`}>
@@ -1079,11 +1127,19 @@ const PlanDetail: React.FC = () => {
           </div>
           <div>
             <p className="text-xs text-slate-500">模板任务</p>
-            <p className="mt-1 text-sm font-medium text-slate-800">{planDetail.stats?.totalTasks ?? '-'}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500">最后执行状态</p>
-            <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-xs ${RUN_STATUS_COLOR[latestRunSummary?.status || ''] || 'bg-slate-100 text-slate-600'}`}>
+              <p className="mt-1 text-sm font-medium text-slate-800">{planDetail.stats?.totalTasks ?? '-'}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">增量进度</p>
+              <p className="mt-1 text-sm font-medium text-slate-800">
+                {planDetail.generationState
+                  ? `${planDetail.generationState.currentStep}/${planDetail.generationConfig?.maxTasks || '-'} 步`
+                  : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-500">最后执行状态</p>
+              <span className={`mt-1 inline-flex rounded px-1.5 py-0.5 text-xs ${RUN_STATUS_COLOR[latestRunSummary?.status || ''] || 'bg-slate-100 text-slate-600'}`}>
               {latestRunSummary ? (RUN_STATUS_LABEL[latestRunSummary.status] || latestRunSummary.status) : '暂无执行'}
             </span>
           </div>
@@ -1990,6 +2046,15 @@ const PlanDetail: React.FC = () => {
                   </option>
                 ))}
               </select>
+              <label className="inline-flex items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={replanAutoGenerate}
+                  onChange={(event) => setReplanAutoGenerate(event.target.checked)}
+                  disabled={replanPlanMutation.isLoading}
+                />
+                重排后自动持续生成任务
+              </label>
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
@@ -2012,6 +2077,7 @@ const PlanDetail: React.FC = () => {
                     planId,
                     prompt: nextPrompt,
                     plannerAgentId: replanPlannerAgentId || undefined,
+                    autoGenerate: replanAutoGenerate,
                   });
                 }}
                 disabled={!planId || replanPlanMutation.isLoading || isReplanPending}

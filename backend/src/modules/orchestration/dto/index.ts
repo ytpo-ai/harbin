@@ -35,6 +35,10 @@ export class CreatePlanFromPromptDto {
   autoRun?: boolean;
 
   @IsOptional()
+  @IsBoolean()
+  autoGenerate?: boolean;
+
+  @IsOptional()
   @IsString()
   requirementId?: string;
 
@@ -71,6 +75,10 @@ export class ReplanPlanDto {
   @IsOptional()
   @IsBoolean()
   autoRun?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  autoGenerate?: boolean;
 
   @IsOptional()
   @IsString()
