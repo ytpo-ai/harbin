@@ -73,6 +73,21 @@ const TASK_TOOL_HINTS: Record<string, string[]> = {
   planning: ['orchestration', 'requirement'],
 };
 
+const TEXT_TOOL_HINTS: Array<{ keywords: string[]; toolHints: string[] }> = [
+  {
+    keywords: ['repo-writer', 'write code', 'edit file', '修改代码', '提交代码', 'patch'],
+    toolHints: ['repo-write', 'docs-write', 'repo-read'],
+  },
+  {
+    keywords: ['save-prompt-template', 'prompt template', '提示词模板', '发布模板'],
+    toolHints: ['save-prompt-template', 'prompt'],
+  },
+  {
+    keywords: ['websearch', 'webfetch', 'search', 'research', '调研', '检索'],
+    toolHints: ['web-search', 'web-fetch', 'websearch', 'webfetch'],
+  },
+];
+
 /** Score dimension weights (configurable via env) */
 const W_ROLE = parseInt(process.env.EXECUTOR_WEIGHT_ROLE || '40', 10);
 const W_TOOL = parseInt(process.env.EXECUTOR_WEIGHT_TOOL || '30', 10);
@@ -124,10 +139,16 @@ export class ExecutorSelectionService {
     taskTitle: string;
     taskDescription: string;
     taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+    requiredTools?: string[];
   }): Promise<AgentToolFitValidationResult> {
     const normalizedAgentId = String(input.agentId || '').trim();
     const normalizedTaskType = this.normalizeExternalTaskType(input.taskType);
-    const requiredTools = this.resolveRequiredToolHints(normalizedTaskType);
+    const explicitRequiredTools = (input.requiredTools || [])
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+    const requiredTools = explicitRequiredTools.length > 0
+      ? explicitRequiredTools
+      : this.resolveRequiredToolHints(normalizedTaskType, input.taskTitle, input.taskDescription);
 
     if (!normalizedAgentId || requiredTools.length === 0) {
       return {
@@ -551,8 +572,22 @@ export class ExecutorSelectionService {
     return 'general';
   }
 
-  private resolveRequiredToolHints(taskType: string): string[] {
-    return [...(TASK_TOOL_HINTS[taskType] || [])];
+  private resolveRequiredToolHints(taskType: string, title: string, description: string): string[] {
+    const hints = new Set<string>(TASK_TOOL_HINTS[taskType] || []);
+    if (hints.size > 0) {
+      return Array.from(hints);
+    }
+
+    const text = `${title} ${description}`.toLowerCase();
+    for (const item of TEXT_TOOL_HINTS) {
+      if (item.keywords.some((keyword) => text.includes(keyword.toLowerCase()))) {
+        for (const hint of item.toolHints) {
+          hints.add(hint);
+        }
+      }
+    }
+
+    return Array.from(hints);
   }
 
   private normalizeExternalTaskType(

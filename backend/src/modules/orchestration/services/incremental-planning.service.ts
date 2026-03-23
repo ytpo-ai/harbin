@@ -7,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
+import { Tool, ToolDocument } from '../../../../apps/agents/src/schemas/tool.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
@@ -50,6 +51,8 @@ export class IncrementalPlanningService {
     private readonly taskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
+    @InjectModel(Tool.name)
+    private readonly toolModel: Model<ToolDocument>,
     private readonly plannerService: PlannerService,
     private readonly executionEngine: OrchestrationExecutionEngineService,
     private readonly planStatsService: PlanStatsService,
@@ -383,6 +386,7 @@ export class IncrementalPlanningService {
             fallbackUsed: assignment.reason !== 'Assigned by planner incremental output',
             resolvedTaskType: runtimeTaskType,
             plannerTaskType: taskResult.taskType || undefined,
+            plannerRequiredTools: taskResult.requiredTools || undefined,
             planDefaultTaskType: planDefaultTaskType || undefined,
           },
         },
@@ -412,9 +416,12 @@ export class IncrementalPlanningService {
     if (!normalizedTaskId) {
       throw new NotFoundException('Failed task not found for redesign');
     }
+    if (!Types.ObjectId.isValid(normalizedTaskId)) {
+      throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
+    }
 
     const targetTask = await this.taskModel
-      .findOne({ _id: normalizedTaskId, planId, status: 'failed' })
+      .findOne({ _id: new Types.ObjectId(normalizedTaskId), planId, status: 'failed' })
       .exec();
     if (!targetTask) {
       throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
@@ -591,6 +598,7 @@ export class IncrementalPlanningService {
       title: taskResult.title,
       description: taskResult.description,
       taskType: this.mapRuntimeTaskTypeToExecutorTaskType(taskResult.taskType),
+      requiredTools: taskResult.requiredTools,
     });
 
     return {
@@ -631,6 +639,7 @@ export class IncrementalPlanningService {
       taskTitle: taskResult.title,
       taskDescription: taskResult.description,
       taskType: taskResult.taskType,
+      requiredTools: taskResult.requiredTools,
     });
 
     if (fitCheck.fit) {
@@ -681,10 +690,38 @@ export class IncrementalPlanningService {
       .lean()
       .exec();
 
+    const toolIds = Array.from(
+      new Set(
+        (agents as Array<{ tools?: string[] }>)
+          .flatMap((agent) => agent.tools || [])
+          .map((item) => String(item || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const tools = toolIds.length > 0
+      ? await this.toolModel
+        .find({ id: { $in: toolIds }, enabled: true })
+        .select({ id: 1, name: 1 })
+        .lean()
+        .exec()
+      : [];
+    const toolNameMap = new Map(
+      (tools as Array<{ id?: string; name?: string }>).map((tool) => [
+        String(tool.id || '').trim(),
+        String(tool.name || '').trim(),
+      ]),
+    );
+
     const map = new Map<string, string[]>();
     for (const agent of agents as Array<{ _id?: Types.ObjectId; id?: string; tools?: string[] }>) {
       const keyCandidates = [String(agent.id || '').trim(), String(agent._id || '').trim()].filter(Boolean);
-      const tools = (agent.tools || []).map((tool) => String(tool || '').trim()).filter(Boolean);
+      const tools = (agent.tools || [])
+        .map((toolId) => String(toolId || '').trim())
+        .filter(Boolean)
+        .map((toolId) => {
+          const toolName = toolNameMap.get(toolId);
+          return toolName ? `${toolName}(${toolId})` : toolId;
+        });
       for (const key of keyCandidates) {
         map.set(key, tools);
       }

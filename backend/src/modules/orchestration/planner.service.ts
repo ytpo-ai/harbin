@@ -60,6 +60,7 @@ export interface GenerateNextTaskResult {
     priority: 'low' | 'medium' | 'high' | 'urgent';
     agentId: string;
     taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+    requiredTools?: string[];
   };
   isGoalReached: boolean;
   reasoning: string;
@@ -170,6 +171,12 @@ export class PlannerService {
     const parsedTaskType = this.normalizeTaskType(parsed?.task?.taskType);
     const parsedAction = this.normalizePlannerAction(parsed?.action);
     const parsedRedesignTaskId = String(parsed?.redesignTaskId || '').trim() || undefined;
+    const parsedRequiredTools = Array.isArray(parsed?.task?.requiredTools)
+      ? parsed.task.requiredTools
+        .map((item: unknown) => String(item || '').trim())
+        .filter(Boolean)
+      : undefined;
+
     const parsedTask = parsed?.task && !Array.isArray(parsed.task)
       ? {
           title: String(parsed.task.title || '').trim().slice(0, MAX_TITLE_LENGTH),
@@ -177,6 +184,7 @@ export class PlannerService {
           priority: this.normalizePriority(parsed.task.priority),
           agentId: parsedAgentId,
           taskType: parsedTaskType,
+          requiredTools: parsedRequiredTools,
         }
       : undefined;
     const validatedTask = parsedTask && parsedTask.agentId ? parsedTask : undefined;
@@ -298,7 +306,7 @@ export class PlannerService {
     sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
     sections.push('- 不要回复"好的"、"收到"、"我来执行"等确认性文字。直接输出 JSON。');
     sections.push('- JSON 必须严格符合以下 schema:');
-    sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development|review|external_action"},"isGoalReached":false,"reasoning":"..."}');
+    sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development|review|external_action","requiredTools":["..."]},"isGoalReached":false,"reasoning":"..."}');
     sections.push('- taskType 用于指定任务执行类型。大多数任务使用 general；仅当任务确实需要信息检索/调研时才用 research；代码开发用 development；审阅评审用 review；外部动作（如发邮件）用 external_action。');
     sections.push('');
 
@@ -367,7 +375,7 @@ export class PlannerService {
     sections.push('');
     sections.push('## 输出规则（严格遵守）');
     sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
-    sections.push('2) JSON 结构: {"action": "new|redesign", "redesignTaskId": "...", "task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development|review|external_action"}, "isGoalReached": false, "reasoning": "..."}');
+    sections.push('2) JSON 结构: {"action": "new|redesign", "redesignTaskId": "...", "task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development|review|external_action", "requiredTools": ["..."]}, "isGoalReached": false, "reasoning": "..."}');
     sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
     sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
@@ -375,6 +383,7 @@ export class PlannerService {
     sections.push('7) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 更换 taskType；c) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
     sections.push('8) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
     sections.push('9) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');
+    sections.push('10) 对工具依赖明确的任务，尽量填写 task.requiredTools（例如 ["repo-writer"]、["save-prompt-template"]），便于系统做二次校验。');
     sections.push('');
     sections.push('再次强调：你的回复必须以 { 开头，以 } 结尾，中间是合法 JSON。不要输出任何其他内容。');
 
