@@ -185,12 +185,19 @@
 - 检测任务是否为研究类任务（city_population、generic_research）
 - 要求输出包含 RESEARCH_EXECUTION_PROOF
 - 验证输出结构化格式（JSON/表格/列表）及内容完整性
+- inability 检测升级为正则词库，覆盖“我这边无法 / 当前会话没有 / 没有接入 / 缺少.*工具”等场景
 
-#### 开发任务验证（warning 级）
+#### 通用执行输出验证
+
+- 所有 taskType 在执行成功前都会执行 `validateGeneralOutput()`。
+- 统一拦截空输出、`TASK_INABILITY:`、以及中英文“无法执行/缺少工具”类 inability 信号。
+
+#### 开发任务验证（warn/strict 可配置）
 
 - 新增 `CODE_EXECUTION_PROOF` 校验分支。
 - 检查 build/test/lint 执行证据、成功信号、代码变更证据。
-- 缺失证据只写入 `runLogs.warn`，不阻断任务完成。
+- `CODE_VALIDATION_MODE=warn`（默认）：缺失证据写入 `runLogs.warn`，不阻断任务完成。
+- `CODE_VALIDATION_MODE=strict`：缺失证据直接标记任务失败。
 
 ---
 
@@ -202,6 +209,7 @@
 |------|------|
 | `MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md` | 会议编排执行主计划 |
 | `MCP_PROFILE_GOVERNANCE_MASTER_PLAN.md` | MCP Profile 治理主计划 |
+| `ORCHESTRATION_TASK_OUTPUT_VALIDATION_FIX_PLAN.md` | Agent 输出校验修复方案（inability 拦截 + strict 模式） |
 | `ORCHESTRATION_PAGE_OPTIMIZATION_PLAN.md` | 计划编排页面交互优化计划 |
 | `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造计划 |

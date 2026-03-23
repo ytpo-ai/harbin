@@ -18,6 +18,18 @@
 - `backend/src/modules/orchestration/services/orchestration-execution-engine.service.ts`
   - 统一承接 task node / run task node 执行能力。
   - 已内建 async task 等待、research/review/external 校验与状态流转。
+  - 新增通用输出兜底校验：所有 runtime taskType 在成功前都会执行 `validateGeneralOutput()`，拦截 `TASK_INABILITY` / “无法执行”类结果。
+  - `development` 代码执行证明校验支持 `CODE_VALIDATION_MODE`：
+    - `warn`（默认）：记录 warning，不阻断完成；
+    - `strict`：缺少代码执行证明时直接失败。
+
+### 输出校验基线（2026-03-24）
+
+- `backend/src/modules/orchestration/services/task-output-validation.service.ts`
+  - 新增 `validateGeneralOutput()`，统一处理空输出与 inability 信号（含中英文 + `TASK_INABILITY:` 格式）。
+  - `validateResearchOutput()` inability 词库改为正则，并扩展“我这边无法 / 当前会话没有 / 缺少.*工具”等模式。
+- `backend/src/modules/orchestration/services/orchestration-context.service.ts`
+  - `buildTaskDescription()` 统一追加 Task Output Contract，要求无法执行时必须输出 `TASK_INABILITY: <reason>`。
 
 ### 子 Service（7 个）
 

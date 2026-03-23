@@ -77,6 +77,14 @@ export class OrchestrationContextService {
         ].join('\n'),
       );
     }
+    sections.push(
+      [
+        'Task output contract (MUST comply):',
+        '- if tool/permission is missing, start response with: TASK_INABILITY: <reason>',
+        '- do not output fallback suggestions or manual instructions as completed task result',
+        '- only return executable result after required actions are actually performed',
+      ].join('\n'),
+    );
     return sections.join('\n\n');
   }
 

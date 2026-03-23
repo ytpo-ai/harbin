@@ -30,6 +30,8 @@ export class OrchestrationExecutionEngineService {
   );
   private readonly asyncAgentTaskSseEnabled =
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
+  private readonly codeValidationMode: 'warn' | 'strict' =
+    String(process.env.CODE_VALIDATION_MODE || 'warn').trim().toLowerCase() === 'strict' ? 'strict' : 'warn';
 
   constructor(
     @InjectModel(OrchestrationTask.name)
@@ -280,6 +282,28 @@ export class OrchestrationExecutionEngineService {
         throw new Error('Async agent task succeeded but returned empty output');
       }
 
+      const generalValidation = this.taskOutputValidationService.validateGeneralOutput(output);
+      if (!generalValidation.valid) {
+        const detail = generalValidation.missing?.length
+          ? `; missing=${generalValidation.missing.join(',')}`
+          : '';
+        await this.markTaskFailed(taskId, `General output validation failed: ${generalValidation.reason}${detail}`);
+        await this.planStatsService.updatePlanSessionTask(planId, taskId, {
+          status: 'failed',
+          error: `General output validation failed: ${generalValidation.reason}${detail}`,
+        });
+        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
+          planId,
+          status: 'failed',
+          taskTitle: task.title,
+          senderAgentId: assignment.executorId,
+          reason: 'general_output_validation_failed',
+          error: generalValidation.reason,
+          missing: generalValidation.missing,
+        });
+        return { status: 'failed', error: generalValidation.reason };
+      }
+
       if (effectiveIsResearchTask && effectiveResearchTaskKind) {
         const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
         if (!validation.valid) {
@@ -304,7 +328,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      if (isReviewTask) {
+      if (effectiveIsReviewTask) {
         const validation = this.taskOutputValidationService.validateReviewOutput(output);
         if (!validation.valid) {
           const detail = validation.missing?.length
@@ -328,7 +352,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      if (isExternalAction) {
+      if (effectiveIsExternalAction) {
         const proof = this.taskOutputValidationService.extractEmailSendProof(output);
         if (!proof.valid) {
           await this.markTaskWaitingHuman(
@@ -354,6 +378,27 @@ export class OrchestrationExecutionEngineService {
 
       const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(task.title, task.description, output);
       if (!codeValidation.valid) {
+        if (this.codeValidationMode === 'strict') {
+          const detail = codeValidation.missing?.length
+            ? `; missing=${codeValidation.missing.join(',')}`
+            : '';
+          await this.markTaskFailed(taskId, `Code output validation failed: ${codeValidation.reason}${detail}`);
+          await this.planStatsService.updatePlanSessionTask(planId, taskId, {
+            status: 'failed',
+            error: `Code output validation failed: ${codeValidation.reason}${detail}`,
+          });
+          this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
+            planId,
+            status: 'failed',
+            taskTitle: task.title,
+            senderAgentId: assignment.executorId,
+            reason: 'development_output_validation_failed',
+            error: codeValidation.reason,
+            missing: codeValidation.missing,
+          });
+          return { status: 'failed', error: codeValidation.reason };
+        }
+
         await this.orchestrationTaskModel
           .updateOne(
             { _id: taskId },
@@ -640,6 +685,15 @@ export class OrchestrationExecutionEngineService {
         throw new Error('Async agent task succeeded but returned empty output');
       }
 
+      const generalValidation = this.taskOutputValidationService.validateGeneralOutput(output);
+      if (!generalValidation.valid) {
+        const detail = generalValidation.missing?.length
+          ? `; missing=${generalValidation.missing.join(',')}`
+          : '';
+        await this.markRunTaskFailed(runTaskId, `General output validation failed: ${generalValidation.reason}${detail}`);
+        return { status: 'failed', error: generalValidation.reason };
+      }
+
       if (effectiveIsResearchTask && effectiveResearchTaskKind) {
         const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
         if (!validation.valid) {
@@ -651,7 +705,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      if (isReviewTask) {
+      if (effectiveIsReviewTask) {
         const validation = this.taskOutputValidationService.validateReviewOutput(output);
         if (!validation.valid) {
           const detail = validation.missing?.length
@@ -662,7 +716,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      if (isExternalAction) {
+      if (effectiveIsExternalAction) {
         const proof = this.taskOutputValidationService.extractEmailSendProof(output);
         if (!proof.valid) {
           await this.markRunTaskWaitingHuman(
@@ -677,6 +731,39 @@ export class OrchestrationExecutionEngineService {
           });
           return { status: 'waiting_human', result: output };
         }
+      }
+
+      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(
+        runTask.title,
+        runTask.description,
+        output,
+      );
+      if (!codeValidation.valid) {
+        if (this.codeValidationMode === 'strict') {
+          const detail = codeValidation.missing?.length
+            ? `; missing=${codeValidation.missing.join(',')}`
+            : '';
+          await this.markRunTaskFailed(runTaskId, `Code output validation failed: ${codeValidation.reason}${detail}`);
+          return { status: 'failed', error: codeValidation.reason };
+        }
+
+        await this.orchestrationRunTaskModel
+          .updateOne(
+            { _id: runTaskId },
+            {
+              $push: {
+                runLogs: {
+                  timestamp: new Date(),
+                  level: 'warn',
+                  message: `CODE_EXECUTION_PROOF warning: ${codeValidation.reason}`,
+                  metadata: {
+                    missing: codeValidation.missing,
+                  },
+                },
+              },
+            },
+          )
+          .exec();
       }
 
       await this.orchestrationRunTaskModel

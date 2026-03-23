@@ -18,12 +18,32 @@ describe('TaskOutputValidationService', () => {
     expect(service.validateResearchOutput(output, 'generic_research').valid).toBe(true);
   });
 
+  it('rejects general output with task inability marker', () => {
+    const output = 'TASK_INABILITY: missing repo-writer tool in current runtime';
+    const result = service.validateGeneralOutput(output);
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('agent reported inability to execute task');
+  });
+
   it('rejects research output when proof is missing', () => {
     const output = '{"findings":[{"rank":1,"title":"A","summary":"B","source":"https://example.com/a"}]}';
     const result = service.validateResearchOutput(output, 'generic_research');
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('missing or invalid research execution proof');
+  });
+
+  it('rejects research output with expanded inability signals', () => {
+    const output = [
+      '当前会话没有接入 web-fetch，缺少必要工具。',
+      '我这边无法直接访问目标网页，因此不能继续研究。',
+      'RESEARCH_EXECUTION_PROOF: {"toolCalls":[],"fetchedUrls":[]}',
+    ].join('\n');
+    const result = service.validateResearchOutput(output, 'generic_research');
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('agent reported inability to access source data');
   });
 
   it('extracts email proof marker', () => {
