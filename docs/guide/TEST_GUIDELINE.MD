@@ -178,23 +178,57 @@ bash start.sh development -p 3002   # agents
 
 ## 9. 增量编排 16 设计点验证状态（截至 2026-03-24）
 
-| # | 设计点 | 结果 | 验证方式 |
-|---|--------|------|----------|
-| 1 | Schema 扩展（generationMode / generationConfig / generationState） | PASS | API 创建 Plan 返回字段验证 |
-| 2 | createPlanFromPrompt 默认 draft + incremental | PASS | status='draft', generationMode='incremental' |
-| 3 | autoGenerate=true 触发异步编排 | PASS | Plan 创建后 status 自动变为 'drafting' |
-| 4 | IncrementalPlanningService 主循环启动 | PASS | generationState.currentStep 递增 |
-| 5 | 防重入（activePlannings Set） | PASS | 同一 planId 不会重复启动编排 |
-| 6 | PlannerService.generateNextTask() 调用 agent | PASS | agent 成功返回 JSON 任务定义 |
-| 7 | buildIncrementalPlannerPrompt 构建完整上下文 | PASS | prompt 包含目标/manifest/已完成任务/失败任务 |
-| 8 | 约束守护 maxRetries=3 兜底终止 | PASS | consecutiveFailures>=3 时 plan 回到 draft |
-| 9 | failPlanning() 恢复 draft + 记录 lastError | PASS | status='draft', lastError 有值 |
-| 10 | generationState 每步持久化到 MongoDB | PASS | currentStep/totalGenerated/totalRetries 实时更新 |
-| 11 | SSE 事件发射（status.changed / step.started / failed） | PASS | 代码审计确认 emitPlanStreamEvent 调用 |
-| 12 | generate-next 手动触发 endpoint | PASS | POST plans/:id/generate-next 返回 accepted |
-| 13 | 向后兼容（旧 Plan 不受影响） | PASS | 旧 plan 无新字段不报错 |
-| 14 | executor fallback（agentId 无效时降级） | PASS | 代码审计 + v1 测试中实际触发 |
-| 15 | **任务创建 + 执行** | **PASS** | v3 测试 Task 0: planner 返回有效 JSON → 创建 task → 执行 completed |
-| 16 | **任务合并（tryMergeWithPreviousTask）** | **待验证** | 需连续 2+ task completed 且同 agent + 相似度>40% 触发 |
+### 9.1 测试场景汇总
 
-**设计点 16 待验证原因**: 合并仅在 task completed 后触发。当前测试中 Task 0 completed 后 Task 1-3 连续失败（planner 自选 research type + agent 缺少仓库访问权限），未达到合并触发条件。需要一个能实际执行成功的多步编排场景来验证。
+| 轮次 | PlanId | Prompt 目标 | 结果 | 验证重点 |
+|------|--------|------------|------|----------|
+| v1 | `69c19204...` | agency-agents Prompt 全量导入（中文） | 3 task 全失败 → plan draft | 失败处理链路（#8 #9）、research taskType 误判 |
+| v2 | `69c192ae...` | Prompt Registry 数据整理与汇总（中文） | 4 task 全 completed → plan planned | 成功执行全链路（#15）、isGoalReached 完成判定 |
+| v3 | `69c193b9...` | Agent Prompt Config Export Report（英文） | 5 task、2 次合并触发 → 手动逐步 | 任务合并（#16）、generate-next 端点（#12） |
+
+### 9.2 设计点验证矩阵
+
+| # | 设计点 | 结果 | 验证方式 | 验证轮次 |
+|---|--------|------|----------|----------|
+| 1 | Schema 扩展（generationMode / generationConfig / generationState） | **PASS** | API 创建 Plan 返回字段验证：generationMode='incremental', generationConfig.maxRetries=3, generationState.currentStep=0 | v1/v2/v3 |
+| 2 | createPlanFromPrompt 默认 draft + incremental | **PASS** | 三轮测试均确认 status='draft', generationMode='incremental' | v1/v2/v3 |
+| 3 | autoGenerate=true 触发异步编排 | **PASS** | v1/v2 Plan 创建后 status 自动变为 'drafting'，任务自动生成 | v1/v2 |
+| 4 | IncrementalPlanningService 主循环启动 | **PASS** | generationState.currentStep 从 0 递增到 3(v1)/4(v2)/5(v3) | v1/v2/v3 |
+| 5 | 防重入（activePlannings Set） | **PASS** | 代码审计 + v3 手动逐步触发未出现并发冲突 | v3 |
+| 6 | PlannerService.generateNextTask() 调用 agent | **PASS** | agent 成功返回 JSON 任务定义（title/description/priority/agentId/taskType） | v2/v3 |
+| 7 | buildIncrementalPlannerPrompt 构建完整上下文 | **PASS** | prompt 包含目标/manifest/已完成任务/失败任务；v1 失败后 planner 调整了策略 | v1/v2 |
+| 8 | 约束守护 maxRetries=3 兜底终止 | **PASS** | v1: consecutiveFailures=3 时 plan 回到 draft，编排终止 | v1 |
+| 9 | failPlanning() 恢复 draft + 记录 lastError | **PASS** | v1: status='draft', lastError='Task "..." failed after 3 retries: missing or invalid research execution proof' | v1 |
+| 10 | generationState 每步持久化到 MongoDB | **PASS** | 三轮测试均确认 currentStep/totalGenerated/totalRetries/consecutiveFailures 实时更新 | v1/v2/v3 |
+| 11 | SSE 事件发射（status.changed / step.started / failed） | **PASS** | 代码审计确认 emitPlanStreamEvent 在 step.started/task.generated/task.executing/task.completed/task.failed/task.merged/planning.completed/planning.failed 等时机均有调用 | 代码审计 |
+| 12 | generate-next 手动触发 endpoint | **PASS** | v3: POST plans/:id/generate-next 返回 `{accepted:true}`，单步执行后 generationState 正确递增 | v3 |
+| 13 | 向后兼容（旧 Plan 不受影响） | **PASS** | 旧 plan 无 generationMode/generationConfig/generationState 字段不报错，API 正常返回 | 代码审计 + API |
+| 14 | executor fallback（agentId 无效时降级） | **PASS** | 代码审计确认 resolveValidAgentId 失败时 fallback 到 ExecutorSelectionService；v1 中 fallbackUsed=false 说明正常路径工作 | 代码审计 |
+| 15 | 任务创建 + 执行 | **PASS** | v2: 4 个 task 全部 completed (rtt=general)；v3: 5 个 task 中 3 个 completed；task 的 runLogs[0].metadata 包含完整诊断字段 | v2/v3 |
+| 16 | 任务合并（tryMergeWithPreviousTask） | **PASS** | v3: Task[0]←Task[1] 合并（similarity≈0.43）、Task[2]←Task[3] 合并；mergedFromTaskIds 有值，cancelled task 状态正确 | v3 |
+
+### 9.3 合并逻辑观察与改进建议
+
+v2（中文 prompt）中 3 个连续同 agent completed task 未触发合并，原因分析：
+
+- `extractKeywords()` 使用正则 `/[^a-zA-Z0-9\u4e00-\u9fa5]+/` 分割文本
+- 中文连续字符（如"条目总量与分类分布并生成清单初稿"）作为单个长 token 处理
+- 导致中文场景关键词重叠率仅 0.30-0.33，低于 0.40 阈值
+- 英文场景（v3）因自然空格分词，关键词粒度合适，成功触发合并
+
+**改进方向**：
+1. 引入中文分词（如 jieba / nodejieba）替代纯正则分割
+2. 或使用 embedding 向量相似度替代关键词匹配
+3. 或降低阈值到 0.25-0.30 以兼容中文场景
+
+### 9.4 runtimeTaskType 解析验证
+
+| 场景 | plannerTaskType | planDefaultTaskType | resolvedTaskType | fallbackUsed |
+|------|----------------|--------------------|--------------------|--------------|
+| v1 Task[0-2] | research | general | research | false |
+| v2 Task[0-3] | general | general | general | false |
+| v3 Task[0-4] | general | general | general | false |
+
+三层优先级解析 (`planner > plan.defaultTaskType > 'general'`) 工作正常：
+- v1 中 planner 选择 research 覆盖了 plan 默认的 general
+- v2/v3 中 planner 选择 general 与 plan 默认一致

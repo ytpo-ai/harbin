@@ -344,6 +344,13 @@ export class PlannerService {
       sections.push('');
     }
 
+    sections.push('## 执行者选择规则（关键，严格遵守）');
+    sections.push('选择 agentId 时必须按以下优先级判断：');
+    sections.push('A) **工具匹配优先**：查看每个 agent 的"工具"列表，选择拥有本任务所需工具的 agent。工具匹配权重远大于能力标签或角色层级。');
+    sections.push('B) **多人有工具时可委派**：若多个 agent 都拥有所需工具，优先选择职级更低/更专注的执行者，让高层级 agent 专注决策。');
+    sections.push('C) **仅自己有工具时必须选自己**：若只有标记了"★你自己"的 agent 拥有所需工具，必须选择自己（你的 agentId）执行，不得委派给没有相应工具的 agent。');
+    sections.push('D) **无工具需求时按能力匹配**：若任务不依赖特定工具，按能力标签和角色匹配度选择。');
+    sections.push('');
     sections.push('## 输出规则（严格遵守）');
     sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
     sections.push('2) JSON 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development|review|external_action"}, "isGoalReached": false, "reasoning": "..."}');

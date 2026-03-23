@@ -29,6 +29,7 @@ interface AgentManifestEntry {
   capabilities: string[];
   toolNames: string[];
   description: string;
+  isPlanner?: boolean;
 }
 
 interface RequirementInfo {
@@ -82,9 +83,8 @@ export class PlanningContextService {
     plannerAgentId?: string;
   }): Promise<PlanningContext> {
     void input.prompt;
-    void input.plannerAgentId;
     const [agentManifest, requirementDetail] = await Promise.all([
-      this.buildAgentManifest().catch((err) => {
+      this.buildAgentManifest(input.plannerAgentId).catch((err) => {
         this.logger.warn(`Failed to build agent manifest: ${err.message}`);
         return '';
       }),
@@ -107,7 +107,7 @@ export class PlanningContextService {
   // Agent Manifest
   // -----------------------------------------------------------------------
 
-  private async buildAgentManifest(): Promise<string> {
+  private async buildAgentManifest(plannerAgentId?: string): Promise<string> {
     const [agents, roles, allToolIds] = await this.loadAgentsAndRoles();
     if (!agents.length) {
       return '';
@@ -132,6 +132,10 @@ export class PlanningContextService {
         })
         .filter(Boolean) as string[];
 
+      const isPlanner = Boolean(
+        plannerAgentId && (agentId === plannerAgentId || agent._id?.toString() === plannerAgentId),
+      );
+
       return {
         id: agentId,
         name: agent.name,
@@ -140,6 +144,7 @@ export class PlanningContextService {
         capabilities: [...new Set(capabilities)],
         toolNames: [...new Set(toolNames)],
         description: (agent.description || '').slice(0, 100),
+        isPlanner,
       };
     });
 
@@ -189,11 +194,14 @@ export class PlanningContextService {
   }
 
   private formatAgentManifest(entries: AgentManifestEntry[]): string {
-    const lines: string[] = ['可用执行者清单（分配任务时请参考其能力范围，agentId 必须使用括号内的 id 值）:'];
+    const lines: string[] = [
+      '可用执行者清单（分配任务时请参考其**工具列表**和能力范围，agentId 必须使用括号内的 id 值）:',
+    ];
 
     for (const entry of entries) {
+      const plannerTag = entry.isPlanner ? ' ★你自己' : '';
       const parts = [
-        `- ${entry.name}（id=${entry.id}, ${entry.roleName}, ${entry.tier}层）`,
+        `- ${entry.name}（id=${entry.id}, ${entry.roleName}, ${entry.tier}层）${plannerTag}`,
       ];
       if (entry.capabilities.length) {
         parts.push(`  能力: ${entry.capabilities.join(', ')}`);
