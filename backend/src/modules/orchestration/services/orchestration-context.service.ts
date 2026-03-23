@@ -80,6 +80,7 @@ export class OrchestrationContextService {
     sections.push(
       [
         'Task output contract (MUST comply):',
+        '- this applies only when execution cannot proceed; otherwise follow task-specific output contract first',
         '- if tool/permission is missing, start response with: TASK_INABILITY: <reason>',
         '- do not output fallback suggestions or manual instructions as completed task result',
         '- only return executable result after required actions are actually performed',

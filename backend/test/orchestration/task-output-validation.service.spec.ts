@@ -26,6 +26,20 @@ describe('TaskOutputValidationService', () => {
     expect(result.reason).toContain('agent reported inability to execute task');
   });
 
+  it('rejects general output when task inability marker starts on a new line', () => {
+    const output = ['Done with pre-check.', 'TASK_INABILITY: missing web-fetch permission'].join('\n');
+    const result = service.validateGeneralOutput(output);
+
+    expect(result.valid).toBe(false);
+  });
+
+  it('ignores inability marker outside general validation snippet window', () => {
+    const output = `${'x'.repeat(520)}\nTASK_INABILITY: too far from output start`;
+    const result = service.validateGeneralOutput(output);
+
+    expect(result.valid).toBe(true);
+  });
+
   it('rejects research output when proof is missing', () => {
     const output = '{"findings":[{"rank":1,"title":"A","summary":"B","source":"https://example.com/a"}]}';
     const result = service.validateResearchOutput(output, 'generic_research');
