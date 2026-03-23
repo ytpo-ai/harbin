@@ -55,6 +55,7 @@ export interface GenerateNextTaskResult {
     description: string;
     priority: 'low' | 'medium' | 'high' | 'urgent';
     agentId: string;
+    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
   };
   isGoalReached: boolean;
   reasoning: string;
@@ -162,12 +163,14 @@ export class PlannerService {
     }
 
     const parsedAgentId = String(parsed?.task?.agentId || '').trim();
+    const parsedTaskType = this.normalizeTaskType(parsed?.task?.taskType);
     const parsedTask = parsed?.task && !Array.isArray(parsed.task)
       ? {
           title: String(parsed.task.title || '').trim().slice(0, MAX_TITLE_LENGTH),
           description: String(parsed.task.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
           priority: this.normalizePriority(parsed.task.priority),
           agentId: parsedAgentId,
+          taskType: parsedTaskType,
         }
       : undefined;
     const validatedTask = parsedTask && parsedTask.agentId ? parsedTask : undefined;
@@ -287,7 +290,8 @@ export class PlannerService {
     sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
     sections.push('- 不要回复"好的"、"收到"、"我来执行"等确认性文字。直接输出 JSON。');
     sections.push('- JSON 必须严格符合以下 schema:');
-    sections.push('  {"task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"..."},"isGoalReached":false,"reasoning":"..."}');
+    sections.push('  {"task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development|review|external_action"},"isGoalReached":false,"reasoning":"..."}');
+    sections.push('- taskType 用于指定任务执行类型。大多数任务使用 general；仅当任务确实需要信息检索/调研时才用 research；代码开发用 development；审阅评审用 review；外部动作（如发邮件）用 external_action。');
     sections.push('');
 
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
@@ -342,7 +346,7 @@ export class PlannerService {
 
     sections.push('## 输出规则（严格遵守）');
     sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
-    sections.push('2) JSON 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "..."}, "isGoalReached": false, "reasoning": "..."}');
+    sections.push('2) JSON 结构: {"task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development|review|external_action"}, "isGoalReached": false, "reasoning": "..."}');
     sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
     sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
@@ -391,6 +395,14 @@ export class PlannerService {
       return input;
     }
     return 'medium';
+  }
+
+  private normalizeTaskType(input: unknown): 'external_action' | 'research' | 'review' | 'development' | 'general' | undefined {
+    const val = String(input || '').trim().toLowerCase();
+    const validTypes = ['external_action', 'research', 'review', 'development', 'general'] as const;
+    return (validTypes as readonly string[]).includes(val)
+      ? (val as 'external_action' | 'research' | 'review' | 'development' | 'general')
+      : undefined;
   }
 
   private normalizeMode(input: string, fallback: 'sequential' | 'parallel' | 'hybrid'): 'sequential' | 'parallel' | 'hybrid' {

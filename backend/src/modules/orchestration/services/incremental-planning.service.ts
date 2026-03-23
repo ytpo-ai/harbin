@@ -342,12 +342,19 @@ export class IncrementalPlanningService {
         };
 
     const requirementId = await this.resolveRequirementObjectId(planId);
+
+    // Resolve runtimeTaskType: planner 指定 > plan.defaultTaskType > 'general'
+    const plan = await this.planModel.findById(planId).select({ defaultTaskType: 1 }).lean().exec();
+    const planDefaultTaskType = (plan as any)?.defaultTaskType as string | undefined;
+    const runtimeTaskType = taskResult.taskType || planDefaultTaskType || 'general';
+
     const task = await new this.taskModel({
       planId,
       ...(requirementId ? { requirementId } : {}),
       title: taskResult.title,
       description: taskResult.description,
       priority: taskResult.priority,
+      runtimeTaskType,
       status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
       order,
       dependencyTaskIds: [],
@@ -361,6 +368,9 @@ export class IncrementalPlanningService {
           metadata: {
             plannerAssignedAgentId: normalizedAgentId || undefined,
             fallbackUsed: !validAgentId,
+            resolvedTaskType: runtimeTaskType,
+            plannerTaskType: taskResult.taskType || undefined,
+            planDefaultTaskType: planDefaultTaskType || undefined,
           },
         },
       ],

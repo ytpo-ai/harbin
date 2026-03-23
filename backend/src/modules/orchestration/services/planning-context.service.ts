@@ -189,11 +189,11 @@ export class PlanningContextService {
   }
 
   private formatAgentManifest(entries: AgentManifestEntry[]): string {
-    const lines: string[] = ['可用执行者清单（分配任务时请参考其能力范围）:'];
+    const lines: string[] = ['可用执行者清单（分配任务时请参考其能力范围，agentId 必须使用括号内的 id 值）:'];
 
     for (const entry of entries) {
       const parts = [
-        `- ${entry.name}（${entry.roleName}, ${entry.tier}层）`,
+        `- ${entry.name}（id=${entry.id}, ${entry.roleName}, ${entry.tier}层）`,
       ];
       if (entry.capabilities.length) {
         parts.push(`  能力: ${entry.capabilities.join(', ')}`);

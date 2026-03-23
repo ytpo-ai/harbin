@@ -86,6 +86,9 @@ export class OrchestrationPlan {
     metadata?: Record<string, unknown>;
   };
 
+  @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
+  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+
   @Prop({ enum: ['batch', 'incremental'], default: 'incremental' })
   generationMode: OrchestrationGenerationMode;
 

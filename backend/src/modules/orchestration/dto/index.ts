@@ -46,6 +46,10 @@ export class CreatePlanFromPromptDto {
   @IsString()
   @MaxLength(64)
   domainType?: string;
+
+  @IsOptional()
+  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
+  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
 }
 
 export class RunPlanDto {
@@ -84,6 +88,10 @@ export class ReplanPlanDto {
   @IsString()
   @MaxLength(64)
   domainType?: string;
+
+  @IsOptional()
+  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
+  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
 }
 
 export class UpdatePlanDto {
@@ -113,6 +121,10 @@ export class UpdatePlanDto {
   @IsString()
   @MaxLength(64)
   domainType?: string;
+
+  @IsOptional()
+  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
+  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
 }
 
 export class ReassignTaskDto {

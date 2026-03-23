@@ -91,6 +91,7 @@ export class PlanManagementService {
         waitingHumanTasks: 0,
       },
       taskIds: [],
+      ...(dto.defaultTaskType ? { defaultTaskType: dto.defaultTaskType } : {}),
       metadata: {
         ...(dto.plannerAgentId ? { requestedPlannerAgentId: dto.plannerAgentId } : {}),
         ...(requirementId ? { requirementId } : {}),
@@ -220,6 +221,9 @@ export class PlanManagementService {
         ...(plan.metadata || {}),
         ...dto.metadata,
       };
+    }
+    if (dto.defaultTaskType) {
+      updatePayload.defaultTaskType = dto.defaultTaskType;
     }
 
     if (!Object.keys(updatePayload).length && !Object.keys(unsetPayload).length) {
@@ -385,6 +389,7 @@ export class PlanManagementService {
                 plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
                 mode: fallbackMode,
               },
+              ...(dto.defaultTaskType ? { defaultTaskType: dto.defaultTaskType } : {}),
               generationMode: 'incremental',
               generationConfig: {
                 maxRetries: plan.generationConfig?.maxRetries || 3,
