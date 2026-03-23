@@ -38,6 +38,14 @@ import { TaskOutputValidationService } from './services/task-output-validation.s
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { PlanningContextService } from './services/planning-context.service';
 import { SceneOptimizationService } from './services/scene-optimization.service';
+import { PlanManagementService } from './services/plan-management.service';
+import { TaskManagementService } from './services/task-management.service';
+import { PlanExecutionService } from './services/plan-execution.service';
+import { TaskLifecycleService } from './services/task-lifecycle.service';
+import { PlanStatsService } from './services/plan-stats.service';
+import { PlanEventStreamService } from './services/plan-event-stream.service';
+import { OrchestrationContextService } from './services/orchestration-context.service';
+import { OrchestrationExecutionEngineService } from './services/orchestration-execution-engine.service';
 import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-registry/prompt-registry.module';
 
 @Module({
@@ -65,6 +73,14 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     OrchestrationService,
     PlannerService,
     SessionManagerService,
+    PlanManagementService,
+    TaskManagementService,
+    PlanExecutionService,
+    TaskLifecycleService,
+    PlanStatsService,
+    PlanEventStreamService,
+    OrchestrationContextService,
+    OrchestrationExecutionEngineService,
     TaskClassificationService,
     TaskOutputValidationService,
     ExecutorSelectionService,

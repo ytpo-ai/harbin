@@ -29,10 +29,8 @@
 - `draft`：草稿
 - `drafting`：编排中（任务流式生成）
 - `planned`：已规划
-- `running`：执行中
-- `paused`：暂停（等待人工）
-- `completed`：已完成
-- `failed`：失败
+
+> 说明：Plan 状态仅表示“编排容器状态”，执行过程与终态统一沉淀在 Run（`orchestration_runs.status`）中，不再复用 Plan 状态表达运行结果。
 
 #### OrchestrationTask 状态
 
@@ -65,6 +63,12 @@
 - 重新编排接口改为异步受理：开始时先清空旧任务并将计划状态置为 `drafting`，随后通过 `plan.status.changed/plan.task.generated/plan.completed/plan.failed` 事件流式返回新任务，前端以 SSE 实时刷新任务列表并在断线时轮询兜底。
 - 计划详情页支持一键复制任务清单为 Markdown（含计划信息、Prompt、任务列表、依赖/执行者/结果），复制成功提示“已复制到剪贴板”。
 - 创建计划后前端自动跳转 `/orchestration/plans/:id`，并在详情页显示“任务生成中”；任务按 `plan.task.generated` 事件逐条展示，体验接近 step 流式输出。
+- 计划详情页支持人工编辑任务：添加任务、删除任务、复制任务、上下移动重排、批量保存标题/描述/优先级/依赖关系变更。
+- 计划详情页与计划列表详情抽屉将“任务依赖”收敛为低频操作弹窗：主区仅保留依赖摘要，点击“依赖设置”按钮后在弹窗内多选并确认。
+- 计划详情页新增「任务设置 / 执行历史」双 Tab：模板任务编辑与 run 历史查看分区展示。
+- 执行历史 Tab 支持最近一次 run 摘要、历史 run 列表（触发来源/状态筛选）和 run 明细抽屉（run + run task）。
+- 计划列表页中的详情抽屉任务区同步支持基础人工编辑能力，与计划详情页保持一致的增删改重排入口。
+- 计划列表页中的详情抽屉已补齐 run 历史视图（双 Tab、run 列表筛选、run 明细抽屉），与 PlanDetail 信息架构保持一致。
 
 #### 执行模式
 
@@ -92,13 +96,22 @@
 
 #### Orchestration 服务拆分（Plan D）
 
-- `OrchestrationService` 聚焦流程编排，领域逻辑下沉到子服务：
-  - `TaskClassificationService`
-  - `TaskOutputValidationService`
-  - `ExecutorSelectionService`
-  - `PlanningContextService`（Planning Context Pipeline，见下文）
-  - `SceneOptimizationService`（场景化后处理，见下文）
-- 计划创建与重规划复用共享任务创建流程，减少重复实现。
+- `OrchestrationService` 已瘦身为 Facade：Controller 仍只依赖该入口，方法按领域委派到子 Service。
+- 新增 7 个领域 Service（`plan-management`、`task-management`、`plan-execution`、`task-lifecycle`、`plan-stats`、`plan-event-stream`、`orchestration-context`）。
+- 新增 `orchestration-execution-engine` 作为统一执行引擎层，承接 task node/run task node 主流程，保持零 API 变更与渐进迁移。
+- 已完成第二阶段下沉：`plan-stats/plan-event-stream/orchestration-context` 迁移为独立实现；legacy 中 research/review/email 重复校验方法已删除，统一使用 `TaskOutputValidationService`。
+- 已完成第二阶段增量迁移：`plan-management`（list/get/update/delete）、`plan-execution`（run history 查询）、`task-management`（listTasks）改为独立实现。
+- 已继续下沉：`task-management` 的任务模板编辑能力（add/remove/update/reorder/batch/duplicate/draft）已独立实现，包含依赖环检测与运行中 plan 编辑保护。
+- 已继续下沉：`task-lifecycle` 的运行态操作（`reassignTask/completeHumanTask/retryTask`）已独立实现，`debugTaskStep/executeStandaloneTask` 暂保留 legacy 委派。
+- 已继续下沉：`plan-management` 的计划生成管线（`createPlanFromPrompt + generatePlanTasksAsync + replanPlan + replanPlanAsync`）已独立实现，支持异步建计划与重规划。
+- 已继续下沉：`plan-execution` 的运行入口（`runPlan/runPlanAsync`）已独立实现，run 查询链路保持独立；当前仅 `executePlanRun` 仍委派 legacy。
+- 已继续下沉：`task-lifecycle` 的 debug/standalone 入口（`debugTaskStep/executeStandaloneTask`）迁移到独立服务编排，任务节点执行仍复用 legacy 执行引擎私有实现。
+- 已完成执行层入口迁移：`plan-execution` 的 `executePlanRun` 也已独立实现；当前 legacy 主要作为执行引擎私有能力复用层（task node/run node 实际执行）。
+- 已新增 `orchestration-execution-engine` 适配层，统一封装 task node/run task node 执行调用，减少子 Service 对 legacy 私有方法的直接依赖。
+- 已继续下沉执行引擎内部：`orchestration-execution-engine` 已独立实现 `executeRunTaskNode` 主流程（异步 Agent 任务等待、research/review/external 校验、run task 状态流转）。
+- 已完成执行引擎核心下沉：`orchestration-execution-engine` 同步独立实现 `executeTaskNode` 主流程；各子 Service 已不再直接依赖 legacy service。
+- `OrchestrationLegacyService` 已从模块运行时 Provider 移除，遗留文件已删除。
+- `TaskClassificationService`、`TaskOutputValidationService`、`ExecutorSelectionService`、`PlanningContextService`、`SceneOptimizationService` 保持独立能力服务角色。
 
 #### Planning Context Pipeline（计划编排上下文增强）
 
@@ -225,7 +238,15 @@
 |------|------|
 | `orchestration.module.ts` | 模块装配与依赖注入 |
 | `orchestration.controller.ts` | REST API 控制器 |
-| `orchestration.service.ts` | 核心流程编排（计划管理、任务执行编排） |
+| `orchestration.service.ts` | Facade 委派层（对外 API 入口） |
+| `services/orchestration-legacy.service.ts` | 兼容过渡层，承载原有完整编排实现 |
+| `services/plan-management.service.ts` | Plan CRUD 与生命周期委派层 |
+| `services/task-management.service.ts` | Task 模板 CRUD 与编辑委派层 |
+| `services/plan-execution.service.ts` | 执行引擎与 Run 管理委派层 |
+| `services/task-lifecycle.service.ts` | 任务运行时操作委派层 |
+| `services/plan-stats.service.ts` | 状态计算与 Session 同步委派层 |
+| `services/plan-event-stream.service.ts` | Plan SSE 事件流委派层 |
+| `services/orchestration-context.service.ts` | 上下文构建与外部集成委派层 |
 | `planner.service.ts` | 任务拆解服务（Agent 拆解 + 启发式兜底） |
 | `services/task-classification.service.ts` | 任务分类能力 |
 | `services/task-output-validation.service.ts` | 输出质量与证明校验能力 |
@@ -277,11 +298,21 @@
 | GET | `/orchestration/plans/:id` | 获取计划详情（含任务与 PlanSession） |
 | DELETE | `/orchestration/plans/:id` | 删除计划 |
 | GET | `/orchestration/plans/:id/tasks` | 获取计划下的任务列表 |
+| POST | `/orchestration/plans/:planId/tasks` | 手动新增任务（支持插入位置） |
+| PUT | `/orchestration/plans/:planId/tasks/reorder` | 批量重排任务顺序 |
+| PUT | `/orchestration/plans/:planId/tasks/batch-update` | 批量更新多个任务 |
+| POST | `/orchestration/plans/:planId/tasks/duplicate/:taskId` | 复制指定任务 |
 | POST | `/orchestration/plans/:id/run` | 执行计划 |
+| GET | `/orchestration/plans/:id/runs` | 获取计划执行历史（run 列表） |
+| GET | `/orchestration/plans/:id/runs/latest` | 获取计划最近一次执行摘要 |
+| GET | `/orchestration/runs/:runId` | 获取单次 run 详情 |
+| GET | `/orchestration/runs/:runId/tasks` | 获取 run 下任务执行明细 |
 | POST | `/orchestration/tasks/:id/reassign` | 重新分配任务 |
 | POST | `/orchestration/tasks/:id/complete-human` | 人工完成任务 |
 | POST | `/orchestration/tasks/:id/retry` | 重试失败任务 |
 | POST | `/orchestration/tasks/:id/draft` | 更新任务草稿 |
+| PATCH | `/orchestration/tasks/:taskId` | 完整更新任务（标题/描述/优先级/依赖/执行者） |
+| DELETE | `/orchestration/tasks/:taskId` | 删除任务并清理下游依赖引用 |
 | POST | `/orchestration/tasks/:id/debug-run` | 调试任务步骤 |
 
 > 注意：`/orchestration/sessions` 相关接口已废弃，会话管理已迁移到 `apps/agents` 侧的 AgentSession。
