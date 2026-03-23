@@ -56,6 +56,19 @@ type SnapshotStatusFilter = 'all' | 'running' | 'success' | 'failed';
 type SnapshotDrawerTab = 'summary' | 'projects' | 'errors';
 type StatisticsTab = 'projectStats' | 'docsHeat';
 
+const LARGE_FILE_LINE_THRESHOLD = 1500;
+const LARGE_FILE_WARNING_EXCLUDED_EXTENSIONS = ['.json', '.yml', '.yaml', '.md'];
+
+type LargeFileWarningRow = {
+  metricType: 'docs' | 'frontend' | 'backend';
+  projectId: string;
+  projectName: string;
+  rootPath: string;
+  filePath: string;
+  lines: number;
+  bytes: number;
+};
+
 function statusMeta(status?: 'running' | 'success' | 'failed') {
   if (status === 'success') {
     return { label: '成功', className: 'text-emerald-700 bg-emerald-50 border-emerald-200' };
@@ -77,6 +90,31 @@ function tokenModeLabel(mode?: 'estimate' | 'exact') {
   return mode === 'exact' ? '精算' : '估算';
 }
 
+function moduleLabelByProject(project: {
+  metricType: 'docs' | 'frontend' | 'backend';
+  projectId: string;
+  rootPath: string;
+  projectName: string;
+  filePath: string;
+}): string {
+  const normalizedFilePath = (project.filePath || '').replace(/^\/+/, '');
+  if (normalizedFilePath.startsWith('docs/')) return 'Docs';
+  if (normalizedFilePath.startsWith('frontend/')) return 'Frontend';
+  if (normalizedFilePath.startsWith('backend/src/')) return 'Backend (src)';
+  if (normalizedFilePath.startsWith('backend/apps/')) {
+    const appName = normalizedFilePath.replace('backend/apps/', '').split('/')[0] || 'app';
+    return `Backend (${appName})`;
+  }
+
+  if (project.metricType === 'docs') return 'Docs';
+  if (project.metricType === 'frontend') return 'Frontend';
+  if (project.projectId === 'workspace-backend') return 'Backend (src)';
+  if (project.rootPath.startsWith('backend/apps/')) {
+    return `Backend (${project.rootPath.replace('backend/apps/', '')})`;
+  }
+  return project.projectName || 'Backend';
+}
+
 const EngineeringStatistics: React.FC = () => {
   const queryClient = useQueryClient();
   const { toast, showToast, clearToast } = useToast(4000);
@@ -89,10 +127,12 @@ const EngineeringStatistics: React.FC = () => {
   const [page, setPage] = React.useState(1);
   const [drawerTab, setDrawerTab] = React.useState<SnapshotDrawerTab>('summary');
 
+  const [expandedProjectKey, setExpandedProjectKey] = React.useState<string | null>(null);
   const [docsWindow, setDocsWindow] = React.useState<DocsHeatWindow>('1d');
   const [docsTopN, setDocsTopN] = React.useState(20);
   const [showConfigModal, setShowConfigModal] = React.useState(false);
   const [draftConfig, setDraftConfig] = React.useState<DocsHeatConfig | null>(null);
+  const [showLargeFileModal, setShowLargeFileModal] = React.useState(false);
 
   const PAGE_SIZE = 10;
 
@@ -253,6 +293,32 @@ const EngineeringStatistics: React.FC = () => {
     return history.filter((item) => item.status === statusFilter);
   }, [history, statusFilter]);
 
+  const latestLargeFiles = React.useMemo<LargeFileWarningRow[]>(() => {
+    const rows: LargeFileWarningRow[] = [];
+    (latest?.projects || []).forEach((project) => {
+      (project.topLineFiles || []).forEach((file) => {
+        const normalizedPath = file.filePath.toLowerCase();
+        const shouldExclude = LARGE_FILE_WARNING_EXCLUDED_EXTENSIONS.some((ext) => normalizedPath.endsWith(ext));
+        if (file.lines >= LARGE_FILE_LINE_THRESHOLD && !shouldExclude) {
+          rows.push({
+            metricType: project.metricType,
+            projectId: project.projectId,
+            projectName: project.projectName,
+            rootPath: project.rootPath,
+            filePath: file.filePath,
+            lines: file.lines,
+            bytes: file.bytes,
+          });
+        }
+      });
+    });
+    return rows.sort((a, b) => {
+      if (b.lines !== a.lines) return b.lines - a.lines;
+      if (b.bytes !== a.bytes) return b.bytes - a.bytes;
+      return a.filePath.localeCompare(b.filePath);
+    });
+  }, [latest?.projects]);
+
   const totalPages = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE));
 
   React.useEffect(() => {
@@ -382,28 +448,109 @@ const EngineeringStatistics: React.FC = () => {
 
       {activeTab === 'projectStats' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">最近统计状态</p>
-              <p className="mt-1 text-sm font-semibold text-gray-900">{latest ? statusMeta(latest.status).label : '暂无'}</p>
-              <p className="mt-1 text-xs text-gray-500">{latest ? formatDateTime(latest.completedAt || latest.startedAt) : '-'}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-white border border-gray-200 rounded-lg overflow-hidden h-full flex flex-col">
+              <div className="p-3 flex-1">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-gray-700">最近统计</p>
+                  <span className={`inline-flex rounded border px-2 py-0.5 text-[11px] ${latest ? statusMeta(latest.status).className : 'text-gray-500 bg-gray-50 border-gray-200'}`}>
+                    {latest ? statusMeta(latest.status).label : '暂无'}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{latest ? formatDateTime(latest.completedAt || latest.startedAt) : '-'}</p>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-[11px] text-gray-400">项目数</p>
+                    <p className="text-sm font-semibold text-gray-900">{latestSummary?.projectCount || 0}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-400">Docs Token</p>
+                    <p className="text-sm font-semibold text-gray-900">{(latestSummary?.totalDocsTokens || 0).toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-gray-400">总字节数</p>
+                    <p className="text-sm font-semibold text-gray-900">{formatBytes(latestSummary?.grandTotalBytes)}</p>
+                  </div>
+                </div>
+              </div>
+              {latestLargeFiles.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowLargeFileModal(true)}
+                  className="w-full border-t border-rose-200 bg-rose-50 px-3 py-2 text-left hover:bg-rose-100/80"
+                >
+                  <span className="inline-flex items-center gap-1 text-xs text-rose-700">
+                    <ExclamationTriangleIcon className="h-4 w-4" />
+                    有 {latestLargeFiles.length} 个代码文件超过 {LARGE_FILE_LINE_THRESHOLD} 行，建议优化
+                  </span>
+                </button>
+              )}
             </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Docs 字节数</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{formatBytes(latestSummary?.totalDocsBytes)}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">Docs Token</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{latestSummary?.totalDocsTokens || 0}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">前端字节数</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{formatBytes(latestSummary?.totalFrontendBytes)}</p>
-            </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-3">
-              <p className="text-xs text-gray-500">总字节数</p>
-              <p className="mt-1 text-lg font-semibold text-gray-900">{formatBytes(latestSummary?.grandTotalBytes)}</p>
-            </div>
+
+            {(() => {
+              const backendApps = (latest?.projects || []).filter(
+                (p) => p.metricType === 'backend' && p.projectId !== 'workspace-backend',
+              );
+              const boards: Array<{
+                label: string;
+                fileCount: number;
+                lines: number;
+                bytes: number;
+              }> = [
+                {
+                  label: 'Docs',
+                  fileCount: latestSummary?.totalDocsFileCount || 0,
+                  lines: latestSummary?.totalDocsLines || 0,
+                  bytes: latestSummary?.totalDocsBytes || 0,
+                },
+                {
+                  label: 'Frontend',
+                  fileCount: latestSummary?.totalFrontendFileCount || 0,
+                  lines: latestSummary?.totalFrontendLines || 0,
+                  bytes: latestSummary?.totalFrontendBytes || 0,
+                },
+                {
+                  label: 'Backend (src)',
+                  fileCount: (latest?.projects || []).find((p) => p.projectId === 'workspace-backend')?.fileCount || 0,
+                  lines: (latest?.projects || []).find((p) => p.projectId === 'workspace-backend')?.lines || 0,
+                  bytes: (latest?.projects || []).find((p) => p.projectId === 'workspace-backend')?.bytes || 0,
+                },
+                ...backendApps.map((app) => ({
+                  label: `Backend (${app.rootPath.replace('backend/apps/', '')})`,
+                  fileCount: app.fileCount,
+                  lines: app.lines,
+                  bytes: app.bytes,
+                })),
+              ];
+
+              return (
+                <div className="bg-white border border-gray-200 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">工程规模 Board</p>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="pb-1.5 text-left font-semibold text-gray-500">模块</th>
+                          <th className="pb-1.5 text-right font-semibold text-gray-500">文件数</th>
+                          <th className="pb-1.5 text-right font-semibold text-gray-500">代码行数</th>
+                          <th className="pb-1.5 text-right font-semibold text-gray-500">字节数</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {boards.map((board) => (
+                          <tr key={board.label} className="border-b border-gray-50">
+                            <td className="py-1.5 text-gray-800 font-medium">{board.label}</td>
+                            <td className="py-1.5 text-right text-gray-700">{board.fileCount.toLocaleString()}</td>
+                            <td className="py-1.5 text-right text-gray-700">{board.lines.toLocaleString()}</td>
+                            <td className="py-1.5 text-right text-gray-700">{formatBytes(board.bytes)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
 
           <div className="bg-white border border-gray-200 rounded-lg">
@@ -692,8 +839,8 @@ const EngineeringStatistics: React.FC = () => {
                           </p>
                         </div>
                         <div className="rounded border border-gray-200 p-3">
-                          <p className="text-xs text-gray-500">后端字节数</p>
-                          <p className="mt-1 text-base font-semibold text-gray-900">{formatBytes(detailSnapshot.summary?.totalBackendBytes)}</p>
+                          <p className="text-xs text-gray-500">Docs Token</p>
+                          <p className="mt-1 text-base font-semibold text-gray-900">{(detailSnapshot.summary?.totalDocsTokens || 0).toLocaleString()}</p>
                         </div>
                         <div className="rounded border border-gray-200 p-3">
                           <p className="text-xs text-gray-500">总字节数</p>
@@ -701,19 +848,38 @@ const EngineeringStatistics: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        <div className="rounded border border-gray-200 p-3">
-                          <p className="text-xs text-gray-500">Docs 字节</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-900">{formatBytes(detailSnapshot.summary?.totalDocsBytes)}</p>
-                        </div>
-                        <div className="rounded border border-gray-200 p-3">
-                          <p className="text-xs text-gray-500">前端字节</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-900">{formatBytes(detailSnapshot.summary?.totalFrontendBytes)}</p>
-                        </div>
-                        <div className="rounded border border-gray-200 p-3">
-                          <p className="text-xs text-gray-500">Docs Token</p>
-                          <p className="mt-1 text-sm font-semibold text-gray-900">{detailSnapshot.summary?.totalDocsTokens || 0}</p>
-                        </div>
+                      <div className="rounded border border-gray-200 overflow-hidden">
+                        <p className="px-3 py-2 text-xs font-semibold text-gray-700 bg-gray-50 border-b border-gray-200">分模块汇总</p>
+                        <table className="min-w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-gray-100">
+                              <th className="px-3 py-1.5 text-left font-semibold text-gray-500">模块</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-500">文件数</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-500">代码行数</th>
+                              <th className="px-3 py-1.5 text-right font-semibold text-gray-500">字节数</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-t border-gray-50">
+                              <td className="px-3 py-1.5 text-gray-800 font-medium">Docs</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalDocsFileCount || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalDocsLines || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{formatBytes(detailSnapshot.summary?.totalDocsBytes)}</td>
+                            </tr>
+                            <tr className="border-t border-gray-50">
+                              <td className="px-3 py-1.5 text-gray-800 font-medium">Frontend</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalFrontendFileCount || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalFrontendLines || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{formatBytes(detailSnapshot.summary?.totalFrontendBytes)}</td>
+                            </tr>
+                            <tr className="border-t border-gray-50">
+                              <td className="px-3 py-1.5 text-gray-800 font-medium">Backend</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalBackendFileCount || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{(detailSnapshot.summary?.totalBackendLines || 0).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-right text-gray-700">{formatBytes(detailSnapshot.summary?.totalBackendBytes)}</td>
+                            </tr>
+                          </tbody>
+                        </table>
                       </div>
                     </div>
                   )}
@@ -739,27 +905,77 @@ const EngineeringStatistics: React.FC = () => {
                               <td className="px-3 py-3 text-xs text-gray-400" colSpan={8}>暂无项目明细</td>
                             </tr>
                           ) : (
-                            (detailSnapshot.projects || []).map((project) => (
-                              <tr key={`${project.projectId}-${project.metricType}-${project.rootPath}`} className="border-t border-gray-100">
-                                <td className="px-3 py-2 text-xs text-gray-800">{project.projectName}</td>
-                                <td className="px-3 py-2 text-xs text-gray-700">{project.metricType}</td>
-                                <td className="px-3 py-2 text-xs text-gray-500">{project.rootPath}</td>
-                                <td className="px-3 py-2 text-xs text-right text-gray-800">{project.fileCount}</td>
-                                <td className="px-3 py-2 text-xs text-right text-gray-800">{formatBytes(project.bytes)}</td>
-                                <td className="px-3 py-2 text-xs text-right text-gray-800">{project.lines}</td>
-                                <td className="px-3 py-2 text-xs text-right text-gray-800">{project.tokens || 0}</td>
-                                <td className="px-3 py-2 text-xs">
-                                  {project.error ? (
-                                    <span className="inline-flex items-center gap-1 text-rose-600">
-                                      <ExclamationTriangleIcon className="h-3.5 w-3.5" />
-                                      失败
-                                    </span>
-                                  ) : (
-                                    <span className="text-emerald-600">成功</span>
+                            (detailSnapshot.projects || []).map((project) => {
+                              const projectKey = `${project.projectId}-${project.metricType}-${project.rootPath}`;
+                              const hasTopFiles = (project.topLineFiles || []).length > 0;
+                              const isExpanded = expandedProjectKey === projectKey;
+                              return (
+                                <React.Fragment key={projectKey}>
+                                  <tr
+                                    className={`border-t border-gray-100 ${hasTopFiles ? 'cursor-pointer hover:bg-gray-50' : ''}`}
+                                    onClick={() => {
+                                      if (hasTopFiles) {
+                                        setExpandedProjectKey(isExpanded ? null : projectKey);
+                                      }
+                                    }}
+                                  >
+                                    <td className="px-3 py-2 text-xs text-gray-800">
+                                      {hasTopFiles && (
+                                        <span className="inline-block w-4 text-gray-400 mr-1">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                                      )}
+                                      {project.projectName}
+                                    </td>
+                                    <td className="px-3 py-2 text-xs text-gray-700">{project.metricType}</td>
+                                    <td className="px-3 py-2 text-xs text-gray-500">{project.rootPath}</td>
+                                    <td className="px-3 py-2 text-xs text-right text-gray-800">{project.fileCount}</td>
+                                    <td className="px-3 py-2 text-xs text-right text-gray-800">{formatBytes(project.bytes)}</td>
+                                    <td className="px-3 py-2 text-xs text-right text-gray-800">{project.lines}</td>
+                                    <td className="px-3 py-2 text-xs text-right text-gray-800">{project.tokens || 0}</td>
+                                    <td className="px-3 py-2 text-xs">
+                                      {project.error ? (
+                                        <span className="inline-flex items-center gap-1 text-rose-600">
+                                          <ExclamationTriangleIcon className="h-3.5 w-3.5" />
+                                          失败
+                                        </span>
+                                      ) : (
+                                        <span className="text-emerald-600">成功</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                  {isExpanded && (
+                                    <tr>
+                                      <td colSpan={8} className="px-3 py-0">
+                                        <div className="ml-5 my-2 rounded border border-gray-100 bg-gray-50/60">
+                                          <p className="px-3 py-1.5 text-[11px] font-semibold text-gray-500 border-b border-gray-100">
+                                            大文件行数 Top {project.topLineFiles?.length || 0}
+                                          </p>
+                                          <table className="min-w-full text-xs">
+                                            <thead>
+                                              <tr className="border-b border-gray-100">
+                                                <th className="px-3 py-1 text-left text-[11px] font-semibold text-gray-400">#</th>
+                                                <th className="px-3 py-1 text-left text-[11px] font-semibold text-gray-400">文件路径</th>
+                                                <th className="px-3 py-1 text-right text-[11px] font-semibold text-gray-400">行数</th>
+                                                <th className="px-3 py-1 text-right text-[11px] font-semibold text-gray-400">字节</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {(project.topLineFiles || []).map((file, fileIndex) => (
+                                                <tr key={file.filePath} className="border-t border-gray-50">
+                                                  <td className="px-3 py-1 text-[11px] text-gray-500">{fileIndex + 1}</td>
+                                                  <td className="px-3 py-1 text-[11px] text-gray-700 font-mono">{file.filePath}</td>
+                                                  <td className="px-3 py-1 text-[11px] text-right text-gray-800 font-semibold">{file.lines.toLocaleString()}</td>
+                                                  <td className="px-3 py-1 text-[11px] text-right text-gray-600">{formatBytes(file.bytes)}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </td>
+                                    </tr>
                                   )}
-                                </td>
-                              </tr>
-                            ))
+                                </React.Fragment>
+                              );
+                            })
                           )}
                         </tbody>
                       </table>
@@ -932,6 +1148,68 @@ const EngineeringStatistics: React.FC = () => {
                 className="rounded bg-primary-600 px-3 py-1.5 text-xs text-white disabled:bg-gray-300"
               >
                 {saveDocsHeatConfigMutation.isLoading ? '保存中...' : '保存配置'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLargeFileModal && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setShowLargeFileModal(false)}
+            aria-label="关闭大文件警告弹窗"
+          />
+          <div className="absolute left-1/2 top-1/2 w-[96vw] max-w-5xl -translate-x-1/2 -translate-y-1/2 rounded-lg border border-gray-200 bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-900">大文件警告 - 超过 {LARGE_FILE_LINE_THRESHOLD} 行</p>
+                <p className="mt-0.5 text-xs text-gray-500">共 {latestLargeFiles.length} 个文件</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLargeFileModal(false)}
+                className="rounded p-1 text-gray-500 hover:bg-gray-100"
+                aria-label="关闭弹窗"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="max-h-[60vh] overflow-auto">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">#</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">所属模块</th>
+                    <th className="px-3 py-2 text-left font-semibold text-gray-600">文件路径</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600">行数</th>
+                    <th className="px-3 py-2 text-right font-semibold text-gray-600">字节数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {latestLargeFiles.map((file, index) => (
+                    <tr key={`${file.projectId}-${file.filePath}`} className="border-t border-gray-100">
+                      <td className="px-3 py-2 text-gray-500">{index + 1}</td>
+                      <td className="px-3 py-2 text-gray-700">{moduleLabelByProject(file)}</td>
+                      <td className="px-3 py-2 font-mono text-gray-700">{file.filePath}</td>
+                      <td className="px-3 py-2 text-right font-semibold text-gray-900">{file.lines.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right text-gray-700">{formatBytes(file.bytes)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-end border-t border-gray-200 px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setShowLargeFileModal(false)}
+                className="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+              >
+                关闭
               </button>
             </div>
           </div>
