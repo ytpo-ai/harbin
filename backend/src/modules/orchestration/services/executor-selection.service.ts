@@ -46,6 +46,13 @@ export interface ExecutorSelectionResult {
   };
 }
 
+export interface AgentToolFitValidationResult {
+  fit: boolean;
+  requiredTools: string[];
+  missingTools: string[];
+  suggestion?: ExecutorSelectionResult;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -110,6 +117,75 @@ export class ExecutorSelectionService {
         : titleOrCtx;
 
     return this.routeExecutor(ctx);
+  }
+
+  async validateAgentToolFit(input: {
+    agentId: string;
+    taskTitle: string;
+    taskDescription: string;
+    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  }): Promise<AgentToolFitValidationResult> {
+    const normalizedAgentId = String(input.agentId || '').trim();
+    const normalizedTaskType = this.normalizeExternalTaskType(input.taskType);
+    const requiredTools = this.resolveRequiredToolHints(normalizedTaskType);
+
+    if (!normalizedAgentId || requiredTools.length === 0) {
+      return {
+        fit: true,
+        requiredTools,
+        missingTools: [],
+      };
+    }
+
+    const agentLookup: Record<string, unknown> = { id: normalizedAgentId, isActive: true };
+    if (Types.ObjectId.isValid(normalizedAgentId)) {
+      agentLookup.$or = [{ id: normalizedAgentId }, { _id: new Types.ObjectId(normalizedAgentId) }];
+      delete agentLookup.id;
+    }
+
+    const agent = await this.agentModel.findOne(agentLookup).select({ tools: 1 }).lean().exec();
+    if (!agent) {
+      return {
+        fit: false,
+        requiredTools,
+        missingTools: [...requiredTools],
+        suggestion: await this.selectExecutor({
+          title: input.taskTitle,
+          description: input.taskDescription,
+          taskType: normalizedTaskType,
+        }),
+      };
+    }
+
+    const toolIds = (agent as { tools?: string[] }).tools || [];
+    const tools = toolIds.length
+      ? await this.toolModel.find({ id: { $in: toolIds }, enabled: true }).select({ id: 1, name: 1, description: 1, category: 1 }).lean().exec()
+      : [];
+
+    const toolText = [
+      ...toolIds.map((id) => String(id || '').toLowerCase()),
+      ...tools.map((tool) => `${tool.id || ''} ${tool.name || ''} ${tool.description || ''} ${tool.category || ''}`.toLowerCase()),
+    ].join(' ');
+
+    const missingTools = requiredTools.filter((hint) => !toolText.includes(hint.toLowerCase()));
+    if (missingTools.length === 0) {
+      return {
+        fit: true,
+        requiredTools,
+        missingTools: [],
+      };
+    }
+
+    return {
+      fit: false,
+      requiredTools,
+      missingTools,
+      suggestion: await this.selectExecutor({
+        title: input.taskTitle,
+        description: input.taskDescription,
+        taskType: normalizedTaskType,
+      }),
+    };
   }
 
   /** Runtime email-capability check (unchanged public contract) */
@@ -471,6 +547,25 @@ export class ExecutorSelectionService {
       text.includes('orchestrat')
     ) {
       return 'planning';
+    }
+    return 'general';
+  }
+
+  private resolveRequiredToolHints(taskType: string): string[] {
+    return [...(TASK_TOOL_HINTS[taskType] || [])];
+  }
+
+  private normalizeExternalTaskType(
+    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general',
+  ): 'development' | 'code_review' | 'research' | 'email' | 'planning' | 'general' {
+    if (taskType === 'external_action') {
+      return 'email';
+    }
+    if (taskType === 'review') {
+      return 'code_review';
+    }
+    if (taskType === 'development' || taskType === 'research' || taskType === 'general') {
+      return taskType;
     }
     return 'general';
   }

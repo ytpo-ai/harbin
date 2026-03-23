@@ -31,9 +31,12 @@ import { ExecutorSelectionService } from './executor-selection.service';
 
 const DEFAULT_GENERATION_CONFIG: OrchestrationGenerationConfig = {
   maxRetries: 3,
+  maxTotalFailures: 6,
   maxCostTokens: 500000,
   maxTasks: 15,
 };
+
+type PlannerAgentSelectionMode = 'trust' | 'verify' | 'override';
 
 @Injectable()
 export class IncrementalPlanningService {
@@ -75,7 +78,7 @@ export class IncrementalPlanningService {
 
       await this.prepareDraftingState(normalizedPlanId, this.resolveGenerationState(plan.generationState));
 
-      while (true) {
+      for (;;) {
         const stepResult = await this.executePlanningStep(normalizedPlanId, plan.sourcePrompt || '');
         if (stepResult.done) {
           break;
@@ -136,6 +139,7 @@ export class IncrementalPlanningService {
       totalGenerated,
       totalRetries,
       consecutiveFailures,
+      totalFailures,
       totalCost,
     } = state;
 
@@ -166,33 +170,40 @@ export class IncrementalPlanningService {
         totalGenerated,
         totalRetries,
         consecutiveFailures,
+        totalFailures,
         totalCost,
         isComplete: true,
       });
       return { done: true };
     }
 
+    const isRedesign = nextTaskResult.action === 'redesign' && Boolean(nextTaskResult.redesignTaskId);
+
     if (!nextTaskResult.task?.title || !nextTaskResult.task?.description) {
       totalRetries += 1;
       consecutiveFailures += 1;
+      totalFailures += 1;
       const lastError = 'Planner returned empty task definition';
       await this.updateGenerationState(planId, {
         currentStep,
         totalGenerated,
         totalRetries,
         consecutiveFailures,
+        totalFailures,
         totalCost,
         isComplete: false,
         lastError,
       });
-      if (consecutiveFailures >= config.maxRetries) {
+      if (consecutiveFailures >= config.maxRetries || totalFailures >= config.maxTotalFailures) {
         await this.failPlanning(planId, lastError);
         return { done: true };
       }
       return { done: false };
     }
 
-    const createdTask = await this.createTaskFromPlannerOutput(planId, nextTaskResult.task, currentStep);
+    const createdTask = isRedesign
+      ? await this.redesignFailedTask(planId, String(nextTaskResult.redesignTaskId), nextTaskResult.task)
+      : await this.createTaskFromPlannerOutput(planId, nextTaskResult.task, currentStep);
 
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.generated', {
       planId,
@@ -200,6 +211,7 @@ export class IncrementalPlanningService {
       taskId: createdTask._id.toString(),
       title: createdTask.title,
       agentId: createdTask.assignment?.executorId,
+      mode: isRedesign ? 'redesign' : 'new',
     });
 
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.executing', {
@@ -215,14 +227,17 @@ export class IncrementalPlanningService {
 
     if (executionResult.status === 'completed') {
       const merged = await this.tryMergeWithPreviousTask(planId, createdTask);
-      currentStep += 1;
-      totalGenerated += 1;
+      if (!isRedesign) {
+        currentStep += 1;
+        totalGenerated += 1;
+      }
       consecutiveFailures = 0;
       await this.updateGenerationState(planId, {
         currentStep,
         totalGenerated,
         totalRetries,
         consecutiveFailures,
+        totalFailures,
         totalCost,
         isComplete: false,
         lastError: undefined,
@@ -239,8 +254,11 @@ export class IncrementalPlanningService {
 
     totalRetries += 1;
     consecutiveFailures += 1;
-    totalGenerated += 1;
-    currentStep += 1;
+    totalFailures += 1;
+    if (!isRedesign) {
+      totalGenerated += 1;
+      currentStep += 1;
+    }
 
     const error = executionResult.error || `Task execution ended with status=${executionResult.status}`;
     await this.updateGenerationState(planId, {
@@ -248,6 +266,7 @@ export class IncrementalPlanningService {
       totalGenerated,
       totalRetries,
       consecutiveFailures,
+      totalFailures,
       totalCost,
       isComplete: false,
       lastError: error,
@@ -261,10 +280,10 @@ export class IncrementalPlanningService {
       retriesLeft: Math.max(config.maxRetries - consecutiveFailures, 0),
     });
 
-    if (consecutiveFailures >= config.maxRetries) {
+    if (consecutiveFailures >= config.maxRetries || totalFailures >= config.maxTotalFailures) {
       await this.failPlanning(
         planId,
-        `Task "${createdTask.title}" failed after ${config.maxRetries} retries: ${error}`,
+        `Task "${createdTask.title}" failed: consecutive=${consecutiveFailures}/${config.maxRetries}, total=${totalFailures}/${config.maxTotalFailures}, error=${error}`,
       );
       return { done: true };
     }
@@ -296,10 +315,22 @@ export class IncrementalPlanningService {
         outputSummary: String(item.result?.output || '').slice(0, 500),
       }));
 
+    const failedAgentIds = Array.from(
+      new Set(
+        tasks
+          .filter((item) => item.status === 'failed')
+          .map((item) => String(item.assignment?.executorId || '').trim())
+          .filter(Boolean),
+      ),
+    );
+    const failedAgentToolMap = await this.loadAgentToolMap(failedAgentIds);
+
     const failedTasks = tasks
       .filter((item) => item.status === 'failed')
       .map((item) => ({
         title: item.title,
+        agentId: item.assignment?.executorId,
+        agentTools: failedAgentToolMap.get(String(item.assignment?.executorId || '').trim()) || [],
         error: String(item.result?.error || 'Unknown error'),
       }));
 
@@ -321,25 +352,7 @@ export class IncrementalPlanningService {
     order: number,
   ): Promise<OrchestrationTaskDocument> {
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const validAgentId = await this.resolveValidAgentId(normalizedAgentId);
-    const fallbackAssignment = !validAgentId
-      ? await this.executorSelectionService.selectExecutor({
-          title: taskResult.title,
-          description: taskResult.description,
-        })
-      : null;
-
-    const assignment = validAgentId
-      ? {
-          executorType: 'agent' as const,
-          executorId: validAgentId,
-          reason: 'Assigned by planner incremental output',
-        }
-      : {
-          executorType: fallbackAssignment?.executorType || 'unassigned',
-          executorId: fallbackAssignment?.executorId,
-          reason: fallbackAssignment?.reason || 'Planner did not provide valid agentId',
-        };
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
 
     const requirementId = await this.resolveRequirementObjectId(planId);
 
@@ -367,7 +380,7 @@ export class IncrementalPlanningService {
           message: 'Task generated by incremental planner',
           metadata: {
             plannerAssignedAgentId: normalizedAgentId || undefined,
-            fallbackUsed: !validAgentId,
+            fallbackUsed: assignment.reason !== 'Assigned by planner incremental output',
             resolvedTaskType: runtimeTaskType,
             plannerTaskType: taskResult.taskType || undefined,
             planDefaultTaskType: planDefaultTaskType || undefined,
@@ -388,6 +401,73 @@ export class IncrementalPlanningService {
     await this.planStatsService.refreshPlanStats(planId);
     await this.planStatsService.syncPlanSessionTasks(planId);
     return task;
+  }
+
+  private async redesignFailedTask(
+    planId: string,
+    redesignTaskId: string,
+    taskResult: NonNullable<GenerateNextTaskResult['task']>,
+  ): Promise<OrchestrationTaskDocument> {
+    const normalizedTaskId = String(redesignTaskId || '').trim();
+    if (!normalizedTaskId) {
+      throw new NotFoundException('Failed task not found for redesign');
+    }
+
+    const targetTask = await this.taskModel
+      .findOne({ _id: normalizedTaskId, planId, status: 'failed' })
+      .exec();
+    if (!targetTask) {
+      throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
+    }
+
+    const normalizedAgentId = String(taskResult.agentId || '').trim();
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
+    const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
+    const runtimeTaskType = taskResult.taskType || targetTask.runtimeTaskType || 'general';
+
+    await this.taskModel
+      .updateOne(
+        { _id: targetTask._id, planId, status: 'failed' },
+        {
+          $set: {
+            title: taskResult.title,
+            description: taskResult.description,
+            priority: taskResult.priority,
+            runtimeTaskType,
+            status,
+            assignment,
+            startedAt: null,
+            completedAt: null,
+          },
+          $unset: {
+            result: 1,
+          },
+          $push: {
+            runLogs: {
+              timestamp: new Date(),
+              level: 'info',
+              message: 'Task redesigned by incremental planner',
+              metadata: {
+                redesignTaskId: normalizedTaskId,
+                previousAgentId: targetTask.assignment?.executorId,
+                plannerAssignedAgentId: normalizedAgentId || undefined,
+                reassignedAgentId: assignment.executorId,
+                plannerAction: 'redesign',
+              },
+            },
+          },
+        },
+      )
+      .exec();
+
+    const redesignedTask = await this.taskModel.findById(targetTask._id).exec();
+    if (!redesignedTask) {
+      throw new NotFoundException(`Redesigned task ${normalizedTaskId} not found`);
+    }
+
+    await this.planStatsService.refreshPlanStats(planId);
+    await this.planStatsService.syncPlanSessionTasks(planId);
+    return redesignedTask;
   }
 
   private async tryMergeWithPreviousTask(
@@ -480,6 +560,139 @@ export class IncrementalPlanningService {
     return true;
   }
 
+  private resolvePlannerAgentSelectionMode(): PlannerAgentSelectionMode {
+    const value = String(process.env.PLANNER_AGENT_SELECTION_MODE || 'verify').trim().toLowerCase();
+    if (value === 'trust' || value === 'verify' || value === 'override') {
+      return value;
+    }
+    return 'verify';
+  }
+
+  private mapRuntimeTaskTypeToExecutorTaskType(
+    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general',
+  ): 'development' | 'code_review' | 'research' | 'email' | 'planning' | 'general' {
+    if (taskType === 'external_action') {
+      return 'email';
+    }
+    if (taskType === 'review') {
+      return 'code_review';
+    }
+    if (taskType === 'development' || taskType === 'research' || taskType === 'general') {
+      return taskType;
+    }
+    return 'general';
+  }
+
+  private async resolveFallbackAssignment(
+    taskResult: NonNullable<GenerateNextTaskResult['task']>,
+    reasonPrefix: string,
+  ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
+    const fallback = await this.executorSelectionService.selectExecutor({
+      title: taskResult.title,
+      description: taskResult.description,
+      taskType: this.mapRuntimeTaskTypeToExecutorTaskType(taskResult.taskType),
+    });
+
+    return {
+      executorType: fallback.executorType || 'unassigned',
+      executorId: fallback.executorId,
+      reason: `${reasonPrefix}; fallback=${fallback.reason}`,
+    };
+  }
+
+  private async resolveAssignmentForPlannerTask(
+    taskResult: NonNullable<GenerateNextTaskResult['task']>,
+    plannerAgentId: string,
+  ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
+    const mode = this.resolvePlannerAgentSelectionMode();
+    const validAgentId = await this.resolveValidAgentId(plannerAgentId);
+
+    if (mode === 'override') {
+      this.logger.log(
+        `[planner_override_mode] mode=override plannerAgent=${plannerAgentId || 'empty'} title="${taskResult.title.slice(0, 60)}"`,
+      );
+      return this.resolveFallbackAssignment(taskResult, 'Planner assignment overridden by policy');
+    }
+
+    if (!validAgentId) {
+      return this.resolveFallbackAssignment(taskResult, 'Planner did not provide valid agentId');
+    }
+
+    if (mode === 'trust') {
+      return {
+        executorType: 'agent',
+        executorId: validAgentId,
+        reason: 'Assigned by planner incremental output',
+      };
+    }
+
+    const fitCheck = await this.executorSelectionService.validateAgentToolFit({
+      agentId: validAgentId,
+      taskTitle: taskResult.title,
+      taskDescription: taskResult.description,
+      taskType: taskResult.taskType,
+    });
+
+    if (fitCheck.fit) {
+      return {
+        executorType: 'agent',
+        executorId: validAgentId,
+        reason: 'Assigned by planner incremental output',
+      };
+    }
+
+    this.logger.warn(
+      `[planner_verify_fallback] plannerAgent=${validAgentId} missingTools=${fitCheck.missingTools.join(',') || 'none'} title="${taskResult.title.slice(0, 60)}"`,
+    );
+
+    if (fitCheck.suggestion) {
+      return {
+        executorType: fitCheck.suggestion.executorType,
+        executorId: fitCheck.suggestion.executorId,
+        reason: `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}; fallback=${fitCheck.suggestion.reason}`,
+      };
+    }
+
+    return this.resolveFallbackAssignment(
+      taskResult,
+      `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}`,
+    );
+  }
+
+  private async loadAgentToolMap(agentIds: string[]): Promise<Map<string, string[]>> {
+    const normalizedIds = agentIds
+      .map((item) => String(item || '').trim())
+      .filter(Boolean);
+    if (normalizedIds.length === 0) {
+      return new Map<string, string[]>();
+    }
+
+    const objectIds = normalizedIds.filter((item) => Types.ObjectId.isValid(item)).map((item) => new Types.ObjectId(item));
+    const query: Record<string, unknown> = {
+      $or: [
+        { id: { $in: normalizedIds } },
+        ...(objectIds.length > 0 ? [{ _id: { $in: objectIds } }] : []),
+      ],
+    };
+
+    const agents = await this.agentModel
+      .find(query)
+      .select({ id: 1, tools: 1 })
+      .lean()
+      .exec();
+
+    const map = new Map<string, string[]>();
+    for (const agent of agents as Array<{ _id?: Types.ObjectId; id?: string; tools?: string[] }>) {
+      const keyCandidates = [String(agent.id || '').trim(), String(agent._id || '').trim()].filter(Boolean);
+      const tools = (agent.tools || []).map((tool) => String(tool || '').trim()).filter(Boolean);
+      for (const key of keyCandidates) {
+        map.set(key, tools);
+      }
+    }
+
+    return map;
+  }
+
   private async completePlanning(planId: string, state: OrchestrationGenerationState): Promise<void> {
     await this.planModel
       .updateOne(
@@ -548,6 +761,7 @@ export class IncrementalPlanningService {
   private resolveGenerationConfig(config?: OrchestrationGenerationConfig): OrchestrationGenerationConfig {
     return {
       maxRetries: Number(config?.maxRetries || DEFAULT_GENERATION_CONFIG.maxRetries),
+      maxTotalFailures: Number(config?.maxTotalFailures || DEFAULT_GENERATION_CONFIG.maxTotalFailures),
       maxCostTokens: Number(config?.maxCostTokens || DEFAULT_GENERATION_CONFIG.maxCostTokens),
       maxTasks: Number(config?.maxTasks || DEFAULT_GENERATION_CONFIG.maxTasks),
     };
@@ -559,6 +773,7 @@ export class IncrementalPlanningService {
       totalGenerated: Number(state?.totalGenerated || 0),
       totalRetries: Number(state?.totalRetries || 0),
       consecutiveFailures: Number(state?.consecutiveFailures || 0),
+      totalFailures: Number(state?.totalFailures || 0),
       totalCost: Number(state?.totalCost || 0),
       isComplete: Boolean(state?.isComplete),
       lastError: state?.lastError,

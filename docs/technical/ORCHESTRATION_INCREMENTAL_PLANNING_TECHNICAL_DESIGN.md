@@ -835,3 +835,54 @@ POST /api/orchestration/plans/from-prompt
 | `resolvedTaskType` | 最终持久化的 runtimeTaskType |
 | `plannerTaskType` | planner JSON 中的 taskType 值 |
 | `planDefaultTaskType` | plan.defaultTaskType 的值 |
+
+---
+
+## 12. 失败守护机制加固（2026-03-24 新增）
+
+### 12.1 Agent-Task 二次适配校验
+
+- 在 `ExecutorSelectionService` 新增 `validateAgentToolFit()`，对 Planner 已选 agent 做工具覆盖二次验证。
+- 校验输入：`agentId + taskTitle + taskDescription + taskType`。
+- 若工具缺口存在，返回 `fit=false` + `missingTools` + `suggestion`（基于 `selectExecutor()` 的替代执行者）。
+
+### 12.2 Planner 选人强制介入模式
+
+新增环境变量：`PLANNER_AGENT_SELECTION_MODE`
+
+| 模式 | 行为 |
+|---|---|
+| `trust` | 仅校验 agent 是否存在，直接采用 Planner 分配 |
+| `verify`（默认） | 先用 Planner 分配，再做工具适配校验，不匹配则 fallback |
+| `override` | 忽略 Planner 选人，强制走 `ExecutorSelectionService` |
+
+### 12.3 失败任务原地 redesign
+
+- `PlannerService.GenerateNextTaskResult` 扩展：支持 `action: new|redesign` 与 `redesignTaskId`。
+- 当 `action=redesign` 时，`IncrementalPlanningService` 调用 `redesignFailedTask()`：
+  - 仅允许改写 `status=failed` 的目标任务；
+  - 重置 assignment/description/priority/runtimeTaskType；
+  - 清空 `result` 与执行时间字段；
+  - 写入 runLogs（记录前后 agent 与 redesign 来源）；
+  - 原任务 ID 不变，不新增 task 文档。
+
+### 12.4 双熔断计数器
+
+- `generationState` 新增 `totalFailures`（累计失败，不因成功归零）。
+- `generationConfig` 新增 `maxTotalFailures`（默认 6）。
+- 熔断条件改为：
+
+```typescript
+consecutiveFailures >= maxRetries || totalFailures >= maxTotalFailures
+```
+
+### 12.5 失败上下文增强
+
+- Planner 上下文中的 `failedTasks` 扩展：`agentId`、`agentTools[]`。
+- Prompt 展示格式升级为：
+
+```text
+- [title] (agent=xxx, tools=[A, B]): error
+```
+
+这让 Planner 在下一步可直接识别“失败是否由工具缺失导致”，提升纠偏分配的命中率。

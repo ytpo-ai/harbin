@@ -73,6 +73,7 @@ export class PlanManagementService {
       generationMode: 'incremental',
       generationConfig: {
         maxRetries: 3,
+        maxTotalFailures: 6,
         maxCostTokens: 500000,
         maxTasks: 15,
       },
@@ -81,6 +82,7 @@ export class PlanManagementService {
         totalGenerated: 0,
         totalRetries: 0,
         consecutiveFailures: 0,
+        totalFailures: 0,
         totalCost: 0,
         isComplete: false,
       },
@@ -393,6 +395,7 @@ export class PlanManagementService {
               generationMode: 'incremental',
               generationConfig: {
                 maxRetries: plan.generationConfig?.maxRetries || 3,
+                maxTotalFailures: plan.generationConfig?.maxTotalFailures || 6,
                 maxCostTokens: plan.generationConfig?.maxCostTokens || 500000,
                 maxTasks: plan.generationConfig?.maxTasks || 15,
               },
@@ -401,6 +404,7 @@ export class PlanManagementService {
                 totalGenerated: 0,
                 totalRetries: 0,
                 consecutiveFailures: 0,
+                totalFailures: 0,
                 totalCost: 0,
                 isComplete: false,
               },

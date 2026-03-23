@@ -9,6 +9,7 @@ export type OrchestrationGenerationMode = 'batch' | 'incremental';
 
 export interface OrchestrationGenerationConfig {
   maxRetries: number;
+  maxTotalFailures: number;
   maxCostTokens: number;
   maxTasks: number;
 }
@@ -18,6 +19,7 @@ export interface OrchestrationGenerationState {
   totalGenerated: number;
   totalRetries: number;
   consecutiveFailures: number;
+  totalFailures: number;
   totalCost: number;
   isComplete: boolean;
   lastError?: string;
@@ -94,6 +96,7 @@ export class OrchestrationPlan {
 
   @Prop(raw({
     maxRetries: { type: Number, default: 3 },
+    maxTotalFailures: { type: Number, default: 6 },
     maxCostTokens: { type: Number, default: 500000 },
     maxTasks: { type: Number, default: 15 },
   }))
@@ -104,6 +107,7 @@ export class OrchestrationPlan {
     totalGenerated: { type: Number, default: 0 },
     totalRetries: { type: Number, default: 0 },
     consecutiveFailures: { type: Number, default: 0 },
+    totalFailures: { type: Number, default: 0 },
     totalCost: { type: Number, default: 0 },
     isComplete: { type: Boolean, default: false },
     lastError: { type: String },

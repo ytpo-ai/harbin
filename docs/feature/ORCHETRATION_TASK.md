@@ -170,6 +170,9 @@
 - **角色语义**：执行者选择会结合 `Agent.roleId` 与 `AgentRole.capabilities/tools`，不再仅依赖任务文本关键词。
 - **工具硬门槛**：当任务声明 `requiredTools` 时，候选执行者必须覆盖必需工具，否则返回 `unassigned` 并给出缺失工具说明。
 - **兜底策略**：无候选达到阈值时保留回退逻辑（优先员工可执行场景，否则回退首个活跃 Agent 或 `unassigned`）。
+- **增量编排二次校验**：`IncrementalPlanningService` 在 Planner 选定 agent 后会再次执行工具匹配校验，支持 `PLANNER_AGENT_SELECTION_MODE=trust|verify|override` 三档。
+- **失败任务重设计**：增量编排支持 `action=redesign`，可在原失败任务上重分配执行者并重跑，避免失败后不断追加新任务。
+- **双熔断计数器**：编排状态新增 `generationState.totalFailures` 与 `generationConfig.maxTotalFailures`，防止“中间伪成功”反复重置熔断。
 
 #### 外部动作验证
 
