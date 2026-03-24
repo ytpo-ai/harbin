@@ -1,8 +1,21 @@
 # PlanDetail 页面综合重构计划
 
-> 状态：执行中（2026-03-24 已启动开发）  
+> 状态：执行中（2026-03-24 已启动开发，2026-03-24 第二轮继续收敛）  
 > 创建时间：2026-03-24  
 > 关联文档：`docs/feature/ORCHETRATION_TASK.md`、`docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD`、`docs/plan/ORCHESTRATION_TASK_MANUAL_EDIT_PLAN.md`
+
+---
+
+## 执行进展（2026-03-24 第二轮）
+
+- 前端文件体量收敛：`DebugDrawer.tsx`、`usePlanMutations.ts`、`useTaskMutations.ts` 已拆分到 200 行以内。
+- 调试区拆分为 `DebugDrawerDebugTab.tsx` 与 `DebugDrawerSessionTab.tsx`，并补充 production 只读锁定（禁止调试草稿保存与执行）。
+- Task 卡片边缘操作加锁：production 下禁用 `调试 / 人工完成 / 重试`。
+- 后端补充 production 保护：`task-lifecycle.service.ts` 在 `reassign / complete-human / retry / debug` 的计划任务路径增加状态拦截。
+- 新增后端接口单测：`backend/test/orchestration/orchestration.controller.spec.ts` 覆盖 `cancelRun/publishPlan/unlockPlan` 入口委派与鉴权路径。
+- 已验证：`frontend npm run build`、`backend npm run build`、`backend jest --runTestsByPath test/orchestration/orchestration.controller.spec.ts` 通过。
+
+> 仍待继续：`PlanDetail.tsx` 页面壳进一步下沉（当前 471 行，未达 <=200/<=150 目标）以及前端交互定向测试补齐。
 
 ---
 

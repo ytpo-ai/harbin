@@ -1,15 +1,13 @@
 import React from 'react';
-import { ClockIcon, PencilSquareIcon, PlayIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon } from '@heroicons/react/24/outline';
 import {
   AgentSession,
   DebugRuntimeTaskTypeOverride,
   OrchestrationTask,
 } from '../../services/orchestrationService';
-import {
-  DEBUG_RUNTIME_TYPE_OPTIONS,
-  DrawerTab,
-  formatDateTime,
-} from './constants';
+import { DrawerTab } from './constants';
+import DebugDrawerDebugTab from './DebugDrawerDebugTab';
+import DebugDrawerSessionTab from './DebugDrawerSessionTab';
 
 interface DebugDrawerProps {
   open: boolean;
@@ -27,6 +25,7 @@ interface DebugDrawerProps {
   debugSaving: boolean;
   debugRunning: boolean;
   reassignRunning: boolean;
+  editable: boolean;
   onClose: () => void;
   onTabChange: (tab: DrawerTab) => void;
   onChangeAgentId: (value: string) => void;
@@ -53,6 +52,7 @@ const DebugDrawer: React.FC<DebugDrawerProps> = ({
   debugSaving,
   debugRunning,
   reassignRunning,
+  editable,
   onClose,
   onTabChange,
   onChangeAgentId,
@@ -103,121 +103,31 @@ const DebugDrawer: React.FC<DebugDrawerProps> = ({
         {!task ? (
           <div className="flex-1 p-4 text-sm text-slate-500">当前计划中未找到该任务，请重新选择。</div>
         ) : activeDrawerTab === 'debug' ? (
-          <>
-            <div className="p-4 border-b border-slate-200 space-y-3">
-              <div className="grid grid-cols-1 gap-2">
-                <label className="text-xs text-slate-600">执行 Agent</label>
-                <select
-                  value={debugAgentId}
-                  onChange={(event) => onChangeAgentId(event.target.value)}
-                  className="w-full text-sm border border-slate-300 rounded px-2 py-1.5"
-                >
-                  <option value="">请选择 Agent</option>
-                  {agents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <label className="text-xs text-slate-600">任务标题</label>
-                <input
-                  value={debugTitle}
-                  onChange={(event) => onChangeTitle(event.target.value)}
-                  className="w-full text-sm border border-slate-300 rounded px-2 py-1.5"
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <label className="text-xs text-slate-600">任务描述（可编辑后反复调试）</label>
-                <textarea
-                  value={debugDescription}
-                  onChange={(event) => onChangeDescription(event.target.value)}
-                  className="w-full min-h-[120px] text-sm border border-slate-300 rounded px-2 py-1.5"
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-2">
-                <label className="text-xs text-slate-600">任务类型（可保存）</label>
-                <select
-                  value={debugRuntimeTaskType}
-                  onChange={(event) => onChangeRuntimeType(event.target.value as 'auto' | DebugRuntimeTaskTypeOverride)}
-                  className="w-full text-sm border border-slate-300 rounded px-2 py-1.5"
-                >
-                  {DEBUG_RUNTIME_TYPE_OPTIONS.map((item) => (
-                    <option key={item.value} value={item.value}>{item.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={onSaveDraft}
-                  disabled={debugSaving}
-                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <PencilSquareIcon className="h-4 w-4" /> 保存草稿
-                </button>
-                <button
-                  onClick={onRunDebug}
-                  disabled={debugRunning || reassignRunning}
-                  className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded bg-slate-900 text-white disabled:bg-slate-300"
-                >
-                  <PlayIcon className="h-4 w-4" /> 执行当前 Step
-                </button>
-              </div>
-              {debugHint && <p className="text-xs text-primary-700">{debugHint}</p>}
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-              <section className="space-y-2">
-                <p className="text-xs font-semibold text-slate-700">运行日志</p>
-                {!task.runLogs?.length ? (
-                  <p className="text-xs text-slate-400">暂无日志</p>
-                ) : (
-                  <div className="space-y-1">
-                    {task.runLogs.slice(-10).reverse().map((log, index) => (
-                      <div key={`${log.timestamp}-${index}`} className="rounded border border-slate-200 px-2 py-1.5">
-                        <p className="text-[11px] text-slate-500 inline-flex items-center gap-1">
-                          <ClockIcon className="h-3 w-3" /> {formatDateTime(log.timestamp)} · {log.level}
-                        </p>
-                        <p className="text-xs text-slate-700 mt-0.5">{log.message}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
-          </>
+          <DebugDrawerDebugTab
+            task={task}
+            editable={editable}
+            debugAgentId={debugAgentId}
+            debugTitle={debugTitle}
+            debugDescription={debugDescription}
+            debugRuntimeTaskType={debugRuntimeTaskType}
+            debugHint={debugHint}
+            agents={agents}
+            debugSaving={debugSaving}
+            debugRunning={debugRunning}
+            reassignRunning={reassignRunning}
+            onChangeAgentId={onChangeAgentId}
+            onChangeTitle={onChangeTitle}
+            onChangeDescription={onChangeDescription}
+            onChangeRuntimeType={onChangeRuntimeType}
+            onSaveDraft={onSaveDraft}
+            onRunDebug={onRunDebug}
+          />
         ) : (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <section className="space-y-2">
-              <p className="text-xs font-semibold text-slate-700">Session 信息</p>
-              {!debugSessionId ? (
-                <p className="text-xs text-slate-400">该任务尚未产生 session</p>
-              ) : debugSessionLoading ? (
-                <p className="text-xs text-slate-400">加载 session 中...</p>
-              ) : !debugSessionDetail ? (
-                <p className="text-xs text-slate-400">未查询到 session 详情</p>
-              ) : (
-                <div className="rounded border border-slate-200 p-3 space-y-2">
-                  <p className="text-xs text-slate-600">ID: {debugSessionDetail._id}</p>
-                  <p className="text-xs text-slate-600">Owner: {debugSessionDetail.ownerType} / {debugSessionDetail.ownerId}</p>
-                  <p className="text-xs text-slate-600">状态: {debugSessionDetail.status}</p>
-                  <p className="text-xs text-slate-600">更新时间: {formatDateTime(debugSessionDetail.updatedAt)}</p>
-                  <div className="border-t border-slate-200 pt-2 space-y-1">
-                    <p className="text-xs font-medium text-slate-700">最近消息</p>
-                    {(debugSessionDetail.messages || []).slice(-5).reverse().map((message, index) => (
-                      <div key={`${message.timestamp}-${index}`} className="bg-slate-50 rounded px-2 py-1.5">
-                        <p className="text-[11px] text-slate-500">
-                          {message.role} · {formatDateTime(message.timestamp)}
-                        </p>
-                        <p className="text-xs text-slate-700 whitespace-pre-wrap line-clamp-3">{message.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
+          <DebugDrawerSessionTab
+            debugSessionId={debugSessionId}
+            debugSessionDetail={debugSessionDetail}
+            debugSessionLoading={debugSessionLoading}
+          />
         )}
       </aside>
     </div>

@@ -8,10 +8,7 @@ import {
   orchestrationService,
   OrchestrationPlan,
 } from '../services/orchestrationService';
-import PlanHeader from '../components/orchestration/PlanHeader';
-import PlanDetailMainContent from '../components/orchestration/PlanDetailMainContent';
-import PlanDetailTaskOverlays from '../components/orchestration/PlanDetailTaskOverlays';
-import PlanDetailRuntimeOverlays from '../components/orchestration/PlanDetailRuntimeOverlays';
+import PlanDetailScaffold from '../components/orchestration/PlanDetailScaffold';
 import {
   STREAMING_PLAN_STATUS,
   FULLY_EDITABLE_PLAN_STATUS,
@@ -28,70 +25,7 @@ import { usePlanDetailActions } from '../hooks/usePlanDetailActions';
 const PlanDetail: React.FC = () => {
   const { id: planId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-
-  const {
-    promptDraft,
-    setPromptDraft,
-    modeDraft,
-    setModeDraft,
-    promptHint,
-    setPromptHint,
-    isReplanModalOpen,
-    setIsReplanModalOpen,
-    replanPlannerAgentId,
-    setReplanPlannerAgentId,
-    replanAutoGenerate,
-    setReplanAutoGenerate,
-    isReplanPending,
-    setIsReplanPending,
-    lastAsyncReplanError,
-    setLastAsyncReplanError,
-    debugDrawerOpen,
-    setDebugDrawerOpen,
-    debugTaskId,
-    setDebugTaskId,
-    debugTitle,
-    setDebugTitle,
-    debugDescription,
-    setDebugDescription,
-    debugRuntimeTaskType,
-    setDebugRuntimeTaskType,
-    debugHint,
-    setDebugHint,
-    debugSessionId,
-    setDebugSessionId,
-    debugAgentId,
-    setDebugAgentId,
-    activeDrawerTab,
-    setActiveDrawerTab,
-    activeTab,
-    setActiveTab,
-    runDrawerOpen,
-    setRunDrawerOpen,
-    selectedRunId,
-    streamHint,
-    setStreamHint,
-    streamConnected,
-    setStreamConnected,
-    streamTaskIds,
-    setStreamTaskIds,
-    taskHint,
-    setTaskHint,
-    isAddTaskModalOpen,
-    setIsAddTaskModalOpen,
-    newTaskTitle,
-    setNewTaskTitle,
-    newTaskDescription,
-    setNewTaskDescription,
-    newTaskPriority,
-    setNewTaskPriority,
-    newTaskInsertAfterTaskId,
-    setNewTaskInsertAfterTaskId,
-    openDebugDrawer,
-    openRunDetailDrawer,
-    syncDebugDraftFromTask,
-    resetForPlanSwitch,
-  } = usePlanDetailViewState(planId);
+  const view = usePlanDetailViewState(planId);
 
   const { data: planDetail, isLoading: planLoading, error: planError } = useQuery<OrchestrationPlan>(
     ['orchestration-plan', planId],
@@ -100,7 +34,7 @@ const PlanDetail: React.FC = () => {
       enabled: Boolean(planId),
       refetchInterval: (data) => {
         if (!planId) return false;
-        if (isReplanPending) return 2000;
+        if (view.isReplanPending) return 2000;
         const status = (data as any)?.status as string | undefined;
         if (!status) return false;
         if (STREAMING_PLAN_STATUS.has(status)) return 2500;
@@ -126,12 +60,12 @@ const PlanDetail: React.FC = () => {
     runTasksLoading,
     runTasksError,
     filteredPlanRuns,
-  } = usePlanRunHistory(planId, activeTab, runDrawerOpen, selectedRunId);
+  } = usePlanRunHistory(planId, view.activeTab, view.runDrawerOpen, view.selectedRunId);
 
   const { data: agents = [] } = useQuery('plan-detail-agents', () => agentService.getAssignableAgents());
   const debugTask = useMemo(
-    () => planDetail?.tasks?.find((task) => task._id === debugTaskId),
-    [planDetail?.tasks, debugTaskId],
+    () => planDetail?.tasks?.find((task) => task._id === view.debugTaskId),
+    [planDetail?.tasks, view.debugTaskId],
   );
   const planTasks = planDetail?.tasks ?? [];
   const isPlanEditable = useMemo(
@@ -166,39 +100,39 @@ const PlanDetail: React.FC = () => {
     planTasks,
     getEffectiveTaskDraft,
     updateTaskDraftField,
-    setTaskHint,
+    setTaskHint: view.setTaskHint,
   });
 
   const latestRunSummary = latestRun ?? planDetail?.lastRun ?? null;
 
   const { data: debugSessionDetail, isFetching: debugSessionLoading } = useQuery<AgentSession>(
-    ['orchestration-debug-session', debugSessionId],
-    () => orchestrationService.getSessionById(debugSessionId),
+    ['orchestration-debug-session', view.debugSessionId],
+    () => orchestrationService.getSessionById(view.debugSessionId),
     {
-      enabled: debugDrawerOpen && Boolean(debugSessionId),
-      refetchInterval: debugDrawerOpen && debugSessionId ? 3000 : false,
+      enabled: view.debugDrawerOpen && Boolean(view.debugSessionId),
+      refetchInterval: view.debugDrawerOpen && view.debugSessionId ? 3000 : false,
     },
   );
 
   useEffect(() => {
     if (planDetail?._id) {
-      setPromptDraft(planDetail.sourcePrompt || '');
-      setModeDraft(planDetail.strategy?.mode || 'hybrid');
+      view.setPromptDraft(planDetail.sourcePrompt || '');
+      view.setModeDraft(planDetail.strategy?.mode || 'hybrid');
     }
   }, [planDetail?._id, planDetail?.sourcePrompt, planDetail?.strategy?.mode]);
 
   useEffect(() => {
-    syncDebugDraftFromTask(debugTask, agents[0]?.id);
-  }, [agents, debugTask, syncDebugDraftFromTask]);
+    view.syncDebugDraftFromTask(debugTask, agents[0]?.id);
+  }, [agents, debugTask]);
 
   useEffect(() => {
     setRunStatusFilter('all');
     setRunTriggerFilter('all');
-    resetForPlanSwitch(() => {
+    view.resetForPlanSwitch(() => {
       setTaskEdits({});
       resetTaskDrawerState();
     });
-  }, [planId, resetForPlanSwitch, resetTaskDrawerState, setRunStatusFilter, setRunTriggerFilter, setTaskEdits]);
+  }, [planId, resetTaskDrawerState, setRunStatusFilter, setRunTriggerFilter, setTaskEdits]);
 
   useEffect(() => {
     pruneTaskEdits(planTasks);
@@ -218,29 +152,29 @@ const PlanDetail: React.FC = () => {
     replanPlan,
   } = usePlanMutations({
     planId,
-    modeDraft,
+    modeDraft: view.modeDraft,
     planDetail,
-    setPromptHint,
-    setIsReplanModalOpen,
-    setIsReplanPending,
-    setLastAsyncReplanError,
-    setStreamTaskIds,
-    setStreamHint,
-    setDebugDrawerOpen,
-    setDebugTaskId,
-    setDebugHint,
+    setPromptHint: view.setPromptHint,
+    setIsReplanModalOpen: view.setIsReplanModalOpen,
+    setIsReplanPending: view.setIsReplanPending,
+    setLastAsyncReplanError: view.setLastAsyncReplanError,
+    setStreamTaskIds: view.setStreamTaskIds,
+    setStreamHint: view.setStreamHint,
+    setDebugDrawerOpen: view.setDebugDrawerOpen,
+    setDebugTaskId: view.setDebugTaskId,
+    setDebugHint: view.setDebugHint,
   });
 
   usePlanStreaming({
     planId,
-    isReplanPending,
-    lastAsyncReplanError,
+    isReplanPending: view.isReplanPending,
+    lastAsyncReplanError: view.lastAsyncReplanError,
     planDetail,
-    setStreamConnected,
-    setStreamTaskIds,
-    setStreamHint,
-    setPromptHint,
-    setIsReplanPending,
+    setStreamConnected: view.setStreamConnected,
+    setStreamTaskIds: view.setStreamTaskIds,
+    setStreamHint: view.setStreamHint,
+    setPromptHint: view.setPromptHint,
+    setIsReplanPending: view.setIsReplanPending,
     refreshPlanData,
   });
 
@@ -258,14 +192,14 @@ const PlanDetail: React.FC = () => {
     runDebugTask,
   } = useTaskMutations({
     planId,
-    setTaskHint,
-    setIsAddTaskModalOpen,
-    setNewTaskTitle,
-    setNewTaskDescription,
-    setNewTaskPriority,
-    setNewTaskInsertAfterTaskId,
-    setDebugHint,
-    setDebugSessionId,
+    setTaskHint: view.setTaskHint,
+    setIsAddTaskModalOpen: view.setIsAddTaskModalOpen,
+    setNewTaskTitle: view.setNewTaskTitle,
+    setNewTaskDescription: view.setNewTaskDescription,
+    setNewTaskPriority: view.setNewTaskPriority,
+    setNewTaskInsertAfterTaskId: view.setNewTaskInsertAfterTaskId,
+    setDebugHint: view.setDebugHint,
+    setDebugSessionId: view.setDebugSessionId,
     onRefreshPlanData: refreshPlanData,
     clearTaskEditsAfterBatchSave: () => setTaskEdits({}),
   });
@@ -295,8 +229,8 @@ const PlanDetail: React.FC = () => {
       batchUpdateTasksMutation.mutate({ targetPlanId: planId, updates });
     },
     onCancelRun: (runId, reason) => cancelRunMutation.mutate({ runId, reason }),
-    setTaskHint,
-    setPromptHint,
+    setTaskHint: view.setTaskHint,
+    setPromptHint: view.setPromptHint,
     runDebugTask,
   });
 
@@ -322,276 +256,216 @@ const PlanDetail: React.FC = () => {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <PlanHeader
-        planDetail={planDetail}
-        planId={planId}
-        promptDraft={promptDraft}
-        latestRunSummary={latestRunSummary}
-        isPlanEditable={isPlanEditable}
-        isProductionPlan={isProductionPlan}
-        runPlanLoading={runPlanMutation.isLoading}
-        replanLoading={replanPlanMutation.isLoading}
-        replanPending={isReplanPending}
-        savePromptLoading={savePlanPromptMutation.isLoading}
-        generateLoading={generateNextMutation.isLoading}
-        generationCompleted={Boolean(planDetail.generationState?.isComplete)}
-        cancelRunLoading={cancelRunMutation.isLoading}
-        publishLoading={publishPlanMutation.isLoading}
-        unlockLoading={unlockPlanMutation.isLoading}
-        onBack={() => navigate('/orchestration')}
-        onRefresh={() => { void refreshPlanData(); }}
-        onGenerateNext={() => {
-          if (planId) {
-            generateNextMutation.mutate(planId);
-          }
-        }}
-        onSavePrompt={() => {
-          if (!planId) return;
-          const nextPrompt = promptDraft.trim();
-          if (!nextPrompt) {
-            setPromptHint('Prompt 不能为空');
-            return;
-          }
-          savePlanPrompt(planId, nextPrompt, modeDraft);
-        }}
-        onOpenReplan={() => {
-          const nextPrompt = promptDraft.trim();
-          if (!nextPrompt) {
-            setPromptHint('Prompt 不能为空');
-            return;
-          }
-          setReplanPlannerAgentId(planDetail?.strategy?.plannerAgentId || '');
-          setReplanAutoGenerate(true);
-          setIsReplanModalOpen(true);
-        }}
-        onRunPlan={() => {
-          if (planId) {
-            runPlan(planId, true);
-          }
-        }}
-        onCancelRun={(runId) => confirmAndCancelRun(runId, '用户在计划详情页停止运行')}
-        onPublish={() => {
-          if (planId) {
-            publishPlanMutation.mutate(planId);
-          }
-        }}
-        onUnlock={() => {
-          if (planId) {
-            unlockPlanMutation.mutate(planId);
-          }
-        }}
-        onCopyMarkdown={() => { void handleCopyPlanTasksMarkdown(); }}
-      />
+  const headerProps = {
+    planDetail,
+    planId,
+    promptDraft: view.promptDraft,
+    latestRunSummary,
+    isPlanEditable,
+    isProductionPlan,
+    runPlanLoading: runPlanMutation.isLoading,
+    replanLoading: replanPlanMutation.isLoading,
+    replanPending: view.isReplanPending,
+    savePromptLoading: savePlanPromptMutation.isLoading,
+    generateLoading: generateNextMutation.isLoading,
+    generationCompleted: Boolean(planDetail.generationState?.isComplete),
+    cancelRunLoading: cancelRunMutation.isLoading,
+    publishLoading: publishPlanMutation.isLoading,
+    unlockLoading: unlockPlanMutation.isLoading,
+    onBack: () => navigate('/orchestration'),
+    onRefresh: () => { void refreshPlanData(); },
+    onGenerateNext: () => { if (planId) generateNextMutation.mutate(planId); },
+    onSavePrompt: () => {
+      if (!planId) return;
+      const nextPrompt = view.promptDraft.trim();
+      if (!nextPrompt) return view.setPromptHint('Prompt 不能为空');
+      savePlanPrompt(planId, nextPrompt, view.modeDraft);
+    },
+    onOpenReplan: () => {
+      const nextPrompt = view.promptDraft.trim();
+      if (!nextPrompt) return view.setPromptHint('Prompt 不能为空');
+      view.setReplanPlannerAgentId(planDetail?.strategy?.plannerAgentId || '');
+      view.setReplanAutoGenerate(true);
+      view.setIsReplanModalOpen(true);
+    },
+    onRunPlan: () => { if (planId) runPlan(planId, true); },
+    onCancelRun: (runId: string) => confirmAndCancelRun(runId, '用户在计划详情页停止运行'),
+    onPublish: () => { if (planId) publishPlanMutation.mutate(planId); },
+    onUnlock: () => { if (planId) unlockPlanMutation.mutate(planId); },
+    onCopyMarkdown: () => { void handleCopyPlanTasksMarkdown(); },
+  };
 
-      <PlanDetailMainContent
-        planId={planId}
-        planDetail={planDetail}
-        latestRunSummary={latestRunSummary}
-        streamHint={streamHint}
-        streamConnected={streamConnected}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        modeDraft={modeDraft}
-        promptDraft={promptDraft}
-        promptHint={promptHint}
-        setModeDraft={setModeDraft}
-        setPromptDraft={setPromptDraft}
-        isPlanEditable={isPlanEditable}
-        taskHint={taskHint}
-        debugTaskId={debugTaskId}
-        streamTaskIds={streamTaskIds}
-        dirtyTaskCount={dirtyTaskUpdates.length}
-        isAddLoading={addTaskMutation.isLoading}
-        isBatchSaving={batchUpdateTasksMutation.isLoading}
-        isReordering={reorderTaskMutation.isLoading}
-        isDuplicating={duplicateTaskMutation.isLoading}
-        isRemoving={removeTaskMutation.isLoading}
-        onOpenAddTask={() => setIsAddTaskModalOpen(true)}
-        onSaveBatch={handleSaveTaskEdits}
-        onMoveTask={handleMoveTask}
-        onDuplicateTask={(taskId) => {
-          if (planId) {
-            duplicateTaskMutation.mutate({ targetPlanId: planId, taskId });
-          }
-        }}
-        onRemoveTask={(taskId) => {
-          const ok = window.confirm('确认删除该任务？依赖此任务的下游任务将自动解除依赖。');
-          if (!ok) {
-            return;
-          }
-          removeTaskMutation.mutate(taskId);
-          removeTaskEdit(taskId);
-        }}
-        onOpenTaskEdit={openTaskEditDrawer}
-        onOpenDebug={(taskId) => openDebugDrawer(taskId, 'debug')}
-        onCompleteHuman={(taskId) => {
-          const summary = window.prompt('请输入人工完成说明', '由人工完成') || undefined;
-          completeHumanTaskMutation.mutate({ taskId, summary });
-        }}
-        onRetryTask={(taskId) => retryTaskMutation.mutate(taskId)}
-        filteredPlanRuns={filteredPlanRuns}
-        latestRunLoading={latestRunLoading}
-        planRunsLoading={planRunsLoading}
-        planRunsError={Boolean(planRunsError)}
-        runTriggerFilter={runTriggerFilter}
-        runStatusFilter={runStatusFilter}
-        cancelRunLoading={cancelRunMutation.isLoading}
-        onChangeTriggerFilter={setRunTriggerFilter}
-        onChangeStatusFilter={setRunStatusFilter}
-        onOpenRunDetail={openRunDetailDrawer}
-        onCancelRunFromHistory={(runId) => confirmAndCancelRun(runId, '用户在执行历史中取消运行')}
-      />
+  const mainContentProps = {
+    planId,
+    planDetail,
+    latestRunSummary,
+    streamHint: view.streamHint,
+    streamConnected: view.streamConnected,
+    activeTab: view.activeTab,
+    setActiveTab: view.setActiveTab,
+    modeDraft: view.modeDraft,
+    promptDraft: view.promptDraft,
+    promptHint: view.promptHint,
+    setModeDraft: view.setModeDraft,
+    setPromptDraft: view.setPromptDraft,
+    isPlanEditable,
+    taskHint: view.taskHint,
+    debugTaskId: view.debugTaskId,
+    streamTaskIds: view.streamTaskIds,
+    dirtyTaskCount: dirtyTaskUpdates.length,
+    isAddLoading: addTaskMutation.isLoading,
+    isBatchSaving: batchUpdateTasksMutation.isLoading,
+    isReordering: reorderTaskMutation.isLoading,
+    isDuplicating: duplicateTaskMutation.isLoading,
+    isRemoving: removeTaskMutation.isLoading,
+    onOpenAddTask: () => view.setIsAddTaskModalOpen(true),
+    onSaveBatch: handleSaveTaskEdits,
+    onMoveTask: handleMoveTask,
+    onDuplicateTask: (taskId: string) => { if (planId) duplicateTaskMutation.mutate({ targetPlanId: planId, taskId }); },
+    onRemoveTask: (taskId: string) => {
+      if (!window.confirm('确认删除该任务？依赖此任务的下游任务将自动解除依赖。')) return;
+      removeTaskMutation.mutate(taskId);
+      removeTaskEdit(taskId);
+    },
+    onOpenTaskEdit: openTaskEditDrawer,
+    onOpenDebug: (taskId: string) => view.openDebugDrawer(taskId, 'debug'),
+    onCompleteHuman: (taskId: string) => {
+      const summary = window.prompt('请输入人工完成说明', '由人工完成') || undefined;
+      completeHumanTaskMutation.mutate({ taskId, summary });
+    },
+    onRetryTask: (taskId: string) => retryTaskMutation.mutate(taskId),
+    filteredPlanRuns,
+    latestRunLoading,
+    planRunsLoading,
+    planRunsError: Boolean(planRunsError),
+    runTriggerFilter,
+    runStatusFilter,
+    cancelRunLoading: cancelRunMutation.isLoading,
+    onChangeTriggerFilter: setRunTriggerFilter,
+    onChangeStatusFilter: setRunStatusFilter,
+    onOpenRunDetail: view.openRunDetailDrawer,
+    onCancelRunFromHistory: (runId: string) => confirmAndCancelRun(runId, '用户在执行历史中取消运行'),
+  };
 
-      <PlanDetailTaskOverlays
-        planId={planId}
-        planStatus={planDetail.status}
-        planTasks={planTasks}
-        isAddTaskModalOpen={isAddTaskModalOpen}
-        newTaskTitle={newTaskTitle}
-        newTaskDescription={newTaskDescription}
-        newTaskPriority={newTaskPriority}
-        newTaskInsertAfterTaskId={newTaskInsertAfterTaskId}
-        addTaskLoading={addTaskMutation.isLoading}
-        dependencyModalTask={dependencyModalTask}
-        dependencyModalCandidates={dependencyModalCandidates}
-        dependencyModalDraftIds={dependencyModalDraftIds}
-        taskEditDrawerOpen={taskEditDrawerOpen}
-        editingTask={editingTask}
-        editingTaskDraft={editingTask ? getEffectiveTaskDraft(editingTask) : null}
-        onCloseAddModal={() => setIsAddTaskModalOpen(false)}
-        onChangeNewTaskTitle={setNewTaskTitle}
-        onChangeNewTaskDescription={setNewTaskDescription}
-        onChangeNewTaskPriority={setNewTaskPriority}
-        onChangeNewTaskInsertAfter={setNewTaskInsertAfterTaskId}
-        onSubmitAddTask={() => {
-          if (!planId) {
-            return;
-          }
-          const title = newTaskTitle.trim();
-          const description = newTaskDescription.trim();
-          if (!title || !description) {
-            setTaskHint('任务标题和描述不能为空');
-            return;
-          }
-          addTaskMutation.mutate({
-            targetPlanId: planId,
-            title,
-            description,
-            priority: newTaskPriority,
-            insertAfterTaskId: newTaskInsertAfterTaskId || undefined,
-          });
-        }}
-        onCloseDependencyModal={closeDependencyModal}
-        onToggleDependency={toggleDependencyDraftId}
-        onClearDependency={() => setDependencyModalDraftIds([])}
-        onApplyDependency={applyDependencyDraft}
-        onCloseTaskEditDrawer={closeTaskEditDrawer}
-        onUpdateTaskEditDraft={(patch) => {
-          if (!editingTask) {
-            return;
-          }
-          setTaskHint('');
-          updateTaskDraftField(editingTask, patch);
-        }}
-        onOpenDependencyFromTaskEdit={() => {
-          if (!editingTask) {
-            return;
-          }
-          openDependencyModal(editingTask);
-        }}
-      />
+  const taskOverlayProps = {
+    planId,
+    planStatus: planDetail.status,
+    planTasks,
+    isAddTaskModalOpen: view.isAddTaskModalOpen,
+    newTaskTitle: view.newTaskTitle,
+    newTaskDescription: view.newTaskDescription,
+    newTaskPriority: view.newTaskPriority,
+    newTaskInsertAfterTaskId: view.newTaskInsertAfterTaskId,
+    addTaskLoading: addTaskMutation.isLoading,
+    dependencyModalTask,
+    dependencyModalCandidates,
+    dependencyModalDraftIds,
+    taskEditDrawerOpen,
+    editingTask,
+    editingTaskDraft: editingTask ? getEffectiveTaskDraft(editingTask) : null,
+    onCloseAddModal: () => view.setIsAddTaskModalOpen(false),
+    onChangeNewTaskTitle: view.setNewTaskTitle,
+    onChangeNewTaskDescription: view.setNewTaskDescription,
+    onChangeNewTaskPriority: view.setNewTaskPriority,
+    onChangeNewTaskInsertAfter: view.setNewTaskInsertAfterTaskId,
+    onSubmitAddTask: () => {
+      if (!planId) return;
+      const title = view.newTaskTitle.trim();
+      const description = view.newTaskDescription.trim();
+      if (!title || !description) return view.setTaskHint('任务标题和描述不能为空');
+      addTaskMutation.mutate({
+        targetPlanId: planId,
+        title,
+        description,
+        priority: view.newTaskPriority,
+        insertAfterTaskId: view.newTaskInsertAfterTaskId || undefined,
+      });
+    },
+    onCloseDependencyModal: closeDependencyModal,
+    onToggleDependency: toggleDependencyDraftId,
+    onClearDependency: () => setDependencyModalDraftIds([]),
+    onApplyDependency: applyDependencyDraft,
+    onCloseTaskEditDrawer: closeTaskEditDrawer,
+    onUpdateTaskEditDraft: (patch: any) => {
+      if (!editingTask) return;
+      view.setTaskHint('');
+      updateTaskDraftField(editingTask, patch);
+    },
+    onOpenDependencyFromTaskEdit: () => {
+      if (editingTask) openDependencyModal(editingTask);
+    },
+  };
 
-      <PlanDetailRuntimeOverlays
-        planId={planId}
-        runDrawerOpen={runDrawerOpen}
-        selectedRunId={selectedRunId}
-        runDetail={runDetail}
-        runDetailLoading={runDetailLoading}
-        runDetailError={Boolean(runDetailError)}
-        runTasks={runTasks}
-        runTasksLoading={runTasksLoading}
-        runTasksError={Boolean(runTasksError)}
-        cancelRunLoading={cancelRunMutation.isLoading}
-        onCloseRunDrawer={() => setRunDrawerOpen(false)}
-        onCancelRunInRunDetail={(runId) => confirmAndCancelRun(runId, '用户在 run 详情中取消运行')}
-        debugDrawerOpen={debugDrawerOpen}
-        debugTask={debugTask || null}
-        activeDrawerTab={activeDrawerTab}
-        debugAgentId={debugAgentId}
-        debugTitle={debugTitle}
-        debugDescription={debugDescription}
-        debugRuntimeTaskType={debugRuntimeTaskType}
-        debugHint={debugHint}
-        debugSessionId={debugSessionId}
-        debugSessionDetail={debugSessionDetail}
-        debugSessionLoading={debugSessionLoading}
-        agents={agents}
-        debugSaving={saveTaskDraftMutation.isLoading}
-        debugRunning={debugStepMutation.isLoading}
-        reassignRunning={reassignMutation.isLoading}
-        onCloseDebugDrawer={() => setDebugDrawerOpen(false)}
-        onTabChange={setActiveDrawerTab}
-        onChangeAgentId={setDebugAgentId}
-        onChangeTitle={setDebugTitle}
-        onChangeDescription={setDebugDescription}
-        onChangeRuntimeType={setDebugRuntimeTaskType}
-        onSaveDraft={() => {
-          if (!debugTask) {
-            return;
-          }
-          const nextTitle = debugTitle.trim();
-          const nextDescription = debugDescription.trim();
-          const originalTitle = String(debugTask.title || '').trim();
-          const originalDescription = String(debugTask.description || '').trim();
-          saveTaskDraftMutation.mutate({
-            taskId: debugTask._id,
-            title: nextTitle && nextTitle !== originalTitle ? nextTitle : undefined,
-            description: nextDescription && nextDescription !== originalDescription ? nextDescription : undefined,
-            runtimeTaskType:
-              debugRuntimeTaskType !== (debugTask.runtimeTaskType || 'auto')
-                ? debugRuntimeTaskType
-                : undefined,
-          });
-        }}
-        onRunDebug={() => {
-          void handleDebugRun(
-            debugTask,
-            debugAgentId,
-            debugTitle,
-            debugDescription,
-            debugRuntimeTaskType,
-          );
-        }}
-        isReplanModalOpen={isReplanModalOpen}
-        replanPlannerAgentId={replanPlannerAgentId}
-        replanAutoGenerate={replanAutoGenerate}
-        replanLoading={replanPlanMutation.isLoading}
-        replanPending={isReplanPending}
-        onCloseReplanModal={() => {
-          if (replanPlanMutation.isLoading) return;
-          setIsReplanModalOpen(false);
-        }}
-        onChangeReplanPlannerAgentId={setReplanPlannerAgentId}
-        onChangeReplanAutoGenerate={setReplanAutoGenerate}
-        onSubmitReplan={() => {
-          if (!planId) return;
-          const nextPrompt = promptDraft.trim() || planDetail?.sourcePrompt?.trim() || '';
-          if (!nextPrompt) {
-            setPromptHint('Prompt 不能为空');
-            return;
-          }
-          replanPlan(
-            planId,
-            nextPrompt,
-            replanPlannerAgentId || undefined,
-            replanAutoGenerate,
-          );
-        }}
-      />
-    </div>
-  );
+  const runtimeOverlayProps = {
+    planId,
+    runDrawerOpen: view.runDrawerOpen,
+    selectedRunId: view.selectedRunId,
+    runDetail,
+    runDetailLoading,
+    runDetailError: Boolean(runDetailError),
+    runTasks,
+    runTasksLoading,
+    runTasksError: Boolean(runTasksError),
+    cancelRunLoading: cancelRunMutation.isLoading,
+    onCloseRunDrawer: () => view.setRunDrawerOpen(false),
+    onCancelRunInRunDetail: (runId: string) => confirmAndCancelRun(runId, '用户在 run 详情中取消运行'),
+    debugDrawerOpen: view.debugDrawerOpen,
+    debugTask: debugTask || null,
+    activeDrawerTab: view.activeDrawerTab,
+    debugAgentId: view.debugAgentId,
+    debugTitle: view.debugTitle,
+    debugDescription: view.debugDescription,
+    debugRuntimeTaskType: view.debugRuntimeTaskType,
+    debugHint: view.debugHint,
+    debugSessionId: view.debugSessionId,
+    debugSessionDetail,
+    debugSessionLoading,
+    agents,
+    debugSaving: saveTaskDraftMutation.isLoading,
+    debugRunning: debugStepMutation.isLoading,
+    reassignRunning: reassignMutation.isLoading,
+    debugEditable: isPlanEditable,
+    onCloseDebugDrawer: () => view.setDebugDrawerOpen(false),
+    onTabChange: view.setActiveDrawerTab,
+    onChangeAgentId: view.setDebugAgentId,
+    onChangeTitle: view.setDebugTitle,
+    onChangeDescription: view.setDebugDescription,
+    onChangeRuntimeType: view.setDebugRuntimeTaskType,
+    onSaveDraft: () => {
+      if (!debugTask) return;
+      const nextTitle = view.debugTitle.trim();
+      const nextDescription = view.debugDescription.trim();
+      const originalTitle = String(debugTask.title || '').trim();
+      const originalDescription = String(debugTask.description || '').trim();
+      saveTaskDraftMutation.mutate({
+        taskId: debugTask._id,
+        title: nextTitle && nextTitle !== originalTitle ? nextTitle : undefined,
+        description: nextDescription && nextDescription !== originalDescription ? nextDescription : undefined,
+        runtimeTaskType: view.debugRuntimeTaskType !== (debugTask.runtimeTaskType || 'auto') ? view.debugRuntimeTaskType : undefined,
+      });
+    },
+    onRunDebug: () => {
+      void handleDebugRun(debugTask, view.debugAgentId, view.debugTitle, view.debugDescription, view.debugRuntimeTaskType);
+    },
+    isReplanModalOpen: view.isReplanModalOpen,
+    replanPlannerAgentId: view.replanPlannerAgentId,
+    replanAutoGenerate: view.replanAutoGenerate,
+    replanLoading: replanPlanMutation.isLoading,
+    replanPending: view.isReplanPending,
+    onCloseReplanModal: () => {
+      if (!replanPlanMutation.isLoading) view.setIsReplanModalOpen(false);
+    },
+    onChangeReplanPlannerAgentId: view.setReplanPlannerAgentId,
+    onChangeReplanAutoGenerate: view.setReplanAutoGenerate,
+    onSubmitReplan: () => {
+      if (!planId) return;
+      const nextPrompt = view.promptDraft.trim() || planDetail?.sourcePrompt?.trim() || '';
+      if (!nextPrompt) return view.setPromptHint('Prompt 不能为空');
+      replanPlan(planId, nextPrompt, view.replanPlannerAgentId || undefined, view.replanAutoGenerate);
+    },
+  };
+
+  return <PlanDetailScaffold headerProps={headerProps} mainContentProps={mainContentProps} taskOverlayProps={taskOverlayProps} runtimeOverlayProps={runtimeOverlayProps} />;
 };
 
 export default PlanDetail;

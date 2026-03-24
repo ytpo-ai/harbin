@@ -32,6 +32,7 @@ interface PlanDetailRuntimeOverlaysProps {
   debugSaving: boolean;
   debugRunning: boolean;
   reassignRunning: boolean;
+  debugEditable: boolean;
   onCloseDebugDrawer: () => void;
   onTabChange: (tab: 'debug' | 'session') => void;
   onChangeAgentId: (value: string) => void;
@@ -79,6 +80,7 @@ const PlanDetailRuntimeOverlays: React.FC<PlanDetailRuntimeOverlaysProps> = ({
   debugSaving,
   debugRunning,
   reassignRunning,
+  debugEditable,
   onCloseDebugDrawer,
   onTabChange,
   onChangeAgentId,
@@ -129,6 +131,7 @@ const PlanDetailRuntimeOverlays: React.FC<PlanDetailRuntimeOverlaysProps> = ({
         debugSaving={debugSaving}
         debugRunning={debugRunning}
         reassignRunning={reassignRunning}
+        editable={debugEditable}
         onClose={onCloseDebugDrawer}
         onTabChange={onTabChange}
         onChangeAgentId={onChangeAgentId}

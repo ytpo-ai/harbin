@@ -104,7 +104,8 @@ const TaskCard: React.FC<TaskCardProps> = ({
           </button>
           <button
             onClick={() => onOpenDebug(task._id)}
-            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-primary-200 text-primary-700 hover:bg-primary-50"
+            disabled={!editable}
+            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded border border-primary-200 text-primary-700 hover:bg-primary-50 disabled:opacity-50"
           >
             <BeakerIcon className="h-3.5 w-3.5" /> 调试
           </button>
@@ -127,7 +128,8 @@ const TaskCard: React.FC<TaskCardProps> = ({
         {task.status === 'waiting_human' && (
           <button
             onClick={() => onCompleteHuman(task._id)}
-            className="text-xs px-2 py-1.5 rounded bg-emerald-600 text-white"
+            disabled={!editable}
+            className="text-xs px-2 py-1.5 rounded bg-emerald-600 text-white disabled:opacity-50"
           >
             人工完成
           </button>
@@ -135,7 +137,8 @@ const TaskCard: React.FC<TaskCardProps> = ({
         {task.status === 'failed' && (
           <button
             onClick={() => onRetryTask(task._id)}
-            className="text-xs px-2 py-1.5 rounded bg-blue-600 text-white"
+            disabled={!editable}
+            className="text-xs px-2 py-1.5 rounded bg-blue-600 text-white disabled:opacity-50"
           >
             重试
           </button>

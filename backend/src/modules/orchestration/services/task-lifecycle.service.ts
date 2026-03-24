@@ -17,6 +17,10 @@ import {
   OrchestrationRunStatus,
 } from '../../../shared/schemas/orchestration-run.schema';
 import {
+  OrchestrationPlan,
+  OrchestrationPlanDocument,
+} from '../../../shared/schemas/orchestration-plan.schema';
+import {
   OrchestrationRunTask,
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
@@ -46,6 +50,8 @@ export class TaskLifecycleService {
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
+    @InjectModel(OrchestrationPlan.name)
+    private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
     @InjectModel(Employee.name)
@@ -63,6 +69,7 @@ export class TaskLifecycleService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    await this.assertTaskPlanEditable(task, 'reassign');
 
     const normalizedExecutorId = dto.executorId?.trim() || undefined;
     const requiresExplicitExecutor = dto.executorType !== 'unassigned';
@@ -220,6 +227,7 @@ export class TaskLifecycleService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    await this.assertTaskPlanEditable(task, 'complete-human');
     if (task.assignment.executorType !== 'employee') {
       throw new BadRequestException('Only employee tasks can be completed manually');
     }
@@ -355,6 +363,7 @@ export class TaskLifecycleService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    await this.assertTaskPlanEditable(task, 'retry');
     if (task.status !== 'failed') {
       throw new BadRequestException('Only failed tasks can be retried');
     }
@@ -421,6 +430,7 @@ export class TaskLifecycleService {
     if (!task) {
       throw new NotFoundException('Task not found');
     }
+    await this.assertTaskPlanEditable(task, 'debug');
     const planId = this.requirePlanId(task);
     if (task.status === 'in_progress') {
       throw new BadRequestException('Task is already running');
@@ -572,6 +582,22 @@ export class TaskLifecycleService {
       throw new BadRequestException('Task is not associated with orchestration plan');
     }
     return task.planId;
+  }
+
+  private async assertTaskPlanEditable(task: OrchestrationTask, action: string): Promise<void> {
+    const planId = String(task.planId || '').trim();
+    if (!planId) {
+      return;
+    }
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).lean().exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
+    if (normalizedStatus === 'draft' || normalizedStatus === 'planned') {
+      return;
+    }
+    throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot ${action}`);
   }
 
   private buildTierGuardException(
