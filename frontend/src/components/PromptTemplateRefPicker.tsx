@@ -2,6 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
 import { promptRegistryService } from '../services/promptRegistryService';
 
+const getErrorMessage = (error: unknown): string => {
+  if (!error || typeof error !== 'object') {
+    return '预览失败';
+  }
+  const response = (error as { response?: { data?: { message?: string } } }).response;
+  if (response?.data?.message) {
+    return response.data.message;
+  }
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return '预览失败';
+};
+
 export interface PromptTemplateRefValue {
   scene: string;
   role: string;
@@ -99,7 +113,15 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
         status: 'published',
         limit: 1,
       });
-      const content = String(templates?.[0]?.content || '').trim();
+      const templateId = String(templates?.[0]?._id || '').trim();
+      if (!templateId) {
+        setPreviewError('未找到可预览的已发布模板');
+        setPreviewContent('');
+        return;
+      }
+
+      const template = await promptRegistryService.getTemplateById(templateId);
+      const content = String(template?.content || '').trim();
       if (!content) {
         setPreviewError('未找到可预览的已发布模板');
         setPreviewContent('');
@@ -121,7 +143,8 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
         <select
           value={selectedScene}
           onChange={(event) => handleSceneChange(event.target.value)}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+          disabled={filtersLoading}
+          className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
         >
           <option value="">选择 scene...</option>
           {sceneOptions.map((scene) => (
@@ -133,7 +156,7 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
         <select
           value={selectedRole}
           onChange={(event) => handleRoleChange(event.target.value)}
-          disabled={!selectedScene}
+          disabled={!selectedScene || filtersLoading}
           className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
         >
           <option value="">选择 role...</option>
@@ -171,7 +194,7 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
       {previewContent && (
         <div className="mt-2 rounded-md border border-gray-200 bg-white p-2">
           <p className="mb-1 text-xs font-medium text-gray-500">模板预览</p>
-          <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-xs text-gray-700">
+          <pre className="max-h-72 overflow-y-auto whitespace-pre-wrap break-words text-xs text-gray-700">
             {previewContent}
           </pre>
         </div>
@@ -179,16 +202,3 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
     </div>
   );
 };
-  const getErrorMessage = (error: unknown): string => {
-    if (!error || typeof error !== 'object') {
-      return '预览失败';
-    }
-    const response = (error as { response?: { data?: { message?: string } } }).response;
-    if (response?.data?.message) {
-      return response.data.message;
-    }
-    if (error instanceof Error && error.message) {
-      return error.message;
-    }
-    return '预览失败';
-  };

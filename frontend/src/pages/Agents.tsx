@@ -738,7 +738,7 @@ const CreateAgentModal: React.FC<{
               <PromptTemplateRefPicker
                 value={formData.promptTemplateRef}
                 onChange={(next) => setFormData({ ...formData, promptTemplateRef: next })}
-                helperText="运行时会将模板内容追加到 systemPrompt 之后；解析失败时仅保留 systemPrompt。"
+                helperText="可选增强：模板内容会追加到 systemPrompt 之后注入 Identity Layer；解析失败时仅保留 systemPrompt。"
               />
             </div>
 
@@ -1573,7 +1573,7 @@ const EditAgentModal: React.FC<{
               <PromptTemplateRefPicker
                 value={promptTemplateRef}
                 onChange={setPromptTemplateRef}
-                helperText="可选增强：模板内容会追加在 systemPrompt 之后注入 Identity Layer。"
+                helperText="可选增强：模板内容会追加到 systemPrompt 之后注入 Identity Layer；解析失败时仅保留 systemPrompt。"
               />
             </div>
 

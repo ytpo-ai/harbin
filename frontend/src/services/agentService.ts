@@ -290,7 +290,11 @@ export const agentService = {
 
   // 更新agent
   async updateAgent(id: string, updates: Partial<Agent>): Promise<Agent> {
-    const response = await api.put(`/agents/${id}`, updates);
+    const payload: Record<string, unknown> = { ...updates };
+    if (Object.prototype.hasOwnProperty.call(updates, 'promptTemplateRef') && updates.promptTemplateRef === undefined) {
+      payload.promptTemplateRef = null;
+    }
+    const response = await api.put(`/agents/${id}`, payload);
     return response.data;
   },
 

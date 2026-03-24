@@ -42,13 +42,53 @@ const PromptRegistry: React.FC = () => {
     promptRegistryService.listTemplateFilters(),
   );
 
-  const sceneOptions = filterOptions?.scenes || [];
+  const { data: categoryScopedTemplates = [] } = useQuery(
+    ['prompt-templates-category-scope', categoryTab],
+    () =>
+      promptRegistryService.listTemplates({
+        category: categoryTab,
+        status: 'all',
+        limit: 200,
+      }),
+    {
+      enabled: Boolean(categoryTab),
+    },
+  );
+
+  const sceneOptions = useMemo(() => {
+    if (!categoryTab) {
+      return filterOptions?.scenes || [];
+    }
+
+    const scopedScenes = Array.from(
+      new Set(
+        categoryScopedTemplates
+          .map((item) => String(item.scene || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    return scopedScenes.sort((a, b) => a.localeCompare(b));
+  }, [categoryScopedTemplates, categoryTab, filterOptions?.scenes]);
+
   const roleOptions = useMemo(() => {
     if (!scene) {
       return [];
     }
+
+    if (categoryTab) {
+      return Array.from(
+        new Set(
+          categoryScopedTemplates
+            .filter((item) => String(item.scene || '').trim() === scene)
+            .map((item) => String(item.role || '').trim())
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => a.localeCompare(b));
+    }
+
     return filterOptions?.sceneRoleMap?.[scene] || [];
-  }, [filterOptions?.sceneRoleMap, scene]);
+  }, [categoryScopedTemplates, categoryTab, filterOptions?.sceneRoleMap, scene]);
 
   const statusOptions = useMemo(() => {
     const options = filterOptions?.statuses?.length ? filterOptions.statuses : [];

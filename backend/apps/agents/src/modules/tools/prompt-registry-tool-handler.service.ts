@@ -74,9 +74,6 @@ export class PromptRegistryToolHandler {
         if (rolePrefix && !String(item.role || '').startsWith(rolePrefix)) {
           return false;
         }
-        if (category && String(item.category || '').trim().toLowerCase() !== category) {
-          return false;
-        }
         return true;
       })
       .map((item) => ({
@@ -118,7 +115,19 @@ export class PromptRegistryToolHandler {
     const role = String(params?.role || '').trim();
 
     if (templateId) {
-      const template = await this.promptRegistryAdminService.getTemplateById(templateId);
+      let template: any;
+      try {
+        template = await this.promptRegistryAdminService.getTemplateById(templateId);
+      } catch (error) {
+        throw new Error(
+          `prompt template lookup failed for templateId ${templateId}: ${this.getErrorMessage(error)}`,
+        );
+      }
+
+      if (!template) {
+        throw new Error(`prompt template not found for templateId ${templateId}`);
+      }
+
       return {
         _id: template._id ? String(template._id) : undefined,
         scene: String(template.scene || ''),
@@ -184,6 +193,13 @@ export class PromptRegistryToolHandler {
         ? new Date(matched.updatedAt).toISOString()
         : effective.updatedAt,
     };
+  }
+
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) {
+      return error.message;
+    }
+    return 'unknown error';
   }
 
   async savePromptTemplate(params: {

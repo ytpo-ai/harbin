@@ -32,7 +32,11 @@ export const skillService = {
   },
 
   async updateSkill(skillId: string, payload: Partial<Skill>): Promise<Skill> {
-    const response = await api.put(`/skills/${skillId}`, payload);
+    const normalizedPayload: Record<string, unknown> = { ...payload };
+    if (Object.prototype.hasOwnProperty.call(payload, 'promptTemplateRef') && payload.promptTemplateRef === undefined) {
+      normalizedPayload.promptTemplateRef = null;
+    }
+    const response = await api.put(`/skills/${skillId}`, normalizedPayload);
     return response.data;
   },
 

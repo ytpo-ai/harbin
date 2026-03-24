@@ -100,6 +100,78 @@ describe('PromptRegistryToolHandler', () => {
     expect(result.role).toBe('facilitator');
   });
 
+  it('throws when getPromptTemplate has no templateId and no scene role', async () => {
+    const handler = new PromptRegistryToolHandler({} as any);
+    await expect(handler.getPromptTemplate({})).rejects.toThrow(
+      'get_prompt_template requires templateId or scene + role',
+    );
+  });
+
+  it('throws when effective template content is missing', async () => {
+    const promptRegistryAdminService = {
+      getEffectiveTemplate: jest.fn().mockResolvedValue({ content: '' }),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    await expect(
+      handler.getPromptTemplate({
+        scene: 'technical',
+        role: 'engineering:frontend-developer',
+      }),
+    ).rejects.toThrow('prompt template not found for technical/engineering:frontend-developer');
+  });
+
+  it('filters by role prefix for listPromptTemplates', async () => {
+    const promptRegistryAdminService = {
+      listTemplates: jest.fn().mockResolvedValue([
+        {
+          _id: 'template-1',
+          scene: 'technical',
+          role: 'engineering:frontend-developer',
+          version: 1,
+          status: 'published',
+          category: 'recruitment',
+        },
+        {
+          _id: 'template-2',
+          scene: 'technical',
+          role: 'design:ux-designer',
+          version: 1,
+          status: 'published',
+          category: 'recruitment',
+        },
+      ]),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.listPromptTemplates({
+      scene: 'technical',
+      role: 'engineering:*',
+      category: 'recruitment',
+    });
+
+    expect(promptRegistryAdminService.listTemplates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scene: 'technical',
+        role: undefined,
+        category: 'recruitment',
+      }),
+    );
+    expect(result.total).toBe(1);
+    expect(result.templates[0].role).toBe('engineering:frontend-developer');
+  });
+
+  it('wraps templateId lookup errors with friendly message', async () => {
+    const promptRegistryAdminService = {
+      getTemplateById: jest.fn().mockRejectedValue(new Error('Cast to ObjectId failed')),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    await expect(handler.getPromptTemplate({ templateId: 'invalid-id' })).rejects.toThrow(
+      'prompt template lookup failed for templateId invalid-id: Cast to ObjectId failed',
+    );
+  });
+
   it('saves single template as draft', async () => {
     const promptRegistryAdminService = {
       saveDraft: jest.fn().mockResolvedValue({
