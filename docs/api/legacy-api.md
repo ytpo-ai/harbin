@@ -78,11 +78,20 @@ Employees 字段补充：
 - `GET /orchestration/plans`：计划列表
 - `GET /orchestration/plans/:id`：计划详情
 - `POST /orchestration/plans/:id/run`：执行计划
+- `POST /orchestration/runs/:runId/cancel`：取消指定 run（将未完成 run task 标记为 cancelled）
+- `POST /orchestration/plans/:id/publish`：发布计划到 production（锁定编辑）
+- `POST /orchestration/plans/:id/unlock`：解锁 production 计划并恢复编辑
 - `DELETE /orchestration/plans/:id`：删除计划
+- `POST /orchestration/plans/:planId/tasks`：手动新增任务（支持插入位置）
+- `PUT /orchestration/plans/:planId/tasks/reorder`：批量重排任务顺序
+- `PUT /orchestration/plans/:planId/tasks/batch-update`：批量更新多个任务
+- `POST /orchestration/plans/:planId/tasks/duplicate/:taskId`：复制任务
 - `POST /orchestration/tasks/:id/reassign`：任务改派
 - `POST /orchestration/tasks/:id/complete-human`：人工任务完成回填
 - `POST /orchestration/tasks/:id/retry`：失败任务重试
 - `POST /orchestration/tasks/:id/draft`：更新任务草稿（标题/描述）
+- `PATCH /orchestration/tasks/:taskId`：完整更新任务（标题/描述/优先级/依赖/执行者）
+- `DELETE /orchestration/tasks/:taskId`：删除任务并级联清理依赖
 - `POST /orchestration/tasks/:id/debug-run`：单步调试执行指定任务
 - `POST /orchestration/sessions`：创建会话
 - `GET /orchestration/sessions`：查询会话
@@ -116,7 +125,11 @@ Orchestration 任务改派字段补充：
 - `GET /message-center/unread-count`：查询当前登录用户未读数
 - `PATCH /message-center/messages/:messageId/read`：单条消息标记已读
 - `PATCH /message-center/messages/read-all`：全部消息标记已读
-- `POST /message-center/hooks/engineering-statistics`：工程统计通知写入 Hook（EI 调用，通知落库在 legacy）
+
+> 跨服务通知链路说明：Message Center 跨服务系统消息统一通过 Redis Streams 事件消费写库（非 HTTP Hook）。
+> - Stream Key：`streams:message-center:events`
+> - Consumer Group：`message-center-group`
+> - 首批事件：`meeting.session.ended`、`engineering.tool.completed`
 
 ## Inner Messages（`/inner-messages`）
 

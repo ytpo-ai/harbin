@@ -58,6 +58,13 @@ export class RunPlanDto {
   continueOnFailure?: boolean;
 }
 
+export class CancelRunDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class ReplanPlanDto {
   @IsString()
   @MaxLength(4000)

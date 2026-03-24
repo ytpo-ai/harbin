@@ -23,6 +23,7 @@ import {
   ArchiveSessionDto,
   BatchAppendMessagesDto,
   BatchUpdateTasksDto,
+  CancelRunDto,
   DebugTaskStepDto,
   ReplanPlanDto,
   CompleteHumanTaskDto,
@@ -190,6 +191,40 @@ export class OrchestrationController {
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.runPlanAsync(planId, dto || {});
+  }
+
+  @Post('runs/:runId/cancel')
+  async cancelRun(
+    @Param('runId') runId: string,
+    @Body() dto: CancelRunDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.cancelRun(runId, dto?.reason);
+  }
+
+  @Post('plans/:id/publish')
+  async publishPlan(
+    @Param('id') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.publishPlan(planId);
+  }
+
+  @Post('plans/:id/unlock')
+  async unlockPlan(
+    @Param('id') planId: string,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.unlockPlan(planId);
   }
 
   @Get('plans/:id/runs')

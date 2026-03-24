@@ -139,6 +139,21 @@ export class OrchestrationService {
     return this.planExecutionService.runPlanAsync(planId, dto);
   }
 
+  async cancelRun(
+    runId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; runId: string; status: 'cancelled'; cancelledTasks: number }> {
+    return this.planExecutionService.cancelRun(runId, reason);
+  }
+
+  async publishPlan(planId: string): Promise<OrchestrationPlan> {
+    return this.planManagementService.publishPlan(planId);
+  }
+
+  async unlockPlan(planId: string): Promise<OrchestrationPlan> {
+    return this.planManagementService.unlockPlan(planId);
+  }
+
   async executePlanRun(
     planId: string,
     triggerType: OrchestrationRunTriggerType,

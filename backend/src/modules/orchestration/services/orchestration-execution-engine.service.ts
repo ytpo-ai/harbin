@@ -11,6 +11,10 @@ import {
   OrchestrationRunTask,
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
+import {
+  OrchestrationRun,
+  OrchestrationRunDocument,
+} from '../../../shared/schemas/orchestration-run.schema';
 import { TaskClassificationService } from './task-classification.service';
 import { TaskOutputValidationService } from './task-output-validation.service';
 import { ExecutorSelectionService } from './executor-selection.service';
@@ -20,6 +24,7 @@ import { PlanStatsService } from './plan-stats.service';
 
 @Injectable()
 export class OrchestrationExecutionEngineService {
+  private static readonly RUN_CANCELLED_ERROR = '__RUN_CANCELLED_BY_USER__';
   private readonly asyncAgentTaskWaitTimeoutMs = Math.max(
     10000,
     Number(process.env.ORCHESTRATION_AGENT_TASK_WAIT_TIMEOUT_MS || 1800000),
@@ -38,6 +43,8 @@ export class OrchestrationExecutionEngineService {
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(OrchestrationRunTask.name)
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
+    @InjectModel(OrchestrationRun.name)
+    private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
     private readonly agentClientService: AgentClientService,
     private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
@@ -201,7 +208,7 @@ export class OrchestrationExecutionEngineService {
 
     let requestedSessionId = `plan-${planId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
-    const runtimeChannelHint: 'native' | 'opencode' = runtimeTaskType === 'development' ? 'opencode' : 'native';
+    const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, task.description);
     const taskPrompt = this.contextService.buildTaskDescription(task.description, {
       dependencyContext,
       isExternalAction: effectiveIsExternalAction,
@@ -508,6 +515,10 @@ export class OrchestrationExecutionEngineService {
     runTask: OrchestrationRunTask,
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const runTaskId = this.getEntityId(runTask as Record<string, any>);
+    if (await this.isRunCancelled(runId)) {
+      await this.markRunTaskCancelled(runTaskId, 'Run cancelled by user');
+      return { status: 'cancelled', error: 'Run cancelled by user' };
+    }
     const assignment = runTask.assignment || { executorType: 'unassigned' as const };
     const isExternalAction = this.taskClassificationService.isExternalActionTask(runTask.title, runTask.description);
     const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(runTask.title, runTask.description);
@@ -603,7 +614,7 @@ export class OrchestrationExecutionEngineService {
 
     let requestedSessionId = `run-${runId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
-    const runtimeChannelHint: 'native' | 'opencode' = runtimeTaskType === 'development' ? 'opencode' : 'native';
+    const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, runTask.description);
     const taskPrompt = this.contextService.buildTaskDescription(runTask.description, {
       dependencyContext,
       isExternalAction: effectiveIsExternalAction,
@@ -678,7 +689,7 @@ export class OrchestrationExecutionEngineService {
         )
         .exec();
 
-      const execution = await this.waitForAsyncAgentTaskResult(accepted.taskId);
+      const execution = await this.waitForAsyncAgentTaskResult(accepted.taskId, runId);
       const output = String(execution.output || '').trim();
 
       if (!output && execution.status === 'succeeded') {
@@ -798,6 +809,16 @@ export class OrchestrationExecutionEngineService {
 
       return { status: 'completed', result: output };
     } catch (error) {
+      if (this.isRunCancelledError(error) || await this.isRunCancelled(runId)) {
+        await this.markRunTaskCancelled(runTaskId, 'Run cancelled by user');
+        this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.updated', {
+          runId,
+          runTaskId,
+          sourceTaskId: runTask.sourceTaskId,
+          status: 'cancelled',
+        });
+        return { status: 'cancelled', error: 'Run cancelled by user' };
+      }
       const message = error instanceof Error ? error.message : 'Unknown execution failure';
       await this.markRunTaskFailed(runTaskId, message);
       this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.failed', {
@@ -827,6 +848,30 @@ export class OrchestrationExecutionEngineService {
               timestamp: new Date(),
               level: 'error',
               message: errorMessage,
+            },
+          },
+        },
+      )
+      .exec();
+  }
+
+  private async markRunTaskCancelled(runTaskId: string, reason: string): Promise<void> {
+    await this.orchestrationRunTaskModel
+      .updateOne(
+        { _id: runTaskId },
+        {
+          $set: {
+            status: 'cancelled',
+            completedAt: new Date(),
+            result: {
+              error: reason,
+            },
+          },
+          $push: {
+            runLogs: {
+              timestamp: new Date(),
+              level: 'warn',
+              message: reason,
             },
           },
         },
@@ -908,8 +953,9 @@ export class OrchestrationExecutionEngineService {
 
   private async waitForAsyncAgentTaskResult(
     agentTaskId: string,
+    runId?: string,
   ): Promise<{ status: 'succeeded'; output: string; runId?: string; sessionId?: string; agentTaskId: string }> {
-    if (this.asyncAgentTaskSseEnabled) {
+    if (this.asyncAgentTaskSseEnabled && !runId) {
       try {
         const terminal = await this.agentClientService.waitForAsyncAgentTaskCompletionBySse(agentTaskId, {
           timeoutMs: this.asyncAgentTaskWaitTimeoutMs,
@@ -936,6 +982,9 @@ export class OrchestrationExecutionEngineService {
     }
 
     while (Date.now() - startedAt <= this.asyncAgentTaskWaitTimeoutMs) {
+      if (runId && await this.isRunCancelled(runId)) {
+        throw new Error(OrchestrationExecutionEngineService.RUN_CANCELLED_ERROR);
+      }
       const snapshot = await this.agentClientService.getAsyncAgentTask(normalizedTaskId);
       const status = String(snapshot?.status || '').toLowerCase();
       if (status === 'succeeded') {
@@ -976,8 +1025,39 @@ export class OrchestrationExecutionEngineService {
     return '';
   }
 
+  private resolveRuntimeChannelHint(
+    runtimeTaskType: string,
+    description: string,
+  ): 'native' | 'opencode' {
+    if (runtimeTaskType !== 'development') {
+      return 'native';
+    }
+
+    const normalizedDescription = String(description || '').toLowerCase();
+    const requiresInternalTools =
+      normalizedDescription.includes('builtin.sys-mg.')
+      || normalizedDescription.includes('repo-writer')
+      || normalizedDescription.includes('repo-read')
+      || normalizedDescription.includes('save-template')
+      || normalizedDescription.includes('save-prompt-template');
+
+    return requiresInternalTools ? 'native' : 'opencode';
+  }
+
   private async sleep(ms: number): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async isRunCancelled(runId: string): Promise<boolean> {
+    const run = await this.orchestrationRunModel.findOne({ _id: runId }).select({ status: 1 }).lean().exec();
+    return Boolean(run && run.status === 'cancelled');
+  }
+
+  private isRunCancelledError(error: unknown): boolean {
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    return error.message === OrchestrationExecutionEngineService.RUN_CANCELLED_ERROR;
   }
 
   private getEntityId(entity: Record<string, any>): string {

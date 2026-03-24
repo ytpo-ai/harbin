@@ -300,6 +300,85 @@ export class PlanExecutionService {
     return latestRun;
   }
 
+  async cancelRun(
+    runId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; runId: string; status: 'cancelled'; cancelledTasks: number }> {
+    const run = await this.orchestrationRunModel.findOne({ _id: runId }).exec();
+    if (!run) {
+      throw new NotFoundException('Run not found');
+    }
+    if (run.status !== 'running') {
+      throw new BadRequestException(`Run in "${run.status}" status cannot be cancelled`);
+    }
+
+    const cancelReason = String(reason || '').trim() || '用户手动取消';
+    const completedAt = new Date();
+    const cancellableStatuses: Array<OrchestrationTask['status']> = ['pending', 'assigned', 'blocked', 'in_progress'];
+
+    const cancelUpdateResult = await this.orchestrationRunTaskModel
+      .updateMany(
+        {
+          runId,
+          status: { $in: cancellableStatuses },
+        },
+        {
+          $set: {
+            status: 'cancelled',
+            completedAt,
+            result: {
+              error: 'Run cancelled by user',
+            },
+          },
+          $push: {
+            runLogs: {
+              timestamp: completedAt,
+              level: 'warn',
+              message: cancelReason,
+            },
+          },
+        },
+      )
+      .exec();
+
+    const runTasks = await this.orchestrationRunTaskModel.find({ runId }).sort({ order: 1 }).exec();
+    const stats = this.computeRunStats(runTasks as unknown as OrchestrationRunTask[]);
+
+    await this.orchestrationRunModel
+      .updateOne(
+        { _id: runId },
+        {
+          $set: {
+            status: 'cancelled',
+            completedAt,
+            durationMs: completedAt.getTime() - new Date(run.startedAt).getTime(),
+            error: cancelReason,
+            stats,
+          },
+        },
+      )
+      .exec();
+
+    await this.planStatsService.setPlanStatus(run.planId, 'planned');
+    await this.planStatsService.setPlanSessionStatus(run.planId, 'planned');
+
+    this.planEventStreamService.emitPlanStreamEvent(run.planId, 'run.cancelled', {
+      planId: run.planId,
+      runId,
+      status: 'cancelled',
+      reason: cancelReason,
+      cancelledTasks: cancelUpdateResult.modifiedCount || 0,
+      completedAt,
+    });
+
+    return {
+      success: true,
+      runId,
+      status: 'cancelled',
+      cancelledTasks: cancelUpdateResult.modifiedCount || 0,
+    };
+  }
+
   async listPlanRuns(planId: string, limit = 20): Promise<OrchestrationRun[]> {
     await this.assertPlanExists(planId);
     const safeLimit = Math.min(Math.max(limit, 1), 100);
@@ -349,6 +428,11 @@ export class PlanExecutionService {
     let keepRunning = true;
 
     while (keepRunning) {
+      const runSnapshot = await this.orchestrationRunModel.findOne({ _id: runId }).select({ status: 1 }).lean().exec();
+      if (!runSnapshot || runSnapshot.status === 'cancelled') {
+        break;
+      }
+
       const runTasks = await this.orchestrationRunTaskModel
         .find({ runId })
         .sort({ order: 1 })
@@ -384,6 +468,11 @@ export class PlanExecutionService {
         }
       } else {
         for (const task of runnableTasks) {
+          const latestRun = await this.orchestrationRunModel.findOne({ _id: runId }).select({ status: 1 }).lean().exec();
+          if (!latestRun || latestRun.status === 'cancelled') {
+            keepRunning = false;
+            break;
+          }
           const result = await this.executionEngineService.executeRunTaskNode(runId, task);
           if (!options.continueOnFailure && result.status === 'failed') {
             keepRunning = false;
@@ -428,6 +517,10 @@ export class PlanExecutionService {
 
     if (tasks.some((task) => task.status === 'pending' || task.status === 'assigned' || task.status === 'blocked')) {
       return 'running';
+    }
+
+    if (tasks.some((task) => task.status === 'cancelled')) {
+      return 'cancelled';
     }
 
     return 'failed';

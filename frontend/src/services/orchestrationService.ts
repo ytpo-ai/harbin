@@ -2,7 +2,7 @@ import api from './api';
 
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
 export type DebugRuntimeTaskTypeOverride = 'general' | 'development' | 'research' | 'review' | 'external_action';
-export type PlanStatus = 'draft' | 'drafting' | 'planned';
+export type PlanStatus = 'draft' | 'drafting' | 'planned' | 'production';
 export type TaskStatus =
   | 'pending'
   | 'assigned'
@@ -230,7 +230,7 @@ export interface BatchUpdateTaskItem extends UpdateTaskFullPayload {
 }
 
 const normalizePlanStatus = (status: string | undefined, taskCount = 0): PlanStatus => {
-  if (status === 'draft' || status === 'drafting' || status === 'planned') {
+  if (status === 'draft' || status === 'drafting' || status === 'planned' || status === 'production') {
     return status;
   }
   if (status === 'failed' && taskCount === 0) {
@@ -393,6 +393,24 @@ export const orchestrationService = {
       continueOnFailure,
     });
     return response.data;
+  },
+
+  async cancelRun(
+    runId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; runId: string; status: 'cancelled'; cancelledTasks: number }> {
+    const response = await api.post(`/orchestration/runs/${runId}/cancel`, { reason });
+    return response.data;
+  },
+
+  async publishPlan(planId: string): Promise<OrchestrationPlan> {
+    const response = await api.post(`/orchestration/plans/${planId}/publish`);
+    return normalizePlan(response.data);
+  },
+
+  async unlockPlan(planId: string): Promise<OrchestrationPlan> {
+    const response = await api.post(`/orchestration/plans/${planId}/unlock`);
+    return normalizePlan(response.data);
   },
 
   async generateNext(planId: string): Promise<{ accepted: boolean }> {

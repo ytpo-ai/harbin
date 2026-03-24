@@ -18,6 +18,7 @@
 - `backend/src/modules/orchestration/services/orchestration-execution-engine.service.ts`
   - 统一承接 task node / run task node 执行能力。
   - 已内建 async task 等待、research/review/external 校验与状态流转。
+  - run task 执行新增 run 取消态检查（polling 前检查 run.status），命中取消时将当前 run_task 置为 `cancelled` 并停止后续执行。
   - 新增通用输出兜底校验：所有 runtime taskType 在成功前都会执行 `validateGeneralOutput()`，拦截 `TASK_INABILITY` / “无法执行”类结果。
   - `development` 代码执行证明校验支持 `CODE_VALIDATION_MODE`：
     - `warn`（默认）：记录 warning，不阻断完成；
@@ -45,6 +46,8 @@
 > - `plan-stats.service.ts`、`plan-event-stream.service.ts`、`orchestration-context.service.ts` 已迁移为独立实现，不再委派 legacy。
 > - `plan-management.service.ts` 已迁移为独立实现（`createPlanFromPrompt/generatePlanTasksAsync/replanPlan/replanPlanAsync/list/get/update/delete`）。
 > - `plan-execution.service.ts` 已迁移为独立入口实现（`runPlan/runPlanAsync/executePlanRun/listPlanRuns/getLatestPlanRun/getRunById/listRunTasks`）；run task node 执行由 execution engine 统一承接。
+> - `plan-execution.service.ts` 已补齐 `cancelRun`：支持 run 级别取消、批量回写未完成 run_task 为 `cancelled`、并推送 `run.cancelled` SSE 事件。
+> - `plan-management.service.ts` 新增生产态切换能力：`publishPlan`（planned -> production）与 `unlockPlan`（production -> planned）。
 > - `task-management.service.ts` 已迁移为独立实现（`list/add/remove/update/reorder/batch/duplicate/draft` + 依赖环校验 + 可编辑状态校验）。
 > - `task-lifecycle.service.ts` 已迁移为独立入口实现（`reassignTask/completeHumanTask/retryTask/debugTaskStep/executeStandaloneTask`）；debug/standalone 执行通过 execution engine 统一承接。
 > - legacy 中已删除重复的 research/review/email 旧校验方法，统一走 `TaskOutputValidationService`/`TaskClassificationService`。

@@ -1,0 +1,160 @@
+import React from 'react';
+import {
+  ArrowLeftIcon,
+  ArrowPathIcon,
+  DocumentDuplicateIcon,
+  PencilSquareIcon,
+  PlayIcon,
+  PlusIcon,
+} from '@heroicons/react/24/outline';
+import { OrchestrationPlan, OrchestrationRun } from '../../services/orchestrationService';
+import { formatDateTime } from './constants';
+
+interface PlanHeaderProps {
+  planDetail: OrchestrationPlan;
+  planId?: string;
+  promptDraft: string;
+  latestRunSummary: OrchestrationRun | null;
+  isPlanEditable: boolean;
+  isProductionPlan: boolean;
+  runPlanLoading: boolean;
+  replanLoading: boolean;
+  replanPending: boolean;
+  savePromptLoading: boolean;
+  generateLoading: boolean;
+  generationCompleted: boolean;
+  cancelRunLoading: boolean;
+  publishLoading: boolean;
+  unlockLoading: boolean;
+  onBack: () => void;
+  onRefresh: () => void;
+  onGenerateNext: () => void;
+  onSavePrompt: () => void;
+  onOpenReplan: () => void;
+  onRunPlan: () => void;
+  onCancelRun: (runId: string) => void;
+  onPublish: () => void;
+  onUnlock: () => void;
+  onCopyMarkdown: () => void;
+}
+
+const PlanHeader: React.FC<PlanHeaderProps> = ({
+  planDetail,
+  planId,
+  promptDraft,
+  latestRunSummary,
+  isPlanEditable,
+  isProductionPlan,
+  runPlanLoading,
+  replanLoading,
+  replanPending,
+  savePromptLoading,
+  generateLoading,
+  generationCompleted,
+  cancelRunLoading,
+  publishLoading,
+  unlockLoading,
+  onBack,
+  onRefresh,
+  onGenerateNext,
+  onSavePrompt,
+  onOpenReplan,
+  onRunPlan,
+  onCancelRun,
+  onPublish,
+  onUnlock,
+  onCopyMarkdown,
+}) => {
+  return (
+    <div className="bg-white border-b border-slate-200 px-4 py-3">
+      <div className="flex items-center justify-between max-w-7xl mx-auto">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={onBack}
+            className="p-1.5 rounded-md hover:bg-slate-100 text-slate-600"
+          >
+            <ArrowLeftIcon className="h-5 w-5" />
+          </button>
+          <div>
+            <h1 className="text-lg font-semibold text-slate-900">{planDetail.title || '未命名计划'}</h1>
+            <p className="text-xs text-slate-500">mode: {planDetail.strategy?.mode || '-'} · 创建于 {formatDateTime(planDetail.createdAt)}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRefresh}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+          >
+            <ArrowPathIcon className="h-4 w-4" /> 刷新
+          </button>
+          <button
+            onClick={onGenerateNext}
+            disabled={!planId || generateLoading || runPlanLoading || isProductionPlan || generationCompleted}
+            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            <PlusIcon className="h-4 w-4" />
+            {generateLoading ? '生成中...' : '生成下一步'}
+          </button>
+          <button
+            onClick={onSavePrompt}
+            disabled={!planId || savePromptLoading || !isPlanEditable || !promptDraft.trim()}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <PencilSquareIcon className="h-4 w-4" /> 保存
+          </button>
+          <button
+            onClick={onOpenReplan}
+            disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
+            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
+            {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
+          </button>
+          <button
+            onClick={onRunPlan}
+            disabled={!planId || runPlanLoading}
+            className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-sm text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+          >
+            <PlayIcon className="h-4 w-4" /> 运行
+          </button>
+          {latestRunSummary?.status === 'running' && latestRunSummary?._id && (
+            <button
+              onClick={() => onCancelRun(latestRunSummary._id)}
+              disabled={cancelRunLoading}
+              className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+            >
+              {cancelRunLoading ? '停止中...' : '停止运行'}
+            </button>
+          )}
+          {planDetail.status === 'planned' && (
+            <button
+              onClick={onPublish}
+              disabled={!planId || publishLoading || runPlanLoading}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {publishLoading ? '发布中...' : '发布生产'}
+            </button>
+          )}
+          {planDetail.status === 'production' && (
+            <button
+              onClick={onUnlock}
+              disabled={!planId || unlockLoading || runPlanLoading}
+              className="inline-flex items-center gap-1 rounded-md border border-amber-200 px-3 py-1.5 text-sm text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+            >
+              {unlockLoading ? '解锁中...' : '解锁编辑'}
+            </button>
+          )}
+          <button
+            onClick={onCopyMarkdown}
+            disabled={!planDetail}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <DocumentDuplicateIcon className="h-4 w-4" /> 复制任务MD
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default PlanHeader;

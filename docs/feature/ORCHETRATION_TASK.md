@@ -29,6 +29,7 @@
 - `draft`：草稿
 - `drafting`：编排中（任务流式生成）
 - `planned`：已规划
+- `production`：生产锁定（可运行，不可编辑，需解锁后才可修改）
 
 > 说明：Plan 状态仅表示“编排容器状态”，执行过程与终态统一沉淀在 Run（`orchestration_runs.status`）中，不再复用 Plan 状态表达运行结果。
 
@@ -64,9 +65,13 @@
 - 计划详情页支持一键复制任务清单为 Markdown（含计划信息、Prompt、任务列表、依赖/执行者/结果），复制成功提示“已复制到剪贴板”。
 - 创建计划后前端自动跳转 `/orchestration/plans/:id`，并在详情页显示“任务生成中”；任务按 `plan.task.generated` 事件逐条展示，体验接近 step 流式输出。
 - 计划详情页支持人工编辑任务：添加任务、删除任务、复制任务、上下移动重排、批量保存标题/描述/优先级/依赖关系变更。
+- 计划详情页支持「发布生产 / 解锁编辑」：
+  - `POST /orchestration/plans/:id/publish` 将计划切换为 `production` 并锁定编辑；
+  - `POST /orchestration/plans/:id/unlock` 将计划恢复为 `planned` 并开放编辑。
 - 计划详情页与计划列表详情抽屉将“任务依赖”收敛为低频操作弹窗：主区仅保留依赖摘要，点击“依赖设置”按钮后在弹窗内多选并确认。
 - 计划详情页新增「任务设置 / 执行历史」双 Tab：模板任务编辑与 run 历史查看分区展示。
 - 执行历史 Tab 支持最近一次 run 摘要、历史 run 列表（触发来源/状态筛选）和 run 明细抽屉（run + run task）。
+- 计划执行支持取消运行：`POST /orchestration/runs/:runId/cancel`，前端在 Header / Run 历史 / Run 明细三处提供取消入口。
 - 计划列表页中的详情抽屉任务区同步支持基础人工编辑能力，与计划详情页保持一致的增删改重排入口。
 - 计划列表页中的详情抽屉已补齐 run 历史视图（双 Tab、run 列表筛选、run 明细抽屉），与 PlanDetail 信息架构保持一致。
 
@@ -116,12 +121,12 @@
 #### Planning Context Pipeline（计划编排上下文增强）
 
 - 计划拆解前新增 Context Enrichment 阶段，为 Planner 提供决策所需的结构化上下文：
-  - **Agent Manifest**：聚合所有活跃 Agent 的名称、角色、层级、能力标签、工具列表，供 Planner 生成与执行者能力匹配的任务
+  - **Agent Discovery Instruction**：不再注入静态 Agent 清单；改为强制 Planner 在每轮决策前调用 `builtin.sys-mg.internal.agent-master.list-agents` 拉取实时列表，并基于工具过滤后再选执行者
   - **Requirement Detail**：通过 EI 服务获取关联需求的标题、描述、优先级、标签
   - **Planning Constraints**：从 Planner Agent 的 enabled skills 中提取 `planningRules` 约束规则和 skill content 中的约束性章节
-- Planner Prompt 模板新增 `{{agentManifest}}`、`{{requirementDetail}}`、`{{planningConstraints}}` 变量
+- Planner Prompt 模板支持 `{{agentManifest}}`、`{{requirementDetail}}`、`{{planningConstraints}}` 变量；其中 `{{agentManifest}}` 现承载执行者发现规则而非静态列表
 - 所有 context 提取均为 best-effort，失败不阻断计划创建
-- 支持通过环境变量配置 Agent Manifest 最大长度（`PLANNER_AGENT_MANIFEST_MAX_LENGTH`）、Requirement 详情长度（`PLANNER_REQUIREMENT_DETAIL_MAX_LENGTH`）
+- 支持通过环境变量配置 Requirement 详情长度（`PLANNER_REQUIREMENT_DETAIL_MAX_LENGTH`）
 
 #### Skill Planning Rules（技能级计划约束）
 

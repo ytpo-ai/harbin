@@ -189,6 +189,7 @@ export class PlanManagementService {
     if (await this.isPlanRunActive(planId)) {
       throw new BadRequestException('Plan is running and cannot be edited');
     }
+    this.assertPlanUnlocked(plan);
 
     const title = dto.title?.trim();
     const sourcePrompt = dto.sourcePrompt?.trim();
@@ -347,6 +348,7 @@ export class PlanManagementService {
     if (await this.isPlanRunActive(planId)) {
       throw new BadRequestException('Plan is running and cannot be replanned');
     }
+    this.assertPlanUnlocked(plan);
 
     const prompt = dto.prompt?.trim();
     if (!prompt) {
@@ -511,6 +513,62 @@ export class PlanManagementService {
     };
   }
 
+  async publishPlan(planId: string): Promise<OrchestrationPlan> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    if (await this.isPlanRunActive(planId)) {
+      throw new BadRequestException('Plan is running and cannot be published');
+    }
+
+    const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
+    if (normalizedStatus !== 'planned') {
+      throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot be published`);
+    }
+
+    await this.planStatsService.setPlanStatus(planId, 'production');
+    this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'production',
+      phase: 'published',
+    });
+
+    const updated = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!updated) {
+      throw new NotFoundException('Plan not found');
+    }
+    return updated;
+  }
+
+  async unlockPlan(planId: string): Promise<OrchestrationPlan> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    if (await this.isPlanRunActive(planId)) {
+      throw new BadRequestException('Plan is running and cannot be unlocked');
+    }
+
+    const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
+    if (normalizedStatus !== 'production') {
+      throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot be unlocked`);
+    }
+
+    await this.planStatsService.setPlanStatus(planId, 'planned');
+    this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'planned',
+      phase: 'unlocked',
+    });
+
+    const updated = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!updated) {
+      throw new NotFoundException('Plan not found');
+    }
+    return updated;
+  }
+
   private derivePlanTitle(prompt: string): string {
     return prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
   }
@@ -522,6 +580,13 @@ export class PlanManagementService {
       .lean()
       .exec();
     return Boolean(runningRun);
+  }
+
+  private assertPlanUnlocked(plan: OrchestrationPlan): void {
+    const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
+    if (normalizedStatus === 'production') {
+      throw new BadRequestException('Plan is in production and cannot be edited. Please unlock first.');
+    }
   }
 
 }
