@@ -1,6 +1,10 @@
 export const AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-master.list-agents';
 export const LEGACY_AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-admin.list-agents';
 export const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create-agent';
+export const AGENT_ROLE_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.list-roles';
+export const AGENT_ROLE_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.create-role';
+export const AGENT_ROLE_UPDATE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.update-role';
+export const AGENT_ROLE_DELETE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.delete-role';
 export const RD_DOCS_WRITE_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-write';
 export const RD_REPO_WRITER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-writer';
 export const PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.save-template';

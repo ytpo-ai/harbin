@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { access, appendFile, mkdir, readdir, stat, writeFile } from 'fs/promises';
+import { access, appendFile, mkdir, readdir, rm, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { codeDocsReader } from './local-repo-docs-reader.util';
-import { codeUpdatesReader } from './local-repo-updates-reader.util';
-import { RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from './builtin-tool-definitions';
+import { codeDocsReader } from '../local-repo-docs-reader.util';
+import { codeUpdatesReader } from '../local-repo-updates-reader.util';
+import { RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from '../builtin-tool-definitions';
 
 const execFileAsync = promisify(execFile);
 
@@ -232,12 +232,7 @@ export class RepoToolHandler {
         timeout: timeoutMs,
         maxBuffer: 5 * 1024 * 1024,
       });
-      await execFileAsync('git', ['-C', localPath, 'checkout', branch], {
-        cwd: workspaceRoot,
-        timeout: timeoutMs,
-        maxBuffer: 5 * 1024 * 1024,
-      });
-      await execFileAsync('git', ['-C', localPath, 'pull', '--ff-only', 'origin', branch], {
+      await execFileAsync('git', ['-C', localPath, 'checkout', '-B', branch, `origin/${branch}`], {
         cwd: workspaceRoot,
         timeout: timeoutMs,
         maxBuffer: 5 * 1024 * 1024,
@@ -256,6 +251,9 @@ export class RepoToolHandler {
     ]);
 
     if (maxRepoSizeMb > 0 && repoSizeBytes > maxRepoSizeMb * 1024 * 1024) {
+      if (!hasGitRepo) {
+        await this.cleanupRepoDirectory(localPath);
+      }
       throw new Error(`repo_writer repository size exceeds limit (${maxRepoSizeMb}MB)`);
     }
 
@@ -491,6 +489,9 @@ export class RepoToolHandler {
       for (const entry of entries) {
         const entryPath = path.join(current, entry.name);
         if (entry.isDirectory()) {
+          if (entry.name === '.git') {
+            continue;
+          }
           stack.push(entryPath);
           continue;
         }
@@ -501,5 +502,13 @@ export class RepoToolHandler {
       }
     }
     return total;
+  }
+
+  private async cleanupRepoDirectory(targetPath: string): Promise<void> {
+    try {
+      await rm(targetPath, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors and keep original failure reason
+    }
   }
 }

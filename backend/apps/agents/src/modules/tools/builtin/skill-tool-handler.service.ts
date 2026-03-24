@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { SkillService } from '../skills/skill.service';
+import { SkillService } from '../../skills/skill.service';
 
 @Injectable()
 export class SkillToolHandler {

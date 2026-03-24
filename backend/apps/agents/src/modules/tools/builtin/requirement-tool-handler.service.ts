@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InternalApiClient } from './internal-api-client.service';
-import { ToolExecutionContext } from './tool-execution-context.type';
+import { InternalApiClient } from '../internal-api-client.service';
+import { ToolExecutionContext } from '../tool-execution-context.type';
 
 @Injectable()
 export class RequirementToolHandler {

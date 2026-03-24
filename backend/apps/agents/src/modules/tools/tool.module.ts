@@ -23,31 +23,35 @@ import { ToolService } from './tool.service';
 import { ToolController } from './tool.controller';
 import { ComposioService } from './composio.service';
 import { ExaService } from './exa.service';
-import { WebToolsService } from './web-tools.service';
 import { ModelModule } from '../models/model.module';
 import { MemoModule } from '../memos/memo.module';
 import { SkillModule } from '../skills/skill.module';
 import { InternalApiClient } from './internal-api-client.service';
 import { ToolGovernanceService } from './tool-governance.service';
-import { OrchestrationToolHandler } from './orchestration-tool-handler.service';
-import { RequirementToolHandler } from './requirement-tool-handler.service';
-import { RepoToolHandler } from './repo-tool-handler.service';
-import { ModelToolHandler } from './model-tool-handler.service';
-import { SkillToolHandler } from './skill-tool-handler.service';
-import { AuditToolHandler } from './audit-tool-handler.service';
-import { MeetingToolHandler } from './meeting-tool-handler.service';
-import { PromptRegistryToolHandler } from './prompt-registry-tool-handler.service';
-import { PromptTemplate, PromptTemplateSchema } from '../../schemas/prompt-template.schema';
 import {
-  PromptTemplateAudit,
-  PromptTemplateAuditSchema,
-} from '../../schemas/prompt-template-audit.schema';
-import { PromptRegistryAdminService } from '../prompt-registry/prompt-registry-admin.service';
-import { PromptResolverService } from '../prompt-registry/prompt-resolver.service';
+  AgentMasterToolHandler,
+  AgentRoleToolHandler,
+  AuditToolHandler,
+  CommunicationToolHandler,
+  MeetingToolHandler,
+  MemoToolHandler,
+  ModelToolHandler,
+  OrchestrationToolHandler,
+  PromptRegistryToolHandler,
+  RdIntelligenceToolHandler,
+  RepoToolHandler,
+  RequirementToolHandler,
+  SkillToolHandler,
+  WebToolsService,
+} from './builtin';
+import { PromptRegistryAdminModule } from '../prompt-registry/prompt-registry-admin.module';
 import { AgentToolAuthService } from './agent-tool-auth.service';
 import { AgentToolAuthGuard } from './agent-tool-auth.guard';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 import { InfraModule } from '@libs/infra';
+import { ToolRegistryService } from './tool-registry.service';
+import { ToolExecutionService } from './tool-execution.service';
+import { ToolExecutionDispatcherService } from './tool-execution-dispatcher.service';
 
 @Module({
   imports: [
@@ -57,6 +61,7 @@ import { InfraModule } from '@libs/infra';
     MemoModule,
     SkillModule,
     AgentActionLogModule,
+    PromptRegistryAdminModule,
     MongooseModule.forFeature([
       { name: Tool.name, schema: ToolSchema },
       { name: Toolkit.name, schema: ToolkitSchema },
@@ -70,13 +75,14 @@ import { InfraModule } from '@libs/infra';
       { name: AgentRole.name, schema: AgentRoleSchema },
       { name: AgentToolCredential.name, schema: AgentToolCredentialSchema },
       { name: AgentToolTokenRevocation.name, schema: AgentToolTokenRevocationSchema },
-      { name: PromptTemplate.name, schema: PromptTemplateSchema },
-      { name: PromptTemplateAudit.name, schema: PromptTemplateAuditSchema },
     ]),
   ],
   controllers: [ToolController],
   providers: [
     ToolService,
+    ToolRegistryService,
+    ToolExecutionService,
+    ToolExecutionDispatcherService,
     ComposioService,
     ExaService,
     WebToolsService,
@@ -90,13 +96,18 @@ import { InfraModule } from '@libs/infra';
     AuditToolHandler,
     MeetingToolHandler,
     PromptRegistryToolHandler,
-    PromptResolverService,
-    PromptRegistryAdminService,
+    AgentMasterToolHandler,
+    AgentRoleToolHandler,
+    MemoToolHandler,
+    CommunicationToolHandler,
+    RdIntelligenceToolHandler,
     AgentToolAuthService,
     AgentToolAuthGuard,
   ],
   exports: [
     ToolService,
+    ToolRegistryService,
+    ToolExecutionService,
     ComposioService,
     ExaService,
     WebToolsService,
@@ -110,6 +121,11 @@ import { InfraModule } from '@libs/infra';
     AuditToolHandler,
     MeetingToolHandler,
     PromptRegistryToolHandler,
+    AgentMasterToolHandler,
+    AgentRoleToolHandler,
+    MemoToolHandler,
+    CommunicationToolHandler,
+    RdIntelligenceToolHandler,
     AgentToolAuthService,
     AgentToolAuthGuard,
   ],

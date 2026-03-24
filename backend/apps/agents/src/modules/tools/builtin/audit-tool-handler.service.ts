@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { Employee, EmployeeDocument, EmployeeType } from '../../../../../src/shared/schemas/employee.schema';
-import { OperationLog, OperationLogDocument } from '../../../../../src/shared/schemas/operation-log.schema';
+import { Employee, EmployeeDocument, EmployeeType } from '../../../../../../src/shared/schemas/employee.schema';
+import { OperationLog, OperationLogDocument } from '../../../../../../src/shared/schemas/operation-log.schema';
 
 @Injectable()
 export class AuditToolHandler {

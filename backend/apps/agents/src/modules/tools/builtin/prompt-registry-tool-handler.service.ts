@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PromptRegistryAdminService } from '../prompt-registry/prompt-registry-admin.service';
+import { PromptRegistryAdminService } from '../../prompt-registry/prompt-registry-admin.service';
 
 const ALLOWED_PROMPT_CATEGORIES = new Set(['system', 'recruitment']);
 const RECRUITMENT_ROLE_PATTERN = /^[a-z0-9-]+:[a-z0-9-]+$/;

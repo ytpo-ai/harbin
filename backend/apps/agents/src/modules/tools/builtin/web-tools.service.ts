@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ComposioService } from './composio.service';
-import { ExaService } from './exa.service';
+import { ComposioService } from '../composio.service';
+import { ExaService } from '../exa.service';
 
 type NormalizedSearchRow = { title: string; url: string; snippet: string; date?: string };
 

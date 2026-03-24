@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ModelManagementService } from '../models/model-management.service';
+import { ModelManagementService } from '../../models/model-management.service';
 
 @Injectable()
 export class ModelToolHandler {

@@ -2,7 +2,7 @@ import { OpenCodeExecutionService } from './opencode-execution.service';
 
 describe('OpenCodeExecutionService', () => {
   it('extracts delta from parts payload', () => {
-    const service = new OpenCodeExecutionService({} as any, {} as any);
+    const service = new OpenCodeExecutionService({} as any, {} as any, {} as any);
     const text = service['extractDeltaText']({
       parts: [{ type: 'text', text: 'hello ' }, { type: 'text', text: 'world' }],
     });
@@ -10,7 +10,7 @@ describe('OpenCodeExecutionService', () => {
   });
 
   it('extracts delta from info.content payload', () => {
-    const service = new OpenCodeExecutionService({} as any, {} as any);
+    const service = new OpenCodeExecutionService({} as any, {} as any, {} as any);
     const text = service['extractDeltaText']({
       info: { content: 'from info content' },
     });
@@ -43,7 +43,11 @@ describe('OpenCodeExecutionService', () => {
       recordLlmDelta: jest.fn().mockResolvedValue(undefined),
     } as any;
 
-    const service = new OpenCodeExecutionService(adapter, runtimeOrchestrator);
+    const runtimePersistence = {
+      bulkCreateMessageWithParts: jest.fn().mockResolvedValue(undefined),
+    } as any;
+
+    const service = new OpenCodeExecutionService(adapter, runtimeOrchestrator, runtimePersistence);
     const result = await service.executeWithRuntimeBridge({
       runtimeContext: {
         runId: 'run-1',
