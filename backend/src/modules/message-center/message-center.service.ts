@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { SystemMessage, SystemMessageDocument, SystemMessageType } from '../../shared/schemas/system-message.schema';
@@ -20,10 +20,14 @@ export interface CreateSystemMessageInput {
   payload?: Record<string, any>;
   source?: string;
   status?: string;
+  eventId?: string;
+  dedupKey?: string;
 }
 
 @Injectable()
 export class MessageCenterService {
+  private readonly logger = new Logger(MessageCenterService.name);
+
   constructor(
     @InjectModel(SystemMessage.name)
     private readonly systemMessageModel: Model<SystemMessageDocument>,
@@ -124,16 +128,52 @@ export class MessageCenterService {
       throw new BadRequestException('title and content are required');
     }
 
-    const created = await this.systemMessageModel.create({
-      receiverId: input.receiverId,
-      type: input.type,
-      title: input.title,
-      content: input.content,
-      payload: input.payload || {},
-      source: input.source || 'system',
-      status: input.status || 'active',
-      isRead: false,
-    });
+    let created: SystemMessageDocument;
+    try {
+      created = await this.systemMessageModel.create({
+        receiverId: input.receiverId,
+        type: input.type,
+        title: input.title,
+        content: input.content,
+        payload: input.payload || {},
+        source: input.source || 'system',
+        status: input.status || 'active',
+        isRead: false,
+        eventId: String(input.eventId || '').trim() || undefined,
+        dedupKey: String(input.dedupKey || '').trim() || undefined,
+      });
+    } catch (error: any) {
+      if (Number(error?.code) !== 11000) {
+        throw error;
+      }
+
+      const normalizedEventId = String(input.eventId || '').trim();
+      const normalizedDedupKey = String(input.dedupKey || '').trim();
+
+      let existing: SystemMessageDocument | null = null;
+      if (normalizedEventId) {
+        existing = await this.systemMessageModel.findOne({ eventId: normalizedEventId }).exec();
+      }
+
+      if (!existing && normalizedDedupKey) {
+        existing = await this.systemMessageModel
+          .findOne({
+            receiverId: input.receiverId,
+            type: input.type,
+            dedupKey: normalizedDedupKey,
+          })
+          .exec();
+      }
+
+      if (!existing) {
+        throw error;
+      }
+
+      this.logger.log(
+        `Ignored duplicate system message write: receiverId=${input.receiverId} type=${input.type} eventId=${normalizedEventId || 'n/a'} dedupKey=${normalizedDedupKey || 'n/a'}`,
+      );
+      return existing;
+    }
 
     const unreadCount = await this.getUnreadCount(input.receiverId);
     void this.wsMessageService

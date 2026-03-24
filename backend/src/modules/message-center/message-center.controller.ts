@@ -1,12 +1,10 @@
 import {
   BadRequestException,
-  Body,
   Controller,
   Get,
   Headers,
   Param,
   Patch,
-  Post,
   Query,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -116,50 +114,4 @@ export class MessageCenterController {
     };
   }
 
-  @Post('hooks/engineering-statistics')
-  async createEngineeringStatisticsMessage(
-    @Body()
-    payload: {
-      receiverId: string;
-      snapshotId: string;
-      status: 'success' | 'failed';
-      title?: string;
-      content?: string;
-      summary?: Record<string, any>;
-      error?: string;
-    },
-  ) {
-    if (!payload?.receiverId || !payload?.snapshotId || !payload?.status) {
-      throw new BadRequestException('receiverId, snapshotId and status are required');
-    }
-
-    const defaultTitle =
-      payload.status === 'success'
-        ? '工程统计执行完成'
-        : '工程统计执行失败';
-    const defaultContent =
-      payload.status === 'success'
-        ? `统计快照 ${payload.snapshotId} 已完成，可查看详情。`
-        : `统计快照 ${payload.snapshotId} 执行失败，请检查错误信息。`;
-
-    const message = await this.messageCenterService.createSystemMessage({
-      receiverId: payload.receiverId,
-      type: 'engineering_statistics',
-      title: payload.title || defaultTitle,
-      content: payload.content || defaultContent,
-      payload: {
-        snapshotId: payload.snapshotId,
-        status: payload.status,
-        summary: payload.summary || {},
-        error: payload.error,
-        redirectPath: `/ei/statistics?snapshotId=${encodeURIComponent(payload.snapshotId)}`,
-      },
-      source: 'engineering-intelligence',
-    });
-
-    return {
-      success: true,
-      data: message,
-    };
-  }
 }

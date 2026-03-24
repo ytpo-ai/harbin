@@ -16,6 +16,7 @@ export class MeetingLifecycleService {
   private onAddSystemMessageHook?: (meetingId: string, content: string) => Promise<void>;
   private onAppendParticipantContextHook?: (meeting: MeetingDocument, action: 'initialized' | 'updated') => Promise<void>;
   private onPublishMeetingEndedSummaryEventHook?: (meeting: MeetingDocument) => Promise<void>;
+  private onPublishMeetingEndedMessageCenterEventHook?: (meeting: MeetingDocument) => Promise<void>;
 
   constructor(
     @InjectModel(Meeting.name) private readonly meetingModel: Model<MeetingDocument>,
@@ -38,6 +39,10 @@ export class MeetingLifecycleService {
     this.onPublishMeetingEndedSummaryEventHook = hook;
   }
 
+  setOnPublishMeetingEndedMessageCenterEventHook(hook: (meeting: MeetingDocument) => Promise<void>): void {
+    this.onPublishMeetingEndedMessageCenterEventHook = hook;
+  }
+
   private async addSystemMessage(meetingId: string, content: string): Promise<void> {
     if (!this.onAddSystemMessageHook) return;
     await this.onAddSystemMessageHook(meetingId, content);
@@ -54,6 +59,11 @@ export class MeetingLifecycleService {
   private async publishMeetingEndedSummaryEvent(meeting: MeetingDocument): Promise<void> {
     if (!this.onPublishMeetingEndedSummaryEventHook) return;
     await this.onPublishMeetingEndedSummaryEventHook(meeting);
+  }
+
+  private async publishMeetingEndedMessageCenterEvent(meeting: MeetingDocument): Promise<void> {
+    if (!this.onPublishMeetingEndedMessageCenterEventHook) return;
+    await this.onPublishMeetingEndedMessageCenterEventHook(meeting);
   }
 
   private normalizeSpeakingMode(mode?: string): MeetingSpeakingMode {
@@ -268,6 +278,7 @@ export class MeetingLifecycleService {
     await this.agentStateService.clearAllMeetingAgentThinking(meetingId, 'meeting_ended');
     await this.addSystemMessage(meetingId, `会议 "${meeting.title}" 已结束。`);
     await this.publishMeetingEndedSummaryEvent(meeting);
+    await this.publishMeetingEndedMessageCenterEvent(meeting);
 
     this.eventService.emitEvent(meetingId, {
       type: 'status_changed',

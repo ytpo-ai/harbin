@@ -6,7 +6,7 @@
 
 - 在主前端 Header 提供统一消息入口，集中承载系统通知与内部消息入口。
 - 在 legacy 主 backend 提供消息中心存储与查询能力，支持已读管理与未读计数。
-- 支撑工程统计等业务通过 Hook 写入通知，实现“业务事件生产，消息中心消费与展示”。
+- 支撑跨服务业务通过 Redis Streams 事件写入通知，实现“业务事件生产，消息中心消费与展示”。
 
 ### 1.2 数据结构
 
@@ -31,7 +31,10 @@
 - 消息抽屉仅展示未读消息（打开即请求未读列表），完整消息页支持分页与筛选。
 - 点击抽屉消息可触发“标记已读 + 跳转消息中心详情（`messageId` 高亮）”，并实时同步 Header 未读角标。
 - 抽屉支持“全部已读”操作，批量设置当前用户所有未读消息为已读。
-- 工程统计创建快照时可传 `receiverId`，EI 完成后回调 legacy Hook 写入通知。
+- 消息中心模块内置 Redis Streams 消费者（`streams:message-center:events` + `message-center-group`），统一消费跨服务消息事件。
+- 首批事件类型：`meeting.session.ended`、`engineering.tool.completed`。
+- 消费后统一映射到 `createSystemMessage` 落库，并复用既有 WS 推送链路。
+- 系统消息落库新增幂等键：`eventId` 与 `receiverId+type+dedupKey`，重复消费不会生成重复消息。
 
 ## 2. 相关文档
 
@@ -55,8 +58,9 @@
 
 | 路径 | 功能 |
 |------|------|
-| `backend/src/modules/message-center/message-center.controller.ts` | 系统消息/内部消息查询、已读操作与 Hook 接口 |
-| `backend/src/modules/message-center/message-center.service.ts` | 系统消息与内部消息查询聚合、已读逻辑 |
+| `backend/src/modules/message-center/message-center.controller.ts` | 系统消息/内部消息查询与已读操作 |
+| `backend/src/modules/message-center/message-center.service.ts` | 系统消息查询聚合、已读逻辑、幂等写入 |
+| `backend/src/modules/message-center/message-center-event-consumer.service.ts` | Redis Streams 事件消费与消息入库 |
 | `backend/src/modules/message-center/message-center.module.ts` | 模块装配 |
 | `backend/src/shared/schemas/system-message.schema.ts` | `system_messages` 模型与索引 |
 | `backend/src/shared/schemas/inner-message.schema.ts` | `inner_messages` 模型与索引 |
@@ -65,7 +69,13 @@
 
 | 路径 | 功能 |
 |------|------|
-| `backend/apps/engineering-intelligence/src/modules/engineering-intelligence/engineering-intelligence.service.ts` | 统计完成后调用 legacy Hook 写入消息 |
+| `backend/apps/ei/src/services/ei.service.ts` | 工程工具完成后发布 `engineering.tool.completed` 事件 |
+
+### 后端（Meeting）
+
+| 路径 | 功能 |
+|------|------|
+| `backend/src/modules/meetings/services/meeting-message-center-event.service.ts` | 会议结束后发布 `meeting.session.ended` 事件 |
 
 ### 前端
 

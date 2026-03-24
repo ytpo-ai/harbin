@@ -17,6 +17,7 @@ import { MeetingParticipantService } from './services/meeting-participant.servic
 import { MeetingMessageService } from './services/meeting-message.service';
 import { MeetingOrchestrationService } from './services/meeting-orchestration.service';
 import { MeetingSummaryService } from './services/meeting-summary.service';
+import { MeetingMessageCenterEventService } from './services/meeting-message-center-event.service';
 
 @Injectable()
 export class MeetingService implements OnModuleInit {
@@ -28,6 +29,7 @@ export class MeetingService implements OnModuleInit {
     private readonly messageService: MeetingMessageService,
     private readonly orchestrationService: MeetingOrchestrationService,
     private readonly summaryService: MeetingSummaryService,
+    private readonly meetingMessageCenterEventService: MeetingMessageCenterEventService,
   ) {}
 
   onModuleInit(): void {
@@ -50,6 +52,9 @@ export class MeetingService implements OnModuleInit {
     );
     this.lifecycleService.setOnPublishMeetingEndedSummaryEventHook((meeting) =>
       this.summaryService.publishMeetingEndedSummaryEvent(meeting),
+    );
+    this.lifecycleService.setOnPublishMeetingEndedMessageCenterEventHook((meeting) =>
+      this.meetingMessageCenterEventService.publishMeetingEndedMessage(meeting),
     );
   }
 

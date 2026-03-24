@@ -37,6 +37,12 @@ export class SystemMessage {
 
   @Prop({ default: 'active' })
   status: string;
+
+  @Prop()
+  eventId?: string;
+
+  @Prop()
+  dedupKey?: string;
 }
 
 export const SystemMessageSchema = SchemaFactory.createForClass(SystemMessage);
@@ -44,3 +50,5 @@ export const SystemMessageSchema = SchemaFactory.createForClass(SystemMessage);
 SystemMessageSchema.index({ receiverId: 1, isRead: 1, createdAt: -1 });
 SystemMessageSchema.index({ type: 1, createdAt: -1 });
 SystemMessageSchema.index({ messageId: 1 }, { unique: true });
+SystemMessageSchema.index({ eventId: 1 }, { unique: true, sparse: true });
+SystemMessageSchema.index({ receiverId: 1, type: 1, dedupKey: 1 }, { unique: true, sparse: true });

@@ -4,6 +4,14 @@ import { createServiceLogger } from '@libs/common';
 
 type MessageListener = (message: string) => void;
 
+type RedisStreamReadResult = Array<{
+  stream: string;
+  messages: Array<{
+    id: string;
+    fields: Record<string, string>;
+  }>;
+}>;
+
 @Injectable()
 export class RedisService implements OnModuleDestroy {
   private readonly logger = createServiceLogger(RedisService.name);
@@ -270,6 +278,131 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  async xadd(
+    streamKey: string,
+    fields: Record<string, string>,
+    options?: {
+      maxLen?: number;
+      approximate?: boolean;
+      id?: string;
+    },
+  ): Promise<string | null> {
+    if (!this.ready) return null;
+    const startedAt = Date.now();
+    try {
+      const args: string[] = [];
+      if (options?.maxLen && options.maxLen > 0) {
+        args.push('MAXLEN');
+        if (options.approximate !== false) {
+          args.push('~');
+        }
+        args.push(String(options.maxLen));
+      }
+
+      const messageId = options?.id || '*';
+      const flattenedFields = Object.entries(fields || {}).flatMap(([key, value]) => [key, value]);
+      if (!flattenedFields.length) {
+        throw new Error('xadd requires at least one field');
+      }
+
+      const streamId = await (this.publisher as any).xadd(streamKey, ...args, messageId, ...flattenedFields);
+      this.logSlowRedisOp('xadd', streamKey, startedAt, {
+        fieldCount: flattenedFields.length / 2,
+      });
+      return typeof streamId === 'string' ? streamId : null;
+    } catch (error) {
+      this.logRedisOpError('xadd', streamKey, startedAt, error);
+      throw error;
+    }
+  }
+
+  async xgroupCreate(streamKey: string, groupName: string, startId = '0', mkstream = true): Promise<void> {
+    if (!this.ready) return;
+    const startedAt = Date.now();
+    try {
+      const args = ['CREATE', streamKey, groupName, startId] as string[];
+      if (mkstream) {
+        args.push('MKSTREAM');
+      }
+      await (this.publisher as any).xgroup(...args);
+      this.logSlowRedisOp('xgroup_create', streamKey, startedAt, {
+        groupName,
+        startId,
+        mkstream,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      if (message.includes('BUSYGROUP')) {
+        return;
+      }
+      this.logRedisOpError('xgroup_create', streamKey, startedAt, error);
+      throw error;
+    }
+  }
+
+  async xreadgroup(
+    streamKey: string,
+    groupName: string,
+    consumerName: string,
+    options?: {
+      count?: number;
+      blockMs?: number;
+      streamId?: string;
+    },
+  ): Promise<RedisStreamReadResult> {
+    if (!this.ready) return [];
+    const startedAt = Date.now();
+    try {
+      const count = Math.max(1, Number(options?.count || 10));
+      const blockMs = Math.max(0, Number(options?.blockMs || 2000));
+      const streamId = options?.streamId || '>';
+      const response = await (this.blockingClient as any).xreadgroup(
+        'GROUP',
+        groupName,
+        consumerName,
+        'COUNT',
+        String(count),
+        'BLOCK',
+        String(blockMs),
+        'STREAMS',
+        streamKey,
+        streamId,
+      );
+
+      const result = this.parseXreadgroupResponse(response);
+      if (result.length > 0) {
+        this.logSlowRedisOp('xreadgroup', streamKey, startedAt, {
+          groupName,
+          consumerName,
+          count,
+          blockMs,
+          fetched: result.reduce((sum, item) => sum + item.messages.length, 0),
+        });
+      }
+      return result;
+    } catch (error) {
+      this.logRedisOpError('xreadgroup', streamKey, startedAt, error);
+      throw error;
+    }
+  }
+
+  async xack(streamKey: string, groupName: string, messageIds: string[]): Promise<number> {
+    if (!this.ready) return 0;
+    if (!messageIds.length) return 0;
+    const startedAt = Date.now();
+    try {
+      const acknowledged = await (this.publisher as any).xack(streamKey, groupName, ...messageIds);
+      this.logSlowRedisOp('xack', streamKey, startedAt, {
+        groupName,
+        acked: Number(acknowledged || 0),
+      });
+      return Number(acknowledged || 0);
+    } catch (error) {
+      this.logRedisOpError('xack', streamKey, startedAt, error);
+      throw error;
+    }
+  }
+
   async subscribe(channel: string, listener: MessageListener): Promise<void> {
     if (!this.ready) return;
     const existing = this.listeners.get(channel) || new Set<MessageListener>();
@@ -296,6 +429,52 @@ export class RedisService implements OnModuleDestroy {
 
   isReady(): boolean {
     return this.ready;
+  }
+
+  private parseXreadgroupResponse(raw: any): RedisStreamReadResult {
+    if (!Array.isArray(raw)) {
+      return [];
+    }
+
+    const result: RedisStreamReadResult = [];
+
+    for (const streamItem of raw) {
+      if (!Array.isArray(streamItem) || streamItem.length < 2) {
+        continue;
+      }
+      const stream = String(streamItem[0] || '').trim();
+      const entries = Array.isArray(streamItem[1]) ? streamItem[1] : [];
+      if (!stream) {
+        continue;
+      }
+
+      const messages: RedisStreamReadResult[number]['messages'] = [];
+      for (const entry of entries) {
+        if (!Array.isArray(entry) || entry.length < 2) {
+          continue;
+        }
+        const id = String(entry[0] || '').trim();
+        const fieldsArray = Array.isArray(entry[1]) ? entry[1] : [];
+        if (!id || fieldsArray.length === 0) {
+          continue;
+        }
+
+        const fields: Record<string, string> = {};
+        for (let i = 0; i < fieldsArray.length; i += 2) {
+          const key = String(fieldsArray[i] || '').trim();
+          if (!key) {
+            continue;
+          }
+          fields[key] = String(fieldsArray[i + 1] ?? '');
+        }
+
+        messages.push({ id, fields });
+      }
+
+      result.push({ stream, messages });
+    }
+
+    return result;
   }
 
   private normalizeKeyForLog(key: string): string {

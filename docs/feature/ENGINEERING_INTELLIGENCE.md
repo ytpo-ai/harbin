@@ -105,7 +105,7 @@
 - 看板接口按状态泳道聚合需求，前端定时刷新以实现近实时状态感知。
 - 支持一键同步到 GitHub Issues，回写 `owner/repo/issueNumber/issueUrl/state/syncedAt` 映射信息。
 - 系统默认创建定时计划 `system-engineering-statistics`，按钮触发本质为触发该计划一次执行。
-- 计划执行完成后通过消息中心 Hook 发送提醒，前端可在消息中心查看并跳转快照。
+- 计划执行完成后通过 Redis Streams 事件（`engineering.tool.completed`）发送提醒，前端可在消息中心查看并跳转快照。
 - 统计快照创建接口支持可选 `receiverId`，用于在统计完成/失败后触发 legacy 消息中心通知落库。
 - 通过系统调度触发时，`receiverId` 会默认回填为当前登录用户，保障前端按钮触发后可收到消息中心通知。
 - 前端 `工程统计` 页面按钮触发时会显式透传当前登录用户 `receiverId`，避免跨服务链路中上下文丢失导致通知静默。

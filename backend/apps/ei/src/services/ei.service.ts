@@ -1,7 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { createHmac, timingSafeEqual } from 'crypto';
-import axios from 'axios';
+import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import { Dirent, existsSync } from 'fs';
 import { readdir, readFile } from 'fs/promises';
 import * as path from 'path';
@@ -45,6 +44,12 @@ import {
   UpdateEngineeringRepositoryDto,
   UpdateRequirementStatusDto,
 } from '../dto';
+import {
+  buildMessageCenterEvent,
+  MESSAGE_CENTER_EVENT_SOURCE_EI,
+  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  RedisService,
+} from '@libs/infra';
 
 type GitHubContentItem = {
   type: 'file' | 'dir';
@@ -106,6 +111,12 @@ type OpenCodeRunSyncPayload = {
   events: OpenCodeRunSyncEvent[];
 };
 
+type TopLineFileEntry = {
+  filePath: string;
+  lines: number;
+  bytes: number;
+};
+
 type FileMetrics = {
   fileCount: number;
   bytes: number;
@@ -114,17 +125,18 @@ type FileMetrics = {
   tsxCount: number;
   testFileCount: number;
   tokens: number;
+  topLineFiles: TopLineFileEntry[];
 };
 
 @Injectable()
 export class EngineeringIntelligence
  {
+  private readonly logger = new Logger(EngineeringIntelligence.name);
   private readonly workspaceRoot = this.resolveWorkspaceRoot();
   private readonly githubApiBase = 'https://api.github.com';
   private readonly maxFilesPerSummary = 20;
   private readonly maxCharsPerFile = 12000;
   private readonly nodeIdentityPattern = /^[a-zA-Z0-9._-]{2,64}$/;
-  private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001';
   private readonly requirementTransitions: Record<EiRequirementStatus, EiRequirementStatus[]> = {
     todo: ['assigned', 'blocked'],
     assigned: ['in_progress', 'todo', 'blocked'],
@@ -148,6 +160,7 @@ export class EngineeringIntelligence
     private readonly requirementModel: Model<EiRequirementDocument>,
     @InjectModel(RdProject.name)
     private readonly rdProjectModel: Model<RdProjectDocument>,
+    private readonly redisService: RedisService,
   ) {}
 
   private resolveWorkspaceRoot(): string {
@@ -854,6 +867,8 @@ export class EngineeringIntelligence
     return Math.round((text || '').length / 4);
   }
 
+  private readonly topLineFilesLimit = 10;
+
   private async scanDirectoryMetrics(absRootPath: string): Promise<FileMetrics> {
     const metrics: FileMetrics = {
       fileCount: 0,
@@ -863,7 +878,10 @@ export class EngineeringIntelligence
       tsxCount: 0,
       testFileCount: 0,
       tokens: 0,
+      topLineFiles: [],
     };
+
+    const allFiles: TopLineFileEntry[] = [];
 
     const walk = async (current: string): Promise<void> => {
       const entries = await readdir(current, { withFileTypes: true });
@@ -885,12 +903,16 @@ export class EngineeringIntelligence
 
         const content = await readFile(fullPath, 'utf-8').catch(() => '');
         const bytes = Buffer.byteLength(content, 'utf-8');
+        const fileLines = this.countLinesFromText(content);
         const lower = entry.name.toLowerCase();
 
         metrics.fileCount += 1;
         metrics.bytes += bytes;
-        metrics.lines += this.countLinesFromText(content);
+        metrics.lines += fileLines;
         metrics.tokens += this.estimateTokensByChars(content);
+
+        const relativePath = path.relative(absRootPath, fullPath);
+        allFiles.push({ filePath: relativePath, lines: fileLines, bytes });
 
         if (lower.endsWith('.ts')) {
           metrics.tsCount += 1;
@@ -905,24 +927,46 @@ export class EngineeringIntelligence
     };
 
     await walk(absRootPath);
+
+    metrics.topLineFiles = allFiles
+      .sort((a, b) => b.lines - a.lines)
+      .slice(0, this.topLineFilesLimit);
+
     return metrics;
   }
 
   private buildSummary(rows: EiStatisticsProjectRow[]): EiStatisticsSummary {
-    const totalDocsBytes = rows.filter((item) => item.metricType === 'docs').reduce((sum, item) => sum + item.bytes, 0);
-    const totalDocsTokens = rows.filter((item) => item.metricType === 'docs').reduce((sum, item) => sum + (item.tokens || 0), 0);
-    const totalFrontendBytes = rows
-      .filter((item) => item.metricType === 'frontend')
-      .reduce((sum, item) => sum + item.bytes, 0);
-    const totalBackendBytes = rows.filter((item) => item.metricType === 'backend').reduce((sum, item) => sum + item.bytes, 0);
+    const docsRows = rows.filter((item) => item.metricType === 'docs');
+    const frontendRows = rows.filter((item) => item.metricType === 'frontend');
+    const backendRows = rows.filter((item) => item.metricType === 'backend');
+
+    const totalDocsBytes = docsRows.reduce((sum, item) => sum + item.bytes, 0);
+    const totalDocsTokens = docsRows.reduce((sum, item) => sum + (item.tokens || 0), 0);
+    const totalDocsLines = docsRows.reduce((sum, item) => sum + item.lines, 0);
+    const totalDocsFileCount = docsRows.reduce((sum, item) => sum + item.fileCount, 0);
+
+    const totalFrontendBytes = frontendRows.reduce((sum, item) => sum + item.bytes, 0);
+    const totalFrontendLines = frontendRows.reduce((sum, item) => sum + item.lines, 0);
+    const totalFrontendFileCount = frontendRows.reduce((sum, item) => sum + item.fileCount, 0);
+
+    const totalBackendBytes = backendRows.reduce((sum, item) => sum + item.bytes, 0);
+    const totalBackendLines = backendRows.reduce((sum, item) => sum + item.lines, 0);
+    const totalBackendFileCount = backendRows.reduce((sum, item) => sum + item.fileCount, 0);
+
     const failureCount = rows.filter((item) => Boolean(item.error)).length;
     const successCount = rows.length - failureCount;
 
     return {
       totalDocsBytes,
       totalDocsTokens,
+      totalDocsLines,
+      totalDocsFileCount,
       totalFrontendBytes,
+      totalFrontendLines,
+      totalFrontendFileCount,
       totalBackendBytes,
+      totalBackendLines,
+      totalBackendFileCount,
       grandTotalBytes: totalDocsBytes + totalFrontendBytes + totalBackendBytes,
       projectCount: rows.length,
       successCount,
@@ -984,40 +1028,6 @@ export class EngineeringIntelligence
       }
     }
 
-    const projectFilter = input.requestedProjectIds.length
-      ? {
-          $or: [
-            { _id: { $in: input.requestedProjectIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id)) } },
-            { id: { $in: input.requestedProjectIds } },
-          ],
-        }
-      : {};
-
-    const eiProjects = await this.rdProjectModel
-      .find({
-        ...projectFilter,
-        opencodeProjectPath: { $exists: true, $ne: '' },
-      })
-      .lean()
-      .exec();
-
-    for (const project of eiProjects as Array<Record<string, any>>) {
-      const projectId = String(project.id || project._id || '');
-      const projectName = String(project.name || project.opencodeProjectPath || projectId);
-      const projectPath = String(project.opencodeProjectPath || '').trim();
-      const metricType = projectPath.includes('frontend') ? 'frontend' : projectPath.includes('backend') ? 'backend' : 'docs';
-      if (input.scope !== 'all' && input.scope !== metricType) {
-        continue;
-      }
-      baseProjects.push({
-        projectId,
-        projectName,
-        source: 'ei_project',
-        metricType,
-        rootPath: projectPath,
-      });
-    }
-
     for (const item of baseProjects) {
       try {
         const abs = this.resolveWorkspacePath(item.rootPath);
@@ -1035,6 +1045,7 @@ export class EngineeringIntelligence
           tsCount: metrics.tsCount,
           tsxCount: metrics.tsxCount,
           testFileCount: metrics.testFileCount,
+          topLineFiles: metrics.topLineFiles,
         });
       } catch (error) {
         rows.push({
@@ -1070,19 +1081,63 @@ export class EngineeringIntelligence
       return;
     }
 
-    await axios.post(
-      `${this.legacyBaseUrl}/api/message-center/hooks/engineering-statistics`,
-      {
+    const title = input.status === 'success' ? '工程工具执行完成' : '工程工具执行失败';
+    const content =
+      input.status === 'success'
+        ? `工程工具任务 ${input.snapshotId} 已完成，可查看详情。`
+        : `工程工具任务 ${input.snapshotId} 执行失败，请检查错误信息。`;
+
+    const event = buildMessageCenterEvent({
+      eventType: 'engineering.tool.completed',
+      source: MESSAGE_CENTER_EVENT_SOURCE_EI,
+      traceId: randomUUID(),
+      data: {
         receiverId,
-        snapshotId: input.snapshotId,
-        status: input.status,
-        summary: input.summary,
-        error: input.error,
+        messageType: 'engineering_statistics',
+        title,
+        content,
+        actionUrl: `/ei/statistics?snapshotId=${encodeURIComponent(input.snapshotId)}`,
+        bizKey: `engineering-tool:${input.snapshotId}:${input.status}`,
+        priority: input.status === 'failed' ? 'high' : 'normal',
+        extra: {
+          snapshotId: input.snapshotId,
+          status: input.status,
+          summary: input.summary || {},
+          error: input.error || '',
+        },
+      },
+    });
+
+    const streamId = await this.redisService.xadd(
+      MESSAGE_CENTER_EVENT_STREAM_KEY,
+      {
+        event: JSON.stringify(event),
       },
       {
-        timeout: 10000,
+        maxLen: 10000,
       },
     );
+
+    this.logger.log(
+      `Published message-center event for engineering tool completion: eventId=${event.eventId} streamId=${streamId || 'n/a'} receiverId=${receiverId} snapshotId=${input.snapshotId} status=${input.status}`,
+    );
+  }
+
+  private async safeEmitStatisticsMessage(input: {
+    receiverId?: string;
+    snapshotId: string;
+    status: 'success' | 'failed';
+    summary?: EiStatisticsSummary;
+    error?: string;
+  }): Promise<void> {
+    try {
+      await this.emitStatisticsMessage(input);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to publish engineering tool message-center event (non-blocking): receiverId=${String(input.receiverId || '').trim()} snapshotId=${input.snapshotId} status=${input.status} reason=${reason}`,
+      );
+    }
   }
 
   async createStatisticsSnapshot(payload: CreateStatisticsSnapshotDto) {
@@ -1104,8 +1159,14 @@ export class EngineeringIntelligence
       summary: {
         totalDocsBytes: 0,
         totalDocsTokens: 0,
+        totalDocsLines: 0,
+        totalDocsFileCount: 0,
         totalFrontendBytes: 0,
+        totalFrontendLines: 0,
+        totalFrontendFileCount: 0,
         totalBackendBytes: 0,
+        totalBackendLines: 0,
+        totalBackendFileCount: 0,
         grandTotalBytes: 0,
         projectCount: 0,
         successCount: 0,
@@ -1136,7 +1197,7 @@ export class EngineeringIntelligence
         },
       );
 
-      await this.emitStatisticsMessage({
+      await this.safeEmitStatisticsMessage({
         receiverId: payload.receiverId,
         snapshotId,
         status,
@@ -1155,7 +1216,7 @@ export class EngineeringIntelligence
         },
       );
 
-      await this.emitStatisticsMessage({
+      await this.safeEmitStatisticsMessage({
         receiverId: payload.receiverId,
         snapshotId,
         status: 'failed',

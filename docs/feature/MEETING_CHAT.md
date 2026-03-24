@@ -123,6 +123,7 @@ enum ParticipantRole {
 
 - Agent 入场时自动 catch-up：获取最近5条消息并生成入场发言
 - 会议结束时由 Meeting Service 发布 `meeting.ended` inner message，并由统一 Agent Runtime 消息桥接触发 `meeting-assistant` 执行；是否生成总结由 Agent 自主决策并可调用 `meeting.generate-summary` 工具。
+- 会议结束时同时发布消息中心事件 `meeting.session.ended` 到 Redis Streams，由 Message Center 消费并生成系统通知。
 - 会议执行链路由 ContextAssembler 统一注入 system context；Meeting Service 仅传递会话历史（user/assistant）与触发用户消息，不再在 `task.messages` 注入 system prompt
 - 会议上下文采用分层注入与 fingerprint 抑制：静态/半静态 blocks（身份基线、领域、协作、工具规格、任务信息）仅在首次或变更时注入，变更时优先增量
 - runtime 持久化分层：`session.messages` 与 `agent_messages` 不再落盘 system 消息，system 快照写入 `run.metadata.initialSystemMessages` 供审计

@@ -4,6 +4,7 @@ import { AuthModule } from '../auth/auth.module';
 import { SystemMessage, SystemMessageSchema } from '../../shared/schemas/system-message.schema';
 import { MessageCenterController } from './message-center.controller';
 import { MessageCenterService } from './message-center.service';
+import { MessageCenterEventConsumerService } from './message-center-event-consumer.service';
 
 @Module({
   imports: [
@@ -13,7 +14,7 @@ import { MessageCenterService } from './message-center.service';
     ]),
   ],
   controllers: [MessageCenterController],
-  providers: [MessageCenterService],
+  providers: [MessageCenterService, MessageCenterEventConsumerService],
   exports: [MessageCenterService],
 })
 export class MessageCenterModule {}
