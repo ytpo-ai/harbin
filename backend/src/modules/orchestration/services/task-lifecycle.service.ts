@@ -594,7 +594,7 @@ export class TaskLifecycleService {
       throw new NotFoundException('Plan not found');
     }
     const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
-    if (normalizedStatus === 'draft' || normalizedStatus === 'planned') {
+    if (normalizedStatus === 'draft' || normalizedStatus === 'planned' || normalizedStatus === 'drafting') {
       return;
     }
     throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot ${action}`);

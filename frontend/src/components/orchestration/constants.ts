@@ -53,7 +53,11 @@ export const TRIGGER_TYPE_LABEL: Record<string, string> = {
 };
 
 export const STREAMING_PLAN_STATUS = new Set(['drafting']);
-export const FULLY_EDITABLE_PLAN_STATUS = new Set(['draft', 'planned']);
+export const FULLY_EDITABLE_PLAN_STATUS = new Set([
+  'draft',
+  'drafting',
+  'planned',
+]);
 
 export const DEBUG_RUNTIME_TYPE_OPTIONS: Array<{ value: 'auto' | DebugRuntimeTaskTypeOverride; label: string }> = [
   { value: 'auto', label: '自动判定（不覆盖）' },
@@ -126,10 +130,14 @@ export const getRunCompletionPercent = (run?: OrchestrationRun | null) => {
   return Math.min(100, Math.round((run.stats.completedTasks / run.stats.totalTasks) * 100));
 };
 
-export const formatExecutor = (task: OrchestrationTask) => {
+export const formatExecutor = (task: OrchestrationTask, agentNameById?: Record<string, string>) => {
   const executorType = task.assignment?.executorType || 'unassigned';
   const executorId = task.assignment?.executorId;
   if (executorType === 'unassigned') return 'unassigned';
+  if (executorType === 'agent' && executorId) {
+    const agentName = agentNameById?.[executorId];
+    return agentName ? `${executorType}:${agentName}` : `${executorType}:${executorId}`;
+  }
   return executorId ? `${executorType}:${executorId}` : executorType;
 };
 

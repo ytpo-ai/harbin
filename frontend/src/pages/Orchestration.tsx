@@ -71,7 +71,11 @@ const TRIGGER_TYPE_LABEL: Record<string, string> = {
 };
 
 const PLAN_PROMPT_DRAFT_STORAGE_KEY = 'orchestration-plan-prompt-drafts';
-const FULLY_EDITABLE_PLAN_STATUS = new Set(['draft', 'planned']);
+const FULLY_EDITABLE_PLAN_STATUS = new Set([
+  'draft',
+  'drafting',
+  'planned',
+]);
 
 const DEBUG_RUNTIME_TYPE_OPTIONS: Array<{ value: 'auto' | DebugRuntimeTaskTypeOverride; label: string }> = [
   { value: 'auto', label: '自动判定（不覆盖）' },
@@ -1316,21 +1320,21 @@ const Orchestration: React.FC = () => {
                                 <button
                                   onClick={() => handleMoveTask(task._id, 'up')}
                                   disabled={!editable || reorderTaskMutation.isLoading || task.order <= 0}
-                                  className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  className="hidden rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                                 >
                                   ↑
                                 </button>
                                 <button
                                   onClick={() => handleMoveTask(task._id, 'down')}
                                   disabled={!editable || reorderTaskMutation.isLoading || task.order >= planTasks.length - 1}
-                                  className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  className="hidden rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                                 >
                                   ↓
                                 </button>
                                 <button
                                   onClick={() => selectedPlanId && duplicateTaskMutation.mutate({ planId: selectedPlanId, taskId: task._id })}
                                   disabled={!editable || duplicateTaskMutation.isLoading || !selectedPlanId}
-                                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                                  className="hidden rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                                 >
                                   复制
                                 </button>

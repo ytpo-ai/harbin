@@ -485,6 +485,15 @@ export class PlanManagementService {
       throw new NotFoundException('Plan not found');
     }
 
+    const prompt = String(dto.prompt || '').trim();
+    if (!prompt) {
+      throw new BadRequestException('prompt is required');
+    }
+    if (await this.isPlanRunActive(planId)) {
+      throw new BadRequestException('Plan is running and cannot be replanned');
+    }
+    this.assertPlanUnlocked(plan);
+
     const runKey = `replan:${planId}`;
     if (this.runningPlans.has(runKey)) {
       return {
@@ -499,7 +508,10 @@ export class PlanManagementService {
 
     setTimeout(() => {
       this.replanPlan(planId, dto)
-        .catch(() => undefined)
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : 'Async replan failed';
+          this.logger.error(`Async replan failed for plan ${planId}: ${message}`);
+        })
         .finally(() => {
           this.runningPlans.delete(runKey);
         });

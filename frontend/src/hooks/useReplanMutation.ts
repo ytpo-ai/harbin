@@ -75,7 +75,6 @@ export const useReplanMutation = ({
             },
           };
         });
-        void queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
       onSuccess: async (_result, variables) => {
         setPromptHint(
@@ -88,13 +87,32 @@ export const useReplanMutation = ({
         setDebugHint('');
         if (!variables?.autoGenerate) {
           setIsReplanPending(false);
+          queryClient.setQueryData(['orchestration-plan', planId], (prev: any) => {
+            if (!prev) return prev;
+            return {
+              ...prev,
+              status: 'draft',
+              taskIds: [],
+              tasks: [],
+              stats: {
+                ...(prev.stats || {}),
+                totalTasks: 0,
+                completedTasks: 0,
+                failedTasks: 0,
+                waitingHumanTasks: 0,
+              },
+            };
+          });
+          await queryClient.invalidateQueries('orchestration-plans');
+          return;
         }
-        await queryClient.invalidateQueries(['orchestration-plan', planId]);
+        await queryClient.invalidateQueries('orchestration-plans');
       },
       onError: (error) => {
         setIsReplanPending(false);
         const message = error instanceof Error ? error.message : '重新编排失败，请稍后重试';
         setPromptHint(message);
+        void queryClient.invalidateQueries(['orchestration-plan', planId]);
       },
     },
   );
