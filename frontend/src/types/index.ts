@@ -32,6 +32,11 @@ export interface ChatMessage {
 
 export type AgentTier = 'leadership' | 'operations' | 'temporary';
 
+export interface PromptTemplateRef {
+  scene: string;
+  role: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -42,6 +47,7 @@ export interface Agent {
   config?: Record<string, unknown>;
   capabilities: string[];
   systemPrompt: string;
+  promptTemplateRef?: PromptTemplateRef;
   isActive: boolean;
   tools: string[]; // 可使用的工具ID列表
   skills?: string[]; // 已启用技能ID列表
@@ -143,6 +149,7 @@ export interface Skill {
   lastVerifiedAt?: string;
   metadata?: Record<string, any>;
   content?: string;
+  promptTemplateRef?: PromptTemplateRef;
   contentType?: string;
   contentHash?: string;
   contentSize?: number;

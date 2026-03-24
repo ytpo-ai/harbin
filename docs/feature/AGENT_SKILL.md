@@ -15,7 +15,7 @@
 
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
-| `agent_skills` | `agent-skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version 等） |
+| `agent_skills` | `agent-skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version/promptTemplateRef 等） |
 | `agents` | `agent.schema.ts` | Agent 主表中的 `skills: string[]` 维护已启用 skillId |
 
 `agent_skills` 的状态语义：
@@ -40,6 +40,7 @@
    - 列表/路由阶段只读取 skill 元数据（name/description/metadata/status/tags）。
    - 执行阶段先注入 skill 摘要，再根据任务上下文触发 `shouldActivateSkillContent`。
     - 命中激活条件时才读取 `content` 注入 prompt，并受 `SKILL_CONTENT_MAX_INJECT_LENGTH` 截断保护。
+    - 若 Skill 配置了 `promptTemplateRef: { scene, role }`，运行时优先解析 PromptTemplate：解析成功则替换 `skill.content`，解析失败则回退原 `skill.content`。
     - content 加载失败时仅告警，不阻断任务执行（fail-open）。
    - 当前内置场景映射：
      - 会议执行与异常：`meeting-sensitive-planner`、`meeting-resilience`
@@ -95,7 +96,7 @@
 
 | 文件 | 功能 |
 |------|------|
-| `agent-skill.schema.ts` | Skill 主表结构与索引 |
+| `agent-skill.schema.ts` | Skill 主表结构与索引（含 `promptTemplateRef`） |
 | `agent.schema.ts`（shared） | Agent 主表中的 `skills` 字段 |
 
 ### 前端 Skills 页面 (frontend/src/)
@@ -109,5 +110,6 @@
 
 - Skill 列表项默认信息降噪（描述限高 + 渐隐），通过「查看详情」进入右侧抽屉。
 - 右侧抽屉分为「详情 / Agent 绑定」两个 Tab，详情支持直接保存。
+- 详情 Tab 在 `content` 上方提供 Prompt 模板绑定选择器（scene/role 联动、预览、清除）；绑定后 `content` 字段进入 fallback 语义提示态。
 - 「Agent 绑定」Tab 采用 Agent 列表勾选模式，支持单项勾选、当前可见列表全选/取消全选，并按差异批量提交绑定与解绑（解绑复用 `/skills/assign` 且 `enabled=false`）。
 - 状态与分类展示中文文案，筛选项同样使用中文显示（传参仍保持后端枚举值）。

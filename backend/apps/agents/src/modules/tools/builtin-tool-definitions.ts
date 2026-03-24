@@ -4,6 +4,8 @@ export const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create
 export const RD_DOCS_WRITE_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-write';
 export const RD_REPO_WRITER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-writer';
 export const PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.save-template';
+export const PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.list-templates';
+export const PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.get-template';
 
 export const VIRTUAL_TOOL_IDS = [
   'web_search',

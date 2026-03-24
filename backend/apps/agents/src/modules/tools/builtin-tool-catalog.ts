@@ -2,6 +2,8 @@ import {
   AGENT_CREATE_TOOL_ID,
   AGENT_LIST_TOOL_ID,
   LEGACY_AGENT_LIST_TOOL_ID,
+  PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
+  PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
   PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
   RD_DOCS_WRITE_TOOL_ID,
   RD_REPO_WRITER_TOOL_ID,
@@ -136,7 +138,7 @@ export const BUILTIN_TOOLS = [
         name: 'Repo Writer',
         description: 'Clone or refresh remote repository into data/repos sandbox directory',
         prompt:
-          '当你需要导入外部仓库内容时，先调用 builtin.sys-mg.internal.rd-related.repo-writer，action 使用 git-clone，将仓库拉取到 data/repos/ 下，再用 repo-read 继续分析文件。',
+          '当你需要导入外部仓库内容时，先调用 builtin.sys-mg.internal.rd-related.repo-writer，action 使用 git-clone，将仓库拉取到 data/repos/ 下，再用 repo-read 分析内容；若识别出可复用 Prompt，请继续调用 builtin.sys-mg.mcp.prompt-registry.save-template 落库。',
         type: 'file_operation' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_write', name: 'Repository Write', level: 'intermediate' }],
@@ -216,6 +218,8 @@ export const BUILTIN_TOOLS = [
         id: PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
         name: 'Prompt Registry Save Template',
         description: 'Create or version prompt templates in prompt registry with optional auto-publish',
+        prompt:
+          '当你已经整理好 Prompt 模板内容时，调用 builtin.sys-mg.mcp.prompt-registry.save-template 保存模板；单条模式必填 scene/role/content，批量模式使用 templates 数组，并在需要时设置 autoPublish=true。',
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'prompt_write', name: 'Prompt Registry Write', level: 'intermediate' }],
@@ -224,7 +228,16 @@ export const BUILTIN_TOOLS = [
           type: 'built_in' as const,
           parameters: {
             type: 'object',
-            required: [],
+            oneOf: [
+              {
+                type: 'object',
+                required: ['scene', 'role', 'content'],
+              },
+              {
+                type: 'object',
+                required: ['templates'],
+              },
+            ],
             additionalProperties: true,
             properties: {
               scene: { type: 'string' },
@@ -236,6 +249,54 @@ export const BUILTIN_TOOLS = [
               source: { type: 'object' },
               templates: { type: 'array' },
               autoPublish: { type: 'boolean' },
+            },
+          },
+        },
+      },
+      {
+        id: PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
+        name: 'Prompt Registry List Templates',
+        description: 'List prompt templates by scene role category and status without returning content field',
+        prompt:
+          '当你需要浏览可用 Prompt 模板时，先调用 builtin.sys-mg.mcp.prompt-registry.list-templates；该工具仅返回摘要信息（不含 content），可先筛选 scene/role/category，再决定是否调用 get-template 查看全文。',
+        type: 'data_analysis' as const,
+        category: 'System Intelligence',
+        requiredPermissions: [{ id: 'prompt_read', name: 'Prompt Registry Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              scene: { type: 'string' },
+              role: { type: 'string' },
+              category: { type: 'string' },
+              status: { type: 'string' },
+              limit: { type: 'number' },
+            },
+          },
+        },
+      },
+      {
+        id: PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
+        name: 'Prompt Registry Get Template',
+        description: 'Get a full prompt template by templateId or by scene and role',
+        prompt:
+          '当你已选定一个 Prompt 模板并需要完整内容时，调用 builtin.sys-mg.mcp.prompt-registry.get-template。优先使用 scene+role 获取当前生效版本；如已知 templateId，也可直接查询。',
+        type: 'data_analysis' as const,
+        category: 'System Intelligence',
+        requiredPermissions: [{ id: 'prompt_read', name: 'Prompt Registry Read', level: 'basic' }],
+        tokenCost: 2,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              scene: { type: 'string' },
+              role: { type: 'string' },
+              templateId: { type: 'string' },
             },
           },
         },

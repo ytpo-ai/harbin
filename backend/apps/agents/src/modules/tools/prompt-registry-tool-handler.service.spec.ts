@@ -1,13 +1,112 @@
 import { PromptRegistryToolHandler } from './prompt-registry-tool-handler.service';
 
 describe('PromptRegistryToolHandler', () => {
+  it('lists templates without content field', async () => {
+    const promptRegistryAdminService = {
+      listTemplates: jest.fn().mockResolvedValue([
+        {
+          _id: 'template-1',
+          scene: 'technical',
+          role: 'engineering:frontend-developer',
+          version: 3,
+          status: 'published',
+          category: 'recruitment',
+          description: 'frontend prompt',
+          content: 'should not be returned',
+          updatedAt: new Date('2026-03-24T00:00:00.000Z'),
+        },
+      ]),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.listPromptTemplates({ scene: 'technical' });
+
+    expect(promptRegistryAdminService.listTemplates).toHaveBeenCalledWith(
+      expect.objectContaining({ scene: 'technical', status: 'published' }),
+    );
+    expect(result.total).toBe(1);
+    expect(result.templates[0]).toEqual(
+      expect.objectContaining({
+        _id: 'template-1',
+        scene: 'technical',
+        role: 'engineering:frontend-developer',
+        version: 3,
+        status: 'published',
+      }),
+    );
+    expect(result.templates[0]).not.toHaveProperty('content');
+  });
+
+  it('gets effective template by scene and role', async () => {
+    const promptRegistryAdminService = {
+      getEffectiveTemplate: jest.fn().mockResolvedValue({
+        content: 'effective prompt',
+        version: 5,
+        updatedAt: '2026-03-24T01:00:00.000Z',
+      }),
+      listTemplates: jest.fn().mockResolvedValue([
+        {
+          _id: 'template-5',
+          scene: 'technical',
+          role: 'engineering:frontend-developer',
+          version: 5,
+          status: 'published',
+          category: 'recruitment',
+          description: 'published template',
+        },
+      ]),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.getPromptTemplate({
+      scene: 'technical',
+      role: 'engineering:frontend-developer',
+    });
+
+    expect(promptRegistryAdminService.getEffectiveTemplate).toHaveBeenCalledWith({
+      scene: 'technical',
+      role: 'engineering:frontend-developer',
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        _id: 'template-5',
+        scene: 'technical',
+        role: 'engineering:frontend-developer',
+        version: 5,
+        status: 'published',
+        content: 'effective prompt',
+      }),
+    );
+  });
+
+  it('gets template by templateId', async () => {
+    const promptRegistryAdminService = {
+      getTemplateById: jest.fn().mockResolvedValue({
+        _id: 'template-9',
+        scene: 'meeting',
+        role: 'facilitator',
+        version: 9,
+        status: 'published',
+        content: 'meeting facilitator prompt',
+      }),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.getPromptTemplate({ templateId: 'template-9' });
+
+    expect(promptRegistryAdminService.getTemplateById).toHaveBeenCalledWith('template-9');
+    expect(result.content).toBe('meeting facilitator prompt');
+    expect(result.scene).toBe('meeting');
+    expect(result.role).toBe('facilitator');
+  });
+
   it('saves single template as draft', async () => {
     const promptRegistryAdminService = {
       saveDraft: jest.fn().mockResolvedValue({
-        scene: 'engineering',
-        role: 'frontend-developer',
+        scene: 'technical',
+        role: 'engineering:frontend-developer',
         version: 1,
-        category: 'engineering',
+        category: 'recruitment',
         tags: ['frontend'],
         source: { type: 'github', repo: 'https://github.com/example/repo' },
       }),
@@ -16,19 +115,19 @@ describe('PromptRegistryToolHandler', () => {
 
     const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
     const result = await handler.savePromptTemplate({
-      scene: 'engineering',
-      role: 'frontend-developer',
+      scene: 'technical',
+      role: 'engineering:frontend-developer',
       content: 'You are frontend expert',
-      category: 'engineering',
+      category: 'recruitment',
       tags: ['frontend', 'frontend'],
       source: { type: 'github', repo: 'https://github.com/example/repo' },
     });
 
     expect(promptRegistryAdminService.saveDraft).toHaveBeenCalledWith(
       expect.objectContaining({
-        scene: 'engineering',
-        role: 'frontend-developer',
-        category: 'engineering',
+        scene: 'technical',
+        role: 'engineering:frontend-developer',
+        category: 'recruitment',
         tags: ['frontend'],
       }),
     );
@@ -40,8 +139,8 @@ describe('PromptRegistryToolHandler', () => {
   it('supports auto publish and marks updated when version > 1', async () => {
     const promptRegistryAdminService = {
       saveDraft: jest.fn().mockResolvedValue({
-        scene: 'engineering',
-        role: 'backend-developer',
+        scene: 'technical',
+        role: 'engineering:backend-developer',
         version: 2,
       }),
       publish: jest.fn().mockResolvedValue({}),
@@ -50,18 +149,58 @@ describe('PromptRegistryToolHandler', () => {
     const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
     const result = await handler.savePromptTemplate({
       autoPublish: true,
-      templates: [{ scene: 'engineering', role: 'backend-developer', content: 'You are backend expert' }],
+      templates: [{ scene: 'technical', role: 'engineering:backend-developer', category: 'recruitment', content: 'You are backend expert' }],
     });
 
     expect(promptRegistryAdminService.publish).toHaveBeenCalledWith(
       expect.objectContaining({
-        scene: 'engineering',
-        role: 'backend-developer',
+        scene: 'technical',
+        role: 'engineering:backend-developer',
         version: 2,
       }),
     );
     expect(result.created).toBe(0);
     expect(result.updated).toBe(1);
     expect(result.failed).toBe(0);
+  });
+
+  it('rejects invalid category and marks item as failed', async () => {
+    const promptRegistryAdminService = {
+      saveDraft: jest.fn(),
+      publish: jest.fn(),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.savePromptTemplate({
+      scene: 'technical',
+      role: 'engineering:backend-developer',
+      category: 'engineering',
+      content: 'invalid category',
+    });
+
+    expect(promptRegistryAdminService.saveDraft).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.failed).toBe(1);
+    expect(result.details[0].error).toContain('category must be system | recruitment');
+  });
+
+  it('rejects invalid recruitment role format', async () => {
+    const promptRegistryAdminService = {
+      saveDraft: jest.fn(),
+      publish: jest.fn(),
+    } as any;
+
+    const handler = new PromptRegistryToolHandler(promptRegistryAdminService);
+    const result = await handler.savePromptTemplate({
+      scene: 'technical',
+      role: 'engineering-backend-developer',
+      category: 'recruitment',
+      content: 'invalid role format',
+    });
+
+    expect(promptRegistryAdminService.saveDraft).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.failed).toBe(1);
+    expect(result.details[0].error).toContain('recruitment role must match');
   });
 });

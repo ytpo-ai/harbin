@@ -32,6 +32,8 @@ import {
   AGENT_LIST_TOOL_ID,
   DEPRECATED_TOOL_IDS,
   LEGACY_AGENT_LIST_TOOL_ID,
+  PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
+  PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
   PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
   RD_DOCS_WRITE_TOOL_ID,
   RD_REPO_WRITER_TOOL_ID,
@@ -1367,6 +1369,10 @@ export class ToolService {
     parameters: any,
   ): Promise<any> | undefined {
     switch (toolId) {
+      case PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID:
+        return this.promptRegistryToolHandler.listPromptTemplates(parameters);
+      case PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID:
+        return this.promptRegistryToolHandler.getPromptTemplate(parameters);
       case PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID:
         return this.promptRegistryToolHandler.savePromptTemplate(parameters);
       default:

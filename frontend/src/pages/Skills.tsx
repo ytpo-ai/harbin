@@ -11,9 +11,10 @@ import {
   WrenchScrewdriverIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
+import { PromptTemplateRefPicker } from '../components/PromptTemplateRefPicker';
 import { skillService, SkillPagedResponse } from '../services/skillService';
 import { agentService } from '../services/agentService';
-import { Skill } from '../types';
+import { PromptTemplateRef, Skill } from '../types';
 
 const statusOptions: Array<Skill['status']> = ['active', 'experimental', 'deprecated', 'disabled'];
 const sourceOptions: Array<Skill['sourceType']> = ['manual', 'github', 'web', 'internal'];
@@ -49,6 +50,7 @@ type SkillFormPayload = {
   discoveredBy?: string;
   metadata?: Record<string, any>;
   content?: string;
+  promptTemplateRef?: PromptTemplateRef;
   contentType?: string;
 };
 
@@ -645,6 +647,7 @@ const SkillDetailDrawer: React.FC<{
       discoveredBy: skill.discoveredBy || '',
       metadata: skill.metadata || {},
       content: skill.content || '',
+      promptTemplateRef: skill.promptTemplateRef,
       contentType: skill.contentType || 'text/markdown',
     });
     setTagsText((skill.tags || []).join(','));
@@ -668,6 +671,7 @@ const SkillDetailDrawer: React.FC<{
     if (selectedAgentIds.length !== initialAgentIds.length) return true;
     return initialAgentIds.some((agentId) => !selectedAgentSet.has(agentId));
   }, [initialAgentIds, selectedAgentIds.length, selectedAgentSet]);
+  const hasPromptTemplateRef = Boolean(form.promptTemplateRef?.scene && form.promptTemplateRef?.role);
 
   if (!open) return null;
 
@@ -730,8 +734,25 @@ const SkillDetailDrawer: React.FC<{
                 />
               </div>
               <div className="md:col-span-2">
+                <PromptTemplateRefPicker
+                  value={form.promptTemplateRef}
+                  onChange={(next) => setForm({ ...form, promptTemplateRef: next })}
+                  label="Prompt 模板绑定（可选）"
+                  helperText="绑定后运行时将优先使用模板内容替换 content；当解析失败时回退到下方 content。"
+                />
+              </div>
+              <div className="md:col-span-2">
                 <label className="mb-1 block text-xs font-medium text-gray-600">content</label>
-                <textarea value={form.content || ''} onChange={(e) => setForm({ ...form, content: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" rows={8} placeholder="Markdown 正文" />
+                <textarea
+                  value={form.content || ''}
+                  onChange={(e) => setForm({ ...form, content: e.target.value })}
+                  className={`w-full rounded-md border px-3 py-2 text-sm ${hasPromptTemplateRef ? 'border-amber-300 bg-amber-50/40' : 'border-gray-300'}`}
+                  rows={8}
+                  placeholder="Markdown 正文"
+                />
+                {hasPromptTemplateRef && (
+                  <p className="mt-1 text-xs text-amber-700">已绑定 Prompt 模板：当前 content 作为 fallback 备用。</p>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-gray-600">tags</label>

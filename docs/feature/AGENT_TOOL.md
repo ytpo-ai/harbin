@@ -50,7 +50,8 @@
 21. 会议分配执行提示：`requirement.update-status / requirement.assign / send-internal-message` 增加闭环执行 prompt（一次确认即执行、先分配后通知、三段式回执、默认短版通知）。
 22. 工具参数契约按需注入：运行时默认仅注入工具目录（id/name/description）；当出现参数错误时，仅对当前失败工具回填 `inputSchema` 做修正重试，避免把全部工具 schema 常驻到上下文。
 23. RD 仓库写入工具：新增 `builtin.sys-mg.internal.rd-related.repo-writer`，支持 `git-clone` 到 `data/repos/**`，并内置 HTTPS 协议限制与目录沙箱防护。
-24. Prompt Registry 写入工具：新增 `builtin.sys-mg.mcp.prompt-registry.save-template`，支持单条/批量保存 PromptTemplate，按 `scene+role` 自动递增版本并可选自动发布。
+24. Prompt Registry 写入工具：新增 `builtin.sys-mg.mcp.prompt-registry.save-template`，支持单条/批量保存 PromptTemplate，按 `scene+role` 自动递增版本并可选自动发布；`category` 必须为 `system/recruitment`，且 `recruitment` 类强制 `role=<domain>:<persona-role>`。
+25. Prompt Registry 读取工具：新增 `builtin.sys-mg.mcp.prompt-registry.list-templates`（摘要列表，不含 content）与 `builtin.sys-mg.mcp.prompt-registry.get-template`（按 `scene+role` 或 `templateId` 获取完整内容），支持 Agent 在绑定前先检索后读取。
 
 ---
 

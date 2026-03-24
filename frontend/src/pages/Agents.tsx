@@ -11,7 +11,8 @@ import { apiKeyService } from '../services/apiKeyService';
 import { toolService } from '../services/toolService';
 import { authService } from '../services/authService';
 import { meetingService } from '../services/meetingService';
-import { Agent, AIModel } from '../types';
+import { PromptTemplateRefPicker } from '../components/PromptTemplateRefPicker';
+import { Agent, AIModel, PromptTemplateRef } from '../types';
 import { 
   PlusIcon, 
   PencilIcon, 
@@ -536,6 +537,7 @@ const CreateAgentModal: React.FC<{
     tier: 'operations' as AgentTier,
     description: '',
     systemPrompt: '',
+    promptTemplateRef: undefined as PromptTemplateRef | undefined,
     capabilities: '',
     modelId: availableModels[0]?.id || '',
     apiKeyId: '',
@@ -642,6 +644,7 @@ const CreateAgentModal: React.FC<{
       tier: formData.tier,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
+      promptTemplateRef: formData.promptTemplateRef,
       capabilities: formData.capabilities.split(',').map(cap => cap.trim()).filter(Boolean),
       model: selectedModel,
       apiKeyId: formData.apiKeyId || undefined,
@@ -731,6 +734,14 @@ const CreateAgentModal: React.FC<{
               />
             </div>
             
+            <div>
+              <PromptTemplateRefPicker
+                value={formData.promptTemplateRef}
+                onChange={(next) => setFormData({ ...formData, promptTemplateRef: next })}
+                helperText="运行时会将模板内容追加到 systemPrompt 之后；解析失败时仅保留 systemPrompt。"
+              />
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">系统提示 (System Prompt)</label>
               <textarea
@@ -968,6 +979,7 @@ const EditAgentModal: React.FC<{
   const [tier, setTier] = useState<AgentTier>(initialAgentTier);
   const [description, setDescription] = useState(agent.description || '');
   const [systemPrompt, setSystemPrompt] = useState(agent.systemPrompt || '');
+  const [promptTemplateRef, setPromptTemplateRef] = useState<PromptTemplateRef | undefined>(agent.promptTemplateRef);
   const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
   const [configText, setConfigText] = useState(prettyConfigText(agent.config));
   const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
@@ -1032,6 +1044,12 @@ const EditAgentModal: React.FC<{
     return sortedA.every((value, index) => value === sortedB[index]);
   };
 
+  const promptTemplateRefEqual = (a?: PromptTemplateRef, b?: PromptTemplateRef) => {
+    if (!a && !b) return true;
+    if (!a || !b) return false;
+    return a.scene === b.scene && a.role === b.role;
+  };
+
   const hasChanges =
     selectedModelId !== (agent.model?.id || '') ||
     selectedApiKeyId !== (agent.apiKeyId || '') ||
@@ -1041,6 +1059,7 @@ const EditAgentModal: React.FC<{
     tier !== initialAgentTier ||
     description.trim() !== (agent.description || '').trim() ||
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
+    !promptTemplateRefEqual(promptTemplateRef, agent.promptTemplateRef) ||
     !arraysEqual(parsedCapabilities, agent.capabilities || []) ||
     configText.trim() !== prettyConfigText(agent.config).trim();
 
@@ -1106,6 +1125,7 @@ const EditAgentModal: React.FC<{
       tier,
       description: description.trim(),
       systemPrompt: systemPrompt.trim(),
+      promptTemplateRef,
       capabilities: parsedCapabilities,
     });
   };
@@ -1546,6 +1566,14 @@ const EditAgentModal: React.FC<{
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 rows={2}
                 placeholder="简要描述这个Agent的职责和能力..."
+              />
+            </div>
+
+            <div>
+              <PromptTemplateRefPicker
+                value={promptTemplateRef}
+                onChange={setPromptTemplateRef}
+                helperText="可选增强：模板内容会追加在 systemPrompt 之后注入 Identity Layer。"
               />
             </div>
 
