@@ -245,7 +245,7 @@ requiredPermissions: [{ id: 'prompt_write', name: 'Prompt Registry Write', level
 - [ ] Prompt Read 工具：list-templates + get-template（详见 9.6 节）
 - [ ] 前端 Agent 创建/编辑页增加"从 Prompt 库选择"（详见 9.7 节）
 - [ ] 前端 Skill 创建/编辑页增加"绑定 Prompt"（详见 9.8 节）
-- [ ] Prompt 管理页 category 标签页 + 创建时 category 选择（详见 9.10 节）
+- [x] Prompt 管理页 category 标签页 + 创建时 category 选择（详见 9.10 节）
 
 ### 未纳入本次范围
 - [ ] repo-writer 扩展更多写操作（mkdir/write-file）

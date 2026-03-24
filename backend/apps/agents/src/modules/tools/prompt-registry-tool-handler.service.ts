@@ -64,6 +64,7 @@ export class PromptRegistryToolHandler {
     const templates = await this.promptRegistryAdminService.listTemplates({
       scene: scene || undefined,
       role: role || undefined,
+      category: category || undefined,
       status,
       limit,
     });

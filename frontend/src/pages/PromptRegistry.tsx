@@ -17,14 +17,21 @@ const statusTagClass: Record<string, string> = {
   archived: 'bg-slate-100 text-slate-700',
 };
 
+const categoryTagClass: Record<string, string> = {
+  system: 'bg-blue-100 text-blue-700',
+  recruitment: 'bg-violet-100 text-violet-700',
+};
+
 const PromptRegistry: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [scene, setScene] = useState('');
   const [role, setRole] = useState('');
+  const [categoryTab, setCategoryTab] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published' | 'archived'>('all');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<'create' | 'copy'>('create');
+  const [createCategory, setCreateCategory] = useState('system');
   const [createScene, setCreateScene] = useState('');
   const [createRole, setCreateRole] = useState('');
   const [createDescription, setCreateDescription] = useState('');
@@ -48,10 +55,35 @@ const PromptRegistry: React.FC = () => {
     return Array.from(new Set(options));
   }, [filterOptions?.statuses]);
 
-  const templatesQueryKey = ['prompt-templates', scene, role, statusFilter];
+  const categoryOptions = useMemo(() => {
+    const categories = Array.isArray(filterOptions?.categories) ? filterOptions.categories : [];
+    return Array.from(new Set(categories.map((item) => String(item || '').trim()).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b),
+    );
+  }, [filterOptions?.categories]);
+
+  const categoryTabOptions = useMemo(() => {
+    const defaults = ['system', 'recruitment'];
+    return Array.from(new Set([...defaults, ...categoryOptions])).sort((a, b) => a.localeCompare(b));
+  }, [categoryOptions]);
+
+  const createCategoryOptions = useMemo(() => {
+    const fromFilters = categoryOptions;
+    const defaults = ['system', 'recruitment'];
+    return Array.from(new Set([...defaults, ...fromFilters])).sort((a, b) => a.localeCompare(b));
+  }, [categoryOptions]);
+
+  const templatesQueryKey = ['prompt-templates', categoryTab, scene, role, statusFilter];
   const { data: templates = [], isLoading } = useQuery(
     templatesQueryKey,
-    () => promptRegistryService.listTemplates({ scene, role, status: statusFilter, limit: 200 }),
+    () =>
+      promptRegistryService.listTemplates({
+        category: categoryTab || undefined,
+        scene,
+        role,
+        status: statusFilter,
+        limit: 200,
+      }),
     { enabled: Boolean(scene && role) },
   );
 
@@ -84,6 +116,7 @@ const PromptRegistry: React.FC = () => {
   const createTemplateMutation = useMutation(promptRegistryService.saveDraft, {
     onSuccess: () => {
       setIsCreateOpen(false);
+      setCreateCategory('system');
       setCreateScene('');
       setCreateRole('');
       setCreateDescription('');
@@ -120,6 +153,7 @@ const PromptRegistry: React.FC = () => {
       return;
     }
     createTemplateMutation.mutate({
+      category: createCategory,
       scene: normalizedScene,
       role: normalizedRole,
       description: createDescription.trim() || undefined,
@@ -132,6 +166,7 @@ const PromptRegistry: React.FC = () => {
 
   const openCreateModal = () => {
     setCreateMode('create');
+    setCreateCategory('system');
     setCreateScene('');
     setCreateRole('');
     setCreateDescription('');
@@ -142,6 +177,7 @@ const PromptRegistry: React.FC = () => {
 
   const openCopyModal = (item: PromptTemplateItem) => {
     setCreateMode('copy');
+    setCreateCategory(item.category || 'system');
     setCreateScene(item.scene || '');
     setCreateRole(item.role || '');
     setCreateDescription(item.description || '');
@@ -195,6 +231,36 @@ const PromptRegistry: React.FC = () => {
           >
             新增
           </button>
+        </div>
+
+        <div className="mt-4 border-b border-slate-200">
+          <nav className="-mb-px flex flex-wrap gap-4">
+            <button
+              type="button"
+              onClick={() => setCategoryTab('')}
+              className={`border-b-2 px-1 py-2 text-sm font-medium ${
+                !categoryTab
+                  ? 'border-primary-600 text-primary-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              全部
+            </button>
+            {categoryTabOptions.map((category) => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setCategoryTab(category)}
+                className={`border-b-2 px-1 py-2 text-sm font-medium ${
+                  categoryTab === category
+                    ? 'border-primary-600 text-primary-600'
+                    : 'border-transparent text-slate-500 hover:text-slate-700'
+                }`}
+              >
+                {category}
+              </button>
+            ))}
+          </nav>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-4">
@@ -266,6 +332,13 @@ const PromptRegistry: React.FC = () => {
                     <span className={`rounded px-2 py-0.5 text-xs ${statusTagClass[item.status] || statusTagClass.archived}`}>
                       {item.status}
                     </span>
+                    {item.category ? (
+                      <span
+                        className={`rounded px-2 py-0.5 text-xs ${categoryTagClass[item.category] || 'bg-slate-100 text-slate-700'}`}
+                      >
+                        {item.category}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-1 text-xs text-slate-500">{new Date(item.updatedAt).toLocaleString()}</p>
                   <p className="mt-1 text-xs text-slate-600">{item.description || '暂无描述'}</p>
@@ -333,19 +406,31 @@ const PromptRegistry: React.FC = () => {
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <select
+                value={createCategory}
+                onChange={(event) => setCreateCategory(event.target.value)}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              >
+                {createCategoryOptions.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
               <input
                 value={createScene}
                 onChange={(event) => setCreateScene(event.target.value)}
                 placeholder="scene，例如 orchestration"
                 className="rounded-md border border-slate-300 px-3 py-2 text-sm"
               />
-              <input
-                value={createRole}
-                onChange={(event) => setCreateRole(event.target.value)}
-                placeholder="Prompt职责 role，例如 planner-task-decomposition"
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-              />
             </div>
+
+            <input
+              value={createRole}
+              onChange={(event) => setCreateRole(event.target.value)}
+              placeholder="Prompt职责 role，例如 planner-task-decomposition"
+              className="mt-3 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
 
             <input
               value={createDescription}
@@ -382,6 +467,7 @@ const PromptRegistry: React.FC = () => {
                 onClick={onCreateTemplate}
                 disabled={
                   createTemplateMutation.isLoading ||
+                  !createCategory.trim() ||
                   !createScene.trim() ||
                   !createRole.trim() ||
                   !createContent.trim()

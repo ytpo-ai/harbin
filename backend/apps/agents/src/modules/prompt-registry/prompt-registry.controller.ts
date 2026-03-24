@@ -13,6 +13,7 @@ export class PromptRegistryController {
   async listTemplates(
     @Query('scene') scene?: string,
     @Query('role') role?: string,
+    @Query('category') category?: string,
     @Query('status') status?: 'draft' | 'published' | 'archived' | 'all',
     @Query('limit') limit?: string,
     @Req() req?: any,
@@ -23,6 +24,7 @@ export class PromptRegistryController {
     return this.promptRegistryAdminService.listTemplates({
       scene,
       role,
+      category,
       status,
       limit: Number(limit || 50),
     });

@@ -9,6 +9,7 @@ export interface PromptTemplateItem {
   version: number;
   status: PromptTemplateStatus;
   content: string;
+  category?: string;
   description?: string;
   updatedBy?: string;
   updatedAt: string;
@@ -44,6 +45,7 @@ export interface PromptTemplateDiffResult {
 export interface PromptTemplateFilterOptions {
   scenes: string[];
   roles: string[];
+  categories: string[];
   statuses: PromptTemplateStatus[];
   sceneRoleMap: Record<string, string[]>;
 }
@@ -52,6 +54,7 @@ export const promptRegistryService = {
   async listTemplates(params: {
     scene?: string;
     role?: string;
+    category?: string;
     status?: PromptTemplateStatus | 'all';
     limit?: number;
   }) {
@@ -73,6 +76,7 @@ export const promptRegistryService = {
     scene: string;
     role: string;
     content: string;
+    category?: string;
     description?: string;
     baseVersion?: number;
     summary?: string;

@@ -25,17 +25,20 @@ export class PromptRegistryAdminService {
   async listTemplates(query: {
     scene?: string;
     role?: string;
+    category?: string;
     status?: PromptTemplateStatus | 'all';
     limit?: number;
   }) {
     const filter: Record<string, unknown> = {};
     const scene = String(query.scene || '').trim();
     const role = String(query.role || '').trim();
+    const category = String(query.category || '').trim();
     const status = String(query.status || '').trim();
     const limit = Math.min(200, Math.max(1, Number(query.limit || 50)));
 
     if (scene) filter.scene = scene;
     if (role) filter.role = role;
+    if (category) filter.category = category;
     if (status && status !== 'all') {
       filter.status = status;
     }
@@ -49,7 +52,7 @@ export class PromptRegistryAdminService {
   }
 
   async listTemplateFilters() {
-    const [sceneRolePairs, statuses] = await Promise.all([
+    const [sceneRolePairs, statuses, categories] = await Promise.all([
       this.promptTemplateModel
         .aggregate<{ _id: { scene: string; role: string } }>([
           {
@@ -75,6 +78,7 @@ export class PromptRegistryAdminService {
         ])
         .exec(),
       this.promptTemplateModel.distinct('status', { status: { $type: 'string', $nin: ['', null] } }).exec(),
+      this.promptTemplateModel.distinct('category', { category: { $type: 'string', $nin: ['', null] } }).exec(),
     ]);
 
     const sceneRoleMap: Record<string, string[]> = {};
@@ -110,10 +114,15 @@ export class PromptRegistryAdminService {
       new Set(statuses.map((item) => String(item || '').trim()).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b));
 
+    const normalizedCategories = Array.from(
+      new Set(categories.map((item) => String(item || '').trim()).filter(Boolean)),
+    ).sort((a, b) => a.localeCompare(b));
+
     return {
       scenes,
       roles,
       statuses: normalizedStatuses,
+      categories: normalizedCategories,
       sceneRoleMap,
     };
   }
