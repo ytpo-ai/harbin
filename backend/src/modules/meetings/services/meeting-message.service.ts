@@ -136,10 +136,6 @@ export class MeetingMessageService {
     return message;
   }
 
-  /**
-   * 邀请参与者
-   */
-
   async addSystemMessage(meetingId: string, content: string): Promise<void> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) return;
@@ -317,8 +313,4 @@ export class MeetingMessageService {
 
     return meeting;
   }
-
-  /**
-   * 订阅事件
-   */
 }

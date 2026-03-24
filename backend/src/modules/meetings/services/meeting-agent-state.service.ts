@@ -117,8 +117,4 @@ export class MeetingAgentStateService {
       .filter((item): item is MeetingAgentStatePayload => Boolean(item && item.agentId && item.state === 'thinking'))
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
   }
-
-  /**
-   * 获取所有会议
-   */
 }

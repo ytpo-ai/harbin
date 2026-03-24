@@ -3,13 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentClientService } from '../../agents-client/agent-client.service';
-import { EmployeeService } from '../../employees/employee.service';
-import { EmployeeType } from '../../../shared/schemas/employee.schema';
 import { Meeting, MeetingDocument, MeetingStatus, MeetingType, ParticipantRole } from '../../../shared/schemas/meeting.schema';
 import { MessagesService } from '../../messages/messages.service';
-import { CreateMeetingDto, MeetingSpeakingMode, MeetingEvent, MeetingParticipantRecord, ParticipantIdentity } from '../meeting.types';
+import { CreateMeetingDto, MeetingSpeakingMode, MeetingEvent, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingAgentStateService } from './meeting-agent-state.service';
+import { MeetingParticipantHelperService } from './meeting-participant-helper.service';
 
 @Injectable()
 export class MeetingLifecycleService {
@@ -21,10 +20,10 @@ export class MeetingLifecycleService {
   constructor(
     @InjectModel(Meeting.name) private readonly meetingModel: Model<MeetingDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly employeeService: EmployeeService,
     private readonly messagesService: MessagesService,
     private readonly eventService: MeetingEventService,
     private readonly agentStateService: MeetingAgentStateService,
+    private readonly participantHelperService: MeetingParticipantHelperService,
   ) {}
 
   setOnAddSystemMessageHook(hook: (meetingId: string, content: string) => Promise<void>): void {
@@ -65,66 +64,6 @@ export class MeetingLifecycleService {
   }
 
 
-  private async getEmployeeOrThrow(employeeId: string) {
-    const employee = await this.employeeService.getEmployee(employeeId);
-    if (!employee) {
-      throw new NotFoundException(`Employee not found: ${employeeId}`);
-    }
-    return employee;
-  }
-
-
-  private async getRequiredExclusiveAssistantAgentId(employeeId: string): Promise<string> {
-    const employee = await this.getEmployeeOrThrow(employeeId);
-
-    if (employee.type !== EmployeeType.HUMAN) {
-      throw new ConflictException('Only human accounts can initiate or join meetings in employee mode');
-    }
-
-    const assistantAgentId = employee.exclusiveAssistantAgentId || employee.aiProxyAgentId;
-    if (!assistantAgentId) {
-      throw new ConflictException('Human account must bind an exclusive assistant before initiating or joining meetings');
-    }
-
-    return assistantAgentId;
-  }
-
-
-  private upsertExclusiveAssistantParticipant(
-    meeting: MeetingDocument,
-    ownerEmployeeId: string,
-    assistantAgentId: string,
-    isPresent: boolean,
-  ): void {
-    const now = new Date();
-    const existing = meeting.participants.find(
-      (p) => p.participantId === assistantAgentId && p.participantType === 'agent',
-    ) as MeetingParticipantRecord | undefined;
-
-    if (existing) {
-      existing.isExclusiveAssistant = true;
-      existing.assistantForEmployeeId = ownerEmployeeId;
-      if (isPresent) {
-        existing.isPresent = true;
-        existing.joinedAt = existing.joinedAt || now;
-      }
-      return;
-    }
-
-    meeting.participants.push({
-      participantId: assistantAgentId,
-      participantType: 'agent',
-      role: ParticipantRole.PARTICIPANT,
-      isPresent,
-      hasSpoken: false,
-      messageCount: 0,
-      joinedAt: isPresent ? now : undefined,
-      isExclusiveAssistant: true,
-      assistantForEmployeeId: ownerEmployeeId,
-    });
-  }
-
-
   ensureMeetingCompatibility(meeting: MeetingDocument): void {
     if (!meeting.hostType) {
       const hostParticipant = meeting.participants?.find(
@@ -142,17 +81,13 @@ export class MeetingLifecycleService {
     meeting.settings.speakingOrder = this.normalizeSpeakingMode(meeting.settings.speakingOrder as string | undefined);
   }
 
-  /**
-   * 创建新会议
-   */
-
   async createMeeting(dto: CreateMeetingDto): Promise<Meeting> {
     let effectiveHostId = dto.hostId;
     let effectiveHostType: 'employee' | 'agent' = dto.hostType;
     const participants = [...(dto.participantIds || [])];
 
     if (dto.hostType === 'employee') {
-      const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(dto.hostId);
+      const assistantAgentId = await this.participantHelperService.getRequiredExclusiveAssistantAgentId(dto.hostId);
       effectiveHostId = assistantAgentId;
       effectiveHostType = 'agent';
     }
@@ -172,7 +107,7 @@ export class MeetingLifecycleService {
     );
 
     for (const employeeId of uniqueHumanParticipantIds) {
-      await this.getRequiredExclusiveAssistantAgentId(employeeId);
+      await this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
     }
     
     // 过滤掉主持人自己
@@ -234,8 +169,8 @@ export class MeetingLifecycleService {
     }
 
     for (const employeeId of employeeIdsRequiringAssistant) {
-      const assistantAgentId = await this.getRequiredExclusiveAssistantAgentId(employeeId);
-      this.upsertExclusiveAssistantParticipant(meeting, employeeId, assistantAgentId, false);
+      const assistantAgentId = await this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
+      this.participantHelperService.upsertExclusiveAssistantParticipant(meeting, employeeId, assistantAgentId, false);
     }
 
     const saved = await meeting.save();
@@ -243,10 +178,6 @@ export class MeetingLifecycleService {
     
     return saved;
   }
-
-  /**
-   * 开始会议
-   */
 
   async startMeeting(meetingId: string, startedBy: ParticipantIdentity): Promise<Meeting> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
@@ -265,7 +196,7 @@ export class MeetingLifecycleService {
     }
 
     if (meeting.hostType === 'employee') {
-      await this.getRequiredExclusiveAssistantAgentId(meeting.hostId);
+      await this.participantHelperService.getRequiredExclusiveAssistantAgentId(meeting.hostId);
     }
 
     meeting.status = MeetingStatus.ACTIVE;
@@ -305,10 +236,6 @@ export class MeetingLifecycleService {
 
     return meeting;
   }
-
-  /**
-   * 结束会议
-   */
 
   async endMeeting(meetingId: string): Promise<Meeting> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
@@ -464,10 +391,6 @@ export class MeetingLifecycleService {
     return meeting;
   }
 
-  /**
-   * 归档会议
-   */
-
   async archiveMeeting(meetingId: string): Promise<Meeting> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) {
@@ -487,10 +410,6 @@ export class MeetingLifecycleService {
     this.logger.log(`Meeting ${meetingId} archived`);
     return meeting;
   }
-
-  /**
-   * 删除会议
-   */
 
   async deleteMeeting(meetingId: string): Promise<void> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
@@ -512,10 +431,6 @@ export class MeetingLifecycleService {
     this.logger.log(`Meeting ${meetingId} deleted`);
   }
 
-  /**
-   * 加入会议
-   */
-
   async getMeeting(meetingId: string): Promise<Meeting | null> {
     return this.meetingModel.findOne({ id: meetingId }).exec();
   }
@@ -533,10 +448,6 @@ export class MeetingLifecycleService {
     return this.meetingModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
-  /**
-   * 获取参与者参与的会议
-   */
-
   async getMeetingsByParticipant(participantId: string, participantType: 'employee' | 'agent'): Promise<Meeting[]> {
     return this.meetingModel.find({
       $or: [
@@ -546,10 +457,6 @@ export class MeetingLifecycleService {
       ],
     }).sort({ createdAt: -1 }).exec();
   }
-
-  /**
-   * 获取会议统计
-   */
 
   async getMeetingStats(): Promise<any> {
     const total = await this.meetingModel.countDocuments();
@@ -564,8 +471,4 @@ export class MeetingLifecycleService {
       totalMessages: totalMessages[0]?.total || 0,
     };
   }
-
-  /**
-   * 触发Agent响应
-   */
 }

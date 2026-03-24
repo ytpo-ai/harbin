@@ -3,12 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { EmployeeService } from '../../employees/employee.service';
-import { EmployeeType } from '../../../shared/schemas/employee.schema';
 import { Agent } from '../../../shared/types';
 import { Meeting, MeetingDocument, MeetingStatus, ParticipantRole } from '../../../shared/schemas/meeting.schema';
 import { MeetingParticipantRecord, ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingLifecycleService } from './meeting-lifecycle.service';
+import { MeetingParticipantHelperService } from './meeting-participant-helper.service';
 
 @Injectable()
 export class MeetingParticipantService {
@@ -23,6 +23,7 @@ export class MeetingParticipantService {
     private readonly employeeService: EmployeeService,
     private readonly eventService: MeetingEventService,
     private readonly lifecycleService: MeetingLifecycleService,
+    private readonly participantHelperService: MeetingParticipantHelperService,
   ) {}
 
   setOnAddSystemMessageHook(hook: (meetingId: string, content: string) => Promise<void>): void {
@@ -43,109 +44,18 @@ export class MeetingParticipantService {
     await this.onAgentJoinedActiveHook(meetingId, participant);
   }
 
-  private async getEmployeeOrThrow(employeeId: string) {
-    const employee = await this.employeeService.getEmployee(employeeId);
-    if (!employee) {
-      throw new NotFoundException(`Employee not found: ${employeeId}`);
-    }
-    return employee;
-  }
-
-
   async getRequiredExclusiveAssistantAgentId(employeeId: string): Promise<string> {
-    const employee = await this.getEmployeeOrThrow(employeeId);
-
-    if (employee.type !== EmployeeType.HUMAN) {
-      throw new ConflictException('Only human accounts can initiate or join meetings in employee mode');
-    }
-
-    const assistantAgentId = employee.exclusiveAssistantAgentId || employee.aiProxyAgentId;
-    if (!assistantAgentId) {
-      throw new ConflictException('Human account must bind an exclusive assistant before initiating or joining meetings');
-    }
-
-    return assistantAgentId;
+    return this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
   }
 
 
-  private upsertExclusiveAssistantParticipant(
+  upsertExclusiveAssistantParticipant(
     meeting: MeetingDocument,
     ownerEmployeeId: string,
     assistantAgentId: string,
     isPresent: boolean,
   ): void {
-    const now = new Date();
-    const existing = meeting.participants.find(
-      (p) => p.participantId === assistantAgentId && p.participantType === 'agent',
-    ) as MeetingParticipantRecord | undefined;
-
-    if (existing) {
-      existing.isExclusiveAssistant = true;
-      existing.assistantForEmployeeId = ownerEmployeeId;
-      if (isPresent) {
-        existing.isPresent = true;
-        existing.joinedAt = existing.joinedAt || now;
-      }
-      return;
-    }
-
-    meeting.participants.push({
-      participantId: assistantAgentId,
-      participantType: 'agent',
-      role: ParticipantRole.PARTICIPANT,
-      isPresent,
-      hasSpoken: false,
-      messageCount: 0,
-      joinedAt: isPresent ? now : undefined,
-      isExclusiveAssistant: true,
-      assistantForEmployeeId: ownerEmployeeId,
-    });
-  }
-
-
-  private extractMentionTokens(content: string): string[] {
-    if (!content || !content.includes('@')) {
-      return [];
-    }
-
-    const matches = content.matchAll(/@([^\s@，。,.!?！？:：;；]+)/g);
-    const tokens = new Set<string>();
-
-    for (const match of matches) {
-      const raw = (match[1] || '').trim();
-      const normalized = raw
-        .replace(/^@+/, '')
-        .replace(/[，。,.!?！？:：;；]+$/g, '')
-        .toLowerCase();
-
-      if (normalized) {
-        tokens.add(normalized);
-      }
-    }
-
-    return Array.from(tokens);
-  }
-
-
-  private buildMentionAliases(agentId: string, agentName?: string): Set<string> {
-    const aliases = new Set<string>();
-    aliases.add(agentId.toLowerCase());
-
-    if (!agentName) {
-      return aliases;
-    }
-
-    const normalizedName = agentName.toLowerCase().trim();
-    if (normalizedName) {
-      aliases.add(normalizedName);
-      aliases.add(normalizedName.replace(/\s+/g, ''));
-      normalizedName
-        .split(/\s+/)
-        .filter(Boolean)
-        .forEach((part) => aliases.add(part));
-    }
-
-    return aliases;
+    this.participantHelperService.upsertExclusiveAssistantParticipant(meeting, ownerEmployeeId, assistantAgentId, isPresent);
   }
 
 
@@ -461,10 +371,6 @@ export class MeetingParticipantService {
     return meeting;
   }
 
-  /**
-   * 离开会议
-   */
-
   async leaveMeeting(meetingId: string, participant: ParticipantIdentity): Promise<Meeting> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
     if (!meeting) {
@@ -495,10 +401,6 @@ export class MeetingParticipantService {
 
     return meeting;
   }
-
-  /**
-   * 发送消息
-   */
 
   async inviteParticipant(
     meetingId: string, 
@@ -676,8 +578,4 @@ export class MeetingParticipantService {
 
     return meeting;
   }
-
-  /**
-   * 获取会议
-   */
 }

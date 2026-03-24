@@ -13,6 +13,7 @@ import { MeetingParticipantService } from './services/meeting-participant.servic
 import { MeetingMessageService } from './services/meeting-message.service';
 import { MeetingOrchestrationService } from './services/meeting-orchestration.service';
 import { MeetingSummaryService } from './services/meeting-summary.service';
+import { MeetingParticipantHelperService } from './services/meeting-participant-helper.service';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { MeetingSummaryService } from './services/meeting-summary.service';
     MeetingMessageService,
     MeetingOrchestrationService,
     MeetingSummaryService,
+    MeetingParticipantHelperService,
   ],
   exports: [MeetingService],
 })

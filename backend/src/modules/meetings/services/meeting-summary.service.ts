@@ -103,8 +103,4 @@ export class MeetingSummaryService {
       .map((item) => String(item || '').trim())
       .filter(Boolean);
   }
-
-  /**
-   * 分析消息类型
-   */
 }

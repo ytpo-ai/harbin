@@ -4,7 +4,6 @@ import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { Meeting, MeetingDocument, MeetingMessage, MeetingStatus } from '../../../shared/schemas/meeting.schema';
 import { AgentClientService } from '../../agents-client/agent-client.service';
-import { EmployeeService } from '../../employees/employee.service';
 import { Agent, ChatMessage } from '../../../shared/types';
 import { MeetingParticipantRecord, ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
@@ -28,7 +27,6 @@ export class MeetingOrchestrationService {
   constructor(
     @InjectModel(Meeting.name) private readonly meetingModel: Model<MeetingDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly employeeService: EmployeeService,
     private readonly eventService: MeetingEventService,
     private readonly agentStateService: MeetingAgentStateService,
     private readonly lifecycleService: MeetingLifecycleService,
@@ -170,8 +168,10 @@ export class MeetingOrchestrationService {
       );
 
       if (assistantParticipant?.assistantForEmployeeId) {
-        const ownerEmployee = await this.employeeService.getEmployee(assistantParticipant.assistantForEmployeeId);
-        const ownerName = ownerEmployee?.name || ownerEmployee?.email || assistantParticipant.assistantForEmployeeId;
+        const ownerName = await this.participantService.resolveParticipantDisplayName(
+          assistantParticipant.assistantForEmployeeId,
+          'employee',
+        );
         const assistantAlias = `${ownerName}的专属助理`.toLowerCase();
         aliases.add(assistantAlias);
         aliases.add(assistantAlias.replace(/\s+/g, ''));
@@ -563,10 +563,6 @@ export class MeetingOrchestrationService {
     }
   }
 
-  /**
-   * 生成Agent响应
-   */
-
   private async generateAgentResponse(
     meetingId: string, 
     agentId: string, 
@@ -642,10 +638,6 @@ export class MeetingOrchestrationService {
     }
   }
 
-  /**
-   * 构建讨论上下文
-   */
-
   private async buildMeetingResponseContext(meeting: Meeting, triggerMessage: MeetingMessage): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
 
@@ -684,10 +676,6 @@ export class MeetingOrchestrationService {
 
     return messages;
   }
-
-  /**
-   * Agent加入时catch up
-   */
 
   async catchUpAgent(meetingId: string, participant: ParticipantIdentity): Promise<void> {
     const meeting = await this.meetingModel.findOne({ id: meetingId }).exec();
@@ -750,8 +738,4 @@ export class MeetingOrchestrationService {
       this.logger.error(`Failed to generate catch-up for agent: ${error.message}`);
     }
   }
-
-  /**
-   * 添加系统消息
-   */
 }
