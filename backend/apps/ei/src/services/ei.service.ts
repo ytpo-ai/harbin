@@ -1472,7 +1472,22 @@ export class EngineeringIntelligence
 
     const fromStatus = requirement.status;
     const toStatus = payload.status;
-    this.validateStatusTransition(fromStatus, toStatus);
+    const forceComplete = payload.forceComplete === true && toStatus === 'done';
+    if (!forceComplete) {
+      this.validateStatusTransition(fromStatus, toStatus);
+    }
+
+    const nextAssigneeId = payload.toAgentId ? String(payload.toAgentId).trim() : '';
+    const nextAssigneeName = payload.toAgentName ? String(payload.toAgentName).trim() : '';
+    if (nextAssigneeId) {
+      requirement.currentAssigneeAgentId = nextAssigneeId;
+      requirement.currentAssigneeAgentName = nextAssigneeName || undefined;
+    }
+
+    if (payload.description !== undefined) {
+      requirement.description = String(payload.description).trim();
+    }
+
     requirement.status = toStatus;
     if (toStatus === 'todo') {
       requirement.currentAssigneeAgentId = undefined;

@@ -61,6 +61,13 @@
 - `GET /ei/requirements` (`active`)
 - `GET /ei/requirements/:requirementId` (`active`)
 - `PATCH /ei/requirements/:requirementId/status` (`active`)
+  - 请求体：
+    - `status`（必填）：`todo|assigned|in_progress|review|done|blocked`
+    - `note?`：状态备注
+    - `changedById?` / `changedByName?` / `changedByType?`
+    - `toAgentId?` / `toAgentName?`：同次提交可选更新负责人
+    - `description?`：同次提交可选更新需求描述
+    - `forceComplete?`：当 `status=done` 且为 `true` 时，允许直接完成（绕过常规状态流转校验）
 - `POST /ei/requirements/:requirementId/assign` (`active`)
 - `POST /ei/requirements/:requirementId/comments` (`active`)
 - `POST /ei/requirements/:requirementId/github/sync` (`active`)

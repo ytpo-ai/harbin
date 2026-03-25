@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateRequirementDto {
   @IsString()
@@ -116,6 +116,23 @@ export class UpdateRequirementStatusDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  toAgentId?: string;
+
+  @IsOptional()
+  @IsString()
+  toAgentName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  forceComplete?: boolean;
 }
 
 export class SyncRequirementToGithubDto {
