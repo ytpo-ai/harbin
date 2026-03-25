@@ -187,50 +187,7 @@ export class TaskOutputValidationService {
   }
 
   validateReviewOutput(output: string): { valid: boolean; reason?: string; missing?: string[] } {
-    const text = (output || '').trim();
-    if (!text) {
-      return { valid: false, reason: 'empty review output', missing: ['email-content'] };
-    }
-
-    const lower = text.toLowerCase();
-    const askForDraftSignals = ['please provide', 'provide the draft', '请提供草稿'];
-    if (askForDraftSignals.some((signal) => lower.includes(signal))) {
-      return {
-        valid: false,
-        reason: 'review output asks user for draft instead of providing revised email',
-        missing: ['final-revised-email'],
-      };
-    }
-
-    const suggestionOnlySignals = ['suggestion', 'you might consider', 'could be improved', '建议如下'];
-    const hasSubject = /(subject\s*:|主题\s*[:：])/i.test(text);
-    const hasGreeting = /(dear\s+|hi\s+|hello\s+|尊敬的|您好)/i.test(text);
-    const hasClosing = /(best regards|regards|sincerely|thanks|此致|敬礼|祝好)/i.test(text);
-    const bodyLengthEnough = text.length >= 220;
-
-    const missing: string[] = [];
-    if (!hasSubject) missing.push('subject-line');
-    if (!hasGreeting) missing.push('greeting');
-    if (!hasClosing) missing.push('closing-signature');
-    if (!bodyLengthEnough) missing.push('full-body-content');
-
-    if (missing.length > 0) {
-      return {
-        valid: false,
-        reason: 'review output is not a complete revised email',
-        missing,
-      };
-    }
-
-    if (suggestionOnlySignals.some((signal) => lower.includes(signal)) && !hasSubject) {
-      return {
-        valid: false,
-        reason: 'review output contains suggestions only',
-        missing: ['final-revised-email'],
-      };
-    }
-
-    return { valid: true };
+    return this.validateGeneralOutput(output);
   }
 
   private validateResearchJson(text: string): { valid: boolean; missing?: string[]; parsed?: any } {

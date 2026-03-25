@@ -216,6 +216,9 @@ export class OrchestrationExecutionEngineService {
       isReviewTask: effectiveIsReviewTask,
       researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
+      stepIndex: typeof (task as any).order === 'number' ? (task as any).order : undefined,
+      currentTaskTitle: task.title,
+      runtimeTaskType,
     });
     const agentTaskIdempotencyKey = `orch:${planId}:${taskId}:${new Date().getTime()}`;
 
@@ -622,6 +625,9 @@ export class OrchestrationExecutionEngineService {
       isReviewTask: effectiveIsReviewTask,
       researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
+      stepIndex: typeof (runTask as any).order === 'number' ? (runTask as any).order : undefined,
+      currentTaskTitle: runTask.title,
+      runtimeTaskType,
     });
     const agentTaskIdempotencyKey = `orch-run:${runId}:${runTaskId}:${new Date().getTime()}`;
 

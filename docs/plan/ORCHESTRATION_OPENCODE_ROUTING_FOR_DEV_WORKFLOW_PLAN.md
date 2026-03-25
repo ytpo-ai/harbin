@@ -47,6 +47,23 @@ executeTaskNode (orchestration-execution-engine.service.ts:57)
           └─ 作为优先级最高的 channel 偏好 → 决定最终引擎
 ```
 
+### 1.4 当前验证结论（2026-03-25）
+
+> 状态说明：以下结论基于本次真实环境联调（Gateway 3100 + Legacy 3001 + Agents 3002）得到。
+
+**已验证通过 ✅**
+
+1. `resolveRuntimeChannelHint` 代码改动已生效（dist 产物可检索 `OPENCODE_ELIGIBLE_TASK_TYPES`）。
+2. `development` 任务可路由到 `opencode`（日志已出现 `execution_route ... taskType=development channel=opencode`）。
+3. `review` 任务可路由到 `opencode`（日志已出现 `execution_route ... taskType=review channel=opencode`，且 run 详情 `executionChannel=opencode`）。
+4. 计划 prompt 约束中“禁止内部工具关键词”有效：已生成任务的 `task.description` 未出现 `repo-writer/repo-read/builtin.sys-mg/save-template/save-prompt-template`。
+
+**未完全闭环 / 待继续处理 ⚠️**
+
+1. 任务进入执行态后，关联需求状态未按预期变化。
+2. 计划在“生成任务过程中即执行任务”时，执行记录未完整沉淀到计划页「执行历史」。
+3. 个别场景下 planner 在 step4 前提前收敛（未稳定产出 review step），需通过 prompt/状态机约束进一步收口。
+
 ---
 
 ## 2. 方案设计
@@ -156,6 +173,14 @@ private resolveRuntimeChannelHint(
 | step2（技术方案） | development | development | opencode（description 不含触发词） | opencode ✅ |
 | step3（执行开发） | development | development | opencode（description 不含触发词） | opencode ✅ |
 | step4（实现评估） | review | review | opencode（代码改动后支持） | opencode ✅ |
+
+### 2.3 Prompt 优先策略（不改代码）
+
+应你的最新要求，本方案后续迭代优先采用 **Prompt 约束修复**，不新增代码层改动：
+
+1. **需求状态写操作归 Planner-CTO**：通过 planner prompt 强约束实现，不在执行器代码中加硬编码分流。
+2. **Step 上下文显式化**：通过 task.description 固定模板传递，确保 opencode 能清晰识别当前处于哪个 step。
+3. **执行历史可观测性先用 Prompt 补强**：在每个 step 的产出契约中要求回传 `planId/stepId/stepLabel`，便于前端与日志对齐排查。
 
 ---
 
@@ -382,6 +407,40 @@ curl -s --noproxy '*' -N "http://127.0.0.1:3100/api/orchestration/plans/<planId>
    `repo-writer`、`repo-read`、`builtin.sys-mg`、`save-template`、`save-prompt-template`
    如需描述代码操作，使用"读取代码"、"修改代码"、"提交变更"等自然语言表述
 
+## 任务上下文传递格式（强制）
+
+为避免执行侧无法辨识当前步骤，所有 task.description 必须使用以下结构：
+
+```
+【Plan上下文】
+planId=<PLAN_ID>
+requirementId=<STEP0_REQUIREMENT_ID>
+
+【步骤状态】
+Step0 【已完成】
+Step1 【当前任务】
+
+【当前步骤信息】
+stepId=step1
+stepTitle=确认需求范围
+stepGoal=<本步骤目标>
+
+【执行指令】
+<输入/动作/产出契约>
+```
+
+约束：
+1. `【步骤状态】` 中必须至少包含“最近已完成 step”与“当前 step”两行
+2. `【当前任务】` 标签只能出现一次，且必须对应当前要执行的 step
+3. step 推进时，Planner 必须更新该区块（例如 step2 执行时显示 `Step1 【已完成】`、`Step2 【当前任务】`）
+4. 该区块仅用于上下文标识，不得省略 `【执行指令】`
+
+## 需求状态修改职责（强制）
+
+1. 所有需求状态修改任务必须由 Planner-CTO（Kim-CTO）执行
+2. 开发执行者（step2/step3）禁止直接修改 requirement.status
+3. 若需要状态推进，Planner 需显式生成独立状态同步任务（taskType=`general`，执行角色=Kim-CTO）
+
 ## 步骤定义（严格按序执行）
 
 ### step0: 选定最高优先级需求
@@ -422,6 +481,13 @@ curl -s --noproxy '*' -N "http://127.0.0.1:3100/api/orchestration/plans/<planId>
 - **动作**: 对照验收标准评估实现质量，给出通过/修改意见
 - **输出契约**: 评估结论（通过/需修改 + 具体意见）
 - **约束**: taskType 设为 review
+
+### step5: 需求状态回写（由 Planner-CTO 执行）
+- **执行角色**: Kim-CTO（必须与 step0 同一 agent）
+- **输入**: step4 评估结论 + step0 requirementId
+- **动作**: 按评估结论更新需求状态（例如通过则 `done`，需修改则保持/回退到进行中）
+- **输出契约**: requirementId、原状态、新状态、变更原因、时间戳
+- **约束**: taskType 必须为 `general`；禁止分配给非 Planner 执行
 ```
 
 ---
@@ -451,7 +517,69 @@ curl -s --noproxy '*' -N "http://127.0.0.1:3100/api/orchestration/plans/<planId>
 
 ---
 
-## 8. 涉及文件清单
+## 8. 新增问题与修复方案（本轮追加）
+
+### 8.1 问题 A：任务进入执行后需求状态未改变
+
+**现象**：任务已被分配并进入执行流程，但 EI 需求状态未同步变化（例如未从 `todo/open` 进入执行中态，或未在关键节点写回）。
+
+**影响**：需求看板与编排执行状态脱节，业务侧误判“需求未推进”。
+
+**职责归属决策（新增）**：需求状态修改统一由 **计划 Planner（Kim-CTO）** 处理，不下放给开发执行者。
+
+- 任何 `requirement.status` 写操作均归属 `plannerAgentId`（CTO）。
+- 开发执行者（step2/step3）只负责方案与代码交付，不直接改 EI 需求状态。
+- 如需在任务执行阶段触发状态变更，由系统生成/复用“状态同步任务”，并强制分配给 Planner。
+
+**优先排查链路**：
+
+1. `orchestration` 侧 requirement 回写触发点（计划启动/任务执行/计划完成）。
+2. EI 接口调用结果与错误处理（是否被吞错、是否 4xx/5xx 后仅告警不回写）。
+3. requirementId 绑定一致性（step0 锚定的 requirementId 是否贯穿后续 task/run）。
+4. 幂等与状态机约束（是否因状态不合法导致 EI 拒绝更新）。
+
+**修复建议（Prompt-only，最小可行）**：
+
+1. 明确“任务进入执行态”时的需求状态映射（例如 `in_progress`）。
+2. 在任务状态流转关键点补齐 best-effort 回写与结构化日志（含 requirementId/runId/taskId/old->new）。
+3. 对回写失败增加可观测失败面板/重试队列（避免静默失败）。
+4. 在 Planner Prompt 中加入“需求状态修改职责”硬约束（仅 Kim-CTO 可执行）。
+5. 在步骤定义中新增独立 step5（状态回写），避免夹杂在 step2/3 开发任务中。
+
+### 8.2 问题 B：生成阶段已执行任务，但计划页执行历史无记录
+
+**现象**：incremental generate-next 过程中已触发任务执行，但计划详情页「执行历史」没有对应 run 记录。
+
+**影响**：前端观测与实际执行不一致，审计链路缺失。
+
+**优先排查链路**：
+
+1. 增量生成流程是否创建了 `orchestration_runs`（或是否仅走 task 直执未建 run）。
+2. `runId` 在 task/run_task/session 中的关联是否完整。
+3. 计划页执行历史查询接口过滤条件（是否只查手工 run，不含 incremental run）。
+4. 前端 history tab 数据源是否遗漏某类 run source。
+
+**修复建议（最小可行）**：
+
+1. 为 generate-next 触发的执行统一落库 run（推荐 run source 标记为 `incremental_generation`）。
+2. 统一计划页 run 列表查询口径：纳入 `manual + schedule + incremental_generation`。
+3. 在 run 明细中展示来源与关联 step，确保与任务时间线可互相跳转。
+
+**本轮实现与验证（2026-03-25）**：
+
+1. 已在增量执行链路落库 `orchestration_runs` + `orchestration_run_tasks`（每次 generate-next 触发执行时创建 run 记录）。
+2. run 触发类型使用 `triggerType=autorun`，并在 `metadata.source` 标记 `incremental_generation`。
+3. 已通过 API 验证：同一 plan 下 `tasks_count > 0` 时，`GET /orchestration/plans/:id/runs` 返回 `runs_count > 0`（不再为空）。
+
+**Prompt 侧兜底（在不改代码前提下）**：
+
+1. 每个 step 输出必须包含 `planId + stepId + stepLabel`，用于历史页人工对账。
+2. step 任务标题统一前缀 `StepN`，并在 description 固定输出“步骤状态区块”（见 5.1）。
+3. 评估与状态回写分离为 step4/step5，避免历史中只看到开发执行却缺少闭环动作。
+
+---
+
+## 9. 涉及文件清单
 
 | 文件 | 改动类型 | 说明 |
 |---|---|---|
@@ -460,7 +588,7 @@ curl -s --noproxy '*' -N "http://127.0.0.1:3100/api/orchestration/plans/<planId>
 
 ---
 
-## 9. 相关文档
+## 10. 相关文档
 
 | 文档 | 路径 | 关系 |
 |---|---|---|

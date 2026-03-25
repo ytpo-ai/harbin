@@ -19,6 +19,14 @@ import {
   OrchestrationTaskDocument,
 } from '../../../shared/schemas/orchestration-task.schema';
 import {
+  OrchestrationRun,
+  OrchestrationRunDocument,
+} from '../../../shared/schemas/orchestration-run.schema';
+import {
+  OrchestrationRunTask,
+  OrchestrationRunTaskDocument,
+} from '../../../shared/schemas/orchestration-run-task.schema';
+import {
   GenerateNextTaskResult,
   IncrementalPlannerContext,
   PlannerService,
@@ -49,6 +57,10 @@ export class IncrementalPlanningService {
     private readonly planModel: Model<OrchestrationPlanDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly taskModel: Model<OrchestrationTaskDocument>,
+    @InjectModel(OrchestrationRun.name)
+    private readonly runModel: Model<OrchestrationRunDocument>,
+    @InjectModel(OrchestrationRunTask.name)
+    private readonly runTaskModel: Model<OrchestrationRunTaskDocument>,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
     @InjectModel(Tool.name)
@@ -223,9 +235,11 @@ export class IncrementalPlanningService {
       taskId: createdTask._id.toString(),
     });
 
-    const executionResult = await this.executionEngine.executeTaskNode(
+    const executionResult = await this.executeIncrementalTaskWithRunRecord(
       planId,
-      createdTask as unknown as OrchestrationTask,
+      createdTask,
+      currentStep + 1,
+      isRedesign,
     );
 
     if (executionResult.status === 'completed') {
@@ -296,6 +310,157 @@ export class IncrementalPlanningService {
     }
 
     return { done: false };
+  }
+
+  private async executeIncrementalTaskWithRunRecord(
+    planId: string,
+    task: OrchestrationTaskDocument,
+    step: number,
+    isRedesign: boolean,
+  ): Promise<{ status: string; result?: string; error?: string }> {
+    const startedAt = new Date();
+    const run = await new this.runModel({
+      planId,
+      triggerType: 'autorun',
+      status: 'running',
+      startedAt,
+      stats: {
+        totalTasks: 1,
+        completedTasks: 0,
+        failedTasks: 0,
+        waitingHumanTasks: 0,
+      },
+      metadata: {
+        source: 'incremental_generation',
+        step,
+        isRedesign,
+      },
+    }).save();
+
+    const runId = String((run as any).id || (run as any)._id);
+    const taskId = String(task.id || task._id);
+
+    await new this.runTaskModel({
+      runId,
+      planId,
+      sourceTaskId: taskId,
+      order: task.order,
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      status: task.status,
+      assignment: task.assignment,
+      dependencyTaskIds: task.dependencyTaskIds || [],
+      runtimeTaskType: task.runtimeTaskType,
+      runLogs: [
+        {
+          timestamp: new Date(),
+          level: 'info',
+          message: 'Incremental task execution run created',
+          metadata: {
+            source: 'incremental_generation',
+            step,
+            isRedesign,
+          },
+        },
+      ],
+    }).save();
+
+    let executionResult: { status: string; result?: string; error?: string };
+    try {
+      executionResult = await this.executionEngine.executeTaskNode(planId, task as unknown as OrchestrationTask, {
+        orchestrationRunId: runId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Incremental task execution failed';
+      executionResult = { status: 'failed', error: message };
+    }
+
+    const latestTask = await this.taskModel.findById(task._id).lean().exec();
+    const finalTaskStatus = String(latestTask?.status || executionResult.status || 'failed') as
+      | 'pending'
+      | 'assigned'
+      | 'in_progress'
+      | 'blocked'
+      | 'waiting_human'
+      | 'completed'
+      | 'failed'
+      | 'cancelled';
+
+    const completedAt = new Date();
+    const runStatus =
+      finalTaskStatus === 'completed'
+        ? 'completed'
+        : finalTaskStatus === 'cancelled'
+          ? 'cancelled'
+          : 'failed';
+    const stats = {
+      totalTasks: 1,
+      completedTasks: runStatus === 'completed' ? 1 : 0,
+      failedTasks: runStatus === 'failed' ? 1 : 0,
+      waitingHumanTasks: finalTaskStatus === 'waiting_human' ? 1 : 0,
+    };
+
+    await this.runTaskModel
+      .updateOne(
+        { runId, sourceTaskId: taskId },
+        {
+          $set: {
+            status: finalTaskStatus,
+            result: {
+              summary: latestTask?.result?.summary,
+              output: latestTask?.result?.output,
+              error: latestTask?.result?.error || executionResult.error,
+            },
+            sessionId: latestTask?.sessionId,
+            startedAt: latestTask?.startedAt || startedAt,
+            completedAt: latestTask?.completedAt || completedAt,
+          },
+          $push: {
+            runLogs: {
+              timestamp: completedAt,
+              level: runStatus === 'completed' ? 'info' : 'error',
+              message:
+                runStatus === 'completed'
+                  ? 'Incremental task execution completed'
+                  : `Incremental task execution ended with status=${finalTaskStatus}`,
+              metadata: {
+                executionStatus: executionResult.status,
+                executionError: executionResult.error,
+              },
+            },
+          },
+        },
+      )
+      .exec();
+
+    await this.runModel
+      .updateOne(
+        { _id: runId },
+        {
+          $set: {
+            status: runStatus,
+            completedAt,
+            durationMs: completedAt.getTime() - startedAt.getTime(),
+            stats,
+            error: runStatus === 'failed' ? executionResult.error || latestTask?.result?.error : undefined,
+          },
+        },
+      )
+      .exec();
+
+    await this.planModel
+      .updateOne(
+        { _id: planId },
+        {
+          $set: {
+            lastRunId: runId,
+          },
+        },
+      )
+      .exec();
+
+    return executionResult;
   }
 
   private async buildPlannerContext(planId: string, sourcePrompt: string): Promise<IncrementalPlannerContext> {
@@ -895,15 +1060,11 @@ export class IncrementalPlanningService {
         return;
       }
 
-      // 从 output 中匹配 requirementId 模式：
-      // - requirementId=xxx / requirementId：xxx / requirementId: xxx
-      // - requirementId\nxxx（换行分隔，常见于 agent 格式化输出）
-      const match = output.match(/requirementId[=：:\s]*[`'"]?(req-[a-zA-Z0-9_-]+|[a-f0-9]{24})[`'"]?/i);
-      if (!match?.[1]) {
+      // 从 output 中匹配 requirementId，按优先级依次尝试多种格式：
+      const extractedId = this.extractRequirementIdFromOutput(output);
+      if (!extractedId) {
         return;
       }
-
-      const extractedId = match[1].trim();
       this.logger.log(
         `[backfill_requirement] planId=${planId} taskId=${taskId} requirementId=${extractedId}`,
       );
@@ -919,5 +1080,43 @@ export class IncrementalPlanningService {
         `[backfill_requirement] failed planId=${planId} taskId=${taskId}: ${(err as Error).message}`,
       );
     }
+  }
+
+  /**
+   * 从 task output 文本中提取 requirementId，按优先级依次尝试多种格式。
+   *
+   * 支持的格式（高 → 低优先级）：
+   *  1. requirementId / requirement_id / 需求ID / 需求编号 + 分隔符 + ID
+   *     - requirementId=req-xxx / requirementId: req-xxx / requirementId：req-xxx
+   *     - requirementId\nreq-xxx（换行分隔）
+   *     - **requirementId**: req-xxx（Markdown 加粗）
+   *     - "requirementId": "req-xxx"（JSON）
+   *     - | requirementId | req-xxx |（Markdown 表格）
+   *  2. 兜底：output 中首个独立出现的 req- 前缀 ID
+   */
+  private extractRequirementIdFromOutput(output: string): string | undefined {
+    // ID 模式：req- 前缀 或 24 位 hex ObjectId
+    const ID_PATTERN = '(req-[a-zA-Z0-9_-]+|[a-f0-9]{24})';
+
+    // 优先级 1：显式标签匹配
+    // 支持 requirementId / requirement_id / 需求ID / 需求编号，可带 Markdown 加粗 ** 或反引号
+    const labelPattern = new RegExp(
+      String.raw`(?:\*{0,2})(?:requirementId|requirement_id|需求ID|需求编号)(?:\*{0,2})\s*[=：:|\s]\s*[|\s]*[\x60'"]?` +
+      ID_PATTERN +
+      String.raw`[\x60'"]?`,
+      'i',
+    );
+    const labelMatch = output.match(labelPattern);
+    if (labelMatch?.[1]) {
+      return labelMatch[1].trim();
+    }
+
+    // 优先级 2：兜底 — output 中首个独立出现的 req- 前缀 ID
+    const fallbackMatch = output.match(/\breq-[a-zA-Z0-9_-]{3,}\b/);
+    if (fallbackMatch?.[0]) {
+      return fallbackMatch[0].trim();
+    }
+
+    return undefined;
   }
 }

@@ -45,10 +45,27 @@ export class OrchestrationContextService {
       isReviewTask: boolean;
       researchTaskKind?: 'city_population' | 'generic_research';
       retryHint?: string;
+      stepIndex?: number;
+      currentTaskTitle?: string;
+      runtimeTaskType?: string;
     },
   ): string {
-    const { dependencyContext, isExternalAction, isResearchTask, isReviewTask, researchTaskKind, retryHint } = options;
-    const sections = [baseDescription];
+    const {
+      dependencyContext,
+      isExternalAction,
+      isResearchTask,
+      isReviewTask,
+      researchTaskKind,
+      retryHint,
+      stepIndex,
+      currentTaskTitle,
+      runtimeTaskType,
+    } = options;
+    const sections = [`【当前任务目标】\n${this.extractCurrentTaskGoal(baseDescription)}`];
+    const stepStatusContext = this.buildStepStatusContext(stepIndex, runtimeTaskType, currentTaskTitle);
+    if (stepStatusContext) {
+      sections.push(stepStatusContext);
+    }
     if (dependencyContext) {
       sections.push(`Dependency context:\n${dependencyContext}`);
     }
@@ -62,9 +79,9 @@ export class OrchestrationContextService {
       sections.push(
         [
           'Review output contract (MUST comply):',
-          '- return the FULL revised email body, not just suggestions',
-          '- include Subject line + greeting + revised body + closing signature',
-          '- output the final email directly',
+          '- output must be a generic implementation review result, not email draft',
+          '- include: 1) review verdict (pass/needs-fix), 2) evidence list, 3) minimal fix suggestions',
+          '- each evidence item should reference code behavior or file path when available',
         ].join('\n'),
       );
     }
@@ -89,6 +106,57 @@ export class OrchestrationContextService {
     return sections.join('\n\n');
   }
 
+  private extractCurrentTaskGoal(baseDescription: string): string {
+    const normalized = String(baseDescription || '').trim();
+    if (!normalized) {
+      return '按当前步骤要求完成任务并输出可执行结果。';
+    }
+
+    const actionMatch = normalized.match(/动作\s*[：:]\s*([\s\S]*?)(?:\n\s*产出\s*[：:]|$)/i);
+    if (actionMatch?.[1]) {
+      return actionMatch[1].replace(/\s+/g, ' ').trim();
+    }
+
+    const firstSentence = normalized.split(/\n|。/).map((item) => item.trim()).find(Boolean);
+    if (firstSentence) {
+      return firstSentence;
+    }
+
+    return normalized.slice(0, 200);
+  }
+
+  private buildStepStatusContext(stepIndex?: number, runtimeTaskType?: string, currentTaskTitle?: string): string {
+    if (!Number.isInteger(stepIndex) || Number(stepIndex) < 0) {
+      return '';
+    }
+    const currentStep = Number(stepIndex);
+    const lines: string[] = [];
+    const taskTypeLabel = this.toTaskTypeLabel(runtimeTaskType);
+    lines.push('———————————');
+    lines.push(`Task #${currentStep + 1} 【当前任务】`);
+    lines.push(
+      `标题: 根据 step${Math.max(currentStep - 1, 0)} 的输出 你需要执行的工作是 ***${taskTypeLabel}${currentTaskTitle ? `（${currentTaskTitle}）` : ''}`,
+    );
+    return lines.join('\n');
+  }
+
+  private toTaskTypeLabel(runtimeTaskType?: string): string {
+    const normalized = String(runtimeTaskType || '').trim().toLowerCase();
+    if (normalized === 'development') {
+      return '开发';
+    }
+    if (normalized === 'review') {
+      return 'review';
+    }
+    if (normalized === 'research') {
+      return '调研';
+    }
+    if (normalized === 'external_action') {
+      return '外部执行';
+    }
+    return '开发方案';
+  }
+
   async buildDependencyContext(planId: string, dependencyTaskIds: string[]): Promise<string> {
     if (!dependencyTaskIds.length) {
       return '';
@@ -109,13 +177,9 @@ export class OrchestrationContextService {
     return dependencyTasks
       .map((depTask) => {
         const output = depTask.result?.output || depTask.result?.summary || '';
-        return [
-          `Task #${depTask.order + 1}: ${depTask.title}`,
-          `Status: ${depTask.status}`,
-          `Output: ${output || 'N/A'}`,
-        ].join('\n');
+        return this.buildTaskContextBlock(depTask.order + 1, depTask.title, depTask.status, output || 'N/A');
       })
-      .join('\n\n---\n\n');
+      .join('\n\n');
   }
 
   async buildRunDependencyContext(runId: string, dependencySourceTaskIds: string[]): Promise<string> {
@@ -138,13 +202,49 @@ export class OrchestrationContextService {
     return dependencyTasks
       .map((depTask) => {
         const output = depTask.result?.output || depTask.result?.summary || '';
-        return [
-          `Task #${depTask.order + 1}: ${depTask.title}`,
-          `Status: ${depTask.status}`,
-          `Output: ${output || 'N/A'}`,
-        ].join('\n');
+        return this.buildTaskContextBlock(depTask.order + 1, depTask.title, depTask.status, output || 'N/A');
       })
-      .join('\n\n---\n\n');
+      .join('\n\n');
+  }
+
+  private buildTaskContextBlock(stepNo: number, title: string, status: string, output: string): string {
+    const statusLabel = this.toTaskStatusLabel(status);
+    return [
+      '———————————',
+      `Task #${stepNo} 【${statusLabel}】`,
+      `标题: ${title}`,
+      '',
+      output,
+    ].join('\n');
+  }
+
+  private toTaskStatusLabel(status: string): string {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'completed') {
+      return '已完成';
+    }
+    if (normalized === 'failed') {
+      return '失败';
+    }
+    if (normalized === 'in_progress') {
+      return '执行中';
+    }
+    if (normalized === 'waiting_human') {
+      return '待人工';
+    }
+    if (normalized === 'assigned') {
+      return '已分配';
+    }
+    if (normalized === 'pending') {
+      return '待执行';
+    }
+    if (normalized === 'blocked') {
+      return '阻塞';
+    }
+    if (normalized === 'cancelled') {
+      return '已取消';
+    }
+    return normalized || '未知';
   }
 
   buildOrchestrationCollaborationContext(
