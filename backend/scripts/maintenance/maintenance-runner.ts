@@ -40,22 +40,22 @@ async function main(): Promise<void> {
 
   switch (task) {
     case 'cleanup-runtime': {
-      const { run } = await import('./cleanup-runtime');
+      const { run } = require('./cleanup-runtime') as { run: (argv?: string[]) => Promise<void> };
       await run(passthrough);
       break;
     }
     case 'cleanup-redis': {
-      const { run } = await import('./cleanup-redis');
+      const { run } = require('./cleanup-redis') as { run: (argv?: string[]) => Promise<void> };
       await run(passthrough);
       break;
     }
     case 'backup': {
-      const { run } = await import('./backup-db');
+      const { run } = require('./backup-db') as { run: (argv?: string[]) => Promise<void> };
       await run(passthrough);
       break;
     }
     case 'restore': {
-      const { run } = await import('./restore-db');
+      const { run } = require('./restore-db') as { run: (argv?: string[]) => Promise<void> };
       await run(passthrough);
       break;
     }

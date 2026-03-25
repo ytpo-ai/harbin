@@ -14,6 +14,7 @@ import { PlanDetailTab } from './constants';
 interface PlanDetailMainContentProps {
   planId?: string;
   planDetail: OrchestrationPlan;
+  agentNameById?: Record<string, string>;
   latestRunSummary: OrchestrationRun | null;
   streamHint: string;
   streamConnected: boolean;
@@ -28,19 +29,15 @@ interface PlanDetailMainContentProps {
   taskHint: string;
   debugTaskId: string;
   streamTaskIds: string[];
-  dirtyTaskCount: number;
   isAddLoading: boolean;
-  isBatchSaving: boolean;
   isReordering: boolean;
   isDuplicating: boolean;
   isRemoving: boolean;
   onOpenAddTask: () => void;
-  onSaveBatch: () => void;
   onMoveTask: (taskId: string, direction: 'up' | 'down') => void;
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
-  onOpenDebug: (taskId: string) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
   filteredPlanRuns: OrchestrationRun[];
@@ -58,6 +55,7 @@ interface PlanDetailMainContentProps {
 
 const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   planDetail,
+  agentNameById,
   latestRunSummary,
   streamHint,
   streamConnected,
@@ -72,19 +70,15 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   taskHint,
   debugTaskId,
   streamTaskIds,
-  dirtyTaskCount,
   isAddLoading,
-  isBatchSaving,
   isReordering,
   isDuplicating,
   isRemoving,
   onOpenAddTask,
-  onSaveBatch,
   onMoveTask,
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
-  onOpenDebug,
   onCompleteHuman,
   onRetryTask,
   filteredPlanRuns,
@@ -123,27 +117,26 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
           modeDraft={modeDraft}
           promptDraft={promptDraft}
           promptHint={promptHint}
+          plannerAgentId={planDetail.strategy?.plannerAgentId}
+          plannerAgentName={planDetail.strategy?.plannerAgentId ? agentNameById?.[planDetail.strategy.plannerAgentId] : undefined}
           setModeDraft={setModeDraft}
           setPromptDraft={setPromptDraft}
           tasks={planDetail.tasks || []}
+          agentNameById={agentNameById}
           planStatus={planDetail.status}
           isPlanEditable={isPlanEditable}
           taskHint={taskHint}
           debugTaskId={debugTaskId}
           streamTaskIds={streamTaskIds}
-          dirtyCount={dirtyTaskCount}
           isAddLoading={isAddLoading}
-          isBatchSaving={isBatchSaving}
           isReordering={isReordering}
           isDuplicating={isDuplicating}
           isRemoving={isRemoving}
           onOpenAddTask={onOpenAddTask}
-          onSaveBatch={onSaveBatch}
           onMoveTask={onMoveTask}
           onDuplicateTask={onDuplicateTask}
           onRemoveTask={onRemoveTask}
           onOpenTaskEdit={onOpenTaskEdit}
-          onOpenDebug={onOpenDebug}
           onCompleteHuman={onCompleteHuman}
           onRetryTask={onRetryTask}
         />

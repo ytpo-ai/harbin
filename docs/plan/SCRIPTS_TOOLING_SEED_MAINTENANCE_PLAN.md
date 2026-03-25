@@ -18,6 +18,7 @@
 backend/scripts/
 ├── seed/                              # 第一层：初始化预置数据
 │   ├── seed-runner.ts                 # 统一入口（从 manual-seed.ts 迁移）
+│   ├── builtin-tool-seed.ts           # 内置工具 seed（从 ToolService 迁出）
 │   ├── mcp-profile-seed.ts
 │   ├── role-seed.ts
 │   ├── system-schedule-seed.ts
@@ -52,19 +53,58 @@ backend/scripts/
 - `getMongoUri()` — 读取 `MONGODB_URI` 并提供默认值
 - `getRedisUrl()` — 从环境变量构建 Redis URL（支持 `REDIS_URL` 直传和 host/port 拼接）
 
-### 步骤 2：迁移 seed 脚本到 `scripts/seed/`
+### 步骤 2：创建 `scripts/seed/builtin-tool-seed.ts`（工具 seed 迁移）
 
-- `manual-seed.ts` → `seed/seed-runner.ts`（仅移动 + 修正内部相对路径）
+将 `ToolService.seedBuiltinTools()` / `initializeBuiltinTools()` 的完整逻辑迁移到脚本层，脚本自包含所有依赖函数，与 ToolService 独立维护。
+
+**迁移范围：**
+
+| 来源（ToolService 私有方法） | 目标（脚本内独立实现） |
+|------|------|
+| `initializeBuiltinTools()` | 主编排函数 `seedBuiltinTools()` |
+| `parseToolIdentity()` | 脚本内 `parseToolIdentity()` |
+| `buildBuiltinToolMetadata()` | 脚本内 `buildBuiltinToolMetadata()` |
+| `upsertToolkit()` | 脚本内 `upsertToolkit()` |
+| `alignStoredToolMetadata()` | 脚本内 `alignStoredToolMetadata()` |
+| `syncToolkitsFromTools()` | 脚本内 `syncToolkitsFromTools()` |
+| `getToolkitDisplayName()` | 脚本内 `getToolkitDisplayName()` |
+| `inferToolkitAuthStrategy()` | 脚本内 `inferToolkitAuthStrategy()` |
+| `inferToolkitFromToolId()` | 脚本内 `inferToolkitFromToolId()` |
+| `inferResourceAndAction()` | 脚本内 `inferResourceAndAction()` |
+
+**数据源引用（保持 import 不复制）：**
+- `BUILTIN_TOOLS` — 从 `apps/agents/src/modules/tools/builtin-tool-catalog.ts` import
+- `VIRTUAL_TOOL_IDS` / `DEPRECATED_TOOL_IDS` — 从 `apps/agents/src/modules/tools/builtin-tool-definitions.ts` import
+- `IMPLEMENTED_TOOL_IDS` — 从 `builtin-tool-catalog.ts` import
+
+**脚本架构（与 mcp-profile-seed.ts 一致）：**
+- 直连 mongoose，不启动 NestJS 上下文
+- 使用 `shared/env-loader` 加载环境变量
+- 支持 `sync` / `append` 两种模式
+- 支持 `--dry-run`
+- 导出 `seedBuiltinTools(mode)` 供 `seed-runner.ts` 调用
+
+**对 seed-runner.ts 的影响：**
+- `builtin-tools` 分支改为调用 `seedBuiltinTools(mode)`，不再需要启动 `AgentsAppModule`
+- 如果 `builtin-tools` 是 selectedSeeds 中唯一需要 AgentsAppModule 的 seed，可跳过 `NestFactory.createApplicationContext(AgentsAppModule)`
+
+**对 ToolService 的影响：**
+- `seedBuiltinTools()` 和 `initializeBuiltinTools()` **保留不动**，不删除不修改
+- 两份逻辑独立维护；脚本层作为运维入口，ToolService 方法作为历史保留（后续可按需清理）
+
+### 步骤 3：迁移其他 seed 脚本到 `scripts/seed/`
+
+- `manual-seed.ts` → `seed/seed-runner.ts`（移动 + 修正内部相对路径）
 - `mcp-profile-seed.ts`、`role-seed.ts`、`system-schedule-seed.ts`、`seed-skill-planning-rules.ts` → `seed/` 目录
 - 更新 `seed-runner.ts` 内部 `localRequire` 路径引用
 - 所有 seed 脚本改用 `shared/env-loader` 代替内联环境加载
 
-### 步骤 3：归档 migration 脚本到 `scripts/migrate/`
+### 步骤 4：归档 migration 脚本到 `scripts/migrate/`
 
 - 移动 6 个 migrate/backfill 脚本到 `migrate/` 子目录
 - 仅更新 `package.json` 中的路径，不改脚本代码逻辑
 
-### 步骤 4：创建 `maintenance/cleanup-runtime.ts`
+### 步骤 5：创建 `maintenance/cleanup-runtime.ts`
 
 从现有 `cleanup-agents-runtime-data.ts` 演化，扩大清理范围。
 
@@ -92,7 +132,7 @@ backend/scripts/
 - 执行需要 `--execute --confirm=DELETE_RUNTIME_DATA`
 - 输出清理前后统计
 
-### 步骤 5：创建 `maintenance/cleanup-redis.ts`
+### 步骤 6：创建 `maintenance/cleanup-redis.ts`
 
 全局审查并清理 Redis 缓存。
 
@@ -119,7 +159,7 @@ backend/scripts/
    - `--keep=<prefix1,prefix2>`：保留指定前缀（白名单）
    - `--only=<prefix1,prefix2>`：仅清理指定前缀
 
-### 步骤 6：创建 `maintenance/backup-db.ts`
+### 步骤 7：创建 `maintenance/backup-db.ts`
 
 使用 `mongodump` 备份 MongoDB。
 
@@ -133,7 +173,7 @@ backend/scripts/
 - 执行前检测 `mongodump` 命令是否可用，不可用时给出安装提示
 - 输出备份摘要（集合数、文档数、文件大小、耗时）
 
-### 步骤 7：创建 `maintenance/restore-db.ts`
+### 步骤 8：创建 `maintenance/restore-db.ts`
 
 使用 `mongorestore` 恢复 MongoDB。
 
@@ -146,7 +186,7 @@ backend/scripts/
 - 执行前检测 `mongorestore` 命令是否可用
 - 输出恢复摘要
 
-### 步骤 8：创建 `maintenance/maintenance-runner.ts`
+### 步骤 9：创建 `maintenance/maintenance-runner.ts`
 
 统一入口，支持选择子任务。
 
@@ -164,7 +204,7 @@ ts-node scripts/maintenance/maintenance-runner.ts --task=restore --from=./backup
 - `backup` — 备份数据库
 - `restore` — 恢复数据库
 
-### 步骤 9：更新 `package.json` scripts
+### 步骤 10：更新 `package.json` scripts
 
 ```jsonc
 {
@@ -194,7 +234,7 @@ ts-node scripts/maintenance/maintenance-runner.ts --task=restore --from=./backup
 }
 ```
 
-### 步骤 10：清理遗留文件
+### 步骤 11：清理遗留文件
 
 - 删除 `backend/scripts/ss.json`（空文件）
 - 原位置的旧脚本文件在迁移完成后删除
@@ -218,12 +258,14 @@ ts-node scripts/maintenance/maintenance-runner.ts --task=restore --from=./backup
 | cleanup-runtime 误删生产数据 | 默认 dry-run + 双重确认（`--execute --confirm=...`） |
 | cleanup-redis 清理到正在使用的缓存 | 支持 `--keep` 白名单；dry-run 先查看再执行 |
 | restore 覆盖线上数据 | 必须提供 `--confirm=RESTORE_DATABASE`；`--drop` 需显式指定 |
-| seed 脚本移动后相对路径断裂 | 步骤 2 中统一修正 `localRequire` 和 import 的相对路径 |
+| builtin-tool-seed 与 ToolService 逻辑分叉 | 两份独立维护；工具定义数据源（BUILTIN_TOOLS 等常量）保持 import 共用，不复制 |
+| seed 脚本移动后相对路径断裂 | 步骤 3 中统一修正 `localRequire` 和 import 的相对路径 |
 | 旧命令兼容性 | `cleanup:agents-runtime` 保留为别名指向新入口 |
 
 ## 6. 验证清单
 
 - [ ] `npm run seed:manual -- --all --dry-run` 正常输出
+- [ ] `npm run seed:manual -- --only=builtin-tools --dry-run` 正常输出（脚本层独立运行，不启动 NestJS）
 - [ ] `npm run maintain:cleanup-runtime -- --dry-run` 正常输出各集合统计
 - [ ] `npm run maintain:cleanup-redis -- --dry-run` 正常输出 Redis key 分类统计
 - [ ] `npm run maintain:backup -- --gzip` 成功生成备份目录

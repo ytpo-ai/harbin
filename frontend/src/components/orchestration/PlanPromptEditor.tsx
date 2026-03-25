@@ -5,6 +5,8 @@ interface PlanPromptEditorProps {
   modeDraft: PlanMode;
   promptDraft: string;
   promptHint: string;
+  plannerAgentId?: string;
+  plannerAgentName?: string;
   setModeDraft: (value: PlanMode) => void;
   setPromptDraft: (value: string) => void;
 }
@@ -13,11 +15,21 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
   modeDraft,
   promptDraft,
   promptHint,
+  plannerAgentId,
+  plannerAgentName,
   setModeDraft,
   setPromptDraft,
 }) => {
+  const plannerDisplay = plannerAgentId
+    ? plannerAgentName && plannerAgentName !== plannerAgentId
+      ? `${plannerAgentName} (${plannerAgentId})`
+      : plannerAgentId
+    : '默认';
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="mb-1 text-xs font-medium text-slate-700">当前 Planner</p>
+      <p className="mb-3 text-xs text-slate-600">{plannerDisplay}</p>
       <p className="mb-2 text-xs font-medium text-slate-700">计划模式</p>
       <select
         value={modeDraft}

@@ -19,9 +19,9 @@ export class AgentPart {
 
   @Prop({
     required: true,
-    enum: ['text', 'reasoning', 'tool_call', 'tool_result', 'system_event'],
+    enum: ['text', 'reasoning', 'tool_call', 'tool_result', 'system_event', 'step_start', 'step_finish'],
   })
-  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event';
+  type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
 
   @Prop({
     type: String,

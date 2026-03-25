@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider } from './base-provider';
+import { BaseAIProvider, ProviderChatResult } from './base-provider';
 
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
@@ -55,7 +55,21 @@ export class OpenAIProvider extends BaseAIProvider {
     this.client = new OpenAI(clientOptions);
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  private normalizeFinishReason(reason: unknown): string | undefined {
+    if (typeof reason !== 'string' || !reason.trim()) {
+      return undefined;
+    }
+    const normalized = reason.trim().toLowerCase();
+    if (normalized === 'tool_calls') {
+      return 'tool_calls';
+    }
+    if (normalized === 'stop' || normalized === 'length' || normalized === 'content_filter') {
+      return normalized;
+    }
+    return normalized;
+  }
+
+  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
     const response = await this.client.chat.completions.create({
       model: this.model.model,
       messages: this.formatMessages(messages),
@@ -64,7 +78,31 @@ export class OpenAIProvider extends BaseAIProvider {
       top_p: options?.topP || this.model.topP || 1,
     });
 
-    return response.choices[0]?.message?.content || '';
+    const usage = response.usage;
+    const inputTokens = Number(usage?.prompt_tokens || 0);
+    const outputTokens = Number(usage?.completion_tokens || 0);
+    const totalTokens = Number(usage?.total_tokens || inputTokens + outputTokens);
+    const reasoningTokens = Number((usage as any)?.completion_tokens_details?.reasoning_tokens || 0) || undefined;
+    const cachedInputTokens = Number((usage as any)?.prompt_tokens_details?.cached_tokens || 0) || undefined;
+
+    return {
+      response: response.choices[0]?.message?.content || '',
+      usage: usage
+        ? {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            reasoningTokens,
+            cachedInputTokens,
+          }
+        : undefined,
+      finishReason: this.normalizeFinishReason(response.choices?.[0]?.finish_reason),
+    };
+  }
+
+  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+    const result = await this.chatWithMeta(messages, options);
+    return result.response;
   }
 
   async streamingChat(

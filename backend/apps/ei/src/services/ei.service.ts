@@ -138,12 +138,12 @@ export class EngineeringIntelligence
   private readonly maxCharsPerFile = 12000;
   private readonly nodeIdentityPattern = /^[a-zA-Z0-9._-]{2,64}$/;
   private readonly requirementTransitions: Record<EiRequirementStatus, EiRequirementStatus[]> = {
-    todo: ['assigned', 'blocked'],
-    assigned: ['in_progress', 'todo', 'blocked'],
-    in_progress: ['review', 'blocked', 'todo'],
+    todo: ['assigned', 'blocked', 'done'],
+    assigned: ['in_progress', 'todo', 'blocked', 'done'],
+    in_progress: ['review', 'blocked', 'todo', 'done'],
     review: ['done', 'in_progress', 'blocked'],
     done: ['todo'],
-    blocked: ['todo', 'assigned', 'in_progress'],
+    blocked: ['todo', 'assigned', 'in_progress', 'done'],
   };
 
   constructor(

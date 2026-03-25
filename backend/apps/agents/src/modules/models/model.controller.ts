@@ -29,7 +29,7 @@ export class ModelController {
   @Post(':modelId/chat')
   async chat(@Param('modelId') modelId: string, @Body() body: { messages: ChatMessage[], options?: any }) {
     const response = await this.modelService.chat(modelId, body.messages, body.options);
-    return { response };
+    return response;
   }
 
   @Post(':modelId/test')
@@ -44,7 +44,7 @@ export class ModelController {
 
     try {
       const startTime = Date.now();
-      const response = await this.modelService.chat(modelId, testMessages, {
+      const result = await this.modelService.chat(modelId, testMessages, {
         temperature: 0.7,
         maxTokens: 100
       });
@@ -53,7 +53,9 @@ export class ModelController {
       return {
         success: true,
         modelId,
-        response,
+        response: result.response,
+        usage: result.usage,
+        finishReason: result.finishReason,
         duration: `${duration}ms`,
         timestamp: new Date().toISOString()
       };

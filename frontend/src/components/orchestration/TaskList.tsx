@@ -1,52 +1,46 @@
 import React from 'react';
-import { PencilSquareIcon, PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon } from '@heroicons/react/24/outline';
 import { OrchestrationTask } from '../../services/orchestrationService';
 import TaskCard from './TaskCard';
 
 interface TaskListProps {
   tasks: OrchestrationTask[];
+  agentNameById?: Record<string, string>;
   planStatus: string;
   isPlanEditable: boolean;
   taskHint: string;
   debugTaskId: string;
   streamTaskIds: string[];
-  dirtyCount: number;
   isAddLoading: boolean;
-  isBatchSaving: boolean;
   isReordering: boolean;
   isDuplicating: boolean;
   isRemoving: boolean;
   onOpenAddTask: () => void;
-  onSaveBatch: () => void;
   onMoveTask: (taskId: string, direction: 'up' | 'down') => void;
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
-  onOpenDebug: (taskId: string) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }
 
 const TaskList: React.FC<TaskListProps> = ({
   tasks,
+  agentNameById,
   planStatus,
   isPlanEditable,
   taskHint,
   debugTaskId,
   streamTaskIds,
-  dirtyCount,
   isAddLoading,
-  isBatchSaving,
   isReordering,
   isDuplicating,
   isRemoving,
   onOpenAddTask,
-  onSaveBatch,
   onMoveTask,
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
-  onOpenDebug,
   onCompleteHuman,
   onRetryTask,
 }) => {
@@ -62,14 +56,6 @@ const TaskList: React.FC<TaskListProps> = ({
           >
             <PlusIcon className="h-3.5 w-3.5" /> 添加任务
           </button>
-          <button
-            onClick={onSaveBatch}
-            disabled={!dirtyCount || isBatchSaving}
-            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-2.5 py-1.5 text-xs text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-          >
-            <PencilSquareIcon className="h-3.5 w-3.5" />
-            {isBatchSaving ? '保存中...' : `批量保存(${dirtyCount})`}
-          </button>
         </div>
       </div>
 
@@ -82,6 +68,7 @@ const TaskList: React.FC<TaskListProps> = ({
           <TaskCard
             key={task._id}
             task={task}
+            agentNameById={agentNameById}
             planStatus={planStatus}
             planTaskCount={tasks.length}
             highlightDebug={debugTaskId === task._id}
@@ -93,7 +80,6 @@ const TaskList: React.FC<TaskListProps> = ({
             onDuplicateTask={onDuplicateTask}
             onRemoveTask={onRemoveTask}
             onOpenTaskEdit={onOpenTaskEdit}
-            onOpenDebug={onOpenDebug}
             onCompleteHuman={onCompleteHuman}
             onRetryTask={onRetryTask}
           />

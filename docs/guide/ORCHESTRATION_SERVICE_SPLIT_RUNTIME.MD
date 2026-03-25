@@ -32,6 +32,13 @@
 - `backend/src/modules/orchestration/services/orchestration-context.service.ts`
   - `buildTaskDescription()` 统一追加 Task Output Contract，要求无法执行时必须输出 `TASK_INABILITY: <reason>`。
 
+### Requirement 同步链路（2026-03-25）
+
+- 编排模块已移除 requirement 相关 EI 直连（`/ei/requirements/*`）。
+- 需求详情读取：`PlanningContextService` 通过提示词强制 planner/CTO agent 主动调用 `builtin.sys-mg.mcp.requirement.get`。
+- 需求状态回写：`OrchestrationContextService` 通过提示词驱动 planner/CTO agent 主动调用 `builtin.sys-mg.mcp.requirement.update-status`。
+- requirement 同步默认 fail-closed：工具调用失败会中断当前编排流程。
+
 ### 子 Service（7 个）
 
 - `services/plan-management.service.ts`

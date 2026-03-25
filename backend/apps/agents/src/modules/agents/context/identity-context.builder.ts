@@ -4,6 +4,7 @@ import { ChatMessage } from '../../../../../../src/shared/types';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
 import { ContextFingerprintService } from './context-fingerprint.service';
 import { ContextPromptService } from './context-prompt.service';
+import { PromptResolverService } from '@agent/modules/prompt-registry/prompt-resolver.service';
 
 @Injectable()
 export class IdentityContextBuilder implements ContextBlockBuilder {
@@ -13,6 +14,7 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
   constructor(
     private readonly contextPromptService: ContextPromptService,
     private readonly contextFingerprintService: ContextFingerprintService,
+    private readonly promptResolverService: PromptResolverService,
   ) {}
 
   shouldInject(): boolean {
@@ -23,14 +25,21 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
     const messages: ChatMessage[] = [];
     const guidelineContent = await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline);
     const systemPromptContent = String(input.agent.systemPrompt || '').trim();
+    const agentPromptTemplateRef = this.normalizePromptTemplateRef((input.agent as any).promptTemplateRef);
+    const agentPromptTemplateContent = await this.resolvePromptTemplateRefContent(agentPromptTemplateRef, '');
+    const identityBaseFullContent = [guidelineContent, systemPromptContent, agentPromptTemplateContent]
+      .map((item) => String(item || '').trim())
+      .filter(Boolean)
+      .join('\n\n');
     const identityBaseSnapshot = {
       guidelineHash: this.contextFingerprintService.hashFingerprint(guidelineContent),
       systemPromptHash: this.contextFingerprintService.hashFingerprint(systemPromptContent),
+      promptTemplateHash: this.contextFingerprintService.hashFingerprint(agentPromptTemplateContent),
     };
     const identityBaseContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
       scope: input.contextScope,
       blockType: 'identity-base',
-      fullContent: `${guidelineContent}\n\n${systemPromptContent}`,
+      fullContent: identityBaseFullContent,
       snapshot: identityBaseSnapshot,
     });
     if (identityBaseContent) {
@@ -38,11 +47,21 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
         role: 'system',
         content: guidelineContent,
         timestamp: new Date(),
+        metadata: {
+          promptSlug: AGENT_PROMPTS.agentWorkingGuideline.slug,
+        },
       });
       if (systemPromptContent) {
         messages.push({
           role: 'system',
           content: systemPromptContent,
+          timestamp: new Date(),
+        });
+      }
+      if (agentPromptTemplateContent) {
+        messages.push({
+          role: 'system',
+          content: agentPromptTemplateContent,
           timestamp: new Date(),
         });
       }
@@ -85,5 +104,38 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
       messages.push({ role: 'system', content: identityMessage, timestamp: new Date() });
     }
     return messages;
+  }
+
+  private normalizePromptTemplateRef(input: unknown): { scene: string; role: string } | null {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return null;
+    }
+    const scene = String((input as any).scene || '').trim();
+    const role = String((input as any).role || '').trim();
+    if (!scene || !role) {
+      return null;
+    }
+    return { scene, role };
+  }
+
+  private async resolvePromptTemplateRefContent(
+    ref: { scene: string; role: string } | null,
+    defaultContent: string,
+  ): Promise<string> {
+    if (!ref) {
+      return defaultContent;
+    }
+
+    try {
+      const resolved = await this.promptResolverService.resolve({
+        scene: ref.scene,
+        role: ref.role,
+        defaultContent,
+        cacheOnly: true,
+      });
+      return String(resolved.content || '').trim();
+    } catch {
+      return defaultContent;
+    }
   }
 }

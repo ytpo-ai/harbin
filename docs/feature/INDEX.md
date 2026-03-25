@@ -34,7 +34,7 @@
 |---------|------|----------|
 | `orchestration/task` | 任务管理 | `docs/feature/ORCHETRATION_TASK.md` |
 | `orchestration/prompt_registry` | Prompt 模板管理 | `docs/feature/ORCHETRATION_TASK.md` |
-| `orchestration.workflow` | 工作流编排 | (待完善) |
+| `orchestration/workflow` | 工作流编排（增量编排 + run 执行） | `docs/feature/ORCHETRATION_TASK.md` |
 | `orchestration.scheduler` | 定时调度 | `docs/feature/ORCHETRATION_SCHEDULER.md` |
 
 ### 3. Meeting 模块 (meeting)
@@ -94,7 +94,7 @@
 | `docs/feature/AGENT_SKILL.md` | agent/skill |
 | `docs/feature/AGENT_RUNTIME.md` | agent/agent_runtime |
 | `docs/feature/INNER_MESSAGE.md` | agent/agent_message |
-| `docs/feature/ORCHETRATION.md` | orchestration |
+| `docs/feature/ORCHETRATION_TASK.md` | orchestration/task, orchestration/prompt_registry, orchestration/workflow |
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |

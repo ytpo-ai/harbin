@@ -1,3 +1,9 @@
+# [已弃用] MEETING_ORCHESTRATION_PENDING_INTENT_PLAN
+
+> 状态：已弃用（2026-03-24）
+>
+> 说明：该文档为历史方案/设计沉淀，仅用于归档追溯，不再作为当前实现依据。
+> 当前实现请以 `docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD` 与 `docs/feature/ORCHETRATION_TASK.md` 为准。
 # 会议编排 Pending Intent 补全计划
 
 > 已聚合到主计划：`docs/plan/MEETING_ORCHESTRATION_EXECUTION_MASTER_PLAN.md`

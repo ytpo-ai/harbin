@@ -4,6 +4,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeftIcon,
   ArrowPathIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   ClipboardDocumentIcon,
   EyeIcon,
   PencilIcon,
@@ -201,6 +203,7 @@ const AgentDetail: React.FC = () => {
   const [isSessionDrawerOpen, setIsSessionDrawerOpen] = useState(false);
   const [sessionCopyNotice, setSessionCopyNotice] = useState('');
   const [expandedSessionMessageIds, setExpandedSessionMessageIds] = useState<Record<string, boolean>>({});
+  const [expandedSessionRawInfoIds, setExpandedSessionRawInfoIds] = useState<Record<string, boolean>>({});
   const [expandedSessionPartsIds, setExpandedSessionPartsIds] = useState<Record<string, boolean>>({});
   const [expandedSessionPartContentIds, setExpandedSessionPartContentIds] = useState<Record<string, boolean>>({});
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Record<string, boolean>>({});
@@ -520,13 +523,6 @@ const AgentDetail: React.FC = () => {
 
   const getSessionPartType = (part: AgentRuntimeSessionPart): string => part.type;
 
-  const getSessionPartRunTask = (part: AgentRuntimeSessionPart): string => {
-    const items: string[] = [];
-    if (part.runId) items.push(`run: ${part.runId}`);
-    if (part.taskId) items.push(`task: ${part.taskId}`);
-    return items.join(' | ');
-  };
-
   const getSessionMessageText = (message: AgentRuntimeSessionMessage): string => {
     const payload: any = message as any;
 
@@ -537,7 +533,9 @@ const AgentDetail: React.FC = () => {
     return '-';
   };
 
-  const shouldClampMessage = (content: string): boolean => content.length > 220 || content.split('\n').length > 5;
+  const getSessionMessageRawText = (message: AgentRuntimeSessionMessage): string => {
+    return JSON.stringify(message, null, 2);
+  };
 
   const shouldClampPartContent = (content: string): boolean => content.length > 220 || content.split('\n').length > 5;
 
@@ -550,7 +548,7 @@ const AgentDetail: React.FC = () => {
     };
     const roleClassMap: Record<AgentRuntimeSessionMessage['role'], string> = {
       system: 'bg-gray-100 text-gray-700',
-      user: 'bg-blue-100 text-blue-700',
+      user: 'bg-blue-200 text-blue-800 ring-1 ring-blue-300/80',
       assistant: 'bg-green-100 text-green-700',
       tool: 'bg-amber-100 text-amber-700',
     };
@@ -559,6 +557,42 @@ const AgentDetail: React.FC = () => {
         {roleMap[message.role]}
       </span>
     );
+  };
+
+  const getSystemMessageTag = (message: AgentRuntimeSessionMessage): string | null => {
+    if (message.role !== 'system') return null;
+
+    const promptSlug = String((message.metadata as Record<string, unknown> | undefined)?.promptSlug || '').trim();
+    if (promptSlug) {
+      return promptSlug;
+    }
+
+    const content = (message.content || '').toLowerCase();
+    const source = String((message.metadata as Record<string, unknown> | undefined)?.source || '').toLowerCase();
+
+    if (content.includes('会议') || content.includes('meeting')) {
+      return '会议规则';
+    }
+
+    if (
+      content.includes('工作准则') ||
+      content.includes('最小默认原则') ||
+      content.includes('runtime 基线') ||
+      content.includes('baseline')
+    ) {
+      return '团队工作基础准则';
+    }
+
+    if (
+      content.includes('you are') ||
+      content.includes('system prompt') ||
+      source.includes('initialsystemmessages') ||
+      source.includes('appendsystemmessagestosession')
+    ) {
+      return 'Agent Prompt';
+    }
+
+    return '系统规则';
   };
 
   const renderMessageStatus = (message: AgentRuntimeSessionMessage) => {
@@ -574,6 +608,78 @@ const AgentDetail: React.FC = () => {
     }
     return <span className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-700">异常</span>;
   };
+
+  const renderFinishStatus = (message: AgentRuntimeSessionMessage) => {
+    if (!message.finish) return null;
+    const labelMap: Record<string, string> = {
+      stop: 'stop',
+      'tool-calls': 'tool-calls',
+      error: 'error',
+      cancelled: 'cancelled',
+      paused: 'paused',
+      'max-rounds': 'max-rounds',
+    };
+    return <span className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">{labelMap[message.finish] || message.finish}</span>;
+  };
+
+  const renderTokenUsage = (message: AgentRuntimeSessionMessage) => {
+    if (!message.tokens) return null;
+    return (
+      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
+        tokens: {message.tokens.total ?? 0}
+      </span>
+    );
+  };
+
+  const renderCost = (message: AgentRuntimeSessionMessage) => {
+    if (typeof message.cost !== 'number' || Number.isNaN(message.cost)) return null;
+    return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">cost: {message.cost.toFixed(6)}</span>;
+  };
+
+  const groupedSessionMessages = useMemo(() => {
+    const rows = sessionDetailQuery.data?.messages || [];
+    const groups = new Map<string, AgentRuntimeSessionMessage[]>();
+    const toTimestamp = (message: AgentRuntimeSessionMessage): number => {
+      if (!message.timestamp) return Number.NaN;
+      const parsed = new Date(message.timestamp).getTime();
+      return Number.isNaN(parsed) ? Number.NaN : parsed;
+    };
+    const compareMessageOrder = (a: AgentRuntimeSessionMessage, b: AgentRuntimeSessionMessage): number => {
+      const at = toTimestamp(a);
+      const bt = toTimestamp(b);
+      if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) {
+        return at - bt;
+      }
+      if (Number.isFinite(at) && !Number.isFinite(bt)) {
+        return -1;
+      }
+      if (!Number.isFinite(at) && Number.isFinite(bt)) {
+        return 1;
+      }
+      const sequenceDelta = (a.sequence ?? 0) - (b.sequence ?? 0);
+      if (sequenceDelta !== 0) {
+        return sequenceDelta;
+      }
+      return (a.stepIndex ?? 0) - (b.stepIndex ?? 0);
+    };
+    rows.forEach((message) => {
+      const key = message.parentMessageId || message.id || 'ungrouped';
+      const list = groups.get(key) || [];
+      list.push(message);
+      groups.set(key, list);
+    });
+    return Array.from(groups.entries())
+      .map(([key, messages]) => ({
+        key,
+        messages: [...messages].sort(compareMessageOrder),
+      }))
+      .sort((a, b) => {
+        const aFirst = a.messages[0];
+        const bFirst = b.messages[0];
+        if (!aFirst || !bFirst) return 0;
+        return compareMessageOrder(aFirst, bFirst);
+      });
+  }, [sessionDetailQuery.data?.messages]);
 
   const copyText = async (text: string): Promise<boolean> => {
     if (!text) return false;
@@ -1523,124 +1629,159 @@ const AgentDetail: React.FC = () => {
                           <p className="text-sm text-slate-400">该 Session 暂无消息记录</p>
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          {sessionDetailQuery.data.messages.map((message, index) => {
-                            const messageKey = getSessionMessageKey(message, index);
-                            const messageText = getSessionMessageText(message);
-                            const messageParts = getSessionMessageParts(sessionDetailQuery.data, message);
-                            const hasParts = messageParts.length > 0;
-                            const isSystemMessage = message.role === 'system';
-                            const isMessageExpanded = !!expandedSessionMessageIds[messageKey];
-                            const isPartsExpanded = !!expandedSessionPartsIds[messageKey];
-                            const needClamp = shouldClampMessage(messageText);
+                        <div className="space-y-4">
+                          {groupedSessionMessages.map((group) => (
+                            <div key={group.key} className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-3">
+                              <div className="mb-2 text-xs font-medium text-slate-500">消息组（{group.messages.length} 条）</div>
+                              <div className="space-y-3">
+                                {group.messages.map((message, index) => {
+                                  const messageKey = getSessionMessageKey(message, index);
+                                  const messageText = getSessionMessageText(message);
+                                  const messageRawText = getSessionMessageRawText(message);
+                                  const messageParts = getSessionMessageParts(sessionDetailQuery.data, message);
+                                  const hasParts = messageParts.length > 0;
+                                  const isSystemMessage = message.role === 'system';
+                                  const systemMessageTag = getSystemMessageTag(message);
+                                  const isMessageExpanded = expandedSessionMessageIds[messageKey] ?? !isSystemMessage;
+                                  const isRawInfoExpanded = !!expandedSessionRawInfoIds[messageKey];
+                                  const isPartsExpanded = !!expandedSessionPartsIds[messageKey];
 
-                            return (
-                              <div key={messageKey} className="rounded-xl border border-slate-200/60 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-sm">
-                                <div className="flex flex-wrap items-center gap-2 mb-3">
-                                  {renderSessionRole(message)}
-                                  {renderMessageStatus(message)}
-                                  <span className="text-xs text-slate-400 ml-auto">
-                                    {message.timestamp ? new Date(message.timestamp).toLocaleString() : '-'}
-                                  </span>
-                                </div>
-                                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                                  {message.runId ? <span className="font-mono">run: {message.runId}</span> : null}
-                                  {message.taskId ? <span className="font-mono">task: {message.taskId}</span> : null}
-                                  {!isSystemMessage ? (
-                                    <button
-                                      onClick={() =>
-                                        setExpandedSessionPartsIds((prev) => ({
-                                          ...prev,
-                                          [messageKey]: !prev[messageKey],
-                                        }))
-                                      }
-                                      className="ml-auto rounded-md border border-slate-200 px-2 py-0.5 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
-                                    >
-                                      {`Parts: ${messageParts.length} ${isPartsExpanded ? '收起 parts' : '查看 parts'}`}
-                                    </button>
-                                  ) : null}
-                                  {!isSystemMessage && !message.id ? <span className="text-[11px] text-amber-600">messageId 缺失</span> : null}
-                                </div>
-                                <div
-                                  className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm text-slate-700 leading-relaxed"
-                                  style={
-                                    needClamp && !isMessageExpanded
-                                      ? {
-                                          display: '-webkit-box',
-                                          WebkitLineClamp: 5,
-                                          WebkitBoxOrient: 'vertical',
-                                          overflow: 'hidden',
+                                  return (
+                                    <div key={messageKey} className="rounded-xl border border-slate-200/60 bg-white p-4 transition-all hover:border-slate-300 hover:shadow-sm">
+                                      <button
+                                        onClick={() =>
+                                          setExpandedSessionMessageIds((prev) => ({
+                                            ...prev,
+                                            [messageKey]: !isMessageExpanded,
+                                          }))
                                         }
-                                      : undefined
-                                  }
-                                >
-                                  {messageText}
-                                </div>
-                                {needClamp ? (
-                                  <button
-                                    onClick={() =>
-                                      setExpandedSessionMessageIds((prev) => ({
-                                        ...prev,
-                                        [messageKey]: !prev[messageKey],
-                                      }))
-                                    }
-                                    className="mt-2 text-xs font-medium text-primary-600 hover:text-primary-700"
-                                  >
-                                    {isMessageExpanded ? '收起正文' : '展开正文'}
-                                  </button>
-                                ) : null}
-                                {!isSystemMessage && hasParts && isPartsExpanded ? (
-                                  <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                                    {messageParts.map((part, partIndex) => {
-                                      const partText = getSessionPartText(part);
-                                      const partKey = `${messageKey}-part-${partIndex}`;
-                                      const isPartExpanded = !!expandedSessionPartContentIds[partKey];
-                                      const shouldClampPart = shouldClampPartContent(partText);
-                                      return (
-                                        <div key={partKey} className="rounded-md border border-slate-200 bg-white p-2.5">
-                                          <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
-                                            <span>Part #{partIndex + 1}</span>
-                                            <span className="rounded bg-slate-100 px-2 py-0.5">{getSessionPartType(part)}</span>
+                                        className="mb-3 flex w-full flex-wrap items-center gap-2 text-left"
+                                      >
+                                        {renderSessionRole(message)}
+                                        {isSystemMessage && systemMessageTag ? (
+                                          <span className="inline-flex rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-200/70">
+                                            {systemMessageTag}
+                                          </span>
+                                        ) : null}
+                                        {renderMessageStatus(message)}
+                                        {renderFinishStatus(message)}
+                                        {renderTokenUsage(message)}
+                                        {renderCost(message)}
+                                        {typeof message.stepIndex === 'number' ? (
+                                          <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-xs text-blue-700">step: {message.stepIndex}</span>
+                                        ) : null}
+                                        <span className="ml-auto inline-flex items-center gap-1 text-xs text-slate-400">
+                                          {message.timestamp ? new Date(message.timestamp).toLocaleString() : '-'}
+                                          {isMessageExpanded ? <ChevronDownIcon className="h-3.5 w-3.5" /> : <ChevronRightIcon className="h-3.5 w-3.5" />}
+                                        </span>
+                                      </button>
+                                      {isMessageExpanded ? (
+                                        <div>
+                                          <div className="whitespace-pre-wrap break-words rounded-lg bg-slate-50 p-3 text-sm text-slate-700 leading-relaxed">
+                                            {messageText}
                                           </div>
-                                          {getSessionPartRunTask(part) ? (
-                                            <div className="mb-1 text-[11px] font-mono text-slate-400">{getSessionPartRunTask(part)}</div>
-                                          ) : null}
-                                          <pre
-                                            className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700"
-                                            style={
-                                              shouldClampPart && !isPartExpanded
-                                                ? {
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: 5,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden',
-                                                  }
-                                                : undefined
-                                            }
-                                          >
-                                            {partText || '-'}
-                                          </pre>
-                                          {shouldClampPart ? (
+                                          <div className="mt-3 mb-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                                             <button
                                               onClick={() =>
-                                                setExpandedSessionPartContentIds((prev) => ({
+                                                setExpandedSessionRawInfoIds((prev) => ({
                                                   ...prev,
-                                                  [partKey]: !prev[partKey],
+                                                  [messageKey]: !prev[messageKey],
                                                 }))
                                               }
-                                              className="mt-1 text-[11px] font-medium text-primary-600 hover:text-primary-700"
+                                              className="rounded-md border border-slate-200 px-2 py-0.5 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
                                             >
-                                              {isPartExpanded ? '收起 part' : '展开 part'}
+                                              {isRawInfoExpanded ? '收起原始信息' : '查看原始信息'}
                                             </button>
-                                          ) : null}
+                                            {!isSystemMessage ? (
+                                              <button
+                                                onClick={() =>
+                                                  setExpandedSessionPartsIds((prev) => ({
+                                                    ...prev,
+                                                    [messageKey]: !prev[messageKey],
+                                                  }))
+                                                }
+                                                className="rounded-md border border-slate-200 px-2 py-0.5 text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-700"
+                                              >
+                                                {`Parts: ${messageParts.length} ${isPartsExpanded ? '收起 parts' : '查看 parts'}`}
+                                              </button>
+                                            ) : null}
+                                          </div>
                                         </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
+                                      ) : null}
+                                      {isMessageExpanded && isRawInfoExpanded ? (
+                                        <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-xs font-medium text-slate-500">消息原始信息</span>
+                                            <button
+                                              onClick={() => {
+                                                copyText(messageRawText).then((copied) => {
+                                                  setSessionCopyNotice(copied ? '消息原始信息已复制到剪贴板' : '复制失败，请检查浏览器剪贴板权限');
+                                                  window.setTimeout(() => setSessionCopyNotice(''), 2000);
+                                                });
+                                              }}
+                                              className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50"
+                                            >
+                                              <ClipboardDocumentIcon className="mr-1 h-3.5 w-3.5" />
+                                              复制原始信息
+                                            </button>
+                                          </div>
+                                          <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md border border-slate-200 bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">
+                                            {messageRawText}
+                                          </pre>
+                                        </div>
+                                      ) : null}
+                                      {isMessageExpanded && !isSystemMessage && hasParts && isPartsExpanded ? (
+                                        <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                          {messageParts.map((part, partIndex) => {
+                                            const partText = getSessionPartText(part);
+                                            const partKey = `${messageKey}-part-${partIndex}`;
+                                            const isPartExpanded = !!expandedSessionPartContentIds[partKey];
+                                            const shouldClampPart = shouldClampPartContent(partText);
+                                            return (
+                                              <div key={partKey} className="rounded-md border border-slate-200 bg-white p-2.5">
+                                                <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+                                                  <span>Part #{partIndex + 1}</span>
+                                                  <span className="rounded bg-slate-100 px-2 py-0.5">{getSessionPartType(part)}</span>
+                                                </div>
+                                                <pre
+                                                  className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-700"
+                                                  style={
+                                                    shouldClampPart && !isPartExpanded
+                                                      ? {
+                                                          display: '-webkit-box',
+                                                          WebkitLineClamp: 5,
+                                                          WebkitBoxOrient: 'vertical',
+                                                          overflow: 'hidden',
+                                                        }
+                                                      : undefined
+                                                  }
+                                                >
+                                                  {partText || '-'}
+                                                </pre>
+                                                {shouldClampPart ? (
+                                                  <button
+                                                    onClick={() =>
+                                                      setExpandedSessionPartContentIds((prev) => ({
+                                                        ...prev,
+                                                        [partKey]: !prev[partKey],
+                                                      }))
+                                                    }
+                                                    className="mt-1 text-[11px] font-medium text-primary-600 hover:text-primary-700"
+                                                  >
+                                                    {isPartExpanded ? '收起 part' : '展开 part'}
+                                                  </button>
+                                                ) : null}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
                               </div>
-                            );
-                          })}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

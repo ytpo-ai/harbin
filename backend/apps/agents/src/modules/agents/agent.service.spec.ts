@@ -42,3 +42,28 @@ describe('AgentService tier resolution', () => {
     expect((service as any).logger.warn).toHaveBeenCalled();
   });
 });
+
+describe('AgentService prompt template ref normalization', () => {
+  it('normalizes valid promptTemplateRef', () => {
+    const service = Object.create(AgentService.prototype) as AgentService;
+    const normalized = service['normalizePromptTemplateRef']({
+      scene: ' technical ',
+      role: ' engineering:frontend-developer ',
+    });
+
+    expect(normalized).toEqual({
+      scene: 'technical',
+      role: 'engineering:frontend-developer',
+    });
+  });
+
+  it('returns undefined when promptTemplateRef is null', () => {
+    const service = Object.create(AgentService.prototype) as AgentService;
+    expect(service['normalizePromptTemplateRef'](null)).toBeUndefined();
+  });
+
+  it('throws when promptTemplateRef is missing scene or role', () => {
+    const service = Object.create(AgentService.prototype) as AgentService;
+    expect(() => service['normalizePromptTemplateRef']({ scene: 'technical', role: '' })).toThrow(BadRequestException);
+  });
+});

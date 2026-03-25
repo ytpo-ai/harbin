@@ -8,32 +8,6 @@ import {
 } from './agent-executor.helpers';
 import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catalog';
 
-describe('AgentExecutorService tool prompt messages', () => {
-  it('collects and sorts non-empty tool prompts', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-    const result = service['buildToolPromptMessages']([
-      { canonicalId: 'builtin.z', prompt: 'prompt z' },
-      { canonicalId: 'builtin.a', prompt: 'prompt a' },
-      { canonicalId: 'builtin.empty', prompt: '   ' },
-    ]);
-
-    expect(result).toEqual([
-      '工具使用策略（builtin.a）:\nprompt a',
-      '工具使用策略（builtin.z）:\nprompt z',
-    ]);
-  });
-
-  it('deduplicates identical tool prompt messages', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-    const result = service['buildToolPromptMessages']([
-      { id: 'builtin.same', prompt: 'same prompt' },
-      { canonicalId: 'builtin.same', prompt: 'same prompt' },
-    ]);
-
-    expect(result).toEqual(['工具使用策略（builtin.same）:\nsame prompt']);
-  });
-});
-
 describe('AgentExecutorService OpenCode runtime resolution', () => {
   it('prefers agent config endpoint over runtime endpoint', () => {
     const result = resolveOpenCodeRuntimeOptions(
@@ -84,28 +58,6 @@ describe('AgentExecutorService meeting response guard', () => {
     expect(isMeaninglessAssistantResponse('已完成分配并通知')).toBe(false);
   });
 
-  it('builds task info delta when key fields changed', () => {
-    const service = Object.create(AgentExecutorService.prototype);
-    const delta = service['buildTaskInfoDelta'](
-      {
-        title: '旧标题',
-        description: '旧描述',
-        type: 'meeting',
-        priority: 'medium',
-      },
-      {
-        title: '新标题',
-        description: '新描述',
-        type: 'planning',
-        priority: 'high',
-      },
-    );
-
-    expect(delta).toContain('标题');
-    expect(delta).toContain('描述');
-    expect(delta).toContain('类型');
-    expect(delta).toContain('优先级');
-  });
 });
 
 describe('AgentExecutorService prompt resolve redis guard', () => {
@@ -196,6 +148,28 @@ describe('AgentExecutorService system prompt ordering', () => {
       }
       return template.buildDefaultContent();
     });
+    service.contextFingerprintService = {
+      resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
+    };
+    service.contextAssembler = {
+      assemble: jest.fn().mockResolvedValue({
+        messages: [
+          {
+            role: 'system',
+            content: AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent(),
+          },
+          {
+            role: 'system',
+            content: '你是一个专注交付结果的工程 Agent。',
+          },
+        ],
+        systemBlockCount: 2,
+        blockMetas: [],
+      }),
+    };
+    service.debugTimingProvider = {
+      log: jest.fn(),
+    };
 
     const messages = await service.buildMessages(
       {
@@ -258,6 +232,9 @@ describe('AgentExecutorService system prompt ordering', () => {
       resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
     };
     service.debugTiming = jest.fn();
+    service.debugTimingProvider = {
+      log: jest.fn(),
+    };
 
     const workingGuideline = AGENT_PROMPTS.agentWorkingGuideline.buildDefaultContent();
     const baseSystemPrompt = '你是一个专注交付结果的工程 Agent。';
@@ -337,6 +314,9 @@ describe('AgentExecutorService system prompt ordering', () => {
       resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
     };
     service.debugTiming = jest.fn();
+    service.debugTimingProvider = {
+      log: jest.fn(),
+    };
 
     const agent = {
       id: 'agent-1',
@@ -397,6 +377,95 @@ describe('AgentExecutorService system prompt ordering', () => {
 
     expect(round2SystemContents.filter((content) => content === guideline)).toHaveLength(0);
     expect(round2SystemContents.filter((content) => content === agent.systemPrompt)).toHaveLength(0);
+  });
+
+  it('replaces skill content with resolved prompt template when promptTemplateRef is configured', async () => {
+    const service = Object.create(AgentExecutorService.prototype) as any;
+    service.memoService = {
+      getIdentityMemos: jest.fn().mockResolvedValue([]),
+    };
+    service.agentRoleService = {
+      getAllowedToolIds: jest.fn().mockResolvedValue([]),
+    };
+    service.toolService = {
+      getToolsByIds: jest.fn().mockResolvedValue([]),
+    };
+    service.contextStrategyService = {
+      shouldActivateSkillContent: jest.fn().mockReturnValue(true),
+    };
+    service.promptResolverService = {
+      resolve: jest.fn().mockResolvedValue({
+        content: 'prompt-template-content',
+        source: 'redis_cache',
+      }),
+    };
+    service.skillModel = {
+      findOne: jest.fn().mockReturnValue({
+        lean: () => ({
+          exec: async () => ({
+            content: 'skill-raw-content',
+            promptTemplateRef: { scene: 'technical', role: 'engineering:frontend-developer' },
+          }),
+        }),
+      }),
+    };
+    service.contextFingerprintService = {
+      resolveSystemContextScope: jest.fn().mockReturnValue('scope:test'),
+    };
+    service.debugTiming = jest.fn();
+    service.debugTimingProvider = {
+      log: jest.fn(),
+    };
+    service.contextAssembler = {
+      assemble: jest.fn().mockResolvedValue({
+        messages: [{ role: 'user', content: 'ok' }],
+        systemBlockCount: 0,
+        blockMetas: [],
+      }),
+    };
+
+    await service.buildMessages(
+      {
+        id: 'agent-1',
+        systemPrompt: 'base-system-prompt',
+      },
+      {
+        id: 'task-1',
+        title: '实现接口',
+        description: '新增 agent runtime 接口',
+        type: 'engineering',
+        priority: 'high',
+      },
+      {
+        task: {
+          id: 'task-1',
+          title: '实现接口',
+          description: '新增 agent runtime 接口',
+          type: 'engineering',
+          priority: 'high',
+        },
+        previousMessages: [],
+        workingMemory: new Map(),
+      },
+      [
+        {
+          id: 'skill-1',
+          name: 'Skill One',
+          description: 'desc',
+          tags: [],
+          proficiencyLevel: 'beginner',
+        },
+      ],
+    );
+
+    const assembleInput = service.contextAssembler.assemble.mock.calls[0][0];
+    expect(assembleInput.shared.skillContents.get('skill-1')).toBe('prompt-template-content');
+    expect(service.promptResolverService.resolve).toHaveBeenCalledWith({
+      scene: 'technical',
+      role: 'engineering:frontend-developer',
+      defaultContent: 'skill-raw-content',
+      cacheOnly: true,
+    });
   });
 });
 

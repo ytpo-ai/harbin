@@ -71,7 +71,14 @@ export class TaskContextBuilder implements ContextBlockBuilder {
       },
     });
     if (meetingExecutionPolicy) {
-      messages.push({ role: 'system', content: meetingExecutionPolicy, timestamp: new Date() });
+      messages.push({
+        role: 'system',
+        content: meetingExecutionPolicy,
+        timestamp: new Date(),
+        metadata: {
+          promptSlug: AGENT_PROMPTS.defaultMeetingExecutionPolicyPrompt.slug,
+        },
+      });
     }
     return messages;
   }

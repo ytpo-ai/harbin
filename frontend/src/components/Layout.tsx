@@ -324,7 +324,7 @@ const Layout: React.FC = () => {
   const [expandedSectionState, setExpandedSectionState] = useState<Record<string, boolean>>(
     () =>
       groupedNavigation.reduce<Record<string, boolean>>((acc, section) => {
-        acc[section.name] = true;
+        acc[section.name] = false;
         return acc;
       }, {}),
   );
@@ -428,7 +428,7 @@ const Layout: React.FC = () => {
 
             {groupedNavigation.map((section) => {
               const isSectionActive = section.items.some((item) => isItemActive(item.href));
-              const isSectionExpanded = expandedSectionState[section.name] ?? true;
+              const isSectionExpanded = expandedSectionState[section.name] ?? false;
 
               return (
                 <div key={section.name} className="space-y-2">

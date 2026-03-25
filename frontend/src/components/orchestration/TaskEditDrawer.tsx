@@ -1,16 +1,27 @@
 import React from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import { OrchestrationTask } from '../../services/orchestrationService';
-import { TaskEditableDraft, isTaskEditable, formatExecutor } from './constants';
+import { PlayIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { DebugRuntimeTaskTypeOverride, OrchestrationTask } from '../../services/orchestrationService';
+import { DEBUG_RUNTIME_TYPE_OPTIONS, TaskEditableDraft, isTaskEditable, formatExecutor } from './constants';
 
 interface TaskEditDrawerProps {
   open: boolean;
   task: OrchestrationTask | null;
   planStatus: string;
   draft: TaskEditableDraft | null;
+  debugAgentId: string;
+  debugRuntimeTaskType: 'auto' | DebugRuntimeTaskTypeOverride;
+  debugHint: string;
+  agents: Array<{ id: string; name: string }>;
+  debugRunning: boolean;
+  reassignRunning: boolean;
   onClose: () => void;
   onUpdateDraft: (patch: Partial<TaskEditableDraft>) => void;
   onOpenDependencyModal: () => void;
+  onChangeExecutorType: (value: 'agent' | 'unassigned') => void;
+  onChangeExecutorAgentId: (value: string) => void;
+  onChangeDebugAgentId: (value: string) => void;
+  onChangeDebugRuntimeType: (value: 'auto' | DebugRuntimeTaskTypeOverride) => void;
+  onRunDebug: () => void;
 }
 
 const TaskEditDrawer: React.FC<TaskEditDrawerProps> = ({
@@ -18,15 +29,30 @@ const TaskEditDrawer: React.FC<TaskEditDrawerProps> = ({
   task,
   planStatus,
   draft,
+  debugAgentId,
+  debugRuntimeTaskType,
+  debugHint,
+  agents,
+  debugRunning,
+  reassignRunning,
   onClose,
   onUpdateDraft,
   onOpenDependencyModal,
+  onChangeExecutorType,
+  onChangeExecutorAgentId,
+  onChangeDebugAgentId,
+  onChangeDebugRuntimeType,
+  onRunDebug,
 }) => {
   if (!open || !task || !draft) {
     return null;
   }
 
   const editable = isTaskEditable(planStatus);
+  const executorType: 'agent' | 'unassigned' = task.assignment?.executorType === 'agent' ? 'agent' : 'unassigned';
+  const executorAgentId = executorType === 'agent'
+    ? (task.assignment?.executorId || debugAgentId)
+    : '';
 
   return (
     <div className="fixed inset-0 z-[94]">
@@ -49,7 +75,21 @@ const TaskEditDrawer: React.FC<TaskEditDrawerProps> = ({
           </button>
         </div>
 
-        <div className="h-[calc(100%-61px)] space-y-4 overflow-y-auto p-4">
+        <div className="border-b border-slate-200 px-4 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-500">修改后可直接调试执行当前任务模板</p>
+            <button
+              onClick={onRunDebug}
+              disabled={!editable || debugRunning || reassignRunning}
+              className="inline-flex items-center gap-1 rounded bg-slate-900 px-3 py-1.5 text-xs text-white disabled:bg-slate-300"
+            >
+              <PlayIcon className="h-3.5 w-3.5" /> 调试执行
+            </button>
+          </div>
+          {debugHint ? <p className="mt-1 text-xs text-primary-700">{debugHint}</p> : null}
+        </div>
+
+        <div className="h-[calc(100%-109px)] space-y-4 overflow-y-auto p-4">
           <div>
             <p className="mb-1 text-xs text-slate-600">任务标题</p>
             <input
@@ -72,6 +112,60 @@ const TaskEditDrawer: React.FC<TaskEditDrawerProps> = ({
               <option value="medium">medium</option>
               <option value="high">high</option>
               <option value="urgent">urgent</option>
+            </select>
+          </div>
+
+          <div>
+            <p className="mb-1 text-xs text-slate-600">执行类型</p>
+            <select
+              value={executorType}
+              onChange={(event) => {
+                const nextType = event.target.value as 'agent' | 'unassigned';
+                onChangeExecutorType(nextType);
+                if (nextType === 'unassigned') {
+                  onChangeDebugAgentId('');
+                }
+              }}
+              disabled={!editable || reassignRunning}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+            >
+              <option value="agent">agent</option>
+              <option value="unassigned">unassigned</option>
+            </select>
+          </div>
+
+          {executorType === 'agent' && (
+            <div>
+              <p className="mb-1 text-xs text-slate-600">执行 Agent</p>
+              <select
+                value={executorAgentId}
+                onChange={(event) => {
+                  const nextAgentId = event.target.value;
+                  onChangeExecutorAgentId(nextAgentId);
+                  onChangeDebugAgentId(nextAgentId);
+                }}
+                disabled={!editable || reassignRunning}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+              >
+                <option value="">请选择 Agent</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div>
+            <p className="mb-1 text-xs text-slate-600">任务类型</p>
+            <select
+              value={debugRuntimeTaskType}
+              onChange={(event) => onChangeDebugRuntimeType(event.target.value as 'auto' | DebugRuntimeTaskTypeOverride)}
+              disabled={!editable}
+              className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-50"
+            >
+              {DEBUG_RUNTIME_TYPE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
             </select>
           </div>
 

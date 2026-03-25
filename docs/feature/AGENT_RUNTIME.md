@@ -16,11 +16,11 @@
 | 集合 | Schema 文件 | 说明 |
 |------|-------------|------|
 | `agent_runs` | `agent-run.schema.ts` | 运行实例（run），包含 `status/currentStep/task/session` 等状态 |
-| `agent_messages` | `agent-message.schema.ts` | run 下消息层（system/user/assistant/tool） |
-| `agent_parts` | `agent-part.schema.ts` | 消息分片/步骤层，承载 LLM 增量与工具调用状态 |
+| `agent_messages` | `agent-message.schema.ts` | run 下消息层（system/user/assistant/tool），assistant step 级持久化（含 `parentMessageId/stepIndex/finish/tokens/cost`） |
+| `agent_parts` | `agent-part.schema.ts` | 消息分片/步骤层，承载 LLM 增量与工具调用状态（含 `step_start/step_finish`） |
 | `agent_events_outbox` | `agent-event-outbox.schema.ts` | Hook 外发 outbox（`pending/dispatched/failed`） |
 | `agent_runtime_maintenance_audits` | `agent-runtime-maintenance-audit.schema.ts` | 维护操作审计（requeue/purge） |
-| `agent_sessions` | `agent-session.schema.ts` | 会话聚合视图（messages/runIds/planContext/meetingContext/memoSnapshot） |
+| `agent_sessions` | `agent-session.schema.ts` | 会话聚合视图（`messageIds` 引用、runIds/planContext/meetingContext/memoSnapshot） |
 
 ### 1.3 生命周期与状态模型
 
@@ -65,6 +65,8 @@
 - OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `context.opencodeRuntime.endpoint` > `context.opencodeRuntime.endpointRef` > `OPENCODE_SERVER_URL`。
 - OpenCode 认证开关：支持 `agent.config.execution.auth_enable`（boolean，默认 `false`）；仅当为 `true` 时读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth（username=`opencode`）。
 - OpenCode 调用通道：Runtime 侧已移除 SDK 依赖，统一通过 OpenCode HTTP API（含 SSE）直连执行与事件读取。
+- OpenCode 消息持久化：执行桥接会按 step 聚合事件并写入 `agent_messages + agent_parts`（`step_start/step_finish` + tool/reasoning/text parts）。
+- Model usage 对齐：`ModelService.chat` 返回结构化 usage，并统一归一化到 Runtime message tokens（含 cacheRead/cacheWrite 口径修正）。
 - OpenCode session 创建时会显式透传当前执行模型（`providerID/modelID`），保证 session 模型与 Agent 绑定模型对齐。
 - 当 `OPENCODE_MODEL_BINDING_CHECK_ENABLED=false` 时，创建 session 与发送 message 仅透传执行模型，不再因为绑定不一致直接阻断；后续可在 OpenCode 可用模型列表稳定后再开启严格校验。
 - 优先级约束说明见：`docs/TIP.MD`（用于排查 endpoint 错配、默认 env 误命中）。
@@ -97,6 +99,8 @@
 - Worker 对单次执行启用 step timeout 守卫；对任务全生命周期启用 task timeout 守卫。
 - 错误分类支持 `retryable/fatal/cancelled`：仅 retryable 错误进入指数退避 + jitter 重试。
 - SSE 事件流增加 `retry_scheduled/retry_started` 语义（通过 progress payload 承载），并在任务查询接口返回 `attempt/nextRetryAt` 等字段。
+- OpenCode streaming 执行改为“先订阅事件再发送 prompt”：`executeWithRuntimeBridge` 在 `promptSession` 阻塞期间实时消费 `/event`，将 delta 立即透传到 Task SSE（方案 A 主路径）。
+- Worker 对 OpenCode 通道启用活动感知超时：周期查询 `GET /session/:id` 判断活跃状态，按“无活动超时 + 绝对上限”触发取消（方案 B 兜底）。
 
 #### 工具调用状态机（part 级）
 
@@ -183,7 +187,7 @@
 - 死信治理：`GET outbox/dead-letter`、`POST outbox/dead-letter/requeue`
 - 维护审计：`GET maintenance/audits`
 - legacy 清理：`POST maintenance/purge-legacy`
-- 数据清理脚本：`npm run cleanup:agents-runtime`（默认 dry-run；执行删除需 `--execute --confirm=DELETE_AGENT_RUNTIME_DATA`）
+- 数据清理脚本：`npm run cleanup:agents-runtime`（默认 dry-run；执行删除需 `--execute --confirm=DELETE_RUNTIME_DATA`）
 
 控制约束（当前实现）：
 
@@ -197,8 +201,10 @@
 - `run.metadata.initialSystemMessages` 保留 system 快照用于审计查询，替代 message 集合中的 system 文档沉积。
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），并改为通过 Redis 队列异步写入 session 缓存，避免主链路同步落库阻塞。
-- Agent 详情页 Session 抽屉支持消息正文 5 行折叠、按条展开与 parts 数量/明细查看，便于排查结构化消息轨迹。
+- Agent 详情页 Session 抽屉支持“按角色默认展开策略”（`system` 默认折叠，其他角色默认展开）；消息正文折叠态不再展示前置片段，需手动展开查看完整内容。
+- Session 消息卡片默认隐藏 `runId/taskId/messageId` 等标识字段，新增“查看原始信息”面板按需展开，并支持一键复制原始 message JSON。
 - Session 抽屉头部提供刷新图标按钮，可手动重载当前 Session 详情与列表数据。
+- Session 详情查询会补齐 run 级 `user/system` 消息：除 `session.messageIds` 外，额外按 `runId` 回查缺失的 `user/system` 记录，并将 `run.metadata.initialSystemMessages` 以虚拟 system message 返回，确保前端完整展示 system/user/assistant 轨迹。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
 - legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
@@ -214,8 +220,10 @@
   - `agent-executor.service.ts` 通过 `HookPipelineService.run()` 统一调度 step hooks，不再维护硬编码数组。
   - `modules/agents/agent-orchestration-intent.service.ts`（历史项，文件已于 2026-03-19 删除）
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
-- Agent Prompt 文案已集中到 `modules/agents/agent-prompts.ts`，按 `symbol/context/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
+- Agent Prompt 文案已集中到 `modules/prompt-registry/agent-prompt-catalog.ts`，按 `symbol/slug/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
+- Agent/Skill 已支持 `promptTemplateRef: { scene, role }` 绑定：Identity Layer 在 `systemPrompt` 后追加 Agent 绑定模板；Toolset Layer 在技能激活时优先解析 Skill 绑定模板并替换 `skill.content`，失败回退原技能正文。
 - Agent Task Worker 会透传 `sessionContext.runtimeTaskType/runtimeChannelHint` 到 `context.runtimeRouting`，用于异步任务执行时的 runtime 通道路由。
+- Agent Task Tool 级状态会写入 Redis（`pending/running/completed/failed`），任务终态（成功/失败/取消/超时）统一回写 `idle`，供 MCP `list-agents` 实时查询。
 - 当路由命中 `opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
 - 模型调用默认优先走统一 provider 路由；`alibaba/qwen-*` 已在 `AIV2Provider` 中通过 OpenAI 兼容端点接入，避免落入 generic provider 提示分支。
 - 会议场景编排意图触发已收敛：移除“执行/继续/开始”单词级触发，新增“否定编排”阻断分支，减少误判。
@@ -309,7 +317,7 @@
 | 文件 | 功能 |
 |------|------|
 | `modules/agents/agent.service.ts` | Agent 执行链路接入 runtime（start/assert/complete/fail/tool events） |
-| `modules/agents/agent-prompts.ts` | Agent Prompt 清单（symbol/context/scene/role/defaultContent）与默认模板构造 |
+| `modules/prompt-registry/agent-prompt-catalog.ts` | Agent Prompt 清单（symbol/slug/scene/role/defaultContent）与默认模板构造 |
 | `modules/agents/agent-executor-runtime.service.ts` | Agent 执行链公共模板（start/complete/fail/release） |
 | `modules/agents/agent-opencode-policy.service.ts` | OpenCode 执行门禁与预算审批策略 |
 | `modules/agents/agent-before-step-optimization.hook.ts` | step 进入前语义优化 Hook（LLM 判断） |

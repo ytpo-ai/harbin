@@ -47,6 +47,13 @@ const INNER_MESSAGE_TOOL_IDS = {
   sendInternalMessage: 'builtin.sys-mg.mcp.inner-message.send-internal-message',
 } as const;
 
+const AGENT_ROLE_TOOL_IDS = {
+  listRoles: 'builtin.sys-mg.internal.agent-role-master.list-roles',
+  createRole: 'builtin.sys-mg.internal.agent-role-master.create-role',
+  updateRole: 'builtin.sys-mg.internal.agent-role-master.update-role',
+  deleteRole: 'builtin.sys-mg.internal.agent-role-master.delete-role',
+} as const;
+
 const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   'mcp.orchestration.createPlan': ORCHESTRATION_TOOL_IDS.createPlan,
   'mcp.orchestration.updatePlan': ORCHESTRATION_TOOL_IDS.updatePlan,
@@ -217,8 +224,20 @@ const MCP_PROFILE_SEEDS: McpProfileSeed[] = [
   {
     roleCode: 'human-resources-manager',
     role: 'human-resources-manager',
-    tools: ['internal.web.search'],
-    permissions: ['talent_acquisition', 'performance_management', 'organization_development'],
+    tools: [
+      'internal.web.search',
+      AGENT_ROLE_TOOL_IDS.listRoles,
+      AGENT_ROLE_TOOL_IDS.createRole,
+      AGENT_ROLE_TOOL_IDS.updateRole,
+      AGENT_ROLE_TOOL_IDS.deleteRole,
+    ],
+    permissions: [
+      'talent_acquisition',
+      'performance_management',
+      'organization_development',
+      'agent_role_registry_read',
+      'agent_role_registry_write',
+    ],
     exposed: true,
     description: '负责招聘、绩效管理与组织人才发展。',
   },

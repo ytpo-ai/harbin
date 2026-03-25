@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQueryClient } from 'react-query';
 import { OrchestrationPlan, orchestrationService } from '../services/orchestrationService';
 
@@ -28,6 +28,16 @@ export const usePlanStreaming = ({
   refreshPlanData,
 }: UsePlanStreamingOptions) => {
   const queryClient = useQueryClient();
+  const isReplanPendingRef = useRef(isReplanPending);
+  const refreshPlanDataRef = useRef(refreshPlanData);
+
+  useEffect(() => {
+    isReplanPendingRef.current = isReplanPending;
+  }, [isReplanPending]);
+
+  useEffect(() => {
+    refreshPlanDataRef.current = refreshPlanData;
+  }, [refreshPlanData]);
 
   useEffect(() => {
     if (!planId) {
@@ -47,7 +57,7 @@ export const usePlanStreaming = ({
             setStreamTaskIds((prev) => (prev.includes(generatedTaskId) ? prev : [...prev, generatedTaskId]));
           }
           setStreamHint(`正在生成任务 (${event.data?.index || 0}/${event.data?.total || '-'})`);
-          if (isReplanPending) {
+          if (isReplanPendingRef.current) {
             setPromptHint(`重新编排任务生成中 (${event.data?.index || 0}/${event.data?.total || '-'})`);
           }
           void queryClient.invalidateQueries(['orchestration-plan', planId]);
@@ -56,17 +66,17 @@ export const usePlanStreaming = ({
 
         if (event.type === 'plan.completed') {
           setStreamHint('任务生成完成');
-          if (isReplanPending) {
+          if (isReplanPendingRef.current) {
             setIsReplanPending(false);
             setPromptHint('重新编排已完成，任务结构已覆盖更新');
           }
-          void refreshPlanData();
+          void refreshPlanDataRef.current();
           return;
         }
 
         if (event.type === 'plan.failed') {
           setStreamHint(`任务生成失败: ${event.data?.error || 'unknown error'}`);
-          if (isReplanPending) {
+          if (isReplanPendingRef.current) {
             setIsReplanPending(false);
             setPromptHint(`重新编排失败：${event.data?.error || 'unknown error'}`);
           }
@@ -76,7 +86,7 @@ export const usePlanStreaming = ({
 
         if (event.type === 'plan.status.changed' && event.data?.status === 'drafting') {
           setStreamHint('任务生成中...');
-          if (isReplanPending) {
+          if (isReplanPendingRef.current) {
             setPromptHint('重新编排中：已清空旧任务，正在流式生成新任务...');
           }
         }
@@ -95,10 +105,8 @@ export const usePlanStreaming = ({
       unsubscribe();
     };
   }, [
-    isReplanPending,
     planId,
     queryClient,
-    refreshPlanData,
     setIsReplanPending,
     setPromptHint,
     setStreamConnected,

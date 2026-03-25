@@ -80,6 +80,7 @@ export class AgentService {
       tools: agentData.tools || [],
       skills: this.normalizeSkillIds(agentData.skills || []),
       permissions: agentData.permissions || [],
+      promptTemplateRef: this.normalizePromptTemplateRef((agentData as any).promptTemplateRef),
       personality: agentData.personality || {
         workEthic: 80,
         creativity: 75,
@@ -211,6 +212,20 @@ export class AgentService {
         normalizedUpdates.$unset = {
           ...(normalizedUpdates.$unset || {}),
           apiKeyId: 1,
+        };
+      }
+    }
+
+    const hasPromptTemplateRefField = Object.prototype.hasOwnProperty.call(updates, 'promptTemplateRef');
+    if (hasPromptTemplateRefField) {
+      const normalizedPromptTemplateRef = this.normalizePromptTemplateRef((updates as any).promptTemplateRef);
+      if (normalizedPromptTemplateRef) {
+        normalizedUpdates.promptTemplateRef = normalizedPromptTemplateRef;
+      } else {
+        delete normalizedUpdates.promptTemplateRef;
+        normalizedUpdates.$unset = {
+          ...(normalizedUpdates.$unset || {}),
+          promptTemplateRef: 1,
         };
       }
     }
@@ -477,6 +492,23 @@ export class AgentService {
     }
 
     return { ...(config as Record<string, unknown>) };
+  }
+
+  private normalizePromptTemplateRef(input: unknown): { scene: string; role: string } | undefined {
+    if (input === undefined || input === null) {
+      return undefined;
+    }
+    if (typeof input !== 'object' || Array.isArray(input)) {
+      throw new BadRequestException('promptTemplateRef must be an object with scene and role');
+    }
+
+    const scene = String((input as any).scene || '').trim();
+    const role = String((input as any).role || '').trim();
+    if (!scene || !role) {
+      throw new BadRequestException('promptTemplateRef requires non-empty scene and role');
+    }
+
+    return { scene, role };
   }
 
   private normalizeSkillIds(skillIds: string[]): string[] {

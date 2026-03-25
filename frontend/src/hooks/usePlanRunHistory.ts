@@ -18,7 +18,7 @@ export const usePlanRunHistory = (
 
   const {
     data: planRuns = [],
-    isFetching: planRunsLoading,
+    isLoading: planRunsLoading,
     error: planRunsError,
   } = useQuery<OrchestrationRun[]>(
     ['orchestration-plan-runs', planId],
@@ -34,7 +34,7 @@ export const usePlanRunHistory = (
 
   const {
     data: latestRun,
-    isFetching: latestRunLoading,
+    isLoading: latestRunLoading,
   } = useQuery<OrchestrationRun | null>(
     ['orchestration-plan-latest-run', planId],
     () => orchestrationService.getPlanLatestRun(planId!),
@@ -46,7 +46,7 @@ export const usePlanRunHistory = (
 
   const {
     data: runDetail,
-    isFetching: runDetailLoading,
+    isLoading: runDetailLoading,
     error: runDetailError,
   } = useQuery<OrchestrationRun>(
     ['orchestration-run-detail', selectedRunId],
@@ -62,7 +62,7 @@ export const usePlanRunHistory = (
 
   const {
     data: runTasks = [],
-    isFetching: runTasksLoading,
+    isLoading: runTasksLoading,
     error: runTasksError,
   } = useQuery<OrchestrationRunTask[]>(
     ['orchestration-run-tasks', selectedRunId],

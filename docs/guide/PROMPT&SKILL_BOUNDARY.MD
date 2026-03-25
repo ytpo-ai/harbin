@@ -31,5 +31,5 @@
 
 ## 5. 兼容策略
 
-- `AGENT_PROMPTS` 保留 symbol/context/scene/role，`code_default` 作为无 skill 时兜底。
+- `AGENT_PROMPTS` 保留 symbol/slug/scene/role，`code_default` 作为无 skill 时兜底。
 - OpenCode 引擎重试补充文本复用 catalog，避免重复维护。

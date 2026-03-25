@@ -1,3 +1,10 @@
+# [TODO 重新整理] ORCHESTRATION_PLAN
+
+> 状态：待重新整理（2026-03-24）
+>
+> 说明：本文为历史分析草稿，结构与内容需要按当前实现重新梳理后再作为正式参考。
+>
+> 当前实现参考：`docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD`、`docs/feature/ORCHETRATION_TASK.md`、`docs/feature/ORCHETRATION_SCHEDULER.md`。
 ---
 探索 /Users/van/Workspace/harbin 项目中与 orchestration plan 编排相关的代码结构。我需要了解以下内容：
 

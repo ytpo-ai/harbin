@@ -1,4 +1,10 @@
-# 会议 Agent Session 上下文补齐与去重计划
+# [Deprecated] 会议 Agent Session 上下文补齐与去重计划
+
+> **状态：已过期**
+> 本计划的核心目标（入会 catch-up 上下文补齐、session system message 去重）已被 `SYSTEM_CONTEXT_LAYERED_ARCHITECTURE_PLAN.md` 架构级根治方案覆盖。
+> 具体落地 commit: `373e1dc refactor(backend): layer system context as run-scoped envelope`
+> - 会议上下文统一由 CollaborationContextBuilder + TaskContextBuilder 生成，catch-up 路径不再注入 system prompt
+> - session.messages 不再写入 system 消息，去重策略已无需保留
 
 ## 背景
 

@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { SkillService } from './skill.service';
 
 declare const describe: any;
@@ -155,5 +155,32 @@ describe('SkillService', () => {
     agentModel.findOne.mockReturnValue(queryResult(null));
 
     await expect(service.assignSkillToAgent('missing-agent', 's1')).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('SkillService prompt template ref normalization', () => {
+  it('normalizes valid promptTemplateRef', () => {
+    const service = Object.create(SkillService.prototype) as SkillService;
+    const normalized = service['normalizePromptTemplateRef']({
+      scene: ' technical ',
+      role: ' engineering:backend-developer ',
+    });
+
+    expect(normalized).toEqual({
+      scene: 'technical',
+      role: 'engineering:backend-developer',
+    });
+  });
+
+  it('returns undefined when promptTemplateRef is undefined', () => {
+    const service = Object.create(SkillService.prototype) as SkillService;
+    expect(service['normalizePromptTemplateRef'](undefined)).toBeUndefined();
+  });
+
+  it('throws when promptTemplateRef is invalid', () => {
+    const service = Object.create(SkillService.prototype) as SkillService;
+    expect(() => service['normalizePromptTemplateRef']({ scene: '', role: 'engineering:backend-developer' })).toThrow(
+      BadRequestException,
+    );
   });
 });

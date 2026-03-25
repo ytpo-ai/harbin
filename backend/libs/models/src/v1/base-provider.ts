@@ -1,5 +1,21 @@
 import { AIModel, ChatMessage } from '@libs/contracts';
 
+export interface ProviderUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  reasoningTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+}
+
+export interface ProviderChatResult {
+  response: string;
+  usage?: ProviderUsage;
+  finishReason?: string;
+  cost?: number;
+}
+
 export abstract class BaseAIProvider {
   protected model: AIModel;
   protected apiKey?: string;
@@ -11,6 +27,11 @@ export abstract class BaseAIProvider {
 
   abstract chat(messages: ChatMessage[], options?: any): Promise<string>;
   abstract streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void>;
+
+  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+    const response = await this.chat(messages, options);
+    return { response };
+  }
 
   protected formatMessages(messages: ChatMessage[]): any[] {
     return messages.map((msg) => ({

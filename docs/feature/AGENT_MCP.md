@@ -11,17 +11,23 @@
 ### 1.2 核心逻辑
 
 1. `builtin.sys-mg.internal.agent-master.list-agents`：返回当前 Agent 摘要列表（含 `identify`）。
+   - 支持可选 `agentId` 参数查询指定 Agent。
+   - 返回新增 `runtimeStatus`（来自 Redis 的 task tool 级状态：`idle/pending/running/completed/failed`，含 `taskId/toolId/toolName/updatedAt`）。
 2. `builtin.sys-mg.internal.agent-master.create-agent`：基于 MCP 入参创建 Agent。
-3. 创建时 API Key 策略：优先使用显式 `apiKeyId`；否则按 provider 选择默认 key。
-4. provider 策略参数默认为 `default`，会回退到模型 provider 查找默认 key。
-5. 为兼容历史数据，旧 id `builtin.sys-mg.internal.agent-admin.list-agents` 保留执行兼容。
-6. MCP Profile 授权字段统一为 `permissions`，并在工具集更新时自动聚合 `requiredPermissions` 写入 `permissionsDerived`。
-7. Agent 在创建/更新（角色或工具变更）时自动继承 role 对应 Profile 的 `permissions` 到 `agent.permissions`（补齐合并，不覆盖已有手工权限）。
+3. `builtin.sys-mg.internal.agent-role-master.list-roles/create-role/update-role/delete-role`：提供角色管理 MCP（查询/创建/更新/删除）。
+4. 创建时 API Key 策略：优先使用显式 `apiKeyId`；否则按 provider 选择默认 key。
+5. provider 策略参数默认为 `default`，会回退到模型 provider 查找默认 key。
+6. 为兼容历史数据，旧 id `builtin.sys-mg.internal.agent-admin.list-agents` 保留执行兼容。
+7. MCP Profile 授权字段统一为 `permissions`，并在工具集更新时自动聚合 `requiredPermissions` 写入 `permissionsDerived`。
+8. Agent 在创建/更新（角色或工具变更）时自动继承 role 对应 Profile 的 `permissions` 到 `agent.permissions`（补齐合并，不覆盖已有手工权限）。
 
 ### 1.3 状态与约束
 
 - `create-agent` 最小必填：`name`、`roleId`、`model.id`（或 `modelId`）；`roleId` 支持 role id 或 role code。
+- `agent-role-master.create-role` 最小必填：`code`、`name`；`update-role/delete-role` 最小必填：`roleId`（`id` 作为兼容别名）。
 - role 合法性由 Agent 创建接口校验（role 不存在会返回失败）。
+- role 管理工具采用读写权限拆分：`agent_role_registry_read`（查询）/`agent_role_registry_write`（写操作）。
+- 可通过 seed 一键绑定 HR Agent 角色管理能力：`npm run seed:manual -- --only=hr-agent-role-master`。
 - 若 provider 对应默认 key 不存在，创建流程不阻断，回退系统默认 key 策略。
 - Profile 权限采用 `effectivePermissions = permissionsManual ∪ permissionsDerived`。
 - 迁移期保留 `capabilities` 双读兼容，写入主路径统一落到 `permissions`。
@@ -35,6 +41,7 @@
 | 文件 | 说明 |
 |------|------|
 | `AGENT_MASTER_CREATE_AGENT_MCP_PLAN.md` | agent-master toolkit 命名升级与 create-agent MCP 实施计划 |
+| `AGENT_ROLE_MASTER_MCP_MANAGEMENT_PLAN.MD` | agent-role-master 角色管理 MCP（list/create/update/delete）实施计划 |
 | `MCP_PROFILE_PERMISSIONS_ALIGNMENT_PLAN.md` | MCP Profile 权限模型统一与继承改造计划 |
 
 ### 开发总结 (docs/development/)

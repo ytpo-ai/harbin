@@ -99,6 +99,9 @@ meeting/orchestration/session
    - 场景策略迭代应优先改 skill 文档，减少代码改动面。
    - 功能文档需说明“场景 -> skill -> 工具”映射关系，保证可追踪与可审计。
 
+### 3.4 相关前后端开发规范
+- 前端开发必须遵循 `docs/guide/FRONTEND_GUIDELINE.md` 中的规范
+- 后端开发必须遵循 `docs/guide/BACKEND_GUIDELINE.md`
 ---
 
 ## 4. 现有功能模块

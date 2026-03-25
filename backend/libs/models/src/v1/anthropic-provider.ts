@@ -1,7 +1,7 @@
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider } from './base-provider';
+import { BaseAIProvider, ProviderChatResult } from './base-provider';
 
 interface AnthropicTextBlock {
   type: string;
@@ -10,6 +10,14 @@ interface AnthropicTextBlock {
 
 interface AnthropicMessageResponse {
   content?: AnthropicTextBlock[];
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+  stop_reason?: string;
+  stop_sequence?: string | null;
 }
 
 export class AnthropicProvider extends BaseAIProvider {
@@ -18,15 +26,40 @@ export class AnthropicProvider extends BaseAIProvider {
     this.apiKey = apiKey || process.env.ANTHROPIC_API_KEY;
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
     const payload = this.buildMessagePayload(messages, options, false);
     const response = await this.requestAnthropic(payload);
     const data = (await response.json()) as AnthropicMessageResponse;
 
-    return (data.content || [])
+    const text = (data.content || [])
       .filter((block) => block.type === 'text' && typeof block.text === 'string')
       .map((block) => block.text as string)
       .join('');
+
+    const inputTokens = Number(data.usage?.input_tokens || 0);
+    const outputTokens = Number(data.usage?.output_tokens || 0);
+    const cacheRead = Number(data.usage?.cache_read_input_tokens || 0) || undefined;
+    const cacheWrite = Number(data.usage?.cache_creation_input_tokens || 0) || undefined;
+    const totalTokens = inputTokens + outputTokens;
+
+    return {
+      response: text,
+      usage: data.usage
+        ? {
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            cachedInputTokens: cacheRead,
+            cacheWriteTokens: cacheWrite,
+          }
+        : undefined,
+      finishReason: typeof data.stop_reason === 'string' ? data.stop_reason : undefined,
+    };
+  }
+
+  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+    const result = await this.chatWithMeta(messages, options);
+    return result.response;
   }
 
   async streamingChat(

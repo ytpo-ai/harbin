@@ -6,6 +6,12 @@ export type EiProjectStatisticsSnapshotDocument = EiProjectStatisticsSnapshot & 
 export type EiStatisticsSnapshotStatus = 'running' | 'success' | 'failed';
 export type EiStatisticsTokenMode = 'estimate' | 'exact';
 
+export type EiStatisticsTopLineFile = {
+  filePath: string;
+  lines: number;
+  bytes: number;
+};
+
 export type EiStatisticsProjectRow = {
   projectId: string;
   projectName: string;
@@ -19,14 +25,21 @@ export type EiStatisticsProjectRow = {
   tsCount?: number;
   tsxCount?: number;
   testFileCount?: number;
+  topLineFiles?: EiStatisticsTopLineFile[];
   error?: string;
 };
 
 export type EiStatisticsSummary = {
   totalDocsBytes: number;
   totalDocsTokens: number;
+  totalDocsLines: number;
+  totalDocsFileCount: number;
   totalFrontendBytes: number;
+  totalFrontendLines: number;
+  totalFrontendFileCount: number;
   totalBackendBytes: number;
+  totalBackendLines: number;
+  totalBackendFileCount: number;
   grandTotalBytes: number;
   projectCount: number;
   successCount: number;

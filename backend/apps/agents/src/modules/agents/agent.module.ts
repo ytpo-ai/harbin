@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { AgentProfile, AgentProfileSchema } from '@agent/schemas/agent-profile.schema';
@@ -26,7 +26,7 @@ import { NativeAgentExecutorEngine } from './executor-engines/native-agent-execu
 import { NativeStreamingAgentExecutorEngine } from './executor-engines/native-streaming-agent-executor.engine';
 import { OpencodeAgentExecutorEngine } from './executor-engines/opencode-agent-executor.engine';
 import { OpencodeStreamingAgentExecutorEngine } from './executor-engines/opencode-streaming-agent-executor.engine';
-import { provideLifecycleHook } from '../runtime/hooks/lifecycle-hook.helpers';
+import { HookRegistryService } from '../runtime/hooks/hook-registry.service';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 import { ContextModule } from './context/context.module';
 
@@ -53,11 +53,8 @@ import { ContextModule } from './context/context.module';
   providers: [
     AgentService,
     AgentExecutorRuntimeService,
-    // Step hooks 注册到统一 LifecycleHook Registry
     AgentBeforeStepOptimizationHook,
     AgentAfterStepEvaluationHook,
-    provideLifecycleHook(AgentBeforeStepOptimizationHook),
-    provideLifecycleHook(AgentAfterStepEvaluationHook),
     AgentOpenCodePolicyService,
     AgentMcpProfileService,
     AgentRoleService,
@@ -70,4 +67,15 @@ import { ContextModule } from './context/context.module';
   ],
   exports: [AgentService],
 })
-export class AgentModule {}
+export class AgentModule implements OnModuleInit {
+  constructor(
+    private readonly hookRegistry: HookRegistryService,
+    private readonly beforeStepHook: AgentBeforeStepOptimizationHook,
+    private readonly afterStepHook: AgentAfterStepEvaluationHook,
+  ) {}
+
+  onModuleInit(): void {
+    this.hookRegistry.register(this.beforeStepHook);
+    this.hookRegistry.register(this.afterStepHook);
+  }
+}

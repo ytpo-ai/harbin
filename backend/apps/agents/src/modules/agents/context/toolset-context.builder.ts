@@ -95,6 +95,9 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
             role: 'system',
             content: resolvedToolsetSpecContent,
             timestamp: new Date(),
+            metadata: {
+              promptSlug: `${AGENT_PROMPTS.toolInjectionInstruction.slug}+${AGENT_PROMPTS.toolStrategyWrapper.slug}`,
+            },
           });
           return messages;
         }
@@ -103,12 +106,18 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
           role: 'system',
           content: toolSpecContent,
           timestamp: new Date(),
+          metadata: {
+            promptSlug: AGENT_PROMPTS.toolInjectionInstruction.slug,
+          },
         });
         if (toolStrategyContent) {
           messages.push({
             role: 'system',
             content: toolStrategyContent,
             timestamp: new Date(),
+            metadata: {
+              promptSlug: AGENT_PROMPTS.toolStrategyWrapper.slug,
+            },
           });
         }
       }

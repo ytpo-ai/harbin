@@ -1,3 +1,9 @@
+# [已弃用] ORCHESTRATION_PLAN_LIST_DELETE_GUARD_PLAN
+
+> 状态：已弃用（2026-03-24）
+>
+> 说明：该文档为历史方案/设计沉淀，仅用于归档追溯，不再作为当前实现依据。
+> 当前实现请以 `docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD` 与 `docs/feature/ORCHETRATION_TASK.md` 为准。
 # 计划编排列表删除增强 Plan
 
 ## 需求概述

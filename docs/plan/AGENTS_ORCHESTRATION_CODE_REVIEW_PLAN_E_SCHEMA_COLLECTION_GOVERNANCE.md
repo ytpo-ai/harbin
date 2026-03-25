@@ -1,3 +1,9 @@
+# [已弃用] AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_E_SCHEMA_COLLECTION_GOVERNANCE
+
+> 状态：已弃用（2026-03-24）
+>
+> 说明：该文档为历史方案/设计沉淀，仅用于归档追溯，不再作为当前实现依据。
+> 当前实现请以 `docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD` 与 `docs/feature/ORCHETRATION_TASK.md` 为准。
 # Plan E - Schema 命名与模型一致性治理（P1）
 
 ## 1. 目标

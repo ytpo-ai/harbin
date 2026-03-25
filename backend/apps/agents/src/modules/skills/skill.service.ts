@@ -33,6 +33,10 @@ interface CreateSkillInput {
   content?: string;
   contentType?: string;
   planningRules?: PlanningRule[];
+  promptTemplateRef?: {
+    scene?: string;
+    role?: string;
+  };
 }
 
 interface SkillReadOptions {
@@ -114,6 +118,7 @@ export class SkillService {
       contentHash,
       contentSize: normalizedContent ? Buffer.byteLength(normalizedContent, 'utf8') : 0,
       contentUpdatedAt: normalizedContent ? new Date() : undefined,
+      promptTemplateRef: this.normalizePromptTemplateRef(payload.promptTemplateRef),
       lastVerifiedAt: new Date(),
     });
 
@@ -271,6 +276,17 @@ export class SkillService {
     }
     if (typeof updates.confidenceScore === 'number') {
       updatePayload.confidenceScore = this.normalizeScore(updates.confidenceScore);
+    }
+    if (Object.prototype.hasOwnProperty.call(updates, 'promptTemplateRef')) {
+      const normalizedPromptTemplateRef = this.normalizePromptTemplateRef((updates as any).promptTemplateRef);
+      if (normalizedPromptTemplateRef) {
+        updatePayload.promptTemplateRef = normalizedPromptTemplateRef;
+      } else {
+        updatePayload.$unset = {
+          ...(updatePayload.$unset || {}),
+          promptTemplateRef: 1,
+        };
+      }
     }
 
     const skill = await this.skillModel.findOneAndUpdate({ id: skillId }, updatePayload, { new: true }).exec();
@@ -548,6 +564,22 @@ export class SkillService {
     if (typeof content !== 'string') return undefined;
     const normalized = content.trim();
     return normalized.length ? normalized : undefined;
+  }
+
+  private normalizePromptTemplateRef(input: unknown): { scene: string; role: string } | undefined {
+    if (input === undefined || input === null) {
+      return undefined;
+    }
+    if (typeof input !== 'object' || Array.isArray(input)) {
+      throw new BadRequestException('promptTemplateRef must be an object with scene and role');
+    }
+
+    const scene = String((input as any).scene || '').trim();
+    const role = String((input as any).role || '').trim();
+    if (!scene || !role) {
+      throw new BadRequestException('promptTemplateRef requires non-empty scene and role');
+    }
+    return { scene, role };
   }
 
   private computeContentHash(content: string): string {

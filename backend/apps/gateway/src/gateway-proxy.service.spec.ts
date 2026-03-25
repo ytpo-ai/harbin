@@ -86,6 +86,35 @@ describe('GatewayProxyService', () => {
     expect(pipe).toHaveBeenCalledWith(res);
   });
 
+  it('does not record operation log for GET requests', async () => {
+    const operationLogModel = { create: jest.fn() };
+    const employeeModel = { findOne: jest.fn() };
+    const service = new GatewayProxyService(operationLogModel as any, employeeModel as any);
+    jest.spyOn(axios, 'request').mockResolvedValue({
+      status: 200,
+      headers: {},
+      data: { ok: true },
+    } as any);
+
+    const req: any = {
+      method: 'GET',
+      originalUrl: '/api/agents',
+      url: '/api/agents',
+      headers: {},
+      query: {},
+      body: undefined,
+      userContext: {
+        employeeId: 'human-1',
+      },
+    };
+    const res = createRes();
+
+    await service.forward(req, res);
+
+    expect(employeeModel.findOne).not.toHaveBeenCalled();
+    expect(operationLogModel.create).not.toHaveBeenCalled();
+  });
+
   it('throws gateway timeout for axios timeout errors', async () => {
     const service = createService();
     jest

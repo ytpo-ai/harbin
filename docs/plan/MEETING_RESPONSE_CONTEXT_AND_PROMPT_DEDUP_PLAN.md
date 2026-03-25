@@ -1,4 +1,10 @@
-# 会议回应上下文与系统提示去重优化计划
+# [Deprecated] 会议回应上下文与系统提示去重优化计划
+
+> **状态：已过期**
+> 本计划的核心目标（session 层面 system message 去重、会议响应去重键）已被 `SYSTEM_CONTEXT_LAYERED_ARCHITECTURE_PLAN.md` 架构级根治方案覆盖。
+> 具体落地 commit: `373e1dc refactor(backend): layer system context as run-scoped envelope`
+> - system 消息不再写入 session.messages，去重逻辑已无需保留
+> - 会议响应去重键（步骤 3）仍在原代码中生效，未受影响
 
 ## 背景
 

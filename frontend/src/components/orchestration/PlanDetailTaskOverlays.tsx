@@ -1,5 +1,5 @@
 import React from 'react';
-import { OrchestrationTask } from '../../services/orchestrationService';
+import { DebugRuntimeTaskTypeOverride, OrchestrationTask } from '../../services/orchestrationService';
 import { TaskEditableDraft } from './constants';
 import AddTaskModal from './AddTaskModal';
 import TaskDependencyModal from './TaskDependencyModal';
@@ -21,6 +21,12 @@ interface PlanDetailTaskOverlaysProps {
   taskEditDrawerOpen: boolean;
   editingTask: OrchestrationTask | null;
   editingTaskDraft: TaskEditableDraft | null;
+  debugAgentId: string;
+  debugRuntimeTaskType: 'auto' | DebugRuntimeTaskTypeOverride;
+  debugHint: string;
+  agents: Array<{ id: string; name: string }>;
+  debugRunning: boolean;
+  reassignRunning: boolean;
   onCloseAddModal: () => void;
   onChangeNewTaskTitle: (value: string) => void;
   onChangeNewTaskDescription: (value: string) => void;
@@ -34,6 +40,11 @@ interface PlanDetailTaskOverlaysProps {
   onCloseTaskEditDrawer: () => void;
   onUpdateTaskEditDraft: (patch: Partial<TaskEditableDraft>) => void;
   onOpenDependencyFromTaskEdit: () => void;
+  onChangeExecutorType: (value: 'agent' | 'unassigned') => void;
+  onChangeExecutorAgentId: (value: string) => void;
+  onChangeDebugAgentId: (value: string) => void;
+  onChangeDebugRuntimeType: (value: 'auto' | DebugRuntimeTaskTypeOverride) => void;
+  onRunDebugFromTaskEdit: () => void;
 }
 
 const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
@@ -51,6 +62,12 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
   taskEditDrawerOpen,
   editingTask,
   editingTaskDraft,
+  debugAgentId,
+  debugRuntimeTaskType,
+  debugHint,
+  agents,
+  debugRunning,
+  reassignRunning,
   onCloseAddModal,
   onChangeNewTaskTitle,
   onChangeNewTaskDescription,
@@ -64,6 +81,11 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
   onCloseTaskEditDrawer,
   onUpdateTaskEditDraft,
   onOpenDependencyFromTaskEdit,
+  onChangeExecutorType,
+  onChangeExecutorAgentId,
+  onChangeDebugAgentId,
+  onChangeDebugRuntimeType,
+  onRunDebugFromTaskEdit,
 }) => {
   return (
     <>
@@ -99,9 +121,20 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
         task={editingTask}
         planStatus={planStatus}
         draft={editingTaskDraft}
+        debugAgentId={debugAgentId}
+        debugRuntimeTaskType={debugRuntimeTaskType}
+        debugHint={debugHint}
+        agents={agents}
+        debugRunning={debugRunning}
+        reassignRunning={reassignRunning}
         onClose={onCloseTaskEditDrawer}
         onUpdateDraft={onUpdateTaskEditDraft}
         onOpenDependencyModal={onOpenDependencyFromTaskEdit}
+        onChangeExecutorType={onChangeExecutorType}
+        onChangeExecutorAgentId={onChangeExecutorAgentId}
+        onChangeDebugAgentId={onChangeDebugAgentId}
+        onChangeDebugRuntimeType={onChangeDebugRuntimeType}
+        onRunDebug={onRunDebugFromTaskEdit}
       />
     </>
   );

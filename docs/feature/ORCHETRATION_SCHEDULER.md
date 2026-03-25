@@ -1,49 +1,53 @@
 # 定时调度（Scheduler）
 
-## 1. 功能设计
+> 状态：当前有效（2026-03-26）
 
-### 1.1 目标
+## 1. 功能范围
 
-- Scheduler 独立为 legacy 一级模块，职责收敛为“按时向 Agent 发送 inner-message”。
-- 不再直接执行 Orchestration Plan / Task，不再依赖 OrchestrationService 执行入口。
-- Agent 收到 `schedule.*` 消息后自主调用工具/执行流程。
+- Scheduler 已从 orchestration 子目录迁出，作为 legacy app 一级模块独立运行。
+- 核心职责收敛为“按时向 Agent 发送 inner-message”。
+- 不再直接执行 Orchestration Plan/Task，不依赖 `OrchestrationService` 运行入口。
 
-### 1.2 模块与数据模型
+## 2. 当前实现结构
+
+### 2.1 后端模块
 
 | 维度 | 路径 | 说明 |
-|------|------|------|
+|---|---|---|
 | 模块 | `backend/src/modules/scheduler/` | `scheduler.module.ts` / `scheduler.controller.ts` / `scheduler.service.ts` |
-| Schema | `backend/src/shared/schemas/schedule.schema.ts` | 新主 Schema，集合仍为 `orchestration_schedules` |
-| 兼容导出 | `backend/src/shared/schemas/orchestration-schedule.schema.ts` | 向后兼容旧 import |
+| Schema | `backend/src/shared/schemas/schedule.schema.ts` | 主 Schema，集合名仍为 `orchestration_schedules` |
+| 兼容导出 | `backend/src/shared/schemas/orchestration-schedule.schema.ts` | 兼容旧 import |
 
-#### Schedule 核心字段
+### 2.2 前端模块
+
+- 页面：`frontend/src/pages/Scheduler.tsx`
+- 服务：`frontend/src/services/schedulerService.ts`
+
+## 3. 执行链路
+
+1. cron/interval 到点，或调用 `POST /schedules/:id/trigger` 手动触发。
+2. `SchedulerService` 获取锁并组装 inner-message。
+3. 调用 `AgentClientService.sendDirectInnerMessage()` 发送给目标 Agent。
+4. agents app 通过 inner-message dispatcher/runtime bridge 执行。
+5. Scheduler 轮询消息终态并异步回写 `lastRun` 与统计。
+6. 历史查询优先读取 `source=scheduler` 且 `payload.scheduleId` 的 inner-message。
+
+## 4. 关键字段
 
 - `schedule`: `cron | interval`
-- `target.executorId`: 接收消息的 Agent
-- `input.prompt/payload`: 传递给 Agent 的指令和参数
-- `message.eventType/title`: inner-message 事件类型和标题（默认 `schedule.trigger`）
-- `planId`: deprecated（保留兼容，不再作为调度执行依赖）
+- `target.executorId`: 目标 Agent
+- `input.prompt` / `input.payload`: 发送给 Agent 的指令参数
+- `message.eventType` / `message.title`: 消息事件类型与标题（默认 `schedule.trigger`）
+- `planId`: deprecated，仅兼容保留，不再作为执行依赖
 
-### 1.3 执行链路
+## 5. API 清单（当前有效）
 
-1. cron/interval 或手动触发 `POST /schedules/:id/trigger`
-2. SchedulerService 获取锁并组装 message
-3. 调用 `AgentClientService.sendDirectInnerMessage()`
-4. agents app 通过 inner-message dispatcher/runtime bridge 投递并执行
-5. Scheduler 轮询 inner-message 状态并异步回写 `lastRun`（语义为“消息处理终态”）与 `stats`
-6. 历史查询优先读取 inner-message（`source=scheduler` + `payload.scheduleId`）
-
-### 1.4 重试与失败策略
-
-- Scheduler 不做执行层重试，统一依赖 inner-message `maxAttempts`。
-- 发送失败、处理失败或生命周期监控超时时，写入 `deadLetters` 并触发告警 webhook。
-
-### 1.5 API 路由
+### 5.1 主路由
 
 主路由为 `/schedules/*`，同时保留 `/orchestration/schedules/*` 兼容别名。
 
-| 方法 | 路径 | 功能 |
-|------|------|------|
+| 方法 | 路径 | 说明 |
+|---|---|---|
 | POST | `/schedules` | 创建 |
 | GET | `/schedules` | 列表 |
 | GET | `/schedules/:id` | 详情 |
@@ -54,35 +58,31 @@
 | POST | `/schedules/:id/trigger` | 手动触发 |
 | GET | `/schedules/:id/history` | 调度历史 |
 
-系统调度端点：
+### 5.2 系统调度端点
 
 - `GET /schedules/system/engineering-statistics`
 - `POST /schedules/system/engineering-statistics/trigger`
 - `GET /schedules/system/docs-heat`
 - `POST /schedules/system/docs-heat/trigger`
 
-## 2. 前端
+## 6. 文档状态治理（plan / guide / technical）
 
-- 页面：`frontend/src/pages/Scheduler.tsx`
-- 服务：`frontend/src/services/schedulerService.ts`
-- 新建/编辑项：
-  - Agent 选择（`target.executorId`）
-  - 消息 eventType（`message.eventType`）
-  - 保留调度规则、prompt/payload
+### 6.1 当前有效文档
 
-## 3. 相关代码文件
+- 功能文档：`docs/feature/ORCHETRATION_SCHEDULER.md`
+- Plan：
+  - `docs/plan/SCHEDULER_SERVICE_REFACTOR_PLAN.md`
+  - `docs/plan/SCHEDULER_PAGE_OPTIMIZATION_PLAN.md`
+- Technical：`docs/technical/SCHEDULER_SERVICE_REFACTOR_TECHNICAL_DESIGN.md`
 
-### 后端
+### 6.2 已废弃文档（归档参考）
 
-- `backend/src/modules/scheduler/scheduler.module.ts`
-- `backend/src/modules/scheduler/scheduler.controller.ts`
-- `backend/src/modules/scheduler/scheduler.service.ts`
-- `backend/src/modules/scheduler/dto/index.ts`
-- `backend/src/modules/agents-client/agent-client.service.ts`
-- `backend/apps/agents/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts`
-- `backend/scripts/seed/system-schedule.ts`
+- `docs/plan/ORCHESTRATION_SCHEDULER_MODULE_PLAN.md`
+- `docs/plan/ORCHESTRATION_SCHEDULER_MCP_PLAN.md`
+- `docs/plan/ORCHESTRATION_SCHEDULER_PLAN_BINDING_OPTIMIZATION_PLAN.md`
+- `docs/technical/ORCHESTRATION_SCHEDULER_TECHNICAL_DESIGN.md`
 
-### 前端
+## 7. 关联功能文档
 
-- `frontend/src/pages/Scheduler.tsx`
-- `frontend/src/services/schedulerService.ts`
+- 任务编排主文档：`docs/feature/ORCHETRATION_TASK.md`
+- Agent 协作消息：`docs/feature/INNER_MESSAGE.md`

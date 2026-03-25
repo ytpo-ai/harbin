@@ -5,7 +5,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider } from './v1/base-provider';
+import { BaseAIProvider, ProviderChatResult } from './v1/base-provider';
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 const DEFAULT_ALIBABA_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -161,28 +161,56 @@ export class AIV2Provider extends BaseAIProvider {
     return fallbackMap[modelName];
   }
 
-  private async generateWithFallback(messages: ChatMessage[], options?: any): Promise<string> {
-    const { text } = await generateText({
+  private normalizeUsage(usage: any): ProviderChatResult['usage'] {
+    if (!usage || typeof usage !== 'object') {
+      return undefined;
+    }
+    const promptTokens = Number(usage.promptTokens ?? usage.inputTokens ?? 0);
+    const completionTokens = Number(usage.completionTokens ?? usage.outputTokens ?? 0);
+    const totalTokens = Number(usage.totalTokens ?? promptTokens + completionTokens);
+    const reasoningTokens = Number(usage.reasoningTokens ?? usage.reasoning_tokens ?? 0) || undefined;
+    const cachedInputTokens = Number(usage.cachedInputTokens ?? usage.cached_tokens ?? 0) || undefined;
+    const cacheWriteTokens = Number(usage.cacheWriteTokens ?? usage.cache_write_tokens ?? 0) || undefined;
+    return {
+      inputTokens: promptTokens,
+      outputTokens: completionTokens,
+      totalTokens,
+      reasoningTokens,
+      cachedInputTokens,
+      cacheWriteTokens,
+    };
+  }
+
+  private async generateWithFallback(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+    const result = await generateText({
       model: this.languageModel,
       messages: this.formatMessages(messages) as any,
       ...this.buildCallOptions(options),
     });
 
-    return text || '';
+    return {
+      response: result.text || '',
+      usage: this.normalizeUsage((result as any).usage),
+      finishReason: (result as any).finishReason,
+    };
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
     try {
       return await this.generateWithFallback(messages, options);
     } catch (error) {
       const fallbackModel = this.getAlibabaFallbackModelName();
       if (fallbackModel && this.isNotFoundError(error) && this.openAICompatibleClient) {
-        const { text } = await generateText({
+        const result = await generateText({
           model: this.openAICompatibleClient.chat(fallbackModel as any),
           messages: this.formatMessages(messages) as any,
           ...this.buildCallOptions(options),
         });
-        return text || '';
+        return {
+          response: result.text || '',
+          usage: this.normalizeUsage((result as any).usage),
+          finishReason: (result as any).finishReason,
+        };
       }
 
       if ((this.providerName === 'alibaba' || this.providerName === 'qwen') && this.isNotFoundError(error)) {
@@ -196,6 +224,11 @@ export class AIV2Provider extends BaseAIProvider {
 
       throw error;
     }
+  }
+
+  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+    const result = await this.chatWithMeta(messages, options);
+    return result.response;
   }
 
   async streamingChat(

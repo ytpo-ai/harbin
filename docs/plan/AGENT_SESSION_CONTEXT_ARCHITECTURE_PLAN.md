@@ -1,4 +1,12 @@
-# Agent Session 与 Context 组装架构优化计划
+# [Deprecated] Agent Session 与 Context 组装架构优化计划
+
+> **状态：已过期（主体已落地）**
+> 本计划提出的 6 层上下文模型、ContextAssembler + Builder 模块拆分、指纹抑制机制已全部落地。
+> 后续增强（分层持久化、system 作为 run envelope）由 `SYSTEM_CONTEXT_LAYERED_ARCHITECTURE_PLAN.md` 承接并已执行。
+> 具体落地 commit: `373e1dc refactor(backend): layer system context as run-scoped envelope`
+> - 6 层 Builder（Identity/Toolset/Domain/Collaboration/Task/Memory）均已实现并接入 fingerprint
+> - Session schema 已支持 meeting/task/chat 类型、planContext、domainContext、collaborationContext、runSummaries
+> - buildMessages 已简化为 ContextAssembler.assemble() 的单行调用
 
 ## 背景
 

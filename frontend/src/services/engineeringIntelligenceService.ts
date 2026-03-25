@@ -43,6 +43,12 @@ export interface EngineeringDocHistoryResult {
   }>;
 }
 
+export interface EngineeringStatisticsTopLineFile {
+  filePath: string;
+  lines: number;
+  bytes: number;
+}
+
 export interface EngineeringStatisticsProjectRow {
   projectId: string;
   projectName: string;
@@ -56,14 +62,21 @@ export interface EngineeringStatisticsProjectRow {
   tsCount?: number;
   tsxCount?: number;
   testFileCount?: number;
+  topLineFiles?: EngineeringStatisticsTopLineFile[];
   error?: string;
 }
 
 export interface EngineeringStatisticsSummary {
   totalDocsBytes: number;
   totalDocsTokens: number;
+  totalDocsLines: number;
+  totalDocsFileCount: number;
   totalFrontendBytes: number;
+  totalFrontendLines: number;
+  totalFrontendFileCount: number;
   totalBackendBytes: number;
+  totalBackendLines: number;
+  totalBackendFileCount: number;
   grandTotalBytes: number;
   projectCount: number;
   successCount: number;

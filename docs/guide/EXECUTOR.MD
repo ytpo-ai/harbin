@@ -1,3 +1,10 @@
+# [TODO 重新整理] EXECUTOR
+
+> 状态：待重新整理（2026-03-24）
+>
+> 说明：本文为历史分析草稿，结构与内容需要按当前实现重新梳理后再作为正式参考。
+>
+> 当前实现参考：`docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD`、`docs/feature/ORCHETRATION_TASK.md`、`docs/feature/ORCHETRATION_SCHEDULER.md`。
 ---
 在 /Users/van/Workspace/harbin 项目中，深入分析 executor 选择（任务分配）的完整链路和上下文。我需要了解：
 
@@ -378,3 +385,37 @@ ei.service.ts L1363-1402:
 ```
 
 **核心问题**：系统拥有丰富的角色/能力/权限元数据（Agent.capabilities, Agent.tools, Agent.skills, Agent.permissions, AgentRole.capabilities, AgentRole.tools, AgentProfile.capabilities, AgentProfile.permissions），但 executor selection 阶段几乎没有利用这些数据，仅做了最简单的关键词文本匹配。权限校验只在工具实际执行时才触发，导致"分配-执行"之间存在断层。
+---
+
+## 已知缺陷：Executor 选择依赖截断的 Agent Manifest（2026-03-24）
+
+### 问题
+
+增量编排的 Planner 在分配执行者时，依赖 `PlanningContextService.buildAgentManifest()` 生成的静态 Agent 清单。该清单：
+
+1. **仅读取 `agents.tools`**（Agent 文档自身的工具字段），不合并 `agent_profiles.tools`（角色级配置），可能遗漏通过 Profile 分配的工具
+2. **受 `AGENT_MANIFEST_MAX_LENGTH`（默认 2000 字符）截断**，排序靠后的 Agent 信息丢失
+3. **工具名展示为 human-readable 名称**（如 `Repo Writer`），与 Prompt 中用户使用的 action 名（如 `repo-writer`）不一致，增加 Planner 匹配难度
+
+### 影响
+
+- Planner 无法发现排序靠后但具备关键工具的执行者
+- `verify` 模式下的 `validateAgentToolFit` 也依赖 Planner 先给出 agentId，若 Planner 选错，后续校验仅能 fallback 到关键词评分，无法"发现"未出现在 Manifest 中的 Agent
+
+### 数据验证方法
+
+确认 Agent 工具配置时，需同时查两个 MongoDB 集合：
+
+```javascript
+// 查 Agent 文档直接存储的工具
+db.agents.find({ isActive: true }, { name: 1, tools: 1, roleId: 1 })
+
+// 查通过角色 Profile 关联的工具（需用 agent.roleId 匹配 agent_profiles.roleCode）
+db.agent_profiles.find({}, { roleCode: 1, tools: 1 })
+
+// 两者取并集才是 Agent 的完整可用工具
+```
+
+### 详细分析
+
+见 `docs/issue/fix/2026-03-24-planner-agent-manifest-truncation-deadloop.md`

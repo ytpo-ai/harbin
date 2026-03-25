@@ -26,8 +26,6 @@ import { PlanStatsService } from './plan-stats.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 
-const FULLY_EDITABLE_PLAN_STATUSES = ['draft', 'planned'];
-
 @Injectable()
 export class TaskManagementService {
   constructor(
@@ -400,15 +398,7 @@ export class TaskManagementService {
     await this.assertPlanEditable(plan, task);
 
     const normalizedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((dto as any).runtimeTaskType);
-    const hasRuntimeTypeOnlyUpdate =
-      (dto as any).runtimeTaskType !== undefined
-      && dto.title === undefined
-      && dto.description === undefined
-      && (dto as any).priority === undefined
-      && (dto as any).assignment === undefined
-      && (dto as any).dependencyTaskIds === undefined;
-
-    if (task.status === 'in_progress' || (task.status === 'completed' && !hasRuntimeTypeOnlyUpdate)) {
+    if (task.status === 'in_progress') {
       throw new BadRequestException(`Task in "${task.status}" status cannot be edited`);
     }
 
@@ -520,16 +510,7 @@ export class TaskManagementService {
       throw new BadRequestException('Plan is running and cannot be edited');
     }
 
-    const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
-    if (FULLY_EDITABLE_PLAN_STATUSES.includes(normalizedStatus)) {
-      return 'full';
-    }
-
-    if (normalizedStatus === 'drafting') {
-      throw new BadRequestException('Plan is drafting and cannot be edited');
-    }
-
-    throw new BadRequestException(`Plan in "${normalizedStatus}" status cannot be edited`);
+    return 'full';
   }
 
   private normalizeTaskIdList(taskIds?: string[]): string[] {

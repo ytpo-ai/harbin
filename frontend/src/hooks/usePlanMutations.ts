@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useMutation, useQueryClient } from 'react-query';
 import {
   OrchestrationPlan,
@@ -38,7 +39,7 @@ export const usePlanMutations = ({
 }: UsePlanMutationsOptions) => {
   const queryClient = useQueryClient();
 
-  const refreshPlanData = async () => {
+  const refreshPlanData = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries('orchestration-plans'),
       queryClient.invalidateQueries(['orchestration-plan', planId]),
@@ -47,7 +48,7 @@ export const usePlanMutations = ({
       queryClient.invalidateQueries(['orchestration-run-detail']),
       queryClient.invalidateQueries(['orchestration-run-tasks']),
     ]);
-  };
+  }, [planId, queryClient]);
 
   const savePlanPromptMutation = useMutation(
     ({ targetPlanId, sourcePrompt, mode }: { targetPlanId: string; sourcePrompt: string; mode: PlanMode }) =>

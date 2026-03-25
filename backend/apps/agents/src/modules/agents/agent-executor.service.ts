@@ -18,6 +18,7 @@ import { AGENT_PROMPTS, AgentPromptTemplate } from '@agent/modules/prompt-regist
 import { PromptResolverService } from '@agent/modules/prompt-registry/prompt-resolver.service';
 import { RuntimeEiSyncService } from '@agent/modules/runtime/runtime-ei-sync.service';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '@agent/modules/runtime/runtime-orchestrator.service';
+import { RuntimePersistenceService } from '@agent/modules/runtime/runtime-persistence.service';
 import { HookPipelineService } from '@agent/modules/runtime/hooks/hook-pipeline.service';
 import { LifecycleHookContext } from '@agent/modules/runtime/hooks/lifecycle-hook.types';
 import { ToolService } from '@agent/modules/tools/tool.service';
@@ -107,6 +108,7 @@ export class AgentExecutorService {
     private readonly memoWriteQueue: MemoWriteQueueService,
     private readonly memoEventBus: MemoEventBusService,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
+    private readonly runtimePersistence: RuntimePersistenceService,
     private readonly runtimeEiSyncService: RuntimeEiSyncService,
     private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
@@ -526,7 +528,7 @@ export class AgentExecutorService {
         this.modelService.chat(modelConfig.id, messages, {
           temperature: modelConfig.temperature ?? 0.7,
           maxTokens: 128,
-        }),
+        }).then((result) => result.response),
         new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('模型测试超时（20s）')), 20000),
         ),
@@ -939,12 +941,139 @@ export class AgentExecutorService {
       : '';
     const toolRoundLimitMessage = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolRoundLimitMessage);
 
+    const persistStepMessage = async (input: {
+      round: number;
+      response: string;
+      finish: 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'paused' | 'max-rounds';
+      parts: Array<{
+        type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
+        status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+        content?: string;
+        input?: unknown;
+        output?: unknown;
+        toolId?: string;
+        toolCallId?: string;
+        metadata?: Record<string, unknown>;
+        error?: string;
+        startedAt?: Date;
+        endedAt?: Date;
+      }>;
+      usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        reasoningTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        totalTokens: number;
+      };
+      cost?: number;
+      stepStartAt: Date;
+      stepEndAt: Date;
+    }): Promise<void> => {
+      if (!runtimeContext?.sessionId) {
+        return;
+      }
+
+      const normalizedTokens = input.usage
+        ? {
+            input: input.usage.inputTokens,
+            output: input.usage.outputTokens,
+            reasoning: input.usage.reasoningTokens,
+            cacheRead: input.usage.cacheRead,
+            cacheWrite: input.usage.cacheWrite,
+            total: input.usage.totalTokens,
+          }
+        : undefined;
+
+      const stepParts = [
+        {
+          sequence: 1,
+          type: 'step_start' as const,
+          status: 'completed' as const,
+          metadata: {
+            round: input.round,
+            taskId: task.id,
+            taskType: task.type,
+          },
+          startedAt: input.stepStartAt,
+          endedAt: input.stepStartAt,
+        },
+        ...input.parts.map((part, index) => ({
+          sequence: index + 2,
+          ...part,
+          startedAt: part.startedAt || input.stepStartAt,
+          endedAt: part.endedAt || input.stepEndAt,
+        })),
+        {
+          sequence: input.parts.length + 2,
+          type: 'step_finish' as const,
+          status: input.finish === 'error' ? ('error' as const) : ('completed' as const),
+          metadata: {
+            finish: input.finish,
+            tokens: normalizedTokens,
+            cost: input.cost,
+          },
+          startedAt: input.stepEndAt,
+          endedAt: input.stepEndAt,
+        },
+      ];
+
+      await this.runtimePersistence.bulkCreateMessageWithParts(
+        {
+          runId: runtimeContext.runId,
+          agentId: agentRuntimeId,
+          sessionId: runtimeContext.sessionId,
+          taskId: task.id,
+          role: 'assistant',
+          sequence: input.round + 2,
+          content: input.response,
+          status: input.finish === 'error' ? 'error' : 'completed',
+          parentMessageId: runtimeContext.userMessageId,
+          modelID: modelConfig.id,
+          providerID: modelConfig.provider,
+          finish: input.finish,
+          tokens: normalizedTokens,
+          cost: input.cost,
+          stepIndex: input.round,
+          metadata: {
+            source: 'agent.executeWithToolCalling',
+            round: input.round,
+            taskType: task.type,
+          },
+        },
+        stepParts,
+      );
+    };
+
     // 多轮循环：模型 -> 解析工具调用 -> 执行工具 -> 回灌结果。
     for (let round = 0; round <= maxToolRounds; round++) {
       if (runtimeContext) {
         await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       }
-      let response: string;
+      let response = '';
+      let usage: {
+        inputTokens: number;
+        outputTokens: number;
+        reasoningTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        totalTokens: number;
+      } | undefined;
+      let cost: number | undefined;
+      const stepParts: Array<{
+        type: 'text' | 'reasoning' | 'tool_call' | 'tool_result' | 'system_event' | 'step_start' | 'step_finish';
+        status: 'pending' | 'running' | 'completed' | 'error' | 'cancelled';
+        content?: string;
+        input?: unknown;
+        output?: unknown;
+        toolId?: string;
+        toolCallId?: string;
+        metadata?: Record<string, unknown>;
+        error?: string;
+        startedAt?: Date;
+        endedAt?: Date;
+      }> = [];
+      const stepStartedAt = new Date();
       const roundStartAt = Date.now();
       this.logger.log(
         `[tool_round_start] agent=${agent.name} taskId=${task.id} round=${round + 1}/${maxToolRounds + 1} messageCount=${messages.length} modelId=${modelConfig.id}`,
@@ -966,6 +1095,21 @@ export class AgentExecutorService {
       // hook 请求取消：立即中断执行
       if (beforeStepHookResult.cancelRequested && runtimeContext) {
         this.logger.warn(`[step_hook_cancel] agent=${agent.name} taskId=${task.id} round=${round + 1} reason=${beforeStepHookResult.cancelReason}`);
+        await persistStepMessage({
+          round,
+          response: beforeStepHookResult.cancelReason || 'cancelled_by_before_step_hook',
+          finish: 'cancelled',
+          parts: [
+            {
+              type: 'system_event',
+              status: 'cancelled',
+              content: 'before_step_hook_cancel',
+              error: beforeStepHookResult.cancelReason,
+            },
+          ],
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
+        });
         await this.runtimeOrchestrator.cancelRunWithActor(runtimeContext.runId, {
           actorId: 'lifecycle-hook',
           actorType: 'system',
@@ -977,6 +1121,21 @@ export class AgentExecutorService {
       // hook 请求暂停：暂停 run 后中断执行
       if (beforeStepHookResult.pauseRequested && runtimeContext) {
         this.logger.warn(`[step_hook_pause] agent=${agent.name} taskId=${task.id} round=${round + 1} reason=${beforeStepHookResult.pauseReason}`);
+        await persistStepMessage({
+          round,
+          response: beforeStepHookResult.pauseReason || 'paused_by_before_step_hook',
+          finish: 'paused',
+          parts: [
+            {
+              type: 'system_event',
+              status: 'cancelled',
+              content: 'before_step_hook_pause',
+              error: beforeStepHookResult.pauseReason,
+            },
+          ],
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
+        });
         await this.runtimeOrchestrator.pauseRunWithActor(runtimeContext.runId, {
           actorId: 'lifecycle-hook',
           actorType: 'system',
@@ -1012,10 +1171,13 @@ export class AgentExecutorService {
       }
 
       try {
-        response = await this.modelService.chat(modelConfig.id, messages, {
+        const modelResult = await this.modelService.chat(modelConfig.id, messages, {
           temperature: modelConfig.temperature,
           maxTokens: modelConfig.maxTokens,
         });
+        response = modelResult.response;
+        usage = modelResult.usage;
+        cost = modelResult.cost;
         this.logger.log(
           `[tool_round_response] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt} responseLength=${response.length}`,
         );
@@ -1024,6 +1186,23 @@ export class AgentExecutorService {
           this.logger.warn(
             `[tool_round_timeout] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt}`,
           );
+          await persistStepMessage({
+            round,
+            response: '当前模型请求超时（上游响应过慢）。请稍后重试，或将问题拆小后再试。',
+            finish: 'error',
+            parts: [
+              {
+                type: 'system_event',
+                status: 'error',
+                content: 'model_timeout',
+                error: 'model_timeout',
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           return '当前模型请求超时（上游响应过慢）。请稍后重试，或将问题拆小后再试。';
         }
         if (meetingLike && !errorRetryUsed && shouldRetryGenerationError(error)) {
@@ -1036,9 +1215,43 @@ export class AgentExecutorService {
             content: generationErrorRetryPrompt,
             timestamp: new Date(),
           });
+          await persistStepMessage({
+            round,
+            response: generationErrorRetryPrompt,
+            finish: 'tool-calls',
+            parts: [
+              {
+                type: 'system_event',
+                status: 'completed',
+                content: 'generation_error_retry',
+                error: toLogError(error).message,
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           continue;
         }
         if (meetingLike && shouldRetryGenerationError(error)) {
+          await persistStepMessage({
+            round,
+            response: emptyMeetingResponseFallback,
+            finish: 'error',
+            parts: [
+              {
+                type: 'system_event',
+                status: 'error',
+                content: 'generation_error_fallback',
+                error: toLogError(error).message,
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           return emptyMeetingResponseFallback;
         }
         throw error;
@@ -1059,6 +1272,23 @@ export class AgentExecutorService {
         // hook 请求取消：立即中断执行
         if (afterStepHookResult.cancelRequested && runtimeContext) {
           this.logger.warn(`[after_step_hook_cancel] agent=${agent.name} taskId=${task.id} round=${round + 1} reason=${afterStepHookResult.cancelReason}`);
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'cancelled',
+            parts: [
+              {
+                type: 'system_event',
+                status: 'cancelled',
+                content: 'after_step_hook_cancel',
+                error: afterStepHookResult.cancelReason,
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           await this.runtimeOrchestrator.cancelRunWithActor(runtimeContext.runId, {
             actorId: 'lifecycle-hook',
             actorType: 'system',
@@ -1070,6 +1300,23 @@ export class AgentExecutorService {
         // hook 请求暂停：暂停 run 后中断执行
         if (afterStepHookResult.pauseRequested && runtimeContext) {
           this.logger.warn(`[after_step_hook_pause] agent=${agent.name} taskId=${task.id} round=${round + 1} reason=${afterStepHookResult.pauseReason}`);
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'paused',
+            parts: [
+              {
+                type: 'system_event',
+                status: 'cancelled',
+                content: 'after_step_hook_pause',
+                error: afterStepHookResult.pauseReason,
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           await this.runtimeOrchestrator.pauseRunWithActor(runtimeContext.runId, {
             actorId: 'lifecycle-hook',
             actorType: 'system',
@@ -1086,6 +1333,21 @@ export class AgentExecutorService {
               messages.push({ role: 'system', content: instruction, timestamp: new Date() });
             }
           }
+          stepParts.push({
+            type: 'system_event',
+            status: 'completed',
+            content: 'after_step_hook_retry',
+          });
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           continue;
         }
 
@@ -1097,10 +1359,33 @@ export class AgentExecutorService {
               timestamp: new Date(),
             });
           }
+          stepParts.push({
+            type: 'system_event',
+            status: 'completed',
+            content: 'after_step_hook_inject_instruction',
+            metadata: {
+              injectedCount: afterStepHookResult.appendSystemMessages.length,
+            },
+          });
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           continue;
         }
 
         const cleaned = stripToolCallMarkup(response);
+        stepParts.push({
+          type: 'text',
+          status: 'completed',
+          content: cleaned,
+        });
         if (meetingLike && isMeaninglessAssistantResponse(cleaned)) {
           if (!emptyResponseRetryUsed) {
             emptyResponseRetryUsed = true;
@@ -1109,10 +1394,52 @@ export class AgentExecutorService {
               content: emptyResponseRetryPrompt,
               timestamp: new Date(),
             });
+            stepParts.push({
+              type: 'system_event',
+              status: 'completed',
+              content: 'empty_response_retry',
+            });
+            await persistStepMessage({
+              round,
+              response: cleaned,
+              finish: 'tool-calls',
+              parts: stepParts,
+              usage,
+              cost,
+              stepStartAt: stepStartedAt,
+              stepEndAt: new Date(),
+            });
             continue;
           }
+          await persistStepMessage({
+            round,
+            response: emptyMeetingResponseFallback,
+            finish: 'stop',
+            parts: [
+              ...stepParts,
+              {
+                type: 'system_event',
+                status: 'completed',
+                content: 'empty_response_fallback',
+              },
+            ],
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
           return emptyMeetingResponseFallback;
         }
+        await persistStepMessage({
+          round,
+          response: cleaned,
+          finish: 'stop',
+          parts: stepParts,
+          usage,
+          cost,
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
+        });
         return cleaned;
       }
 
@@ -1123,6 +1450,12 @@ export class AgentExecutorService {
       });
 
       const normalizedToolCallId = normalizeToolId(toolCall.tool);
+      stepParts.push({
+        type: 'tool_call',
+        status: 'completed',
+        toolId: normalizedToolCallId,
+        input: toolCall.parameters,
+      });
       // 工具权限校验：未授权工具直接驳回并提示模型改写。
       if (!assignedToolIds.has(normalizedToolCallId)) {
         this.logger.warn(
@@ -1134,6 +1467,22 @@ export class AgentExecutorService {
             normalizedToolId: normalizedToolCallId,
           }),
           timestamp: new Date(),
+        });
+        stepParts.push({
+          type: 'system_event',
+          status: 'error',
+          content: 'tool_denied',
+          error: normalizedToolCallId,
+        });
+        await persistStepMessage({
+          round,
+          response,
+          finish: 'tool-calls',
+          parts: stepParts,
+          usage,
+          cost,
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
         });
         continue;
       }
@@ -1153,6 +1502,22 @@ export class AgentExecutorService {
             preflightInputError,
           ),
           timestamp: new Date(),
+        });
+        stepParts.push({
+          type: 'system_event',
+          status: 'error',
+          content: 'tool_input_preflight_failed',
+          error: preflightInputError,
+        });
+        await persistStepMessage({
+          round,
+          response,
+          finish: 'tool-calls',
+          parts: stepParts,
+          usage,
+          cost,
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
         });
         continue;
       }
@@ -1207,10 +1572,28 @@ export class AgentExecutorService {
           });
         }
 
+        stepParts.push({
+          type: 'tool_result',
+          status: 'completed',
+          toolId: normalizedToolCallId,
+          toolCallId,
+          output: toolResultPayload,
+        });
+
         messages.push({
           role: 'system',
           content: `工具 ${normalizedToolCallId} 调用结果: ${JSON.stringify(toolResultPayload || {})}`,
           timestamp: new Date(),
+        });
+        await persistStepMessage({
+          round,
+          response,
+          finish: 'tool-calls',
+          parts: stepParts,
+          usage,
+          cost,
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
         });
       } catch (error) {
         const logError = toLogError(error);
@@ -1226,6 +1609,14 @@ export class AgentExecutorService {
             error: logError.message,
           });
         }
+
+        stepParts.push({
+          type: 'tool_result',
+          status: 'error',
+          toolId: normalizedToolCallId,
+          toolCallId,
+          error: logError.message,
+        });
 
         const message = logError.message;
         messages.push({
@@ -1252,8 +1643,34 @@ export class AgentExecutorService {
             });
           }
         }
+
+        await persistStepMessage({
+          round,
+          response,
+          finish: 'tool-calls',
+          parts: stepParts,
+          usage,
+          cost,
+          stepStartAt: stepStartedAt,
+          stepEndAt: new Date(),
+        });
       }
     }
+
+    await persistStepMessage({
+      round: maxToolRounds,
+      response: toolRoundLimitMessage,
+      finish: 'max-rounds',
+      parts: [
+        {
+          type: 'text',
+          status: 'completed',
+          content: toolRoundLimitMessage,
+        },
+      ],
+      stepStartAt: new Date(),
+      stepEndAt: new Date(),
+    });
 
     return toolRoundLimitMessage;
   }
@@ -1287,10 +1704,25 @@ export class AgentExecutorService {
     for (const skill of enabledSkills) {
       if (!this.contextStrategyService.shouldActivateSkillContent(skill, task, context)) continue;
       try {
-        const skillDoc = await this.skillModel.findOne({ id: skill.id }, { content: 1 }).lean().exec();
-        const rawContent = (skillDoc as any)?.content;
-        if (typeof rawContent === 'string' && rawContent.trim()) {
-          skillContents.set(skill.id, rawContent);
+        const skillDoc = await this.skillModel.findOne({ id: skill.id }, { content: 1, promptTemplateRef: 1 }).lean().exec();
+        const rawContent = String((skillDoc as any)?.content || '').trim();
+        const promptTemplateRef = this.normalizePromptTemplateRef((skillDoc as any)?.promptTemplateRef);
+        let resolvedContent = rawContent;
+        if (promptTemplateRef) {
+          try {
+            const resolved = await this.promptResolverService.resolve({
+              scene: promptTemplateRef.scene,
+              role: promptTemplateRef.role,
+              defaultContent: rawContent,
+              cacheOnly: true,
+            });
+            resolvedContent = String(resolved.content || '').trim();
+          } catch {
+            resolvedContent = rawContent;
+          }
+        }
+        if (resolvedContent) {
+          skillContents.set(skill.id, resolvedContent);
         }
       } catch {
         // ignore single skill load failure
@@ -1398,6 +1830,18 @@ export class AgentExecutorService {
   // 构建启用技能缓存 key。
   private agentEnabledSkillCacheKey(agentId: string): string {
     return `agent:enabled-skills:${agentId}`;
+  }
+
+  private normalizePromptTemplateRef(input: unknown): { scene: string; role: string } | null {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return null;
+    }
+    const scene = String((input as any).scene || '').trim();
+    const role = String((input as any).role || '').trim();
+    if (!scene || !role) {
+      return null;
+    }
+    return { scene, role };
   }
 
   private async buildForcedToolCallInstruction(

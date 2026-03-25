@@ -60,6 +60,10 @@ export class SkillController {
       metadata?: Record<string, any>;
       content?: string;
       contentType?: string;
+      promptTemplateRef?: {
+        scene?: string;
+        role?: string;
+      };
     },
   ) {
     return this.skillService.createSkill(body);

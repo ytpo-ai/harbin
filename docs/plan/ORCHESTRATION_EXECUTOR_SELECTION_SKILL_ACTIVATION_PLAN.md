@@ -1,3 +1,9 @@
+# [已弃用] ORCHESTRATION_EXECUTOR_SELECTION_SKILL_ACTIVATION_PLAN
+
+> 状态：已弃用（2026-03-24）
+>
+> 说明：该文档为历史方案/设计沉淀，仅用于归档追溯，不再作为当前实现依据。
+> 当前实现请以 `docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD` 与 `docs/feature/ORCHETRATION_TASK.md` 为准。
 # Orchestration Executor Selection 重构 + Skill 渐进式激活方案
 
 > 创建时间: 2026-03-17

@@ -90,5 +90,5 @@ else
     bash "$SCRIPT_DIR/start.sh" "$ENV"
 fi
 
-sleep 8
+sleep 2
 lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 -i :3004 -i :3201 | grep LISTEN

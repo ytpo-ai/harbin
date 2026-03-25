@@ -124,6 +124,11 @@ export class GatewayProxyService {
     const { req, userContext, statusCode, durationMs, requestId, sourceService, errorMessage } = params;
     if (!userContext?.employeeId) return;
 
+    const method = String(req.method || '').toUpperCase();
+    if (method === 'GET') {
+      return;
+    }
+
     const path = (req.originalUrl || req.url || '').split('?')[0] || '/';
     if (path === '/api/operation-logs') {
       return;
@@ -138,9 +143,9 @@ export class GatewayProxyService {
     await this.operationLogModel.create({
       humanEmployeeId: snapshot.humanEmployeeId,
       assistantAgentId: snapshot.assistantAgentId,
-      action: `${req.method} ${path}`,
+      action: `${method} ${path}`,
       resource: path,
-      httpMethod: req.method,
+      httpMethod: method,
       statusCode,
       success: statusCode < 400,
       requestId,

@@ -20,6 +20,9 @@ export class AgentMessage {
   @Prop()
   taskId?: string;
 
+  @Prop()
+  parentMessageId?: string;
+
   @Prop({ required: true, enum: ['system', 'user', 'assistant', 'tool'] })
   role: 'system' | 'user' | 'assistant' | 'tool';
 
@@ -46,6 +49,43 @@ export class AgentMessage {
 
   @Prop({ type: Object })
   metadata?: Record<string, unknown>;
+
+  @Prop()
+  modelID?: string;
+
+  @Prop()
+  providerID?: string;
+
+  @Prop({
+    enum: ['stop', 'tool-calls', 'error', 'cancelled', 'paused', 'max-rounds'],
+  })
+  finish?: 'stop' | 'tool-calls' | 'error' | 'cancelled' | 'paused' | 'max-rounds';
+
+  @Prop({
+    type: {
+      input: { type: Number },
+      output: { type: Number },
+      reasoning: { type: Number },
+      cacheRead: { type: Number },
+      cacheWrite: { type: Number },
+      total: { type: Number },
+    },
+    _id: false,
+  })
+  tokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+
+  @Prop({ type: Number })
+  cost?: number;
+
+  @Prop({ type: Number })
+  stepIndex?: number;
 }
 
 export const AgentMessageSchema = SchemaFactory.createForClass(AgentMessage);
@@ -60,3 +100,5 @@ AgentMessageSchema.pre('validate', function ensureContent(this: AgentMessageDocu
 AgentMessageSchema.index({ runId: 1, sequence: 1 });
 AgentMessageSchema.index({ sessionId: 1, sequence: 1 });
 AgentMessageSchema.index({ taskId: 1, sequence: 1 });
+AgentMessageSchema.index({ runId: 1, stepIndex: 1 });
+AgentMessageSchema.index({ parentMessageId: 1 });

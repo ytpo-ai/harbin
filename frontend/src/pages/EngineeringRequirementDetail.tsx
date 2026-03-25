@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { engineeringIntelligenceService, RequirementStatus } from '../services/engineeringIntelligenceService';
-import { agentService } from '../services/agentService';
 import { authService } from '../services/authService';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
@@ -41,21 +40,13 @@ const EngineeringRequirementDetail: React.FC = () => {
 
   const [statusNote, setStatusNote] = useState('');
   const [comment, setComment] = useState('');
-  const [isDoneModalOpen, setIsDoneModalOpen] = useState(false);
-  const [doneAgentId, setDoneAgentId] = useState('');
-  const [doneDescription, setDoneDescription] = useState('');
-  const [initialDoneDescription, setInitialDoneDescription] = useState('');
+  const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
+  const [targetStatus, setTargetStatus] = useState<RequirementStatus>('todo');
 
   const { data: detail, isLoading, refetch } = useQuery(
     ['ei-requirement-detail', requirementId],
     () => engineeringIntelligenceService.getRequirementById(requirementId),
     { enabled: Boolean(requirementId), retry: false },
-  );
-
-  const { data: assignableAgents = [] } = useQuery(
-    ['ei-assignable-agents'],
-    () => agentService.getAssignableAgents(),
-    { enabled: isDoneModalOpen },
   );
 
   const assignMutation = useMutation(
@@ -86,10 +77,10 @@ const EngineeringRequirementDetail: React.FC = () => {
   );
 
   const statusMutation = useMutation(
-    async (status: RequirementStatus) => {
+    async () => {
       const user = await authService.getCurrentUser();
       return engineeringIntelligenceService.updateRequirementStatus(requirementId, {
-        status,
+        status: targetStatus,
         changedById: user?.id,
         changedByName: user?.name,
         changedByType: 'human',
@@ -99,42 +90,7 @@ const EngineeringRequirementDetail: React.FC = () => {
     {
       onSuccess: () => {
         setStatusNote('');
-        queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
-        queryClient.invalidateQueries('ei-requirements');
-        queryClient.invalidateQueries('ei-requirement-board');
-        showToast('success', '状态更新成功');
-      },
-      onError: (error) => {
-        showToast('error', extractRequestErrorMessage(error));
-      },
-    },
-  );
-
-  const doneStatusMutation = useMutation(
-    async () => {
-      const user = await authService.getCurrentUser();
-      const selectedAgent = assignableAgents.find((agent) => agent.id === doneAgentId);
-      const shouldUpdateDescription = doneDescription !== initialDoneDescription;
-      const donePayload: any = {
-        status: 'done',
-        changedById: user?.id,
-        changedByName: user?.name,
-        changedByType: 'human',
-        note: statusNote.trim() || undefined,
-        toAgentId: selectedAgent?.id,
-        toAgentName: selectedAgent?.name,
-        description: shouldUpdateDescription ? doneDescription : undefined,
-        forceComplete: true,
-      };
-      return engineeringIntelligenceService.updateRequirementStatus(requirementId, donePayload);
-    },
-    {
-      onSuccess: () => {
-        setStatusNote('');
-        setDoneAgentId('');
-        setDoneDescription('');
-        setInitialDoneDescription('');
-        setIsDoneModalOpen(false);
+        setIsStatusModalOpen(false);
         queryClient.invalidateQueries(['ei-requirement-detail', requirementId]);
         queryClient.invalidateQueries('ei-requirements');
         queryClient.invalidateQueries('ei-requirement-board');
@@ -212,19 +168,17 @@ const EngineeringRequirementDetail: React.FC = () => {
   const comments = useMemo(() => (detail?.comments || []).slice().reverse(), [detail?.comments]);
   const statusHistory = useMemo(() => (detail?.statusHistory || []).slice().reverse(), [detail?.statusHistory]);
 
-  const openDoneModal = () => {
-    const currentDescription = detail?.description || '';
-    setDoneAgentId('');
-    setDoneDescription(currentDescription);
-    setInitialDoneDescription(currentDescription);
-    setIsDoneModalOpen(true);
+  const openStatusModal = () => {
+    setTargetStatus(detail?.status || 'todo');
+    setStatusNote('');
+    setIsStatusModalOpen(true);
   };
 
-  const closeDoneModal = () => {
-    if (doneStatusMutation.isLoading) {
+  const closeStatusModal = () => {
+    if (statusMutation.isLoading) {
       return;
     }
-    setIsDoneModalOpen(false);
+    setIsStatusModalOpen(false);
   };
 
   return (
@@ -311,40 +265,18 @@ const EngineeringRequirementDetail: React.FC = () => {
               >
                 同步 GitHub
               </button>
+              <button
+                onClick={openStatusModal}
+                className="px-3 py-2 border border-gray-300 rounded text-sm"
+              >
+                修改状态
+              </button>
             </div>
             {detail?.githubLink?.issueUrl ? (
               <a href={detail.githubLink.issueUrl} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-primary-700 hover:underline">
                 GitHub #{detail.githubLink.issueNumber}
               </a>
             ) : null}
-          </div>
-
-          <div>
-            <p className="text-xs text-gray-600 mb-1">状态说明（可选）</p>
-            <input
-              value={statusNote}
-              onChange={(e) => setStatusNote(e.target.value)}
-              placeholder="例如：等待评审"
-              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {STATUS_OPTIONS.map((status) => (
-                <button
-                  key={status}
-                  onClick={() => {
-                    if (status === 'done') {
-                      openDoneModal();
-                      return;
-                    }
-                    statusMutation.mutate(status);
-                  }}
-                  disabled={statusMutation.isLoading || doneStatusMutation.isLoading}
-                  className="px-2 py-1.5 border border-gray-300 rounded text-xs disabled:opacity-50"
-                >
-                  {STATUS_LABEL[status]}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div>
@@ -365,35 +297,34 @@ const EngineeringRequirementDetail: React.FC = () => {
           </div>
         </section>
       </div>
-      {isDoneModalOpen ? (
+      {isStatusModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-xl rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
-            <p className="text-base font-semibold text-gray-900">设置为 Done</p>
-            <p className="mt-1 text-xs text-gray-600">可选填写 Agent 与需求描述后提交。</p>
+          <div className="w-full max-w-lg rounded-lg border border-gray-200 bg-white p-4 shadow-xl">
+            <p className="text-base font-semibold text-gray-900">修改状态</p>
+            <p className="mt-1 text-xs text-gray-600">设置目标状态，可选补充状态说明。</p>
 
             <div className="mt-4 space-y-3">
               <div>
-                <p className="text-xs text-gray-600 mb-1">Agent（可选）</p>
+                <p className="text-xs text-gray-600 mb-1">目标状态</p>
                 <select
-                  value={doneAgentId}
-                  onChange={(e) => setDoneAgentId(e.target.value)}
+                  value={targetStatus}
+                  onChange={(e) => setTargetStatus(e.target.value as RequirementStatus)}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
                 >
-                  <option value="">不指定（保持当前负责人）</option>
-                  {assignableAgents.map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name} ({agent.id})
+                  {STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {STATUS_LABEL[status]}
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <p className="text-xs text-gray-600 mb-1">需求描述（可选更新）</p>
-                <textarea
-                  value={doneDescription}
-                  onChange={(e) => setDoneDescription(e.target.value)}
-                  rows={6}
+                <p className="text-xs text-gray-600 mb-1">状态说明（可选）</p>
+                <input
+                  value={statusNote}
+                  onChange={(e) => setStatusNote(e.target.value)}
+                  placeholder={targetStatus === 'done' ? '例如：手动标记完成原因' : '例如：等待评审'}
                   className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
                 />
               </div>
@@ -401,18 +332,18 @@ const EngineeringRequirementDetail: React.FC = () => {
 
             <div className="mt-4 flex items-center justify-end gap-2">
               <button
-                onClick={closeDoneModal}
-                disabled={doneStatusMutation.isLoading}
+                onClick={closeStatusModal}
+                disabled={statusMutation.isLoading}
                 className="px-3 py-2 border border-gray-300 rounded text-sm disabled:opacity-50"
               >
                 取消
               </button>
               <button
-                onClick={() => doneStatusMutation.mutate()}
-                disabled={doneStatusMutation.isLoading}
+                onClick={() => statusMutation.mutate()}
+                disabled={statusMutation.isLoading}
                 className="px-3 py-2 bg-primary-600 text-white rounded text-sm disabled:bg-gray-300"
               >
-                {doneStatusMutation.isLoading ? '提交中...' : '提交并设置为 Done'}
+                {statusMutation.isLoading ? '提交中...' : '提交'}
               </button>
             </div>
           </div>

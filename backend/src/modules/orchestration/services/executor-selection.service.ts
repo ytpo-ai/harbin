@@ -96,6 +96,9 @@ const W_KEYWORD = parseInt(process.env.EXECUTOR_WEIGHT_KEYWORD || '10', 10);
 
 const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD || '10', 10);
 
+/** Task types that require opencode execution capability (development / code_review). */
+const OPENCODE_REQUIRED_TASK_TYPES = new Set(['development', 'code_review']);
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -164,12 +167,30 @@ export class ExecutorSelectionService {
       delete agentLookup.id;
     }
 
-    const agent = await this.agentModel.findOne(agentLookup).select({ tools: 1 }).lean().exec();
+    const agent = await this.agentModel.findOne(agentLookup).select({ tools: 1, config: 1 }).lean().exec();
     if (!agent) {
       return {
         fit: false,
         requiredTools,
         missingTools: [...requiredTools],
+        suggestion: await this.selectExecutor({
+          title: input.taskTitle,
+          description: input.taskDescription,
+          taskType: normalizedTaskType,
+        }),
+      };
+    }
+
+    // OpenCode capability hard gate: development/code_review tasks require opencode-enabled agent.
+    const executorTaskType = normalizedTaskType;
+    if (OPENCODE_REQUIRED_TASK_TYPES.has(executorTaskType) && !this.isOpenCodeCapable(agent as unknown as Agent)) {
+      this.logger.warn(
+        `[validate_opencode_gate] agent=${normalizedAgentId} taskType=${executorTaskType} — agent lacks opencode capability, rejecting`,
+      );
+      return {
+        fit: false,
+        requiredTools,
+        missingTools: ['opencode_capability'],
         suggestion: await this.selectExecutor({
           title: input.taskTitle,
           description: input.taskDescription,
@@ -301,6 +322,16 @@ export class ExecutorSelectionService {
         breakdown.keywordRelevance = 0;
       }
 
+      // A-2. OpenCode capability gate — development/code_review tasks MUST go to
+      //      an agent whose config.execution.provider === 'opencode'. Agents without
+      //      this capability cannot execute code operations, so zero out their scores.
+      if (OPENCODE_REQUIRED_TASK_TYPES.has(taskType) && !this.isOpenCodeCapable(agent)) {
+        breakdown.roleMatch = 0;
+        breakdown.toolCoverage = 0;
+        breakdown.capabilityMatch = 0;
+        breakdown.keywordRelevance = 0;
+      }
+
       // B. Tool coverage
       breakdown.toolCoverage = ctx.requiredTools?.length
         ? this.computeExplicitToolScore(agentToolSet, ctx.requiredTools)
@@ -324,6 +355,13 @@ export class ExecutorSelectionService {
     });
 
     scored.sort((a, b) => b.score - a.score);
+
+    if (OPENCODE_REQUIRED_TASK_TYPES.has(taskType)) {
+      const eligible = scored.filter((s) => s.score > 0).length;
+      this.logger.log(
+        `[executor_opencode_gate] taskType=${taskType} totalAgents=${scored.length} eligibleAfterGate=${eligible}`,
+      );
+    }
 
     // 5. Employee fallback scoring (keyword only — employees don't have role/tools)
     const employeeCandidates = plannerTier
@@ -380,14 +418,19 @@ export class ExecutorSelectionService {
       };
     }
 
-    // Absolute fallback — first active agent
-    const fallbackAgent = plannerTier
-      ? agents.find((agent) => {
-          const role = roleMap.get(agent.roleId);
-          const targetTier = this.resolveAgentTier(agent, role);
-          return canDelegateAcrossTier(plannerTier, targetTier);
-        })
-      : agents[0];
+    // Absolute fallback — first active agent (with opencode gate for development/code_review)
+    const requiresOpenCode = OPENCODE_REQUIRED_TASK_TYPES.has(taskType);
+    const fallbackAgent = agents.find((agent) => {
+      if (requiresOpenCode && !this.isOpenCodeCapable(agent)) {
+        return false;
+      }
+      if (plannerTier) {
+        const role = roleMap.get(agent.roleId);
+        const targetTier = this.resolveAgentTier(agent, role);
+        return canDelegateAcrossTier(plannerTier, targetTier);
+      }
+      return true;
+    });
     if (fallbackAgent?._id) {
       return {
         executorType: 'agent',
@@ -463,6 +506,23 @@ export class ExecutorSelectionService {
       getTierByAgentRoleCode(role?.code) ||
       'operations'
     );
+  }
+
+  /**
+   * 判断 agent 是否具备 opencode 执行能力。
+   * 依据：agent.config.execution.provider === 'opencode'。
+   */
+  private isOpenCodeCapable(agent: Agent): boolean {
+    const config = agent.config;
+    if (!config || typeof config !== 'object') {
+      return false;
+    }
+    const execution = (config as Record<string, unknown>).execution;
+    if (!execution || typeof execution !== 'object') {
+      return false;
+    }
+    const provider = String((execution as Record<string, unknown>).provider || '').trim().toLowerCase();
+    return provider === 'opencode';
   }
 
   private async resolvePlannerTier(

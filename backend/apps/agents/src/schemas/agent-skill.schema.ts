@@ -98,6 +98,18 @@ export class Skill {
 
   @Prop({ type: [Object], default: [] })
   planningRules?: PlanningRule[];
+
+  @Prop({
+    type: {
+      scene: { type: String, required: true, trim: true },
+      role: { type: String, required: true, trim: true },
+    },
+    required: false,
+  })
+  promptTemplateRef?: {
+    scene: string;
+    role: string;
+  };
 }
 
 export const SkillSchema = SchemaFactory.createForClass(Skill);

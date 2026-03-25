@@ -66,6 +66,15 @@ export class Agent {
   @Prop({ required: true })
   systemPrompt: string;
 
+  @Prop(raw({
+    scene: { type: String, required: true, trim: true },
+    role: { type: String, required: true, trim: true },
+  }))
+  promptTemplateRef?: {
+    scene: string;
+    role: string;
+  };
+
   @Prop({ default: true })
   isActive: boolean;
 

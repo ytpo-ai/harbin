@@ -44,7 +44,6 @@ flowchart TD
   C -- stop --> O[返回 assistant 消息]
 ```
 
-
 ### 1.3 关键状态机
 
 工具 part 在 `MessageV2` 中是显式状态机：
@@ -55,32 +54,6 @@ flowchart TD
 - `error`：执行失败或中断
 
 这个状态机使 UI、恢复、审计都可以只依赖持久化数据，而不用依赖 provider 原始流。
-
-
-### 1.4 ReAct 流程图
-
-用户输入
-    ↓
-createUserMessage() → 写入 message 到存储
-    ↓
-loop() 进入 ReAct 循环
-    ↓
-┌─────────────────────────────────────────────────────┐
-│ for (step = 0; ; step++) {                         │
-│   1. 读取历史消息 ( compacted )                   │
-│   2. 检查是否结束 ( finish !== "tool-calls" )     │
-│   3. 创建新 assistant message                     │
-│   4. processor.process() → streamText()            │
-│      ├─ reasoning-start/delta/end (推理)           │
-│      ├─ tool-call (模型决定调用工具)               │
-│      │   └─ AI SDK 自动执行工具                    │
-│      │       └─ tool-result (结果注入消息流)       │
-│      ├─ text-delta (最终回复)                     │
-│      └─ finish-step                                │
-│   5. 结果判断: continue / stop / compact          │
-└─────────────────────────────────────────────────────┘
-    ↓
-返回最后一条 assistant message
 
 ---
 
@@ -285,6 +258,135 @@ export const updatePart = fn(UpdatePartInput, async (part) => {
 
 - message/part 采用 upsert，天然幂等，适合流式增量写。
 - 写库后广播事件，前端可订阅增量更新。
+
+### 2.7 常见问题 1：每次工具调用都会新建一条 message 吗？
+
+结论：**不会**。OpenCode 的粒度是“每轮 loop 生成一条 assistant message；该轮内多次工具调用写成多个 tool part”。
+
+文件：`packages/opencode/src/session/prompt.ts`
+
+```ts
+const processor = SessionProcessor.create({
+  assistantMessage: (await Session.updateMessage({
+    id: MessageID.ascending(),
+    parentID: lastUser.id,
+    role: "assistant",
+    // ...
+    sessionID,
+  })) as MessageV2.Assistant,
+  sessionID,
+  model,
+  abort,
+})
+```
+
+文件：`packages/opencode/src/session/processor.ts`
+
+```ts
+case "tool-input-start":
+  const part = await Session.updatePart({
+    id: toolcalls[value.id]?.id ?? PartID.ascending(),
+    messageID: input.assistantMessage.id,
+    sessionID: input.assistantMessage.sessionID,
+    type: "tool",
+    tool: value.toolName,
+    callID: value.id,
+    state: { status: "pending", input: {}, raw: "" },
+  })
+
+case "tool-result": {
+  const match = toolcalls[value.toolCallId]
+  if (match && match.state.status === "running") {
+    await Session.updatePart({
+      ...match,
+      state: { status: "completed", /* ... */ },
+    })
+  }
+}
+```
+
+文件：`packages/opencode/src/session/message-v2.ts`
+
+```ts
+export const ToolStatePending = z.object({ status: z.literal("pending"), ... })
+export const ToolStateRunning = z.object({ status: z.literal("running"), ... })
+export const ToolStateCompleted = z.object({ status: z.literal("completed"), ... })
+```
+
+解读：
+
+- assistant message 是“轮次容器”。
+- 工具调用是容器内的 part 状态流转：`pending -> running -> completed/error`。
+- 你在 UI 看到很多 assistant message，通常是多轮 ReAct（多 step）导致，不是“每个工具调用一条 message”。
+
+### 2.8 常见问题 2：不同 provider usage 格式不同，OpenCode 如何适配？
+
+结论：OpenCode 用三层适配：
+
+1. **Provider SDK 层映射**：先把各家 usage 映射为 `LanguageModelV2Usage`。
+2. **请求参数层补齐 usage**：确保流式接口返回 usage（如 `include_usage`）。
+3. **会话层归一化计费**：`Session.getUsage` 做跨 provider 语义修正与统一 cost 计算。
+
+文件：`packages/opencode/src/provider/sdk/copilot/chat/openai-compatible-chat-language-model.ts`
+
+```ts
+return {
+  usage: {
+    inputTokens: responseBody.usage?.prompt_tokens ?? undefined,
+    outputTokens: responseBody.usage?.completion_tokens ?? undefined,
+    totalTokens: responseBody.usage?.total_tokens ?? undefined,
+    reasoningTokens: responseBody.usage?.completion_tokens_details?.reasoning_tokens ?? undefined,
+    cachedInputTokens: responseBody.usage?.prompt_tokens_details?.cached_tokens ?? undefined,
+  },
+}
+```
+
+文件：`packages/opencode/src/provider/provider.ts`
+
+```ts
+if (model.api.npm.includes("@ai-sdk/openai-compatible") && options["includeUsage"] !== false) {
+  options["includeUsage"] = true
+}
+```
+
+文件：`packages/opencode/src/provider/sdk/copilot/chat/openai-compatible-chat-language-model.ts`
+
+```ts
+stream_options: this.config.includeUsage ? { include_usage: true } : undefined,
+```
+
+文件：`packages/opencode/src/provider/transform.ts`
+
+```ts
+if (input.model.api.npm === "@openrouter/ai-sdk-provider") {
+  result["usage"] = { include: true }
+}
+```
+
+文件：`packages/opencode/src/session/index.ts`
+
+```ts
+const inputTokens = safe(input.usage.inputTokens ?? 0)
+const outputTokens = safe(input.usage.outputTokens ?? 0)
+const cacheReadInputTokens = safe(input.usage.cachedInputTokens ?? 0)
+const cacheWriteInputTokens = safe(
+  (input.metadata?.["anthropic"]?.["cacheCreationInputTokens"] ??
+    input.metadata?.["bedrock"]?.["usage"]?.["cacheWriteInputTokens"] ??
+    input.metadata?.["venice"]?.["usage"]?.["cacheCreationInputTokens"] ??
+    0) as number,
+)
+
+const excludesCachedTokens = !!(input.metadata?.["anthropic"] || input.metadata?.["bedrock"])
+const adjustedInputTokens = safe(
+  excludesCachedTokens ? inputTokens : inputTokens - cacheReadInputTokens - cacheWriteInputTokens,
+)
+```
+
+解读：
+
+- 各家先映射到统一 usage 字段，避免上层到处写 provider 分支。
+- 对 usage 返回不稳定的 provider，在请求参数层显式要求返回 usage。
+- 计费与 token 统计统一收口在 `Session.getUsage`，处理 cached token 口径差异（Anthropic vs OpenAI/OpenRouter）和 metadata 补充值。
 
 ---
 

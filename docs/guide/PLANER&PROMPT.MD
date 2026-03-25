@@ -1,3 +1,10 @@
+# [TODO 重新整理] PLANER&PROMPT
+
+> 状态：待重新整理（2026-03-24）
+>
+> 说明：本文为历史分析草稿，结构与内容需要按当前实现重新梳理后再作为正式参考。
+>
+> 当前实现参考：`docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD`、`docs/feature/ORCHETRATION_TASK.md`、`docs/feature/ORCHETRATION_SCHEDULER.md`。
 ---
 探索 /Users/van/Workspace/harbin 项目中与 planner agent 任务拆解和 prompt 构建相关的代码。我需要了解：
 
@@ -363,3 +370,30 @@ Skill content 通过两级缓存管理：
 | Skill Schema | `/Users/van/Workspace/harbin/backend/apps/agents/src/schemas/agent-skill.schema.ts` | L1-87 |
 | Skill Content 读取 | `/Users/van/Workspace/harbin/backend/apps/agents/src/modules/skills/skill.service.ts` | L180-228 |
 | Orchestration 任务 Schema | `/Users/van/Workspace/harbin/backend/src/shared/schemas/orchestration-task.schema.ts` | L54-60 |
+
+---
+
+## 已知缺陷：Agent Manifest 截断导致执行者不可见（2026-03-24）
+
+### 问题
+
+`planning-context.service.ts` 的 `buildAgentManifest` 将所有活跃 Agent 的信息拼为纯文本，然后以 `AGENT_MANIFEST_MAX_LENGTH`（默认 2000 字符，`PLANNER_AGENT_MANIFEST_MAX_LENGTH` 环境变量可调）做硬截断后注入 Planner Prompt。
+
+当 Agent 数量增多时，排序靠后但具备关键工具的 Agent 会被截断，导致 Planner 在规划阶段无法发现正确的执行者，产生反复分配失败与死循环。
+
+### 实际案例
+
+计划 `69c181d953a3c074f2eca7f6`（Prompt 全量导入）要求 `repo-writer` + `save-prompt-template`。数据库中 Docter-W 和 Coder-T 均具备这两个工具，但因排序在第 11-12 位被截断，Planner 完全不可见，导致 3 次 replan、20+ 任务全部失败。
+
+### 根本原因
+
+Agent Manifest 作为**静态文本**注入 Planner Prompt 的架构设计存在缺陷。Planner Agent 本身具备 `list-agents` 工具，应该自行调用工具查询完整执行者清单，而非依赖系统预先塞入的截断文本。
+
+### 排查教训
+
+- **必须查数据库验证实际 Agent 工具配置**，不能只看种子文件代码（种子文件只是初始数据，运行时已被修改）
+- Agent 工具来源有两处需同时检查：`agents.tools`（Agent 文档直接存储）和 `agent_profiles.tools`（通过 roleId → roleCode 关联的角色配置），`buildAgentManifest` 仅读取前者
+
+### 详细分析
+
+见 `docs/issue/fix/2026-03-24-planner-agent-manifest-truncation-deadloop.md`

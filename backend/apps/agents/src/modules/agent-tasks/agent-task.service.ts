@@ -12,6 +12,12 @@ import { HookPipelineService } from '../runtime/hooks/hook-pipeline.service';
 import { LifecycleHookContext, LifecyclePhase } from '../runtime/hooks/lifecycle-hook.types';
 import { AgentTaskEvent, AgentTaskEventSchema, CreateAgentTaskBody } from './contracts/agent-task.contract';
 import { RuntimeSseStreamService } from './runtime-sse-stream.service';
+import {
+  AGENT_TASK_RUNTIME_STATUS_INDEX_KEY,
+  AGENT_TASK_RUNTIME_STATUS_TTL_SECONDS,
+  buildIdleAgentRuntimeStatus,
+  buildAgentRuntimeStatusKey,
+} from './agent-task-runtime-status.util';
 
 @Injectable()
 export class AgentTaskService {
@@ -342,6 +348,21 @@ export class AgentTaskService {
 
     const channel = this.sseStreamService.buildTaskChannel(parsed.taskId);
     await this.redisService.publish(channel, JSON.stringify(normalized));
+  }
+
+  async markAgentTaskToolIdle(agentId: string, taskId?: string): Promise<void> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId || !this.redisService.isReady()) {
+      return;
+    }
+
+    const payload = buildIdleAgentRuntimeStatus(normalizedAgentId, taskId);
+    await this.redisService.set(
+      buildAgentRuntimeStatusKey(normalizedAgentId),
+      JSON.stringify(payload),
+      AGENT_TASK_RUNTIME_STATUS_TTL_SECONDS,
+    );
+    await this.redisService.sadd(AGENT_TASK_RUNTIME_STATUS_INDEX_KEY, [normalizedAgentId]);
   }
 
   private mapRuntimeEventToTaskEvent(taskId: string, event: any): AgentTaskEvent {
