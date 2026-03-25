@@ -4,6 +4,8 @@ import { Document } from 'mongoose';
 export type OrchestrationPlanDocument = OrchestrationPlan & Document;
 
 export type OrchestrationMode = 'sequential' | 'parallel' | 'hybrid';
+export type OrchestrationDomainType = 'general' | 'development' | 'research';
+export type OrchestrationRunMode = 'once' | 'multi';
 export type OrchestrationPlanStatus =
   | 'draft'
   | 'drafting'
@@ -53,10 +55,12 @@ export class OrchestrationPlan {
   @Prop(raw({
     plannerAgentId: { type: String },
     mode: { type: String, enum: ['sequential', 'parallel', 'hybrid'], default: 'sequential' },
+    runMode: { type: String, enum: ['once', 'multi'], default: 'multi' },
   }))
   strategy: {
     plannerAgentId?: string;
     mode: OrchestrationMode;
+    runMode: OrchestrationRunMode;
   };
 
   @Prop({ type: [String], default: [] })
@@ -84,23 +88,8 @@ export class OrchestrationPlan {
   @Prop({ type: Object })
   metadata?: Record<string, any>;
 
-  @Prop(raw({
-    domainType: { type: String },
-    description: { type: String },
-    constraints: [{ type: String }],
-    knowledgeRefs: [{ type: String }],
-    metadata: { type: Object },
-  }))
-  domainContext?: {
-    domainType?: string;
-    description?: string;
-    constraints?: string[];
-    knowledgeRefs?: string[];
-    metadata?: Record<string, unknown>;
-  };
-
-  @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
-  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  @Prop({ enum: ['general', 'development', 'research'], default: 'general', required: true })
+  domainType: OrchestrationDomainType;
 
   @Prop({ enum: ['batch', 'incremental'], default: 'incremental' })
   generationMode: OrchestrationGenerationMode;

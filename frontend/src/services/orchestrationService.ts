@@ -1,6 +1,8 @@
 import api from './api';
 
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
+export type PlanDomainType = 'general' | 'development' | 'research';
+export type PlanRunMode = 'once' | 'multi';
 export type DebugRuntimeTaskTypeOverride = 'general' | 'development' | 'research' | 'review' | 'external_action';
 export type PlanStatus = 'draft' | 'drafting' | 'planned' | 'production';
 export type TaskStatus =
@@ -48,10 +50,12 @@ export interface OrchestrationPlan {
   _id: string;
   title: string;
   sourcePrompt: string;
+  domainType: PlanDomainType;
   status: PlanStatus;
   strategy: {
     plannerAgentId?: string;
     mode: PlanMode;
+    runMode?: PlanRunMode;
   };
   stats: {
     totalTasks: number;
@@ -159,9 +163,11 @@ export interface AgentSession {
 
 export interface CreatePlanFromPromptDto {
   prompt: string;
+  domainType: PlanDomainType;
   title?: string;
   plannerAgentId?: string;
   mode?: PlanMode;
+  runMode?: PlanRunMode;
   autoRun?: boolean;
   autoGenerate?: boolean;
 }
@@ -188,16 +194,20 @@ export interface PlanStreamEvent {
 export interface UpdatePlanDto {
   title?: string;
   sourcePrompt?: string;
+  domainType?: PlanDomainType;
   plannerAgentId?: string;
   mode?: PlanMode;
+  runMode?: PlanRunMode;
   metadata?: Record<string, unknown>;
 }
 
 export interface ReplanPlanDto {
   prompt: string;
+  domainType?: PlanDomainType;
   title?: string;
   plannerAgentId?: string;
   mode?: PlanMode;
+  runMode?: PlanRunMode;
   autoRun?: boolean;
   autoGenerate?: boolean;
 }

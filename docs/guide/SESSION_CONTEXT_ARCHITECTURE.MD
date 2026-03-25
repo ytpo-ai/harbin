@@ -29,7 +29,7 @@
 
 5. 编排调用上下文更新：
    - `orchestration.service.ts` 的 sessionId 改为 `plan-{planId}-{agentId}`
-   - 通过 `sessionContext` 透传 `domainContext` 与 `collaborationContext`
+   - 当前仅通过 `sessionContext` 透传 `collaborationContext`（Orchestration 已移除 `domainContext` 透传）
 
 6. Runtime API 新增：
    - `POST /agents/runtime/sessions/plan`

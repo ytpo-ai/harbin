@@ -35,7 +35,6 @@ import { OrchestrationExecutionEngineService } from './orchestration-execution-e
 import { PlanStatsService } from './plan-stats.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
-import { PlanningContextService } from './planning-context.service';
 import { ExecutorSelectionService } from './executor-selection.service';
 
 const DEFAULT_GENERATION_CONFIG: OrchestrationGenerationConfig = {
@@ -70,7 +69,6 @@ export class IncrementalPlanningService {
     private readonly planStatsService: PlanStatsService,
     private readonly eventStream: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
-    private readonly planningContextService: PlanningContextService,
     private readonly executorSelectionService: ExecutorSelectionService,
   ) {}
 
@@ -472,13 +470,6 @@ export class IncrementalPlanningService {
       this.planModel.findById(planId).exec(),
     ]);
 
-    const requirementId = plan ? this.contextService.resolveRequirementIdFromPlan(plan as any) : undefined;
-    const planningContext = await this.planningContextService.buildPlanningContext({
-      prompt: sourcePrompt,
-      requirementId,
-      plannerAgentId: String(plan?.strategy?.plannerAgentId || '').trim() || undefined,
-    });
-
     const completedTasks = tasks
       .filter((item) => item.status === 'completed')
       .map((item) => ({
@@ -509,9 +500,6 @@ export class IncrementalPlanningService {
 
     return {
       planGoal: sourcePrompt,
-      agentManifest: planningContext.agentManifest,
-      requirementDetail: planningContext.requirementDetail,
-      planningConstraints: planningContext.planningConstraints,
       completedTasks,
       failedTasks,
       totalSteps: tasks.length,
@@ -529,10 +517,8 @@ export class IncrementalPlanningService {
 
     const requirementId = await this.resolveRequirementObjectId(planId);
 
-    // Resolve runtimeTaskType: planner 指定 > plan.defaultTaskType > 'general'
-    const plan = await this.planModel.findById(planId).select({ defaultTaskType: 1, taskIds: 1 }).lean().exec();
-    const planDefaultTaskType = (plan as any)?.defaultTaskType as string | undefined;
-    const runtimeTaskType = taskResult.taskType || planDefaultTaskType || 'general';
+    // Resolve runtimeTaskType: planner 指定 > 'general'
+    const runtimeTaskType = taskResult.taskType || 'general';
 
     // 增量规划：自动将前序已完成任务设为依赖，确保执行层能注入前序输出上下文。
     const completedPredecessors = await this.taskModel
@@ -566,7 +552,6 @@ export class IncrementalPlanningService {
             resolvedTaskType: runtimeTaskType,
             plannerTaskType: taskResult.taskType || undefined,
             plannerRequiredTools: taskResult.requiredTools || undefined,
-            planDefaultTaskType: planDefaultTaskType || undefined,
           },
         },
       ],

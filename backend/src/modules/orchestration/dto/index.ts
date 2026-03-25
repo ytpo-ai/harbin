@@ -31,6 +31,10 @@ export class CreatePlanFromPromptDto {
   mode?: 'sequential' | 'parallel' | 'hybrid';
 
   @IsOptional()
+  @IsEnum(['once', 'multi'])
+  runMode?: 'once' | 'multi';
+
+  @IsOptional()
   @IsBoolean()
   autoRun?: boolean;
 
@@ -42,14 +46,8 @@ export class CreatePlanFromPromptDto {
   @IsString()
   requirementId?: string;
 
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  domainType?: string;
-
-  @IsOptional()
-  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
-  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  @IsEnum(['general', 'development', 'research'])
+  domainType: 'general' | 'development' | 'research' = 'general';
 }
 
 export class RunPlanDto {
@@ -84,6 +82,10 @@ export class ReplanPlanDto {
   mode?: 'sequential' | 'parallel' | 'hybrid';
 
   @IsOptional()
+  @IsEnum(['once', 'multi'])
+  runMode?: 'once' | 'multi';
+
+  @IsOptional()
   @IsBoolean()
   autoRun?: boolean;
 
@@ -92,13 +94,8 @@ export class ReplanPlanDto {
   autoGenerate?: boolean;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  domainType?: string;
-
-  @IsOptional()
-  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
-  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  @IsEnum(['general', 'development', 'research'])
+  domainType?: 'general' | 'development' | 'research';
 }
 
 export class UpdatePlanDto {
@@ -117,6 +114,10 @@ export class UpdatePlanDto {
   mode?: 'sequential' | 'parallel' | 'hybrid';
 
   @IsOptional()
+  @IsEnum(['once', 'multi'])
+  runMode?: 'once' | 'multi';
+
+  @IsOptional()
   @IsString()
   plannerAgentId?: string;
 
@@ -125,13 +126,8 @@ export class UpdatePlanDto {
   metadata?: Record<string, any>;
 
   @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  domainType?: string;
-
-  @IsOptional()
-  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
-  defaultTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  @IsEnum(['general', 'development', 'research'])
+  domainType?: 'general' | 'development' | 'research';
 }
 
 export class ReassignTaskDto {

@@ -23,7 +23,9 @@ import {
   OrchestrationRun,
   OrchestrationRunTask,
   OrchestrationTask,
+  PlanDomainType,
   PlanMode,
+  PlanRunMode,
 } from '../services/orchestrationService';
 
 type DrawerTab = 'debug' | 'session';
@@ -176,6 +178,8 @@ const Orchestration: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<PlanMode>('hybrid');
+  const [runMode, setRunMode] = useState<PlanRunMode>('multi');
+  const [domainType, setDomainType] = useState<PlanDomainType>('general');
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [plannerAgentId, setPlannerAgentId] = useState('');
 
@@ -455,6 +459,8 @@ const Orchestration: React.FC = () => {
     onSuccess: async (created) => {
       setPrompt('');
       setTitle('');
+      setDomainType('general');
+      setRunMode('multi');
       await queryClient.invalidateQueries('orchestration-plans');
       if (created?._id) {
         setSelectedPlanId(created._id);
@@ -511,7 +517,9 @@ const Orchestration: React.FC = () => {
     ({ planId, prompt: nextPrompt }: { planId: string; prompt: string }) =>
       orchestrationService.replanPlan(planId, {
         prompt: nextPrompt,
+        domainType: (planDetail?.domainType || 'general') as PlanDomainType,
         mode: planModeDraft,
+        runMode: (planDetail?.strategy?.runMode || 'multi') as PlanRunMode,
         plannerAgentId: planDetail?.strategy?.plannerAgentId,
       }),
     {
@@ -739,6 +747,7 @@ const Orchestration: React.FC = () => {
     setTitle(plan.title || '');
     setPrompt(plan.sourcePrompt || '');
     setMode(plan.strategy?.mode || 'hybrid');
+    setRunMode((plan.strategy?.runMode || 'multi') as PlanRunMode);
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
     setAutoGenerate(false);
     setIsCreateModalOpen(true);
@@ -1058,6 +1067,23 @@ const Orchestration: React.FC = () => {
                     </option>
                   ))}
                 </select>
+                <select
+                  value={domainType}
+                  onChange={(event) => setDomainType(event.target.value as PlanDomainType)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="general">通用（general）</option>
+                  <option value="development">研发（development）</option>
+                  <option value="research">调研（research）</option>
+                </select>
+                <select
+                  value={runMode}
+                  onChange={(event) => setRunMode(event.target.value as PlanRunMode)}
+                  className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+                >
+                  <option value="multi">多次执行（multi）</option>
+                  <option value="once">仅生成过程执行（once）</option>
+                </select>
               </div>
               <label className="inline-flex items-center gap-2 text-xs text-slate-600">
                 <input
@@ -1082,8 +1108,10 @@ const Orchestration: React.FC = () => {
                   createPlanMutation.mutate({
                     prompt: prompt.trim(),
                     title: title.trim() || undefined,
+                    domainType,
                     plannerAgentId: plannerAgentId || undefined,
                     mode,
+                    runMode,
                     autoGenerate,
                   })
                 }
@@ -1178,7 +1206,8 @@ const Orchestration: React.FC = () => {
                       onClick={() =>
                         selectedPlanId && runPlanMutation.mutate({ planId: selectedPlanId, continueOnFailure: true })
                       }
-                      disabled={!selectedPlanId || runPlanMutation.isLoading}
+                      disabled={!selectedPlanId || runPlanMutation.isLoading || planDetail?.strategy?.runMode === 'once'}
+                      title={planDetail?.strategy?.runMode === 'once' ? 'once 模式仅在生成任务过程中执行，不支持手动运行' : undefined}
                       className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-xs text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
                     >
                       <PlayIcon className="h-3.5 w-3.5" /> 运行计划

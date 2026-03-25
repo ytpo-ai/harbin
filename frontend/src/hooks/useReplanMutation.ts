@@ -43,7 +43,9 @@ export const useReplanMutation = ({
     ({ targetPlanId, prompt, plannerAgentId, autoGenerate }: ReplanPayload) =>
       orchestrationService.replanPlan(targetPlanId, {
         prompt,
+        domainType: planDetail?.domainType || 'general',
         mode: modeDraft,
+        runMode: planDetail?.strategy?.runMode || 'multi',
         plannerAgentId,
         autoGenerate,
       }),

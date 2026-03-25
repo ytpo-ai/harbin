@@ -84,7 +84,6 @@ export class OrchestrationExecutionEngineService {
     const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
     const dependencyContext = await this.contextService.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(task);
-    const planDomainContext = await this.contextService.resolvePlanDomainContext(planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(task, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
@@ -231,7 +230,6 @@ export class OrchestrationExecutionEngineService {
           {
             currentTaskId: taskId,
             orchestrationRunId: options?.orchestrationRunId,
-            domainContext: planDomainContext,
             collaborationContext,
           },
         );
@@ -250,7 +248,6 @@ export class OrchestrationExecutionEngineService {
           runId: options?.orchestrationRunId,
           orchestrationTaskId: taskId,
           sessionId: requestedSessionId,
-          domainContext: planDomainContext,
           collaborationContext,
           runSummaries: Array.isArray(planSessionSnapshot?.runSummaries) ? planSessionSnapshot.runSummaries : [],
           dependencies: task.dependencyTaskIds,
@@ -541,7 +538,6 @@ export class OrchestrationExecutionEngineService {
     const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
     const dependencyContext = await this.contextService.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
-    const planDomainContext = await this.contextService.resolvePlanDomainContext(runTask.planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(runTask as any as OrchestrationTask, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
@@ -640,7 +636,6 @@ export class OrchestrationExecutionEngineService {
           {
             currentTaskId: runTaskId,
             orchestrationRunId: runId,
-            domainContext: planDomainContext,
             collaborationContext,
           },
         );
@@ -660,7 +655,6 @@ export class OrchestrationExecutionEngineService {
           orchestrationRunTaskId: runTaskId,
           sourceTaskId: runTask.sourceTaskId,
           sessionId: requestedSessionId,
-          domainContext: planDomainContext,
           collaborationContext,
           runSummaries: Array.isArray(planSessionSnapshot?.runSummaries) ? planSessionSnapshot.runSummaries : [],
           dependencies: runTask.dependencyTaskIds,

@@ -63,9 +63,9 @@ const PlanDetail: React.FC = () => {
   } = usePlanRunHistory(planId, view.activeTab, view.runDrawerOpen, view.selectedRunId);
 
   const { data: agents = [] } = useQuery('plan-detail-agents', () => agentService.getAssignableAgents());
-  const debugTask = useMemo(
-    () => planDetail?.tasks?.find((task) => task._id === view.debugTaskId),
-    [planDetail?.tasks, view.debugTaskId],
+  const agentNameById = useMemo(
+    () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
+    [agents],
   );
   const planTasks = planDetail?.tasks ?? [];
   const isPlanEditable = useMemo(
@@ -122,8 +122,8 @@ const PlanDetail: React.FC = () => {
   }, [planDetail?._id, planDetail?.sourcePrompt, planDetail?.strategy?.mode]);
 
   useEffect(() => {
-    view.syncDebugDraftFromTask(debugTask, agents[0]?.id);
-  }, [agents, debugTask]);
+    view.syncDebugDraftFromTask(editingTask || undefined, agents[0]?.id);
+  }, [agents, editingTask]);
 
   useEffect(() => {
     setRunStatusFilter('all');
@@ -132,7 +132,7 @@ const PlanDetail: React.FC = () => {
       setTaskEdits({});
       resetTaskDrawerState();
     });
-  }, [planId, resetTaskDrawerState, setRunStatusFilter, setRunTriggerFilter, setTaskEdits]);
+  }, [planId]);
 
   useEffect(() => {
     pruneTaskEdits(planTasks);
@@ -207,7 +207,6 @@ const PlanDetail: React.FC = () => {
   const {
     handleCopyPlanTasksMarkdown,
     handleMoveTask,
-    handleSaveTaskEdits,
     confirmAndCancelRun,
     handleDebugRun,
   } = usePlanDetailActions({
@@ -289,6 +288,10 @@ const PlanDetail: React.FC = () => {
       view.setIsReplanModalOpen(true);
     },
     onRunPlan: () => { if (planId) runPlan(planId, true); },
+    runPlanDisabled: planDetail?.strategy?.runMode === 'once',
+    runPlanDisabledReason: planDetail?.strategy?.runMode === 'once'
+      ? 'once 模式仅在生成任务过程中执行，不支持手动运行'
+      : undefined,
     onCancelRun: (runId: string) => confirmAndCancelRun(runId, '用户在计划详情页停止运行'),
     onPublish: () => { if (planId) publishPlanMutation.mutate(planId); },
     onUnlock: () => { if (planId) unlockPlanMutation.mutate(planId); },
@@ -298,6 +301,7 @@ const PlanDetail: React.FC = () => {
   const mainContentProps = {
     planId,
     planDetail,
+    agentNameById,
     latestRunSummary,
     streamHint: view.streamHint,
     streamConnected: view.streamConnected,
@@ -312,14 +316,11 @@ const PlanDetail: React.FC = () => {
     taskHint: view.taskHint,
     debugTaskId: view.debugTaskId,
     streamTaskIds: view.streamTaskIds,
-    dirtyTaskCount: dirtyTaskUpdates.length,
     isAddLoading: addTaskMutation.isLoading,
-    isBatchSaving: batchUpdateTasksMutation.isLoading,
     isReordering: reorderTaskMutation.isLoading,
     isDuplicating: duplicateTaskMutation.isLoading,
     isRemoving: removeTaskMutation.isLoading,
     onOpenAddTask: () => view.setIsAddTaskModalOpen(true),
-    onSaveBatch: handleSaveTaskEdits,
     onMoveTask: handleMoveTask,
     onDuplicateTask: (taskId: string) => { if (planId) duplicateTaskMutation.mutate({ targetPlanId: planId, taskId }); },
     onRemoveTask: (taskId: string) => {
@@ -328,7 +329,6 @@ const PlanDetail: React.FC = () => {
       removeTaskEdit(taskId);
     },
     onOpenTaskEdit: openTaskEditDrawer,
-    onOpenDebug: (taskId: string) => view.openDebugDrawer(taskId, 'debug'),
     onCompleteHuman: (taskId: string) => {
       const summary = window.prompt('请输入人工完成说明', '由人工完成') || undefined;
       completeHumanTaskMutation.mutate({ taskId, summary });
@@ -363,6 +363,12 @@ const PlanDetail: React.FC = () => {
     taskEditDrawerOpen,
     editingTask,
     editingTaskDraft: editingTask ? getEffectiveTaskDraft(editingTask) : null,
+    debugAgentId: view.debugAgentId,
+    debugRuntimeTaskType: view.debugRuntimeTaskType,
+    debugHint: view.debugHint,
+    agents,
+    debugRunning: debugStepMutation.isLoading,
+    reassignRunning: reassignMutation.isLoading,
     onCloseAddModal: () => view.setIsAddTaskModalOpen(false),
     onChangeNewTaskTitle: view.setNewTaskTitle,
     onChangeNewTaskDescription: view.setNewTaskDescription,
@@ -394,6 +400,58 @@ const PlanDetail: React.FC = () => {
     onOpenDependencyFromTaskEdit: () => {
       if (editingTask) openDependencyModal(editingTask);
     },
+    onChangeExecutorType: (executorType: 'agent' | 'unassigned') => {
+      if (!editingTask) {
+        return;
+      }
+      if (executorType === 'unassigned') {
+        reassignMutation.mutate({ taskId: editingTask._id, executorType: 'unassigned' });
+        return;
+      }
+
+      const fallbackAgentId =
+        (editingTask.assignment?.executorType === 'agent' ? editingTask.assignment.executorId : '')
+        || view.debugAgentId
+        || agents[0]?.id
+        || '';
+      if (!fallbackAgentId) {
+        view.setDebugHint('请先选择执行 Agent');
+        return;
+      }
+
+      view.setDebugAgentId(fallbackAgentId);
+      reassignMutation.mutate({
+        taskId: editingTask._id,
+        executorType: 'agent',
+        executorId: fallbackAgentId,
+      });
+    },
+    onChangeExecutorAgentId: (agentId: string) => {
+      if (!editingTask) {
+        return;
+      }
+      const nextAgentId = agentId.trim();
+      if (!nextAgentId) {
+        return;
+      }
+      view.setDebugAgentId(nextAgentId);
+      reassignMutation.mutate({
+        taskId: editingTask._id,
+        executorType: 'agent',
+        executorId: nextAgentId,
+      });
+    },
+    onChangeDebugAgentId: view.setDebugAgentId,
+    onChangeDebugRuntimeType: view.setDebugRuntimeTaskType,
+    onRunDebugFromTaskEdit: () => {
+      void handleDebugRun(
+        editingTask || undefined,
+        view.debugAgentId,
+        editingTask ? getEffectiveTaskDraft(editingTask).title : '',
+        editingTask ? getEffectiveTaskDraft(editingTask).description : '',
+        view.debugRuntimeTaskType,
+      );
+    },
   };
 
   const runtimeOverlayProps = {
@@ -410,7 +468,7 @@ const PlanDetail: React.FC = () => {
     onCloseRunDrawer: () => view.setRunDrawerOpen(false),
     onCancelRunInRunDetail: (runId: string) => confirmAndCancelRun(runId, '用户在 run 详情中取消运行'),
     debugDrawerOpen: view.debugDrawerOpen,
-    debugTask: debugTask || null,
+    debugTask: editingTask || null,
     activeDrawerTab: view.activeDrawerTab,
     debugAgentId: view.debugAgentId,
     debugTitle: view.debugTitle,
@@ -432,20 +490,20 @@ const PlanDetail: React.FC = () => {
     onChangeDescription: view.setDebugDescription,
     onChangeRuntimeType: view.setDebugRuntimeTaskType,
     onSaveDraft: () => {
-      if (!debugTask) return;
+      if (!editingTask) return;
       const nextTitle = view.debugTitle.trim();
       const nextDescription = view.debugDescription.trim();
-      const originalTitle = String(debugTask.title || '').trim();
-      const originalDescription = String(debugTask.description || '').trim();
+      const originalTitle = String(editingTask.title || '').trim();
+      const originalDescription = String(editingTask.description || '').trim();
       saveTaskDraftMutation.mutate({
-        taskId: debugTask._id,
+        taskId: editingTask._id,
         title: nextTitle && nextTitle !== originalTitle ? nextTitle : undefined,
         description: nextDescription && nextDescription !== originalDescription ? nextDescription : undefined,
-        runtimeTaskType: view.debugRuntimeTaskType !== (debugTask.runtimeTaskType || 'auto') ? view.debugRuntimeTaskType : undefined,
+        runtimeTaskType: view.debugRuntimeTaskType !== (editingTask.runtimeTaskType || 'auto') ? view.debugRuntimeTaskType : undefined,
       });
     },
     onRunDebug: () => {
-      void handleDebugRun(debugTask, view.debugAgentId, view.debugTitle, view.debugDescription, view.debugRuntimeTaskType);
+      void handleDebugRun(editingTask || undefined, view.debugAgentId, view.debugTitle, view.debugDescription, view.debugRuntimeTaskType);
     },
     isReplanModalOpen: view.isReplanModalOpen,
     replanPlannerAgentId: view.replanPlannerAgentId,

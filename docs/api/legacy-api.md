@@ -73,11 +73,15 @@ Employees 字段补充：
 
 ## Orchestration（`/orchestration`）
 
-- `POST /orchestration/plans/from-prompt`：通过提示词创建计划
+- `POST /orchestration/plans/from-prompt`：通过提示词创建计划（`domainType` 必填，枚举：`general|development|research`，默认 `general`；`runMode` 可选，枚举：`once|multi`，默认 `multi`）
 - `PATCH /orchestration/plans/:id`：更新计划基础信息（标题/提示词/策略/元数据）
 - `GET /orchestration/plans`：计划列表
 - `GET /orchestration/plans/:id`：计划详情
 - `POST /orchestration/plans/:id/run`：执行计划
+
+运行限制补充：
+
+- 当 `plan.strategy.runMode=once` 时，`POST /orchestration/plans/:id/run` 会返回 `400`（仅允许在任务生成链路内执行）。
 - `POST /orchestration/runs/:runId/cancel`：取消指定 run（将未完成 run task 标记为 cancelled）
 - `POST /orchestration/plans/:id/publish`：发布计划到 production（锁定编辑）
 - `POST /orchestration/plans/:id/unlock`：解锁 production 计划并恢复编辑

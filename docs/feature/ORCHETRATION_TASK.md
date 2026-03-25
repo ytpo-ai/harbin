@@ -22,7 +22,10 @@
 
 补充字段：
 
+- `orchestration_plans.domainType`：计划业务域类型，固定枚举 `general | development | research`，创建时必填（默认 `general`）。
 - `orchestration_tasks.requirementId?: ObjectId`：用于将编排任务与 EI 需求建立闭环关联。
+
+> 说明：Plan 已移除 `defaultTaskType` 与 `domainContext` 字段；`domainType` 不再由 Orchestration 在运行时自动推断，需由创建/更新请求显式给出（或采用默认值）。
 
 #### OrchestrationPlan 状态
 
@@ -80,6 +83,11 @@
 - **sequential**：按依赖顺序串行执行
 - **parallel**：无依赖任务并行执行，有依赖按序执行
 - **hybrid**：优先并行，必要时降级为顺序
+
+#### 运行策略（strategy.runMode）
+
+- **multi**（默认）：计划可被手动/调度多次运行。
+- **once**：仅允许在任务生成链路中执行（增量生成时即时执行），不支持后续手动重复运行；前端运行按钮禁用。
 
 #### 任务执行流程
 

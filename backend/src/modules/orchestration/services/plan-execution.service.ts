@@ -57,6 +57,7 @@ export class PlanExecutionService {
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
+    this.assertManualRunAllowed(plan);
 
     const runKey = planId;
     if (this.runningPlans.has(runKey)) {
@@ -134,6 +135,9 @@ export class PlanExecutionService {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {
       throw new NotFoundException('Plan not found');
+    }
+    if (this.isOnceRunMode(plan) && triggerType !== 'autorun') {
+      throw new BadRequestException('Plan strategy.runMode=once only allows execution during task generation');
     }
 
     const templateTasks = await this.orchestrationTaskModel.find({ planId }).sort({ order: 1 }).exec();
@@ -501,5 +505,15 @@ export class PlanExecutionService {
       }
     }
     return '';
+  }
+
+  private assertManualRunAllowed(plan: OrchestrationPlanDocument): void {
+    if (this.isOnceRunMode(plan)) {
+      throw new BadRequestException('Plan strategy.runMode=once does not support manual rerun');
+    }
+  }
+
+  private isOnceRunMode(plan: OrchestrationPlanDocument): boolean {
+    return String((plan.strategy as any)?.runMode || 'multi').trim().toLowerCase() === 'once';
   }
 }

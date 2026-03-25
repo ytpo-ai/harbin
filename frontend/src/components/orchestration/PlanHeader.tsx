@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeftIcon,
   ArrowPathIcon,
+  ChevronDownIcon,
   DocumentDuplicateIcon,
   PencilSquareIcon,
   PlayIcon,
@@ -32,6 +33,8 @@ interface PlanHeaderProps {
   onSavePrompt: () => void;
   onOpenReplan: () => void;
   onRunPlan: () => void;
+  runPlanDisabled?: boolean;
+  runPlanDisabledReason?: string;
   onCancelRun: (runId: string) => void;
   onPublish: () => void;
   onUnlock: () => void;
@@ -60,11 +63,32 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
   onSavePrompt,
   onOpenReplan,
   onRunPlan,
+  runPlanDisabled,
+  runPlanDisabledReason,
   onCancelRun,
   onPublish,
   onUnlock,
   onCopyMarkdown,
 }) => {
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
+  const moreActionsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!moreActionsRef.current) {
+        return;
+      }
+      if (!moreActionsRef.current.contains(event.target as Node)) {
+        setMoreActionsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   return (
     <div className="bg-white border-b border-slate-200 px-4 py-3">
       <div className="flex items-center justify-between max-w-7xl mx-auto">
@@ -88,33 +112,38 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
             <ArrowPathIcon className="h-4 w-4" /> 刷新
           </button>
           <button
-            onClick={onGenerateNext}
-            disabled={!planId || generateLoading || runPlanLoading || isProductionPlan || generationCompleted}
-            className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-          >
-            <PlusIcon className="h-4 w-4" />
-            {generateLoading ? '生成中...' : '生成下一步'}
-          </button>
-          <button
             onClick={onSavePrompt}
             disabled={!planId || savePromptLoading || !isPlanEditable || !promptDraft.trim()}
             className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             <PencilSquareIcon className="h-4 w-4" /> 保存
           </button>
-          <button
-            onClick={onOpenReplan}
-            disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
-            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
-            {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
-          </button>
-          <button
-            onClick={onRunPlan}
-            disabled={!planId || runPlanLoading}
-            className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-sm text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
-          >
+          {!isProductionPlan && (
+            <button
+              onClick={onOpenReplan}
+              disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
+              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
+              {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
+            </button>
+          )}
+          {!isProductionPlan && (
+            <button
+              onClick={onGenerateNext}
+              disabled={!planId || generateLoading || runPlanLoading || generationCompleted}
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              <PlusIcon className="h-4 w-4" />
+              {generateLoading ? '生成中...' : '生成下一步'}
+            </button>
+          )}
+            <button
+              onClick={onRunPlan}
+              disabled={!planId || runPlanLoading || runPlanDisabled}
+              title={runPlanDisabled ? runPlanDisabledReason : undefined}
+              className="inline-flex items-center gap-1 rounded-md border border-cyan-200 px-3 py-1.5 text-sm text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+            >
             <PlayIcon className="h-4 w-4" /> 运行
           </button>
           {latestRunSummary?.status === 'running' && latestRunSummary?._id && (
@@ -126,15 +155,6 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
               {cancelRunLoading ? '停止中...' : '停止运行'}
             </button>
           )}
-          {planDetail.status === 'planned' && (
-            <button
-              onClick={onPublish}
-              disabled={!planId || publishLoading || runPlanLoading}
-              className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-            >
-              {publishLoading ? '发布中...' : '发布生产'}
-            </button>
-          )}
           {planDetail.status === 'production' && (
             <button
               onClick={onUnlock}
@@ -144,13 +164,39 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
               {unlockLoading ? '解锁中...' : '解锁编辑'}
             </button>
           )}
-          <button
-            onClick={onCopyMarkdown}
-            disabled={!planDetail}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            <DocumentDuplicateIcon className="h-4 w-4" /> 复制任务MD
-          </button>
+          <div className="relative" ref={moreActionsRef}>
+            <button
+              onClick={() => setMoreActionsOpen((prev) => !prev)}
+              className="inline-flex items-center gap-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              更多操作 <ChevronDownIcon className="h-4 w-4" />
+            </button>
+            {moreActionsOpen && (
+              <div className="absolute right-0 z-20 mt-1 min-w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {planDetail.status === 'planned' && (
+                  <button
+                    onClick={() => {
+                      setMoreActionsOpen(false);
+                      onPublish();
+                    }}
+                    disabled={!planId || publishLoading || runPlanLoading}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    {publishLoading ? '发布中...' : '发布生产'}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setMoreActionsOpen(false);
+                    onCopyMarkdown();
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  <DocumentDuplicateIcon className="h-4 w-4" /> 复制任务MD
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

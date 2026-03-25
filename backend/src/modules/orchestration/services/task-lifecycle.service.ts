@@ -414,6 +414,22 @@ export class TaskLifecycleService {
       reason: 'manual_retry',
     });
 
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).select({ strategy: 1 }).lean().exec();
+    const isOnceRunMode = String((plan as any)?.strategy?.runMode || 'multi').trim().toLowerCase() === 'once';
+
+    if (isOnceRunMode) {
+      await this.executionEngineService.executeTaskNode(planId, updatedTask as unknown as OrchestrationTask);
+      const refreshedTask = await this.orchestrationTaskModel.findOne({ _id: taskId }).exec();
+      return {
+        task: refreshedTask || updatedTask,
+        run: {
+          accepted: true,
+          planId,
+          status: 'accepted',
+        },
+      };
+    }
+
     const run = await this.planExecutionService.runPlanAsync(planId, { continueOnFailure: true });
 
     return {

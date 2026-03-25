@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import axios from 'axios';
 import { Model, Types } from 'mongoose';
 import {
   OrchestrationTask,
@@ -10,28 +9,17 @@ import {
   OrchestrationRunTask,
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
-import {
-  OrchestrationPlan,
-  OrchestrationPlanDocument,
-} from '../../../shared/schemas/orchestration-plan.schema';
-import { inferDomainTypeFromText } from '../../../shared/domain-context/domain-type.util';
+import { OrchestrationPlanDocument } from '../../../shared/schemas/orchestration-plan.schema';
 import { TaskClassificationService } from './task-classification.service';
 import { TaskOutputValidationService } from './task-output-validation.service';
 
-type DomainStatus = 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
-
 @Injectable()
 export class OrchestrationContextService {
-  private readonly engineeringIntelligenceBaseUrl =
-    process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004/api';
-
   constructor(
     @InjectModel(OrchestrationTask.name)
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(OrchestrationRunTask.name)
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
-    @InjectModel(OrchestrationPlan.name)
-    private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
   ) {}
@@ -262,62 +250,6 @@ export class OrchestrationContextService {
     };
   }
 
-  async resolvePlanDomainContext(planId: string): Promise<Record<string, unknown> | undefined> {
-    const plan = await this.orchestrationPlanModel
-      .findOne({ _id: planId })
-      .select({ domainContext: 1, sourcePrompt: 1 })
-      .lean<{ domainContext?: Record<string, unknown>; sourcePrompt?: string }>()
-      .exec();
-    if (plan?.domainContext && typeof plan.domainContext === 'object') {
-      return plan.domainContext;
-    }
-    if (!plan?.sourcePrompt) {
-      return undefined;
-    }
-    return this.inferDomainContext(String(plan.sourcePrompt));
-  }
-
-  async tryUpdateRequirementStatus(
-    requirementId: string | undefined,
-    status: DomainStatus,
-    reason: string,
-  ): Promise<void> {
-    if (!requirementId) {
-      return;
-    }
-
-    try {
-      await axios.post(
-        `${this.engineeringIntelligenceBaseUrl}/ei/requirements/${encodeURIComponent(requirementId)}/status`,
-        {
-          status,
-          changedByType: 'system',
-          changedByName: 'orchestration-service',
-          note: reason,
-        },
-        {
-          timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
-        },
-      );
-    } catch {
-      // requirement sync is best-effort and should not block orchestration execution.
-    }
-  }
-
-  inferDomainContext(prompt: string, preferredDomainType?: string): Record<string, unknown> {
-    const normalizedPrompt = String(prompt || '').trim();
-    const domainType = this.inferDomainType(normalizedPrompt, preferredDomainType);
-    const text = normalizedPrompt.toLowerCase();
-    const keywords = this.extractDomainKeywords(text);
-    return {
-      domainType,
-      keywords,
-      inferredAt: new Date().toISOString(),
-      source: 'prompt',
-      description: normalizedPrompt.slice(0, 500),
-    };
-  }
-
   resolveRequirementIdFromPlan(plan: OrchestrationPlanDocument): string | undefined {
     return String((plan.metadata || {}).requirementId || '').trim() || undefined;
   }
@@ -397,38 +329,6 @@ export class OrchestrationContextService {
       }
     }
     return '';
-  }
-
-  private inferDomainType(prompt: string, preferredDomainType?: string): string {
-    return inferDomainTypeFromText({
-      prompt,
-      preferredDomainType,
-    });
-  }
-
-  private extractDomainKeywords(text: string): string[] {
-    const candidates = [
-      'backend',
-      'frontend',
-      'api',
-      'database',
-      'schema',
-      'auth',
-      'agent',
-      'orchestration',
-      'scheduler',
-      'prompt',
-      'skill',
-      'meeting',
-      'billing',
-      'engineering',
-      '智能体',
-      '编排',
-      '调度',
-      '需求',
-      '研发',
-    ];
-    return candidates.filter((keyword) => text.includes(keyword)).slice(0, 12);
   }
 
   private getEntityId(entity: Record<string, any>): string {

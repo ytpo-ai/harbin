@@ -7,6 +7,7 @@ import {
   UpdatePlanDto,
 } from '../dto';
 import {
+  OrchestrationDomainType,
   OrchestrationPlan,
   OrchestrationPlanDocument,
 } from '../../../shared/schemas/orchestration-plan.schema';
@@ -53,16 +54,17 @@ export class PlanManagementService {
       throw new BadRequestException('prompt is required');
     }
 
-    const inferredDomainContext = this.contextService.inferDomainContext(prompt, dto.domainType);
+    const domainType = this.normalizeDomainType(dto.domainType);
     const requirementId = String(dto.requirementId || '').trim() || undefined;
     const plan = await new this.orchestrationPlanModel({
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,
-      domainContext: inferredDomainContext,
+      domainType,
       status: 'draft',
       strategy: {
         plannerAgentId: dto.plannerAgentId,
         mode: dto.mode || 'hybrid',
+        runMode: dto.runMode || 'multi',
       },
       generationMode: 'incremental',
       generationConfig: {
@@ -87,7 +89,6 @@ export class PlanManagementService {
         waitingHumanTasks: 0,
       },
       taskIds: [],
-      ...(dto.defaultTaskType ? { defaultTaskType: dto.defaultTaskType } : {}),
       metadata: {
         ...(dto.plannerAgentId ? { requestedPlannerAgentId: dto.plannerAgentId } : {}),
         ...(requirementId ? { requirementId } : {}),
@@ -196,15 +197,15 @@ export class PlanManagementService {
     }
     if (sourcePrompt) {
       updatePayload.sourcePrompt = sourcePrompt;
-      updatePayload.domainContext = this.contextService.inferDomainContext(
-        sourcePrompt,
-        dto.domainType || String((plan.domainContext as any)?.domainType || ''),
-      );
-    } else if (dto.domainType) {
-      updatePayload.domainContext = this.contextService.inferDomainContext(plan.sourcePrompt || '', dto.domainType);
+    }
+    if (dto.domainType) {
+      updatePayload.domainType = this.normalizeDomainType(dto.domainType);
     }
     if (dto.mode) {
       updatePayload['strategy.mode'] = dto.mode;
+    }
+    if (dto.runMode) {
+      updatePayload['strategy.runMode'] = dto.runMode;
     }
     if (dto.plannerAgentId !== undefined) {
       if (plannerAgentId) {
@@ -219,10 +220,6 @@ export class PlanManagementService {
         ...dto.metadata,
       };
     }
-    if (dto.defaultTaskType) {
-      updatePayload.defaultTaskType = dto.defaultTaskType;
-    }
-
     if (!Object.keys(updatePayload).length && !Object.keys(unsetPayload).length) {
       throw new BadRequestException('At least one updatable field is required');
     }
@@ -343,7 +340,8 @@ export class PlanManagementService {
     const plannerAgentId = dto.plannerAgentId?.trim();
     const title = dto.title?.trim() || plan.title || this.derivePlanTitle(prompt);
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
-    const inferredDomainContext = this.contextService.inferDomainContext(prompt, dto.domainType);
+    const fallbackRunMode = dto.runMode || (plan.strategy as any)?.runMode || 'multi';
+    const domainType = this.normalizeDomainType(dto.domainType || (plan as any).domainType);
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
     const shouldStartGeneration = dto.autoGenerate ?? dto.autoRun ?? false;
 
@@ -372,13 +370,13 @@ export class PlanManagementService {
             $set: {
               title,
               sourcePrompt: prompt,
-              domainContext: inferredDomainContext,
+              domainType,
               status: 'draft',
               strategy: {
                 plannerAgentId: plannerAgentId || plan.strategy?.plannerAgentId,
                 mode: fallbackMode,
+                runMode: fallbackRunMode,
               },
-              ...(dto.defaultTaskType ? { defaultTaskType: dto.defaultTaskType } : {}),
               generationMode: 'incremental',
               generationConfig: {
                 maxRetries: plan.generationConfig?.maxRetries || 3,
@@ -568,6 +566,14 @@ export class PlanManagementService {
 
   private derivePlanTitle(prompt: string): string {
     return prompt.length > 40 ? `${prompt.slice(0, 40)}...` : prompt;
+  }
+
+  private normalizeDomainType(value?: string): OrchestrationDomainType {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'development' || normalized === 'research') {
+      return normalized;
+    }
+    return 'general';
   }
 
   private async isPlanRunActive(planId: string): Promise<boolean> {
