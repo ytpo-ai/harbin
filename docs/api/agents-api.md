@@ -323,6 +323,10 @@ Agent token exchange（新增）示例：
 - `orchestration_debug_task`
 - `builtin.sys-mg.internal.agent-master.list-agents`
 - `builtin.sys-mg.internal.agent-master.create-agent`
+- `builtin.sys-mg.internal.agent-role-master.list-roles`
+- `builtin.sys-mg.internal.agent-role-master.create-role`
+- `builtin.sys-mg.internal.agent-role-master.update-role`
+- `builtin.sys-mg.internal.agent-role-master.delete-role`
 - `builtin.sys-mg.internal.rd-related.docs-write`
 - `builtin.sys-mg.mcp.skill-master.list-skills`
 - `builtin.sys-mg.mcp.skill-master.create-skill`
@@ -341,6 +345,23 @@ Agent token exchange（新增）示例：
 - 可选：`description`、`systemPrompt`、`model.*`、`capabilities`、`tools`、`permissions`、`learningAbility`、`isActive`、`apiKeyId`
 - `provider` 为 API Key 选择策略参数：默认 `default`（回退到模型 provider）
 - 未显式传入 `apiKeyId` 时，系统会按 provider 选择 `isDefault=true && isActive=true` 的 key；若不存在则回退系统默认 key 策略
+
+`builtin.sys-mg.internal.agent-role-master.*` 参数约定：
+
+- `list-roles`
+  - 可选：`status=active|inactive`、`includeInactive`（默认 `false`，即默认查 active）
+- `create-role`
+  - 必填：`code`、`name`
+  - 可选：`description`、`capabilities`、`tools`、`promptTemplate`、`status`、`tier`
+- `update-role`
+  - 必填：`roleId`（兼容 `id`）
+  - 可选：`code`、`name`、`description`、`capabilities`、`tools`、`promptTemplate`、`status`、`tier`
+  - 至少需要一个可更新字段
+- `delete-role`
+  - 必填：`roleId`（兼容 `id`）
+- 权限要求：
+  - 读：`agent_role_registry_read`
+  - 写（create/update/delete）：`agent_role_registry_write`
 
 `builtin.sys-mg.internal.rd-related.docs-write` 参数约定：
 
@@ -380,11 +401,39 @@ Internal Message MCP 参数约定：
   - `orchestration_update_plan` -> `PATCH /orchestration/plans/:id`
   - 参数语义：`planId` 必填；支持按需更新 `title`、`prompt`（映射 `sourcePrompt`）、`mode`、`plannerAgentId`、`metadata`
 - 定时计划相关 MCP（创建/更新）通过 Scheduler 接口落地：
-  - `orchestration_create_schedule` -> `POST /orchestration/schedules`
-  - `orchestration_update_schedule` -> `PUT /orchestration/schedules/:id`
+  - `orchestration_create_schedule` -> `POST /schedules`（兼容：`/orchestration/schedules`）
+  - `orchestration_update_schedule` -> `PUT /schedules/:id`（兼容：`/orchestration/schedules/:id`）
   - 参数语义：
-    - `orchestration_create_schedule`：必须传 `planId` + `scheduleType(cron|interval)` + 调度表达式参数（`expression` 或 `intervalMs`）
-    - `orchestration_update_schedule`：用于更新 schedule 调度信息（如 `enabled`、cron/interval 配置），不再要求传执行 target/input
+    - `orchestration_create_schedule`：必须传 `target.executorId` + `scheduleType(cron|interval)` + 调度表达式参数（`expression` 或 `intervalMs`），可选 `message.eventType/title`
+    - `orchestration_update_schedule`：用于更新 schedule 调度信息（如 `enabled`、cron/interval 配置、target/message/input）
+  - 创建示例（请求体）：
+
+```json
+{
+  "name": "Daily engineering digest",
+  "description": "每天发送研发统计摘要",
+  "schedule": {
+    "type": "cron",
+    "expression": "0 10 * * *",
+    "timezone": "Asia/Shanghai"
+  },
+  "target": {
+    "executorId": "executive-lead"
+  },
+  "message": {
+    "eventType": "schedule.engineering-statistics",
+    "title": "系统工程统计"
+  },
+  "input": {
+    "prompt": "请执行工程统计并输出摘要。",
+    "payload": {
+      "scope": "all",
+      "tokenMode": "estimate"
+    }
+  },
+  "enabled": true
+}
+```
 - 任务调试 MCP：
   - `orchestration_debug_task` -> `POST /orchestration/tasks/:id/debug-run`
   - 参数语义：`taskId` 必填；支持可选 `title`、`description`、`resetResult`
@@ -497,12 +546,12 @@ OpenCode EI 同步补偿（已实现骨架）：
 - 计划创建已升级为“秒回 + 异步编排”：
   - `POST /orchestration/plans/from-prompt` 仅创建占位计划并返回（`status=drafting`）。
   - 后台异步生成任务，前端可通过 `GET /orchestration/plans/:id/events` 订阅事件流，接收 `plan.status.changed` / `plan.task.generated` / `plan.completed` / `plan.failed`。
-- `POST /orchestration/schedules`：创建定时计划
-- `GET /orchestration/schedules`：获取计划列表
-- `GET /orchestration/schedules/:id`：获取计划详情
-- `PUT /orchestration/schedules/:id`：更新计划
-- `DELETE /orchestration/schedules/:id`：删除计划
-- `POST /orchestration/schedules/:id/enable`：启用计划
-- `POST /orchestration/schedules/:id/disable`：停用计划
-- `POST /orchestration/schedules/:id/trigger`：手动触发计划
-- `GET /orchestration/schedules/:id/history?limit=20`：查看执行历史（底层来源：`orchestration_tasks`，`mode=schedule`）
+- `POST /schedules`：创建定时计划（兼容：`/orchestration/schedules`）
+- `GET /schedules`：获取计划列表（兼容：`/orchestration/schedules`）
+- `GET /schedules/:id`：获取计划详情（兼容：`/orchestration/schedules/:id`）
+- `PUT /schedules/:id`：更新计划（兼容：`/orchestration/schedules/:id`）
+- `DELETE /schedules/:id`：删除计划（兼容：`/orchestration/schedules/:id`）
+- `POST /schedules/:id/enable`：启用计划（兼容：`/orchestration/schedules/:id/enable`）
+- `POST /schedules/:id/disable`：停用计划（兼容：`/orchestration/schedules/:id/disable`）
+- `POST /schedules/:id/trigger`：手动触发计划（兼容：`/orchestration/schedules/:id/trigger`）
+- `GET /schedules/:id/history?limit=20`：查看投递历史（底层来源：inner-message，`source=scheduler` + `payload.scheduleId`）

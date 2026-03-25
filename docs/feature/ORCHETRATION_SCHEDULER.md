@@ -1,119 +1,88 @@
-# 定时调度（Orchestration Scheduler）
+# 定时调度（Scheduler）
 
 ## 1. 功能设计
 
 ### 1.1 目标
 
-- 提供独立的定时服务管理模块，支持为 Agent 配置周期任务（如每 2 小时巡检）。
-- 将“计划定义”和“执行记录”拆分：`orchestration_schedule` 表示调度计划，`orchestration_task` 表示每次落地执行。
-- 与现有编排执行链路兼容，避免重复实现任务执行逻辑。
+- Scheduler 独立为 legacy 一级模块，职责收敛为“按时向 Agent 发送 inner-message”。
+- 不再直接执行 Orchestration Plan / Task，不再依赖 OrchestrationService 执行入口。
+- Agent 收到 `schedule.*` 消息后自主调用工具/执行流程。
 
-### 1.2 数据结构
+### 1.2 模块与数据模型
 
-核心集合位于 `backend/src/shared/schemas/`：
+| 维度 | 路径 | 说明 |
+|------|------|------|
+| 模块 | `backend/src/modules/scheduler/` | `scheduler.module.ts` / `scheduler.controller.ts` / `scheduler.service.ts` |
+| Schema | `backend/src/shared/schemas/schedule.schema.ts` | 新主 Schema，集合仍为 `orchestration_schedules` |
+| 兼容导出 | `backend/src/shared/schemas/orchestration-schedule.schema.ts` | 向后兼容旧 import |
 
-| 集合 | Schema 文件 | 说明 |
-|------|-------------|------|
-| `orchestration_schedules` | `orchestration-schedule.schema.ts` | 定时计划定义（cron/interval、目标 agent、关联 planId、启停、最近执行状态） |
-| `orchestration_tasks` | `orchestration-task.schema.ts` | 执行记录；新增 `mode=plan|schedule` 与 `scheduleId` |
+#### Schedule 核心字段
 
-#### OrchestrationSchedule 核心字段
+- `schedule`: `cron | interval`
+- `target.executorId`: 接收消息的 Agent
+- `input.prompt/payload`: 传递给 Agent 的指令和参数
+- `message.eventType/title`: inner-message 事件类型和标题（默认 `schedule.trigger`）
+- `planId`: deprecated（保留兼容，不再作为调度执行依赖）
 
-- `name/description`: 计划基本信息
-- `planId`: 关联的编排计划 ID（用于计划页可见性与执行追踪）
-- `schedule`: 调度配置（`type=cron|interval`，`expression|intervalMs`，`timezone`）
-- `target`: 执行目标（当前固定 `executorType=agent`）
-- `input`: 执行输入（`prompt/payload`）
-- `enabled/status`: 启停与运行态（`idle/running/paused/error`）
-- `lastRun/nextRunAt/stats`: 最近执行、下次执行、统计信息
-- `deadLetters[]`: 执行失败死信记录（失败原因、触发类型、taskId、重试次数）
+### 1.3 执行链路
 
-#### OrchestrationTask 模式字段
+1. cron/interval 或手动触发 `POST /schedules/:id/trigger`
+2. SchedulerService 获取锁并组装 message
+3. 调用 `AgentClientService.sendDirectInnerMessage()`
+4. agents app 通过 inner-message dispatcher/runtime bridge 投递并执行
+5. Scheduler 轮询 inner-message 状态并异步回写 `lastRun`（语义为“消息处理终态”）与 `stats`
+6. 历史查询优先读取 inner-message（`source=scheduler` + `payload.scheduleId`）
 
-- `mode='plan'`: 传统编排任务，关联 `planId`
-- `mode='schedule'`: 定时触发任务，关联 `scheduleId`
+### 1.4 重试与失败策略
 
-### 1.3 核心逻辑
+- Scheduler 不做执行层重试，统一依赖 inner-message `maxAttempts`。
+- 发送失败、处理失败或生命周期监控超时时，写入 `deadLetters` 并触发告警 webhook。
 
-1. 创建 schedule 后，Scheduler 服务按配置注册 cron/interval 定时器。
-2. 触发时创建一条 `mode=schedule` 的 `orchestration_task`。
-3. 执行复用 `OrchestrationService` 现有执行能力（Agent 调用、状态流转、结果落库）。
-4. 回写 `schedule.lastRun/stats/nextRunAt`。
-5. 支持手动触发、启停、删除与执行历史查询。
-6. 计划绑定的 schedule 会标记 `planId`，计划删除前需先解绑或删除相关 schedule。
-7. 关联计划的定时服务在详情页仅展示最近一次执行记录。
-8. 支持通过会议编排 MCP 工具创建/更新定时计划（`orchestration_create_schedule`、`orchestration_update_schedule`），推荐流程为“先创建 plan，再为该 plan 添加 schedule”。
-9. 调度失败默认启用指数退避重试，超过最大重试后写入 `deadLetters[]`，并通过日志/可选 webhook 告警。
-10. 系统内置 schedule/plan 改为 seed 数据化管理：服务启动仅注册已有启用计划，不再自动写库；缺失项通过 `seed:manual --only=system-schedules` 补种。
-11. 系统内置新增 `system-cto-daily-requirement-triage`：每日 10:00（`Asia/Shanghai`）由 CTO Agent 自动整理需求并分发给研发 Agent。
+### 1.5 API 路由
 
-### 1.4 API 接口
+主路由为 `/schedules/*`，同时保留 `/orchestration/schedules/*` 兼容别名。
 
 | 方法 | 路径 | 功能 |
 |------|------|------|
-| POST | `/orchestration/schedules` | 创建定时计划 |
-| GET | `/orchestration/schedules` | 获取计划列表 |
-| GET | `/orchestration/schedules/:id` | 获取计划详情 |
-| PUT | `/orchestration/schedules/:id` | 更新计划 |
-| DELETE | `/orchestration/schedules/:id` | 删除计划 |
-| POST | `/orchestration/schedules/:id/enable` | 启用计划 |
-| POST | `/orchestration/schedules/:id/disable` | 停用计划 |
-| POST | `/orchestration/schedules/:id/trigger` | 手动触发 |
-| GET | `/orchestration/schedules/:id/history` | 查询执行历史 |
-| GET | `/orchestration/schedules/by-plan/:planId` | 查询计划关联的定时服务 |
+| POST | `/schedules` | 创建 |
+| GET | `/schedules` | 列表 |
+| GET | `/schedules/:id` | 详情 |
+| PUT | `/schedules/:id` | 更新 |
+| DELETE | `/schedules/:id` | 删除 |
+| POST | `/schedules/:id/enable` | 启用 |
+| POST | `/schedules/:id/disable` | 停用 |
+| POST | `/schedules/:id/trigger` | 手动触发 |
+| GET | `/schedules/:id/history` | 调度历史 |
 
----
+系统调度端点：
 
-## 2. 相关文档
+- `GET /schedules/system/engineering-statistics`
+- `POST /schedules/system/engineering-statistics/trigger`
+- `GET /schedules/system/docs-heat`
+- `POST /schedules/system/docs-heat/trigger`
 
-### 规划文档 (docs/plan/)
+## 2. 前端
 
-| 文件 | 说明 |
-|------|------|
-| `ORCHESTRATION_SCHEDULER_MODULE_PLAN.md` | Scheduler 模块实施计划 |
-| `SYSTEM_MEETING_MONITOR_PLAN_BINDING_PLAN.md` | 系统会议监控补齐 plan 关联计划 |
-| `ORCHESTRATION_OPTIMIZATION_PLAN.md` | 计划编排与定时服务优化 |
-| `CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
-| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | 调度职责边界与失败治理重构计划 |
-| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
-
-### 开发总结 (docs/development/)
-
-| 文件 | 说明 |
-|------|------|
-| `ORCHESTRATION_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 计划编排与定时服务优化开发沉淀 |
-| `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_D_ORCHESTRATION_SCHEDULER_REFACTOR.md` | Plan D 开发沉淀 |
-| `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发开发沉淀 |
-
-### 技术文档 (docs/technical/)
-
-| 文件 | 说明 |
-|------|------|
-| `ORCHESTRATION_SCHEDULER_TECHNICAL_DESIGN.md` | Scheduler 技术设计与时序说明 |
-
----
+- 页面：`frontend/src/pages/Scheduler.tsx`
+- 服务：`frontend/src/services/schedulerService.ts`
+- 新建/编辑项：
+  - Agent 选择（`target.executorId`）
+  - 消息 eventType（`message.eventType`）
+  - 保留调度规则、prompt/payload
 
 ## 3. 相关代码文件
 
-### 后端 (backend/src/)
+### 后端
 
-| 文件 | 功能 |
-|------|------|
-| `modules/orchestration/scheduler/scheduler.module.ts` | Scheduler 模块装配 |
-| `modules/orchestration/scheduler/scheduler.controller.ts` | Scheduler API 控制器 |
-| `modules/orchestration/scheduler/scheduler.service.ts` | 调度注册、触发、执行回写、重试/死信/告警编排（含 memo 异步命令投递） |
-| `scripts/system-schedule-seed.ts` | 系统 schedule/plan seed 幂等写入入口 |
-| `scripts/manual-seed.ts` | 手动 seed 入口（支持 `system-schedules`、`meeting-monitor`） |
-| `modules/orchestration/scheduler/dto/index.ts` | Scheduler DTO |
-| `shared/schemas/orchestration-schedule.schema.ts` | 定时计划数据模型（含 attempts/deadLetters） |
-| `shared/schemas/orchestration-task.schema.ts` | task 新增 `mode/scheduleId` 字段 |
-| `modules/orchestration/orchestration.service.ts` | 暴露 standalone task 执行能力 |
+- `backend/src/modules/scheduler/scheduler.module.ts`
+- `backend/src/modules/scheduler/scheduler.controller.ts`
+- `backend/src/modules/scheduler/scheduler.service.ts`
+- `backend/src/modules/scheduler/dto/index.ts`
+- `backend/src/modules/agents-client/agent-client.service.ts`
+- `backend/apps/agents/src/modules/inner-message/inner-message-agent-runtime-bridge.service.ts`
+- `backend/scripts/seed/system-schedule.ts`
 
-### 前端 (frontend/src/)
+### 前端
 
-| 文件 | 功能 |
-|------|------|
-| `pages/Scheduler.tsx` | 定时服务管理页面 |
-| `services/schedulerService.ts` | Scheduler API 服务封装 |
-| `App.tsx` | 路由注册 (`/scheduler`) |
-| `components/Layout.tsx` | 侧边栏入口（定时服务） |
+- `frontend/src/pages/Scheduler.tsx`
+- `frontend/src/services/schedulerService.ts`

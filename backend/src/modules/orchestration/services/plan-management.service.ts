@@ -19,10 +19,6 @@ import {
   PlanSessionDocument,
 } from '../../../shared/schemas/orchestration-plan-session.schema';
 import {
-  OrchestrationSchedule,
-  OrchestrationScheduleDocument,
-} from '../../../shared/schemas/orchestration-schedule.schema';
-import {
   OrchestrationRun,
   OrchestrationRunDocument,
 } from '../../../shared/schemas/orchestration-run.schema';
@@ -43,8 +39,6 @@ export class PlanManagementService {
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(PlanSession.name)
     private readonly planSessionModel: Model<PlanSessionDocument>,
-    @InjectModel(OrchestrationSchedule.name)
-    private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
     private readonly planStatsService: PlanStatsService,
@@ -263,15 +257,6 @@ export class PlanManagementService {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {
       throw new NotFoundException('Plan not found');
-    }
-
-    const linkedSchedules = await this.orchestrationScheduleModel
-      .find({ planId: plan._id.toString() })
-      .exec();
-    if (linkedSchedules.length > 0) {
-      throw new BadRequestException(
-        `该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先删除关联的定时服务后再试。`,
-      );
     }
 
     const taskDeleteResult = await this.orchestrationTaskModel

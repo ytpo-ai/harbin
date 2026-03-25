@@ -102,6 +102,7 @@
 - 新增需求领域模型 `ei_requirements`，承接 Agent 与人类讨论后的需求条目。
 - 需求状态机：`todo -> assigned -> in_progress -> review -> done`，并支持 `blocked`。
 - 支持需求讨论追加、CTO/负责人分发到研发 Agent、状态流转记录与审计轨迹。
+- 需求详情页状态更新入口收敛为「修改状态」弹窗（目标状态 + 可选状态说明）；支持从 `todo/assigned/in_progress/blocked/review` 直接手动设为 `done`，说明用于记录完成原因，不再编辑需求描述或选择 Agent。
 - 看板接口按状态泳道聚合需求，前端定时刷新以实现近实时状态感知。
 - 支持一键同步到 GitHub Issues，回写 `owner/repo/issueNumber/issueUrl/state/syncedAt` 映射信息。
 - 系统默认创建定时计划 `system-engineering-statistics`，按钮触发本质为触发该计划一次执行。
@@ -251,7 +252,7 @@ GET ranking -> Redis 有值 -> 返回
 - 新增 Agent MCP 工具：`builtin.sys-mg.mcp.rd-intelligence.docs-heat-run`。
 - 新增系统 schedule：`system-docs-heat`（独立于现有 `system-engineering-statistics`）。
 - 建议默认 cron：每 2 小时执行一次。
-- 前端"触发统计"按钮调用：`POST /orchestration/schedules/system/docs-heat/trigger`。
+- 前端"触发统计"按钮调用：`POST /schedules/system/docs-heat/trigger`（兼容旧路由 `/orchestration/schedules/system/docs-heat/trigger`）。
 
 #### 1.11.9 约束
 

@@ -14,6 +14,9 @@ interface ListInnerMessagesQuery {
   mode?: InnerMessageMode;
   status?: InnerMessageStatus;
   eventType?: string;
+  source?: string;
+  scheduleId?: string;
+  messageId?: string;
 }
 
 @Injectable()
@@ -37,6 +40,15 @@ export class MessageCenterService {
     }
     if (query.eventType?.trim()) {
       filter.eventType = query.eventType.trim();
+    }
+    if (query.source?.trim()) {
+      filter.source = query.source.trim();
+    }
+    if (query.scheduleId?.trim()) {
+      filter['payload.scheduleId'] = query.scheduleId.trim();
+    }
+    if (query.messageId?.trim()) {
+      filter.messageId = query.messageId.trim();
     }
 
     const [total, list] = await Promise.all([

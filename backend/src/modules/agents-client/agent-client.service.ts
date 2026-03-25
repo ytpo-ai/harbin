@@ -72,6 +72,18 @@ interface PublishInnerMessageInput {
   maxAttempts?: number;
 }
 
+interface SendDirectInnerMessageInput {
+  senderAgentId?: string;
+  receiverAgentId: string;
+  eventType: string;
+  title: string;
+  content: string;
+  payload?: Record<string, any>;
+  source?: string;
+  dedupKey?: string;
+  maxAttempts?: number;
+}
+
 interface PublishTaskLifecycleEventInput {
   eventType: string;
   taskId: string;
@@ -81,6 +93,26 @@ interface PublishTaskLifecycleEventInput {
   payload?: Record<string, any>;
   title?: string;
   content?: string;
+}
+
+interface ListInnerMessagesInput {
+  page?: number;
+  pageSize?: number;
+  mode?: 'direct' | 'subscription';
+  status?: 'sent' | 'delivered' | 'processing' | 'processed' | 'failed';
+  eventType?: string;
+  source?: string;
+  scheduleId?: string;
+  messageId?: string;
+}
+
+interface ListInnerMessagesResult {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  items: Array<Record<string, any>>;
+  fetchedAt?: string;
 }
 
 @Injectable()
@@ -548,6 +580,24 @@ export class AgentClientService {
     return response.data;
   }
 
+  async sendDirectInnerMessage(input: SendDirectInnerMessageInput): Promise<{ messageId: string; accepted: boolean }> {
+    const response = await axios.post(
+      `${this.baseUrl}/api/inner-messages/direct`,
+      input,
+      {
+        headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
+        timeout: this.timeout,
+      },
+    );
+
+    const data = response.data?.data || {};
+    const messageId = String(data.messageId || data.id || '').trim();
+    return {
+      messageId,
+      accepted: Boolean(response.data?.success && messageId),
+    };
+  }
+
   async publishTaskLifecycleEvent(input: PublishTaskLifecycleEventInput): Promise<any> {
     const response = await axios.post(
       `${this.baseUrl}/api/inner-messages/publish`,
@@ -572,6 +622,33 @@ export class AgentClientService {
     );
 
     return response.data;
+  }
+
+  async listInnerMessages(input: ListInnerMessagesInput): Promise<ListInnerMessagesResult> {
+    const response = await axios.get(`${this.baseUrl}/api/message-center/inner-messages`, {
+      headers: this.buildSignedHeaders(),
+      timeout: this.timeout,
+      params: {
+        ...(input.page ? { page: input.page } : {}),
+        ...(input.pageSize ? { pageSize: input.pageSize } : {}),
+        ...(input.mode ? { mode: input.mode } : {}),
+        ...(input.status ? { status: input.status } : {}),
+        ...(input.eventType ? { eventType: input.eventType } : {}),
+        ...(input.source ? { source: input.source } : {}),
+        ...(input.scheduleId ? { scheduleId: input.scheduleId } : {}),
+        ...(input.messageId ? { messageId: input.messageId } : {}),
+      },
+    });
+
+    const data = response.data?.data || {};
+    return {
+      total: Number(data.total || 0),
+      page: Number(data.page || 1),
+      pageSize: Number(data.pageSize || 20),
+      totalPages: Number(data.totalPages || 0),
+      items: Array.isArray(data.items) ? data.items : [],
+      fetchedAt: data.fetchedAt,
+    };
   }
 
   async testAgentConnection(

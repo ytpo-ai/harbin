@@ -34,6 +34,8 @@ export class InnerMessageAgentRuntimeBridgeService {
 
     const payload = this.normalizePayload(message?.payload);
     const prompt = this.buildPrompt(message, payload);
+    const eventType = String(message?.eventType || '').trim() || 'inner.direct';
+    const isScheduleMessage = eventType.startsWith('schedule.');
 
     try {
       const result = await this.agentService.executeTaskDetailed(
@@ -62,16 +64,25 @@ export class InnerMessageAgentRuntimeBridgeService {
             ...(this.resolveTeamContext(payload) || {}),
           },
           sessionContext: {
-            runtimeTaskType: 'internal_message',
+            runtimeTaskType: isScheduleMessage ? 'scheduled_task' : 'internal_message',
             runtimeChannelHint: 'native',
             innerMessage: {
               messageId,
-              eventType: String(message?.eventType || '').trim() || 'inner.direct',
+              eventType,
               mode: String(message?.mode || '').trim() || 'direct',
               senderAgentId: String(message?.senderAgentId || '').trim() || 'system',
               receiverAgentId,
               payload,
             },
+            ...(isScheduleMessage
+              ? {
+                  scheduleContext: {
+                    scheduleId: payload.scheduleId,
+                    scheduleName: payload.scheduleName,
+                    triggerType: payload.triggerType,
+                  },
+                }
+              : {}),
           },
           requestMeta: {
             requestId: `inner-msg-${randomUUID()}`,
@@ -124,6 +135,10 @@ export class InnerMessageAgentRuntimeBridgeService {
 
   private buildPrompt(message: InnerMessage, payload: Record<string, unknown>): string {
     const eventType = String(message?.eventType || '').trim() || 'inner.direct';
+    if (eventType.startsWith('schedule.')) {
+      return String(message?.content || '').trim() || this.buildDefaultSchedulePrompt(payload);
+    }
+
     const senderAgentId = String(message?.senderAgentId || '').trim() || 'system';
     const title = String(message?.title || '').trim();
     const content = String(message?.content || '').trim();
@@ -150,5 +165,18 @@ export class InnerMessageAgentRuntimeBridgeService {
       '3) 若信息不足，先做最小可行响应并指出缺失信息。',
       '4) 。',
     ].join('\n');
+  }
+
+  private buildDefaultSchedulePrompt(payload: Record<string, unknown>): string {
+    const scheduleName = String(payload.scheduleName || '').trim();
+    const prompt = String(payload.prompt || '').trim();
+    return [
+      `你收到一条定时任务消息${scheduleName ? `（${scheduleName}）` : ''}。`,
+      prompt || '请根据你的身份和能力自主完成此任务。',
+      '',
+      Object.keys(payload).length > 0 ? `参数: ${JSON.stringify(payload, null, 2)}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 }

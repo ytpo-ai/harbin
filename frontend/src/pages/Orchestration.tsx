@@ -25,7 +25,6 @@ import {
   OrchestrationTask,
   PlanMode,
 } from '../services/orchestrationService';
-import { schedulerService } from '../services/schedulerService';
 
 type DrawerTab = 'debug' | 'session';
 type PlanDrawerTab = 'settings' | 'history';
@@ -627,15 +626,6 @@ const Orchestration: React.FC = () => {
   const handleDeletePlan = async (planId: string) => {
     if (!planId) {
       return;
-    }
-    try {
-      const linkedSchedules = await schedulerService.findSchedulesByPlanId(planId);
-      if (linkedSchedules.length > 0) {
-        alert(`该计划已绑定 ${linkedSchedules.length} 个定时服务，无法删除。请先在定时服务管理中删除关联的定时服务。`);
-        return;
-      }
-    } catch (error) {
-      console.error('检查关联定时服务失败:', error);
     }
 
     const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');

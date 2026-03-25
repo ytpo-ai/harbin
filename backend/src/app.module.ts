@@ -8,7 +8,7 @@ import { EmployeeModule } from './modules/employees/employee.module';
 import { InvitationModule } from './modules/invitations/invitation.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { OrchestrationModule } from './modules/orchestration/orchestration.module';
-import { OrchestrationSchedulerModule } from './modules/orchestration/scheduler/scheduler.module';
+import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
@@ -49,7 +49,7 @@ import jwtConfig from './config/jwt.config';
     InvitationModule,
     AuthModule,
     OrchestrationModule,
-    OrchestrationSchedulerModule,
+    SchedulerModule,
   ],
 })
 export class AppModule {}

@@ -100,7 +100,7 @@ Employees 字段补充：
 - `POST /orchestration/sessions/:id/messages/batch`：批量追加会话消息
 - `POST /orchestration/sessions/:id/archive`：归档会话
 - `POST /orchestration/sessions/:id/resume`：恢复会话
-- `GET /orchestration/schedules/by-plan/:planId`：查询计划关联的定时服务
+- `GET /schedules`：查询定时服务列表（兼容：`/orchestration/schedules`）
 
 Orchestration 任务改派字段补充：
 
@@ -121,7 +121,7 @@ Orchestration 任务改派字段补充：
 ## Message Center（`/message-center`）
 
 - `GET /message-center/messages`：查询当前登录用户消息列表（支持 `page/pageSize/isRead/type`）
-- `GET /message-center/inner-messages`：查询当前登录用户绑定 Agent 的内部消息列表（支持 `page/pageSize/status/mode/eventType`）
+- `GET /message-center/inner-messages`：查询当前登录用户绑定 Agent 的内部消息列表（支持 `page/pageSize/status/mode/eventType/source/scheduleId`）
 - `GET /message-center/unread-count`：查询当前登录用户未读数
 - `PATCH /message-center/messages/:messageId/read`：单条消息标记已读
 - `PATCH /message-center/messages/read-all`：全部消息标记已读

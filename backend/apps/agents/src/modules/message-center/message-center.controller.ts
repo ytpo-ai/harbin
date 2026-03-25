@@ -16,6 +16,9 @@ export class MessageCenterController {
     @Query('mode') mode?: InnerMessageMode,
     @Query('status') status?: InnerMessageStatus,
     @Query('eventType') eventType?: string,
+    @Query('source') source?: string,
+    @Query('scheduleId') scheduleId?: string,
+    @Query('messageId') messageId?: string,
   ) {
     return {
       success: true,
@@ -25,6 +28,9 @@ export class MessageCenterController {
         mode,
         status,
         eventType,
+        source,
+        scheduleId,
+        messageId,
       }),
     };
   }

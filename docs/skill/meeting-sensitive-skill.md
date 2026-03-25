@@ -86,14 +86,14 @@ metadata:
 
 ### 3.3 周期计划（Recurring）
 
-系统内不是单独 planType，而是“先创建计划，再创建 schedule”。
+系统内不是单独 planType，而是“按调度规则向 Agent 发送 schedule 消息”。
 
 创建调度：`builtin.sys-mg.mcp.orchestration.create-schedule`
 
-- 必填：`planId`、`scheduleType`
+- 必填：`target.executorId`、`scheduleType`
 - `scheduleType=cron` 时必填：`expression`
 - `scheduleType=interval` 时必填：`intervalMs`（且 `>= 60000`）
-- 可选：`timezone`、`enabled`
+- 可选：`timezone`、`enabled`、`input.prompt`、`input.payload`、`message.eventType/title`
 
 ### 3.4 定时计划（Scheduled）
 
@@ -166,10 +166,15 @@ Agent 每次建议前必须依赖以下信息：
 {
   "toolId": "builtin.sys-mg.mcp.orchestration.create-schedule",
   "parameters": {
-    "planId": "plan_xxx",
+    "target": {
+      "executorId": "meeting-assistant"
+    },
     "scheduleType": "cron",
     "expression": "0 0 9 * * 1",
     "timezone": "Asia/Shanghai",
+    "message": {
+      "eventType": "schedule.trigger"
+    },
     "enabled": true
   }
 }
@@ -200,11 +205,11 @@ Agent 每次建议前必须依赖以下信息：
 
 步骤C：得到同意后执行
 - 一次性计划：先 create-plan。
-- 周期/定时：先 create-plan，再 create-schedule。
+- 周期/定时：直接 create-schedule（必要时再补充 create-plan 作为协作看板）。
 - 仅当用户明确同意启动执行时，才调用 run-plan（必须 confirm=true）。
 
 步骤D：异常处理
-- 参数不足：先澄清最小缺失信息（如 planId、scheduleType、cron expression）。
+- 参数不足：先澄清最小缺失信息（如 target.executorId、scheduleType、cron expression）。
 - 工具报错：说明失败原因 + 给出下一步修复建议（补参、改 mode、补 confirm）。
 
 【输出风格】

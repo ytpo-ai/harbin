@@ -105,12 +105,14 @@
 - `GET /ei/opencode/metrics/overview` (`compat`) -> `GET /ei/metrics/overview`
 - `POST /ei/opencode/runs/:runId/recompute-metrics` (`compat`) -> `POST /ei/runs/:runId/recompute-metrics`
 
-## 编排调度入口（保持不变）
+## 调度入口
 
-- `GET /orchestration/schedules/system/engineering-statistics`
-- `POST /orchestration/schedules/system/engineering-statistics/trigger`
-- `GET /orchestration/schedules/system/docs-heat`
-- `POST /orchestration/schedules/system/docs-heat/trigger`
+- 主路由：
+  - `GET /schedules/system/engineering-statistics`
+  - `POST /schedules/system/engineering-statistics/trigger`
+  - `GET /schedules/system/docs-heat`
+  - `POST /schedules/system/docs-heat/trigger`
+- 兼容路由（迁移期）：`/orchestration/schedules/*` 仍可用
 
 ## 落库集合
 

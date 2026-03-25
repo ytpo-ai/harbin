@@ -1,3 +1,10 @@
+# [已弃用] ORCHESTRATION_SCHEDULER_MCP_PLAN
+
+> 状态：已弃用（2026-03-24）
+>
+> 说明：该文档为历史方案/设计沉淀，仅用于归档追溯，不再作为当前实现依据。
+> 当前实现请以 `docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD` 与 `docs/feature/ORCHETRATION_TASK.md` 为准。
+> 当前 Scheduler MCP 创建语义：`target.executorId + schedule`，不再以 `planId` 为必填锚点。
 # 定时计划编排 MCP 能力补齐计划（开发沉淀）
 
 ## 关联主文档索引

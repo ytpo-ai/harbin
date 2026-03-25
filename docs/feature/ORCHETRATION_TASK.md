@@ -57,8 +57,8 @@
 
 #### 计划管理约束
 
-- 删除计划前会检查是否存在关联定时服务（`planId` 绑定的 schedule），存在则禁止删除。
-- 计划编排列表与计划详情均提供删除入口；点击删除先二次确认，若计划已绑定 schedule 则提示“已绑定定时服务，无法删除”。
+- 删除计划不再依赖 schedule 的 `planId` 绑定检查（Scheduler 已改为 Agent 消息投递模型）。
+- 计划编排列表与计划详情均提供删除入口；点击删除先二次确认。
 - 计划详情页面使用独立路由 `/orchestration/plans/:id`，支持从计划列表或定时服务列表跳转。
 - 计划详情页点击“重新编排”先弹出 Planner 选择框，确认后按所选 Planner 覆盖当前任务结构并重排；执行中按钮显示 loading 并禁用重复触发。
 - 重新编排接口改为异步受理：开始时先清空旧任务并将计划状态置为 `drafting`，随后通过 `plan.status.changed/plan.task.generated/plan.completed/plan.failed` 事件流式返回新任务，前端以 SSE 实时刷新任务列表并在断线时轮询兜底。

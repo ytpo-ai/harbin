@@ -5,8 +5,8 @@ import {
   IsInt,
   IsNotEmpty,
   IsObject,
-  IsString,
   IsOptional,
+  IsString,
   MaxLength,
   Min,
   ValidateNested,
@@ -32,12 +32,13 @@ class ScheduleConfigDto {
 }
 
 class ScheduleTargetDto {
-  @IsEnum(['agent'])
-  executorType: 'agent';
-
   @IsString()
   @IsNotEmpty()
   executorId: string;
+
+  @IsOptional()
+  @IsString()
+  executorName?: string;
 }
 
 class ScheduleInputDto {
@@ -49,6 +50,18 @@ class ScheduleInputDto {
   @IsOptional()
   @IsObject()
   payload?: Record<string, unknown>;
+}
+
+class ScheduleMessageDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  eventType?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
 }
 
 export class CreateScheduleDto {
@@ -73,6 +86,11 @@ export class CreateScheduleDto {
   @ValidateNested()
   @Type(() => ScheduleInputDto)
   input?: ScheduleInputDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ScheduleMessageDto)
+  message?: ScheduleMessageDto;
 
   @IsOptional()
   @IsBoolean()
@@ -104,6 +122,11 @@ export class UpdateScheduleDto {
   @ValidateNested()
   @Type(() => ScheduleInputDto)
   input?: ScheduleInputDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ScheduleMessageDto)
+  message?: ScheduleMessageDto;
 
   @IsOptional()
   @IsBoolean()

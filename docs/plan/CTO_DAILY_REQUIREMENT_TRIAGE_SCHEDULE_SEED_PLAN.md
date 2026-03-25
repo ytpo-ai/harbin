@@ -1,5 +1,7 @@
 # CTO 每日需求整理分发定时 Seed 计划
 
+> 备注：本文为历史 seed 规划文档，当前实现已切换为 Scheduler Agent 消息投递模型，`planId` 不再是系统 schedule 的必填锚点。
+
 ## 1. 需求理解
 
 - 新增系统内置计划编排定时服务 seed。
@@ -11,7 +13,7 @@
 1. 梳理现有 `system-schedule-seed` 结构与系统计划命名规范，确定新增 seed 的接入点。
 2. 在 `system-schedule-seed` 中新增 CTO 每日需求整理分发 seed 定义（含 name/planKey/cron/timezone/target/input）。
 3. 将新 seed 纳入 `SystemSeedName` 与默认执行序列，确保执行 `seed:manual --only=system-schedules` 时可自动写入。
-4. 采用幂等策略：已存在时更新关键字段（planId、schedule、target、input），不存在时创建。
+4. 采用幂等策略：已存在时更新关键字段（schedule、target、input、message），不存在时创建。
 5. 本地执行手动 seed 验证，确认定时计划可被正确创建/更新。
 6. 更新相关文档（功能文档、dailylog）以沉淀变更。
 

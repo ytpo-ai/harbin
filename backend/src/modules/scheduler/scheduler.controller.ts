@@ -12,15 +12,16 @@ import {
 } from '@nestjs/common';
 import { decodeUserContext, verifyEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
-import { AuthService } from '../../auth/auth.service';
+import { AuthService } from '../auth/auth.service';
 import { SchedulerService } from './scheduler.service';
 import {
   CreateScheduleDto,
   ScheduleHistoryQueryDto,
+  TriggerSystemEngineeringStatisticsDto,
   UpdateScheduleDto,
 } from './dto';
 
-@Controller('orchestration/schedules')
+@Controller(['schedules', 'orchestration/schedules'])
 export class SchedulerController {
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
 
@@ -85,7 +86,7 @@ export class SchedulerController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.schedulerService.listSchedules();
   }
 
@@ -96,7 +97,7 @@ export class SchedulerController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.schedulerService.getScheduleById(scheduleId);
   }
 
@@ -108,37 +109,37 @@ export class SchedulerController {
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.schedulerService.updateSchedule(scheduleId, dto);
   }
 
   @Delete(':id')
   async remove(@Param('id') scheduleId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.deleteSchedule(scheduleId);
   }
 
   @Post(':id/enable')
   async enable(@Param('id') scheduleId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.enableSchedule(scheduleId);
   }
 
   @Post(':id/disable')
   async disable(@Param('id') scheduleId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.disableSchedule(scheduleId);
   }
 
   @Post(':id/trigger')
   async trigger(@Param('id') scheduleId: string, @Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.triggerSchedule(scheduleId);
   }
 
   @Post('system/engineering-statistics/trigger')
   async triggerSystemEngineeringStatistics(
-    @Body() dto: Record<string, any>,
+    @Body() dto: TriggerSystemEngineeringStatisticsDto,
     @Headers('authorization') authHeader: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader);
@@ -153,7 +154,7 @@ export class SchedulerController {
 
   @Get('system/engineering-statistics')
   async getSystemEngineeringStatisticsSchedule(@Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.getOrCreateEngineeringStatisticsSchedule();
   }
 
@@ -162,7 +163,7 @@ export class SchedulerController {
     @Body() dto: Record<string, any>,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.triggerSystemDocsHeat({
       topN: dto?.topN,
       triggeredBy: dto?.triggeredBy || 'frontend-button',
@@ -171,7 +172,7 @@ export class SchedulerController {
 
   @Get('system/docs-heat')
   async getSystemDocsHeatSchedule(@Headers('authorization') authHeader: string) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.getOrCreateDocsHeatSchedule();
   }
 
@@ -181,18 +182,7 @@ export class SchedulerController {
     @Query() query: ScheduleHistoryQueryDto,
     @Headers('authorization') authHeader: string,
   ) {
-    const user = await this.getUserFromAuthHeader(authHeader);
+    await this.getUserFromAuthHeader(authHeader);
     return this.schedulerService.getScheduleHistory(scheduleId, query.limit || 20);
-  }
-
-  @Get('by-plan/:planId')
-  async findByPlanId(
-    @Param('planId') planId: string,
-    @Headers('authorization') authHeader: string,
-    @Headers('x-user-context') internalContext?: string,
-    @Headers('x-user-signature') internalSignature?: string,
-  ) {
-    const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
-    return this.schedulerService.findSchedulesByPlanId(planId);
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import {
   ArrowPathIcon,
@@ -12,7 +12,6 @@ import {
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
-import { agentService } from '../services/agentService';
 import {
   schedulerService,
   CreateSchedulePayload,
@@ -20,6 +19,8 @@ import {
   ScheduleRunHistory,
   ScheduleType,
 } from '../services/schedulerService';
+import { agentService } from '../services/agentService';
+import { Agent } from '../types';
 
 type IntervalUnit = 'minute' | 'hour';
 
@@ -71,6 +72,16 @@ const parseIntervalForForm = (intervalMs?: number): { value: string; unit: Inter
   return { value: String(Math.max(Math.round(safeInterval / minuteMs), 1)), unit: 'minute' };
 };
 
+const formatDispatchStatus = (status?: string) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'sent') return '已发送';
+  if (normalized === 'delivered') return '已投递';
+  if (normalized === 'processing') return '处理中';
+  if (normalized === 'processed') return '已处理';
+  if (normalized === 'failed') return '失败';
+  return status || '-';
+};
+
 const Scheduler: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
@@ -84,8 +95,8 @@ const Scheduler: React.FC = () => {
   const [intervalUnit, setIntervalUnit] = useState<IntervalUnit>('hour');
   const [cronExpression, setCronExpression] = useState('0 */2 * * *');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
-  const [executorId, setExecutorId] = useState('');
-  const [prompt, setPrompt] = useState('请检查关键状态并给出结构化结论。');
+  const [targetAgentId, setTargetAgentId] = useState('');
+  const [messageEventType, setMessageEventType] = useState('schedule.trigger');
   const [editingScheduleId, setEditingScheduleId] = useState('');
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -94,10 +105,13 @@ const Scheduler: React.FC = () => {
   const [editIntervalUnit, setEditIntervalUnit] = useState<IntervalUnit>('hour');
   const [editCronExpression, setEditCronExpression] = useState('0 */2 * * *');
   const [editTimezone, setEditTimezone] = useState('Asia/Shanghai');
-  const [editExecutorId, setEditExecutorId] = useState('');
-  const [editPrompt, setEditPrompt] = useState('');
+  const [editTargetAgentId, setEditTargetAgentId] = useState('');
+  const [editMessageEventType, setEditMessageEventType] = useState('schedule.trigger');
 
-  const { data: agents = [] } = useQuery('scheduler-agents', () => agentService.getAgents());
+  const { data: assignableAgents = [] } = useQuery<Agent[]>('scheduler-assignable-agents', () =>
+    agentService.getAssignableAgents(),
+  );
+
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<OrchestrationSchedule[]>(
     'orchestration-schedules',
     () => schedulerService.getSchedules(),
@@ -113,12 +127,6 @@ const Scheduler: React.FC = () => {
     },
   );
 
-  useEffect(() => {
-    if (!executorId && agents.length) {
-      setExecutorId(agents[0].id);
-    }
-  }, [agents, executorId]);
-
   const resetCreateForm = () => {
     setName('');
     setDescription('');
@@ -127,7 +135,8 @@ const Scheduler: React.FC = () => {
     setIntervalUnit('hour');
     setCronExpression('0 */2 * * *');
     setTimezone('Asia/Shanghai');
-    setPrompt('请检查关键状态并给出结构化结论。');
+    setTargetAgentId('');
+    setMessageEventType('schedule.trigger');
   };
 
   const createMutation = useMutation(schedulerService.createSchedule, {
@@ -204,7 +213,7 @@ const Scheduler: React.FC = () => {
     [schedules, selectedScheduleId],
   );
 
-  const historyLimit = scheduleDetail?.planId || selectedSchedule?.planId ? 1 : 15;
+  const historyLimit = 15;
 
   const { data: history = [], isFetching: historyLoading } = useQuery<ScheduleRunHistory[]>(
     ['orchestration-schedule-history', selectedScheduleId, historyLimit],
@@ -244,11 +253,10 @@ const Scheduler: React.FC = () => {
               timezone,
             },
       target: {
-        executorType: 'agent',
-        executorId,
+        executorId: targetAgentId,
       },
-      input: {
-        prompt: prompt.trim() || undefined,
+      message: {
+        eventType: messageEventType.trim() || 'schedule.trigger',
       },
       enabled: true,
     });
@@ -276,8 +284,8 @@ const Scheduler: React.FC = () => {
     setEditIntervalUnit(parsedInterval.unit);
     setEditCronExpression(schedule.schedule?.expression || '0 */2 * * *');
     setEditTimezone(schedule.schedule?.timezone || 'Asia/Shanghai');
-    setEditExecutorId(schedule.target?.executorId || '');
-    setEditPrompt(schedule.input?.prompt || '');
+    setEditTargetAgentId(schedule.target?.executorId || '');
+    setEditMessageEventType(schedule.message?.eventType || 'schedule.trigger');
     setIsEditModalOpen(true);
   };
 
@@ -307,11 +315,10 @@ const Scheduler: React.FC = () => {
                 timezone: editTimezone,
               },
         target: {
-          executorType: 'agent',
-          executorId: editExecutorId,
+          executorId: editTargetAgentId,
         },
-        input: {
-          prompt: editPrompt.trim() || undefined,
+        message: {
+          eventType: editMessageEventType.trim() || 'schedule.trigger',
         },
         enabled: editingSchedule?.enabled,
       },
@@ -324,7 +331,7 @@ const Scheduler: React.FC = () => {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">定时服务管理</h1>
-            <p className="mt-1 text-sm text-slate-600">为 Agent 创建可持续运行的计划任务，如每 2 小时自动巡检一次。</p>
+            <p className="mt-1 text-sm text-slate-600">创建定时触发器，按计划向指定 Agent 发送内部消息，由 Agent 自主执行。</p>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -379,6 +386,7 @@ const Scheduler: React.FC = () => {
                     <td className="px-4 py-3 align-top">
                       <p className="font-medium text-slate-900">{item.name}</p>
                       <p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.description || '-'}</p>
+                      <p className="mt-1 text-xs text-slate-500">目标 Agent：{item.target?.executorId || '-'}</p>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatScheduleRule(item.schedule)}</td>
                     <td className="px-4 py-3">
@@ -396,16 +404,6 @@ const Scheduler: React.FC = () => {
                         >
                           <EyeIcon className="h-4 w-4" />
                         </button>
-                        {item.planId && (
-                          <button
-                            onClick={() => window.open(`/orchestration/plans/${item.planId}`, '_blank')}
-                            title="查看关联计划"
-                            aria-label="查看关联计划"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-cyan-200 text-cyan-700 hover:bg-cyan-50"
-                          >
-                            <PlayIcon className="h-4 w-4" />
-                          </button>
-                        )}
                         <button
                           onClick={() => openEditModal(item._id)}
                           title="编辑"
@@ -478,18 +476,25 @@ const Scheduler: React.FC = () => {
                   <option value="cron">Cron</option>
                 </select>
                 <select
-                  value={executorId}
-                  onChange={(event) => setExecutorId(event.target.value)}
+                  value={targetAgentId}
+                  onChange={(event) => setTargetAgentId(event.target.value)}
                   className="rounded-md border border-slate-300 px-2 py-2 text-sm"
                 >
-                  <option value="">选择 Agent</option>
-                  {agents.map((agent) => (
+                  <option value="">选择接收 Agent</option>
+                  {assignableAgents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
-                      {agent.name}
+                      {agent.name || agent.id}
                     </option>
                   ))}
                 </select>
               </div>
+
+              <input
+                value={messageEventType}
+                onChange={(event) => setMessageEventType(event.target.value)}
+                placeholder="消息事件类型，例如：schedule.trigger"
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
 
               {scheduleType === 'interval' ? (
                 <div className="grid grid-cols-2 gap-2">
@@ -525,13 +530,6 @@ const Scheduler: React.FC = () => {
                 placeholder="Asia/Shanghai"
               />
 
-              <textarea
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-                className="min-h-[100px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
-                placeholder="触发后给 Agent 的执行指令"
-              />
-
               {createMutation.isError && (
                 <p className="text-xs text-rose-600">创建失败，请检查输入后重试。</p>
               )}
@@ -546,7 +544,7 @@ const Scheduler: React.FC = () => {
               </button>
               <button
                 onClick={submitCreate}
-                disabled={!name.trim() || !executorId || createMutation.isLoading}
+                disabled={!name.trim() || !targetAgentId || createMutation.isLoading}
                 className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white disabled:bg-slate-300"
               >
                 <PlusIcon className="h-4 w-4" /> 创建计划
@@ -653,18 +651,19 @@ const Scheduler: React.FC = () => {
 
                   <div className="rounded-lg border border-slate-200 p-3">
                     <p className="text-xs font-semibold text-slate-700">计划配置</p>
-                    <p className="mt-1 text-xs text-slate-600">执行对象：{scheduleDetail.target?.executorName || scheduleDetail.target?.executorId || '-'}</p>
+                    <p className="mt-1 text-xs text-slate-600">目标 Agent：{scheduleDetail.target?.executorId || '-'}</p>
+                    <p className="text-xs text-slate-600">消息类型：{scheduleDetail.message?.eventType || 'schedule.trigger'}</p>
                     <p className="text-xs text-slate-600">时区：{scheduleDetail.schedule?.timezone || '-'}</p>
                     <p className="text-xs text-slate-600">更新时间：{formatDateTime(scheduleDetail.updatedAt)}</p>
                   </div>
 
                   <div className="rounded-lg border border-slate-200 p-3">
-                    <p className="text-xs font-semibold text-slate-700">最近执行结果</p>
+                    <p className="text-xs font-semibold text-slate-700">最近投递结果</p>
                     <p className="mt-1 text-xs text-slate-600">开始时间：{formatDateTime(scheduleDetail.lastRun?.startedAt)}</p>
                     <p className="text-xs text-slate-600">完成时间：{formatDateTime(scheduleDetail.lastRun?.completedAt)}</p>
                     <p className="text-xs text-slate-600">
                       状态：
-                      {scheduleDetail.lastRun?.success ? '成功' : scheduleDetail.lastRun?.error ? '失败' : '-'}
+                      {scheduleDetail.lastRun?.success ? '已发送' : scheduleDetail.lastRun?.error ? '失败' : '-'}
                     </p>
                     {scheduleDetail.lastRun?.error && (
                       <p className="mt-1 text-xs text-rose-600">错误：{scheduleDetail.lastRun.error}</p>
@@ -672,17 +671,17 @@ const Scheduler: React.FC = () => {
                   </div>
 
                   <div>
-                    <p className="mb-2 text-xs font-semibold text-slate-700">执行历史</p>
+                    <p className="mb-2 text-xs font-semibold text-slate-700">投递历史</p>
                     {historyLoading ? (
                       <p className="text-xs text-slate-400">加载中...</p>
                     ) : history.length === 0 ? (
-                      <p className="text-xs text-slate-400">暂无执行历史</p>
+                      <p className="text-xs text-slate-400">暂无投递历史</p>
                     ) : (
                       <div className="space-y-2">
                         {history.map((item) => (
                           <div key={item._id} className="rounded-lg border border-slate-200 px-3 py-2">
                             <div className="flex items-center justify-between">
-                              <p className="text-xs font-medium text-slate-700">{item.status}</p>
+                              <p className="text-xs font-medium text-slate-700">{formatDispatchStatus(item.status)}</p>
                               <p className="inline-flex items-center gap-1 text-[11px] text-slate-500">
                                 <ClockIcon className="h-3 w-3" /> {formatDateTime(item.createdAt)}
                               </p>
@@ -747,18 +746,25 @@ const Scheduler: React.FC = () => {
                   <option value="cron">Cron</option>
                 </select>
                 <select
-                  value={editExecutorId}
-                  onChange={(event) => setEditExecutorId(event.target.value)}
+                  value={editTargetAgentId}
+                  onChange={(event) => setEditTargetAgentId(event.target.value)}
                   className="rounded-md border border-slate-300 px-2 py-2 text-sm"
                 >
-                  <option value="">选择 Agent</option>
-                  {agents.map((agent) => (
+                  <option value="">选择接收 Agent</option>
+                  {assignableAgents.map((agent) => (
                     <option key={agent.id} value={agent.id}>
-                      {agent.name}
+                      {agent.name || agent.id}
                     </option>
                   ))}
                 </select>
               </div>
+
+              <input
+                value={editMessageEventType}
+                onChange={(event) => setEditMessageEventType(event.target.value)}
+                placeholder="消息事件类型，例如：schedule.trigger"
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
 
               {editScheduleType === 'interval' ? (
                 <div className="grid grid-cols-2 gap-2">
@@ -794,13 +800,6 @@ const Scheduler: React.FC = () => {
                 placeholder="Asia/Shanghai"
               />
 
-              <textarea
-                value={editPrompt}
-                onChange={(event) => setEditPrompt(event.target.value)}
-                className="min-h-[100px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
-                placeholder="触发后给 Agent 的执行指令"
-              />
-
               {updateMutation.isError && <p className="text-xs text-rose-600">修改失败，请稍后重试。</p>}
             </div>
 
@@ -816,7 +815,7 @@ const Scheduler: React.FC = () => {
               </button>
               <button
                 onClick={submitEdit}
-                disabled={!editName.trim() || !editExecutorId || updateMutation.isLoading}
+                disabled={!editName.trim() || !editTargetAgentId || updateMutation.isLoading}
                 className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-1.5 text-sm text-white disabled:bg-slate-300"
               >
                 <PencilSquareIcon className="h-4 w-4" /> 保存修改

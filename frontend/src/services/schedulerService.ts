@@ -7,17 +7,20 @@ export interface OrchestrationSchedule {
   _id: string;
   name: string;
   description?: string;
-  planId?: string;
   schedule: {
     type: ScheduleType;
     expression?: string;
     intervalMs?: number;
     timezone?: string;
   };
-  target: {
+  target?: {
     executorType: 'agent';
     executorId: string;
     executorName?: string;
+  };
+  message?: {
+    eventType: string;
+    title?: string;
   };
   input?: {
     prompt?: string;
@@ -47,20 +50,14 @@ export interface OrchestrationSchedule {
 
 export interface ScheduleRunHistory {
   _id: string;
-  planId: string;
-  triggerType: 'manual' | 'schedule' | 'autorun';
+  messageId?: string;
+  triggerType?: 'manual' | 'auto';
   scheduleId?: string;
-  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  eventType?: string;
+  receiverAgentId?: string;
+  status: 'sent' | 'delivered' | 'processing' | 'processed' | 'failed' | string;
   summary?: string;
   error?: string;
-  stats: {
-    totalTasks: number;
-    completedTasks: number;
-    failedTasks: number;
-    waitingHumanTasks: number;
-  };
-  startedAt?: string;
-  completedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,13 +71,17 @@ export interface CreateSchedulePayload {
     intervalMs?: number;
     timezone?: string;
   };
-  target: {
-    executorType: 'agent';
-    executorId: string;
-  };
   input?: {
     prompt?: string;
     payload?: Record<string, unknown>;
+  };
+  target: {
+    executorId: string;
+    executorName?: string;
+  };
+  message?: {
+    eventType?: string;
+    title?: string;
   };
   enabled?: boolean;
 }
@@ -102,47 +103,47 @@ export interface TriggerDocsHeatPayload {
 
 export const schedulerService = {
   async createSchedule(payload: CreateSchedulePayload): Promise<OrchestrationSchedule> {
-    const response = await api.post('/orchestration/schedules', payload);
+    const response = await api.post('/schedules', payload);
     return response.data;
   },
 
   async getSchedules(): Promise<OrchestrationSchedule[]> {
-    const response = await api.get('/orchestration/schedules');
+    const response = await api.get('/schedules');
     return response.data;
   },
 
   async getScheduleById(scheduleId: string): Promise<OrchestrationSchedule> {
-    const response = await api.get(`/orchestration/schedules/${scheduleId}`);
+    const response = await api.get(`/schedules/${scheduleId}`);
     return response.data;
   },
 
   async updateSchedule(scheduleId: string, payload: UpdateSchedulePayload): Promise<OrchestrationSchedule> {
-    const response = await api.put(`/orchestration/schedules/${scheduleId}`, payload);
+    const response = await api.put(`/schedules/${scheduleId}`, payload);
     return response.data;
   },
 
   async deleteSchedule(scheduleId: string): Promise<{ success: boolean }> {
-    const response = await api.delete(`/orchestration/schedules/${scheduleId}`);
+    const response = await api.delete(`/schedules/${scheduleId}`);
     return response.data;
   },
 
   async enableSchedule(scheduleId: string): Promise<OrchestrationSchedule> {
-    const response = await api.post(`/orchestration/schedules/${scheduleId}/enable`);
+    const response = await api.post(`/schedules/${scheduleId}/enable`);
     return response.data;
   },
 
   async disableSchedule(scheduleId: string): Promise<OrchestrationSchedule> {
-    const response = await api.post(`/orchestration/schedules/${scheduleId}/disable`);
+    const response = await api.post(`/schedules/${scheduleId}/disable`);
     return response.data;
   },
 
   async triggerSchedule(scheduleId: string): Promise<{ accepted: boolean; status: string }> {
-    const response = await api.post(`/orchestration/schedules/${scheduleId}/trigger`);
+    const response = await api.post(`/schedules/${scheduleId}/trigger`);
     return response.data;
   },
 
   async getSystemEngineeringStatisticsSchedule(): Promise<OrchestrationSchedule> {
-    const response = await api.get('/orchestration/schedules/system/engineering-statistics');
+    const response = await api.get('/schedules/system/engineering-statistics');
     return response.data;
   },
 
@@ -151,12 +152,12 @@ export const schedulerService = {
     status: string;
     scheduleId: string;
   }> {
-    const response = await api.post('/orchestration/schedules/system/engineering-statistics/trigger', payload || {});
+    const response = await api.post('/schedules/system/engineering-statistics/trigger', payload || {});
     return response.data;
   },
 
   async getSystemDocsHeatSchedule(): Promise<OrchestrationSchedule> {
-    const response = await api.get('/orchestration/schedules/system/docs-heat');
+    const response = await api.get('/schedules/system/docs-heat');
     return response.data;
   },
 
@@ -165,21 +166,16 @@ export const schedulerService = {
     status: string;
     scheduleId: string;
   }> {
-    const response = await api.post('/orchestration/schedules/system/docs-heat/trigger', payload || {});
+    const response = await api.post('/schedules/system/docs-heat/trigger', payload || {});
     return response.data;
   },
 
   async getScheduleHistory(scheduleId: string, limit = 20): Promise<ScheduleRunHistory[]> {
-    const response = await api.get(`/orchestration/schedules/${scheduleId}/history`, {
+    const response = await api.get(`/schedules/${scheduleId}/history`, {
       params: {
         limit,
       },
     });
-    return response.data;
-  },
-
-  async findSchedulesByPlanId(planId: string): Promise<OrchestrationSchedule[]> {
-    const response = await api.get(`/orchestration/schedules/by-plan/${planId}`);
     return response.data;
   },
 };

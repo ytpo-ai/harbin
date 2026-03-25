@@ -1,5 +1,9 @@
 # system-meeting-monitor 计划可见性修复计划
 
+> 状态：已过时（当前 Scheduler 不再以 plan 绑定为核心模型）
+>
+> 说明：`schedule.planId` 现为兼容字段，不作为调度触发或删除保护依据。
+
 ## 背景
 
 当前 `system-meeting-monitor` 以内置 schedule 形式存在，但未稳定绑定 `orchestration_plan`，导致前端计划编排页（基于 plan 列表）不可见。
