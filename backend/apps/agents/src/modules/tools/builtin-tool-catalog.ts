@@ -738,7 +738,7 @@ export const BUILTIN_TOOLS = [
       {
         id: 'builtin.sys-mg.mcp.orchestration.create-schedule',
         name: 'Orchestration Create Schedule',
-        description: 'Create orchestration scheduler plan in meeting workflow',
+        description: 'Create scheduler rule that dispatches inner-message to target agent',
         type: 'api_call' as const,
         category: 'Orchestration',
         requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
@@ -746,7 +746,14 @@ export const BUILTIN_TOOLS = [
         implementation: {
           type: 'built_in' as const,
           parameters: {
-            planId: 'string',
+            name: 'string',
+            description: 'string',
+            targetAgentId: 'string',
+            targetAgentName: 'string',
+            prompt: 'string',
+            payload: 'object',
+            messageEventType: 'string',
+            messageTitle: 'string',
             scheduleType: 'string',
             expression: 'string',
             intervalMs: 'number',

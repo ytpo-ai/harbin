@@ -97,6 +97,7 @@ const Scheduler: React.FC = () => {
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [targetAgentId, setTargetAgentId] = useState('');
   const [messageEventType, setMessageEventType] = useState('schedule.trigger');
+  const [messagePrompt, setMessagePrompt] = useState('');
   const [editingScheduleId, setEditingScheduleId] = useState('');
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -107,6 +108,7 @@ const Scheduler: React.FC = () => {
   const [editTimezone, setEditTimezone] = useState('Asia/Shanghai');
   const [editTargetAgentId, setEditTargetAgentId] = useState('');
   const [editMessageEventType, setEditMessageEventType] = useState('schedule.trigger');
+  const [editMessagePrompt, setEditMessagePrompt] = useState('');
 
   const { data: assignableAgents = [] } = useQuery<Agent[]>('scheduler-assignable-agents', () =>
     agentService.getAssignableAgents(),
@@ -137,6 +139,7 @@ const Scheduler: React.FC = () => {
     setTimezone('Asia/Shanghai');
     setTargetAgentId('');
     setMessageEventType('schedule.trigger');
+    setMessagePrompt('');
   };
 
   const createMutation = useMutation(schedulerService.createSchedule, {
@@ -258,6 +261,9 @@ const Scheduler: React.FC = () => {
       message: {
         eventType: messageEventType.trim() || 'schedule.trigger',
       },
+      input: {
+        prompt: messagePrompt.trim() || undefined,
+      },
       enabled: true,
     });
   };
@@ -286,6 +292,7 @@ const Scheduler: React.FC = () => {
     setEditTimezone(schedule.schedule?.timezone || 'Asia/Shanghai');
     setEditTargetAgentId(schedule.target?.executorId || '');
     setEditMessageEventType(schedule.message?.eventType || 'schedule.trigger');
+    setEditMessagePrompt(schedule.input?.prompt || '');
     setIsEditModalOpen(true);
   };
 
@@ -319,6 +326,9 @@ const Scheduler: React.FC = () => {
         },
         message: {
           eventType: editMessageEventType.trim() || 'schedule.trigger',
+        },
+        input: {
+          prompt: editMessagePrompt.trim() || undefined,
         },
         enabled: editingSchedule?.enabled,
       },
@@ -496,6 +506,13 @@ const Scheduler: React.FC = () => {
                 className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
               />
 
+              <textarea
+                value={messagePrompt}
+                onChange={(event) => setMessagePrompt(event.target.value)}
+                placeholder="触发后传递给 Agent 的指令（可选）"
+                className="min-h-[96px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+
               {scheduleType === 'interval' ? (
                 <div className="grid grid-cols-2 gap-2">
                   <input
@@ -653,6 +670,7 @@ const Scheduler: React.FC = () => {
                     <p className="text-xs font-semibold text-slate-700">计划配置</p>
                     <p className="mt-1 text-xs text-slate-600">目标 Agent：{scheduleDetail.target?.executorId || '-'}</p>
                     <p className="text-xs text-slate-600">消息类型：{scheduleDetail.message?.eventType || 'schedule.trigger'}</p>
+                    <p className="text-xs text-slate-600">消息指令：{scheduleDetail.input?.prompt || '-'}</p>
                     <p className="text-xs text-slate-600">时区：{scheduleDetail.schedule?.timezone || '-'}</p>
                     <p className="text-xs text-slate-600">更新时间：{formatDateTime(scheduleDetail.updatedAt)}</p>
                   </div>
@@ -764,6 +782,13 @@ const Scheduler: React.FC = () => {
                 onChange={(event) => setEditMessageEventType(event.target.value)}
                 placeholder="消息事件类型，例如：schedule.trigger"
                 className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              />
+
+              <textarea
+                value={editMessagePrompt}
+                onChange={(event) => setEditMessagePrompt(event.target.value)}
+                placeholder="触发后传递给 Agent 的指令（可选）"
+                className="min-h-[96px] w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
               />
 
               {editScheduleType === 'interval' ? (

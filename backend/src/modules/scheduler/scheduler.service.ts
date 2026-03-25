@@ -22,6 +22,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SchedulerService.name);
   private readonly runLocks = new Set<string>();
   private readonly lifecycleMonitorTimers = new Map<string, NodeJS.Timeout>();
+  private readonly scheduleMonitorKeys = new Map<string, string>();
   private readonly schedulerAlertWebhookUrl = String(process.env.SCHEDULER_ALERT_WEBHOOK_URL || '').trim();
   private readonly monitorIntervalMs = Math.max(1000, Number(process.env.SCHEDULER_MESSAGE_MONITOR_INTERVAL_MS || 3000));
   private readonly monitorMaxAttempts = Math.max(1, Number(process.env.SCHEDULER_MESSAGE_MONITOR_MAX_ATTEMPTS || 20));
@@ -47,6 +48,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     const enabledSchedules = await this.scheduleModel.find({ enabled: true }).exec();
     await Promise.all(enabledSchedules.map((schedule) => this.registerSchedule(schedule)));
+    await this.recoverUnfinishedLifecycleRuns();
     await this.logMissingSystemSchedules();
   }
 
@@ -65,6 +67,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(timer);
     }
     this.lifecycleMonitorTimers.clear();
+    this.scheduleMonitorKeys.clear();
   }
 
   async getOrCreateEngineeringStatisticsSchedule(): Promise<Schedule> {
@@ -531,7 +534,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
               lastRun: {
                 startedAt,
                 completedAt,
-                success: undefined,
+                success: true,
                 result: `inner-message dispatched: ${dispatched.messageId}`,
                 error: undefined,
                 taskId: dispatched.messageId || undefined,
@@ -621,6 +624,12 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     triggerType: TriggerType;
   }): void {
     const monitorKey = this.getLifecycleMonitorKey(input.scheduleId, input.messageId);
+    const previousKey = this.scheduleMonitorKeys.get(input.scheduleId);
+    if (previousKey && previousKey !== monitorKey) {
+      this.stopLifecycleMonitor(previousKey);
+    }
+    this.scheduleMonitorKeys.set(input.scheduleId, monitorKey);
+
     const poll = async (attempt: number): Promise<void> => {
       try {
         const data = await this.agentClientService.listInnerMessages({
@@ -749,6 +758,105 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(timer);
       this.lifecycleMonitorTimers.delete(monitorKey);
     }
+    for (const [scheduleId, key] of this.scheduleMonitorKeys.entries()) {
+      if (key === monitorKey) {
+        this.scheduleMonitorKeys.delete(scheduleId);
+      }
+    }
+  }
+
+  private async recoverUnfinishedLifecycleRuns(): Promise<void> {
+    const runningSchedules = await this.scheduleModel
+      .find({ status: 'running', enabled: true })
+      .select({ _id: 1, name: 1, lastRun: 1 })
+      .lean()
+      .exec();
+
+    if (!runningSchedules.length) {
+      return;
+    }
+
+    for (const raw of runningSchedules) {
+      const schedule = raw as unknown as {
+        _id?: unknown;
+        name?: string;
+        lastRun?: { taskId?: string };
+      };
+      const scheduleId = this.getEntityId(schedule as unknown as Record<string, unknown>);
+      const messageId = String(schedule?.lastRun?.taskId || '').trim();
+      const scheduleName = String(schedule?.name || '').trim() || scheduleId;
+
+      if (!scheduleId) {
+        continue;
+      }
+
+      if (!messageId) {
+        await this.markScheduleLifecycleFailure({
+          scheduleId,
+          scheduleName,
+          triggerType: 'auto',
+          messageId: '',
+          reason: 'scheduler restarted while lifecycle monitor was in-flight',
+        });
+        continue;
+      }
+
+      try {
+        const data = await this.agentClientService.listInnerMessages({
+          page: 1,
+          pageSize: 1,
+          source: 'scheduler',
+          scheduleId,
+          messageId,
+        });
+        const message = Array.isArray(data.items) && data.items.length > 0 ? data.items[0] : null;
+        const status = String(message?.status || '').trim().toLowerCase();
+
+        if (status === 'processed') {
+          await this.scheduleModel
+            .updateOne(
+              { _id: scheduleId, 'lastRun.taskId': messageId },
+              {
+                $set: {
+                  status: 'idle',
+                  'lastRun.success': true,
+                  'lastRun.completedAt': new Date(),
+                  'lastRun.result': `inner-message processed: ${messageId}`,
+                  'lastRun.error': undefined,
+                },
+                $inc: {
+                  'stats.successRuns': 1,
+                },
+              },
+            )
+            .exec();
+          continue;
+        }
+
+        if (status === 'failed') {
+          await this.markScheduleLifecycleFailure({
+            scheduleId,
+            scheduleName,
+            triggerType: 'auto',
+            messageId,
+            reason: String(message?.error || '').trim() || 'inner-message processing failed',
+          });
+          continue;
+        }
+
+        await this.markScheduleLifecycleFailure({
+          scheduleId,
+          scheduleName,
+          triggerType: 'auto',
+          messageId,
+          reason: 'scheduler restarted before lifecycle monitor completed',
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to recover running schedule lifecycle scheduleId=${scheduleId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   private async markScheduleLifecycleFailure(input: {
@@ -758,9 +866,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     triggerType: TriggerType;
     reason: string;
   }): Promise<void> {
+    const query: Record<string, unknown> = { _id: input.scheduleId };
+    if (input.messageId) {
+      query['lastRun.taskId'] = input.messageId;
+    }
+
     await this.scheduleModel
       .updateOne(
-        { _id: input.scheduleId, 'lastRun.taskId': input.messageId },
+        query,
         {
           $set: {
             status: 'error',

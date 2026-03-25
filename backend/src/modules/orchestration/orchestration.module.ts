@@ -16,10 +16,6 @@ import {
 import { Tool, ToolSchema } from '../../../apps/agents/src/schemas/tool.schema';
 import { Skill, SkillSchema } from '../../../apps/agents/src/schemas/agent-skill.schema';
 import {
-  OrchestrationSchedule,
-  OrchestrationScheduleSchema,
-} from '../../shared/schemas/orchestration-schedule.schema';
-import {
   OrchestrationRun,
   OrchestrationRunSchema,
 } from '../../shared/schemas/orchestration-run.schema';
@@ -36,7 +32,6 @@ import { SessionManagerService } from './session-manager.service';
 import { TaskClassificationService } from './services/task-classification.service';
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
-import { PlanningContextService } from './services/planning-context.service';
 import { SceneOptimizationService } from './services/scene-optimization.service';
 import { PlanManagementService } from './services/plan-management.service';
 import { TaskManagementService } from './services/task-management.service';
@@ -64,7 +59,6 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
       { name: Employee.name, schema: EmployeeSchema },
       { name: AgentRole.name, schema: AgentRoleSchema },
       { name: Skill.name, schema: SkillSchema },
-      { name: OrchestrationSchedule.name, schema: OrchestrationScheduleSchema },
       { name: OrchestrationRun.name, schema: OrchestrationRunSchema },
       { name: OrchestrationRunTask.name, schema: OrchestrationRunTaskSchema },
     ]),
@@ -86,7 +80,6 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     TaskClassificationService,
     TaskOutputValidationService,
     ExecutorSelectionService,
-    PlanningContextService,
     SceneOptimizationService,
   ],
   exports: [OrchestrationService],

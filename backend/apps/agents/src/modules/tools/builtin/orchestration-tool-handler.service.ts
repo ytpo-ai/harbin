@@ -86,39 +86,6 @@ export class OrchestrationToolHandler {
     throw new Error(`${action} requires confirm=true`);
   }
 
-  private async getOrchestrationPlanForSchedule(planId: string): Promise<any> {
-    const normalizedPlanId = String(planId || '').trim();
-    if (!normalizedPlanId) {
-      throw new Error('planId is required');
-    }
-    const plan = await this.internalApiClient.callOrchestrationApi('GET', `/plans/${normalizedPlanId}`, undefined);
-    if (!plan || typeof plan !== 'object') {
-      throw new Error('plan not found');
-    }
-    return plan;
-  }
-
-  private resolvePlanExecutorId(plan: any): string {
-    const plannerAgentId = String(plan?.strategy?.plannerAgentId || '').trim();
-    if (plannerAgentId) {
-      return plannerAgentId;
-    }
-
-    const taskAssignments = Array.isArray(plan?.tasks)
-      ? plan.tasks
-          .map((task: any) => ({
-            executorType: String(task?.assignment?.executorType || ''),
-            executorId: String(task?.assignment?.executorId || '').trim(),
-          }))
-          .filter((assignment: any) => assignment.executorType === 'agent' && assignment.executorId)
-      : [];
-    if (taskAssignments.length) {
-      return taskAssignments[0].executorId;
-    }
-
-    throw new Error('plan has no executable agent context, please set plannerAgentId first');
-  }
-
   private buildScheduleConfig(params: {
     scheduleType?: 'cron' | 'interval';
     expression?: string;
@@ -454,7 +421,14 @@ export class OrchestrationToolHandler {
 
   async createOrchestrationSchedule(
     params: {
-      planId?: string;
+      name?: string;
+      description?: string;
+      targetAgentId?: string;
+      targetAgentName?: string;
+      prompt?: string;
+      payload?: Record<string, unknown>;
+      messageEventType?: string;
+      messageTitle?: string;
       scheduleType?: 'cron' | 'interval';
       expression?: string;
       intervalMs?: number;
@@ -469,19 +443,16 @@ export class OrchestrationToolHandler {
       allowAutonomous: true,
       fallbackAgentId: agentId,
     });
-    const planId = String(params?.planId || '').trim();
-    if (!planId) {
-      throw new Error('orchestration_create_schedule requires planId');
+    const targetAgentId = String(params?.targetAgentId || '').trim();
+    if (!targetAgentId) {
+      throw new Error('orchestration_create_schedule requires targetAgentId');
     }
 
-    const plan = await this.getOrchestrationPlanForSchedule(planId);
-    const targetAgentId = this.resolvePlanExecutorId(plan);
-    const planTitle = String(plan?.title || '').trim();
-    const planPrompt = String(plan?.sourcePrompt || '').trim();
+    const name = String(params?.name || '').trim() || `agent-schedule:${targetAgentId}`;
 
     const payload = {
-      name: `plan-schedule:${planTitle || planId}`,
-      description: `Schedule for orchestration plan ${planId}`,
+      name,
+      description: String(params?.description || '').trim() || undefined,
       schedule: this.buildScheduleConfig({
         scheduleType: params.scheduleType,
         expression: params.expression,
@@ -489,15 +460,16 @@ export class OrchestrationToolHandler {
         timezone: params.timezone,
       }),
       target: {
-        executorType: 'agent' as const,
         executorId: targetAgentId,
+        executorName: String(params?.targetAgentName || '').trim() || undefined,
       },
       input: {
-        prompt: planPrompt || undefined,
-        payload: {
-          planId,
-          source: 'mcp.orchestration.createSchedule',
-        },
+        prompt: String(params?.prompt || '').trim() || undefined,
+        payload: params?.payload,
+      },
+      message: {
+        eventType: String(params?.messageEventType || '').trim() || 'schedule.trigger',
+        title: String(params?.messageTitle || '').trim() || undefined,
       },
       enabled: params?.enabled,
     };
@@ -509,7 +481,7 @@ export class OrchestrationToolHandler {
       meetingId: executionInfo.meetingId,
       organizationId: executionInfo.organizationId,
       initiatorAgentId: agentId,
-      planId,
+      targetAgentId,
       result,
     };
   }

@@ -19,10 +19,6 @@ import {
   OrchestrationTask,
   OrchestrationTaskDocument,
 } from '../../../shared/schemas/orchestration-task.schema';
-import {
-  OrchestrationSchedule,
-  OrchestrationScheduleDocument,
-} from '../../../shared/schemas/orchestration-schedule.schema';
 import { PlanStatsService } from './plan-stats.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
@@ -41,8 +37,6 @@ export class PlanExecutionService {
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
-    @InjectModel(OrchestrationSchedule.name)
-    private readonly orchestrationScheduleModel: Model<OrchestrationScheduleDocument>,
     private readonly planStatsService: PlanStatsService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
@@ -148,9 +142,7 @@ export class PlanExecutionService {
     }
 
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    if (requirementId) {
-      await this.contextService.tryUpdateRequirementStatus(requirementId, 'in_progress', 'orchestration plan started');
-    }
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim() || undefined;
 
     await this.planStatsService.setPlanStatus(planId, 'planned');
     await this.planStatsService.setPlanSessionStatus(planId, 'planned');
@@ -251,27 +243,6 @@ export class PlanExecutionService {
       )
       .exec();
 
-    if (options?.scheduleId) {
-      await this.orchestrationScheduleModel
-        .updateOne(
-          { _id: options.scheduleId },
-          {
-            $set: {
-              lastRun: {
-                startedAt,
-                completedAt,
-                success: runStatus === 'completed',
-                result: undefined,
-                error: runStatus === 'failed' ? 'Run failed' : undefined,
-                taskId: undefined,
-                sessionId: undefined,
-              },
-            },
-          },
-        )
-        .exec();
-    }
-
     await this.planStatsService.setPlanStatus(planId, 'planned');
     await this.planStatsService.setPlanSessionStatus(planId, 'planned');
     await this.planStatsService.refreshPlanStats(planId);
@@ -283,15 +254,6 @@ export class PlanExecutionService {
       stats,
       completedAt,
     });
-
-    if (requirementId && runStatus === 'completed') {
-      await this.contextService.tryUpdateRequirementStatus(
-        requirementId,
-        'review',
-        'orchestration plan passed auto review gate',
-      );
-      await this.contextService.tryUpdateRequirementStatus(requirementId, 'done', 'orchestration plan completed');
-    }
 
     const latestRun = await this.orchestrationRunModel.findOne({ _id: runId }).exec();
     if (!latestRun) {

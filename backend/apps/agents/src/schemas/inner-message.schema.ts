@@ -74,3 +74,4 @@ InnerMessageSchema.index({ receiverAgentId: 1, status: 1, createdAt: -1 });
 InnerMessageSchema.index({ senderAgentId: 1, createdAt: -1 });
 InnerMessageSchema.index({ eventType: 1, createdAt: -1 });
 InnerMessageSchema.index({ dedupKey: 1 }, { unique: true, sparse: true });
+InnerMessageSchema.index({ source: 1, 'payload.scheduleId': 1, createdAt: -1 });
