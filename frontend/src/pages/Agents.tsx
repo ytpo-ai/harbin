@@ -63,6 +63,15 @@ const TIER_LABEL_MAP: Record<AgentTier, string> = {
   temporary: '临时工',
 };
 
+type TierFilter = 'all' | AgentTier;
+
+const TIER_FILTER_OPTIONS: Array<{ value: TierFilter; label: string }> = [
+  { value: 'all', label: '全部' },
+  { value: 'leadership', label: '高管层' },
+  { value: 'operations', label: '执行层' },
+  { value: 'temporary', label: '零时工' },
+];
+
 const TIER_BADGE_CLASS_MAP: Record<AgentTier, string> = {
   leadership: 'bg-indigo-100 text-indigo-800',
   operations: 'bg-slate-100 text-slate-800',
@@ -179,6 +188,7 @@ const Agents: React.FC = () => {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [startingChatAgentId, setStartingChatAgentId] = useState<string>('');
   const [avatarLoadErrors, setAvatarLoadErrors] = useState<Record<string, boolean>>({});
+  const [tierFilter, setTierFilter] = useState<TierFilter>('all');
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;
@@ -205,6 +215,17 @@ const Agents: React.FC = () => {
     }
     return map;
   }, [businessRoles]);
+
+  const filteredAgents = useMemo(() => {
+    const list = agents || [];
+    if (tierFilter === 'all') return list;
+
+    return list.filter((agent) => {
+      const role = roleMap.get(agent.roleId);
+      const tier = normalizeTier(agent.tier || role?.tier);
+      return tier === tierFilter;
+    });
+  }, [agents, roleMap, tierFilter]);
 
   const deleteAgentMutation = useMutation(agentService.deleteAgent, {
     onSuccess: () => {
@@ -331,18 +352,33 @@ const Agents: React.FC = () => {
           <h1 className="text-2xl font-semibold text-gray-900">Agent管理</h1>
           <p className="mt-1 text-sm text-gray-500">管理和配置AI Agent</p>
         </div>
-        <button
-          onClick={() => setIsCreateModalOpen(true)}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-        >
-          <PlusIcon className="h-4 w-4 mr-2" />
-          创建Agent
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label htmlFor="agent-tier-filter" className="text-sm text-gray-600">筛选</label>
+            <select
+              id="agent-tier-filter"
+              value={tierFilter}
+              onChange={(e) => setTierFilter(e.target.value as TierFilter)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+            >
+              {TIER_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+          >
+            <PlusIcon className="h-4 w-4 mr-2" />
+            创建Agent
+          </button>
+        </div>
       </div>
 
       {/* Agent列表 */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {agents?.map((agent) => {
+          {filteredAgents.map((agent) => {
             const agentId = getAgentId(agent) || agent.name;
             const avatarUrl = getAgentAvatarUrl(agent);
             const showAvatarImage = !!avatarUrl && !avatarLoadErrors[agentId];
@@ -457,6 +493,14 @@ const Agents: React.FC = () => {
               </div>
             );
           })}
+
+        {(agents?.length || 0) > 0 && filteredAgents.length === 0 && (
+          <div className="col-span-full py-12 text-center">
+            <UserGroupIcon className="mx-auto h-12 w-12 text-gray-400" />
+            <h3 className="mt-2 text-sm font-medium text-gray-900">暂无匹配结果</h3>
+            <p className="mt-1 text-sm text-gray-500">当前筛选条件下暂无 Agent</p>
+          </div>
+        )}
 
         {agents?.length === 0 && (
           <div className="col-span-full py-12 text-center">
