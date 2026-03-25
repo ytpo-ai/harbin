@@ -10,7 +10,6 @@ import {
 } from '../../shared/schemas/orchestration-plan.schema';
 import { PromptResolverService } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.service';
 import { PROMPT_ROLES, PROMPT_SCENES } from '../../../apps/agents/src/modules/prompt-registry/prompt-resolver.constants';
-import { PlanningContext } from './services/planning-context.service';
 import {
   MAX_TASKS,
   MAX_TITLE_LENGTH,
@@ -33,9 +32,6 @@ interface PlannerResult {
 
 export interface IncrementalPlannerContext {
   planGoal: string;
-  agentManifest?: string;
-  requirementDetail?: string;
-  planningConstraints?: string;
   completedTasks: Array<{
     title: string;
     agentId?: string;
@@ -71,9 +67,6 @@ export interface GenerateNextTaskResult {
 const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
   '将用户需求拆解为可执行任务清单并返回 JSON。',
   '需求: {{prompt}}',
-  '{{requirementDetail}}',
-  '{{agentManifest}}',
-  '{{planningConstraints}}',
   '输出规则:',
   '1) JSON 结构: {"mode":"sequential|parallel|hybrid","tasks":[{"title":"","description":"","priority":"low|medium|high|urgent","dependencies":[0]}]}',
   '2) dependencies 为当前任务依赖的前置任务索引数组。',
@@ -104,11 +97,10 @@ export class PlannerService {
     mode?: 'sequential' | 'parallel' | 'hybrid';
     plannerAgentId?: string;
     requirementId?: string;
-    planningContext?: PlanningContext;
   }): Promise<PlannerResult> {
     const mode = input.mode || 'hybrid';
     if (input.plannerAgentId) {
-      const result = await this.planByAgent(input.prompt, input.plannerAgentId, mode, input.requirementId, input.planningContext);
+      const result = await this.planByAgent(input.prompt, input.plannerAgentId, mode, input.requirementId);
       if (result) {
         return result;
       }
@@ -116,7 +108,7 @@ export class PlannerService {
 
     const defaultPlanner = await this.agentModel.findOne({ isActive: true }).sort({ createdAt: 1 }).exec();
     if (defaultPlanner?._id) {
-      const result = await this.planByAgent(input.prompt, defaultPlanner._id.toString(), mode, input.requirementId, input.planningContext);
+      const result = await this.planByAgent(input.prompt, defaultPlanner._id.toString(), mode, input.requirementId);
       if (result) {
         return result;
       }
@@ -208,13 +200,11 @@ export class PlannerService {
     plannerAgentId: string,
     mode: 'sequential' | 'parallel' | 'hybrid',
     requirementId?: string,
-    planningContext?: PlanningContext,
   ): Promise<PlannerResult | null> {
     const plannerPrompt = await this.resolvePlannerTaskPrompt({
       prompt,
       mode,
       requirementId,
-      planningContext,
     });
 
     const task: AgentExecutionTask = {
@@ -320,24 +310,6 @@ export class PlannerService {
     sections.push('## 当前编排进度');
     sections.push(`已累计执行步骤数: ${context.totalSteps}`);
     sections.push('');
-
-    if (context.requirementDetail) {
-      sections.push('## 需求详情');
-      sections.push(context.requirementDetail);
-      sections.push('');
-    }
-
-    if (context.agentManifest) {
-      sections.push('## 执行者发现规则');
-      sections.push(context.agentManifest);
-      sections.push('');
-    }
-
-    if (context.planningConstraints) {
-      sections.push('## 编排约束');
-      sections.push(context.planningConstraints);
-      sections.push('');
-    }
 
     if (context.completedTasks.length > 0) {
       sections.push('## 已完成任务摘要');
@@ -463,7 +435,6 @@ export class PlannerService {
     mode: 'sequential' | 'parallel' | 'hybrid';
     requirementId?: string;
     sessionOverride?: string;
-    planningContext?: PlanningContext;
   }): Promise<string> {
     const requirementScope = input.requirementId
       ? `来源需求ID: ${input.requirementId}，请确保任务拆解围绕该需求交付闭环。`
@@ -480,9 +451,6 @@ export class PlannerService {
       prompt: input.prompt,
       mode: input.mode,
       requirementScope,
-      agentManifest: input.planningContext?.agentManifest || '',
-      requirementDetail: input.planningContext?.requirementDetail || '',
-      planningConstraints: input.planningContext?.planningConstraints || '',
     });
   }
 
@@ -492,19 +460,13 @@ export class PlannerService {
       prompt: string;
       mode: 'sequential' | 'parallel' | 'hybrid';
       requirementScope: string;
-      agentManifest: string;
-      requirementDetail: string;
-      planningConstraints: string;
     },
   ): string {
     const normalizedTemplate = String(template || '').trim() || DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT;
     const replaced = normalizedTemplate
       .replace(/{{\s*prompt\s*}}/g, params.prompt)
       .replace(/{{\s*mode\s*}}/g, params.mode)
-      .replace(/{{\s*requirementScope\s*}}/g, params.requirementScope)
-      .replace(/{{\s*agentManifest\s*}}/g, params.agentManifest)
-      .replace(/{{\s*requirementDetail\s*}}/g, params.requirementDetail)
-      .replace(/{{\s*planningConstraints\s*}}/g, params.planningConstraints);
+      .replace(/{{\s*requirementScope\s*}}/g, params.requirementScope);
 
     const lines = [replaced.trim()];
 
@@ -517,16 +479,6 @@ export class PlannerService {
     }
     if (!/{{\s*requirementScope\s*}}/i.test(normalizedTemplate) && !replaced.includes(params.requirementScope)) {
       lines.push(params.requirementScope);
-    }
-    // Append context blocks if not already in the template
-    if (params.agentManifest && !/{{\s*agentManifest\s*}}/i.test(normalizedTemplate)) {
-      lines.push(params.agentManifest);
-    }
-    if (params.requirementDetail && !/{{\s*requirementDetail\s*}}/i.test(normalizedTemplate)) {
-      lines.push(params.requirementDetail);
-    }
-    if (params.planningConstraints && !/{{\s*planningConstraints\s*}}/i.test(normalizedTemplate)) {
-      lines.push(params.planningConstraints);
     }
 
     return lines.join('\n').trim();
