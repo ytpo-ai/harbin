@@ -23,6 +23,10 @@ export class AgentTaskWorker implements OnModuleInit {
     5000,
     Number(process.env.AGENT_TASK_OPENCODE_ACTIVITY_POLL_INTERVAL_MS || 30000),
   );
+  private readonly sessionInitTimeoutMs = Math.max(
+    10_000,
+    Number(process.env.AGENT_TASK_SESSION_INIT_TIMEOUT_MS || 60000),
+  );
   private activeCount = 0;
   private retryTimer: NodeJS.Timeout | null = null;
 
@@ -126,11 +130,10 @@ export class AgentTaskWorker implements OnModuleInit {
       const now = Date.now();
       const startedAtMs = freshTask?.startedAt ? new Date(freshTask.startedAt).getTime() : now;
       const taskTimeoutMs = Math.max(1000, Number(freshTask?.taskTimeoutMs || 1200000));
-      // opencode 通道任务（开发/review）执行时间较长，自动扩大 step timeout 至 15 分钟。
       const isOpenCodeChannel = String(task.sessionContext?.runtimeChannelHint || '').trim() === 'opencode';
-      const defaultStepTimeoutMs = isOpenCodeChannel ? 900000 : 120000;
-      const stepTimeoutMs = Math.max(1000, Number(freshTask?.stepTimeoutMs || defaultStepTimeoutMs));
-      if (now - startedAtMs > taskTimeoutMs) {
+      const stepTimeoutMs = Math.max(1000, Number(freshTask?.stepTimeoutMs || 120000));
+      const taskDeadlineAt = startedAtMs + taskTimeoutMs;
+      if (now >= taskDeadlineAt) {
         throw new Error('TASK_TIMEOUT_EXCEEDED');
       }
 
@@ -252,13 +255,24 @@ export class AgentTaskWorker implements OnModuleInit {
         }
       };
 
-      const executePromise = isOpenCodeChannel
+      const taskRemainingMs = Math.max(1000, taskDeadlineAt - Date.now());
+      const effectiveAbsoluteTimeoutMs = Math.min(taskRemainingMs, this.opencodeAbsoluteTimeoutMs);
+      const taskStartedAtMs = startedAtMs;
+
+      const stepPromise = isOpenCodeChannel
         ? this.withActivityAwareTimeout(taskExecutionPromise, {
             inactivityTimeoutMs: this.opencodeInactivityTimeoutMs,
-            absoluteTimeoutMs: Math.max(stepTimeoutMs, this.opencodeAbsoluteTimeoutMs),
+            absoluteTimeoutMs: effectiveAbsoluteTimeoutMs,
             pollIntervalMs: this.opencodeActivityPollIntervalMs,
             checkActivity: async () => {
               if (!openCodeSessionId) {
+                // session 未就绪时检查 init 窗口是否已超时
+                if (Date.now() - taskStartedAtMs > this.sessionInitTimeoutMs) {
+                  this.logger.warn(
+                    `[activity_check] session init timeout taskId=${taskId} elapsed=${Date.now() - taskStartedAtMs}ms limit=${this.sessionInitTimeoutMs}ms`,
+                  );
+                  return false;
+                }
                 return true;
               }
               const status = await this.openCodeAdapter.getSessionStatus(openCodeSessionId, {
@@ -272,7 +286,10 @@ export class AgentTaskWorker implements OnModuleInit {
             },
             onTimeout: onStepTimeout,
           })
-        : this.withStepTimeout(taskExecutionPromise, stepTimeoutMs, onStepTimeout);
+        : this.withStepTimeout(taskExecutionPromise, Math.min(stepTimeoutMs, taskRemainingMs), onStepTimeout);
+
+      // 任务级 watchdog：无论 step/activity 超时如何，总时长不超过 taskTimeoutMs
+      const executePromise = this.withAbsoluteDeadline(stepPromise, taskDeadlineAt, onStepTimeout);
 
       const cancelWatch = { active: true };
       void this.waitForTaskCancellation(taskId, cancelWatch, async () => {
@@ -436,6 +453,9 @@ export class AgentTaskWorker implements OnModuleInit {
     if (normalized.includes('cancel')) return false;
     if (normalized.includes('auth')) return false;
     if (normalized.includes('permission')) return false;
+    // step_timeout / task_timeout 不重试（避免重试叠加放大超时）
+    if (normalized.includes('step_timeout_exceeded')) return false;
+    if (normalized.includes('task_timeout_exceeded')) return false;
     return (
       normalized.includes('timeout') ||
       normalized.includes('econnreset') ||
@@ -526,7 +546,8 @@ export class AgentTaskWorker implements OnModuleInit {
               lastActivityAt = Date.now();
             }
           } catch {
-            lastActivityAt = Date.now();
+            // 探测异常时不刷新 lastActivityAt，让 inactivity 计时器正常推进
+            this.logger.warn('[activity_check] checkActivity threw, not refreshing lastActivityAt');
           }
 
           if (Date.now() - lastActivityAt > inactivityTimeoutMs) {
@@ -548,6 +569,34 @@ export class AgentTaskWorker implements OnModuleInit {
         },
       );
     });
+  }
+
+  private async withAbsoluteDeadline<T>(
+    promise: Promise<T>,
+    deadlineAt: number,
+    onTimeout: () => Promise<void>,
+  ): Promise<T> {
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) {
+      void onTimeout().catch(() => undefined);
+      throw new Error('TASK_TIMEOUT_EXCEEDED');
+    }
+    let timer: NodeJS.Timeout | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            void onTimeout().catch(() => undefined);
+            reject(new Error('TASK_TIMEOUT_EXCEEDED'));
+          }, remainingMs);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   private async waitForTaskCancellation(

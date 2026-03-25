@@ -70,10 +70,12 @@ export class OpenCodeAdapter {
   async abortSession(
     sessionId: string,
     runtime?: OpenCodeRuntimeOptions,
+    options?: { timeoutMs?: number },
   ): Promise<{ response: string; metadata: Record<string, unknown> }> {
     const result = await this.request<any>('POST', `/session/${encodeURIComponent(sessionId)}/abort`, {
       runtime,
       data: {},
+      ...(options?.timeoutMs ? { timeout: options.timeoutMs } : {}),
     });
 
     return {
@@ -104,8 +106,12 @@ export class OpenCodeAdapter {
         active: activeBySessionState || activeByAssistantMessage,
         ...(lastActivityAt ? { lastActivityAt } : {}),
       };
-    } catch {
-      return { active: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(
+        `[session_status_error] sessionId=${sessionId} error=${message} — treating as inactive`,
+      );
+      return { active: false };
     }
   }
 

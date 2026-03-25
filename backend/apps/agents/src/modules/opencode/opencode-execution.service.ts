@@ -505,14 +505,15 @@ export class OpenCodeExecutionService {
       this.logger.log(`[opencode_cancel] no active AbortController for sessionId=${normalizedSessionId}`);
     }
 
-    // 2. Call OpenCode server abort endpoint with retry
+    // 2. Call OpenCode server abort endpoint with retry (short 10s timeout per attempt)
+    const abortTimeoutMs = 10_000;
     const maxRetries = 2;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         this.logger.log(
-          `OpenCode abort request start sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} attempt=${attempt + 1}/${maxRetries + 1}`,
+          `OpenCode abort request start sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'} attempt=${attempt + 1}/${maxRetries + 1} timeoutMs=${abortTimeoutMs}`,
         );
-        await this.adapter.abortSession(normalizedSessionId, runtime);
+        await this.adapter.abortSession(normalizedSessionId, runtime, { timeoutMs: abortTimeoutMs });
         this.logger.log(
           `OpenCode abort request success sessionId=${normalizedSessionId} endpoint=${runtime?.baseUrl || 'env_default'}`,
         );
