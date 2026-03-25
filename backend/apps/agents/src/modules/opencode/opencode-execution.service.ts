@@ -686,6 +686,35 @@ export class OpenCodeExecutionService {
     const candidateObjects = [payload, nested].filter(
       (item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)),
     );
+
+    for (const obj of candidateObjects) {
+      const properties =
+        obj.properties && typeof obj.properties === 'object' && !Array.isArray(obj.properties)
+          ? (obj.properties as Record<string, unknown>)
+          : undefined;
+      if (properties) {
+        for (const key of directKeys) {
+          const value = properties[key];
+          if (typeof value === 'string' && value.trim()) {
+            return value;
+          }
+        }
+
+        const part =
+          properties.part && typeof properties.part === 'object' && !Array.isArray(properties.part)
+            ? (properties.part as Record<string, unknown>)
+            : undefined;
+        if (part) {
+          for (const key of directKeys) {
+            const value = part[key];
+            if (typeof value === 'string' && value.trim()) {
+              return value;
+            }
+          }
+        }
+      }
+    }
+
     for (const obj of candidateObjects) {
       const info = obj.info;
       if (info && typeof info === 'object' && !Array.isArray(info)) {

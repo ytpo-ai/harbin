@@ -449,6 +449,18 @@ export class OpenCodeAdapter {
   }
 
   private resolveSessionId(payload: Record<string, unknown>): string | undefined {
+    const properties =
+      payload.properties && typeof payload.properties === 'object' && !Array.isArray(payload.properties)
+        ? (payload.properties as Record<string, unknown>)
+        : undefined;
+    const info =
+      properties?.info && typeof properties.info === 'object' && !Array.isArray(properties.info)
+        ? (properties.info as Record<string, unknown>)
+        : undefined;
+    const part =
+      properties?.part && typeof properties.part === 'object' && !Array.isArray(properties.part)
+        ? (properties.part as Record<string, unknown>)
+        : undefined;
     const directCandidates = [
       payload.sessionId,
       payload.sessionID,
@@ -456,6 +468,17 @@ export class OpenCodeAdapter {
       (payload.path as Record<string, unknown> | undefined)?.id,
       (payload.meta as Record<string, unknown> | undefined)?.sessionId,
       (payload.metadata as Record<string, unknown> | undefined)?.sessionId,
+      properties?.sessionId,
+      properties?.sessionID,
+      properties?.session_id,
+      info?.sessionId,
+      info?.sessionID,
+      info?.session_id,
+      part?.sessionId,
+      part?.sessionID,
+      part?.session_id,
+      ((properties?.status as Record<string, unknown> | undefined)?.sessionId as unknown),
+      ((properties?.status as Record<string, unknown> | undefined)?.sessionID as unknown),
     ];
 
     for (const value of directCandidates) {
