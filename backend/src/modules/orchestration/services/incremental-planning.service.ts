@@ -229,6 +229,10 @@ export class IncrementalPlanningService {
     );
 
     if (executionResult.status === 'completed') {
+      // 任务完成后尝试从 output 中提取 requirementId，动态补充到 plan metadata。
+      // 这样后续 buildPlannerContext 能拉取完整需求描述传给 planner 和执行者。
+      await this.tryBackfillRequirementId(planId, createdTask._id.toString());
+
       const merged = await this.tryMergeWithPreviousTask(planId, createdTask);
       if (!isRedesign) {
         currentStep += 1;
@@ -315,7 +319,7 @@ export class IncrementalPlanningService {
       .map((item) => ({
         title: item.title,
         agentId: String(item.assignment?.executorId || '').trim() || undefined,
-        outputSummary: String(item.result?.output || '').slice(0, 500),
+        outputSummary: String(item.result?.output || '').slice(0, 2000),
       }));
 
     const failedAgentIds = Array.from(
@@ -331,6 +335,7 @@ export class IncrementalPlanningService {
     const failedTasks = tasks
       .filter((item) => item.status === 'failed')
       .map((item) => ({
+        taskId: String((item as any).id || item._id?.toString() || '').trim(),
         title: item.title,
         agentId: String(item.assignment?.executorId || '').trim() || undefined,
         agentTools: failedAgentToolMap.get(String(item.assignment?.executorId || '').trim()) || [],
@@ -360,9 +365,18 @@ export class IncrementalPlanningService {
     const requirementId = await this.resolveRequirementObjectId(planId);
 
     // Resolve runtimeTaskType: planner 指定 > plan.defaultTaskType > 'general'
-    const plan = await this.planModel.findById(planId).select({ defaultTaskType: 1 }).lean().exec();
+    const plan = await this.planModel.findById(planId).select({ defaultTaskType: 1, taskIds: 1 }).lean().exec();
     const planDefaultTaskType = (plan as any)?.defaultTaskType as string | undefined;
     const runtimeTaskType = taskResult.taskType || planDefaultTaskType || 'general';
+
+    // 增量规划：自动将前序已完成任务设为依赖，确保执行层能注入前序输出上下文。
+    const completedPredecessors = await this.taskModel
+      .find({ planId, status: 'completed' })
+      .sort({ order: 1 })
+      .select({ _id: 1 })
+      .lean()
+      .exec();
+    const dependencyTaskIds = completedPredecessors.map((t) => String(t._id));
 
     const task = await new this.taskModel({
       planId,
@@ -373,7 +387,7 @@ export class IncrementalPlanningService {
       runtimeTaskType,
       status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
       order,
-      dependencyTaskIds: [],
+      dependencyTaskIds,
       mergedFromTaskIds: [],
       assignment,
       runLogs: [
@@ -416,12 +430,14 @@ export class IncrementalPlanningService {
     if (!normalizedTaskId) {
       throw new NotFoundException('Failed task not found for redesign');
     }
-    if (!Types.ObjectId.isValid(normalizedTaskId)) {
-      throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
+
+    const taskFilters: Record<string, any>[] = [{ id: normalizedTaskId }];
+    if (Types.ObjectId.isValid(normalizedTaskId)) {
+      taskFilters.push({ _id: new Types.ObjectId(normalizedTaskId) });
     }
 
     const targetTask = await this.taskModel
-      .findOne({ _id: new Types.ObjectId(normalizedTaskId), planId, status: 'failed' })
+      .findOne({ planId, status: 'failed', $or: taskFilters })
       .exec();
     if (!targetTask) {
       throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
@@ -854,5 +870,54 @@ export class IncrementalPlanningService {
       .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
       .filter((item) => item.length >= 2)
       .slice(0, 30);
+  }
+
+  /**
+   * 任务完成后尝试从 output 中提取 requirementId，回写到 plan.metadata。
+   * 典型场景：step0 选定需求后，output 中包含 "requirementId=xxx"，
+   * 将其回写后，后续 buildPlannerContext 能拉取完整需求描述传给 planner。
+   */
+  private async tryBackfillRequirementId(planId: string, taskId: string): Promise<void> {
+    try {
+      const plan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
+      if (!plan) {
+        return;
+      }
+      // 如果 plan 已经有 requirementId，不覆盖
+      const existing = String((plan.metadata || {}).requirementId || '').trim();
+      if (existing) {
+        return;
+      }
+
+      const task = await this.taskModel.findById(taskId).select({ 'result.output': 1 }).lean().exec();
+      const output = String(task?.result?.output || '');
+      if (!output) {
+        return;
+      }
+
+      // 从 output 中匹配 requirementId 模式：
+      // - requirementId=xxx / requirementId：xxx / requirementId: xxx
+      // - requirementId\nxxx（换行分隔，常见于 agent 格式化输出）
+      const match = output.match(/requirementId[=：:\s]*[`'"]?(req-[a-zA-Z0-9_-]+|[a-f0-9]{24})[`'"]?/i);
+      if (!match?.[1]) {
+        return;
+      }
+
+      const extractedId = match[1].trim();
+      this.logger.log(
+        `[backfill_requirement] planId=${planId} taskId=${taskId} requirementId=${extractedId}`,
+      );
+
+      await this.planModel
+        .updateOne(
+          { _id: planId },
+          { $set: { 'metadata.requirementId': extractedId } },
+        )
+        .exec();
+    } catch (err) {
+      this.logger.warn(
+        `[backfill_requirement] failed planId=${planId} taskId=${taskId}: ${(err as Error).message}`,
+      );
+    }
   }
 }

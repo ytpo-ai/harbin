@@ -3,6 +3,7 @@ import { AgentTaskService } from './agent-task.service';
 import { AgentService } from '../agents/agent.service';
 import { Task as RuntimeTask } from '../../../../../src/shared/types';
 import { OpenCodeServeRouterService } from './opencode-serve-router.service';
+import { OpenCodeAdapter } from '../opencode/opencode.adapter';
 
 @Injectable()
 export class AgentTaskWorker implements OnModuleInit {
@@ -10,6 +11,18 @@ export class AgentTaskWorker implements OnModuleInit {
   private running = false;
   private readonly maxConcurrency = Math.max(1, Number(process.env.AGENT_TASK_WORKER_CONCURRENCY || 2));
   private readonly cancelPollIntervalMs = Math.max(200, Number(process.env.AGENT_TASK_CANCEL_POLL_INTERVAL_MS || 500));
+  private readonly opencodeInactivityTimeoutMs = Math.max(
+    30_000,
+    Number(process.env.AGENT_TASK_OPENCODE_INACTIVITY_TIMEOUT_MS || 300000),
+  );
+  private readonly opencodeAbsoluteTimeoutMs = Math.max(
+    60_000,
+    Number(process.env.AGENT_TASK_OPENCODE_ABSOLUTE_TIMEOUT_MS || 1800000),
+  );
+  private readonly opencodeActivityPollIntervalMs = Math.max(
+    5000,
+    Number(process.env.AGENT_TASK_OPENCODE_ACTIVITY_POLL_INTERVAL_MS || 30000),
+  );
   private activeCount = 0;
   private retryTimer: NodeJS.Timeout | null = null;
 
@@ -17,6 +30,7 @@ export class AgentTaskWorker implements OnModuleInit {
     private readonly taskService: AgentTaskService,
     private readonly agentService: AgentService,
     private readonly serveRouter: OpenCodeServeRouterService,
+    private readonly openCodeAdapter: OpenCodeAdapter,
   ) {}
 
   onModuleInit(): void {
@@ -112,7 +126,10 @@ export class AgentTaskWorker implements OnModuleInit {
       const now = Date.now();
       const startedAtMs = freshTask?.startedAt ? new Date(freshTask.startedAt).getTime() : now;
       const taskTimeoutMs = Math.max(1000, Number(freshTask?.taskTimeoutMs || 1200000));
-      const stepTimeoutMs = Math.max(1000, Number(freshTask?.stepTimeoutMs || 120000));
+      // opencode 通道任务（开发/review）执行时间较长，自动扩大 step timeout 至 15 分钟。
+      const isOpenCodeChannel = String(task.sessionContext?.runtimeChannelHint || '').trim() === 'opencode';
+      const defaultStepTimeoutMs = isOpenCodeChannel ? 900000 : 120000;
+      const stepTimeoutMs = Math.max(1000, Number(freshTask?.stepTimeoutMs || defaultStepTimeoutMs));
       if (now - startedAtMs > taskTimeoutMs) {
         throw new Error('TASK_TIMEOUT_EXCEEDED');
       }
@@ -138,104 +155,124 @@ export class AgentTaskWorker implements OnModuleInit {
       let openCodeSessionId: string | undefined;
       let openCodeRuntimeEndpoint: string | undefined;
       let openCodeRuntimeAuthEnable: boolean | undefined;
-      const executePromise = this.withStepTimeout(
-        this.agentService.executeTaskWithStreaming(
-          task.agentId,
-          runtimeTask,
-          (token) => {
-            void this.taskService.publishTaskEvent({
-              id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
-              type: 'token',
-              taskId,
-              sequence: 0,
-              timestamp: new Date().toISOString(),
-              payload: {
-                token,
-              },
-            });
+      const taskExecutionPromise = this.agentService.executeTaskWithStreaming(
+        task.agentId,
+        runtimeTask,
+        (token) => {
+          void this.taskService.publishTaskEvent({
+            id: `evt-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+            type: 'token',
+            taskId,
+            sequence: 0,
+            timestamp: new Date().toISOString(),
+            payload: {
+              token,
+            },
+          });
+        },
+        {
+          sessionContext: task.sessionContext || {},
+          collaborationContext: {
+            sessionId: this.readString(task.sessionContext?.sessionId),
+            planId: this.readString(task.sessionContext?.planId),
+            taskId: this.readString(task.sessionContext?.orchestrationTaskId) || task.id,
+            orchestrationRunId: this.readString(task.sessionContext?.runId),
+            domainContext:
+              task.sessionContext?.domainContext && typeof task.sessionContext.domainContext === 'object'
+                ? (task.sessionContext.domainContext as Record<string, unknown>)
+                : undefined,
+            collaborationContext:
+              task.sessionContext?.collaborationContext && typeof task.sessionContext.collaborationContext === 'object'
+                ? (task.sessionContext.collaborationContext as Record<string, unknown>)
+                : undefined,
           },
-          {
-            sessionContext: task.sessionContext || {},
-            collaborationContext: {
-              sessionId: this.readString(task.sessionContext?.sessionId),
-              planId: this.readString(task.sessionContext?.planId),
-              taskId: this.readString(task.sessionContext?.orchestrationTaskId) || task.id,
-              orchestrationRunId: this.readString(task.sessionContext?.runId),
-              domainContext:
-                task.sessionContext?.domainContext && typeof task.sessionContext.domainContext === 'object'
-                  ? (task.sessionContext.domainContext as Record<string, unknown>)
-                  : undefined,
-              collaborationContext:
-                task.sessionContext?.collaborationContext && typeof task.sessionContext.collaborationContext === 'object'
-                  ? (task.sessionContext.collaborationContext as Record<string, unknown>)
-                  : undefined,
-            },
-            runtimeRouting: {
-              taskType: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
-              preferredChannel: this.resolvePreferredExecutionChannel(task.sessionContext),
-              source: 'agent_task_session_context',
-            },
-            opencodeRuntime: {
-              endpoint: serve?.baseUrl,
-              authEnable: serve?.authEnable,
-            },
-            runtimeLifecycle: {
-              onStarted: async (runtime) => {
-                await this.taskService.updateTaskState({
-                  taskId,
+          runtimeRouting: {
+            taskType: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
+            preferredChannel: this.resolvePreferredExecutionChannel(task.sessionContext),
+            source: 'agent_task_session_context',
+          },
+          opencodeRuntime: {
+            endpoint: serve?.baseUrl,
+            authEnable: serve?.authEnable,
+          },
+          runtimeLifecycle: {
+            onStarted: async (runtime) => {
+              await this.taskService.updateTaskState({
+                taskId,
+                runId: runtime.runId,
+                sessionId: runtime.sessionId,
+              });
+
+              const latest = await this.taskService.getTaskById(taskId);
+              if (latest?.cancelRequested) {
+                await this.agentService.cancelRuntimeRun(runtime.runId, 'user_cancel');
+              }
+
+              await this.taskService.publishTaskEvent({
+                id: `evt-${Date.now()}-run-started`,
+                type: 'progress',
+                taskId,
+                runId: runtime.runId,
+                sequence: 0,
+                timestamp: new Date().toISOString(),
+                payload: {
+                  step: 'runtime.started',
                   runId: runtime.runId,
                   sessionId: runtime.sessionId,
-                });
-
-                const latest = await this.taskService.getTaskById(taskId);
-                if (latest?.cancelRequested) {
-                  await this.agentService.cancelRuntimeRun(runtime.runId, 'user_cancel');
-                }
-
-                await this.taskService.publishTaskEvent({
-                  id: `evt-${Date.now()}-run-started`,
-                  type: 'progress',
-                  taskId,
-                  runId: runtime.runId,
-                  sequence: 0,
-                  timestamp: new Date().toISOString(),
-                  payload: {
-                    step: 'runtime.started',
-                    runId: runtime.runId,
-                    sessionId: runtime.sessionId,
-                    attempt: nextAttempt,
-                  },
-                });
-              },
-              onOpenCodeSession: async (runtime) => {
-                openCodeSessionId = runtime.sessionId;
-                openCodeRuntimeEndpoint = runtime.endpoint;
-                openCodeRuntimeAuthEnable = runtime.authEnable;
+                  attempt: nextAttempt,
+                },
+              });
+            },
+            onOpenCodeSession: async (runtime) => {
+              openCodeSessionId = runtime.sessionId;
+              openCodeRuntimeEndpoint = runtime.endpoint;
+              openCodeRuntimeAuthEnable = runtime.authEnable;
+              this.logger.log(
+                `[task_cancel] OpenCode session captured taskId=${taskId} sessionId=${openCodeSessionId} endpoint=${openCodeRuntimeEndpoint || 'env_default'}`,
+              );
+              const latest = await this.taskService.getTaskById(taskId);
+              if (latest?.cancelRequested && openCodeSessionId) {
                 this.logger.log(
-                  `[task_cancel] OpenCode session captured taskId=${taskId} sessionId=${openCodeSessionId} endpoint=${openCodeRuntimeEndpoint || 'env_default'}`,
+                  `[task_cancel] immediate abort after session ready taskId=${taskId} sessionId=${openCodeSessionId} endpoint=${openCodeRuntimeEndpoint || 'env_default'}`,
                 );
-                const latest = await this.taskService.getTaskById(taskId);
-                if (latest?.cancelRequested && openCodeSessionId) {
-                  this.logger.log(
-                    `[task_cancel] immediate abort after session ready taskId=${taskId} sessionId=${openCodeSessionId} endpoint=${openCodeRuntimeEndpoint || 'env_default'}`,
-                  );
-                  await this.agentService.cancelOpenCodeSession(openCodeSessionId, {
-                    endpoint: openCodeRuntimeEndpoint,
-                    authEnable: openCodeRuntimeAuthEnable,
-                  });
-                }
-              },
+                await this.agentService.cancelOpenCodeSession(openCodeSessionId, {
+                  endpoint: openCodeRuntimeEndpoint,
+                  authEnable: openCodeRuntimeAuthEnable,
+                });
+              }
             },
           },
-        ),
-        stepTimeoutMs,
-        async () => {
-          const latestRun = await this.taskService.getTaskById(taskId);
-          if (latestRun?.runId) {
-            await this.agentService.cancelRuntimeRun(latestRun.runId, 'step_timeout_cancel');
-          }
         },
       );
+
+      const onStepTimeout = async () => {
+        const latestRun = await this.taskService.getTaskById(taskId);
+        if (latestRun?.runId) {
+          await this.agentService.cancelRuntimeRun(latestRun.runId, 'step_timeout_cancel');
+        }
+      };
+
+      const executePromise = isOpenCodeChannel
+        ? this.withActivityAwareTimeout(taskExecutionPromise, {
+            inactivityTimeoutMs: this.opencodeInactivityTimeoutMs,
+            absoluteTimeoutMs: Math.max(stepTimeoutMs, this.opencodeAbsoluteTimeoutMs),
+            pollIntervalMs: this.opencodeActivityPollIntervalMs,
+            checkActivity: async () => {
+              if (!openCodeSessionId) {
+                return true;
+              }
+              const status = await this.openCodeAdapter.getSessionStatus(openCodeSessionId, {
+                baseUrl: openCodeRuntimeEndpoint || serve?.baseUrl,
+                authEnable: openCodeRuntimeAuthEnable ?? serve?.authEnable,
+              });
+              this.logger.debug(
+                `[activity_check] taskId=${taskId} sessionId=${openCodeSessionId} active=${status.active} lastActivityAt=${status.lastActivityAt || 'n/a'}`,
+              );
+              return status.active;
+            },
+            onTimeout: onStepTimeout,
+          })
+        : this.withStepTimeout(taskExecutionPromise, stepTimeoutMs, onStepTimeout);
 
       const cancelWatch = { active: true };
       void this.waitForTaskCancellation(taskId, cancelWatch, async () => {
@@ -430,6 +467,87 @@ export class AgentTaskWorker implements OnModuleInit {
         clearTimeout(timer);
       }
     }
+  }
+
+  private async withActivityAwareTimeout<T>(
+    promise: Promise<T>,
+    options: {
+      inactivityTimeoutMs: number;
+      absoluteTimeoutMs: number;
+      pollIntervalMs?: number;
+      checkActivity: () => Promise<boolean>;
+      onTimeout: () => Promise<void>;
+    },
+  ): Promise<T> {
+    const {
+      inactivityTimeoutMs,
+      absoluteTimeoutMs,
+      pollIntervalMs = 30000,
+      checkActivity,
+      onTimeout,
+    } = options;
+
+    let lastActivityAt = Date.now();
+    let settled = false;
+    let pollTimer: NodeJS.Timeout | null = null;
+    let absoluteTimer: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      settled = true;
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (absoluteTimer) {
+        clearTimeout(absoluteTimer);
+        absoluteTimer = null;
+      }
+    };
+
+    return new Promise<T>((resolve, reject) => {
+      absoluteTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        cleanup();
+        void onTimeout().catch(() => undefined);
+        reject(new Error('STEP_TIMEOUT_EXCEEDED'));
+      }, absoluteTimeoutMs);
+
+      pollTimer = setInterval(() => {
+        if (settled) {
+          return;
+        }
+
+        void (async () => {
+          try {
+            const active = await checkActivity();
+            if (active) {
+              lastActivityAt = Date.now();
+            }
+          } catch {
+            lastActivityAt = Date.now();
+          }
+
+          if (Date.now() - lastActivityAt > inactivityTimeoutMs) {
+            cleanup();
+            void onTimeout().catch(() => undefined);
+            reject(new Error('STEP_TIMEOUT_EXCEEDED'));
+          }
+        })();
+      }, pollIntervalMs);
+
+      promise.then(
+        (value) => {
+          cleanup();
+          resolve(value);
+        },
+        (error) => {
+          cleanup();
+          reject(error);
+        },
+      );
+    });
   }
 
   private async waitForTaskCancellation(

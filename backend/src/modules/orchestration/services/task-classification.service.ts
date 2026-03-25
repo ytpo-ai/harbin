@@ -22,15 +22,20 @@ export class TaskClassificationService {
 
   isResearchTask(title: string, description: string): boolean {
     const text = `${title} ${description}`.toLowerCase();
+
+    // 如果 task 已通过 planner 显式指定了 runtimeTaskType（如 development/general），
+    // 这里的分类只作为 fallback；planner 指定的 taskType 优先级更高。
+    // 因此关键词需要精确，避免误将非研究任务分类为 research。
     return (
       text.includes('research') ||
-      text.includes('search') ||
-      text.includes('compile') ||
+      text.includes('web search') ||
+      text.includes('compile a list') ||
+      text.includes('compile information') ||
       text.includes('population') ||
       text.includes('most populous') ||
       text.includes('调研') ||
-      text.includes('检索') ||
-      text.includes('汇总')
+      text.includes('市场调查') ||
+      text.includes('信息检索')
     );
   }
 

@@ -1029,10 +1029,23 @@ export class OrchestrationExecutionEngineService {
     runtimeTaskType: string,
     description: string,
   ): 'native' | 'opencode' {
-    if (runtimeTaskType !== 'development') {
+    // development 和 review 类型任务允许路由到 opencode；
+    // 其余类型（general/research/external_action）走 native。
+    const OPENCODE_ELIGIBLE_TASK_TYPES = new Set(['development', 'review']);
+
+    if (!OPENCODE_ELIGIBLE_TASK_TYPES.has(runtimeTaskType)) {
       return 'native';
     }
 
+    // review 类型不做 description 关键词排除，直接走 opencode。
+    // 典型场景：技术专家在 opencode 中读代码做验收评审。
+    if (runtimeTaskType === 'review') {
+      return 'opencode';
+    }
+
+    // development 类型保留关键词排除逻辑（向后兼容）：
+    // 如果 description 显式引用了系统内部工具，说明任务需要通过 native 引擎
+    // 调用 MCP 内部工具，而非在 opencode 中直接操作文件。
     const normalizedDescription = String(description || '').toLowerCase();
     const requiresInternalTools =
       normalizedDescription.includes('builtin.sys-mg.')

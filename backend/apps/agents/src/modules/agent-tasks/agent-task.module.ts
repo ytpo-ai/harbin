@@ -8,12 +8,14 @@ import { AgentTaskWorker } from './agent-task.worker';
 import { RuntimeModule } from '../runtime/runtime.module';
 import { AgentModule } from '../agents/agent.module';
 import { OpenCodeServeRouterService } from './opencode-serve-router.service';
+import { OpenCodeModule } from '../opencode/opencode.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: AgentTask.name, schema: AgentTaskSchema }]),
     RuntimeModule,
     AgentModule,
+    OpenCodeModule,
   ],
   controllers: [AgentTaskController],
   providers: [AgentTaskService, RuntimeSseStreamService, OpenCodeServeRouterService, AgentTaskWorker],

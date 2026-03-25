@@ -17,9 +17,11 @@ export class OpenCodeAdapter {
 
   constructor(private readonly configService: ConfigService) {
     this.defaultRequestTimeoutMs = this.resolveTimeoutMs('OPENCODE_REQUEST_TIMEOUT_MS', 120000);
+    // message 路由（/session/{id}/message）是阻塞式等待 opencode 完整执行，
+    // 开发任务通常需要 5-15 分钟，默认 30 分钟上限由外层 step timeout 兜底。
     this.messageRequestTimeoutMs = this.resolveTimeoutMs(
       'OPENCODE_MESSAGE_REQUEST_TIMEOUT_MS',
-      this.defaultRequestTimeoutMs,
+      1800000,
     );
   }
 
@@ -80,6 +82,33 @@ export class OpenCodeAdapter {
     };
   }
 
+  async getSessionStatus(
+    sessionId: string,
+    runtime?: OpenCodeRuntimeOptions,
+  ): Promise<{ active: boolean; lastActivityAt?: string }> {
+    try {
+      const session = await this.request<any>('GET', `/session/${encodeURIComponent(sessionId)}`, {
+        runtime,
+        timeout: 5000,
+        throwOnError: true,
+      });
+
+      const messages = this.extractSessionMessages(session);
+      const lastAssistantMessage = this.findLastAssistantMessage(messages);
+      const sessionState = String(session?.status || session?.state || '').trim().toLowerCase();
+      const activeBySessionState = this.isActiveSessionState(sessionState);
+      const activeByAssistantMessage = this.isActiveMessage(lastAssistantMessage);
+      const lastActivityAt = this.resolveLastActivityAt(lastAssistantMessage, session);
+
+      return {
+        active: activeBySessionState || activeByAssistantMessage,
+        ...(lastActivityAt ? { lastActivityAt } : {}),
+      };
+    } catch {
+      return { active: true };
+    }
+  }
+
   private extractResponseText(result: any): string {
     const direct = [result?.info?.content, result?.content, result?.message, result?.output];
     for (const value of direct) {
@@ -120,6 +149,75 @@ export class OpenCodeAdapter {
     }
 
     return chunks.join('').trim();
+  }
+
+  private extractSessionMessages(session: unknown): Array<Record<string, unknown>> {
+    if (!session || typeof session !== 'object' || Array.isArray(session)) {
+      return [];
+    }
+    const data = session as Record<string, unknown>;
+    const direct = data.messages;
+    if (Array.isArray(direct)) {
+      return direct.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+    }
+    const nestedInfo = data.info;
+    if (nestedInfo && typeof nestedInfo === 'object' && !Array.isArray(nestedInfo)) {
+      const nestedMessages = (nestedInfo as Record<string, unknown>).messages;
+      if (Array.isArray(nestedMessages)) {
+        return nestedMessages.filter(
+          (item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'),
+        );
+      }
+    }
+    return [];
+  }
+
+  private findLastAssistantMessage(messages: Array<Record<string, unknown>>): Record<string, unknown> | undefined {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      const role = String(message.role || '').trim().toLowerCase();
+      if (role === 'assistant') {
+        return message;
+      }
+    }
+    return undefined;
+  }
+
+  private isActiveMessage(message: Record<string, unknown> | undefined): boolean {
+    if (!message) {
+      return false;
+    }
+    const status = String(message.status || message.state || '').trim().toLowerCase();
+    if (!status) {
+      return true;
+    }
+    return this.isActiveSessionState(status);
+  }
+
+  private isActiveSessionState(status: string): boolean {
+    if (!status) {
+      return false;
+    }
+    return status === 'pending' || status === 'running' || status === 'in_progress' || status === 'processing';
+  }
+
+  private resolveLastActivityAt(
+    message: Record<string, unknown> | undefined,
+    session: unknown,
+  ): string | undefined {
+    const candidates: unknown[] = [
+      message?.updatedAt,
+      message?.createdAt,
+      message?.timestamp,
+      (session as Record<string, unknown> | undefined)?.updatedAt,
+      (session as Record<string, unknown> | undefined)?.createdAt,
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim()) {
+        return value.trim();
+      }
+    }
+    return undefined;
   }
 
   async *subscribeEvents(sessionId?: string, runtime?: OpenCodeRuntimeOptions): AsyncGenerator<OpenCodeAdapterEvent> {
