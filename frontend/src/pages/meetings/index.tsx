@@ -22,6 +22,7 @@ import { useMessageHistory } from './hooks/useMessageHistory';
 import { usePhraseAutocomplete } from './hooks/usePhraseAutocomplete';
 import { MentionCandidate } from './types';
 import {
+  getMeetingDisplayDescription,
   getMeetingDisplayTitle,
   getMeetingTypeInfo,
   getParticipantDisplayName,
@@ -203,6 +204,11 @@ const Meetings: React.FC = () => {
     [selectedMeeting?.description, selectedMeeting?.title],
   );
 
+  const displayMeetingDescription = useMemo(
+    () => getMeetingDisplayDescription(displayMeetingTitle, selectedMeeting?.description),
+    [displayMeetingTitle, selectedMeeting?.description],
+  );
+
   if (meetingsLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -246,7 +252,7 @@ const Meetings: React.FC = () => {
                   </div>
                   <MeetingHeader
                     meeting={selectedMeeting}
-                    displayTitle={displayMeetingTitle}
+                    displayDescription={displayMeetingDescription}
                     speakingModeLabel={getSpeakingModeLabel(selectedMeeting.settings?.speakingOrder)}
                     onSpeakingModeChange={(speakingOrder) => mutations.updateSpeakingMode({ id: selectedMeeting.id, speakingOrder })}
                     isUpdatingSpeakingMode={mutations.isUpdatingSpeakingMode}

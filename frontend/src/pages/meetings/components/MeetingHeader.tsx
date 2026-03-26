@@ -1,17 +1,14 @@
 import React from 'react';
 import { MeetingStatus } from '../../../services/meetingService';
 import { MeetingHeaderProps } from '../types';
-import { getMeetingDisplayDescription } from '../utils';
 
 const MeetingHeader: React.FC<MeetingHeaderProps> = ({
   meeting,
-  displayTitle,
+  displayDescription,
   speakingModeLabel,
   onSpeakingModeChange,
   isUpdatingSpeakingMode,
 }) => {
-  const displayDescription = getMeetingDisplayDescription(displayTitle, meeting.description);
-
   return (
     <div>
       {displayDescription && <p className="text-sm text-gray-500">{displayDescription}</p>}
