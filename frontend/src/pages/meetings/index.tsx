@@ -21,7 +21,13 @@ import { useMentionAutocomplete } from './hooks/useMentionAutocomplete';
 import { useMessageHistory } from './hooks/useMessageHistory';
 import { usePhraseAutocomplete } from './hooks/usePhraseAutocomplete';
 import { MentionCandidate } from './types';
-import { getMeetingTypeInfo, getParticipantDisplayName, getSpeakingModeLabel, getStatusBadge } from './utils';
+import {
+  getMeetingDisplayTitle,
+  getMeetingTypeInfo,
+  getParticipantDisplayName,
+  getSpeakingModeLabel,
+  getStatusBadge,
+} from './utils';
 
 const Meetings: React.FC = () => {
   const queryClient = useQueryClient();
@@ -192,6 +198,11 @@ const Meetings: React.FC = () => {
     participant?: Meeting['participants'][number],
   ) => getParticipantDisplayName(participantDisplayMap, selectedMeeting, participantId, participantType, participant);
 
+  const displayMeetingTitle = useMemo(
+    () => getMeetingDisplayTitle(selectedMeeting?.title, selectedMeeting?.description),
+    [selectedMeeting?.description, selectedMeeting?.title],
+  );
+
   if (meetingsLoading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -229,11 +240,12 @@ const Meetings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <h2 className="text-lg font-semibold text-gray-900">{selectedMeeting.title}</h2>
+                    <h2 className="text-lg font-semibold text-gray-900">{displayMeetingTitle}</h2>
                     {getStatusBadge(selectedMeeting.status)}
                   </div>
                   <MeetingHeader
                     meeting={selectedMeeting}
+                    displayTitle={displayMeetingTitle}
                     speakingModeLabel={getSpeakingModeLabel(selectedMeeting.settings?.speakingOrder)}
                     onSpeakingModeChange={(speakingOrder) => mutations.updateSpeakingMode({ id: selectedMeeting.id, speakingOrder })}
                     isUpdatingSpeakingMode={mutations.isUpdatingSpeakingMode}

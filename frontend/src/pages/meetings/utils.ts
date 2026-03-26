@@ -2,6 +2,72 @@ import React from 'react';
 import { Meeting, MeetingStatus, MeetingType } from '../../services/meetingService';
 import { MEETING_TYPES } from './constants';
 
+const STATUS_SUFFIX_PATTERN = /(?:[\s()\[\]【】\-:：]+)?(待开始|进行中|已暂停|已结束|已归档)$/;
+const ONE_TO_ONE_TITLE_PATTERN = /^与\s*(.+?)\s*的1对1聊天$/;
+const ONE_TO_ONE_DESCRIPTION_PATTERN = /^与\s*Agent\s*(.+?)\s*的直接会话$/i;
+const FALLBACK_MEETING_TITLE = '未命名会议';
+
+const normalizeWhitespace = (value: string) => value.replace(/\s+/g, ' ').trim();
+
+const normalizeOneToOneParticipantName = (value: string) => normalizeWhitespace(value).replace(/^Agent\s+/i, '').toLowerCase();
+
+export const normalizeMeetingTitle = (value?: string) => {
+  if (!value) {
+    return '';
+  }
+
+  let normalized = normalizeWhitespace(value);
+  while (STATUS_SUFFIX_PATTERN.test(normalized)) {
+    normalized = normalized.replace(STATUS_SUFFIX_PATTERN, '').trim();
+  }
+
+  return normalized;
+};
+
+const getSemanticMeetingTitleKey = (value?: string) => {
+  const normalized = normalizeMeetingTitle(value);
+  if (!normalized) {
+    return '';
+  }
+
+  const normalizedTitleMatch = normalized.match(ONE_TO_ONE_TITLE_PATTERN);
+  if (normalizedTitleMatch) {
+    return `one_to_one:${normalizeOneToOneParticipantName(normalizedTitleMatch[1])}`;
+  }
+
+  const normalizedDescriptionMatch = normalized.match(ONE_TO_ONE_DESCRIPTION_PATTERN);
+  if (normalizedDescriptionMatch) {
+    return `one_to_one:${normalizeOneToOneParticipantName(normalizedDescriptionMatch[1])}`;
+  }
+
+  return `text:${normalized.toLowerCase()}`;
+};
+
+export const isDuplicateMeetingDescription = (title?: string, description?: string) => {
+  const titleKey = getSemanticMeetingTitleKey(title);
+  const descriptionKey = getSemanticMeetingTitleKey(description);
+  return Boolean(titleKey && descriptionKey && titleKey === descriptionKey);
+};
+
+export const getMeetingDisplayTitle = (title?: string, description?: string) => {
+  const normalizedTitle = normalizeMeetingTitle(title);
+  if (normalizedTitle) {
+    return normalizedTitle;
+  }
+
+  const normalizedDescription = normalizeMeetingTitle(description);
+  return normalizedDescription || FALLBACK_MEETING_TITLE;
+};
+
+export const getMeetingDisplayDescription = (title?: string, description?: string) => {
+  const normalizedDescription = normalizeMeetingTitle(description);
+  if (!normalizedDescription || isDuplicateMeetingDescription(title, normalizedDescription)) {
+    return '';
+  }
+
+  return normalizedDescription;
+};
+
 export const mergeMeetingMessages = (current: Meeting | null, next: Meeting): Meeting['messages'] => {
   const merged = new Map<string, Meeting['messages'][number]>();
   const currentMessages = current?.messages || [];

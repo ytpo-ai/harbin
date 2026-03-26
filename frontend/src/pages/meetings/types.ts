@@ -96,6 +96,7 @@ export interface MeetingListSidebarProps {
 
 export interface MeetingHeaderProps {
   meeting: Meeting;
+  displayTitle: string;
   speakingModeLabel: string;
   onSpeakingModeChange: (speakingOrder: MeetingSpeakingMode) => void;
   isUpdatingSpeakingMode: boolean;
