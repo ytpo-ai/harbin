@@ -12,7 +12,6 @@ import {
   CpuChipIcon,
   KeyIcon,
   ShieldCheckIcon,
-  ArrowRightOnRectangleIcon,
   CodeBracketIcon,
   SparklesIcon,
   BoltIcon,
@@ -41,6 +40,7 @@ import { wsService } from '../services/wsService';
 const topLevelNavigation = [
   { name: '仪表板', href: '/', icon: HomeIcon },
   { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
+  { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
 ];
 
 const groupedNavigation = [
@@ -64,24 +64,17 @@ const groupedNavigation = [
       { name: '项目管理', href: '/ei', icon: FolderIcon },
       { name: '工程统计', href: '/ei/statistics', icon: ChartBarIcon },
       { name: '需求管理', href: '/ei/requirements', icon: ClipboardDocumentListIcon },
-      { name: '智能研发看板', href: '/ei/board', icon: PresentationChartLineIcon },
-      { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
+      { name: '需求看板', href: '/ei/board', icon: PresentationChartLineIcon },
+      { name: 'Opencode', href: '/rd-conversation', icon: CodeBracketIcon },
     ],
   },
-  {
-    name: '任务计划',
-    icon: DocumentTextIcon,
-      items: [
-        { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
-        { name: '定时服务', href: '/scheduler', icon: ClockIcon },
-      ],
-    },
   {
     name: '系统管理',
     icon: ShieldCheckIcon,
     items: [
       { name: 'UI管理', href: '/ui-management', icon: Squares2X2Icon },
       { name: '消息中心', href: '/message-center', icon: BellIcon },
+      { name: '定时服务', href: '/scheduler', icon: ClockIcon },
       { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
       { name: '用量与计费', href: '/usage', icon: ChartBarIcon },
       { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
@@ -372,7 +365,7 @@ const Layout: React.FC = () => {
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div
-            className={`flex items-center justify-between h-16 border-b border-gray-200 ${
+            className={`flex items-center justify-between h-[56px] min-h-[56px] max-h-[56px] border-b border-gray-200 ${
               isSidebarExpanded ? 'px-4' : 'px-2'
             }`}
           >
@@ -484,54 +477,13 @@ const Layout: React.FC = () => {
             })}
           </nav>
 
-          {/* 用户信息 / 登录 */}
-          <div className="px-2 py-4 border-t border-gray-200">
-            {currentUser ? (
-              <div
-                className={`flex items-center gap-2 ${
-                  isSidebarExpanded ? 'justify-between' : 'flex-col'
-                }`}
-              >
-                <div className="flex items-center">
-                  <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium">
-                    {(currentUser.name || currentUser.email || '?').substring(0, 1).toUpperCase()}
-                  </div>
-                  {isSidebarExpanded && (
-                    <div className="ml-2">
-                      <p className="text-sm font-medium text-gray-900">{currentUser.name || '用户'}</p>
-                      <p className="text-xs text-gray-500">{currentUser.email}</p>
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                  title="退出登录"
-                >
-                  <ArrowRightOnRectangleIcon className="h-5 w-5" />
-                </button>
-              </div>
-            ) : (
-              <Link
-                to="/login"
-                className={`flex items-center justify-center w-full border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 ${
-                  isSidebarExpanded ? 'px-4 py-2' : 'p-2'
-                }`}
-                title={!isSidebarExpanded ? '登录' : undefined}
-              >
-                <ArrowRightOnRectangleIcon className={`h-4 w-4 ${isSidebarExpanded ? 'mr-2' : ''}`} />
-                {isSidebarExpanded && '登录'}
-              </Link>
-            )}
-          </div>
-
           {/* 底部信息 */}
-          <div className="px-2 py-2 border-t border-gray-200">
-            {isSidebarExpanded && (
+          <div className="h-[56px] min-h-[56px] max-h-[56px] border-t border-gray-200 flex items-center px-2">
+            {isSidebarExpanded ? (
               <div className="text-xs text-gray-500">
                 <p>© 2026 ytpo.ai</p>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
