@@ -6,7 +6,6 @@ import appConfig from '../../../src/config/app.config';
 import databaseConfig from '../../../src/config/database.config';
 import aiConfig from '../../../src/config/ai.config';
 import jwtConfig from '../../../src/config/jwt.config';
-import { EngineeringIntelligence } from './services/ei.service';
 import { EngineeringRepository, EngineeringRepositorySchema } from './schemas/engineering-repository.schema';
 import { EiOpenCodeRunSyncBatch, EiOpenCodeRunSyncBatchSchema } from './schemas/ei-opencode-run-sync-batch.schema';
 import { EiOpenCodeEventFact, EiOpenCodeEventFactSchema } from './schemas/ei-opencode-event-fact.schema';
@@ -44,6 +43,7 @@ import { EiProjectsService } from './services/projects.service';
 import { EiOpencodeService } from './services/opencode.service';
 import { DocsHeatService } from './services/docs-heat.service';
 import { EiAppConfigService } from './services/ei-app-config.service';
+import { EiGithubClientService } from './services/ei-github-client.service';
 
 @Module({
   imports: [
@@ -93,7 +93,6 @@ import { EiAppConfigService } from './services/ei-app-config.service';
     EiConfigController,
   ],
   providers: [
-    EngineeringIntelligence,
     EiRepositoriesService,
     EiOpencodeSyncService,
     EiStatisticsService,
@@ -105,6 +104,7 @@ import { EiAppConfigService } from './services/ei-app-config.service';
     EiOpencodeService,
     DocsHeatService,
     EiAppConfigService,
+    EiGithubClientService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

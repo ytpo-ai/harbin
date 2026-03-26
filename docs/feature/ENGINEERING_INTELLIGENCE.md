@@ -321,7 +321,11 @@ GET ranking -> Redis 有值 -> 返回
 | `backend/apps/agents/src/modules/tools/` | 工程统计 MCP 工具定义与执行入口 |
 | `backend/src/modules/orchestration/` | 需求关联编排、回写与任务验证逻辑 |
 | `backend/apps/ei/src/app.module.ts` | EI 应用装配入口（controllers/providers 直接在 AppModule 注册） |
-| `backend/apps/ei/src/services/ei.service.ts` | EI 核心领域服务（聚合同步、统计、需求等核心逻辑） |
+| `backend/apps/ei/src/services/repositories.service.ts` | 仓库管理 + 文档树/内容/历史 + 摘要分析 |
+| `backend/apps/ei/src/services/requirements.service.ts` | 需求 CRUD、状态流转、GitHub Issue 同步 |
+| `backend/apps/ei/src/services/statistics.service.ts` | 工程统计快照扫描、汇总计算、消息中心事件发布 |
+| `backend/apps/ei/src/services/opencode-sync.service.ts` | OpenCode 运行批次同步、事件写入与签名校验 |
+| `backend/apps/ei/src/services/ei-github-client.service.ts` | GitHub API 共享基础设施（branch fallback / 请求封装） |
 | `backend/apps/ei/src/controllers/` | EI 控制器目录（含 `tasks/projects/opencode/repositories/opencode-sync/statistics/requirements`） |
 | `backend/apps/ei/src/services/` | EI 服务目录（含 `management` 核心服务与资源服务、OpenCode 客户端服务） |
 | `backend/apps/ei/src/dto/` | EI DTO 目录（需求、统计、管理与聚合导出） |
