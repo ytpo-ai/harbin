@@ -1,6 +1,6 @@
 {
   "source": "models.dev",
-  "updatedAt": "2026-03-25T19:25:38.783Z",
+  "updatedAt": "2026-03-26T06:09:23.699Z",
   "records": [
     {
       "provider": "evroc",
@@ -113,6 +113,16 @@
         "input": 1,
         "output": 3.2,
         "cache_read": 0.2,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zai",
+      "model": "glm-4.7-flashx",
+      "cost": {
+        "input": 0.07,
+        "output": 0.4,
+        "cache_read": 0.01,
         "cache_write": 0
       }
     },
@@ -6809,6 +6819,14 @@
     },
     {
       "provider": "amazon-bedrock",
+      "model": "nvidia.nemotron-super-3-120b",
+      "cost": {
+        "input": 0.15,
+        "output": 0.65
+      }
+    },
+    {
+      "provider": "amazon-bedrock",
       "model": "eu.anthropic.claude-opus-4-6-v1",
       "cost": {
         "input": 5,
@@ -11243,6 +11261,16 @@
     },
     {
       "provider": "zhipuai-coding-plan",
+      "model": "glm-4.7-flash",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zhipuai-coding-plan",
       "model": "glm-4.5-flash",
       "cost": {
         "input": 0,
@@ -11268,6 +11296,16 @@
         "input": 0,
         "output": 0,
         "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zhipuai-coding-plan",
+      "model": "glm-4.7-flashx",
+      "cost": {
+        "input": 0.07,
+        "output": 0.4,
+        "cache_read": 0.01,
         "cache_write": 0
       }
     },
@@ -12195,6 +12233,14 @@
       "cost": {
         "input": 0,
         "output": 0
+      }
+    },
+    {
+      "provider": "openrouter",
+      "model": "mistralai/mistral-small-2603",
+      "cost": {
+        "input": 0.15,
+        "output": 0.6
       }
     },
     {
@@ -14903,6 +14949,16 @@
         "input": 0.2,
         "output": 1.1,
         "cache_read": 0.03,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zhipuai",
+      "model": "glm-4.7-flashx",
+      "cost": {
+        "input": 0.07,
+        "output": 0.4,
+        "cache_read": 0.01,
         "cache_write": 0
       }
     },
