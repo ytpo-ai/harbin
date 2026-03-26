@@ -47,14 +47,13 @@
 - 同一批次重复写入按幂等成功处理，不重复计算。
 - 边缘节点禁止直连中心分析核心库，只允许通过 Ingest/API 写入。
 
-### 1.7 研发会话项目同步（本轮）
+### 1.7 研发会话项目与会话链路（本轮）
 
-- 研发会话页面改为先选择研发 Agent，再触发 OpenCode projects 同步。
-- 项目记录集合统一为 `ei_projects`（复用原 `rdproject` 结构并扩展同步字段）。
-- `ei_projects` 仅允许通过同步链路创建（`POST /ei/agents/:agentId/opencode/projects/sync`），不允许前端手工创建。
-- 同步按 `agentId + opencodeProjectPath / opencodeProjectId` 幂等更新，返回 `created/updated/skipped` 统计。
-- Agent 项目同步支持按 Agent config 透传 OpenCode 连接策略：优先使用 `execution.endpoint`，其次 `execution.endpointRef`，最终回退服务端 `OPENCODE_SERVER_URL`。
-- Agent 项目同步新增 `auth_enable` 语义：仅当 `auth_enable=true` 时服务端才读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth；否则不携带用户名/密码。
+- 研发会话页面已移除 Agent 选择与“同步 Agent OpenCode Projects”入口，交互改为直接基于 `ei_projects(sourceType=opencode)` 选择项目。
+- 项目下拉文案改为 `name(opencodeProjectPath)`，解决同名项目识别问题。
+- 页面头部保留「测试 Opencode SSE」入口，点击后新开 tab 到 `/agent-task-runner` 进行任务流联调。
+- `ei_projects` 仍为 OpenCode 项目统一记录集合（复用原 `rdproject` 结构并扩展同步字段），前端不提供手工创建 OpenCode 项目的入口。
+- OpenCode 认证开关延续 `auth_enable` 语义：仅当 `auth_enable=true` 时服务端读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth；否则不带用户名/密码。
 - `ei_projects` 新增三类项目来源：`local`（本地项目）、`opencode`（OpenCode 项目）、`github`（GitHub 仓库）。
 - 绑定关系约束：一个 `local` 项目可绑定多个 `opencode` 项目，但最多绑定一个 `github` 仓库。
 - GitHub 凭据不落库明文，改为引用 API Key（`githubApiKeyId`）。
@@ -62,6 +61,7 @@
 - RD 管理页恢复“新建 Session”能力：创建时优先对齐所选 Agent 绑定模型（`providerID/modelID`）并透传到 OpenCode session。
 - RD 管理发送前会进行 OpenCode 模型能力校验；若目标模型未配置，接口返回明确错误（不自动改写 OpenCode 全局配置）。
 - RD 管理 events 面板按当前选中 `sessionId` 过滤，保障会话视角下事件信息同步一致。
+- RD 管理 events 面板支持“实时 SSE + messages.parts 派生事件”双来源兜底，并按 `TOOL/PROMPT/COMMAND/ERROR/OTHER` tab 分类展示。
 - `研发智能` 首页已重建为 `项目管理`：默认聚焦三类项目（local/opencode/github）与绑定关系管理。
 - 研发智能前端主路由已从 `/engineering-intelligence` 统一迁移到 `/ei`（旧路由保留兼容重定向）。
 - 首页移除文档树、提交历史、文档详情抽屉能力；文档相关能力不再作为该入口主流程。
@@ -308,6 +308,7 @@ GET ranking -> Redis 有值 -> 返回
 | `development/RD_MANAGEMENT_EI_PROJECT_SYNC_PLAN.md` | 研发会话页 EI 项目同步实现与排障总结 |
 | `development/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
 | `development/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造开发沉淀 |
+| `development/RD_CONVERSATION_CHAT_EVENTS_UI_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 研发会话 Chat/Events 可读性与 SSE 观测优化沉淀 |
 
 ### API 文档 (docs/api/)
 

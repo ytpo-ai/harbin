@@ -261,6 +261,7 @@
 | `OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agent 执行链路公共能力提取（AgentExecutorRuntimeService）开发沉淀 |
 | `AGENT_UNIFIED_INNER_MESSAGE_RUNTIME_PLAN.md` | inner-message 统一桥接 Agent Runtime 执行链开发总结 |
+| `RD_CONVERSATION_CHAT_EVENTS_UI_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 研发会话页新增「测试 Opencode SSE」联调入口与任务流观测配套改造沉淀 |
 
 ### 技术/架构文档 (docs/technical/, docs/api/)
 

@@ -116,6 +116,23 @@ export class OpencodeService {
   }
 
   private resolveEventSessionId(payload: Record<string, unknown>): string | undefined {
+    const properties =
+      payload.properties && typeof payload.properties === 'object' && !Array.isArray(payload.properties)
+        ? (payload.properties as Record<string, unknown>)
+        : undefined;
+    const info =
+      properties?.info && typeof properties.info === 'object' && !Array.isArray(properties.info)
+        ? (properties.info as Record<string, unknown>)
+        : undefined;
+    const part =
+      properties?.part && typeof properties.part === 'object' && !Array.isArray(properties.part)
+        ? (properties.part as Record<string, unknown>)
+        : undefined;
+    const status =
+      properties?.status && typeof properties.status === 'object' && !Array.isArray(properties.status)
+        ? (properties.status as Record<string, unknown>)
+        : undefined;
+
     const candidates = [
       payload.sessionId,
       payload.sessionID,
@@ -123,6 +140,17 @@ export class OpencodeService {
       (payload.path as Record<string, unknown> | undefined)?.id,
       (payload.meta as Record<string, unknown> | undefined)?.sessionId,
       (payload.metadata as Record<string, unknown> | undefined)?.sessionId,
+      properties?.sessionId,
+      properties?.sessionID,
+      properties?.session_id,
+      info?.sessionId,
+      info?.sessionID,
+      info?.session_id,
+      part?.sessionId,
+      part?.sessionID,
+      part?.session_id,
+      status?.sessionId,
+      status?.sessionID,
     ];
 
     for (const candidate of candidates) {
@@ -619,9 +647,9 @@ export class OpencodeService {
     onEvent: (event: any) => void;
     onError?: (error: any) => void;
     onComplete?: () => void;
-  }): Promise<() => void> {
+  }, options?: { baseUrl?: string; authEnable?: boolean }): Promise<() => void> {
     let active = true;
-    const iterator = this.streamSse(undefined, true)[Symbol.asyncIterator]();
+    const iterator = this.streamSse(options?.baseUrl, options?.authEnable)[Symbol.asyncIterator]();
 
     (async () => {
       try {

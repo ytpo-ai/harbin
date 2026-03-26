@@ -1188,8 +1188,13 @@ export class EiManagementService {
     onEvent: (event: any) => void;
     onError?: (error: any) => void;
     onComplete?: () => void;
-  }): Promise<() => void> {
-    return this.opencodeService.subscribeEvents(handlers);
+  }, options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean }): Promise<() => void> {
+    const endpoint = options?.endpoint?.trim() || options?.endpointRef?.trim() || undefined;
+    const authEnable = options?.authEnable;
+    return this.opencodeService.subscribeEvents(handlers, {
+      baseUrl: endpoint,
+      authEnable,
+    });
   }
 
   async syncCurrentOpencodeToTask(taskId: string): Promise<RdTask> {

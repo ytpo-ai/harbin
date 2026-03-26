@@ -66,7 +66,6 @@ const groupedNavigation = [
       { name: '需求管理', href: '/ei/requirements', icon: ClipboardDocumentListIcon },
       { name: '智能研发看板', href: '/ei/board', icon: PresentationChartLineIcon },
       { name: '研发会话', href: '/rd-conversation', icon: CodeBracketIcon },
-      { name: 'Agent任务流', href: '/agent-task-runner', icon: BoltIcon },
     ],
   },
   {

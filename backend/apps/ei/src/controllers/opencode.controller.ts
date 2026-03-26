@@ -153,8 +153,19 @@ export class EiOpencodeController {
   }
 
   @Sse('opencode/events')
-  async streamOpencodeEvents(@Query('token') token: string): Promise<Observable<MessageEvent>> {
-    return this.opencodeService.streamOpencodeEvents(token, (authHeader) => this.getUserFromAuthHeader(authHeader));
+  async streamOpencodeEvents(
+    @Query('token') token: string,
+    @Query() query: QueryOpencodeSessionsDto,
+  ): Promise<Observable<MessageEvent>> {
+    return this.opencodeService.streamOpencodeEvents(
+      token,
+      (authHeader) => this.getUserFromAuthHeader(authHeader),
+      {
+        endpoint: query?.endpoint,
+        endpointRef: query?.endpointRef,
+        authEnable: query?.auth_enable,
+      },
+    );
   }
 
   @Post('tasks/:id/opencode/sync-current')

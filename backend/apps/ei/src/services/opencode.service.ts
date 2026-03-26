@@ -59,7 +59,11 @@ export class EiOpencodeService {
     });
   }
 
-  streamOpencodeEvents(token: string, authResolver: (authHeader: string) => Promise<unknown>): Observable<MessageEvent> {
+  streamOpencodeEvents(
+    token: string,
+    authResolver: (authHeader: string) => Promise<unknown>,
+    options?: { endpoint?: string; endpointRef?: string; authEnable?: boolean },
+  ): Observable<MessageEvent> {
     const authHeader = token ? `Bearer ${token}` : '';
     return new Observable<MessageEvent>((subscriber) => {
       let cleanup: (() => void) | null = null;
@@ -81,7 +85,7 @@ export class EiOpencodeService {
             onComplete: () => {
               subscriber.complete();
             },
-          }),
+          }, options),
         )
         .then((fn) => {
           cleanup = fn;

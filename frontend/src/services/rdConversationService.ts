@@ -410,9 +410,24 @@ class RdConversationService {
     return response.data;
   }
 
-  subscribeOpencodeEvents(onEvent: (event: OpencodeEventPayload) => void): EventSource {
+  subscribeOpencodeEvents(
+    onEvent: (event: OpencodeEventPayload) => void,
+    options?: { endpoint?: string; endpointRef?: string; auth_enable?: boolean },
+  ): EventSource {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
-    const url = `${API_URL}/ei/opencode/events?token=${encodeURIComponent(token)}`;
+    const params = new URLSearchParams();
+    params.set('token', token);
+    if (options?.endpoint) {
+      params.set('endpoint', options.endpoint);
+    }
+    if (options?.endpointRef) {
+      params.set('endpointRef', options.endpointRef);
+    }
+    if (options?.auth_enable !== undefined) {
+      params.set('auth_enable', String(options.auth_enable));
+    }
+
+    const url = `${API_URL}/ei/opencode/events?${params.toString()}`;
     const source = new EventSource(url);
 
     source.onmessage = (message) => {
