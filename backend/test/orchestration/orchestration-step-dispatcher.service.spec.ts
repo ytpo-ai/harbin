@@ -503,4 +503,54 @@ describe('OrchestrationStepDispatcherService', () => {
       }),
     );
   });
+
+  it('rejects retryCurrentTask when retry limits are exceeded', async () => {
+    const service = new OrchestrationStepDispatcherService(
+      {
+        findById: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({
+              generationConfig: {
+                maxRetries: 1,
+                maxTotalFailures: 6,
+                maxCostTokens: 100000,
+                maxTasks: 10,
+              },
+              generationState: {
+                currentTaskId: 'task-1',
+                currentStep: 1,
+                totalGenerated: 1,
+                totalRetries: 1,
+                consecutiveFailures: 1,
+                totalFailures: 1,
+                totalCost: 0,
+                isComplete: false,
+                currentPhase: 'post_execute',
+              },
+            }),
+          }),
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {
+        resolveGenerationConfig: jest.fn().mockReturnValue({
+          maxRetries: 1,
+          maxTotalFailures: 6,
+          maxCostTokens: 100000,
+          maxTasks: 10,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+    );
+
+    const updateSpy = jest.spyOn(service as any, 'updateGenerationState');
+    const result = await service.retryCurrentTask('plan-1');
+
+    expect(result).toEqual({ accepted: false });
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
 });

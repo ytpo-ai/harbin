@@ -243,6 +243,9 @@ export class OrchestrationContextService {
     runtimeTaskType?: string;
   }): string {
     return [
+      '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
+      '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
+      '如果无法完成判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
       '请进行执行前评估，并仅返回 JSON。',
       '目标：判断当前任务是否允许进入执行阶段。',
       `step: ${input.step}`,
@@ -253,6 +256,7 @@ export class OrchestrationContextService {
       input.taskDescription,
       '输出 JSON schema:',
       '{"allowExecute":true,"executionHints":["..."],"riskFlags":["..."],"notes":"..."}',
+      '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
   }
 
@@ -265,6 +269,9 @@ export class OrchestrationContextService {
     executionError?: string;
   }): string {
     return [
+      '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
+      '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
+      '如果执行结果无法判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
       '请进行执行后决策，并仅返回 JSON。',
       '目标：根据当前任务执行结果，决定下一步动作。',
       `step: ${input.step}`,
@@ -275,6 +282,7 @@ export class OrchestrationContextService {
       `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
       '输出 JSON schema:',
       '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."]}',
+      '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
   }
 

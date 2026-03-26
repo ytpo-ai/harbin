@@ -320,7 +320,7 @@ export class IncrementalPlanningService {
     return { done: false };
   }
 
-  private async executeIncrementalTaskWithRunRecord(
+  async executeIncrementalTaskWithRunRecord(
     planId: string,
     task: OrchestrationTaskDocument,
     step: number,
@@ -471,7 +471,7 @@ export class IncrementalPlanningService {
     return executionResult;
   }
 
-  private async buildPlannerContext(planId: string, sourcePrompt: string): Promise<IncrementalPlannerContext> {
+  async buildPlannerContext(planId: string, sourcePrompt: string): Promise<IncrementalPlannerContext> {
     const [tasks, plan] = await Promise.all([
       this.taskModel
         .find({ planId, status: { $ne: 'cancelled' } })
@@ -517,7 +517,7 @@ export class IncrementalPlanningService {
     };
   }
 
-  private async createTaskFromPlannerOutput(
+  async createTaskFromPlannerOutput(
     planId: string,
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     order: number,
@@ -581,7 +581,7 @@ export class IncrementalPlanningService {
     return task;
   }
 
-  private async redesignFailedTask(
+  async redesignFailedTask(
     planId: string,
     redesignTaskId: string,
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
@@ -906,7 +906,7 @@ export class IncrementalPlanningService {
     return map;
   }
 
-  private async completePlanning(planId: string, state: OrchestrationGenerationState): Promise<void> {
+  async completePlanning(planId: string, state: OrchestrationGenerationState): Promise<void> {
     await this.planModel
       .updateOne(
         { _id: planId },
@@ -939,7 +939,7 @@ export class IncrementalPlanningService {
     });
   }
 
-  private async failPlanning(planId: string, error: string): Promise<void> {
+  async failPlanning(planId: string, error: string): Promise<void> {
     await this.planModel
       .updateOne(
         { _id: planId },
@@ -974,7 +974,7 @@ export class IncrementalPlanningService {
       .exec();
   }
 
-  private resolveGenerationConfig(config?: OrchestrationGenerationConfig): OrchestrationGenerationConfig {
+  resolveGenerationConfig(config?: OrchestrationGenerationConfig): OrchestrationGenerationConfig {
     return {
       maxRetries: Number(config?.maxRetries || DEFAULT_GENERATION_CONFIG.maxRetries),
       maxTotalFailures: Number(config?.maxTotalFailures || DEFAULT_GENERATION_CONFIG.maxTotalFailures),

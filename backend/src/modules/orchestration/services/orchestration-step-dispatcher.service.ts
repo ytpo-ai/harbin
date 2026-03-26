@@ -75,24 +75,24 @@ export class OrchestrationStepDispatcherService {
       const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state);
 
       if (phase === 'idle' || phase === 'generating') {
+        let effectiveState = state;
         if (phase === 'idle') {
+          const claimedState: OrchestrationGenerationState = {
+            ...state,
+            currentPhase: 'generating',
+            plannerSessionId,
+          };
           const claimed = await this.updateGenerationStateIfExpected(
             normalizedPlanId,
             state,
-            {
-              ...state,
-              currentPhase: 'generating',
-            },
+            claimedState,
           );
           if (!claimed) {
             return { advanced: false, phase };
           }
+          effectiveState = claimedState;
         }
-        const latestPlan = await this.planModel.findById(normalizedPlanId).lean().exec();
-        const latestState = this.resolveGenerationState(
-          latestPlan?.generationState as OrchestrationGenerationState | undefined,
-        );
-        await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', latestState, plannerSessionId);
+        await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', effectiveState, plannerSessionId);
         return { advanced: true, phase: 'generating' };
       }
       if (phase === 'pre_execute') {
@@ -120,6 +120,12 @@ export class OrchestrationStepDispatcherService {
     if (!state.currentTaskId) {
       return { accepted: false };
     }
+    const config = this.incrementalPlanningService.resolveGenerationConfig(
+      plan?.generationConfig as OrchestrationPlanDocument['generationConfig'],
+    );
+    if (state.consecutiveFailures >= config.maxRetries || state.totalFailures >= config.maxTotalFailures) {
+      return { accepted: false };
+    }
     await this.updateGenerationState(planId, {
       ...state,
       currentPhase: 'pre_execute',
@@ -140,7 +146,7 @@ export class OrchestrationStepDispatcherService {
     plannerSessionId: string,
   ): Promise<void> {
     await this.emitStepStarted(planId, state.currentStep + 1);
-    const plannerContext = await (this.incrementalPlanningService as any).buildPlannerContext(planId, sourcePrompt);
+    const plannerContext = await this.incrementalPlanningService.buildPlannerContext(planId, sourcePrompt);
     const nextTaskResult = await this.plannerService.generateNextTask(planId, plannerContext, {
       sessionId: plannerSessionId,
     });
@@ -168,12 +174,12 @@ export class OrchestrationStepDispatcherService {
 
     const isRedesign = nextTaskResult.action === 'redesign' && Boolean(nextTaskResult.redesignTaskId);
     const createdTask = isRedesign
-      ? await (this.incrementalPlanningService as any).redesignFailedTask(
+      ? await this.incrementalPlanningService.redesignFailedTask(
         planId,
         String(nextTaskResult.redesignTaskId),
         nextTaskResult.task,
       )
-      : await (this.incrementalPlanningService as any).createTaskFromPlannerOutput(
+      : await this.incrementalPlanningService.createTaskFromPlannerOutput(
         planId,
         nextTaskResult.task,
         mergedState.currentStep,
@@ -292,7 +298,7 @@ export class OrchestrationStepDispatcherService {
       taskId: String(task._id),
     });
 
-    const executionResult = await (this.incrementalPlanningService as any).executeIncrementalTaskWithRunRecord(
+    const executionResult = await this.incrementalPlanningService.executeIncrementalTaskWithRunRecord(
       planId,
       task,
       state.currentStep,
@@ -441,12 +447,7 @@ export class OrchestrationStepDispatcherService {
     plan: OrchestrationPlanDocument,
     state: OrchestrationGenerationState,
   ): Promise<boolean> {
-    const config = (this.incrementalPlanningService as any).resolveGenerationConfig(plan.generationConfig) as {
-      maxTasks: number;
-      maxCostTokens: number;
-      maxRetries: number;
-      maxTotalFailures: number;
-    };
+    const config = this.incrementalPlanningService.resolveGenerationConfig(plan.generationConfig);
 
     if (state.totalGenerated >= config.maxTasks) {
       await this.failAndArchive(planId, `Exceeded max tasks limit (${config.maxTasks})`);
@@ -486,7 +487,7 @@ export class OrchestrationStepDispatcherService {
   }
 
   private async completeAndArchive(planId: string, state: OrchestrationGenerationState): Promise<void> {
-    await (this.incrementalPlanningService as any).completePlanning(planId, {
+    await this.incrementalPlanningService.completePlanning(planId, {
       ...state,
       isComplete: true,
       currentPhase: 'idle',
@@ -501,7 +502,7 @@ export class OrchestrationStepDispatcherService {
   }
 
   private async failAndArchive(planId: string, error: string): Promise<void> {
-    await (this.incrementalPlanningService as any).failPlanning(planId, error);
+    await this.incrementalPlanningService.failPlanning(planId, error);
     const plan = await this.planModel.findById(planId).lean().exec();
     const state = this.resolveGenerationState(plan?.generationState as OrchestrationGenerationState | undefined);
     await this.archivePlannerSessionIfNeeded(state);

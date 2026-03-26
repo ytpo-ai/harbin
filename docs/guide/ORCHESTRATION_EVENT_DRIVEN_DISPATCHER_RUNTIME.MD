@@ -10,6 +10,11 @@
 - 旧 `IncrementalPlanningService.executeIncrementalPlanning()` 的 `for(;;)` 无限循环已移除，改为 `setImmediate` 递进推进。
 - Replan 流程补齐 planner session 生命周期：先归档旧 session，再创建新 replan session 并写入 `generationState.plannerSessionId`。
 - 测试补齐：并发幂等、B 阶段阻断 C、D 阶段 retry/redesign、D 解析失败降级 stop、开关关闭旧链路回归。
+- 消除 dispatcher 对 `IncrementalPlanningService` 的 `as any` 私有方法调用，改为显式 public 协作接口。
+- `advanceOnce` 在 `idle -> generating` 后复用已声明状态，不再进行二次 `findById` 读取，缩小 phaseGenerate 前的 race window。
+- `retryCurrentTask` 新增重试上限前置校验，超过 `maxRetries/maxTotalFailures` 时直接拒绝 retry。
+- `buildPreTaskContext/buildPostTaskContext` 增加 JSON-only 强约束前后缀，降低非 JSON 响应导致的降级频率。
+- `EventEmitterModule.forRoot()` 已上移到 `AppModule` 根注册，避免编排模块承担全局事件总线初始化职责。
 
 ## 双通道推进实现
 

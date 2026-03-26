@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from '../auth/auth.module';
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
@@ -52,11 +51,6 @@ import { OrchestrationEventListenerService } from './services/orchestration-even
     AuthModule,
     AgentClientModule,
     PromptRegistryModule,
-    EventEmitterModule.forRoot({
-      wildcard: true,
-      delimiter: '.',
-      maxListeners: 20,
-    }),
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
