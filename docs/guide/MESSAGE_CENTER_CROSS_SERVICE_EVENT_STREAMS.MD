@@ -16,7 +16,7 @@
 ## 3. 首批事件
 
 - `engineering.tool.completed`
-  - 生产方：`backend/apps/ei/src/services/ei.service.ts`
+  - 生产方：`backend/apps/ei/src/services/statistics.service.ts`
   - 语义：工程工具/统计任务完成（成功或失败）通知。
 - `meeting.session.ended`
   - 生产方：`backend/src/modules/meetings/services/meeting-message-center-event.service.ts`

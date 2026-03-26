@@ -283,6 +283,7 @@ GET ranking -> Redis 有值 -> 返回
 | `plan/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造计划 |
 | `plan/CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
 | `plan/EI_DOCS_HEAT_PLAN.md` | 文档热度统计功能开发计划 |
+| `plan/EI_SERVICE_SPLIT_PLAN.md` | EI 服务拆分计划（移除 God Service） |
 
 ### 技术文档 (docs/technical/)
 
@@ -291,6 +292,12 @@ GET ranking -> Redis 有值 -> 返回
 | `technical/OPENCODE_EI_DATA_LAYER_TECHNICAL_DESIGN.md` | 数据分层、同步契约、补偿策略 |
 | `technical/EI_API_RESOURCE_RESTRUCTURE_DESIGN.md` | EI 资源化接口与 Controller/Service 拆分设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | 多环境同步、节点治理与冲突处理 |
+
+### Guide 缓存文档 (docs/guide/)
+
+| 文件 | 说明 |
+|------|------|
+| `guide/EI_SERVICE_SPLIT_RUNTIME.MD` | EI 拆分后运行态职责与模块装配映射 |
 
 ### 开发讨论文档 (docs/development/)
 

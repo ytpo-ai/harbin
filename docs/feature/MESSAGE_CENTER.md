@@ -69,7 +69,7 @@
 
 | 路径 | 功能 |
 |------|------|
-| `backend/apps/ei/src/services/ei.service.ts` | 工程工具完成后发布 `engineering.tool.completed` 事件 |
+| `backend/apps/ei/src/services/statistics.service.ts` | 工程工具完成后发布 `engineering.tool.completed` 事件 |
 
 ### 后端（Meeting）
 

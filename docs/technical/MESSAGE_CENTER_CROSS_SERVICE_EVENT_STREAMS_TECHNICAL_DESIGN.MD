@@ -80,7 +80,7 @@
 
 ### 6.1 EI
 
-- 文件：`backend/apps/ei/src/services/ei.service.ts`
+- 文件：`backend/apps/ei/src/services/statistics.service.ts`
 - 事件：`engineering.tool.completed`
 - 行为：快照终态后发布事件；发布失败仅记日志，不回写污染统计终态。
 

@@ -38,7 +38,7 @@
 
 ## 影响点
 
-- 后端：`ei.service.ts`（FileMetrics、scanDirectoryMetrics、buildSummary、buildStatisticsRows）
+- 后端：`statistics.service.ts`（FileMetrics、scanDirectoryMetrics、buildSummary、buildStatisticsRows）
 - 后端：`ei-project-statistics-snapshot.schema.ts`（Schema 类型定义）
 - 前端：`engineeringIntelligenceService.ts`（接口类型）
 - 前端：`EngineeringStatistics.tsx`（页面 UI）

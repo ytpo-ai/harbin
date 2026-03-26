@@ -76,7 +76,7 @@
 ## 6. 关键影响点
 
 - 后端（EI）
-  - `backend/apps/ei/src/services/ei.service.ts`
+  - `backend/apps/ei/src/services/statistics.service.ts`（拆分后承载统计消息发布）
 - 后端（legacy）
   - `backend/src/modules/message-center/message-center.service.ts`
   - `backend/src/modules/message-center/message-center.module.ts`

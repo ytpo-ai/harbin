@@ -87,7 +87,7 @@
   - `ListRequirementsDto` 增加筛选/排序/分页字段。
   - `AssignRequirementDto` 升级为可设置 `ownerType/ownerId/ownerName`（保留 `toAgentId` 兼容）。
   - `UpdateRequirementStatusDto` 增加兼容状态别名注释和校验。
-- `backend/apps/ei/src/services/ei.service.ts`
+- `backend/apps/ei/src/services/requirements.service.ts`
   - 重构 `requirementTransitions`。
   - 新增 `normalizeStatusAlias`、`appendOperationLog`、`buildLedgerQuery`。
   - 改造 `listRequirements/getRequirementBoard/assign/updateRequirementStatus/...`。
