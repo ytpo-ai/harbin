@@ -37,7 +37,7 @@ interface ToolkitRegistryQuery {
   status?: string;
 }
 
-interface ToolInputContract {
+export interface ToolInputContract {
   toolId: string;
   schema: Record<string, unknown>;
 }

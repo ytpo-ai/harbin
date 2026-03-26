@@ -62,7 +62,7 @@ export interface SkillPagedResult {
   totalPages: number;
 }
 
-interface SkillDocSyncResult {
+export interface SkillDocSyncResult {
   scanned: number;
   inserted: number;
   updated: number;
