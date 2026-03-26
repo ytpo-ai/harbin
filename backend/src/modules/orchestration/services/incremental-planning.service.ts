@@ -90,16 +90,25 @@ export class IncrementalPlanningService {
       }
 
       await this.prepareDraftingState(normalizedPlanId, this.resolveGenerationState(plan.generationState));
-
-      for (;;) {
-        const stepResult = await this.executePlanningStep(normalizedPlanId, plan.sourcePrompt || '');
-        if (stepResult.done) {
-          break;
-        }
-      }
+      await this.executePlanningUntilDone(normalizedPlanId, plan.sourcePrompt || '');
     } finally {
       this.activePlannings.delete(normalizedPlanId);
     }
+  }
+
+  private async executePlanningUntilDone(planId: string, sourcePrompt: string): Promise<void> {
+    const stepResult = await this.executePlanningStep(planId, sourcePrompt);
+    if (stepResult.done) {
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      setImmediate(() => {
+        this.executePlanningUntilDone(planId, sourcePrompt)
+          .then(resolve)
+          .catch(reject);
+      });
+    });
   }
 
   async executeSinglePlanningStep(planId: string): Promise<void> {
@@ -130,6 +139,7 @@ export class IncrementalPlanningService {
       ...existingState,
       isComplete: false,
       lastError: undefined,
+      currentPhase: existingState.currentPhase || 'idle',
     });
 
     this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
@@ -907,6 +917,8 @@ export class IncrementalPlanningService {
               ...state,
               isComplete: true,
               lastError: undefined,
+              currentPhase: 'idle',
+              currentTaskId: undefined,
             },
             'metadata.planningCompletedAt': new Date().toISOString(),
           },
@@ -936,6 +948,7 @@ export class IncrementalPlanningService {
             status: 'draft',
             'generationState.lastError': error,
             'generationState.isComplete': false,
+            'generationState.currentPhase': 'idle',
             'metadata.planningFailedAt': new Date().toISOString(),
           },
         },
@@ -980,6 +993,10 @@ export class IncrementalPlanningService {
       totalCost: Number(state?.totalCost || 0),
       isComplete: Boolean(state?.isComplete),
       lastError: state?.lastError,
+      currentPhase: state?.currentPhase || 'idle',
+      lastDecision: state?.lastDecision,
+      plannerSessionId: state?.plannerSessionId,
+      currentTaskId: state?.currentTaskId,
     };
   }
 

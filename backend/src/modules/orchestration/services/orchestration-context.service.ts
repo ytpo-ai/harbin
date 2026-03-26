@@ -235,6 +235,49 @@ export class OrchestrationContextService {
     return normalized || '未知';
   }
 
+  buildPreTaskContext(input: {
+    step: number;
+    taskId: string;
+    taskTitle: string;
+    taskDescription: string;
+    runtimeTaskType?: string;
+  }): string {
+    return [
+      '请进行执行前评估，并仅返回 JSON。',
+      '目标：判断当前任务是否允许进入执行阶段。',
+      `step: ${input.step}`,
+      `taskId: ${input.taskId}`,
+      `taskTitle: ${input.taskTitle}`,
+      `runtimeTaskType: ${input.runtimeTaskType || 'general'}`,
+      'taskDescription:',
+      input.taskDescription,
+      '输出 JSON schema:',
+      '{"allowExecute":true,"executionHints":["..."],"riskFlags":["..."],"notes":"..."}',
+    ].join('\n');
+  }
+
+  buildPostTaskContext(input: {
+    step: number;
+    taskId: string;
+    taskTitle: string;
+    executionStatus: string;
+    executionOutput?: string;
+    executionError?: string;
+  }): string {
+    return [
+      '请进行执行后决策，并仅返回 JSON。',
+      '目标：根据当前任务执行结果，决定下一步动作。',
+      `step: ${input.step}`,
+      `taskId: ${input.taskId}`,
+      `taskTitle: ${input.taskTitle}`,
+      `executionStatus: ${input.executionStatus}`,
+      `executionOutput: ${String(input.executionOutput || '').slice(0, 3000)}`,
+      `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
+      '输出 JSON schema:',
+      '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."]}',
+    ].join('\n');
+  }
+
   buildOrchestrationCollaborationContext(
     task: OrchestrationTask | OrchestrationTaskDocument,
     options: { dependencyContext?: string; executorAgentId?: string } = {},

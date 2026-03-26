@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthModule } from '../auth/auth.module';
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
@@ -43,12 +44,19 @@ import { PlanEventStreamService } from './services/plan-event-stream.service';
 import { OrchestrationContextService } from './services/orchestration-context.service';
 import { OrchestrationExecutionEngineService } from './services/orchestration-execution-engine.service';
 import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-registry/prompt-registry.module';
+import { OrchestrationStepDispatcherService } from './services/orchestration-step-dispatcher.service';
+import { OrchestrationEventListenerService } from './services/orchestration-event-listener.service';
 
 @Module({
   imports: [
     AuthModule,
     AgentClientModule,
     PromptRegistryModule,
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+      maxListeners: 20,
+    }),
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
@@ -72,6 +80,8 @@ import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-re
     TaskManagementService,
     PlanExecutionService,
     IncrementalPlanningService,
+    OrchestrationStepDispatcherService,
+    OrchestrationEventListenerService,
     TaskLifecycleService,
     PlanStatsService,
     PlanEventStreamService,

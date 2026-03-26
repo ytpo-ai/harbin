@@ -27,6 +27,8 @@ import { PlanStatsService } from './plan-stats.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { IncrementalPlanningService } from './incremental-planning.service';
+import { OrchestrationStepDispatcherService } from './orchestration-step-dispatcher.service';
+import { AgentClientService } from '../../agents-client/agent-client.service';
 
 @Injectable()
 export class PlanManagementService {
@@ -46,6 +48,8 @@ export class PlanManagementService {
     private readonly contextService: OrchestrationContextService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly incrementalPlanningService: IncrementalPlanningService,
+    private readonly stepDispatcher: OrchestrationStepDispatcherService,
+    private readonly agentClientService: AgentClientService,
   ) {}
 
   async createPlanFromPrompt(createdBy: string, dto: CreatePlanFromPromptDto): Promise<any> {
@@ -81,6 +85,7 @@ export class PlanManagementService {
         totalFailures: 0,
         totalCost: 0,
         isComplete: false,
+        currentPhase: 'idle',
       },
       stats: {
         totalTasks: 0,
@@ -285,12 +290,21 @@ export class PlanManagementService {
     }
 
     setTimeout(() => {
-      this.incrementalPlanningService
-        .executeIncrementalPlanning(planId)
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : 'Incremental planning failed';
-          this.logger.error(`Incremental planning failed for plan ${planId}: ${message}`);
-        });
+      if (this.isStepDispatcherEnabled()) {
+        this.stepDispatcher
+          .advanceOnce(planId, { source: 'internal' })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : 'Step dispatcher failed';
+            this.logger.error(`Step dispatcher failed for plan ${planId}: ${message}`);
+          });
+      } else {
+        this.incrementalPlanningService
+          .executeIncrementalPlanning(planId)
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : 'Incremental planning failed';
+            this.logger.error(`Incremental planning failed for plan ${planId}: ${message}`);
+          });
+      }
     }, 0);
 
     return { accepted: true };
@@ -311,12 +325,21 @@ export class PlanManagementService {
     }
 
     setTimeout(() => {
-      this.incrementalPlanningService
-        .executeSinglePlanningStep(planId)
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : 'Incremental step failed';
-          this.logger.error(`Incremental step failed for plan ${planId}: ${message}`);
-        });
+      if (this.isStepDispatcherEnabled()) {
+        this.stepDispatcher
+          .advanceOnce(planId, { source: 'api' })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : 'Step dispatcher step failed';
+            this.logger.error(`Step dispatcher step failed for plan ${planId}: ${message}`);
+          });
+      } else {
+        this.incrementalPlanningService
+          .executeSinglePlanningStep(planId)
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : 'Incremental step failed';
+            this.logger.error(`Incremental step failed for plan ${planId}: ${message}`);
+          });
+      }
     }, 0);
 
     return { accepted: true };
@@ -338,6 +361,7 @@ export class PlanManagementService {
     }
 
     const plannerAgentId = dto.plannerAgentId?.trim();
+    const resolvedPlannerAgentId = plannerAgentId || String(plan.strategy?.plannerAgentId || '').trim() || undefined;
     const title = dto.title?.trim() || plan.title || this.derivePlanTitle(prompt);
     const fallbackMode = dto.mode || plan.strategy?.mode || 'hybrid';
     const fallbackRunMode = dto.runMode || (plan.strategy as any)?.runMode || 'multi';
@@ -347,6 +371,9 @@ export class PlanManagementService {
 
     try {
       await this.orchestrationTaskModel.deleteMany({ planId }).exec();
+
+      await this.archivePlannerSessionForReplan(plan.generationState?.plannerSessionId);
+      const replannedPlannerSessionId = await this.createPlannerSessionForReplan(planId, title, resolvedPlannerAgentId);
 
       await this.planSessionModel
         .updateOne(
@@ -392,6 +419,8 @@ export class PlanManagementService {
                 totalFailures: 0,
                 totalCost: 0,
                 isComplete: false,
+                currentPhase: 'idle',
+                plannerSessionId: replannedPlannerSessionId,
               },
               stats: {
                 totalTasks: 0,
@@ -590,6 +619,53 @@ export class PlanManagementService {
     if (normalizedStatus === 'production') {
       throw new BadRequestException('Plan is in production and cannot be edited. Please unlock first.');
     }
+  }
+
+  private isStepDispatcherEnabled(): boolean {
+    const value = String(process.env.ORCH_STEP_DISPATCHER_ENABLED || '').trim().toLowerCase();
+    return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+  }
+
+  private async archivePlannerSessionForReplan(existingPlannerSessionId?: string): Promise<void> {
+    const sessionId = String(existingPlannerSessionId || '').trim();
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      await this.agentClientService.archiveSession(sessionId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Archive old planner session failed: sessionId=${sessionId}, error=${message}`);
+    }
+  }
+
+  private async createPlannerSessionForReplan(
+    planId: string,
+    planTitle: string,
+    plannerAgentId?: string,
+  ): Promise<string | undefined> {
+    const normalizedPlannerAgentId = String(plannerAgentId || '').trim();
+    if (!normalizedPlannerAgentId) {
+      return undefined;
+    }
+
+    const session = await this.agentClientService.getOrCreatePlanSession(
+      planId,
+      normalizedPlannerAgentId,
+      `Planner Session: ${planTitle}`,
+      {
+        orchestrationRunId: `replan-${Date.now()}`,
+        collaborationContext: {
+          mode: 'planning',
+          roleInPlan: 'planner',
+          planId,
+        },
+      },
+    );
+
+    const sessionId = String(session?.id || session?.sessionId || '').trim();
+    return sessionId || undefined;
   }
 
 }

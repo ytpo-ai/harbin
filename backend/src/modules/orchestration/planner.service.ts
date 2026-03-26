@@ -64,6 +64,20 @@ export interface GenerateNextTaskResult {
   costTokens?: number;
 }
 
+export interface PreExecutionDecision {
+  allowExecute: boolean;
+  executionHints?: string[];
+  riskFlags?: string[];
+  notes?: string;
+}
+
+export interface PostExecutionDecision {
+  nextAction: 'generate_next' | 'stop' | 'redesign' | 'retry';
+  reason: string;
+  redesignTaskId?: string;
+  nextTaskHints?: string[];
+}
+
 const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
   '将用户需求拆解为可执行任务清单并返回 JSON。',
   '需求: {{prompt}}',
@@ -120,6 +134,7 @@ export class PlannerService {
   async generateNextTask(
     planId: string,
     context: IncrementalPlannerContext,
+    options?: { sessionId?: string },
   ): Promise<GenerateNextTaskResult> {
     const plan = await this.planModel.findById(planId).exec();
     if (!plan) {
@@ -150,6 +165,13 @@ export class PlannerService {
         format: 'json',
         roleInPlan: 'planner',
       },
+      ...(options?.sessionId
+        ? {
+            sessionContext: {
+              sessionId: options.sessionId,
+            },
+          }
+        : {}),
     });
 
     const parsed = this.tryParseJson(response);
@@ -189,6 +211,123 @@ export class PlannerService {
       isGoalReached: Boolean(parsed.isGoalReached),
       reasoning: String(parsed.reasoning || '').trim() || (!validatedTask ? 'Planner did not provide a valid agentId' : ''),
       costTokens: Number.isFinite(parsed.costTokens) ? Number(parsed.costTokens) : undefined,
+    };
+  }
+
+  async executePreTask(
+    planId: string,
+    taskContext: string,
+    sessionId: string,
+  ): Promise<PreExecutionDecision> {
+    const plan = await this.planModel.findById(planId).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim();
+    if (!plannerAgentId) {
+      throw new BadRequestException('Plan has no planner agent configured');
+    }
+
+    const task: AgentExecutionTask = {
+      title: 'Incremental planning: pre-execution decision',
+      description: taskContext,
+      type: 'planning',
+      priority: 'high',
+      status: 'pending',
+      assignedAgents: [plannerAgentId],
+      teamId: 'orchestration',
+      messages: [],
+    };
+
+    const response = await this.agentClientService.executeTask(plannerAgentId, task, {
+      collaborationContext: {
+        planId,
+        mode: 'planning',
+        format: 'json',
+        roleInPlan: 'planner_pre_execution',
+      },
+      sessionContext: {
+        sessionId,
+      },
+    });
+
+    const parsed = this.tryParseJson(response);
+    if (!parsed || typeof parsed !== 'object') {
+      return { allowExecute: true };
+    }
+
+    return {
+      allowExecute: parsed.allowExecute !== false,
+      executionHints: Array.isArray(parsed.executionHints)
+        ? parsed.executionHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : undefined,
+      riskFlags: Array.isArray(parsed.riskFlags)
+        ? parsed.riskFlags.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : undefined,
+      notes: String(parsed.notes || '').trim() || undefined,
+    };
+  }
+
+  async executePostTask(
+    planId: string,
+    executionResult: string,
+    sessionId: string,
+  ): Promise<PostExecutionDecision> {
+    const plan = await this.planModel.findById(planId).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim();
+    if (!plannerAgentId) {
+      throw new BadRequestException('Plan has no planner agent configured');
+    }
+
+    const task: AgentExecutionTask = {
+      title: 'Incremental planning: post-execution decision',
+      description: executionResult,
+      type: 'planning',
+      priority: 'high',
+      status: 'pending',
+      assignedAgents: [plannerAgentId],
+      teamId: 'orchestration',
+      messages: [],
+    };
+
+    const response = await this.agentClientService.executeTask(plannerAgentId, task, {
+      collaborationContext: {
+        planId,
+        mode: 'planning',
+        format: 'json',
+        roleInPlan: 'planner_post_execution',
+      },
+      sessionContext: {
+        sessionId,
+      },
+    });
+
+    const parsed = this.tryParseJson(response);
+    if (!parsed || typeof parsed !== 'object') {
+      return {
+        nextAction: 'stop',
+        reason: 'Failed to parse planner post-task response',
+      };
+    }
+
+    const nextActionRaw = String(parsed.nextAction || '').trim().toLowerCase();
+    const nextAction: PostExecutionDecision['nextAction'] =
+      nextActionRaw === 'generate_next'
+      || nextActionRaw === 'redesign'
+      || nextActionRaw === 'retry'
+        ? (nextActionRaw as PostExecutionDecision['nextAction'])
+        : 'stop';
+
+    return {
+      nextAction,
+      reason: String(parsed.reason || '').trim() || 'Planner post-task response missing reason',
+      redesignTaskId: String(parsed.redesignTaskId || '').trim() || undefined,
+      nextTaskHints: Array.isArray(parsed.nextTaskHints)
+        ? parsed.nextTaskHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : undefined,
     };
   }
 

@@ -33,6 +33,10 @@ export interface OrchestrationGenerationState {
   totalCost: number;
   isComplete: boolean;
   lastError?: string;
+  currentPhase?: 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
+  lastDecision?: 'generate_next' | 'stop' | 'redesign' | 'retry';
+  plannerSessionId?: string;
+  currentTaskId?: string;
 }
 
 @Schema({ timestamps: true, collection: 'orchestration_plans' })
@@ -111,6 +115,10 @@ export class OrchestrationPlan {
     totalCost: { type: Number, default: 0 },
     isComplete: { type: Boolean, default: false },
     lastError: { type: String },
+    currentPhase: { type: String, enum: ['generating', 'pre_execute', 'executing', 'post_execute', 'idle'], default: 'idle' },
+    lastDecision: { type: String, enum: ['generate_next', 'stop', 'redesign', 'retry'] },
+    plannerSessionId: { type: String },
+    currentTaskId: { type: String },
   }))
   generationState?: OrchestrationGenerationState;
 }

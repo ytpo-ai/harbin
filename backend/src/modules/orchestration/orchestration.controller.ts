@@ -13,6 +13,7 @@ import {
   Sse,
   UnauthorizedException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Observable } from 'rxjs';
 import { decodeUserContext, verifyEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
@@ -40,6 +41,7 @@ import {
   UpdateTaskDraftDto,
 } from './dto';
 import { SessionManagerService } from './session-manager.service';
+import { ORCH_EVENTS } from './orchestration-events';
 
 @Controller('orchestration')
 export class OrchestrationController {
@@ -49,6 +51,7 @@ export class OrchestrationController {
     private readonly orchestrationService: OrchestrationService,
     private readonly sessionManagerService: SessionManagerService,
     private readonly authService: AuthService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   private resolveUserFromInternalContext(encoded?: string, signature?: string): { id: string } | null {
@@ -293,6 +296,24 @@ export class OrchestrationController {
   ) {
     await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
     return this.orchestrationService.generateNext(planId);
+  }
+
+  @Post('plans/:id/advance')
+  async advancePlan(
+    @Param('id') planId: string,
+    @Body() dto: { targetPhase?: 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle'; metadata?: Record<string, unknown> },
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    this.eventEmitter.emit(ORCH_EVENTS.ADVANCE_REQUESTED, {
+      planId,
+      source: 'api',
+      targetPhase: dto?.targetPhase,
+      metadata: dto?.metadata,
+    });
+    return { accepted: true };
   }
 
   @Post('tasks/:id/reassign')

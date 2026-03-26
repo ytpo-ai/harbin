@@ -16,11 +16,12 @@ describe('IncrementalPlanningService redesign task lookup', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
+      {} as any,
       {
         refreshPlanStats: jest.fn().mockResolvedValue(undefined),
         syncPlanSessionTasks: jest.fn().mockResolvedValue(undefined),
       } as any,
-      {} as any,
       {} as any,
       {} as any,
       {} as any,
