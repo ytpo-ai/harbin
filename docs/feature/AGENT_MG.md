@@ -47,6 +47,7 @@
 | 文件 | 说明 |
 |------|------|
 | `AGENT_MANAGEMENT_PERSON_CARD_UI_PLAN.md` | Agent 管理页人物卡片与创建顺序优化计划 |
+| `AGENTS_PAGE_SPLIT_REFACTOR_PLAN.md` | Agent 管理页页面拆分重构计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -70,7 +71,23 @@
 
 | 文件 | 功能 |
 |------|------|
-| `Agents.tsx` | Agent 管理主页面（人物卡片列表、创建/编辑弹窗） |
+| `Agents.tsx` | Agent 管理主页面编排层（列表筛选、卡片编排、弹窗状态管理） |
+
+### 前端组件 (frontend/src/components/agents/)
+
+| 文件 | 功能 |
+|------|------|
+| `AgentListHeader.tsx` | 页面标题、Tier 筛选、创建入口 |
+| `AgentCard.tsx` | Agent 人物卡片展示与快捷操作 |
+| `CreateAgentModal.tsx` | 创建 Agent 弹窗 |
+| `EditAgentModal.tsx` | 编辑 Agent 弹窗（三 Tab） |
+| `ModelTestPanel.tsx` | 模型流式测试面板 |
+| `hooks/useAgentListData.ts` | Agent 列表相关查询与 mutation 聚合 |
+| `hooks/useAgentToolFilter.ts` | 角色白名单工具过滤与分组 |
+| `hooks/useAgentFormSync.ts` | Create/Edit 角色切换联动逻辑复用 |
+| `constants.ts` | Tier/Namespace 展示常量 |
+| `utils.ts` | 共享工具函数（provider/tier/tool/config） |
+| `types.ts` | 组件 Props 与局部类型定义 |
 
 ### 前端服务 (frontend/src/services/)
 
