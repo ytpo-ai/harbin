@@ -21,6 +21,8 @@
 - 消息列表按 `receiverId` 查询，支持 `page/pageSize/isRead/type` 筛选。
 - 消息中心完整页提供 Tab：`系统消息`（`system_messages`）、`内部消息`（`inner_messages`）与 `消息监听`（`inner_message_subscriptions`）。
 - 内部消息列表按当前登录员工绑定的 Agent（`exclusiveAssistantAgentId/aiProxyAgentId`）作为 `receiverAgentId` 查询，支持 `page/pageSize/status/mode/eventType` 筛选。
+- 内部消息列表发送方/接收方展示优先使用可读名称（Agent 名称或 payload 内 displayName），并保留 ID 作为补充，避免仅显示接收方 ID。
+- 内部消息列表新增“查看原始消息”按钮，点击后打开右侧抽屉展示格式化 JSON，并支持一键复制消息 JSON 内容用于排障。
 - 消息监听 Tab 支持页面内管理 `inner_message_subscriptions`（查询、启停、创建/更新），并提供事件模板快速注册。
 - 消息监听 Tab 的 Agent 选择支持全量 Agent 下拉与名称/ID 搜索过滤。
 - 消息监听事件目录由后端 `GET /inner-message-subscriptions/event-definitions` 动态提供，前端不再硬编码事件枚举。

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { CheckIcon, EnvelopeOpenIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ClipboardDocumentIcon, EnvelopeOpenIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   messageCenterService,
@@ -38,6 +38,27 @@ function readFilterToQuery(readFilter: 'all' | 'read' | 'unread'): boolean | und
   return undefined;
 }
 
+function readActorDisplayName(
+  payload: Record<string, any> | undefined,
+  actor: 'sender' | 'receiver',
+): string | undefined {
+  if (!payload || typeof payload !== 'object') return undefined;
+
+  const keyCandidates =
+    actor === 'sender'
+      ? ['senderAgentName', 'senderName', 'senderDisplayName', 'senderLabel']
+      : ['receiverAgentName', 'receiverName', 'receiverDisplayName', 'receiverLabel', 'receiverRoomName'];
+
+  for (const key of keyCandidates) {
+    const value = String((payload as Record<string, any>)[key] || '').trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 const MessageCenter: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,6 +78,8 @@ const MessageCenter: React.FC = () => {
   const [subscriptionFiltersText, setSubscriptionFiltersText] = useState('{}');
   const [subscriptionIsActive, setSubscriptionIsActive] = useState(true);
   const [subscriptionError, setSubscriptionError] = useState('');
+  const [rawDrawerMessage, setRawDrawerMessage] = useState<InnerMessageCenterItem | null>(null);
+  const [rawCopyNotice, setRawCopyNotice] = useState('');
 
   const { data: agents = [] } = useQuery('message-center-agents', () => agentService.getAgents(), {
     staleTime: 30 * 1000,
@@ -122,6 +145,34 @@ const MessageCenter: React.FC = () => {
       return id.includes(keyword) || name.includes(keyword);
     });
   }, [agentKeyword, availableSubscriberAgents]);
+
+  const availableAgentNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    availableSubscriberAgents.forEach((agent) => {
+      map.set(agent.id, agent.name);
+    });
+    return map;
+  }, [availableSubscriberAgents]);
+
+  const formatInnerActorLabel = React.useCallback(
+    (actorId: string, payload: Record<string, any> | undefined, actor: 'sender' | 'receiver'): string => {
+      const normalizedId = String(actorId || '').trim();
+      const mappedName = normalizedId ? availableAgentNameMap.get(normalizedId) : '';
+      const payloadName = readActorDisplayName(payload, actor);
+      const displayName = String(payloadName || mappedName || '').trim();
+
+      if (!normalizedId && !displayName) {
+        return '未知';
+      }
+
+      if (displayName && normalizedId && displayName !== normalizedId) {
+        return `${displayName} (${normalizedId})`;
+      }
+
+      return displayName || normalizedId;
+    },
+    [availableAgentNameMap],
+  );
 
   React.useEffect(() => {
     if (!filteredSubscriberAgents.length) {
@@ -317,6 +368,47 @@ const MessageCenter: React.FC = () => {
       source: item.source || 'message-center-ui',
     });
   };
+
+  const formatInnerRawJson = React.useCallback((item: InnerMessageCenterItem | null): string => {
+    if (!item) {
+      return '';
+    }
+    return JSON.stringify(item, null, 2);
+  }, []);
+
+  const copyText = React.useCallback(async (value: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+      }
+
+      const input = document.createElement('textarea');
+      input.value = value;
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.focus();
+      input.select();
+      document.execCommand('copy');
+      document.body.removeChild(input);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleCopyRawJson = React.useCallback(async () => {
+    const rawJson = formatInnerRawJson(rawDrawerMessage);
+    if (!rawJson) {
+      setRawCopyNotice('暂无可复制内容');
+      window.setTimeout(() => setRawCopyNotice(''), 1500);
+      return;
+    }
+    const copied = await copyText(rawJson);
+    setRawCopyNotice(copied ? '已复制 JSON' : '复制失败，请手动复制');
+    window.setTimeout(() => setRawCopyNotice(''), 1500);
+  }, [copyText, formatInnerRawJson, rawDrawerMessage]);
 
   return (
     <div className="space-y-4">
@@ -697,8 +789,20 @@ const MessageCenter: React.FC = () => {
                     </div>
                     <p className="text-sm font-medium text-gray-900">{item.title}</p>
                     <p className="mt-1 text-sm text-gray-600">{item.content}</p>
-                    <p className="mt-2 text-xs text-gray-500">发送方: {item.senderAgentId} · 接收方: {item.receiverAgentId}</p>
+                    <p className="mt-2 text-xs text-gray-500">
+                      发送方: {formatInnerActorLabel(item.senderAgentId, item.payload, 'sender')} · 接收方:{' '}
+                      {formatInnerActorLabel(item.receiverAgentId, item.payload, 'receiver')}
+                    </p>
                     <p className="mt-1 text-xs text-gray-400">{new Date(item.createdAt).toLocaleString()}</p>
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => setRawDrawerMessage(item)}
+                        className="rounded border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                      >
+                        查看原始消息
+                      </button>
+                    </div>
                   </div>
                 ))}
           </div>
@@ -725,6 +829,44 @@ const MessageCenter: React.FC = () => {
           </button>
         </div>
       )}
+
+      {rawDrawerMessage ? (
+        <>
+          <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setRawDrawerMessage(null)} />
+          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-2xl border-l border-gray-200 bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">原始消息 JSON</h2>
+                <p className="mt-0.5 text-xs text-gray-500">messageId: {rawDrawerMessage.messageId}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {rawCopyNotice ? <span className="text-xs text-emerald-600">{rawCopyNotice}</span> : null}
+                <button
+                  type="button"
+                  onClick={handleCopyRawJson}
+                  className="inline-flex items-center gap-1 rounded border border-gray-300 px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <ClipboardDocumentIcon className="h-3.5 w-3.5" />
+                  复制
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRawDrawerMessage(null)}
+                  className="inline-flex items-center rounded border border-gray-300 p-1 text-gray-600 hover:bg-gray-50"
+                  aria-label="关闭"
+                >
+                  <XMarkIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="h-[calc(100%-57px)] overflow-auto p-4">
+              <pre className="h-full min-h-full overflow-auto rounded border border-gray-200 bg-gray-900 p-3 text-xs leading-relaxed text-gray-100 whitespace-pre-wrap">
+                {formatInnerRawJson(rawDrawerMessage)}
+              </pre>
+            </div>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 };
