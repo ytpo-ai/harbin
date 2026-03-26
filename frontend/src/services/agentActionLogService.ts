@@ -54,6 +54,10 @@ export interface AgentActionLogItem {
     sessionId?: string;
     agentSessionId?: string;
     meetingTitle?: string;
+    meetingId?: string;
+    planId?: string;
+    planTitle?: string;
+    environmentType?: 'internal_message' | 'meeting_chat' | 'orchestration_plan' | 'chat';
     error?: string;
     [key: string]: unknown;
   };

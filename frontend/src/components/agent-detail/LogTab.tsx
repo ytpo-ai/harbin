@@ -192,6 +192,7 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                           <span>{durationStr}</span>
                           <span>{group.actionCount} 个事件</span>
                         </div>
+                        <p className="mt-1 truncate text-xs text-slate-500">环境：{group.environmentLabel}</p>
                         <p className="mt-1.5 truncate text-xs text-slate-500">{group.lastActionSummary}</p>
                       </div>
 

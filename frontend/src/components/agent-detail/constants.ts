@@ -49,7 +49,10 @@ export const ACTION_SEMANTIC_MAP: Record<string, { label: string; color: string;
 export interface TaskGroup {
   groupKey: string;
   title: string;
+  contextId?: string;
   contextType: 'chat' | 'orchestration';
+  environmentType: 'internal_message' | 'meeting_chat' | 'orchestration_plan' | 'chat';
+  environmentLabel: string;
   finalStatus: LogStatus;
   startTime: string;
   endTime: string;

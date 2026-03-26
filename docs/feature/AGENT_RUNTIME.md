@@ -171,6 +171,7 @@
 - 状态钩子同步日志：`HookDispatcher` 在分发成功链路内同步调用 agents 应用内 `AgentActionLogService`，写入 `agent_action_logs`，并以 `sourceEventId=eventId` 做幂等。
 - 同步写入的工具事件会在 `details` 顶层透出 `toolId/toolName/params`，便于系统进程日志与任务维度日志直接检索。
 - 大 payload 防护：同步 legacy 前会对超大 `payload`（尤其 `tool.completed.payload.output`）做截断摘要，写入 `outputPreview/outputSize/outputTruncated`，避免请求体过大导致 `413`。
+- 日志查询阶段会按 `runId` 回查 `agent_runs` 元数据，补全 `taskTitle/meetingTitle/planId/planTitle/environmentType`，用于前端任务卡片“环境说明”展示。
 
 **Pipeline vs Dispatcher 职责区分**：
 - `HookPipelineService`：**同步拦截层**，在状态变更前执行，可修改行为（abort/inject/mutate）
