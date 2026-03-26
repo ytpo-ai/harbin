@@ -91,6 +91,7 @@ export interface MeetingListSidebarProps {
   onCreateClick: () => void;
   onSelectMeeting: (meeting: Meeting) => void;
   getMeetingTypeInfo: (type: MeetingType) => MeetingTypeInfo;
+  getMeetingDisplayTitle: (title?: string, description?: string) => string;
   getStatusBadge: (status: MeetingStatus) => React.ReactNode;
 }
 

@@ -229,6 +229,7 @@ const Meetings: React.FC = () => {
             }
           }}
           getMeetingTypeInfo={getMeetingTypeInfo}
+          getMeetingDisplayTitle={getMeetingDisplayTitle}
           getStatusBadge={getStatusBadge}
         />
       )}

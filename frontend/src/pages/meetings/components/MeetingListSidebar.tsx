@@ -11,6 +11,7 @@ const MeetingListSidebar: React.FC<MeetingListSidebarProps> = ({
   onCreateClick,
   onSelectMeeting,
   getMeetingTypeInfo,
+  getMeetingDisplayTitle,
   getStatusBadge,
 }) => {
   return (
@@ -66,7 +67,7 @@ const MeetingListSidebar: React.FC<MeetingListSidebarProps> = ({
               }`}
             >
               <div className="flex items-start justify-between mb-2">
-                <h3 className="font-medium text-gray-900 truncate">{meeting.title}</h3>
+                <h3 className="font-medium text-gray-900 truncate">{getMeetingDisplayTitle(meeting.title, meeting.description)}</h3>
                 {getStatusBadge(meeting.status)}
               </div>
               <div className="flex items-center text-sm text-gray-500 mb-2">
