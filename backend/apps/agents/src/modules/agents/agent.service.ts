@@ -177,11 +177,13 @@ export class AgentService {
     }
 
     if (hasRoleIdField || hasTierField) {
+      const shouldBypassRoleTierConstraint = hasTierField && !hasRoleIdField;
       normalizedUpdates.tier = this.resolveAgentTierOrThrow(
         hasTierField ? updates.tier : existingAgent.tier,
         targetRole.code,
         targetRole.tier,
         true,
+        !shouldBypassRoleTierConstraint,
       );
     }
 
@@ -520,6 +522,7 @@ export class AgentService {
     roleCode?: string,
     roleTier?: unknown,
     allowTierCoercion = false,
+    enforceRoleTierConstraint = true,
   ): AgentRoleTier {
     const normalizedRequestedTier = normalizeAgentRoleTier(requestedTier);
     if (requestedTier !== undefined && !normalizedRequestedTier) {
@@ -529,7 +532,7 @@ export class AgentService {
     const mappedTier = normalizeAgentRoleTier(roleTier) || getTierByAgentRoleCode(roleCode);
     const resolvedTier = normalizedRequestedTier || mappedTier;
 
-    if (normalizedRequestedTier && normalizedRequestedTier !== mappedTier) {
+    if (enforceRoleTierConstraint && normalizedRequestedTier && normalizedRequestedTier !== mappedTier) {
       if (allowTierCoercion) {
         this.logger.warn(
           `coerce tier for role ${String(roleCode || '').trim() || 'unknown'}: requested ${normalizedRequestedTier}, applied ${mappedTier}`,
