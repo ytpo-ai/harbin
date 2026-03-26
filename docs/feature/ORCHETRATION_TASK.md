@@ -33,9 +33,10 @@
 
 ### 2.2 前端模块
 
-路径：`frontend/src/components/orchestration/`、`frontend/src/pages/PlanDetail.tsx`、`frontend/src/services/orchestrationService.ts`
+路径：`frontend/src/components/orchestration/`、`frontend/src/pages/PlanDetail.tsx`、`frontend/src/pages/orchestration/`、`frontend/src/services/orchestrationService.ts`
 
 - 计划详情页支持任务编辑、重编排、run 历史、run 详情、取消运行。
+- 编排中心页已拆分为页面编排层 + hooks + 组件层（详见 `docs/guide/ORCHESTRATION_PAGE_SPLIT_REFACTOR_ARCHITECTURE.MD`）。
 - 通过 SSE 订阅计划生成和状态变化事件。
 
 ## 3. 数据模型与状态
