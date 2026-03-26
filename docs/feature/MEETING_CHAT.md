@@ -140,6 +140,16 @@ enum ParticipantRole {
 - 处于“已暂停回复”的消息支持撤回；撤回后消息会从会议消息流移除。
 - 若消息已产生回复（`metadata.relatedMessageId` 命中），则不可再暂停或撤回。
 
+#### 1.3.7 前端页面分层架构（Meetings Page Split）
+
+- `frontend/src/pages/Meetings.tsx` 保留为路由兼容层，仅做 `re-export`。
+- 会议页主实现迁移至 `frontend/src/pages/meetings/index.tsx`，作为页面编排入口。
+- 查询/写操作/实时订阅/输入辅助拆分为 hooks：
+  - `useMeetingQueries`、`useMeetingMutations`、`useMeetingSelection`、`useMeetingRealtime`
+  - `useMentionAutocomplete`、`usePhraseAutocomplete`、`useMessageHistory`
+- UI 按边界拆分为组件：会议列表、头部、状态菜单、参与者行、消息列表、输入框、摘要面板、操作侧栏、创建弹窗。
+- 状态菜单改为配置驱动渲染（按 `MeetingStatus` 映射动作），避免多分支重复 JSX。
+
 ### 1.4 API（backend/src/modules/meetings/）
 
 | 方法 | 路径 | 功能 |
@@ -193,6 +203,7 @@ enum ParticipantRole {
 | `SEED_MANUAL_TRIGGER_UNIFICATION_PLAN.md` | Seed 统一改为手动触发计划 |
 | `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
 | `MEETING_ASSISTANT_SUMMARY_EVENT_PLAN.md` | 会议总结改为会议助手事件驱动生成计划 |
+| `MEETINGS_PAGE_SPLIT_REFACTOR_PLAN.md` | Meetings 页面拆分重构计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -213,6 +224,7 @@ enum ParticipantRole {
 
 | `agent-action-logs-api.md` | Agent 行为日志查询/内部写入 API |
 | `MEETING_EXPLICIT_PHRASE_COMMANDS.md` | 会议显式短语命令语法与清单 |
+| `MEETINGS_PAGE_SPLIT_REFACTOR_ARCHITECTURE.MD` | Meetings 前端页面拆分后的模块职责与目录结构（guide） |
 
 ### API文档 (docs/api/)
 
@@ -243,7 +255,13 @@ enum ParticipantRole {
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Meetings.tsx` | 会议管理页面 |
+| `pages/Meetings.tsx` | 会议页面路由兼容层（re-export） |
+| `pages/meetings/index.tsx` | 会议页面编排层（状态组装与布局） |
+| `pages/meetings/hooks/useMeetingQueries.ts` | 会议查询与派生数据聚合 |
+| `pages/meetings/hooks/useMeetingMutations.ts` | 会议写操作与组合行为 |
+| `pages/meetings/hooks/useMeetingRealtime.ts` | WebSocket 实时事件订阅与分发 |
+| `pages/meetings/components/ChatInput.tsx` | 输入区（@mention / [phrase] / 历史导航） |
+| `pages/meetings/components/MeetingStatusActions.tsx` | 状态菜单（配置驱动） |
 | `services/meetingService.ts` | Meeting API 调用服务，包含类型定义 |
 
 ### Agent MCP 工具 (backend/apps/agents/src/)
