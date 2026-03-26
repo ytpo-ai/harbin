@@ -2,7 +2,7 @@ import React from 'react';
 import { Meeting, MeetingStatus, MeetingType } from '../../services/meetingService';
 import { MEETING_TYPES } from './constants';
 
-const STATUS_SUFFIX_PATTERN = /(?:[\s()\[\]【】\-:：]+)?(待开始|进行中|已暂停|已结束|已归档)$/;
+const STATUS_SUFFIX_PATTERN = /(?:[\s()\[\]{}【】（）\-:：]+)?(待开始|进行中|已暂停|已结束|已归档)(?:[\s)\]】）]+)?$/;
 const ONE_TO_ONE_TITLE_PATTERN = /^与\s*(.+?)\s*的1对1聊天$/;
 const ONE_TO_ONE_DESCRIPTION_PATTERN = /^与\s*Agent\s*(.+?)\s*的直接会话$/i;
 const FALLBACK_MEETING_TITLE = '未命名会议';

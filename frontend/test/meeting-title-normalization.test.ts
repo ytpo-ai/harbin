@@ -29,6 +29,11 @@ describe('meeting title normalization', () => {
     expect(getMeetingDisplayDescription('与  Kim-CTO 的1对1聊天', '与 Agent   Kim-CTO 的直接会话')).toBe('');
   });
 
+  it('handles mixed chinese-english spacing and punctuation status suffixes', () => {
+    expect(normalizeMeetingTitle(' 与   Kim CTO   的1对1聊天（进行中） ')).toBe('与 Kim CTO 的1对1聊天');
+    expect(getMeetingDisplayDescription('与 Kim CTO 的1对1聊天', ' 与 agent   Kim CTO 的直接会话 ')).toBe('');
+  });
+
   it('keeps non-duplicate descriptions', () => {
     expect(getMeetingDisplayDescription('项目周会', '讨论 Q2 里程碑')).toBe('讨论 Q2 里程碑');
   });
