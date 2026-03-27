@@ -272,16 +272,56 @@ export class OrchestrationContextService {
     }
 
     const domain = String(input.planDomainType || 'general').trim().toLowerCase();
+    const isReviewContractStep = this.isReviewContractStepTask(
+      input.taskTitle,
+      input.taskDescription,
+      input.planGoal,
+      input.step,
+    );
 
     if (domain === 'research') {
       return 'research';
     }
 
     if (domain === 'development') {
+      if (isReviewContractStep) {
+        return 'development.review';
+      }
       return 'development.exec';
     }
 
     return 'general';
+  }
+
+  private isReviewContractStepTask(
+    title: string,
+    description: string,
+    planGoal?: string,
+    step?: number,
+  ): boolean {
+    const taskText = `${title} ${description}`.toLowerCase();
+    const goalText = String(planGoal || '').toLowerCase();
+    const flowDeclaresStep5Review = goalText.includes('step5') && goalText.includes('实现评估');
+    if (!flowDeclaresStep5Review) {
+      return false;
+    }
+
+    const hasStep5Hint =
+      /step\s*5/.test(taskText)
+      || /步骤\s*5/.test(taskText)
+      || (typeof step === 'number' && step >= 4);
+    if (!hasStep5Hint) {
+      return false;
+    }
+
+    return (
+      taskText.includes('实现评估')
+      || taskText.includes('评估结论')
+      || taskText.includes('通过/需修改')
+      || taskText.includes('需修改')
+      || taskText.includes('review')
+      || taskText.includes('评审')
+    );
   }
 
   buildPostTaskContext(input: {

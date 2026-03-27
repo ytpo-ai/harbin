@@ -24,4 +24,16 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
 
     expect(runtimeTaskType).toBe('development.plan');
   });
+
+  it('infers development.review for step5 review contract without explicit taskType', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'development',
+      planGoal: '### step5: 实现评估\n- 输出契约: 评估结论（通过/需修改 + 具体意见）',
+      step: 4,
+      taskTitle: 'step5 实现评估（锚定 req-1）',
+      taskDescription: '输出评估结论（通过/需修改 + 具体意见）',
+    });
+
+    expect(runtimeTaskType).toBe('development.review');
+  });
 });
