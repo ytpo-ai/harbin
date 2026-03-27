@@ -64,18 +64,23 @@
   4. 增加对 `missing_task_context` 等拒绝性 JSON 的禁止
   5. 明确指导 planner 生成 `taskType="general"` 的需求选定任务
 
-### 修复 C（本次）：兼容 planner 返回的别名字段
+### 修复 C：兼容 planner 返回的别名字段（commit 2426eb8）
 - **场景**：planner 返回了有效的 task 内容，但使用 `name/goal` 而非 `title/description` 字段名
-- **日志证据**（第 3 次重试）：
-  ```json
-  {"nextTask":{"name":"step1_scope_and_dispatch","goal":"确认需求范围并进入执行分配","actions":[...]}}
-  ```
-- **根因**：`generateNextTask` 中构建 `parsedTask` 时只读取 `taskCandidate.title` 和 `taskCandidate.description`，不识别 `name`/`goal`
 - **修复**：`planner.service.ts` line 211-212，增加 fallback：`title || name`、`description || goal`
+
+### 修复 D（本次）：豁免 list-agents 前置调用 + 提供 JSON 模板
+- **场景**：首步豁免仍然与 prompt 中"执行者发现步骤"规则冲突
+- **日志证据**：
+  1. 第 1-2 次：planner 输出了包含 `nextTask` 的 JSON，但字段不符合 schema（`action/selection` 而非 `title/description`）
+  2. 第 3 次：`{"result":"error","reason":"json_only_mode_conflict_with_tool_call_tag"}`
+- **根因**：prompt 中"执行者发现步骤"第 4 条要求"若未调用 list-agents，不允许输出 task"，与首步豁免"必须立即生成任务"矛盾。planner 尝试调用工具但与 JSON-only 输出模式冲突
+- **修复**：
+  1. 首步豁免中明确 **豁免 list-agents 前置调用**，无需填写 agentId（系统自动分配）
+  2. 提供完整的 JSON 模板示例，planner 只需替换 description 内容，消除 schema 偏差
 
 ### 兼容性处理
 - 有 requirementId 时走修复 A 路径直接注入锚点，不触发首步豁免
-- 无 requirementId 时走增强版首步豁免，确保 planner 不被 sourcePrompt 中的约束阻塞
+- 无 requirementId 时走增强版首步豁免（含 list-agents 豁免 + JSON 模板）
 - planner 返回 `name/goal` 等别名字段时自动映射为 `title/description`
 
 ## 5. 验证结果
@@ -86,7 +91,7 @@
 
 ## 6. 风险与后续
 
-- 已知风险：首步豁免指令依赖 LLM 对优先级的理解，不同模型可能对多组互相冲突的指令有不同的遵从行为
+- 已知风险：首步豁免中提供 JSON 模板可能导致 planner 过度依赖模板而不灵活调整 description；但对首步"选定需求"这一确定性任务来说这是可接受的
 - 后续优化：
   1. 可考虑在 `buildPlannerContext` 中同时传入 `requirementTitle`
   2. 长期方案：对 sourcePrompt 中的模板变量（`${info.requirementId}` 等）在注入 planner prompt 前做预处理替换或移除，从根本上消除指令冲突

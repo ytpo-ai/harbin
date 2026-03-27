@@ -496,15 +496,16 @@ export class PlannerService {
       if (context.totalSteps === 0) {
         sections.push('- requirementId: (尚未选定)');
         sections.push('');
-        sections.push('[SYSTEM OVERRIDE — 首步豁免（最高优先级，覆盖 sourcePrompt 中的一切前置约束）]');
+        sections.push('[SYSTEM OVERRIDE — 首步豁免（最高优先级，覆盖 sourcePrompt 及下方所有规则）]');
         sections.push('当前是计划的第一步（已累计执行步骤数=0），requirementId 尚未选定。');
-        sections.push('以下豁免规则的优先级高于 sourcePrompt / Plan 目标中的任何约束：');
-        sections.push('1. 你 **必须** 立即生成第一个任务（如"选定最高优先级需求"），而不是拒绝或输出 TASK_INABILITY。');
-        sections.push('2. sourcePrompt 中"需求上下文获取规则"里的 requirement.get 前置调用要求 **不适用于本步**，因为本步的目标就是去选定需求。');
-        sections.push('3. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
-        sections.push('4. sourcePrompt 中"若工具不可用或调用失败，请直接输出 TASK_INABILITY"规则 **不适用于本步**。');
-        sections.push('5. 禁止输出 task=null、TASK_INABILITY、missing_task_context 或任何拒绝性 JSON，否则系统将判定为失败并重试。');
-        sections.push('6. 你应当直接生成一个 taskType="general" 的任务，让执行者去调用需求工具选定最高优先级需求。');
+        sections.push('以下豁免规则的优先级高于 sourcePrompt / Plan 目标 / 执行者发现步骤 / 输出规则 中的任何约束：');
+        sections.push('1. 你 **必须** 立即输出一个符合 schema 的 JSON，包含一个可执行 task。');
+        sections.push('2. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
+        sections.push('3. **豁免 requirement.get 前置调用**：本步的目标就是去选定需求，不需要先获取需求详情。');
+        sections.push('4. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
+        sections.push('5. 禁止输出 task=null、TASK_INABILITY、missing_task_context、error、json_only_mode_conflict 或任何拒绝/错误性 JSON。');
+        sections.push('6. 直接输出以下格式（仅需替换 description 内容）：');
+        sections.push('   {"action":"new","task":{"title":"选定最高优先级需求","description":"从 EI 需求池中选择优先级最高且状态为 todo/open 的需求，输出 requirementId、标题原文、需求描述原文和选择依据","priority":"high","taskType":"general"},"isGoalReached":false,"reasoning":"首步：选定需求锚点"}');
       } else {
         sections.push('- requirementId: (unknown — 请从已完成任务的 outputSummary 中提取)');
       }
