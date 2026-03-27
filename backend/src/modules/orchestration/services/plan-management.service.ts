@@ -324,6 +324,24 @@ export class PlanManagementService {
       throw new BadRequestException('Planning already completed');
     }
 
+    // User-initiated retry: reset consecutive failures so the next attempt is not
+    // immediately blocked by checkTerminalConditions / maxRetries guard.
+    const currentState = plan.generationState;
+    if (currentState && Number(currentState.consecutiveFailures || 0) > 0) {
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              'generationState.consecutiveFailures': 0,
+              'generationState.lastError': undefined,
+              'generationState.currentPhase': 'idle',
+            },
+          },
+        )
+        .exec();
+    }
+
     setTimeout(() => {
       if (this.isStepDispatcherEnabled()) {
         this.stepDispatcher
@@ -343,6 +361,65 @@ export class PlanManagementService {
     }, 0);
 
     return { accepted: true };
+  }
+
+  async stopGeneration(
+    planId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; planId: string; stopped: boolean; alreadyStopped?: boolean }> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    if ((plan.generationMode || 'batch') !== 'incremental') {
+      throw new BadRequestException('Only incremental plans support stop-generation');
+    }
+
+    const stopResult = await this.stepDispatcher.stopGeneration(planId);
+    const normalizedReason = String(reason || '').trim() || 'manually stopped by user';
+
+    if (stopResult.stopped) {
+      await this.orchestrationPlanModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              status: 'draft',
+              'generationState.isComplete': true,
+              'generationState.currentPhase': 'idle',
+              'generationState.currentTaskId': undefined,
+              'generationState.lastDecision': 'stop',
+              'generationState.lastError': undefined,
+              'metadata.planningStoppedAt': new Date().toISOString(),
+              'metadata.planningStoppedReason': normalizedReason,
+            },
+          },
+        )
+        .exec();
+
+      await this.planStatsService.setPlanStatus(planId, 'draft');
+      await this.planStatsService.setPlanSessionStatus(planId, 'draft');
+      this.planEventStreamService.emitPlanStreamEvent(planId, 'plan.status.changed', {
+        planId,
+        status: 'draft',
+        phase: 'generation_stopped',
+        reason: normalizedReason,
+      });
+
+      return {
+        success: true,
+        planId,
+        stopped: true,
+      };
+    }
+
+    return {
+      success: true,
+      planId,
+      stopped: false,
+      alreadyStopped: stopResult.alreadyStopped,
+    };
   }
 
   async replanPlan(planId: string, dto: ReplanPlanDto): Promise<any> {
