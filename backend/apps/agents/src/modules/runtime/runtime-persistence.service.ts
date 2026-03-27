@@ -703,7 +703,15 @@ export class RuntimePersistenceService {
     for (const message of messages) {
       mergedMessageMap.set(message.id, message);
     }
+    // Deduplicate supplemental system messages by content across runs.
+    // Identical system prompts from different runs are collapsed to avoid session view bloat.
+    const seenSystemContent = new Set<string>();
     for (const message of supplementalMessages) {
+      if (message.role === 'system') {
+        const contentKey = (message.content || '').trim();
+        if (seenSystemContent.has(contentKey)) continue;
+        seenSystemContent.add(contentKey);
+      }
       mergedMessageMap.set(message.id, message);
     }
     const mergedMessages = Array.from(mergedMessageMap.values()).sort((a, b) => {
@@ -741,27 +749,29 @@ export class RuntimePersistenceService {
       timestamp: message.updatedAt || message.createdAt || new Date(),
     }));
 
-    const existingSystemFingerprint = new Set(
+    // Deduplicate system messages by content (not runId::content) to prevent
+    // identical system prompts from appearing multiple times across runs.
+    const existingSystemContentFingerprint = new Set(
       projectedMessages
         .filter((message) => message.role === 'system')
-        .map((message) => `${message.runId || 'run:unknown'}::${message.content}`),
+        .map((message) => (message.content || '').trim()),
     );
 
-    for (const runId of runIds) {
-      const initialSystemMessages = runInitialSystemMessagesMap.get(runId) || [];
-      if (!initialSystemMessages.length) {
-        continue;
-      }
+    // Only inject initialSystemMessages from the latest run to avoid duplicating
+    // system context that is regenerated fresh for each run.
+    const latestRunId = runIds.length > 0 ? runIds[runIds.length - 1] : undefined;
+    if (latestRunId) {
+      const initialSystemMessages = runInitialSystemMessagesMap.get(latestRunId) || [];
       initialSystemMessages.forEach((message, index) => {
-        const fingerprint = `${runId}::${message.content}`;
-        if (existingSystemFingerprint.has(fingerprint)) {
+        const contentFingerprint = (message.content || '').trim();
+        if (!contentFingerprint || existingSystemContentFingerprint.has(contentFingerprint)) {
           return;
         }
-        existingSystemFingerprint.add(fingerprint);
+        existingSystemContentFingerprint.add(contentFingerprint);
         projectedMessages.push({
-          id: `virtual-system-${runId}-${index + 1}`,
-          runId,
-          taskId: runTaskMap.get(runId),
+          id: `virtual-system-${latestRunId}-${index + 1}`,
+          runId: latestRunId,
+          taskId: runTaskMap.get(latestRunId),
           role: 'system',
           sequence: index + 1,
           content: message.content,
@@ -770,7 +780,7 @@ export class RuntimePersistenceService {
             ...(message.metadata || {}),
             source: 'runtime.run.metadata.initialSystemMessages',
           },
-          timestamp: runStartedAtMap.get(runId) || new Date(),
+          timestamp: runStartedAtMap.get(latestRunId) || new Date(),
         });
       });
     }
