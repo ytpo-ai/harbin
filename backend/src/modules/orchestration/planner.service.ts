@@ -179,8 +179,15 @@ export class PlannerService {
         : {}),
     });
 
+    this.logger.log(
+      `[planner_raw_response] planId=${planId} step=${context.totalSteps} responseLen=${(response || '').length} preview=${JSON.stringify((response || '').slice(0, 500))}`,
+    );
+
     const parsed = this.tryParseJson(response);
     if (!parsed) {
+      this.logger.warn(
+        `[planner_parse_fail] planId=${planId} step=${context.totalSteps} response=${JSON.stringify((response || '').slice(0, 800))}`,
+      );
       return {
         isGoalReached: false,
         reasoning: 'Failed to parse planner response',
@@ -484,7 +491,11 @@ export class PlannerService {
       sections.push(`- requirementTitle: ${requirementAnchor.requirementTitle}`);
     }
     if (!requirementAnchor.requirementId) {
-      sections.push('- requirementId: (unknown)');
+      if (context.totalSteps === 0) {
+        sections.push('- requirementId: (尚未选定，本轮任务即为选定需求，无需预先持有 requirementId)');
+      } else {
+        sections.push('- requirementId: (unknown — 请从已完成任务的 outputSummary 中提取)');
+      }
     }
     sections.push('- 若 Plan 目标中出现 `${...}` 形式占位符，请忽略占位符字面值，以本节锚点为准。');
     sections.push('');
