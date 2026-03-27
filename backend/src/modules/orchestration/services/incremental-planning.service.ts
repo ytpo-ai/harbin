@@ -548,12 +548,15 @@ export class IncrementalPlanningService {
         error: String(item.result?.error || 'Unknown error'),
       }));
 
+    const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
+
     return {
       planGoal: sourcePrompt,
       completedTasks,
       failedTasks,
       totalSteps: tasks.length,
       lastError: plan?.generationState?.lastError,
+      requirementId,
     };
   }
 

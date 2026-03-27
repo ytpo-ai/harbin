@@ -46,6 +46,8 @@ export interface IncrementalPlannerContext {
   }>;
   totalSteps: number;
   lastError?: string;
+  /** plan.metadata.requirementId — 已锚定的需求 ID，replan 时从 metadata 透传 */
+  requirementId?: string;
 }
 
 export interface GenerateNextTaskResult {
@@ -655,6 +657,10 @@ export class PlannerService {
     requirementId?: string;
     requirementTitle?: string;
   } {
+    // 优先使用 plan.metadata 中已锚定的 requirementId（replan 场景下的唯一可靠来源）
+    let requirementId: string | undefined = context.requirementId;
+    let requirementTitle: string | undefined;
+
     const sources = [
       context.planGoal,
       ...context.completedTasks.map((item) => item.outputSummary),
@@ -669,9 +675,6 @@ export class PlannerService {
       /"标题原文"\s*:\s*"([^"\n]+)"/i,
       /标题(?:原文)?\s*[=:：]\s*([^\n]+)/i,
     ];
-
-    let requirementId: string | undefined;
-    let requirementTitle: string | undefined;
 
     for (const source of sources) {
       if (!requirementId) {
