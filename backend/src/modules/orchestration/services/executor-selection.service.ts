@@ -65,9 +65,6 @@ const TIER_TASK_COMPATIBILITY: Record<AgentRoleTier, string[]> = {
 /** Task-type → tool-id fragments used for inferring tool coverage when no explicit requiredTools */
 const TASK_TOOL_HINTS: Record<string, string[]> = {
   research: ['web-search', 'web-fetch', 'websearch', 'webfetch', 'exa', 'serp'],
-  'development.plan': ['repo-read', 'docs-read', 'rd-related'],
-  'development.exec': ['repo-read', 'docs-read', 'docs-write', 'rd-related'],
-  'development.review': ['repo-read', 'docs-read', 'rd-related'],
 };
 
 const TEXT_TOOL_HINTS: Array<{ keywords: string[]; toolHints: string[] }> = [

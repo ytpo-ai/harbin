@@ -2,9 +2,9 @@
 
 ## 流程原则
 
-- 保持轻量可执行，优先跑通。
 - **先采集事实，再做判断**——任何输出前必须先调用工具读取相关文档或代码。
 - **数据锚定规则（强制）**：step0 选定的 requirementId 是本次编排的唯一锚点。后续所有 step 的 task.description 必须在开头显式引用该 requirementId 和标题原文，禁止替换为其他需求。
+- **需求状态更新（强制）**：任务执行完成必须通过工具调用更新 requirement 状态。
 
 ## 执行引擎约束（Planner 必须遵守）
 
@@ -14,6 +14,7 @@
 3. 所有 step 的 task.description 中，禁止出现以下内部工具引用关键词：
    `repo-writer`、`repo-read`、`builtin.sys-mg`、`save-template`、`save-prompt-template`
    如需描述代码操作，使用"读取代码"、"修改代码"、"提交变更"等自然语言表述
+4. Planner 在分配（生成）任务前必须使用工具修改需求状态
 
 ## 步骤定义（严格按序执行）
 
@@ -31,19 +32,19 @@
 ### step1: 确认需求范围
 - **执行角色**: 与 step0 同一 agent（Kim-CTO）
 - **输入**: step0 输出的 requirementId + 标题 + **需求描述原文**
-- **动作**: 以需求描述原文为唯一事实来源，确认功能范围、验收标准；如无补充，直接复述需求描述原文
-- **输出契约**: 必须包含需求描述原文，且明确列出本次要实现的功能点清单
-- **约束**: 禁止改变 requirementId；禁止将需求替换为其他条目；**禁止对需求描述做泛化、扩展或重新定义——如果需求说"在前端页面将需求设置为 done"，输出就必须围绕这一具体功能**
+- **动作**: 以需求描述原文为唯一事实来源，直接复述需求描述原文
+- **输出契约**: 必须包含需求描述原文
+- **约束**: 禁止改变 requirementId；禁止将需求替换为其他条目
 
 ### step2: 制定技术开发计划
-- **执行角色**: 技术专家（从 list-agents 中查找能力标签包含"技术架构"或"系统设计"的 agent）
+- **执行角色**: 技术专家（从 list-agents 中查找能力标签包含"development_plan"及"opencode"的 agent）
 - **输入**: 读取需求详情和相关代码/文档；明确业务边界、验收标准、最小变更范围
 - **动作**: 基于需求规格设计实现方案，拆解开发子任务，评估技术风险
 - **输出契约**: 结构化开发计划（含实现步骤、涉及文件/接口清单、测试要点）
 - **约束**: taskType 设为 development；输出中避免引用具体内部工具名称
 
 ### step3: 执行开发
-- **执行角色**: 全栈开发（选择当前状态空闲的）
+- **执行角色**: 全栈开发（选择当前状态空闲的 "development_exec"及"opencode" agent）
 - **输入**: step2 输出的开发计划
 - **动作**: 按计划实施代码变更并提交
 - **输出契约**: 代码 commit 信息（含 commit hash、变更文件列表、变更摘要）
@@ -76,15 +77,20 @@
 
 ```text
 需求状态更新规则（强制）:
-- 你必须通过工具调用完成需求状态回写，不允许只输出文本结论。
+- Planner必须通过工具builtin.sys-mg.mcp.requirement.update-status调用完成需求状态回写，不允许只输出文本结论。
+- 每个步骤完成前都必须立即执行一次状态更新。
+- 状态更新时机：
+  1. step0 任务生成后，状态更新为 `assigned`（Assigned，需求分配给 Agent）。
+  2. step0/step1/step2 生成后，状态更新为 `in_progress`（In Progress）。
+  3. step4 生成后，状态更新为 `review`（Review）。
 - 工具ID: builtin.sys-mg.mcp.requirement.update-status
 - 调用参数必须包含：
   - requirementId: <当前需求ID>
   - status: <todo|assigned|in_progress|review|done|blocked>
   - changedByType: agent
   - changedByName: orchestration-planner-agent
-  - note: <状态变更原因>
-- 完成后必须输出证明块（单独一行）：
+  - note: `Kim-CTO 执行  <任务标题>`
+- 执行工具后必须输出证明块（单独一行）：
   REQUIREMENT_STATUS_UPDATE_PROOF: {"toolId":"builtin.sys-mg.mcp.requirement.update-status","requirementId":"<当前需求ID>","status":"<目标状态>"}
 - 若工具不可用或调用失败，必须输出：TASK_INABILITY: <reason>
 ```
