@@ -8,9 +8,9 @@
  *   ts-node scripts/maintenance/maintenance-runner.ts --task=restore --from=./backups/mydb_20260322 --drop --confirm=RESTORE_DATABASE
  */
 
-type TaskName = 'cleanup-runtime' | 'cleanup-redis' | 'backup' | 'restore';
+type TaskName = 'cleanup-runtime' | 'cleanup-redis' | 'cleanup-ended-meetings' | 'backup' | 'restore';
 
-const VALID_TASKS: TaskName[] = ['cleanup-runtime', 'cleanup-redis', 'backup', 'restore'];
+const VALID_TASKS: TaskName[] = ['cleanup-runtime', 'cleanup-redis', 'cleanup-ended-meetings', 'backup', 'restore'];
 
 function extractTask(argv: string[]): { task: TaskName; passthrough: string[] } {
   const taskArg = argv.find((arg) => arg.startsWith('--task='));
@@ -46,6 +46,11 @@ async function main(): Promise<void> {
     }
     case 'cleanup-redis': {
       const { run } = require('./cleanup-redis') as { run: (argv?: string[]) => Promise<void> };
+      await run(passthrough);
+      break;
+    }
+    case 'cleanup-ended-meetings': {
+      const { run } = require('./cleanup-ended-meetings') as { run: (argv?: string[]) => Promise<void> };
       await run(passthrough);
       break;
     }

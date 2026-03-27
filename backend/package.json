@@ -26,6 +26,7 @@
     "maintain": "ts-node -r tsconfig-paths/register scripts/maintenance/maintenance-runner.ts",
     "maintain:cleanup-runtime": "ts-node -r tsconfig-paths/register scripts/maintenance/maintenance-runner.ts --task=cleanup-runtime",
     "maintain:cleanup-redis": "npm run maintain -- --task=cleanup-redis",
+    "maintain:cleanup-ended-meetings": "npm run maintain -- --task=cleanup-ended-meetings",
     "maintain:backup": "npm run maintain -- --task=backup",
     "maintain:restore": "npm run maintain -- --task=restore",
     "cleanup:agents-runtime": "ts-node -r tsconfig-paths/register scripts/maintenance/maintenance-runner.ts --task=cleanup-runtime",
