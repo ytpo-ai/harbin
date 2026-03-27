@@ -223,7 +223,10 @@ export class OrchestrationStepDispatcherService {
     }
 
     if (!nextTaskResult.task?.title || !nextTaskResult.task?.description) {
-      const nextFailures = this.bumpFailureCounters(mergedState, 'Planner returned empty task definition');
+      const nextFailures = this.bumpFailureCounters(
+        mergedState,
+        this.buildEmptyTaskReason(nextTaskResult.reasoning),
+      );
       await this.updateGenerationStateIfExpected(planId, mergedState, {
         ...nextFailures,
         currentPhase: 'idle',
@@ -594,6 +597,14 @@ export class OrchestrationStepDispatcherService {
       totalFailures: Number(state.totalFailures || 0) + 1,
       lastError: error,
     };
+  }
+
+  private buildEmptyTaskReason(reasoning?: string): string {
+    const normalized = String(reasoning || '').trim();
+    if (!normalized) {
+      return 'Planner returned empty task definition';
+    }
+    return `Planner returned empty task definition: ${normalized.slice(0, 200)}`;
   }
 
   private async autoAdvance(planId: string): Promise<void> {

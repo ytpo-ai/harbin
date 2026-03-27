@@ -206,7 +206,7 @@ export class IncrementalPlanningService {
       totalRetries += 1;
       consecutiveFailures += 1;
       totalFailures += 1;
-      const lastError = 'Planner returned empty task definition';
+      const lastError = this.buildEmptyTaskReason(nextTaskResult.reasoning);
       await this.updateGenerationState(planId, {
         currentStep,
         totalGenerated,
@@ -909,6 +909,14 @@ export class IncrementalPlanningService {
         },
       )
       .exec();
+  }
+
+  private buildEmptyTaskReason(reasoning?: string): string {
+    const normalized = String(reasoning || '').trim();
+    if (!normalized) {
+      return 'Planner returned empty task definition';
+    }
+    return `Planner returned empty task definition: ${normalized.slice(0, 200)}`;
   }
 
   resolveGenerationConfig(config?: OrchestrationGenerationConfig): OrchestrationGenerationConfig {

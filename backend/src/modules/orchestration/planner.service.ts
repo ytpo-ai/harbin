@@ -55,7 +55,7 @@ export interface GenerateNextTaskResult {
     title: string;
     description: string;
     priority: 'low' | 'medium' | 'high' | 'urgent';
-    agentId: string;
+    agentId?: string;
     taskType: 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general';
     requiredTools?: string[];
   };
@@ -187,33 +187,35 @@ export class PlannerService {
       };
     }
 
-    const parsedAgentId = String(parsed?.task?.agentId || '').trim();
+    const taskCandidate = this.resolvePlannerTaskCandidate(parsed);
+    const parsedAgentId = String(taskCandidate?.agentId || '').trim();
     const parsedAction = this.normalizePlannerAction(parsed?.action);
     const parsedRedesignTaskId = String(parsed?.redesignTaskId || '').trim() || undefined;
-    const parsedRequiredTools = Array.isArray(parsed?.task?.requiredTools)
-      ? parsed.task.requiredTools
+    const parsedRequiredTools = Array.isArray(taskCandidate?.requiredTools)
+      ? taskCandidate.requiredTools
         .map((item: unknown) => String(item || '').trim())
         .filter(Boolean)
       : undefined;
 
-    const parsedTask = parsed?.task && !Array.isArray(parsed.task)
+    const parsedTask = taskCandidate
       ? {
-          title: String(parsed.task.title || '').trim().slice(0, MAX_TITLE_LENGTH),
-          description: String(parsed.task.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
-          priority: this.normalizePriority(parsed.task.priority),
-          agentId: parsedAgentId,
-          taskType: this.normalizeRuntimeTaskType(parsed.task.taskType),
+          title: String(taskCandidate.title || '').trim().slice(0, MAX_TITLE_LENGTH),
+          description: String(taskCandidate.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
+          priority: this.normalizePriority(taskCandidate.priority),
+          agentId: parsedAgentId || undefined,
+          taskType: this.normalizeRuntimeTaskType(taskCandidate.taskType),
           requiredTools: parsedRequiredTools,
         }
       : undefined;
-    const validatedTask = parsedTask && parsedTask.agentId ? parsedTask : undefined;
+    const validatedTask = parsedTask && parsedTask.title && parsedTask.description ? parsedTask : undefined;
+    const normalizedReasoning = this.resolvePlannerReasoning(parsed, validatedTask);
 
     return {
       action: parsedAction,
       redesignTaskId: parsedAction === 'redesign' ? parsedRedesignTaskId : undefined,
       task: validatedTask,
       isGoalReached: Boolean(parsed.isGoalReached),
-      reasoning: String(parsed.reasoning || '').trim() || (!validatedTask ? 'Planner did not provide a valid agentId' : ''),
+      reasoning: normalizedReasoning,
       costTokens: Number.isFinite(parsed.costTokens) ? Number(parsed.costTokens) : undefined,
     };
   }
@@ -459,6 +461,7 @@ export class PlannerService {
 
   private buildIncrementalPlannerPrompt(context: IncrementalPlannerContext): string {
     const sections: string[] = [];
+    const requirementAnchor = this.extractRequirementAnchor(context);
 
     // ── 最高优先级：输出格式强制约束（放在最前面，压制角色 prompt 影响） ──
     sections.push('[SYSTEM OVERRIDE] 你当前处于 **Planner JSON-only 模式**。');
@@ -472,6 +475,18 @@ export class PlannerService {
 
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
     sections.push('请确保每一步都可验证、可执行、可被单个执行者独立完成。');
+    sections.push('');
+    sections.push('## 上下文锚点（高优先级）');
+    if (requirementAnchor.requirementId) {
+      sections.push(`- requirementId: ${requirementAnchor.requirementId}`);
+    }
+    if (requirementAnchor.requirementTitle) {
+      sections.push(`- requirementTitle: ${requirementAnchor.requirementTitle}`);
+    }
+    if (!requirementAnchor.requirementId) {
+      sections.push('- requirementId: (unknown)');
+    }
+    sections.push('- 若 Plan 目标中出现 `${...}` 形式占位符，请忽略占位符字面值，以本节锚点为准。');
     sections.push('');
     sections.push('## Plan 目标（sourcePrompt 原文）');
     sections.push(context.planGoal);
@@ -582,6 +597,92 @@ export class PlannerService {
   private normalizePlannerAction(input: unknown): 'new' | 'redesign' {
     const val = String(input || '').trim().toLowerCase();
     return val === 'redesign' ? 'redesign' : 'new';
+  }
+
+  private resolvePlannerTaskCandidate(parsed: any): Record<string, any> | null {
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    if (parsed.task && typeof parsed.task === 'object' && !Array.isArray(parsed.task)) {
+      return parsed.task as Record<string, any>;
+    }
+
+    if (parsed.nextTask && typeof parsed.nextTask === 'object' && !Array.isArray(parsed.nextTask)) {
+      return parsed.nextTask as Record<string, any>;
+    }
+
+    return null;
+  }
+
+  private resolvePlannerReasoning(parsed: any, validatedTask?: GenerateNextTaskResult['task']): string {
+    const reasoningCandidates = [
+      parsed?.reasoning,
+      parsed?.reason,
+      parsed?.message,
+      typeof parsed?.result === 'string' ? parsed.result : undefined,
+      !validatedTask ? 'Planner did not provide a valid task payload' : undefined,
+    ];
+
+    for (const candidate of reasoningCandidates) {
+      const normalized = String(candidate || '').trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    return '';
+  }
+
+  private extractRequirementAnchor(context: IncrementalPlannerContext): {
+    requirementId?: string;
+    requirementTitle?: string;
+  } {
+    const sources = [
+      context.planGoal,
+      ...context.completedTasks.map((item) => item.outputSummary),
+      ...context.failedTasks.map((item) => item.error),
+    ].filter(Boolean);
+
+    const requirementIdPatterns = [
+      /"requirementId"\s*:\s*"([^"\n]+)"/i,
+      /requirementId\s*[=:：]\s*([a-zA-Z0-9._:-]+)/i,
+    ];
+    const requirementTitlePatterns = [
+      /"标题原文"\s*:\s*"([^"\n]+)"/i,
+      /标题(?:原文)?\s*[=:：]\s*([^\n]+)/i,
+    ];
+
+    let requirementId: string | undefined;
+    let requirementTitle: string | undefined;
+
+    for (const source of sources) {
+      if (!requirementId) {
+        for (const pattern of requirementIdPatterns) {
+          const matched = source.match(pattern)?.[1]?.trim();
+          if (matched) {
+            requirementId = matched;
+            break;
+          }
+        }
+      }
+
+      if (!requirementTitle) {
+        for (const pattern of requirementTitlePatterns) {
+          const matched = source.match(pattern)?.[1]?.trim();
+          if (matched) {
+            requirementTitle = matched;
+            break;
+          }
+        }
+      }
+
+      if (requirementId && requirementTitle) {
+        break;
+      }
+    }
+
+    return { requirementId, requirementTitle };
   }
 
   private normalizeRuntimeTaskType(
