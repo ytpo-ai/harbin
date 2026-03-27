@@ -110,12 +110,11 @@ export class SceneOptimizationService {
     return [
       {
         id: 'development-plan-requirement-id-backfill',
-        description: 'Backfill plan.metadata.requirementId from development.plan task output',
+        description: 'Backfill plan.metadata.requirementId from the first completed task output in development plans',
         match: (context) => {
           const planDomainType = String(context.planDomainType || '').trim().toLowerCase();
-          const runtimeTaskType = String(context.runtimeTaskType || '').trim().toLowerCase();
           const taskStatus = String(context.taskStatus || '').trim().toLowerCase();
-          return planDomainType === 'development' && runtimeTaskType === 'development.plan' && taskStatus === 'completed';
+          return planDomainType === 'development' && taskStatus === 'completed';
         },
         apply: async (context) => this.tryBackfillRequirementId(context),
       },

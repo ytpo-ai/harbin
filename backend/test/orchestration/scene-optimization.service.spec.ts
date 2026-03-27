@@ -37,6 +37,25 @@ describe('SceneOptimizationService', () => {
     );
   });
 
+  it('applies requirementId backfill for general-type step1 task in development plan', async () => {
+    const { service, planModel } = createService();
+
+    const result = await service.applyPostExecuteOptimizations({
+      planId: 'plan-1',
+      planDomainType: 'development',
+      taskId: 'task-1',
+      runtimeTaskType: 'general',
+      taskStatus: 'completed',
+      taskOutput: 'requirementId: req-1774625464365-82z8ro\n标题原文: 计划详情页-停止执行加图标',
+    });
+
+    expect(result.appliedRuleIds).toContain('development-plan-requirement-id-backfill');
+    expect(planModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'plan-1' },
+      { $set: { 'metadata.requirementId': 'req-1774625464365-82z8ro' } },
+    );
+  });
+
   it('does not apply optimization when scene does not match', async () => {
     const { service, planModel } = createService();
 
