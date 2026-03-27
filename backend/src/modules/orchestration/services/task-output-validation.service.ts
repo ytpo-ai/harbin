@@ -45,32 +45,6 @@ export class TaskOutputValidationService {
     ].join('\n');
   }
 
-  extractEmailSendProof(output: string): { valid: boolean; recipient?: string; provider?: string; messageId?: string } {
-    const text = output || '';
-    const markerMatch = text.match(/EMAIL_SEND_PROOF\s*:\s*(\{[\s\S]*?\})/i);
-    if (markerMatch?.[1]) {
-      try {
-        const parsed = JSON.parse(markerMatch[1]);
-        const recipient = String(parsed.recipient || '');
-        const provider = String(parsed.provider || '');
-        const messageId = String(parsed.messageId || '');
-        if (recipient.includes('@') && provider && messageId) {
-          return { valid: true, recipient, provider, messageId };
-        }
-      } catch {
-        // ignore and fallback to heuristic
-      }
-    }
-
-    const hasRecipient = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/.test(text);
-    const hasProvider = /gmail|smtp|mailgun|ses|sendgrid|outlook/i.test(text);
-    const hasMessageId = /message[\s_-]?id\s*[:=]/i.test(text) || /queued\s+as\s+/i.test(text);
-
-    return {
-      valid: hasRecipient && hasProvider && hasMessageId,
-    };
-  }
-
   validateCodeExecutionProof(
     runtimeTaskType: string | undefined,
     output: string,

@@ -37,7 +37,6 @@ describe('PlannerService incremental redesign', () => {
         description: 'Reassign to agent with web tools',
         priority: 'high',
         agentId: 'agent-research-1',
-        taskType: 'research',
         requiredTools: ['web-search', 'web-fetch'],
       },
       isGoalReached: false,
@@ -51,7 +50,6 @@ describe('PlannerService incremental redesign', () => {
     expect(result.action).toBe('redesign');
     expect(result.redesignTaskId).toBe('task-failed-1');
     expect(result.task?.agentId).toBe('agent-research-1');
-    expect(result.task?.taskType).toBe('research');
     expect(result.task?.requiredTools).toEqual(['web-search', 'web-fetch']);
   });
 

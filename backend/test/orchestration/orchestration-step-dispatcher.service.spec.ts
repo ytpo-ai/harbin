@@ -319,6 +319,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       {
         buildPreTaskContext: jest.fn().mockReturnValue('pre-task-context'),
+        inferRuntimeTaskTypeFromPlanContext: jest.fn().mockReturnValue('general'),
       } as any,
       { emit: jest.fn() } as any,
       {

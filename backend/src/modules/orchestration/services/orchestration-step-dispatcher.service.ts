@@ -244,17 +244,14 @@ export class OrchestrationStepDispatcherService {
     const planSnapshot = await this.planModel
       .findById(planId)
       .exec();
-    const inferredRuntimeTaskType =
-      typeof (this.contextService as any).inferRuntimeTaskTypeFromPlanContext === 'function'
-        ? this.contextService.inferRuntimeTaskTypeFromPlanContext({
-          planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
-          planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
-          step: state.currentStep,
-          taskTitle: task.title,
-          taskDescription: task.description,
-          existingRuntimeTaskType: task.runtimeTaskType,
-        })
-        : (task.runtimeTaskType || 'general');
+    const inferredRuntimeTaskType = this.contextService.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
+      planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
+      step: state.currentStep,
+      taskTitle: task.title,
+      taskDescription: task.description,
+      existingRuntimeTaskType: task.runtimeTaskType,
+    });
 
     if (task.runtimeTaskType !== inferredRuntimeTaskType) {
       await this.taskModel

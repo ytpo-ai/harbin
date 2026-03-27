@@ -56,7 +56,6 @@ describe('IncrementalPlanningService redesign task lookup', () => {
       description: 'use alternate agent',
       priority: 'urgent',
       agentId: 'agent-2',
-      taskType: 'development',
       requiredTools: ['repo-read'],
     });
 
