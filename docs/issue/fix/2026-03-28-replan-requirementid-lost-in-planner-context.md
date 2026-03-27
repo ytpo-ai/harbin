@@ -64,9 +64,19 @@
   4. 增加对 `missing_task_context` 等拒绝性 JSON 的禁止
   5. 明确指导 planner 生成 `taskType="general"` 的需求选定任务
 
+### 修复 C（本次）：兼容 planner 返回的别名字段
+- **场景**：planner 返回了有效的 task 内容，但使用 `name/goal` 而非 `title/description` 字段名
+- **日志证据**（第 3 次重试）：
+  ```json
+  {"nextTask":{"name":"step1_scope_and_dispatch","goal":"确认需求范围并进入执行分配","actions":[...]}}
+  ```
+- **根因**：`generateNextTask` 中构建 `parsedTask` 时只读取 `taskCandidate.title` 和 `taskCandidate.description`，不识别 `name`/`goal`
+- **修复**：`planner.service.ts` line 211-212，增加 fallback：`title || name`、`description || goal`
+
 ### 兼容性处理
 - 有 requirementId 时走修复 A 路径直接注入锚点，不触发首步豁免
 - 无 requirementId 时走增强版首步豁免，确保 planner 不被 sourcePrompt 中的约束阻塞
+- planner 返回 `name/goal` 等别名字段时自动映射为 `title/description`
 
 ## 5. 验证结果
 
@@ -81,4 +91,5 @@
   1. 可考虑在 `buildPlannerContext` 中同时传入 `requirementTitle`
   2. 长期方案：对 sourcePrompt 中的模板变量（`${info.requirementId}` 等）在注入 planner prompt 前做预处理替换或移除，从根本上消除指令冲突
   3. 对 `totalSteps=0` 且 sourcePrompt 为 skill 全文的场景，可考虑在 planner prompt 中只注入 skill 的步骤定义部分，不注入前置约束部分
+  4. 可扩展别名映射覆盖更多 LLM 变体字段（如 `summary` → `description`、`label` → `title` 等）
 - 是否需要补充功能文档/API文档：否

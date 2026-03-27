@@ -208,8 +208,8 @@ export class PlannerService {
 
     const parsedTask = taskCandidate
       ? {
-          title: String(taskCandidate.title || '').trim().slice(0, MAX_TITLE_LENGTH),
-          description: String(taskCandidate.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
+          title: String(taskCandidate.title || taskCandidate.name || '').trim().slice(0, MAX_TITLE_LENGTH),
+          description: String(taskCandidate.description || taskCandidate.goal || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
           priority: this.normalizePriority(taskCandidate.priority),
           agentId: parsedAgentId || undefined,
           taskType: this.normalizeRuntimeTaskType(taskCandidate.taskType),
