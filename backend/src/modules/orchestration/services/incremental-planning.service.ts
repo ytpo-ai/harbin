@@ -527,9 +527,6 @@ export class IncrementalPlanningService {
 
     const requirementId = await this.resolveRequirementObjectId(planId);
 
-    // Resolve runtimeTaskType: planner 指定 > 'general'
-    const runtimeTaskType = taskResult.taskType || 'general';
-
     // 增量规划：自动将前序已完成任务设为依赖，确保执行层能注入前序输出上下文。
     const completedPredecessors = await this.taskModel
       .find({ planId, status: 'completed' })
@@ -545,7 +542,6 @@ export class IncrementalPlanningService {
       title: taskResult.title,
       description: taskResult.description,
       priority: taskResult.priority,
-      runtimeTaskType,
       status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
       order,
       dependencyTaskIds,
@@ -559,8 +555,6 @@ export class IncrementalPlanningService {
           metadata: {
             plannerAssignedAgentId: normalizedAgentId || undefined,
             fallbackUsed: assignment.reason !== 'Assigned by planner incremental output',
-            resolvedTaskType: runtimeTaskType,
-            plannerTaskType: taskResult.taskType || undefined,
             plannerRequiredTools: taskResult.requiredTools || undefined,
           },
         },
@@ -606,8 +600,6 @@ export class IncrementalPlanningService {
     const normalizedAgentId = String(taskResult.agentId || '').trim();
     const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
     const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
-    const runtimeTaskType = taskResult.taskType || targetTask.runtimeTaskType || 'general';
-
     await this.taskModel
       .updateOne(
         { _id: targetTask._id, planId, status: 'failed' },
@@ -616,7 +608,6 @@ export class IncrementalPlanningService {
             title: taskResult.title,
             description: taskResult.description,
             priority: taskResult.priority,
-            runtimeTaskType,
             status,
             assignment,
             startedAt: null,
@@ -624,6 +615,7 @@ export class IncrementalPlanningService {
           },
           $unset: {
             result: 1,
+            runtimeTaskType: 1,
           },
           $push: {
             runLogs: {
@@ -751,26 +743,6 @@ export class IncrementalPlanningService {
     return 'verify';
   }
 
-  private mapRuntimeTaskTypeToExecutorTaskType(
-    taskType?:
-      | 'research'
-      | 'development.plan'
-      | 'development.exec'
-      | 'development.review'
-      | 'general',
-  ): 'development.plan' | 'development.exec' | 'development.review' | 'research' | 'general' {
-    if (
-      taskType === 'development.plan'
-      || taskType === 'development.exec'
-      || taskType === 'development.review'
-      || taskType === 'research'
-      || taskType === 'general'
-    ) {
-      return taskType;
-    }
-    return 'general';
-  }
-
   private async resolveFallbackAssignment(
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     reasonPrefix: string,
@@ -778,7 +750,7 @@ export class IncrementalPlanningService {
     const fallback = await this.executorSelectionService.selectExecutor({
       title: taskResult.title,
       description: taskResult.description,
-      taskType: this.mapRuntimeTaskTypeToExecutorTaskType(taskResult.taskType),
+      taskType: 'general',
       requiredTools: taskResult.requiredTools,
     });
 
@@ -819,7 +791,7 @@ export class IncrementalPlanningService {
       agentId: validAgentId,
       taskTitle: taskResult.title,
       taskDescription: taskResult.description,
-      taskType: taskResult.taskType,
+      taskType: 'general',
       requiredTools: taskResult.requiredTools,
     });
 

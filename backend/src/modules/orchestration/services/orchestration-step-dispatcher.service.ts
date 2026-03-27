@@ -241,12 +241,54 @@ export class OrchestrationStepDispatcherService {
     plannerSessionId: string,
   ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
+    const planSnapshot = await this.planModel
+      .findById(planId)
+      .exec();
+    const inferredRuntimeTaskType =
+      typeof (this.contextService as any).inferRuntimeTaskTypeFromPlanContext === 'function'
+        ? this.contextService.inferRuntimeTaskTypeFromPlanContext({
+          planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
+          planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
+          step: state.currentStep,
+          taskTitle: task.title,
+          taskDescription: task.description,
+          existingRuntimeTaskType: task.runtimeTaskType,
+        })
+        : (task.runtimeTaskType || 'general');
+
+    if (task.runtimeTaskType !== inferredRuntimeTaskType) {
+      await this.taskModel
+        .updateOne(
+          { _id: task._id },
+          {
+            $set: {
+              runtimeTaskType: inferredRuntimeTaskType,
+            },
+            $push: {
+              runLogs: {
+                timestamp: new Date(),
+                level: 'info',
+                message: 'Runtime task type inferred at pre-execute phase',
+                metadata: {
+                  inferredRuntimeTaskType,
+                  previousRuntimeTaskType: task.runtimeTaskType,
+                },
+              },
+            },
+          },
+        )
+        .exec();
+      task.runtimeTaskType = inferredRuntimeTaskType;
+    }
+
     const prompt = this.contextService.buildPreTaskContext({
       step: state.currentStep,
       taskId: String(task._id),
       taskTitle: task.title,
       taskDescription: task.description,
       runtimeTaskType: task.runtimeTaskType,
+      planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
+      planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
     });
 
     const decision = await this.plannerService.executePreTask(planId, prompt, plannerSessionId);

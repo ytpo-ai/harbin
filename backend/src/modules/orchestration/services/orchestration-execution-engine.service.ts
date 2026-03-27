@@ -15,7 +15,6 @@ import {
   OrchestrationRun,
   OrchestrationRunDocument,
 } from '../../../shared/schemas/orchestration-run.schema';
-import { TaskClassificationService } from './task-classification.service';
 import { TaskOutputValidationService } from './task-output-validation.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
@@ -45,7 +44,6 @@ export class OrchestrationExecutionEngineService {
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
@@ -62,17 +60,9 @@ export class OrchestrationExecutionEngineService {
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const taskId = this.getEntityId(task as Record<string, any>);
     const assignment = task.assignment || { executorType: 'unassigned' as const };
-    const isResearchTask = Boolean(false);
-    const isReviewTask = this.taskClassificationService.isReviewTask(task.title, task.description);
     const runtimeTaskTypeOverride = this.contextService.normalizeRuntimeTaskTypeOverride(options?.runtimeTaskTypeOverride);
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((task as any).runtimeTaskType);
-    const runtimeTaskType =
-      runtimeTaskTypeOverride
-      || persistedRuntimeTaskType
-      || this.contextService.resolveAgentRuntimeTaskType(task.title, task.description, {
-        isResearchTask,
-        isReviewTask,
-      });
+    const runtimeTaskType = runtimeTaskTypeOverride || persistedRuntimeTaskType || 'general';
     const effectiveIsResearchTask = runtimeTaskType === 'research';
     const effectiveIsReviewTask = runtimeTaskType === 'development.review';
     const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
@@ -319,7 +309,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(task.title, task.description, output);
+      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(runtimeTaskType, output);
       if (!codeValidation.valid) {
         if (this.codeValidationMode === 'strict') {
           const detail = codeValidation.missing?.length
@@ -456,15 +446,8 @@ export class OrchestrationExecutionEngineService {
       return { status: 'cancelled', error: 'Run cancelled by user' };
     }
     const assignment = runTask.assignment || { executorType: 'unassigned' as const };
-    const isResearchTask = Boolean(false);
-    const isReviewTask = this.taskClassificationService.isReviewTask(runTask.title, runTask.description);
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((runTask as any).runtimeTaskType);
-    const runtimeTaskType =
-      persistedRuntimeTaskType
-      || this.contextService.resolveAgentRuntimeTaskType(runTask.title, runTask.description, {
-        isResearchTask,
-        isReviewTask,
-      });
+    const runtimeTaskType = persistedRuntimeTaskType || 'general';
     const effectiveIsResearchTask = runtimeTaskType === 'research';
     const effectiveIsReviewTask = runtimeTaskType === 'development.review';
     const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
@@ -635,11 +618,7 @@ export class OrchestrationExecutionEngineService {
         }
       }
 
-      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(
-        runTask.title,
-        runTask.description,
-        output,
-      );
+      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(runtimeTaskType, output);
       if (!codeValidation.valid) {
         if (this.codeValidationMode === 'strict') {
           const detail = codeValidation.missing?.length

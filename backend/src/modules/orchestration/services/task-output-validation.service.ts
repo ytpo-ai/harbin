@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { ResearchTaskKind, TaskClassificationService } from './task-classification.service';
+
+export type ResearchTaskKind = 'city_population' | 'generic_research';
 
 @Injectable()
 export class TaskOutputValidationService {
@@ -15,8 +16,6 @@ export class TaskOutputValidationService {
     /缺少.{0,8}工具/u,
     /(?:无法|不能|不可).{0,16}(?:访问|浏览|抓取|检索|获取)/u,
   ];
-
-  constructor(private readonly taskClassificationService: TaskClassificationService) {}
 
   buildResearchOutputContract(kind: ResearchTaskKind): string {
     if (kind === 'city_population') {
@@ -73,11 +72,11 @@ export class TaskOutputValidationService {
   }
 
   validateCodeExecutionProof(
-    title: string,
-    description: string,
+    runtimeTaskType: string | undefined,
     output: string,
   ): { valid: boolean; reason?: string; missing?: string[] } {
-    if (!this.taskClassificationService.isCodeTask(title, description)) {
+    const normalizedTaskType = String(runtimeTaskType || '').trim().toLowerCase();
+    if (!normalizedTaskType.startsWith('development.')) {
       return { valid: true };
     }
 

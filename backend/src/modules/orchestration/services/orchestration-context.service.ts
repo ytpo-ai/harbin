@@ -10,7 +10,6 @@ import {
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
 import { OrchestrationPlanDocument } from '../../../shared/schemas/orchestration-plan.schema';
-import { TaskClassificationService } from './task-classification.service';
 import { TaskOutputValidationService } from './task-output-validation.service';
 
 @Injectable()
@@ -20,7 +19,6 @@ export class OrchestrationContextService {
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(OrchestrationRunTask.name)
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
-    private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
   ) {}
 
@@ -230,6 +228,8 @@ export class OrchestrationContextService {
     taskTitle: string;
     taskDescription: string;
     runtimeTaskType?: string;
+    planDomainType?: string;
+    planGoal?: string;
   }): string {
     return [
       '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
@@ -240,6 +240,8 @@ export class OrchestrationContextService {
       `step: ${input.step}`,
       `taskId: ${input.taskId}`,
       `taskTitle: ${input.taskTitle}`,
+      `planDomainType: ${input.planDomainType || 'general'}`,
+      `planGoal: ${String(input.planGoal || '').slice(0, 500)}`,
       `runtimeTaskType: ${input.runtimeTaskType || 'general'}`,
       'taskDescription:',
       input.taskDescription,
@@ -247,6 +249,55 @@ export class OrchestrationContextService {
       '{"allowExecute":true,"executionHints":["..."],"riskFlags":["..."],"notes":"..."}',
       '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
+  }
+
+  inferRuntimeTaskTypeFromPlanContext(input: {
+    planDomainType?: string;
+    planGoal?: string;
+    step?: number;
+    taskTitle: string;
+    taskDescription: string;
+    existingRuntimeTaskType?: string;
+  }): 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general' {
+    const existing = this.normalizeRuntimeTaskTypeOverride(input.existingRuntimeTaskType);
+    if (existing) {
+      return existing;
+    }
+
+    const domain = String(input.planDomainType || 'general').trim().toLowerCase();
+    const isResearchTask = this.isResearchLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
+    const isReviewTask = this.isReviewLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
+    const isCodeTask = this.isCodeLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
+    const isPlanTask = this.isPlanningLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
+
+    if (domain === 'research') {
+      return 'research';
+    }
+
+    if (domain === 'development') {
+      if (isReviewTask) {
+        return 'development.review';
+      }
+      if (isPlanTask && Number(input.step || 0) <= 1) {
+        return 'development.plan';
+      }
+      return 'development.exec';
+    }
+
+    if (isResearchTask) {
+      return 'research';
+    }
+    if (isReviewTask) {
+      return 'development.review';
+    }
+    if (isPlanTask) {
+      return 'development.plan';
+    }
+    if (isCodeTask) {
+      return 'development.exec';
+    }
+
+    return 'general';
   }
 
   buildPostTaskContext(input: {
@@ -317,26 +368,6 @@ export class OrchestrationContextService {
     return this.getEntityId(runTask as any);
   }
 
-  resolveAgentRuntimeTaskType(
-    title: string,
-    description: string,
-    flags: {
-      isResearchTask: boolean;
-      isReviewTask: boolean;
-    },
-  ): string {
-    if (flags.isResearchTask) {
-      return 'research';
-    }
-    if (flags.isReviewTask) {
-      return 'development.review';
-    }
-    if (this.taskClassificationService.isCodeTask(title, description)) {
-      return 'development.exec';
-    }
-    return 'general';
-  }
-
   normalizeRuntimeTaskTypeOverride(
     value?: string,
   ):
@@ -382,5 +413,55 @@ export class OrchestrationContextService {
       return docId.toString();
     }
     return String(entity?.id || '');
+  }
+
+  private isPlanningLikeTask(title: string, description: string, planGoal?: string): boolean {
+    const text = `${title} ${description} ${String(planGoal || '').slice(0, 300)}`.toLowerCase();
+    return (
+      text.includes('plan')
+      || text.includes('planning')
+      || text.includes('design')
+      || text.includes('architecture')
+      || text.includes('拆解')
+      || text.includes('方案')
+      || text.includes('设计')
+      || text.includes('规划')
+      || text.includes('编排')
+    );
+  }
+
+  private isResearchLikeTask(title: string, description: string, planGoal?: string): boolean {
+    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
+    return (
+      text.includes('research')
+      || text.includes('web search')
+      || text.includes('调研')
+      || text.includes('检索')
+      || text.includes('信息收集')
+    );
+  }
+
+  private isReviewLikeTask(title: string, description: string, planGoal?: string): boolean {
+    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
+    return (
+      text.includes('review')
+      || text.includes('验收')
+      || text.includes('复核')
+      || text.includes('校对')
+      || text.includes('评审')
+    );
+  }
+
+  private isCodeLikeTask(title: string, description: string, planGoal?: string): boolean {
+    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
+    return (
+      text.includes('code')
+      || text.includes('implement')
+      || text.includes('fix')
+      || text.includes('refactor')
+      || text.includes('开发')
+      || text.includes('编码')
+      || text.includes('修复')
+    );
   }
 }

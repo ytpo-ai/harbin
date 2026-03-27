@@ -23,17 +23,19 @@
 2. 更新 DTO：`CreatePlanFromPromptDto/ReplanPlanDto/UpdatePlanDto` 仅保留三值 `domainType`，删除 `defaultTaskType` 入参与校验。
 3. 更新 Plan 管理链路：创建/更新/重编排只使用显式 `domainType`，移除 `inferDomainContext` 及相关推断调用。
 4. 更新执行链路：删除向 Agent SessionContext 透传的 `domainContext`，保留其他协作上下文字段。
-5. 清理任务生成逻辑：移除 `plan.defaultTaskType` 兜底，改为 `planner taskType > general`。
-6. 更新前端编排接口与页面：创建计划时显式提交 `domainType`（默认 `general`），移除 `defaultTaskType` 相关字段。
-7. 更新文档与测试：同步 feature/guide/api 描述并完成关键链路验证。
-8. 扩展 `strategy.runMode`：后端新增字段与运行守卫，前端新增配置项并在 `once` 下禁用运行按钮。
-9. 扩展 `development` 子任务类型：在任务类型定义、校验、路由和展示层新增 `development.plan | development.exec | development.review`。
-10. 更新自动生成重试策略：对 `development.*` 三类任务默认关闭自动重试，失败后进入显式人工处理/重编排路径。
+5. 清理任务生成逻辑：移除 `plan.defaultTaskType` 兜底，且移除 planner 输出中的 `taskType` 依赖。
+6. 将任务类型推断收敛到 `phasePreExecute`：基于 `domainType + sourcePrompt + task上下文` 推断并落库 `runtimeTaskType`。
+7. 更新前端编排接口与页面：创建计划时显式提交 `domainType`（默认 `general`），移除 `defaultTaskType` 相关字段。
+8. 更新文档与测试：同步 feature/guide/api 描述并完成关键链路验证。
+9. 扩展 `strategy.runMode`：后端新增字段与运行守卫，前端新增配置项并在 `once` 下禁用运行按钮。
+10. 扩展 `development` 子任务类型：在任务类型定义、校验、路由和展示层新增 `development.plan | development.exec | development.review`。
+11. 更新自动生成重试策略：对 `development.*` 三类任务默认关闭自动重试，失败后进入显式人工处理/重编排路径。
 
 ## 影响点
 
 - 后端：Orchestration Schema、DTO、PlanManagement、ExecutionEngine、IncrementalPlanning
 - 后端：`runtimeTaskType` 枚举扩展与执行引擎重试策略（`development.*` 默认禁用自动重试）
+- 后端：移除 `TaskClassificationService`，清理对任务类型关键词分类的依赖
 - Agent Runtime：Orchestration 注入上下文结构
 - 前端：Orchestration Service 和计划创建/编辑表单
 - 前端：运行按钮可用性判定（once 模式禁用）
@@ -47,3 +49,4 @@
 - 若第三方或脚本依赖旧字段，需要同步改造请求体与读取逻辑。
 - `development.*` 新值属于 taskType 兼容性变更，需同步更新白名单/归一化逻辑，避免被静默降级为 `general`。
 - 自动重试策略收紧后，失败任务可能增多，需要配套明确人工接管与重编排流程。
+- `phasePreExecute` 成为唯一分类入口后，分类策略改动需重点回归 pre/execute/post 三阶段联动行为。

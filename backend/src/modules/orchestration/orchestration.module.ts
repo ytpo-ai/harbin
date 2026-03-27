@@ -29,7 +29,6 @@ import { PlannerService } from './planner.service';
 import { MessagesModule } from '../messages/messages.module';
 import { PlanSession, PlanSessionSchema } from '../../shared/schemas/orchestration-plan-session.schema';
 import { SessionManagerService } from './session-manager.service';
-import { TaskClassificationService } from './services/task-classification.service';
 import { TaskOutputValidationService } from './services/task-output-validation.service';
 import { ExecutorSelectionService } from './services/executor-selection.service';
 import { SceneOptimizationService } from './services/scene-optimization.service';
@@ -81,7 +80,6 @@ import { OrchestrationEventListenerService } from './services/orchestration-even
     PlanEventStreamService,
     OrchestrationContextService,
     OrchestrationExecutionEngineService,
-    TaskClassificationService,
     TaskOutputValidationService,
     ExecutorSelectionService,
     SceneOptimizationService,

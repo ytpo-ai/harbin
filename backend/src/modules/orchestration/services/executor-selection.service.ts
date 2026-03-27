@@ -15,7 +15,6 @@ import {
   getTierByAgentRoleCode,
   normalizeAgentRoleTier,
 } from '@legacy/shared/role-tier';
-import { TaskClassificationService } from './task-classification.service';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,10 +72,6 @@ const TASK_TOOL_HINTS: Record<string, string[]> = {
 
 const TEXT_TOOL_HINTS: Array<{ keywords: string[]; toolHints: string[] }> = [
   {
-    keywords: ['repo-writer', 'write code', 'edit file', '修改代码', '提交代码', 'patch'],
-    toolHints: ['repo-write', 'docs-write', 'repo-read'],
-  },
-  {
     keywords: ['save-prompt-template', 'prompt template', '提示词模板', '发布模板'],
     toolHints: ['save-prompt-template', 'prompt'],
   },
@@ -114,7 +109,6 @@ export class ExecutorSelectionService {
     private readonly employeeModel: Model<EmployeeDocument>,
     @InjectModel(AgentRole.name)
     private readonly agentRoleModel: Model<AgentRoleDocument>,
-    private readonly taskClassificationService: TaskClassificationService,
   ) {}
 
   // -----------------------------------------------------------------------
@@ -251,7 +245,7 @@ export class ExecutorSelectionService {
     }
 
     // 1. Resolve task type
-    const taskType = ctx.taskType || this.classifyTaskType(ctx.title, ctx.description);
+    const taskType = ctx.taskType || 'general';
 
     // 2. Load candidates + roles
     const [agents, employees, roles] = await Promise.all([
@@ -541,27 +535,6 @@ export class ExecutorSelectionService {
         return { id: emp.id, score, type: emp.type };
       })
       .sort((a, b) => b.score - a.score);
-  }
-
-  // -----------------------------------------------------------------------
-  // Task classification (delegates to TaskClassificationService + extension)
-  // -----------------------------------------------------------------------
-
-  private classifyTaskType(title: string, description: string): string {
-    if (this.taskClassificationService.isResearchTask(title, description)) return 'research';
-    if (this.taskClassificationService.isCodeTask(title, description)) return 'development.exec';
-    if (this.taskClassificationService.isReviewTask(title, description)) return 'development.review';
-
-    const text = `${title} ${description}`.toLowerCase();
-    if (
-      text.includes('plan') ||
-      text.includes('编排') ||
-      text.includes('计划') ||
-      text.includes('orchestrat')
-    ) {
-      return 'development.plan';
-    }
-    return 'general';
   }
 
   private resolveRequiredToolHints(taskType: string, title: string, description: string): string[] {

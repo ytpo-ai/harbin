@@ -29,6 +29,7 @@
 | 执行引擎 | `services/orchestration-execution-engine.service.ts` | task node / run task node 统一执行 |
 | 增量编排 | `services/incremental-planning.service.ts` | generate-next 增量产出与落库 |
 | Planner | `planner.service.ts` | planner 输出解析、兜底拆解 |
+| 阶段调度 | `services/orchestration-step-dispatcher.service.ts` | 四阶段推进（generate/pre/execute/post）与 pre 阶段任务类型推断 |
 | Session 代理 | `session-manager.service.ts` | 透传到 agents session 接口 |
 
 ### 2.2 前端模块
@@ -78,6 +79,14 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 - 任务支持重分配、人工完成、重试。
 - 支持 `POST /orchestration/tasks/:id/debug-run` 执行单任务调试。
 - 模板任务支持新增、删除、完整更新、批量更新、重排、复制。
+
+### 4.4 runtimeTaskType 推断（当前规则）
+
+- 任务创建阶段（planner/generate-next）不再负责分类，不接受 planner 输出 `taskType`。
+- `runtimeTaskType` 统一在 `phasePreExecute` 基于计划上下文推断并落库：`domainType + sourcePrompt + taskTitle/taskDescription + step`。
+- 当前有效值：`general`、`research`、`development.plan`、`development.exec`、`development.review`。
+- `development.*` 任务默认禁用自动生成模式下的 retry 原地重试，post 阶段会转为 redesign 路径。
+- 已移除 `TaskClassificationService`，不再在模块内保留独立关键词分类服务。
 
 ## 5. API 清单（当前有效）
 
