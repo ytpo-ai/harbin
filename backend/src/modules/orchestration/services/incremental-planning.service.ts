@@ -251,10 +251,6 @@ export class IncrementalPlanningService {
     );
 
     if (executionResult.status === 'completed') {
-      // 任务完成后尝试从 output 中提取 requirementId，动态补充到 plan metadata。
-      // 这样后续 buildPlannerContext 能拉取完整需求描述传给 planner 和执行者。
-      await this.tryBackfillRequirementId(planId, createdTask._id.toString());
-
       const merged = await this.tryMergeWithPreviousTask(planId, createdTask);
       if (!isRedesign) {
         currentStep += 1;
@@ -1016,86 +1012,4 @@ export class IncrementalPlanningService {
       .slice(0, 30);
   }
 
-  /**
-   * 任务完成后尝试从 output 中提取 requirementId，回写到 plan.metadata。
-   * 典型场景：step0 选定需求后，output 中包含 "requirementId=xxx"，
-   * 将其回写后，后续 buildPlannerContext 能拉取完整需求描述传给 planner。
-   */
-  private async tryBackfillRequirementId(planId: string, taskId: string): Promise<void> {
-    try {
-      const plan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
-      if (!plan) {
-        return;
-      }
-      // 如果 plan 已经有 requirementId，不覆盖
-      const existing = String((plan.metadata || {}).requirementId || '').trim();
-      if (existing) {
-        return;
-      }
-
-      const task = await this.taskModel.findById(taskId).select({ 'result.output': 1 }).lean().exec();
-      const output = String(task?.result?.output || '');
-      if (!output) {
-        return;
-      }
-
-      // 从 output 中匹配 requirementId，按优先级依次尝试多种格式：
-      const extractedId = this.extractRequirementIdFromOutput(output);
-      if (!extractedId) {
-        return;
-      }
-      this.logger.log(
-        `[backfill_requirement] planId=${planId} taskId=${taskId} requirementId=${extractedId}`,
-      );
-
-      await this.planModel
-        .updateOne(
-          { _id: planId },
-          { $set: { 'metadata.requirementId': extractedId } },
-        )
-        .exec();
-    } catch (err) {
-      this.logger.warn(
-        `[backfill_requirement] failed planId=${planId} taskId=${taskId}: ${(err as Error).message}`,
-      );
-    }
-  }
-
-  /**
-   * 从 task output 文本中提取 requirementId，按优先级依次尝试多种格式。
-   *
-   * 支持的格式（高 → 低优先级）：
-   *  1. requirementId / requirement_id / 需求ID / 需求编号 + 分隔符 + ID
-   *     - requirementId=req-xxx / requirementId: req-xxx / requirementId：req-xxx
-   *     - requirementId\nreq-xxx（换行分隔）
-   *     - **requirementId**: req-xxx（Markdown 加粗）
-   *     - "requirementId": "req-xxx"（JSON）
-   *     - | requirementId | req-xxx |（Markdown 表格）
-   *  2. 兜底：output 中首个独立出现的 req- 前缀 ID
-   */
-  private extractRequirementIdFromOutput(output: string): string | undefined {
-    // ID 模式：req- 前缀 或 24 位 hex ObjectId
-    const ID_PATTERN = '(req-[a-zA-Z0-9_-]+|[a-f0-9]{24})';
-
-    // 优先级 1：显式标签匹配
-    // 支持 requirementId / requirement_id / 需求ID / 需求编号，可带 Markdown 加粗 ** 或反引号
-    const labelPattern = new RegExp(
-      String.raw`(?:\*{0,2})(?:requirementId|requirement_id|需求ID|需求编号)(?:\*{0,2})\s*[=：:|\s]\s*[|\s]*[\x60'"]?` +
-      ID_PATTERN +
-      String.raw`[\x60'"]?`,
-      'i',
-    );
-    const labelMatch = output.match(labelPattern);
-    if (labelMatch?.[1]) {
-      return labelMatch[1].trim();
-    }
-
-    // 优先级 2：兜底 — output 中首个独立出现的 req- 前缀 ID
-    const fallbackMatch = output.match(/\breq-[a-zA-Z0-9_-]{3,}\b/);
-    if (fallbackMatch?.[0]) {
-      return fallbackMatch[0].trim();
-    }
-
-    return undefined;
-  }
 }

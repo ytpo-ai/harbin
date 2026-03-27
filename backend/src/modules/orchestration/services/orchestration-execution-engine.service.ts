@@ -15,7 +15,6 @@ import {
   OrchestrationRun,
   OrchestrationRunDocument,
 } from '../../../shared/schemas/orchestration-run.schema';
-import { TaskOutputValidationService } from './task-output-validation.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanStatsService } from './plan-stats.service';
@@ -33,8 +32,6 @@ export class OrchestrationExecutionEngineService {
   );
   private readonly asyncAgentTaskSseEnabled =
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
-  private readonly codeValidationMode: 'warn' | 'strict' =
-    String(process.env.CODE_VALIDATION_MODE || 'warn').trim().toLowerCase() === 'strict' ? 'strict' : 'warn';
 
   constructor(
     @InjectModel(OrchestrationTask.name)
@@ -44,7 +41,6 @@ export class OrchestrationExecutionEngineService {
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
     private readonly agentClientService: AgentClientService,
-    private readonly taskOutputValidationService: TaskOutputValidationService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
     private readonly planStatsService: PlanStatsService,
@@ -237,118 +233,6 @@ export class OrchestrationExecutionEngineService {
 
       if (!output && execution.status === 'succeeded') {
         throw new Error('Async agent task succeeded but returned empty output');
-      }
-
-      const generalValidation = this.taskOutputValidationService.validateGeneralOutput(output);
-      if (!generalValidation.valid) {
-        const detail = generalValidation.missing?.length
-          ? `; missing=${generalValidation.missing.join(',')}`
-          : '';
-        await this.markTaskFailed(taskId, `General output validation failed: ${generalValidation.reason}${detail}`);
-        await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-          status: 'failed',
-          error: `General output validation failed: ${generalValidation.reason}${detail}`,
-        });
-        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
-          planId,
-          status: 'failed',
-          taskTitle: task.title,
-          senderAgentId: assignment.executorId,
-          reason: 'general_output_validation_failed',
-          error: generalValidation.reason,
-          missing: generalValidation.missing,
-        });
-        return { status: 'failed', error: generalValidation.reason };
-      }
-
-      if (effectiveIsResearchTask && effectiveResearchTaskKind) {
-        const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
-        if (!validation.valid) {
-          const detail = validation.missing?.length
-            ? `; missing=${validation.missing.join(',')}`
-            : '';
-          await this.markTaskFailed(taskId, `Research output validation failed: ${validation.reason}${detail}`);
-          await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-            status: 'failed',
-            error: `Research output validation failed: ${validation.reason}${detail}`,
-          });
-          this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
-            planId,
-            status: 'failed',
-            taskTitle: task.title,
-            senderAgentId: assignment.executorId,
-            reason: 'research_output_validation_failed',
-            error: validation.reason,
-            missing: validation.missing,
-          });
-          return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      if (effectiveIsReviewTask) {
-        const validation = this.taskOutputValidationService.validateReviewOutput(output);
-        if (!validation.valid) {
-          const detail = validation.missing?.length
-            ? `; missing=${validation.missing.join(',')}`
-            : '';
-          await this.markTaskFailed(taskId, `Review output validation failed: ${validation.reason}${detail}`);
-          await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-            status: 'failed',
-            error: `Review output validation failed: ${validation.reason}${detail}`,
-          });
-          this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
-            planId,
-            status: 'failed',
-            taskTitle: task.title,
-            senderAgentId: assignment.executorId,
-            reason: 'review_output_validation_failed',
-            error: validation.reason,
-            missing: validation.missing,
-          });
-          return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(runtimeTaskType, output);
-      if (!codeValidation.valid) {
-        if (this.codeValidationMode === 'strict') {
-          const detail = codeValidation.missing?.length
-            ? `; missing=${codeValidation.missing.join(',')}`
-            : '';
-          await this.markTaskFailed(taskId, `Code output validation failed: ${codeValidation.reason}${detail}`);
-          await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-            status: 'failed',
-            error: `Code output validation failed: ${codeValidation.reason}${detail}`,
-          });
-          this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.failed', {
-            planId,
-            status: 'failed',
-            taskTitle: task.title,
-            senderAgentId: assignment.executorId,
-            reason: 'development_output_validation_failed',
-            error: codeValidation.reason,
-            missing: codeValidation.missing,
-          });
-          return { status: 'failed', error: codeValidation.reason };
-        }
-
-        await this.orchestrationTaskModel
-          .updateOne(
-            { _id: taskId },
-            {
-              $push: {
-                runLogs: {
-                  timestamp: new Date(),
-                  level: 'warn',
-                  message: `CODE_EXECUTION_PROOF warning: ${codeValidation.reason}`,
-                  metadata: {
-                    missing: codeValidation.missing,
-                  },
-                },
-              },
-            },
-          )
-          .exec();
       }
 
       await this.orchestrationTaskModel
@@ -585,66 +469,6 @@ export class OrchestrationExecutionEngineService {
 
       if (!output && execution.status === 'succeeded') {
         throw new Error('Async agent task succeeded but returned empty output');
-      }
-
-      const generalValidation = this.taskOutputValidationService.validateGeneralOutput(output);
-      if (!generalValidation.valid) {
-        const detail = generalValidation.missing?.length
-          ? `; missing=${generalValidation.missing.join(',')}`
-          : '';
-        await this.markRunTaskFailed(runTaskId, `General output validation failed: ${generalValidation.reason}${detail}`);
-        return { status: 'failed', error: generalValidation.reason };
-      }
-
-      if (effectiveIsResearchTask && effectiveResearchTaskKind) {
-        const validation = this.taskOutputValidationService.validateResearchOutput(output, effectiveResearchTaskKind);
-        if (!validation.valid) {
-          const detail = validation.missing?.length
-            ? `; missing=${validation.missing.join(',')}`
-            : '';
-          await this.markRunTaskFailed(runTaskId, `Research output validation failed: ${validation.reason}${detail}`);
-          return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      if (effectiveIsReviewTask) {
-        const validation = this.taskOutputValidationService.validateReviewOutput(output);
-        if (!validation.valid) {
-          const detail = validation.missing?.length
-            ? `; missing=${validation.missing.join(',')}`
-            : '';
-          await this.markRunTaskFailed(runTaskId, `Review output validation failed: ${validation.reason}${detail}`);
-          return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      const codeValidation = this.taskOutputValidationService.validateCodeExecutionProof(runtimeTaskType, output);
-      if (!codeValidation.valid) {
-        if (this.codeValidationMode === 'strict') {
-          const detail = codeValidation.missing?.length
-            ? `; missing=${codeValidation.missing.join(',')}`
-            : '';
-          await this.markRunTaskFailed(runTaskId, `Code output validation failed: ${codeValidation.reason}${detail}`);
-          return { status: 'failed', error: codeValidation.reason };
-        }
-
-        await this.orchestrationRunTaskModel
-          .updateOne(
-            { _id: runTaskId },
-            {
-              $push: {
-                runLogs: {
-                  timestamp: new Date(),
-                  level: 'warn',
-                  message: `CODE_EXECUTION_PROOF warning: ${codeValidation.reason}`,
-                  metadata: {
-                    missing: codeValidation.missing,
-                  },
-                },
-              },
-            },
-          )
-          .exec();
       }
 
       await this.orchestrationRunTaskModel

@@ -110,7 +110,7 @@ export class OrchestrationContextService {
     lines.push('———————————');
     lines.push(`Task #${currentStep + 1} 【当前任务】`);
     lines.push(
-      `标题: 根据 step${Math.max(currentStep - 1, 0)} 的输出 你需要执行的工作是 ***${taskTypeLabel}${currentTaskTitle ? `（${currentTaskTitle}）` : ''}`,
+      `标题: 根据 step${Math.max(currentStep - 1, 0)} 的输出,你需要执行的工作是 [${taskTypeLabel}]${currentTaskTitle ? `（${currentTaskTitle}）` : ''}`,
     );
     return lines.join('\n');
   }
@@ -118,7 +118,7 @@ export class OrchestrationContextService {
   private toTaskTypeLabel(runtimeTaskType?: string): string {
     const normalized = String(runtimeTaskType || '').trim().toLowerCase();
     if (normalized === 'development.exec') {
-      return '开发';
+      return '开发执行';
     }
     if (normalized === 'development.plan') {
       return '开发规划';
@@ -304,6 +304,7 @@ export class OrchestrationContextService {
     step: number;
     taskId: string;
     taskTitle: string;
+    runtimeTaskType?: string;
     executionStatus: string;
     executionOutput?: string;
     executionError?: string;
@@ -313,15 +314,17 @@ export class OrchestrationContextService {
       '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
       '如果执行结果无法判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
       '请进行执行后决策，并仅返回 JSON。',
+      '先激活并严格遵循 skill: docs/skill/orchestration-runtime-task-out-validation.md',
       '目标：根据当前任务执行结果，决定下一步动作。',
       `step: ${input.step}`,
       `taskId: ${input.taskId}`,
       `taskTitle: ${input.taskTitle}`,
+      `runtimeTaskType: ${input.runtimeTaskType || 'general'}`,
       `executionStatus: ${input.executionStatus}`,
       `executionOutput: ${String(input.executionOutput || '').slice(0, 3000)}`,
       `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
       '输出 JSON schema:',
-      '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."]}',
+      '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."],"validation":{"passed":true,"verdict":"pass|needs_fix|blocked","missing":["..."],"ruleVersion":"post_execute_skill_v1"}}',
       '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
   }

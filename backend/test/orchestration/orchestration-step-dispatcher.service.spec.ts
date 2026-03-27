@@ -17,6 +17,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
 
     return { service, findOneAndUpdate };
@@ -139,6 +140,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
       { emit: jest.fn() } as any,
       agentClientService,
     );
@@ -181,6 +183,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         findById,
       } as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -237,6 +240,7 @@ describe('OrchestrationStepDispatcherService', () => {
           maxTotalFailures: 6,
         }),
       } as any,
+      {} as any,
       {} as any,
       {} as any,
       { emit: jest.fn() } as any,
@@ -321,6 +325,7 @@ describe('OrchestrationStepDispatcherService', () => {
         buildPreTaskContext: jest.fn().mockReturnValue('pre-task-context'),
         inferRuntimeTaskTypeFromPlanContext: jest.fn().mockReturnValue('general'),
       } as any,
+      {} as any,
       { emit: jest.fn() } as any,
       {
         getOrCreatePlanSession: jest.fn(),
@@ -360,6 +365,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
       } as any,
+      { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
       {} as any,
     );
@@ -411,6 +417,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
       } as any,
+      { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
       {} as any,
     );
@@ -471,6 +478,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
       } as any,
+      { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
       {} as any,
     );
@@ -532,6 +540,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
       } as any,
+      { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
       {} as any,
     );
@@ -613,6 +622,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       {} as any,
       {} as any,
+      {} as any,
       { emit: jest.fn() } as any,
       {} as any,
     );
@@ -669,6 +679,7 @@ describe('OrchestrationStepDispatcherService', () => {
           maxTasks: 10,
         }),
       } as any,
+      {} as any,
       {} as any,
       {} as any,
       { emit: jest.fn() } as any,

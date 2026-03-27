@@ -75,6 +75,12 @@ export interface PostExecutionDecision {
   reason: string;
   redesignTaskId?: string;
   nextTaskHints?: string[];
+  validation?: {
+    passed: boolean;
+    verdict?: 'pass' | 'needs_fix' | 'blocked';
+    missing?: string[];
+    ruleVersion?: string;
+  };
 }
 
 const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
@@ -324,6 +330,33 @@ export class PlannerService {
       nextTaskHints: Array.isArray(parsed.nextTaskHints)
         ? parsed.nextTaskHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
         : undefined,
+      validation: this.normalizePostValidationResult(parsed.validation),
+    };
+  }
+
+  private normalizePostValidationResult(input: unknown): PostExecutionDecision['validation'] {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      return undefined;
+    }
+
+    const candidate = input as Record<string, unknown>;
+    const passed = candidate.passed;
+    if (typeof passed !== 'boolean') {
+      return undefined;
+    }
+
+    const rawVerdict = String(candidate.verdict || '').trim().toLowerCase();
+    const verdict = rawVerdict === 'pass' || rawVerdict === 'needs_fix' || rawVerdict === 'blocked'
+      ? rawVerdict as 'pass' | 'needs_fix' | 'blocked'
+      : undefined;
+
+    return {
+      passed,
+      verdict,
+      missing: Array.isArray(candidate.missing)
+        ? candidate.missing.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : undefined,
+      ruleVersion: String(candidate.ruleVersion || '').trim() || undefined,
     };
   }
 

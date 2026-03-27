@@ -15,6 +15,7 @@ import { PlannerService, PostExecutionDecision } from '../planner.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { IncrementalPlanningService } from './incremental-planning.service';
 import { OrchestrationContextService } from './orchestration-context.service';
+import { SceneOptimizationService } from './scene-optimization.service';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { ORCH_EVENTS, OrchestrationSource } from '../orchestration-events';
 
@@ -40,6 +41,7 @@ export class OrchestrationStepDispatcherService {
     private readonly incrementalPlanningService: IncrementalPlanningService,
     private readonly eventStream: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
+    private readonly sceneOptimizationService: SceneOptimizationService,
     private readonly eventEmitter: EventEmitter2,
     private readonly agentClientService: AgentClientService,
   ) {}
@@ -110,7 +112,12 @@ export class OrchestrationStepDispatcherService {
         return { advanced: true, phase };
       }
       if (phase === 'post_execute') {
-        await this.phasePostExecute(normalizedPlanId, state, plannerSessionId);
+        await this.phasePostExecute(
+          normalizedPlanId,
+          state,
+          plannerSessionId,
+          String((plan as { domainType?: string } | null)?.domainType || 'general'),
+        );
         return { advanced: true, phase };
       }
 
@@ -388,12 +395,23 @@ export class OrchestrationStepDispatcherService {
     planId: string,
     state: OrchestrationGenerationState,
     plannerSessionId: string,
+    planDomainType: string = 'general',
   ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
+    await this.sceneOptimizationService.applyPostExecuteOptimizations({
+      planId,
+      planDomainType,
+      taskId: String(task._id),
+      runtimeTaskType: task.runtimeTaskType,
+      taskStatus: task.status,
+      taskOutput: String(task.result?.output || task.result?.summary || ''),
+    });
+
     const postPrompt = this.contextService.buildPostTaskContext({
       step: state.currentStep,
       taskId: String(task._id),
       taskTitle: task.title,
+      runtimeTaskType: task.runtimeTaskType,
       executionStatus: task.status,
       executionOutput: task.result?.output || task.result?.summary,
       executionError: task.result?.error,
