@@ -563,7 +563,8 @@ export class IncrementalPlanningService {
     order: number,
   ): Promise<OrchestrationTaskDocument> {
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
+    const plannerAgentId = await this.resolvePlanPlannerAgentId(planId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, plannerAgentId);
 
     const requirementId = await this.resolveRequirementObjectId(planId);
 
@@ -639,7 +640,8 @@ export class IncrementalPlanningService {
     }
 
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
+    const plannerAgentId = await this.resolvePlanPlannerAgentId(planId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, plannerAgentId);
     const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
     await this.taskModel
       .updateOne(
@@ -723,19 +725,36 @@ export class IncrementalPlanningService {
 
   private async resolveAssignmentForPlannerTask(
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
-    plannerAgentId: string,
+    taskAgentId: string,
+    planPlannerAgentId?: string,
   ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
     const mode = this.resolvePlannerAgentSelectionMode();
-    const validAgentId = await this.resolveValidAgentId(plannerAgentId);
+    const validAgentId = await this.resolveValidAgentId(taskAgentId);
 
     if (mode === 'override') {
       this.logger.log(
-        `[planner_override_mode] mode=override plannerAgent=${plannerAgentId || 'empty'} title="${taskResult.title.slice(0, 60)}"`,
+        `[planner_override_mode] mode=override taskAgent=${taskAgentId || 'empty'} title="${taskResult.title.slice(0, 60)}"`,
       );
       return this.resolveFallbackAssignment(taskResult, 'Planner assignment overridden by policy');
     }
 
     if (!validAgentId) {
+      // When planner doesn't provide an agentId, fall back to the plan's planner agent
+      // for general-type tasks (e.g. step1/step2 CTO tasks in rd-workflow).
+      const normalizedTaskType = String(taskResult.taskType || 'general').trim().toLowerCase();
+      const validPlannerAgentId = planPlannerAgentId
+        ? await this.resolveValidAgentId(planPlannerAgentId)
+        : undefined;
+      if (validPlannerAgentId && normalizedTaskType === 'general') {
+        this.logger.log(
+          `[planner_fallback_to_plan_planner] taskAgent=empty planPlanner=${validPlannerAgentId} title="${taskResult.title.slice(0, 60)}"`,
+        );
+        return {
+          executorType: 'agent',
+          executorId: validPlannerAgentId,
+          reason: 'Planner did not provide agentId; fallback to plan planner agent for general task',
+        };
+      }
       return this.resolveFallbackAssignment(taskResult, 'Planner did not provide valid agentId');
     }
 
@@ -981,6 +1000,16 @@ export class IncrementalPlanningService {
     }
 
     return String((agent as any).id || (agent as any)._id?.toString() || '').trim() || null;
+  }
+
+  private async resolvePlanPlannerAgentId(planId: string): Promise<string | undefined> {
+    const plan = await this.planModel
+      .findById(planId)
+      .select({ 'strategy.plannerAgentId': 1 })
+      .lean()
+      .exec();
+    const plannerAgentId = String((plan as any)?.strategy?.plannerAgentId || '').trim();
+    return plannerAgentId || undefined;
   }
 
   private async resolveRequirementObjectId(planId: string): Promise<Types.ObjectId | undefined> {

@@ -9,8 +9,18 @@ describe('IncrementalPlanningService redesign task lookup', () => {
       ...taskModelOverrides,
     };
 
+    const planModel = {
+      findById: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({ strategy: { plannerAgentId: 'planner-agent-1' } }),
+          }),
+        }),
+      }),
+    };
+
     const service = new IncrementalPlanningService(
-      {} as any,
+      planModel as any,
       taskModel as any,
       {} as any,
       {} as any,
