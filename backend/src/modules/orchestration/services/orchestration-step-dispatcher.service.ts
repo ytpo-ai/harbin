@@ -205,6 +205,13 @@ export class OrchestrationStepDispatcherService {
     state: OrchestrationGenerationState,
     plannerSessionId: string,
   ): Promise<void> {
+    await this.planModel.updateOne({ _id: planId }, { $set: { status: 'drafting' } }).exec();
+    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'drafting',
+      phase: 'incremental_planning',
+    });
+
     await this.emitStepStarted(planId, state.currentStep + 1);
     const plannerContext = await this.incrementalPlanningService.buildPlannerContext(planId, sourcePrompt);
     const nextTaskResult = await this.plannerService.generateNextTask(planId, plannerContext, {

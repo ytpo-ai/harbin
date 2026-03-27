@@ -874,6 +874,12 @@ export class IncrementalPlanningService {
       totalTasks: state.totalGenerated,
       totalSteps: state.currentStep,
     });
+
+    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'planned',
+      phase: 'planning_completed',
+    });
   }
 
   async failPlanning(planId: string, error: string): Promise<void> {
@@ -894,6 +900,13 @@ export class IncrementalPlanningService {
 
     this.eventStream.emitPlanStreamEvent(planId, 'planning.failed', {
       planId,
+      error,
+    });
+
+    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'draft',
+      phase: 'planning_failed',
       error,
     });
   }

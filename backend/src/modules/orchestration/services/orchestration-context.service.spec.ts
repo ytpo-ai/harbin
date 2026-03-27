@@ -36,4 +36,28 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
 
     expect(runtimeTaskType).toBe('development.review');
   });
+
+  it('infers development.plan for step3 plan contract without explicit taskType', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'development',
+      planGoal: '### step3: 制定技术开发计划\n- 动作: 基于需求规格设计实现方案\n### step5: 实现评估',
+      step: 2,
+      taskTitle: 'step3 制定技术开发计划（锚定 req-1）',
+      taskDescription: '基于需求规格设计实现方案，拆解开发子任务',
+    });
+
+    expect(runtimeTaskType).toBe('development.plan');
+  });
+
+  it('infers development.exec for step4 when no explicit taskType', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'development',
+      planGoal: '### step3: 制定技术开发计划\n### step4: 执行开发\n### step5: 实现评估',
+      step: 3,
+      taskTitle: 'step4 执行开发（锚定 req-1）',
+      taskDescription: '按计划实施代码变更并提交',
+    });
+
+    expect(runtimeTaskType).toBe('development.exec');
+  });
 });
