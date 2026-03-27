@@ -1,9 +1,14 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { json, urlencoded } from 'express';
 import { EngineeringIntelligenceAppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(EngineeringIntelligenceAppModule);
+  const bodyLimit = String(process.env.ENGINEERING_INTELLIGENCE_BODY_LIMIT || '2mb').trim() || '2mb';
+  app.use(json({ limit: bodyLimit }));
+  app.use(urlencoded({ extended: true, limit: bodyLimit }));
+
   app.useGlobalPipes(
     new ValidationPipe({
       transform: true,

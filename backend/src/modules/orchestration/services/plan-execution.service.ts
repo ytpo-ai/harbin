@@ -145,8 +145,8 @@ export class PlanExecutionService {
       throw new BadRequestException('Plan has no tasks to run');
     }
 
-    const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim() || undefined;
+    // const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
+    // const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim() || undefined;
 
     await this.planStatsService.setPlanStatus(planId, 'planned');
     await this.planStatsService.setPlanSessionStatus(planId, 'planned');

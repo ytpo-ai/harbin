@@ -857,6 +857,7 @@ export class EiManagementService {
     for (const candidate of candidates) {
       const session = await this.opencodeService.getSession(sessionId, candidate.endpoint, {
         authEnable: candidate.authEnable,
+        suppressErrorLog: true,
       });
       if (session) {
         return session;
@@ -872,6 +873,7 @@ export class EiManagementService {
     for (const candidate of candidates) {
       const session = await this.opencodeService.getSession(sessionId, candidate.endpoint, {
         authEnable: candidate.authEnable,
+        suppressErrorLog: true,
       });
       if (!session) {
         continue;

@@ -5,3 +5,4 @@ node_modules
 # .gitignore 至少包含
 backend/.env
 backend/.env.development
+backups/

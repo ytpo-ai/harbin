@@ -17,11 +17,9 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 具体规范及约束请阅读 `docs/dailylog/RULES.md` 中的说明。
 
 ## API 接口测试与编排验证规范
-
 具体规范及约束请阅读 `docs/guide/TEST_GUIDELINE.MD` 中的说明。
 
 ## 问题分析规范
-
 对系统问题分析，必须遵循 `docs/guide/ANALYSIS_GUIDELINE.MD` 中的规范中的核心要求。
 
 ## OpenCode Endpoint 优先级提示
@@ -45,9 +43,8 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 1. 接到开发需求后，**优先查阅 `docs/guide/` 和 `docs/technical/`** 下是否已有与当前需求相关的梳理文档
 2. 如果已有文档覆盖所需上下文，直接使用，**不必扫描代码**
 3. 如果文档不存在或信息不足，再进行代码扫描获取上下文
-4. 代码扫描完成后，**必须将梳理结果回写**，供后续 session 复用：
+4. 代码扫描完成后，**如有必要**，将梳理结果回写，供后续 session 复用：
    - 探索项目代码得到的现状总结 → 写入 `docs/guide/`
-   - 针对需求设计的技术方案 → 写入 `docs/technical/`
 
 **文档规范**：
 - 文件命名：使用大写字母 + `&` 或 `_` 分隔的 `.MD` 格式，体现文档主题（如 `AGENT&ROLE.MD`、`ORCHESTRATION_TASK_MANUAL_EDIT.MD`）
@@ -56,8 +53,8 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 - 如果发现已有文档内容过时，应在本次开发中**顺带更新**，保持缓存有效性
 
 **三类文档的关系**：
-- `docs/guide/`：偏向**项目现状探索总结**（代码结构、模块机制、链路概览——"现在是什么样的"）
-- `docs/technical/`：偏向**需求驱动的技术设计**（详细架构、完整数据模型、算法、时序图——"打算怎么做"）
+- `docs/guide/`：偏向**项目现状探索总结**（代码结构、模块机制、链路概览——"现在是什么样的"），agent主动探索总结
+- `docs/technical/`：偏向**需求驱动的技术设计**（详细架构、完整数据模型、算法、时序图——"打算怎么做"），agent主动设计输出
 - `docs/feature/`：偏向**功能维度描述**（功能说明、使用方式、配置项——"功能是什么"）
 - 三者互补：guide 侧重"快速了解模块怎么跑的"，technical 侧重"深入理解技术实现细节"，feature 侧重"功能是什么"
 

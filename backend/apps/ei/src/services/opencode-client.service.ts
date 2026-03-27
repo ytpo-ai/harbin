@@ -503,7 +503,11 @@ export class OpencodeService {
     }
   }
 
-  async getSession(sessionId: string, baseUrl?: string, options?: { authEnable?: boolean }): Promise<any | null> {
+  async getSession(
+    sessionId: string,
+    baseUrl?: string,
+    options?: { authEnable?: boolean; suppressErrorLog?: boolean },
+  ): Promise<any | null> {
     try {
       return await this.request<any>('GET', `/session/${encodeURIComponent(sessionId)}`, {
         baseUrl,
@@ -511,7 +515,9 @@ export class OpencodeService {
         throwOnError: true,
       });
     } catch (error: any) {
-      this.logger.error(`Error getting session: ${error?.message || error}`, error?.stack);
+      if (!options?.suppressErrorLog) {
+        this.logger.error(`Error getting session: ${error?.message || error}`, error?.stack);
+      }
       return null;
     }
   }
