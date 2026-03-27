@@ -56,6 +56,7 @@ export interface GenerateNextTaskResult {
     description: string;
     priority: 'low' | 'medium' | 'high' | 'urgent';
     agentId: string;
+    taskType: 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general';
     requiredTools?: string[];
   };
   isGoalReached: boolean;
@@ -201,6 +202,7 @@ export class PlannerService {
           description: String(parsed.task.description || '').trim().slice(0, MAX_DESCRIPTION_LENGTH),
           priority: this.normalizePriority(parsed.task.priority),
           agentId: parsedAgentId,
+          taskType: this.normalizeRuntimeTaskType(parsed.task.taskType),
           requiredTools: parsedRequiredTools,
         }
       : undefined;
@@ -465,8 +467,7 @@ export class PlannerService {
     sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
     sections.push('- 不要回复"好的"、"收到"、"我来执行"等确认性文字。直接输出 JSON。');
     sections.push('- JSON 必须严格符合以下 schema:');
-    sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","requiredTools":["..."]},"isGoalReached":false,"reasoning":"..."}');
-    sections.push('- 不要输出 taskType，任务类型将由系统在 pre_execute 阶段基于计划上下文自动推断。');
+    sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development.plan|development.exec|development.review","requiredTools":["..."]},"isGoalReached":false,"reasoning":"..."}');
     sections.push('');
 
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
@@ -525,7 +526,7 @@ export class PlannerService {
     sections.push('');
     sections.push('## 输出规则（严格遵守）');
     sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
-    sections.push('2) JSON 结构: {"action": "new|redesign", "redesignTaskId": "...", "task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "requiredTools": ["..."]}, "isGoalReached": false, "reasoning": "..."}');
+    sections.push('2) JSON 结构: {"action": "new|redesign", "redesignTaskId": "...", "task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development.plan|development.exec|development.review", "requiredTools": ["..."]}, "isGoalReached": false, "reasoning": "..."}');
     sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
     sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
@@ -581,6 +582,22 @@ export class PlannerService {
   private normalizePlannerAction(input: unknown): 'new' | 'redesign' {
     const val = String(input || '').trim().toLowerCase();
     return val === 'redesign' ? 'redesign' : 'new';
+  }
+
+  private normalizeRuntimeTaskType(
+    input: unknown,
+  ): 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general' {
+    const normalized = String(input || '').trim().toLowerCase();
+    if (
+      normalized === 'research'
+      || normalized === 'development.plan'
+      || normalized === 'development.exec'
+      || normalized === 'development.review'
+      || normalized === 'general'
+    ) {
+      return normalized;
+    }
+    return 'general';
   }
 
   private normalizeMode(input: string, fallback: 'sequential' | 'parallel' | 'hybrid'): 'sequential' | 'parallel' | 'hybrid' {

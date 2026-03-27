@@ -235,6 +235,7 @@ export class OrchestrationContextService {
       '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
       '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
       '如果无法完成判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
+      '先激活并严格遵循 skill: docs/skill/orchestration-runtime-tasktype-selection.md',
       '请进行执行前评估，并仅返回 JSON。',
       '目标：判断当前任务是否允许进入执行阶段。',
       `step: ${input.step}`,
@@ -257,6 +258,7 @@ export class OrchestrationContextService {
     step?: number;
     taskTitle: string;
     taskDescription: string;
+    taskType?: string;
     existingRuntimeTaskType?: string;
   }): 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general' {
     const existing = this.normalizeRuntimeTaskTypeOverride(input.existingRuntimeTaskType);
@@ -264,36 +266,18 @@ export class OrchestrationContextService {
       return existing;
     }
 
+    const taskType = this.normalizeRuntimeTaskTypeOverride(input.taskType);
+    if (taskType) {
+      return taskType;
+    }
+
     const domain = String(input.planDomainType || 'general').trim().toLowerCase();
-    const isResearchTask = this.isResearchLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
-    const isReviewTask = this.isReviewLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
-    const isCodeTask = this.isCodeLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
-    const isPlanTask = this.isPlanningLikeTask(input.taskTitle, input.taskDescription, input.planGoal);
 
     if (domain === 'research') {
       return 'research';
     }
 
     if (domain === 'development') {
-      if (isReviewTask) {
-        return 'development.review';
-      }
-      if (isPlanTask && Number(input.step || 0) <= 1) {
-        return 'development.plan';
-      }
-      return 'development.exec';
-    }
-
-    if (isResearchTask) {
-      return 'research';
-    }
-    if (isReviewTask) {
-      return 'development.review';
-    }
-    if (isPlanTask) {
-      return 'development.plan';
-    }
-    if (isCodeTask) {
       return 'development.exec';
     }
 
@@ -418,53 +402,4 @@ export class OrchestrationContextService {
     return String(entity?.id || '');
   }
 
-  private isPlanningLikeTask(title: string, description: string, planGoal?: string): boolean {
-    const text = `${title} ${description} ${String(planGoal || '').slice(0, 300)}`.toLowerCase();
-    return (
-      text.includes('plan')
-      || text.includes('planning')
-      || text.includes('design')
-      || text.includes('architecture')
-      || text.includes('拆解')
-      || text.includes('方案')
-      || text.includes('设计')
-      || text.includes('规划')
-      || text.includes('编排')
-    );
-  }
-
-  private isResearchLikeTask(title: string, description: string, planGoal?: string): boolean {
-    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
-    return (
-      text.includes('research')
-      || text.includes('web search')
-      || text.includes('调研')
-      || text.includes('检索')
-      || text.includes('信息收集')
-    );
-  }
-
-  private isReviewLikeTask(title: string, description: string, planGoal?: string): boolean {
-    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
-    return (
-      text.includes('review')
-      || text.includes('验收')
-      || text.includes('复核')
-      || text.includes('校对')
-      || text.includes('评审')
-    );
-  }
-
-  private isCodeLikeTask(title: string, description: string, planGoal?: string): boolean {
-    const text = `${title} ${description} ${String(planGoal || '').slice(0, 200)}`.toLowerCase();
-    return (
-      text.includes('code')
-      || text.includes('implement')
-      || text.includes('fix')
-      || text.includes('refactor')
-      || text.includes('开发')
-      || text.includes('编码')
-      || text.includes('修复')
-    );
-  }
 }

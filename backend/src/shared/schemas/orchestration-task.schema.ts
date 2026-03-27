@@ -20,6 +20,8 @@ export type OrchestrationTaskRuntimeType =
   | 'development.review'
   | 'general';
 
+export type OrchestrationTaskType = OrchestrationTaskRuntimeType;
+
 @Schema({ timestamps: true, collection: 'orchestration_tasks' })
 export class OrchestrationTask {
   @Prop()
@@ -51,6 +53,18 @@ export class OrchestrationTask {
 
   @Prop({ type: [String], default: [] })
   mergedFromTaskIds: string[];
+
+  @Prop({
+    enum: [
+      'research',
+      'development.plan',
+      'development.exec',
+      'development.review',
+      'general',
+    ],
+    default: 'general',
+  })
+  taskType: OrchestrationTaskType;
 
   @Prop({
     enum: [

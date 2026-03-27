@@ -160,6 +160,45 @@ export class OrchestrationStepDispatcherService {
     return { accepted: true };
   }
 
+  async stopGeneration(planId: string): Promise<{ stopped: boolean; alreadyStopped: boolean }> {
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const plan = await this.planModel.findById(normalizedPlanId).lean().exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const currentState = this.resolveGenerationState(plan.generationState as OrchestrationGenerationState | undefined);
+    if (currentState.isComplete) {
+      return { stopped: false, alreadyStopped: true };
+    }
+
+    const sessionId = String(currentState.plannerSessionId || '').trim();
+    await this.updateGenerationState(normalizedPlanId, {
+      ...currentState,
+      isComplete: true,
+      currentPhase: 'idle',
+      currentTaskId: undefined,
+      plannerSessionId: undefined,
+      lastDecision: 'stop',
+      lastError: undefined,
+    });
+
+    if (sessionId) {
+      try {
+        await this.agentClientService.archiveSession(sessionId);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`archive planner session failed when stopping generation: plan=${normalizedPlanId}, session=${sessionId}, error=${message}`);
+      }
+    }
+
+    return { stopped: true, alreadyStopped: false };
+  }
+
   private async phaseGenerate(
     planId: string,
     sourcePrompt: string,
@@ -257,6 +296,7 @@ export class OrchestrationStepDispatcherService {
       step: state.currentStep,
       taskTitle: task.title,
       taskDescription: task.description,
+      taskType: (task as any).taskType,
       existingRuntimeTaskType: task.runtimeTaskType,
     });
 

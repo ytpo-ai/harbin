@@ -47,7 +47,7 @@
 | 集合 | 文件 | 说明 |
 |---|---|---|
 | `orchestration_plans` | `orchestration-plan.schema.ts` | 计划主体、策略、统计、状态 |
-| `orchestration_tasks` | `orchestration-task.schema.ts` | 模板任务（依赖、执行者、结果、runtimeTaskType） |
+| `orchestration_tasks` | `orchestration-task.schema.ts` | 模板任务（依赖、执行者、结果、taskType、runtimeTaskType） |
 | `orchestration_runs` | `orchestration-run.schema.ts` | 单次运行记录 |
 | `orchestration_run_tasks` | `orchestration-run-task.schema.ts` | 运行态任务快照 |
 | `plan_sessions` | `orchestration-plan-session.schema.ts` | 计划聚合视图 |
@@ -66,6 +66,7 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 2. 后台异步生成任务并推送 SSE：`plan.status.changed`、`plan.task.generated`、`plan.completed`、`plan.failed`。
 3. 支持 `POST /orchestration/plans/:id/replan` 覆盖重编排。
 4. 支持 `POST /orchestration/plans/:id/generate-next` 增量生成下一任务。
+5. 支持 `POST /orchestration/plans/:id/stop-generation` 手动停止当前计划生成流程。
 
 ### 4.2 执行与取消
 
@@ -82,11 +83,11 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 
 ### 4.4 runtimeTaskType 推断（当前规则）
 
-- 任务创建阶段（planner/generate-next）不再负责分类，不接受 planner 输出 `taskType`。
-- `runtimeTaskType` 统一在 `phasePreExecute` 基于计划上下文推断并落库：`domainType + sourcePrompt + taskTitle/taskDescription + step`。
+- 任务创建阶段（planner/generate-next）写入 `taskType`，默认值为 `general`。
+- `runtimeTaskType` 统一在 `phasePreExecute` 推断并落库，优先级为：`existingRuntimeTaskType > taskType > domain fallback`。
 - 当前有效值：`general`、`research`、`development.plan`、`development.exec`、`development.review`。
 - `development.*` 任务默认禁用自动生成模式下的 retry 原地重试，post 阶段会转为 redesign 路径。
-- 已移除 `TaskClassificationService`，不再在模块内保留独立关键词分类服务。
+- 已移除编排上下文中的关键词分类函数（`isPlanningLikeTask` / `isResearchLikeTask` / `isCodeReviewLikeTask` / `isCodeLikeTask`）。
 
 ## 5. API 清单（当前有效）
 
@@ -102,6 +103,7 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 | DELETE | `/orchestration/plans/:id` | 删除计划 |
 | POST | `/orchestration/plans/:id/replan` | 重编排 |
 | POST | `/orchestration/plans/:id/generate-next` | 增量生成 |
+| POST | `/orchestration/plans/:id/stop-generation` | 停止计划生成 |
 | POST | `/orchestration/plans/:id/run` | 启动运行 |
 | POST | `/orchestration/runs/:runId/cancel` | 取消运行 |
 | GET | `/orchestration/plans/:id/runs` | 运行历史 |

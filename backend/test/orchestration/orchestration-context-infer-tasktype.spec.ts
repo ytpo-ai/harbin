@@ -16,24 +16,24 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
     expect(result).toBe('research');
   });
 
-  it('returns development.review for development domain with review keywords', () => {
+  it('returns development.review when taskType is provided', () => {
     const service = createService();
     const result = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'development',
+      taskType: 'development.review',
       taskTitle: 'Review implementation and validate acceptance',
       taskDescription: 'perform code review and verify behavior',
-      step: 3,
     });
     expect(result).toBe('development.review');
   });
 
-  it('returns development.plan for development domain plan-like task at step 1', () => {
+  it('returns development.plan when taskType is provided', () => {
     const service = createService();
     const result = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'development',
+      taskType: 'development.plan',
       taskTitle: 'Design architecture plan',
       taskDescription: '拆解方案与里程碑',
-      step: 1,
     });
     expect(result).toBe('development.plan');
   });
@@ -49,24 +49,23 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
     expect(result).toBe('development.exec');
   });
 
-  it('returns research for general domain with research keywords', () => {
+  it('returns general for general domain when taskType is absent', () => {
     const service = createService();
     const result = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'general',
       taskTitle: 'Research competitor solutions',
       taskDescription: 'collect findings with sources',
-      step: 2,
     });
-    expect(result).toBe('research');
+    expect(result).toBe('general');
   });
 
-  it('returns development.exec for general domain with code keywords', () => {
+  it('uses taskType for general domain when provided', () => {
     const service = createService();
     const result = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'general',
+      taskType: 'development.exec',
       taskTitle: 'Implement API endpoint',
       taskDescription: 'code and test the handler',
-      step: 2,
     });
     expect(result).toBe('development.exec');
   });
@@ -77,7 +76,6 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
       planDomainType: 'general',
       taskTitle: 'Coordinate next update',
       taskDescription: 'prepare concise status update for stakeholders',
-      step: 2,
     });
     expect(result).toBe('general');
   });
@@ -88,7 +86,6 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
       planDomainType: 'general',
       taskTitle: 'any task',
       taskDescription: 'any description',
-      step: 2,
       existingRuntimeTaskType: 'development.review',
     });
     expect(result).toBe('development.review');

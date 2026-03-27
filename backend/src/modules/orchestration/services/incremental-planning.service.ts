@@ -322,6 +322,48 @@ export class IncrementalPlanningService {
     step: number,
     isRedesign: boolean,
   ): Promise<{ status: string; result?: string; error?: string }> {
+    const planSnapshot = await this.planModel
+      .findById(planId)
+      .select({ domainType: 1, sourcePrompt: 1 })
+      .lean<{ domainType?: string; sourcePrompt?: string }>()
+      .exec();
+
+    const inferredRuntimeTaskType = this.contextService.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: String(planSnapshot?.domainType || 'general'),
+      planGoal: String(planSnapshot?.sourcePrompt || ''),
+      step: Number.isFinite(step) ? Math.max(step - 1, 0) : undefined,
+      taskTitle: task.title,
+      taskDescription: task.description,
+      taskType: (task as any).taskType,
+      existingRuntimeTaskType: (task as any).runtimeTaskType,
+    });
+
+    if ((task as any).runtimeTaskType !== inferredRuntimeTaskType) {
+      await this.taskModel
+        .updateOne(
+          { _id: task._id },
+          {
+            $set: {
+              runtimeTaskType: inferredRuntimeTaskType,
+            },
+            $push: {
+              runLogs: {
+                timestamp: new Date(),
+                level: 'info',
+                message: 'Runtime task type inferred in incremental execution path',
+                metadata: {
+                  inferredRuntimeTaskType,
+                  previousRuntimeTaskType: (task as any).runtimeTaskType,
+                  source: 'incremental_planning.executeIncrementalTaskWithRunRecord',
+                },
+              },
+            },
+          },
+        )
+        .exec();
+      (task as any).runtimeTaskType = inferredRuntimeTaskType;
+    }
+
     const startedAt = new Date();
     const run = await new this.runModel({
       planId,
@@ -355,6 +397,7 @@ export class IncrementalPlanningService {
       status: task.status,
       assignment: task.assignment,
       dependencyTaskIds: task.dependencyTaskIds || [],
+      taskType: (task as any).taskType || 'general',
       runtimeTaskType: task.runtimeTaskType,
       runLogs: [
         {
@@ -411,6 +454,7 @@ export class IncrementalPlanningService {
         {
           $set: {
             status: finalTaskStatus,
+            runtimeTaskType: (latestTask as any)?.runtimeTaskType,
             result: {
               summary: latestTask?.result?.summary,
               output: latestTask?.result?.output,
@@ -538,6 +582,7 @@ export class IncrementalPlanningService {
       title: taskResult.title,
       description: taskResult.description,
       priority: taskResult.priority,
+      taskType: taskResult.taskType || 'general',
       status: assignment.executorType === 'unassigned' ? 'pending' : 'assigned',
       order,
       dependencyTaskIds,
@@ -604,6 +649,7 @@ export class IncrementalPlanningService {
             title: taskResult.title,
             description: taskResult.description,
             priority: taskResult.priority,
+            taskType: taskResult.taskType || 'general',
             status,
             assignment,
             startedAt: null,
@@ -642,93 +688,11 @@ export class IncrementalPlanningService {
   }
 
   private async tryMergeWithPreviousTask(
-    planId: string,
-    currentTask: OrchestrationTaskDocument,
+    _planId: string,
+    _currentTask: OrchestrationTaskDocument,
   ): Promise<boolean> {
-    const previousTask = await this.taskModel
-      .findOne({
-        planId,
-        order: currentTask.order - 1,
-        status: 'completed',
-      })
-      .exec();
-
-    if (!previousTask) {
-      return false;
-    }
-
-    const sameAgent =
-      previousTask.assignment?.executorType === 'agent'
-      && currentTask.assignment?.executorType === 'agent'
-      && previousTask.assignment?.executorId
-      && previousTask.assignment?.executorId === currentTask.assignment?.executorId;
-
-    if (!sameAgent) {
-      return false;
-    }
-
-    const previousKeywords = this.extractKeywords(`${previousTask.title} ${previousTask.description}`);
-    const currentKeywords = this.extractKeywords(`${currentTask.title} ${currentTask.description}`);
-    const overlap = previousKeywords.filter((item) => currentKeywords.includes(item)).length;
-    const denominator = Math.max(previousKeywords.length, currentKeywords.length, 1);
-    const similarity = overlap / denominator;
-
-    if (similarity < 0.4) {
-      return false;
-    }
-
-    const mergedDescription = [
-      previousTask.description,
-      '---',
-      `[Merged from step ${currentTask.order + 1}] ${currentTask.title}`,
-      currentTask.description,
-    ].join('\n');
-
-    const mergedOutput = [
-      String(previousTask.result?.output || ''),
-      '---',
-      `[Step ${currentTask.order + 1} output]`,
-      String(currentTask.result?.output || ''),
-    ].join('\n');
-
-    await this.taskModel
-      .updateOne(
-        { _id: previousTask._id },
-        {
-          $set: {
-            description: mergedDescription,
-            'result.output': mergedOutput,
-          },
-          $push: {
-            mergedFromTaskIds: currentTask._id.toString(),
-          },
-        },
-      )
-      .exec();
-
-    await this.taskModel
-      .updateOne(
-        { _id: currentTask._id },
-        {
-          $set: { status: 'cancelled' },
-        },
-      )
-      .exec();
-
-    await this.planStatsService.refreshPlanStats(planId);
-    await this.planStatsService.syncPlanSessionTasks(planId);
-
-    this.eventStream.emitPlanStreamEvent(planId, 'planning.task.merged', {
-      planId,
-      sourceTaskId: currentTask._id.toString(),
-      targetTaskId: previousTask._id.toString(),
-    });
-
-    this.logger.log(
-      `Merged task "${currentTask.title}" into "${previousTask.title}" (similarity=${similarity.toFixed(2)})`,
-    );
-
-    return true;
+    // Temporary: disable automatic task merge to keep one-step-one-task traceability.
+    return false;
   }
 
   private resolvePlannerAgentSelectionMode(): PlannerAgentSelectionMode {
@@ -746,7 +710,7 @@ export class IncrementalPlanningService {
     const fallback = await this.executorSelectionService.selectExecutor({
       title: taskResult.title,
       description: taskResult.description,
-      taskType: 'general',
+      taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
     });
 
@@ -787,7 +751,7 @@ export class IncrementalPlanningService {
       agentId: validAgentId,
       taskTitle: taskResult.title,
       taskDescription: taskResult.description,
-      taskType: 'general',
+      taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
     });
 
@@ -1002,14 +966,6 @@ export class IncrementalPlanningService {
     const plan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
     return this.contextService.parseRequirementObjectId(requirementId);
-  }
-
-  private extractKeywords(text: string): string[] {
-    return String(text || '')
-      .toLowerCase()
-      .split(/[^a-zA-Z0-9\u4e00-\u9fa5]+/)
-      .filter((item) => item.length >= 2)
-      .slice(0, 30);
   }
 
 }
