@@ -141,6 +141,40 @@ export const usePlanMutations = ({
     },
   );
 
+  const stopGenerationMutation = useMutation(
+    ({ targetPlanId, reason }: { targetPlanId: string; reason?: string }) =>
+      orchestrationService.stopPlanGeneration(targetPlanId, reason),
+    {
+      onMutate: () => {
+        setStreamHint('正在停止任务生成...');
+      },
+      onSuccess: async (result) => {
+        if (result?.stopped) {
+          setPromptHint('已手动停止任务生成');
+          setStreamHint('已手动停止任务生成');
+        } else {
+          setPromptHint('当前没有可停止的生成流程');
+          setStreamHint('当前没有可停止的生成流程');
+        }
+        await refreshPlanData();
+      },
+      onError: (error) => {
+        const message = error instanceof Error ? error.message : '停止生成失败，请稍后重试';
+        setPromptHint(message);
+        setStreamHint(message);
+      },
+    },
+  );
+
+  const deletePlanMutation = useMutation(
+    (targetPlanId: string) => orchestrationService.deletePlan(targetPlanId),
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries('orchestration-plans');
+      },
+    },
+  );
+
   const replanPlanMutation = useReplanMutation({
     planId,
     modeDraft,
@@ -181,6 +215,8 @@ export const usePlanMutations = ({
     publishPlanMutation,
     unlockPlanMutation,
     generateNextMutation,
+    stopGenerationMutation,
+    deletePlanMutation,
     replanPlanMutation,
     runPlan,
     savePlanPrompt,

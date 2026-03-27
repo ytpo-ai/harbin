@@ -146,6 +146,8 @@ const PlanDetail: React.FC = () => {
     publishPlanMutation,
     unlockPlanMutation,
     generateNextMutation,
+    stopGenerationMutation,
+    deletePlanMutation,
     replanPlanMutation,
     runPlan,
     savePlanPrompt,
@@ -255,6 +257,24 @@ const PlanDetail: React.FC = () => {
     );
   }
 
+  const handleDeletePlan = async () => {
+    if (!planId || deletePlanMutation.isLoading) {
+      return;
+    }
+    const ok = window.confirm('确认删除该计划及其任务？此操作不可恢复。');
+    if (!ok) {
+      return;
+    }
+    try {
+      await deletePlanMutation.mutateAsync(planId);
+      alert('计划已删除');
+      navigate('/orchestration');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '删除失败，请稍后重试';
+      alert(message);
+    }
+  };
+
   const headerProps = {
     planDetail,
     planId,
@@ -267,6 +287,8 @@ const PlanDetail: React.FC = () => {
     replanPending: view.isReplanPending,
     savePromptLoading: savePlanPromptMutation.isLoading,
     generateLoading: generateNextMutation.isLoading,
+    stopGenerationLoading: stopGenerationMutation.isLoading,
+    deleteLoading: deletePlanMutation.isLoading,
     generationCompleted: Boolean(planDetail.generationState?.isComplete),
     cancelRunLoading: cancelRunMutation.isLoading,
     publishLoading: publishPlanMutation.isLoading,
@@ -274,6 +296,18 @@ const PlanDetail: React.FC = () => {
     onBack: () => navigate('/orchestration'),
     onRefresh: () => { void refreshPlanData(); },
     onGenerateNext: () => { if (planId) generateNextMutation.mutate(planId); },
+    onStopGeneration: () => {
+      if (!planId) {
+        return;
+      }
+      stopGenerationMutation.mutate({
+        targetPlanId: planId,
+        reason: '用户在计划详情页点击停止执行',
+      });
+    },
+    onDeletePlan: () => {
+      void handleDeletePlan();
+    },
     onSavePrompt: () => {
       if (!planId) return;
       const nextPrompt = view.promptDraft.trim();

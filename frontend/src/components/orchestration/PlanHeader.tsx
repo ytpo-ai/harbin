@@ -7,6 +7,7 @@ import {
   PencilSquareIcon,
   PlayIcon,
   PlusIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { OrchestrationPlan, OrchestrationRun } from '../../services/orchestrationService';
 import { formatDateTime } from './constants';
@@ -23,6 +24,8 @@ interface PlanHeaderProps {
   replanPending: boolean;
   savePromptLoading: boolean;
   generateLoading: boolean;
+  stopGenerationLoading: boolean;
+  deleteLoading: boolean;
   generationCompleted: boolean;
   cancelRunLoading: boolean;
   publishLoading: boolean;
@@ -30,6 +33,8 @@ interface PlanHeaderProps {
   onBack: () => void;
   onRefresh: () => void;
   onGenerateNext: () => void;
+  onStopGeneration: () => void;
+  onDeletePlan: () => void;
   onSavePrompt: () => void;
   onOpenReplan: () => void;
   onRunPlan: () => void;
@@ -53,6 +58,8 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
   replanPending,
   savePromptLoading,
   generateLoading,
+  stopGenerationLoading,
+  deleteLoading,
   generationCompleted,
   cancelRunLoading,
   publishLoading,
@@ -60,6 +67,8 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
   onBack,
   onRefresh,
   onGenerateNext,
+  onStopGeneration,
+  onDeletePlan,
   onSavePrompt,
   onOpenReplan,
   onRunPlan,
@@ -120,16 +129,6 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
           </button>
           {!isProductionPlan && (
             <button
-              onClick={onOpenReplan}
-              disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
-              className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-3 py-1.5 text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
-            >
-              <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
-              {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
-            </button>
-          )}
-          {!isProductionPlan && (
-            <button
               onClick={onGenerateNext}
               disabled={!planId || generateLoading || runPlanLoading || generationCompleted}
               className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
@@ -173,6 +172,30 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
             </button>
             {moreActionsOpen && (
               <div className="absolute right-0 z-20 mt-1 min-w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {!isProductionPlan && (
+                  <button
+                    onClick={() => {
+                      setMoreActionsOpen(false);
+                      onOpenReplan();
+                    }}
+                    disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
+                    {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setMoreActionsOpen(false);
+                    onDeletePlan();
+                  }}
+                  disabled={!planId || deleteLoading || replanLoading || replanPending || runPlanLoading}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <TrashIcon className="h-4 w-4" />
+                  {deleteLoading ? '删除中...' : '删除计划'}
+                </button>
                 {planDetail.status === 'planned' && (
                   <button
                     onClick={() => {
@@ -183,6 +206,18 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                   >
                     {publishLoading ? '发布中...' : '发布生产'}
+                  </button>
+                )}
+                {planDetail.status === 'drafting' && (
+                  <button
+                    onClick={() => {
+                      setMoreActionsOpen(false);
+                      onStopGeneration();
+                    }}
+                    disabled={!planId || stopGenerationLoading}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    {stopGenerationLoading ? '停止中...' : '停止执行'}
                   </button>
                 )}
                 <button
