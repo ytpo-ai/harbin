@@ -71,7 +71,9 @@ import {
 const DEFAULT_OPENCODE_TASK_TYPES = new Set([
   'code',
   'coding',
-  'development',
+  'development.plan',
+  'development.exec',
+  'development.review',
   'engineering',
   'engineering_development',
   'implement',

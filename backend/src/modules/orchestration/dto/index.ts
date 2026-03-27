@@ -169,8 +169,21 @@ export class UpdateTaskDraftDto {
   description?: string;
 
   @IsOptional()
-  @IsEnum(['external_action', 'research', 'review', 'development', 'general', 'auto'])
-  runtimeTaskType?: 'external_action' | 'research' | 'review' | 'development' | 'general' | 'auto';
+  @IsEnum([
+    'research',
+    'development.plan',
+    'development.exec',
+    'development.review',
+    'general',
+    'auto',
+  ])
+  runtimeTaskType?:
+    | 'research'
+    | 'development.plan'
+    | 'development.exec'
+    | 'development.review'
+    | 'general'
+    | 'auto';
 }
 
 export class TaskAssignmentDto {
@@ -272,8 +285,19 @@ export class DebugTaskStepDto extends UpdateTaskDraftDto {
   resetResult?: boolean;
 
   @IsOptional()
-  @IsEnum(['external_action', 'research', 'review', 'development', 'general'])
-  runtimeTaskTypeOverride?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+  @IsEnum([
+    'research',
+    'development.plan',
+    'development.exec',
+    'development.review',
+    'general',
+  ])
+  runtimeTaskTypeOverride?:
+    | 'research'
+    | 'development.plan'
+    | 'development.exec'
+    | 'development.review'
+    | 'general';
 }
 
 export class CreateSessionDto {

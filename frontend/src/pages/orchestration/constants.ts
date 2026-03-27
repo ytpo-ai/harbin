@@ -60,18 +60,18 @@ export const FULLY_EDITABLE_PLAN_STATUS = new Set(['draft', 'drafting', 'planned
 export const DEBUG_RUNTIME_TYPE_OPTIONS: Array<{ value: 'auto' | DebugRuntimeTaskTypeOverride; label: string }> = [
   { value: 'auto', label: '自动判定（不覆盖）' },
   { value: 'general', label: '通用（general）' },
-  { value: 'development', label: '开发（development）' },
+  { value: 'development.plan', label: '开发规划（development.plan）' },
+  { value: 'development.exec', label: '开发执行（development.exec）' },
+  { value: 'development.review', label: '开发评审（development.review）' },
   { value: 'research', label: '研究（research）' },
-  { value: 'review', label: '评审（review）' },
-  { value: 'external_action', label: '外部动作（external_action）' },
 ];
 
 export const TASK_RUNTIME_TYPE_LABEL: Record<DebugRuntimeTaskTypeOverride, string> = {
   general: 'general',
-  development: 'development',
+  'development.plan': 'development.plan',
+  'development.exec': 'development.exec',
+  'development.review': 'development.review',
   research: 'research',
-  review: 'review',
-  external_action: 'external_action',
 };
 
 export type TaskDraftResolver = (task: OrchestrationTask) => TaskEditableDraft;

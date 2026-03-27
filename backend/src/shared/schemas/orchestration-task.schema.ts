@@ -14,10 +14,10 @@ export type OrchestrationTaskStatus =
   | 'cancelled';
 
 export type OrchestrationTaskRuntimeType =
-  | 'external_action'
   | 'research'
-  | 'review'
-  | 'development'
+  | 'development.plan'
+  | 'development.exec'
+  | 'development.review'
   | 'general';
 
 @Schema({ timestamps: true, collection: 'orchestration_tasks' })
@@ -52,7 +52,16 @@ export class OrchestrationTask {
   @Prop({ type: [String], default: [] })
   mergedFromTaskIds: string[];
 
-  @Prop({ enum: ['external_action', 'research', 'review', 'development', 'general'], required: false })
+  @Prop({
+    enum: [
+      'research',
+      'development.plan',
+      'development.exec',
+      'development.review',
+      'general',
+    ],
+    required: false,
+  })
   runtimeTaskType?: OrchestrationTaskRuntimeType;
 
   @Prop(raw({

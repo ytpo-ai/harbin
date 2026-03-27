@@ -752,15 +752,20 @@ export class IncrementalPlanningService {
   }
 
   private mapRuntimeTaskTypeToExecutorTaskType(
-    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general',
-  ): 'development' | 'code_review' | 'research' | 'email' | 'planning' | 'general' {
-    if (taskType === 'external_action') {
-      return 'email';
-    }
-    if (taskType === 'review') {
-      return 'code_review';
-    }
-    if (taskType === 'development' || taskType === 'research' || taskType === 'general') {
+    taskType?:
+      | 'research'
+      | 'development.plan'
+      | 'development.exec'
+      | 'development.review'
+      | 'general',
+  ): 'development.plan' | 'development.exec' | 'development.review' | 'research' | 'general' {
+    if (
+      taskType === 'development.plan'
+      || taskType === 'development.exec'
+      || taskType === 'development.review'
+      || taskType === 'research'
+      || taskType === 'general'
+    ) {
       return taskType;
     }
     return 'general';

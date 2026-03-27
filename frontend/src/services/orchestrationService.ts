@@ -3,7 +3,12 @@ import api from './api';
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
 export type PlanDomainType = 'general' | 'development' | 'research';
 export type PlanRunMode = 'once' | 'multi';
-export type DebugRuntimeTaskTypeOverride = 'general' | 'development' | 'research' | 'review' | 'external_action';
+export type DebugRuntimeTaskTypeOverride =
+  | 'general'
+  | 'development.plan'
+  | 'development.exec'
+  | 'development.review'
+  | 'research';
 export type PlanStatus = 'draft' | 'drafting' | 'planned' | 'production';
 export type TaskStatus =
   | 'pending'

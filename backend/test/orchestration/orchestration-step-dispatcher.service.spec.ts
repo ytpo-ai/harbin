@@ -443,6 +443,67 @@ describe('OrchestrationStepDispatcherService', () => {
     );
   });
 
+  it('converts retry decision to redesign for development sub task types', async () => {
+    const service = new OrchestrationStepDispatcherService(
+      {} as any,
+      {
+        findOne: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'task-1',
+            status: 'failed',
+            title: 'do task',
+            runtimeTaskType: 'development.exec',
+            result: { error: 'boom' },
+          }),
+        }),
+      } as any,
+      {
+        executePostTask: jest.fn().mockResolvedValue({
+          nextAction: 'retry',
+          reason: 'retry after failure',
+        }),
+      } as any,
+      {} as any,
+      {
+        emitPlanStreamEvent: jest.fn(),
+      } as any,
+      {
+        buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
+      } as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+    );
+
+    const updateStateSpy = jest.spyOn(service as any, 'updateGenerationStateIfExpected').mockResolvedValue(true);
+    jest.spyOn(service as any, 'autoAdvance').mockResolvedValue(undefined);
+
+    await (service as any).phasePostExecute(
+      'plan-1',
+      {
+        currentStep: 2,
+        totalGenerated: 2,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'post_execute',
+        currentTaskId: 'task-1',
+      },
+      'planner-session-1',
+    );
+
+    expect(updateStateSpy).toHaveBeenCalledWith(
+      'plan-1',
+      expect.any(Object),
+      expect.objectContaining({
+        currentPhase: 'idle',
+        currentTaskId: undefined,
+        lastDecision: 'redesign',
+      }),
+    );
+  });
+
   it('applies redesign decision and resets to idle for next round generation', async () => {
     const service = new OrchestrationStepDispatcherService(
       {} as any,
@@ -531,11 +592,77 @@ describe('OrchestrationStepDispatcherService', () => {
           }),
         }),
       } as any,
-      {} as any,
+      {
+        findOne: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue({ runtimeTaskType: 'general' }),
+            }),
+          }),
+        }),
+      } as any,
       {} as any,
       {
         resolveGenerationConfig: jest.fn().mockReturnValue({
           maxRetries: 1,
+          maxTotalFailures: 6,
+          maxCostTokens: 100000,
+          maxTasks: 10,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+    );
+
+    const updateSpy = jest.spyOn(service as any, 'updateGenerationState');
+    const result = await service.retryCurrentTask('plan-1');
+
+    expect(result).toEqual({ accepted: false });
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('rejects retryCurrentTask for development sub task types', async () => {
+    const service = new OrchestrationStepDispatcherService(
+      {
+        findById: jest.fn().mockReturnValue({
+          lean: jest.fn().mockReturnValue({
+            exec: jest.fn().mockResolvedValue({
+              generationConfig: {
+                maxRetries: 3,
+                maxTotalFailures: 6,
+                maxCostTokens: 100000,
+                maxTasks: 10,
+              },
+              generationState: {
+                currentTaskId: 'task-1',
+                currentStep: 1,
+                totalGenerated: 1,
+                totalRetries: 0,
+                consecutiveFailures: 0,
+                totalFailures: 0,
+                totalCost: 0,
+                isComplete: false,
+                currentPhase: 'post_execute',
+              },
+            }),
+          }),
+        }),
+      } as any,
+      {
+        findOne: jest.fn().mockReturnValue({
+          select: jest.fn().mockReturnValue({
+            lean: jest.fn().mockReturnValue({
+              exec: jest.fn().mockResolvedValue({ runtimeTaskType: 'development.plan' }),
+            }),
+          }),
+        }),
+      } as any,
+      {} as any,
+      {
+        resolveGenerationConfig: jest.fn().mockReturnValue({
+          maxRetries: 3,
           maxTotalFailures: 6,
           maxCostTokens: 100000,
           maxTasks: 10,

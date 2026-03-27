@@ -15,7 +15,9 @@
 3. 任务执行后的验证逻辑（research/review/code 各有专属验证器）
 4. 执行者选择时的角色兼容性判定
 
-当前合法值：`'external_action' | 'research' | 'review' | 'development' | 'general'`
+当前合法值：`'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general'`
+
+其中 `development.*` 为开发域细分类型，且默认不支持自动生成模式下的 `retry` 原地重试（进入重编排/下一轮规划路径）。
 
 ---
 

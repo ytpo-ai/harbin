@@ -28,7 +28,6 @@ export class OrchestrationContextService {
     baseDescription: string,
     options: {
       dependencyContext: string;
-      isExternalAction: boolean;
       isResearchTask: boolean;
       isReviewTask: boolean;
       researchTaskKind?: 'city_population' | 'generic_research';
@@ -40,7 +39,6 @@ export class OrchestrationContextService {
   ): string {
     const {
       dependencyContext,
-      isExternalAction,
       isResearchTask,
       isReviewTask,
       researchTaskKind,
@@ -67,18 +65,9 @@ export class OrchestrationContextService {
       sections.push(
         [
           'Review output contract (MUST comply):',
-          '- output must be a generic implementation review result, not email draft',
+          '- output must be a generic implementation review result',
           '- include: 1) review verdict (pass/needs-fix), 2) evidence list, 3) minimal fix suggestions',
           '- each evidence item should reference code behavior or file path when available',
-        ].join('\n'),
-      );
-    }
-    if (isExternalAction) {
-      sections.push(
-        [
-          'For external action completion, include a verifiable proof block in your final response:',
-          'EMAIL_SEND_PROOF: {"recipient":"...","provider":"...","messageId":"..."}',
-          'Do not claim success without this proof block.',
         ].join('\n'),
       );
     }
@@ -130,17 +119,17 @@ export class OrchestrationContextService {
 
   private toTaskTypeLabel(runtimeTaskType?: string): string {
     const normalized = String(runtimeTaskType || '').trim().toLowerCase();
-    if (normalized === 'development') {
+    if (normalized === 'development.exec') {
       return '开发';
     }
-    if (normalized === 'review') {
-      return 'review';
+    if (normalized === 'development.plan') {
+      return '开发规划';
+    }
+    if (normalized === 'development.review') {
+      return '开发评审';
     }
     if (normalized === 'research') {
       return '调研';
-    }
-    if (normalized === 'external_action') {
-      return '外部执行';
     }
     return '开发方案';
   }
@@ -332,38 +321,40 @@ export class OrchestrationContextService {
     title: string,
     description: string,
     flags: {
-      isExternalAction: boolean;
       isResearchTask: boolean;
       isReviewTask: boolean;
     },
   ): string {
-    if (flags.isExternalAction) {
-      return 'external_action';
-    }
     if (flags.isResearchTask) {
       return 'research';
     }
     if (flags.isReviewTask) {
-      return 'review';
+      return 'development.review';
     }
     if (this.taskClassificationService.isCodeTask(title, description)) {
-      return 'development';
+      return 'development.exec';
     }
     return 'general';
   }
 
   normalizeRuntimeTaskTypeOverride(
     value?: string,
-  ): 'external_action' | 'research' | 'review' | 'development' | 'general' | null {
+  ):
+    | 'research'
+    | 'development.plan'
+    | 'development.exec'
+    | 'development.review'
+    | 'general'
+    | null {
     if (!value) {
       return null;
     }
     const normalized = String(value).trim().toLowerCase();
     if (
-      normalized === 'external_action'
-      || normalized === 'research'
-      || normalized === 'review'
-      || normalized === 'development'
+      normalized === 'research'
+      || normalized === 'development.plan'
+      || normalized === 'development.exec'
+      || normalized === 'development.review'
       || normalized === 'general'
     ) {
       return normalized;

@@ -7,7 +7,6 @@ import {
   Employee,
   EmployeeDocument,
   EmployeeStatus,
-  EmployeeType,
 } from '../../../shared/schemas/employee.schema';
 import { AgentRole, AgentRoleDocument } from '@agent/schemas/agent-role.schema';
 import {
@@ -25,7 +24,7 @@ import { TaskClassificationService } from './task-classification.service';
 export interface ExecutorSelectionContext {
   title: string;
   description: string;
-  taskType?: 'development' | 'code_review' | 'research' | 'email' | 'planning' | 'general';
+  taskType?: 'development.plan' | 'development.exec' | 'development.review' | 'research' | 'general';
   requiredTools?: string[];
   requiredCapabilities?: string[];
   preferredRoleCode?: string;
@@ -59,18 +58,17 @@ export interface AgentToolFitValidationResult {
 
 /** Tier → compatible task types (weight = 40 when exact match, 25 when compatible) */
 const TIER_TASK_COMPATIBILITY: Record<AgentRoleTier, string[]> = {
-  leadership: ['planning', 'general', 'research'],
-  operations: ['development', 'code_review', 'research', 'email', 'planning', 'general'],
-  temporary: ['development', 'code_review', 'research', 'email', 'general'],
+  leadership: ['general', 'research', 'development.plan', 'development.exec', 'development.review'],
+  operations: ['general', 'research', 'development.plan', 'development.exec', 'development.review'],
+  temporary: ['general', 'research', 'development.plan', 'development.exec', 'development.review'],
 };
 
 /** Task-type → tool-id fragments used for inferring tool coverage when no explicit requiredTools */
 const TASK_TOOL_HINTS: Record<string, string[]> = {
-  email: ['gmail', 'email', 'mail'],
   research: ['web-search', 'web-fetch', 'websearch', 'webfetch', 'exa', 'serp'],
-  development: ['repo-read', 'docs-read', 'docs-write', 'rd-related'],
-  code_review: ['repo-read', 'docs-read', 'rd-related'],
-  planning: ['orchestration', 'requirement'],
+  'development.plan': ['repo-read', 'docs-read', 'rd-related'],
+  'development.exec': ['repo-read', 'docs-read', 'docs-write', 'rd-related'],
+  'development.review': ['repo-read', 'docs-read', 'rd-related'],
 };
 
 const TEXT_TOOL_HINTS: Array<{ keywords: string[]; toolHints: string[] }> = [
@@ -96,8 +94,8 @@ const W_KEYWORD = parseInt(process.env.EXECUTOR_WEIGHT_KEYWORD || '10', 10);
 
 const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD || '10', 10);
 
-/** Task types that require opencode execution capability (development / code_review). */
-const OPENCODE_REQUIRED_TASK_TYPES = new Set(['development', 'code_review']);
+/** Task types that require opencode execution capability. */
+const OPENCODE_REQUIRED_TASK_TYPES = new Set(['development.plan', 'development.exec', 'development.review']);
 
 // ---------------------------------------------------------------------------
 // Service
@@ -141,7 +139,12 @@ export class ExecutorSelectionService {
     agentId: string;
     taskTitle: string;
     taskDescription: string;
-    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general';
+    taskType?:
+      | 'research'
+      | 'development.plan'
+      | 'development.exec'
+      | 'development.review'
+      | 'general';
     requiredTools?: string[];
   }): Promise<AgentToolFitValidationResult> {
     const normalizedAgentId = String(input.agentId || '').trim();
@@ -181,7 +184,7 @@ export class ExecutorSelectionService {
       };
     }
 
-    // OpenCode capability hard gate: development/code_review tasks require opencode-enabled agent.
+    // OpenCode capability hard gate: development runtime tasks require opencode-enabled agent.
     const executorTaskType = normalizedTaskType;
     if (OPENCODE_REQUIRED_TASK_TYPES.has(executorTaskType) && !this.isOpenCodeCapable(agent as unknown as Agent)) {
       this.logger.warn(
@@ -228,16 +231,6 @@ export class ExecutorSelectionService {
         taskType: normalizedTaskType,
       }),
     };
-  }
-
-  /** Runtime email-capability check (unchanged public contract) */
-  async hasEmailExecutionCapability(agentId: string): Promise<boolean> {
-    const agent = await this.agentModel.findById(agentId).exec();
-    if (!agent) return false;
-    const toolIds = (agent.tools || []).filter(Boolean);
-    if (!toolIds.length) return false;
-    const tools = await this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
-    return tools.some((tool) => this.isEmailTool(tool));
   }
 
   // -----------------------------------------------------------------------
@@ -288,13 +281,7 @@ export class ExecutorSelectionService {
       };
     }
 
-    // 3. Email fast-path (preserves original behaviour for mail tasks)
-    if (taskType === 'email') {
-      return this.routeEmailTask(agents, employees, plannerTier);
-    }
-
-    // 4. Multi-dimension scoring for agents
-    const emailCapableSet = await this.getEmailCapableAgentIdSet(agents);
+    // 3. Multi-dimension scoring for agents
     const scored = agents.map((agent) => {
       const agentId = this.getEntityId(agent as unknown as Record<string, any>);
       const role = roleMap.get(agent.roleId);
@@ -322,7 +309,7 @@ export class ExecutorSelectionService {
         breakdown.keywordRelevance = 0;
       }
 
-      // A-2. OpenCode capability gate — development/code_review tasks MUST go to
+      // A-2. OpenCode capability gate — development runtime tasks MUST go to
       //      an agent whose config.execution.provider === 'opencode'. Agents without
       //      this capability cannot execute code operations, so zero out their scores.
       if (OPENCODE_REQUIRED_TASK_TYPES.has(taskType) && !this.isOpenCodeCapable(agent)) {
@@ -335,7 +322,7 @@ export class ExecutorSelectionService {
       // B. Tool coverage
       breakdown.toolCoverage = ctx.requiredTools?.length
         ? this.computeExplicitToolScore(agentToolSet, ctx.requiredTools)
-        : this.computeInferredToolScore(agentToolSet, taskType, emailCapableSet, agentId);
+        : this.computeInferredToolScore(agentToolSet, taskType);
 
       // C. Capability tags
       if (ctx.requiredCapabilities?.length) {
@@ -363,7 +350,7 @@ export class ExecutorSelectionService {
       );
     }
 
-    // 5. Employee fallback scoring (keyword only — employees don't have role/tools)
+    // 4. Employee fallback scoring (keyword only — employees don't have role/tools)
     const employeeCandidates = plannerTier
       ? employees.filter((employee) => {
           const targetTier = normalizeAgentRoleTier(employee.tier) || 'operations';
@@ -375,7 +362,7 @@ export class ExecutorSelectionService {
     const bestAgent = scored[0];
     const bestEmployee = employeeScored[0];
 
-    // 6. Required-tools hard gate
+    // 5. Required-tools hard gate
     if (ctx.requiredTools?.length && bestAgent) {
       const missing = ctx.requiredTools.filter((t) => !bestAgent.agentToolSet.has(t.toLowerCase()));
       if (missing.length > 0) {
@@ -395,7 +382,7 @@ export class ExecutorSelectionService {
       }
     }
 
-    // 7. Threshold + final pick
+    // 6. Threshold + final pick
     if (bestAgent && bestAgent.score >= MIN_SCORE_THRESHOLD) {
       this.logger.log(
         `[executor_selected] agent=${bestAgent.agentId} score=${bestAgent.score} breakdown=${JSON.stringify(bestAgent.breakdown)}`,
@@ -418,7 +405,7 @@ export class ExecutorSelectionService {
       };
     }
 
-    // Absolute fallback — first active agent (with opencode gate for development/code_review)
+    // Absolute fallback — first active agent (with opencode gate for development runtime tasks)
     const requiresOpenCode = OPENCODE_REQUIRED_TASK_TYPES.has(taskType);
     const fallbackAgent = agents.find((agent) => {
       if (requiresOpenCode && !this.isOpenCodeCapable(agent)) {
@@ -440,54 +427,6 @@ export class ExecutorSelectionService {
     }
 
     return { executorType: 'unassigned', reason: 'No matching capability found' };
-  }
-
-  // -----------------------------------------------------------------------
-  // Email fast path (unchanged logic, extracted for readability)
-  // -----------------------------------------------------------------------
-
-  private async routeEmailTask(
-    agents: Agent[],
-    employees: Employee[],
-    plannerTier?: AgentRoleTier,
-  ): Promise<ExecutorSelectionResult> {
-    const emailCapableSet = await this.getEmailCapableAgentIdSet(agents);
-    const emailAgent = agents.find((a) => {
-      const agentId = this.getEntityId(a as unknown as Record<string, any>);
-      if (!emailCapableSet.has(agentId)) {
-        return false;
-      }
-      if (!plannerTier) {
-        return true;
-      }
-      const targetTier = normalizeAgentRoleTier(a.tier) || 'operations';
-      return canDelegateAcrossTier(plannerTier, targetTier);
-    });
-    if (emailAgent) {
-      return {
-        executorType: 'agent',
-        executorId: this.getEntityId(emailAgent as unknown as Record<string, any>),
-        reason: 'Email task routed to mail-capable agent',
-      };
-    }
-    const humanEmployee = employees.find((e) => {
-      if (e.type !== EmployeeType.HUMAN) {
-        return false;
-      }
-      if (!plannerTier) {
-        return true;
-      }
-      const targetTier = normalizeAgentRoleTier(e.tier) || 'operations';
-      return canDelegateAcrossTier(plannerTier, targetTier);
-    });
-    if (humanEmployee) {
-      return {
-        executorType: 'employee',
-        executorId: humanEmployee.id,
-        reason: 'Email task routed to human due to missing mail tool capability',
-      };
-    }
-    return { executorType: 'unassigned', reason: 'Email task requires tool/credential, manual assignment required' };
   }
 
   // -----------------------------------------------------------------------
@@ -557,13 +496,7 @@ export class ExecutorSelectionService {
   private computeInferredToolScore(
     agentToolSet: Set<string>,
     taskType: string,
-    emailCapableSet: Set<string>,
-    agentId: string,
   ): number {
-    // Special: email capability comes from DB tool lookup
-    if (taskType === 'email') {
-      return emailCapableSet.has(agentId) ? W_TOOL : 0;
-    }
     const hints = TASK_TOOL_HINTS[taskType];
     if (!hints?.length) return Math.round(W_TOOL * 0.15); // general → small base score
     const toolStr = [...agentToolSet].join(' ');
@@ -615,10 +548,9 @@ export class ExecutorSelectionService {
   // -----------------------------------------------------------------------
 
   private classifyTaskType(title: string, description: string): string {
-    if (this.taskClassificationService.isEmailTask(title, description)) return 'email';
     if (this.taskClassificationService.isResearchTask(title, description)) return 'research';
-    if (this.taskClassificationService.isCodeTask(title, description)) return 'development';
-    if (this.taskClassificationService.isReviewTask(title, description)) return 'code_review';
+    if (this.taskClassificationService.isCodeTask(title, description)) return 'development.exec';
+    if (this.taskClassificationService.isReviewTask(title, description)) return 'development.review';
 
     const text = `${title} ${description}`.toLowerCase();
     if (
@@ -627,7 +559,7 @@ export class ExecutorSelectionService {
       text.includes('计划') ||
       text.includes('orchestrat')
     ) {
-      return 'planning';
+      return 'development.plan';
     }
     return 'general';
   }
@@ -651,40 +583,23 @@ export class ExecutorSelectionService {
   }
 
   private normalizeExternalTaskType(
-    taskType?: 'external_action' | 'research' | 'review' | 'development' | 'general',
-  ): 'development' | 'code_review' | 'research' | 'email' | 'planning' | 'general' {
-    if (taskType === 'external_action') {
-      return 'email';
-    }
-    if (taskType === 'review') {
-      return 'code_review';
-    }
-    if (taskType === 'development' || taskType === 'research' || taskType === 'general') {
+    taskType?:
+      | 'research'
+      | 'development.plan'
+      | 'development.exec'
+      | 'development.review'
+      | 'general',
+  ): 'development.plan' | 'development.exec' | 'development.review' | 'research' | 'general' {
+    if (
+      taskType === 'development.plan'
+      || taskType === 'development.exec'
+      || taskType === 'development.review'
+      || taskType === 'research'
+      || taskType === 'general'
+    ) {
       return taskType;
     }
     return 'general';
-  }
-
-  // -----------------------------------------------------------------------
-  // Utility (unchanged)
-  // -----------------------------------------------------------------------
-
-  private async getEmailCapableAgentIdSet(agents: Agent[]): Promise<Set<string>> {
-    const toolIds = Array.from(new Set(agents.flatMap((agent) => agent.tools || []).filter(Boolean)));
-    if (!toolIds.length) return new Set();
-    const tools = await this.toolModel.find({ id: { $in: toolIds }, enabled: true }).exec();
-    const emailToolIdSet = new Set(tools.filter((t) => this.isEmailTool(t)).map((t) => t.id));
-    return new Set(
-      agents
-        .filter((a) => (a.tools || []).some((tid) => emailToolIdSet.has(tid)))
-        .map((a) => this.getEntityId(a as unknown as Record<string, any>))
-        .filter(Boolean),
-    );
-  }
-
-  private isEmailTool(tool: Tool): boolean {
-    const text = `${tool.id} ${tool.name} ${tool.description} ${tool.category}`.toLowerCase();
-    return text.includes('gmail') || text.includes('email') || text.includes('mail');
   }
 
   private getEntityId(entity: Record<string, any>): string {

@@ -17,7 +17,6 @@ import {
 } from '../../../shared/schemas/orchestration-run.schema';
 import { TaskClassificationService } from './task-classification.service';
 import { TaskOutputValidationService } from './task-output-validation.service';
-import { ExecutorSelectionService } from './executor-selection.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanStatsService } from './plan-stats.service';
@@ -48,7 +47,6 @@ export class OrchestrationExecutionEngineService {
     private readonly agentClientService: AgentClientService,
     private readonly taskClassificationService: TaskClassificationService,
     private readonly taskOutputValidationService: TaskOutputValidationService,
-    private readonly executorSelectionService: ExecutorSelectionService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
     private readonly planStatsService: PlanStatsService,
@@ -64,9 +62,7 @@ export class OrchestrationExecutionEngineService {
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     const taskId = this.getEntityId(task as Record<string, any>);
     const assignment = task.assignment || { executorType: 'unassigned' as const };
-    const isExternalAction = this.taskClassificationService.isExternalActionTask(task.title, task.description);
-    const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(task.title, task.description);
-    const isResearchTask = Boolean(researchTaskKind);
+    const isResearchTask = Boolean(false);
     const isReviewTask = this.taskClassificationService.isReviewTask(task.title, task.description);
     const runtimeTaskTypeOverride = this.contextService.normalizeRuntimeTaskTypeOverride(options?.runtimeTaskTypeOverride);
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((task as any).runtimeTaskType);
@@ -74,14 +70,12 @@ export class OrchestrationExecutionEngineService {
       runtimeTaskTypeOverride
       || persistedRuntimeTaskType
       || this.contextService.resolveAgentRuntimeTaskType(task.title, task.description, {
-        isExternalAction,
         isResearchTask,
         isReviewTask,
       });
-    const effectiveIsExternalAction = runtimeTaskType === 'external_action';
     const effectiveIsResearchTask = runtimeTaskType === 'research';
-    const effectiveIsReviewTask = runtimeTaskType === 'review';
-    const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
+    const effectiveIsReviewTask = runtimeTaskType === 'development.review';
+    const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(task);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(task, {
@@ -159,20 +153,6 @@ export class OrchestrationExecutionEngineService {
     }
 
     if (assignment.executorType !== 'agent' || !assignment.executorId) {
-      if (effectiveIsExternalAction) {
-        await this.markTaskWaitingHuman(taskId, 'External action requires manual handling');
-        await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-          status: 'waiting_human',
-          error: 'External action requires manual handling',
-        });
-        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.exception', {
-          planId,
-          status: 'waiting_human',
-          taskTitle: task.title,
-          reason: 'external_action_requires_manual_handling',
-        });
-        return { status: 'waiting_human' };
-      }
       await this.markTaskFailed(taskId, 'No agent assigned for execution');
       await this.planStatsService.updatePlanSessionTask(planId, taskId, {
         status: 'failed',
@@ -187,30 +167,11 @@ export class OrchestrationExecutionEngineService {
       return { status: 'failed', error: 'No agent assigned for execution' };
     }
 
-    if (effectiveIsExternalAction) {
-      const hasEmailCapability = await this.executorSelectionService.hasEmailExecutionCapability(assignment.executorId);
-      if (!hasEmailCapability) {
-        await this.markTaskWaitingHuman(taskId, 'Agent lacks email tool capability, switched to human review');
-        await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-          status: 'waiting_human',
-          error: 'Agent lacks email tool capability, switched to human review',
-        });
-        this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.exception', {
-          planId,
-          status: 'waiting_human',
-          taskTitle: task.title,
-          reason: 'agent_lacks_email_capability',
-        });
-        return { status: 'waiting_human' };
-      }
-    }
-
     let requestedSessionId = `plan-${planId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, task.description);
     const taskPrompt = this.contextService.buildTaskDescription(task.description, {
       dependencyContext,
-      isExternalAction: effectiveIsExternalAction,
       isResearchTask: effectiveIsResearchTask,
       isReviewTask: effectiveIsReviewTask,
       researchTaskKind: effectiveResearchTaskKind || undefined,
@@ -254,7 +215,6 @@ export class OrchestrationExecutionEngineService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          externalActionValidationRequired: effectiveIsExternalAction,
           researchTaskKind: effectiveResearchTaskKind,
           reviewValidationRequired: effectiveIsReviewTask,
         },
@@ -356,30 +316,6 @@ export class OrchestrationExecutionEngineService {
             missing: validation.missing,
           });
           return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      if (effectiveIsExternalAction) {
-        const proof = this.taskOutputValidationService.extractEmailSendProof(output);
-        if (!proof.valid) {
-          await this.markTaskWaitingHuman(
-            taskId,
-            'External action execution lacks verifiable proof, waiting for human confirmation',
-            output,
-          );
-          await this.planStatsService.updatePlanSessionTask(planId, taskId, {
-            status: 'waiting_human',
-            output,
-            error: 'External action execution lacks verifiable proof, waiting for human confirmation',
-          });
-          this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.exception', {
-            planId,
-            status: 'waiting_human',
-            taskTitle: task.title,
-            senderAgentId: assignment.executorId,
-            reason: 'external_action_missing_proof',
-          });
-          return { status: 'waiting_human' };
         }
       }
 
@@ -520,22 +456,18 @@ export class OrchestrationExecutionEngineService {
       return { status: 'cancelled', error: 'Run cancelled by user' };
     }
     const assignment = runTask.assignment || { executorType: 'unassigned' as const };
-    const isExternalAction = this.taskClassificationService.isExternalActionTask(runTask.title, runTask.description);
-    const researchTaskKind = this.taskClassificationService.detectResearchTaskKind(runTask.title, runTask.description);
-    const isResearchTask = Boolean(researchTaskKind);
+    const isResearchTask = Boolean(false);
     const isReviewTask = this.taskClassificationService.isReviewTask(runTask.title, runTask.description);
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((runTask as any).runtimeTaskType);
     const runtimeTaskType =
       persistedRuntimeTaskType
       || this.contextService.resolveAgentRuntimeTaskType(runTask.title, runTask.description, {
-        isExternalAction,
         isResearchTask,
         isReviewTask,
       });
-    const effectiveIsExternalAction = runtimeTaskType === 'external_action';
     const effectiveIsResearchTask = runtimeTaskType === 'research';
-    const effectiveIsReviewTask = runtimeTaskType === 'review';
-    const effectiveResearchTaskKind = effectiveIsResearchTask ? (researchTaskKind || 'generic_research') : null;
+    const effectiveIsReviewTask = runtimeTaskType === 'development.review';
+    const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(runTask as any as OrchestrationTask, {
@@ -580,15 +512,6 @@ export class OrchestrationExecutionEngineService {
     }
 
     if (assignment.executorType !== 'agent' || !assignment.executorId) {
-      if (effectiveIsExternalAction) {
-        await this.markRunTaskWaitingHuman(runTaskId, 'External action requires manual handling');
-        this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.updated', {
-          runId,
-          runTaskId,
-          status: 'waiting_human',
-        });
-        return { status: 'waiting_human' };
-      }
       await this.markRunTaskFailed(runTaskId, 'No agent assigned for execution');
       this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.failed', {
         runId,
@@ -598,25 +521,11 @@ export class OrchestrationExecutionEngineService {
       return { status: 'failed', error: 'No agent assigned for execution' };
     }
 
-    if (effectiveIsExternalAction) {
-      const hasEmailCapability = await this.executorSelectionService.hasEmailExecutionCapability(assignment.executorId);
-      if (!hasEmailCapability) {
-        await this.markRunTaskWaitingHuman(runTaskId, 'Agent lacks email tool capability, switched to human review');
-        this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.updated', {
-          runId,
-          runTaskId,
-          status: 'waiting_human',
-        });
-        return { status: 'waiting_human' };
-      }
-    }
-
     let requestedSessionId = `run-${runId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, runTask.description);
     const taskPrompt = this.contextService.buildTaskDescription(runTask.description, {
       dependencyContext,
-      isExternalAction: effectiveIsExternalAction,
       isResearchTask: effectiveIsResearchTask,
       isReviewTask: effectiveIsReviewTask,
       researchTaskKind: effectiveResearchTaskKind || undefined,
@@ -661,7 +570,6 @@ export class OrchestrationExecutionEngineService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          externalActionValidationRequired: effectiveIsExternalAction,
           researchTaskKind: effectiveResearchTaskKind,
           reviewValidationRequired: effectiveIsReviewTask,
         },
@@ -724,23 +632,6 @@ export class OrchestrationExecutionEngineService {
             : '';
           await this.markRunTaskFailed(runTaskId, `Review output validation failed: ${validation.reason}${detail}`);
           return { status: 'failed', error: validation.reason };
-        }
-      }
-
-      if (effectiveIsExternalAction) {
-        const proof = this.taskOutputValidationService.extractEmailSendProof(output);
-        if (!proof.valid) {
-          await this.markRunTaskWaitingHuman(
-            runTaskId,
-            'External action execution lacks verifiable proof, waiting for human confirmation',
-            output,
-          );
-          this.planEventStreamService.emitPlanStreamEvent(runTask.planId, 'run.task.updated', {
-            runId,
-            runTaskId,
-            status: 'waiting_human',
-          });
-          return { status: 'waiting_human', result: output };
         }
       }
 
@@ -1029,17 +920,21 @@ export class OrchestrationExecutionEngineService {
     runtimeTaskType: string,
     description: string,
   ): 'native' | 'opencode' {
-    // development 和 review 类型任务允许路由到 opencode；
-    // 其余类型（general/research/external_action）走 native。
-    const OPENCODE_ELIGIBLE_TASK_TYPES = new Set(['development', 'review']);
+    // development.* 类型任务允许路由到 opencode；
+    // 其余类型（general/research）走 native。
+    const OPENCODE_ELIGIBLE_TASK_TYPES = new Set([
+      'development.plan',
+      'development.exec',
+      'development.review',
+    ]);
 
     if (!OPENCODE_ELIGIBLE_TASK_TYPES.has(runtimeTaskType)) {
       return 'native';
     }
 
-    // review 类型不做 description 关键词排除，直接走 opencode。
+    // development.review 类型不做 description 关键词排除，直接走 opencode。
     // 典型场景：技术专家在 opencode 中读代码做验收评审。
-    if (runtimeTaskType === 'review') {
+    if (runtimeTaskType === 'development.review') {
       return 'opencode';
     }
 

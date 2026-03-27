@@ -20,6 +20,12 @@ import { ORCH_EVENTS, OrchestrationSource } from '../orchestration-events';
 
 type Phase = 'idle' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
 
+const AUTO_RETRY_DISABLED_TASK_TYPES = new Set([
+  'development.plan',
+  'development.exec',
+  'development.review',
+]);
+
 @Injectable()
 export class OrchestrationStepDispatcherService {
   private readonly logger = new Logger(OrchestrationStepDispatcherService.name);
@@ -118,6 +124,14 @@ export class OrchestrationStepDispatcherService {
     const plan = await this.planModel.findById(planId).lean().exec();
     const state = this.resolveGenerationState(plan?.generationState as OrchestrationGenerationState | undefined);
     if (!state.currentTaskId) {
+      return { accepted: false };
+    }
+    const currentTask = await this.taskModel
+      .findOne({ _id: state.currentTaskId, planId })
+      .select({ runtimeTaskType: 1 })
+      .lean()
+      .exec();
+    if (this.isAutoRetryDisabledTaskType((currentTask as { runtimeTaskType?: string } | null)?.runtimeTaskType)) {
       return { accepted: false };
     }
     const config = this.incrementalPlanningService.resolveGenerationConfig(
@@ -355,6 +369,14 @@ export class OrchestrationStepDispatcherService {
       };
     }
 
+    if (decision.nextAction === 'retry' && this.isAutoRetryDisabledTaskType(task.runtimeTaskType)) {
+      decision = {
+        ...decision,
+        nextAction: 'redesign',
+        reason: `${decision.reason} (auto retry disabled for ${task.runtimeTaskType})`,
+      };
+    }
+
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.post_processed', {
       planId,
       step: state.currentStep,
@@ -580,5 +602,13 @@ export class OrchestrationStepDispatcherService {
       plannerSessionId: state?.plannerSessionId,
       currentTaskId: state?.currentTaskId,
     };
+  }
+
+  private isAutoRetryDisabledTaskType(runtimeTaskType?: string): boolean {
+    const normalized = String(runtimeTaskType || '').trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    return AUTO_RETRY_DISABLED_TASK_TYPES.has(normalized);
   }
 }
