@@ -492,7 +492,13 @@ export class PlannerService {
     }
     if (!requirementAnchor.requirementId) {
       if (context.totalSteps === 0) {
-        sections.push('- requirementId: (尚未选定，本轮任务即为选定需求，无需预先持有 requirementId)');
+        sections.push('- requirementId: (尚未选定)');
+        sections.push('');
+        sections.push('[SYSTEM OVERRIDE — 首步豁免]');
+        sections.push('当前是计划的第一步（已累计执行步骤数=0），requirementId 尚未选定。');
+        sections.push('- 你 **必须** 立即生成第一个任务（如"选定最高优先级需求"），而不是拒绝或输出 TASK_INABILITY。');
+        sections.push('- sourcePrompt 中"需求上下文获取规则"里的 requirement.get 前置调用要求 **不适用于本步**，因为本步的目标就是去选定需求。');
+        sections.push('- 禁止输出 task=null 或 TASK_INABILITY，否则系统将判定为失败并重试。');
       } else {
         sections.push('- requirementId: (unknown — 请从已完成任务的 outputSummary 中提取)');
       }
