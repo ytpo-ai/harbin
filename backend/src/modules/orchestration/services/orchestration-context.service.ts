@@ -271,100 +271,20 @@ export class OrchestrationContextService {
       return taskType;
     }
 
+    // Fallback: planner did not provide a valid taskType.
+    // Use only the plan-level domain as a coarse hint; fine-grained
+    // classification (plan / exec / review) is the planner's responsibility.
     const domain = String(input.planDomainType || 'general').trim().toLowerCase();
-    const isReviewContractStep = this.isReviewContractStepTask(
-      input.taskTitle,
-      input.taskDescription,
-      input.planGoal,
-      input.step,
-    );
-    const isPlanContractStep = this.isPlanContractStepTask(
-      input.taskTitle,
-      input.taskDescription,
-      input.planGoal,
-      input.step,
-    );
 
     if (domain === 'research') {
       return 'research';
     }
 
     if (domain === 'development') {
-      if (isReviewContractStep) {
-        return 'development.review';
-      }
-      if (isPlanContractStep) {
-        return 'development.plan';
-      }
       return 'development.exec';
     }
 
     return 'general';
-  }
-
-  private isPlanContractStepTask(
-    title: string,
-    description: string,
-    planGoal?: string,
-    step?: number,
-  ): boolean {
-    const taskText = `${title} ${description}`.toLowerCase();
-    const goalText = String(planGoal || '').toLowerCase();
-
-    const flowDeclaresStep3Plan =
-      (goalText.includes('step3') && goalText.includes('技术开发计划'))
-      || (goalText.includes('step3') && goalText.includes('技术方案'));
-    if (!flowDeclaresStep3Plan) {
-      return false;
-    }
-
-    const hasStep3Hint =
-      /step\s*3/.test(taskText)
-      || /步骤\s*3/.test(taskText)
-      || (typeof step === 'number' && step === 2);
-    if (!hasStep3Hint) {
-      return false;
-    }
-
-    return (
-      taskText.includes('技术方案')
-      || taskText.includes('技术开发计划')
-      || taskText.includes('开发计划')
-      || taskText.includes('实现方案')
-      || taskText.includes('development plan')
-      || taskText.includes('technical plan')
-    );
-  }
-
-  private isReviewContractStepTask(
-    title: string,
-    description: string,
-    planGoal?: string,
-    step?: number,
-  ): boolean {
-    const taskText = `${title} ${description}`.toLowerCase();
-    const goalText = String(planGoal || '').toLowerCase();
-    const flowDeclaresStep5Review = goalText.includes('step5') && goalText.includes('实现评估');
-    if (!flowDeclaresStep5Review) {
-      return false;
-    }
-
-    const hasStep5Hint =
-      /step\s*5/.test(taskText)
-      || /步骤\s*5/.test(taskText)
-      || (typeof step === 'number' && step >= 4);
-    if (!hasStep5Hint) {
-      return false;
-    }
-
-    return (
-      taskText.includes('实现评估')
-      || taskText.includes('评估结论')
-      || taskText.includes('通过/需修改')
-      || taskText.includes('需修改')
-      || taskText.includes('review')
-      || taskText.includes('评审')
-    );
   }
 
   buildPostTaskContext(input: {

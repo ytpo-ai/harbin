@@ -3,7 +3,7 @@ import { OrchestrationContextService } from './orchestration-context.service';
 describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () => {
   const service = new OrchestrationContextService({} as any, {} as any, { buildResearchOutputContract: jest.fn() } as any);
 
-  it('uses taskType when provided for review task', () => {
+  it('uses explicit taskType for review task', () => {
     const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'development',
       taskType: 'development.review',
@@ -14,7 +14,7 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
     expect(runtimeTaskType).toBe('development.review');
   });
 
-  it('uses taskType when provided for plan task', () => {
+  it('uses explicit taskType for plan task', () => {
     const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'development',
       taskType: 'development.plan',
@@ -25,39 +25,45 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
     expect(runtimeTaskType).toBe('development.plan');
   });
 
-  it('infers development.review for step5 review contract without explicit taskType', () => {
+  it('falls back to development.exec when planner omits taskType in development domain', () => {
     const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
       planDomainType: 'development',
-      planGoal: '### step5: 实现评估\n- 输出契约: 评估结论（通过/需修改 + 具体意见）',
-      step: 4,
-      taskTitle: 'step5 实现评估（锚定 req-1）',
-      taskDescription: '输出评估结论（通过/需修改 + 具体意见）',
-    });
-
-    expect(runtimeTaskType).toBe('development.review');
-  });
-
-  it('infers development.plan for step3 plan contract without explicit taskType', () => {
-    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
-      planDomainType: 'development',
-      planGoal: '### step3: 制定技术开发计划\n- 动作: 基于需求规格设计实现方案\n### step5: 实现评估',
-      step: 2,
-      taskTitle: 'step3 制定技术开发计划（锚定 req-1）',
-      taskDescription: '基于需求规格设计实现方案，拆解开发子任务',
-    });
-
-    expect(runtimeTaskType).toBe('development.plan');
-  });
-
-  it('infers development.exec for step4 when no explicit taskType', () => {
-    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
-      planDomainType: 'development',
-      planGoal: '### step3: 制定技术开发计划\n### step4: 执行开发\n### step5: 实现评估',
-      step: 3,
-      taskTitle: 'step4 执行开发（锚定 req-1）',
-      taskDescription: '按计划实施代码变更并提交',
+      taskTitle: 'step3 制定技术开发计划',
+      taskDescription: '基于需求规格设计实现方案',
     });
 
     expect(runtimeTaskType).toBe('development.exec');
+  });
+
+  it('falls back to research for research domain', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'research',
+      taskTitle: '调研竞品方案',
+      taskDescription: '对比三个竞品的实现方式',
+    });
+
+    expect(runtimeTaskType).toBe('research');
+  });
+
+  it('falls back to general when domain is general and no taskType', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'general',
+      taskTitle: '选定最高优先级需求',
+      taskDescription: '从需求池中选择',
+    });
+
+    expect(runtimeTaskType).toBe('general');
+  });
+
+  it('preserves existingRuntimeTaskType over everything', () => {
+    const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
+      planDomainType: 'development',
+      taskType: 'general',
+      existingRuntimeTaskType: 'development.review',
+      taskTitle: 'any',
+      taskDescription: 'any',
+    });
+
+    expect(runtimeTaskType).toBe('development.review');
   });
 });
