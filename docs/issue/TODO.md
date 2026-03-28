@@ -15,6 +15,27 @@ Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbXBsb3llZUlkIjoiMzViODhhODMtOTBj
 
 ## 已完成
 
+### #3 Orchestration 无用系统工具下线与 seed 对齐（2026-03-29）
+
+**问题**：以下历史工具已不再需要，但仍存在于工具注册、执行分发、MCP profile seed 与别名映射中，导致可见性与实际能力不一致：
+
+- `builtin.sys-mg.mcp.orchestration.complete-human-task`
+- `builtin.sys-mg.mcp.orchestration.create-schedule`
+- `builtin.sys-mg.mcp.orchestration.debug-task`
+- `builtin.sys-mg.mcp.orchestration.reassign-task`
+- `builtin.sys-mg.mcp.orchestration.update-schedule`
+
+**修复摘要**：
+- 工具目录移除上述 5 个 tool id，并同步移除执行分发分支。
+- 移除 Agent 常量与 legacy alias 中对应映射，避免运行时继续解析旧入口。
+- `mcp-profile` seed 移除这些工具，并修正 `mode=sync` 为覆盖写入 `tools`，防止历史工具残留。
+- 将 5 个 canonical id 加入 `DEPRECATED_TOOL_IDS`，确保 `builtin-tools` sync 会清理存量。
+- 执行 seed 落库：`npm run seed:manual -- --only=builtin-tools,mcp-profiles --mode=sync`（`builtin-tools updated=51`，`mcp-profiles seeded=13`）。
+
+**关联文档**：
+- Development: `docs/development/ORCHESTRATION_UNUSED_MCP_TOOL_CLEANUP_2026-03-29.md`
+- Feature: `docs/feature/AGENT_TOOL.md`
+
 ### #2 Development 计划任务生成偏离 — Skill 驱动改造（2026-03-29）
 
 **问题**：`domainType=development` 计划中，Planner 没有按 rd-workflow 的 step1→step5 生成业务任务，而是生成元规划任务、自己调用业务工具、输出确认文本、重复生成 step1、post-execute 默认 stop 导致编排卡住。
@@ -87,4 +108,3 @@ Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbXBsb3llZUlkIjoiMzViODhhODMtOTBj
 - 执行过程要慢慢来，更多的交互，询问我的意见，而不是一次性输出最终结果
 - 优先 ORCH_STEP_DISPATCHER_ENABLED=true，步骤调度器以步骤调度器的方式触发
 - 必要时 可直接自己构造 LLM Conext，通过结构以某Agent的身份提交给LLM provider， 来测试提示词效果，验证设计合理性
-

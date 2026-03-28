@@ -53,4 +53,9 @@ export const DEPRECATED_TOOL_IDS = [
   'orchestration_create_schedule',
   'orchestration_update_schedule',
   'orchestration_debug_task',
+  'builtin.sys-mg.mcp.orchestration.reassign-task',
+  'builtin.sys-mg.mcp.orchestration.complete-human-task',
+  'builtin.sys-mg.mcp.orchestration.create-schedule',
+  'builtin.sys-mg.mcp.orchestration.update-schedule',
+  'builtin.sys-mg.mcp.orchestration.debug-task',
 ];

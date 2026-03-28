@@ -33,7 +33,7 @@
 4. 兼容映射：通过 `/tools/registry/mappings` 维护 legacy 与 unified tool id 映射。
 5. 工具管理：前端通过右侧抽屉统一承载“执行/修改”Tab；修改页支持编辑（名称/描述/分类/状态/启用开关/prompt）并提供弃用入口（标记 `status=deprecated` 且 `enabled=false`）。`/tools/registry` 返回 `prompt` 字段，工具列表“有提示词/无提示词”与修改页回填均基于统一字段。
 6. Provider 接入：搜索工具拆分为显式 Exa 与显式 Composio SERP 两类（`web-tools.service.ts` + `exa.service.ts` + `composio.service.ts`），并通过 canonical id 统一治理。
-7. 编排工具：Orchestration MCP 已覆盖 create/update/run/get/list/reassign/complete-human、schedule create/update 及 task debug 操作。
+7. 编排工具：Orchestration MCP 当前覆盖 create/update/run/get/list、submit-task、report-task-run-result 操作。
 8. Skill 工具：新增 `skill-master` toolkit，提供 `list-skills`（支持 title 模糊检索）与 `create-skill`（创建 skill）能力。
 9. Agents MCP：`agent-master` toolkit 提供 `builtin.sys-mg.internal.agent-master.list-agents`（列表）与 `builtin.sys-mg.internal.agent-master.create-agent`（创建）能力；列表返回 `identify`（来自 `identity` memo 首条内容，缺失时为空字符串），并不再返回 `roleId/type`。`list-agents` 支持可选 `agentId` 精确查询，且返回 `runtimeStatus`（Redis task tool 级状态快照）。
 10. Agent Role MCP：新增 `agent-role-master` toolkit，提供 `builtin.sys-mg.internal.agent-role-master.list-roles/create-role/update-role/delete-role` 能力，支持受控角色主数据管理。
@@ -83,6 +83,7 @@
 | `TOOL_PROMPT_INJECTION_PLAN.md` | 工具级 prompt 注入与历史数据回填总结 |
 | `CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO 日常研发工作流改造开发沉淀 |
 | `AGENTS_ORCHESTRATION_CODE_REVIEW_PLAN_C_AGENTS_REFACTOR_PHASE1.md` | Agents/Tools 一期拆分（InternalApiClient + ToolGovernanceService）开发沉淀 |
+| `ORCHESTRATION_UNUSED_MCP_TOOL_CLEANUP_2026-03-29.md` | Orchestration 无用 MCP 工具下线与 seed 对齐总结 |
 
 ### 技术文档 (docs/technical/, docs/api/)
 

@@ -160,19 +160,9 @@ export class ToolExecutionDispatcherService {
       case 'builtin.sys-mg.mcp.orchestration.list-plans':
         return this.orchestrationToolHandler.listOrchestrationPlans(agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.submit-task':
-        return this.orchestrationToolHandler.submitOrchestrationTask(parameters);
+        return this.orchestrationToolHandler.submitOrchestrationTask(parameters, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.report-task-run-result':
-        return this.orchestrationToolHandler.reportOrchestrationTaskRunResult(parameters);
-      case 'builtin.sys-mg.mcp.orchestration.reassign-task':
-        return this.orchestrationToolHandler.reassignOrchestrationTask(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.complete-human-task':
-        return this.orchestrationToolHandler.completeOrchestrationHumanTask(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.create-schedule':
-        return this.orchestrationToolHandler.createOrchestrationSchedule(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.update-schedule':
-        return this.orchestrationToolHandler.updateOrchestrationSchedule(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.debug-task':
-        return this.orchestrationToolHandler.debugOrchestrationTask(parameters, agentId, executionContext);
+        return this.orchestrationToolHandler.reportOrchestrationTaskRunResult(parameters, executionContext);
       default:
         return undefined;
     }

@@ -17,11 +17,6 @@ export const ORCHESTRATION_TOOL_IDS = {
   listPlans: 'builtin.sys-mg.mcp.orchestration.list-plans',
   submitTask: 'builtin.sys-mg.mcp.orchestration.submit-task',
   reportTaskRunResult: 'builtin.sys-mg.mcp.orchestration.report-task-run-result',
-  reassignTask: 'builtin.sys-mg.mcp.orchestration.reassign-task',
-  completeHumanTask: 'builtin.sys-mg.mcp.orchestration.complete-human-task',
-  createSchedule: 'builtin.sys-mg.mcp.orchestration.create-schedule',
-  updateSchedule: 'builtin.sys-mg.mcp.orchestration.update-schedule',
-  debugTask: 'builtin.sys-mg.mcp.orchestration.debug-task',
 } as const;
 
 export const REQUIREMENT_TOOL_IDS = {
@@ -43,11 +38,6 @@ export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   'mcp.orchestration.listPlans': ORCHESTRATION_TOOL_IDS.listPlans,
   'mcp.orchestration.submitTask': ORCHESTRATION_TOOL_IDS.submitTask,
   'mcp.orchestration.reportTaskRunResult': ORCHESTRATION_TOOL_IDS.reportTaskRunResult,
-  'mcp.orchestration.reassignTask': ORCHESTRATION_TOOL_IDS.reassignTask,
-  'mcp.orchestration.completeHumanTask': ORCHESTRATION_TOOL_IDS.completeHumanTask,
-  'mcp.orchestration.createSchedule': ORCHESTRATION_TOOL_IDS.createSchedule,
-  'mcp.orchestration.updateSchedule': ORCHESTRATION_TOOL_IDS.updateSchedule,
-  'mcp.orchestration.debugTask': ORCHESTRATION_TOOL_IDS.debugTask,
   'mcp.model.list': MODEL_LIST_TOOL_ID,
   'mcp.model.add': MODEL_ADD_TOOL_ID,
   'mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
