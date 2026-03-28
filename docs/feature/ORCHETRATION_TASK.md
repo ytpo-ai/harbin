@@ -39,6 +39,7 @@
 - 计划详情页支持任务编辑、重编排、run 历史、run 详情、取消运行。
 - 编排中心页已拆分为页面编排层 + hooks + 组件层（详见 `docs/guide/ORCHESTRATION_PAGE_SPLIT_REFACTOR_ARCHITECTURE.MD`）。
 - 通过 SSE 订阅计划生成和状态变化事件。
+- 计划列表项支持“复制并新建”：点击后直接打开创建弹窗，并预填当前计划的创建参数用于二次编辑。
 
 ## 3. 数据模型与状态
 

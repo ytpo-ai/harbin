@@ -242,10 +242,12 @@ const Orchestration: React.FC = () => {
   };
 
   const copyPlanToForm = (plan: OrchestrationPlan) => {
-    setTitle(plan.title || '');
+    const normalizedTitle = String(plan.title || '').trim();
+    setTitle(normalizedTitle ? `${normalizedTitle} - 副本` : '');
     setPrompt(plan.sourcePrompt || '');
     setMode(plan.strategy?.mode || 'hybrid');
     setRunMode((plan.strategy?.runMode || 'multi') as PlanRunMode);
+    setDomainType((plan.domainType || 'general') as PlanDomainType);
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
     setAutoGenerate(false);
     setIsCreateModalOpen(true);
@@ -343,6 +345,7 @@ const Orchestration: React.FC = () => {
         plans={plans}
         plansLoading={plansLoading}
         deleteLoading={mutations.deletePlanMutation.isLoading}
+        onCopyPlan={copyPlanToForm}
         onDeletePlan={(planId) => {
           void handleDeletePlan(planId);
         }}
@@ -407,6 +410,7 @@ const Orchestration: React.FC = () => {
         savePlanPromptLoading={mutations.savePlanPromptMutation.isLoading}
         replanPlanLoading={mutations.replanPlanMutation.isLoading}
         runPlanLoading={mutations.runPlanMutation.isLoading}
+        stopGenerationLoading={mutations.stopGenerationMutation.isLoading}
         addTaskLoading={mutations.addTaskMutation.isLoading}
         batchUpdateTasksLoading={mutations.batchUpdateTasksMutation.isLoading}
         reorderTaskLoading={mutations.reorderTaskMutation.isLoading}
@@ -452,6 +456,15 @@ const Orchestration: React.FC = () => {
           if (selectedPlanId) {
             mutations.runPlanMutation.mutate({ planId: selectedPlanId, continueOnFailure: true });
           }
+        }}
+        onStopGeneration={() => {
+          if (!selectedPlanId) {
+            return;
+          }
+          mutations.stopGenerationMutation.mutate({
+            planId: selectedPlanId,
+            reason: '用户在计划详情抽屉点击停止执行',
+          });
         }}
         onDeletePlan={() => {
           if (selectedPlanId) {

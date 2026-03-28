@@ -1,5 +1,5 @@
 import React from 'react';
-import { EyeIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { DocumentDuplicateIcon, EyeIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { OrchestrationPlan } from '../../../services/orchestrationService';
 import { STATUS_COLOR } from '../constants';
 import { formatDateTime } from '../utils';
@@ -8,10 +8,17 @@ type Props = {
   plans: OrchestrationPlan[];
   plansLoading: boolean;
   deleteLoading: boolean;
+  onCopyPlan: (plan: OrchestrationPlan) => void;
   onDeletePlan: (planId: string) => void;
 };
 
-const PlanListTable: React.FC<Props> = ({ plans, plansLoading, deleteLoading, onDeletePlan }) => {
+const PlanListTable: React.FC<Props> = ({
+  plans,
+  plansLoading,
+  deleteLoading,
+  onCopyPlan,
+  onDeletePlan,
+}) => {
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -68,6 +75,14 @@ const PlanListTable: React.FC<Props> = ({ plans, plansLoading, deleteLoading, on
                         aria-label="查看详情"
                       >
                         <EyeIcon className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => onCopyPlan(plan)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sky-200 text-sky-700 hover:bg-sky-50"
+                        title="复制并新建"
+                        aria-label="复制并新建"
+                      >
+                        <DocumentDuplicateIcon className="h-4 w-4" />
                       </button>
                       <button
                         onClick={() => onDeletePlan(plan._id)}
