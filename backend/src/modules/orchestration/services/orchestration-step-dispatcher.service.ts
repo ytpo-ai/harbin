@@ -243,18 +243,44 @@ export class OrchestrationStepDispatcherService {
       return;
     }
 
-    const isRedesign = nextTaskResult.action === 'redesign' && Boolean(nextTaskResult.redesignTaskId);
-    const createdTask = isRedesign
-      ? await this.incrementalPlanningService.redesignFailedTask(
-        planId,
-        String(nextTaskResult.redesignTaskId),
-        nextTaskResult.task,
-      )
-      : await this.incrementalPlanningService.createTaskFromPlannerOutput(
-        planId,
-        nextTaskResult.task,
-        mergedState.currentStep,
-      );
+    const isRedesign = nextTaskResult.action === 'redesign';
+    let createdTask: OrchestrationTaskDocument | null = nextTaskResult.createdTaskId
+      ? await this.taskModel.findOne({ _id: nextTaskResult.createdTaskId, planId }).exec()
+      : null;
+
+    if (!createdTask && isRedesign && !nextTaskResult.redesignTaskId) {
+      const nextFailures = this.bumpFailureCounters(mergedState, 'Planner redesign action missing redesignTaskId');
+      await this.updateGenerationStateIfExpected(planId, mergedState, {
+        ...nextFailures,
+        currentPhase: 'idle',
+      });
+      await this.autoAdvance(planId);
+      return;
+    }
+
+    if (!createdTask) {
+      createdTask = isRedesign
+        ? await this.incrementalPlanningService.redesignFailedTask(
+          planId,
+          String(nextTaskResult.redesignTaskId),
+          nextTaskResult.task,
+        )
+        : await this.incrementalPlanningService.createTaskFromPlannerOutput(
+          planId,
+          nextTaskResult.task,
+          mergedState.currentStep,
+        );
+    }
+
+    if (!createdTask) {
+      const nextFailures = this.bumpFailureCounters(mergedState, 'Planner created task is missing');
+      await this.updateGenerationStateIfExpected(planId, mergedState, {
+        ...nextFailures,
+        currentPhase: 'idle',
+      });
+      await this.autoAdvance(planId);
+      return;
+    }
 
     const nextState: OrchestrationGenerationState = {
       ...mergedState,
@@ -474,15 +500,15 @@ export class OrchestrationStepDispatcherService {
       decision = await this.plannerService.executePostTask(planId, postPrompt, plannerSessionId);
     } catch (error) {
       decision = {
-        nextAction: 'stop',
+        action: 'stop',
         reason: error instanceof Error ? error.message : 'post-task planner failed',
       };
     }
 
-    if (decision.nextAction === 'retry' && this.isAutoRetryDisabledTaskType(task.runtimeTaskType)) {
+    if (decision.action === 'retry' && this.isAutoRetryDisabledTaskType(task.runtimeTaskType)) {
       decision = {
         ...decision,
-        nextAction: 'redesign',
+        action: 'redesign',
         reason: `${decision.reason} (auto retry disabled for ${task.runtimeTaskType})`,
       };
     }
@@ -491,7 +517,7 @@ export class OrchestrationStepDispatcherService {
       planId,
       step: state.currentStep,
       taskId: String(task._id),
-      nextAction: decision.nextAction,
+      nextAction: decision.action,
       reason: decision.reason,
     });
     this.eventEmitter.emit(ORCH_EVENTS.TASK_POST_PROCESSED, {
@@ -502,7 +528,7 @@ export class OrchestrationStepDispatcherService {
       result: decision,
     });
 
-    if (decision.nextAction === 'stop') {
+    if (decision.action === 'stop') {
       await this.completeAndArchive(planId, {
         ...state,
         currentPhase: 'idle',
@@ -512,7 +538,7 @@ export class OrchestrationStepDispatcherService {
       return;
     }
 
-    if (decision.nextAction === 'retry') {
+    if (decision.action === 'retry') {
       await this.updateGenerationStateIfExpected(planId, state, {
         ...state,
         currentPhase: 'pre_execute',
@@ -526,7 +552,7 @@ export class OrchestrationStepDispatcherService {
       ...state,
       currentPhase: 'idle',
       currentTaskId: undefined,
-      lastDecision: decision.nextAction,
+      lastDecision: decision.action,
     };
 
     await this.updateGenerationStateIfExpected(planId, state, nextState);

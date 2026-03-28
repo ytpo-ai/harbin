@@ -157,6 +157,74 @@ export class CompleteHumanTaskDto {
   output?: string;
 }
 
+export class PlannerSubmitTaskDto {
+  @IsString()
+  planId: string;
+
+  @IsOptional()
+  @IsEnum(['new', 'redesign'])
+  action?: 'new' | 'redesign';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  title?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  description?: string;
+
+  @IsOptional()
+  @IsEnum(['low', 'medium', 'high', 'urgent'])
+  priority?: 'low' | 'medium' | 'high' | 'urgent';
+
+  @IsOptional()
+  @IsEnum(['research', 'development.plan', 'development.exec', 'development.review', 'general'])
+  taskType?: 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general';
+
+  @IsOptional()
+  @IsString()
+  agentId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  requiredTools?: string[];
+
+  @IsOptional()
+  @IsString()
+  reasoning?: string;
+
+  @IsOptional()
+  @IsString()
+  redesignTaskId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isGoalReached?: boolean;
+}
+
+export class PlannerReportTaskRunResultDto {
+  @IsString()
+  planId: string;
+
+  @IsEnum(['generate_next', 'stop', 'redesign', 'retry'])
+  action: 'generate_next' | 'stop' | 'redesign' | 'retry';
+
+  @IsString()
+  reason: string;
+
+  @IsOptional()
+  @IsString()
+  redesignTaskId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  nextTaskHints?: string[];
+}
+
 export class UpdateTaskDraftDto {
   @IsOptional()
   @IsString()

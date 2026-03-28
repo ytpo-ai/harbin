@@ -296,9 +296,11 @@ export class OrchestrationContextService {
     totalGeneratedSteps?: number;
   }): string {
     const lines = [
-      '请进行执行后决策，并仅返回 JSON。',
+      '请进行执行后决策。',
       '先激活并严格遵循 skill: docs/skill/orchestration-runtime-task-out-validation.md',
       '目标：根据当前任务执行结果，决定下一步动作。',
+      '你必须调用工具 builtin.sys-mg.mcp.orchestration.report-task-run-result 报告决策结果。',
+      '禁止直接输出纯文本 JSON 作为最终结果。',
       `step: ${input.step}`,
       `taskId: ${input.taskId}`,
       `taskTitle: ${input.taskTitle}`,
@@ -316,12 +318,11 @@ export class OrchestrationContextService {
       lines.push(`当前计划类型: development（由 rd-workflow 技能定义的多步流程）`);
       lines.push(`已完成步骤数: ${completed}`);
       lines.push('rd-workflow 技能定义了 5 个步骤（step1 → step5），当前流程尚未全部完成。');
-      lines.push('决策指引：若当前任务 executionStatus=completed 且输出有效，应优先返回 nextAction="generate_next" 以继续下一步骤。');
-      lines.push('仅当所有 5 个步骤均已完成时，才应返回 nextAction="stop"。');
+      lines.push('决策指引：若当前任务 executionStatus=completed 且输出有效，应优先返回 action="generate_next" 以继续下一步骤。');
+      lines.push('仅当所有 5 个步骤均已完成时，才应返回 action="stop"。');
     }
 
-    lines.push('输出 JSON schema:');
-    lines.push('{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."],"validation":{"passed":true,"verdict":"pass|needs_fix|blocked","missing":["..."],"ruleVersion":"post_execute_skill_v1"}}');
+    lines.push('工具参数约束: action=generate_next|stop|redesign|retry, reason 必填, action=redesign 时 redesignTaskId 必填。');
     return lines.join('\n');
   }
 

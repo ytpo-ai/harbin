@@ -6,6 +6,8 @@ import {
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
   DebugTaskStepDto,
+  PlannerReportTaskRunResultDto,
+  PlannerSubmitTaskDto,
   ReorderPlanTasksDto,
   ReplanPlanDto,
   ReassignTaskDto,
@@ -31,6 +33,7 @@ import { TaskLifecycleService } from './services/task-lifecycle.service';
 import { PlanStatsService } from './services/plan-stats.service';
 import { PlanEventStreamService } from './services/plan-event-stream.service';
 import { OrchestrationContextService } from './services/orchestration-context.service';
+import { IncrementalPlanningService } from './services/incremental-planning.service';
 
 @Injectable()
 export class OrchestrationService {
@@ -42,6 +45,7 @@ export class OrchestrationService {
     private readonly planStatsService: PlanStatsService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly orchestrationContextService: OrchestrationContextService,
+    private readonly incrementalPlanningService: IncrementalPlanningService,
   ) {}
 
   async createPlanFromPrompt(createdBy: string, dto: CreatePlanFromPromptDto): Promise<any> {
@@ -70,6 +74,13 @@ export class OrchestrationService {
 
   async generateNext(planId: string): Promise<{ accepted: boolean }> {
     return this.planManagementService.generateNext(planId);
+  }
+
+  async stopGeneration(
+    planId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; planId: string; stopped: boolean; alreadyStopped?: boolean }> {
+    return this.planManagementService.stopGeneration(planId, reason);
   }
 
   async updatePlan(planId: string, dto: UpdatePlanDto): Promise<any> {
@@ -194,6 +205,14 @@ export class OrchestrationService {
     taskId: string,
   ): Promise<{ status: OrchestrationTaskStatus; result?: string; error?: string }> {
     return this.taskLifecycleService.executeStandaloneTask(taskId);
+  }
+
+  async submitPlannerTask(dto: PlannerSubmitTaskDto): Promise<any> {
+    return this.incrementalPlanningService.submitPlannerTaskFromTool(dto);
+  }
+
+  async reportPlannerTaskRunResult(dto: PlannerReportTaskRunResultDto): Promise<any> {
+    return this.incrementalPlanningService.reportTaskRunResultFromTool(dto);
   }
 
 }

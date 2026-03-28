@@ -159,6 +159,10 @@ export class ToolExecutionDispatcherService {
         return this.orchestrationToolHandler.getOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.list-plans':
         return this.orchestrationToolHandler.listOrchestrationPlans(agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.submit-task':
+        return this.orchestrationToolHandler.submitOrchestrationTask(parameters);
+      case 'builtin.sys-mg.mcp.orchestration.report-task-run-result':
+        return this.orchestrationToolHandler.reportOrchestrationTaskRunResult(parameters);
       case 'builtin.sys-mg.mcp.orchestration.reassign-task':
         return this.orchestrationToolHandler.reassignOrchestrationTask(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.complete-human-task':

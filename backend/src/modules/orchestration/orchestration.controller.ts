@@ -30,6 +30,8 @@ import {
   CompleteHumanTaskDto,
   CreatePlanFromPromptDto,
   CreateSessionDto,
+  PlannerReportTaskRunResultDto,
+  PlannerSubmitTaskDto,
   ReorderPlanTasksDto,
   ReassignTaskDto,
   RunHistoryQueryDto,
@@ -298,6 +300,18 @@ export class OrchestrationController {
     return this.orchestrationService.generateNext(planId);
   }
 
+  @Post('plans/:id/stop-generation')
+  async stopPlanGeneration(
+    @Param('id') planId: string,
+    @Body() dto: { reason?: string },
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.stopGeneration(planId, dto?.reason);
+  }
+
   @Post('plans/:id/advance')
   async advancePlan(
     @Param('id') planId: string,
@@ -314,6 +328,28 @@ export class OrchestrationController {
       metadata: dto?.metadata,
     });
     return { accepted: true };
+  }
+
+  @Post('planner/submit-task')
+  async submitPlannerTask(
+    @Body() dto: PlannerSubmitTaskDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.submitPlannerTask(dto);
+  }
+
+  @Post('planner/report-task-run-result')
+  async reportPlannerTaskRunResult(
+    @Body() dto: PlannerReportTaskRunResultDto,
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.reportPlannerTaskRunResult(dto);
   }
 
   @Post('tasks/:id/reassign')

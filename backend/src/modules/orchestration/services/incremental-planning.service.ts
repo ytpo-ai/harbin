@@ -178,13 +178,62 @@ export class IncrementalPlanningService {
       return { done: true };
     }
 
-    const plannerContext = await this.buildPlannerContext(planId, sourcePrompt);
+    let plannerContext: IncrementalPlannerContext;
+    try {
+      plannerContext = await this.buildPlannerContext(planId, sourcePrompt);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to build planner context';
+      this.logger.error(`[planning_step_error] planId=${planId} step=${currentStep} phase=buildContext error=${message}`);
+      totalRetries += 1;
+      consecutiveFailures += 1;
+      totalFailures += 1;
+      await this.updateGenerationState(planId, {
+        currentStep,
+        totalGenerated,
+        totalRetries,
+        consecutiveFailures,
+        totalFailures,
+        totalCost,
+        isComplete: false,
+        lastError: `Build planner context failed: ${message}`,
+      });
+      if (consecutiveFailures >= config.maxRetries || totalFailures >= config.maxTotalFailures) {
+        await this.failPlanning(planId, `Build planner context failed: ${message}`);
+        return { done: true };
+      }
+      return { done: false };
+    }
+
     this.eventStream.emitPlanStreamEvent(planId, 'planning.step.started', {
       planId,
       step: currentStep + 1,
     });
 
-    const nextTaskResult = await this.plannerService.generateNextTask(planId, plannerContext);
+    let nextTaskResult: GenerateNextTaskResult;
+    try {
+      nextTaskResult = await this.plannerService.generateNextTask(planId, plannerContext);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Planner generateNextTask failed';
+      this.logger.error(`[planning_step_error] planId=${planId} step=${currentStep} phase=generateNextTask error=${message}`);
+      totalRetries += 1;
+      consecutiveFailures += 1;
+      totalFailures += 1;
+      await this.updateGenerationState(planId, {
+        currentStep,
+        totalGenerated,
+        totalRetries,
+        consecutiveFailures,
+        totalFailures,
+        totalCost,
+        isComplete: false,
+        lastError: `Planner call failed: ${message}`,
+      });
+      if (consecutiveFailures >= config.maxRetries || totalFailures >= config.maxTotalFailures) {
+        await this.failPlanning(planId, `Planner call failed: ${message}`);
+        return { done: true };
+      }
+      return { done: false };
+    }
     totalCost += nextTaskResult.costTokens || 0;
 
     if (nextTaskResult.isGoalReached) {
@@ -224,9 +273,33 @@ export class IncrementalPlanningService {
       return { done: false };
     }
 
-    const createdTask = isRedesign
-      ? await this.redesignFailedTask(planId, String(nextTaskResult.redesignTaskId), nextTaskResult.task)
-      : await this.createTaskFromPlannerOutput(planId, nextTaskResult.task, currentStep);
+    let createdTask: OrchestrationTaskDocument;
+    try {
+      createdTask = isRedesign
+        ? await this.redesignFailedTask(planId, String(nextTaskResult.redesignTaskId), nextTaskResult.task)
+        : await this.createTaskFromPlannerOutput(planId, nextTaskResult.task, currentStep);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to create/redesign task';
+      this.logger.error(`[planning_step_error] planId=${planId} step=${currentStep} phase=createTask error=${message}`);
+      totalRetries += 1;
+      consecutiveFailures += 1;
+      totalFailures += 1;
+      await this.updateGenerationState(planId, {
+        currentStep,
+        totalGenerated,
+        totalRetries,
+        consecutiveFailures,
+        totalFailures,
+        totalCost,
+        isComplete: false,
+        lastError: `Task creation failed: ${message}`,
+      });
+      if (consecutiveFailures >= config.maxRetries || totalFailures >= config.maxTotalFailures) {
+        await this.failPlanning(planId, `Task creation failed: ${message}`);
+        return { done: true };
+      }
+      return { done: false };
+    }
 
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.generated', {
       planId,
@@ -557,6 +630,146 @@ export class IncrementalPlanningService {
       totalSteps: tasks.length,
       lastError: plan?.generationState?.lastError,
       requirementId,
+    };
+  }
+
+  async submitPlannerTaskFromTool(input: {
+    planId: string;
+    action?: 'new' | 'redesign';
+    title?: string;
+    description?: string;
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    taskType?: 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general';
+    agentId?: string;
+    requiredTools?: string[];
+    reasoning?: string;
+    redesignTaskId?: string;
+    isGoalReached?: boolean;
+  }): Promise<any> {
+    const planId = String(input?.planId || '').trim();
+    if (!planId) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    if (input?.isGoalReached === true) {
+      return {
+        goalReached: true,
+        message: '计划目标已达成',
+      };
+    }
+
+    const plan = await this.planModel
+      .findById(planId)
+      .select({ generationState: 1 })
+      .lean<{ generationState?: { currentStep?: number } }>()
+      .exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const action = String(input?.action || 'new').trim().toLowerCase() === 'redesign' ? 'redesign' : 'new';
+    const title = String(input?.title || '').trim().slice(0, 200);
+    const description = String(input?.description || '').trim().slice(0, 4000);
+    if (!title || !description) {
+      throw new ConflictException('submit-task requires non-empty title and description');
+    }
+
+    const taskTypeRaw = String(input?.taskType || '').trim().toLowerCase();
+    const taskType =
+      taskTypeRaw === 'research'
+      || taskTypeRaw === 'development.plan'
+      || taskTypeRaw === 'development.exec'
+      || taskTypeRaw === 'development.review'
+      || taskTypeRaw === 'general'
+        ? (taskTypeRaw as NonNullable<GenerateNextTaskResult['task']>['taskType'])
+        : 'general';
+    const priorityRaw = String(input?.priority || '').trim().toLowerCase();
+    const priority =
+      priorityRaw === 'low' || priorityRaw === 'medium' || priorityRaw === 'high' || priorityRaw === 'urgent'
+        ? (priorityRaw as NonNullable<GenerateNextTaskResult['task']>['priority'])
+        : 'medium';
+
+    const taskPayload: NonNullable<GenerateNextTaskResult['task']> = {
+      title,
+      description,
+      priority,
+      agentId: String(input?.agentId || '').trim() || undefined,
+      taskType,
+      requiredTools: Array.isArray(input?.requiredTools)
+        ? input.requiredTools.map((item) => String(item || '').trim()).filter(Boolean)
+        : undefined,
+    };
+
+    const redesignedTaskId = String(input?.redesignTaskId || '').trim();
+    if (action === 'redesign' && !redesignedTaskId) {
+      throw new ConflictException('redesignTaskId is required when action=redesign');
+    }
+    const createdTask = action === 'redesign'
+      ? await this.redesignFailedTask(planId, redesignedTaskId, taskPayload)
+      : await this.createTaskFromPlannerOutput(
+        planId,
+        taskPayload,
+        Math.max(0, Number(plan?.generationState?.currentStep || 0)),
+      );
+
+    return {
+      plannerAction: action,
+      taskId: String(createdTask._id),
+      title: createdTask.title,
+      description: createdTask.description,
+      status: createdTask.status,
+      priority: createdTask.priority,
+      taskType: (createdTask as any).taskType || 'general',
+      order: Number(createdTask.order || 0),
+      assignment: {
+        executorType: createdTask.assignment?.executorType,
+        executorId: createdTask.assignment?.executorId,
+      },
+      reasoning: String(input?.reasoning || '').trim() || undefined,
+      redesignTaskId: action === 'redesign' ? redesignedTaskId || undefined : undefined,
+    };
+  }
+
+  async reportTaskRunResultFromTool(input: {
+    planId: string;
+    action: 'generate_next' | 'stop' | 'redesign' | 'retry';
+    reason: string;
+    redesignTaskId?: string;
+    nextTaskHints?: string[];
+  }): Promise<any> {
+    const planId = String(input?.planId || '').trim();
+    if (!planId) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const planExists = await this.planModel.exists({ _id: planId });
+    if (!planExists) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const action = String(input?.action || '').trim().toLowerCase();
+    if (!['generate_next', 'stop', 'redesign', 'retry'].includes(action)) {
+      throw new ConflictException('action must be generate_next|stop|redesign|retry');
+    }
+
+    const reason = String(input?.reason || '').trim();
+    if (!reason) {
+      throw new ConflictException('reason is required');
+    }
+
+    const redesignTaskId = String(input?.redesignTaskId || '').trim();
+    if (action === 'redesign' && !redesignTaskId) {
+      throw new ConflictException('redesignTaskId is required when action=redesign');
+    }
+
+    return {
+      action,
+      reason,
+      accepted: true,
+      redesignTaskId: redesignTaskId || undefined,
+      nextTaskHints: Array.isArray(input?.nextTaskHints)
+        ? input.nextTaskHints.map((item) => String(item || '').trim()).filter(Boolean)
+        : undefined,
     };
   }
 

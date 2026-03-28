@@ -54,6 +54,7 @@ export interface IncrementalPlannerContext {
 export interface GenerateNextTaskResult {
   action?: 'new' | 'redesign';
   redesignTaskId?: string;
+  createdTaskId?: string;
   task?: {
     title: string;
     description: string;
@@ -75,7 +76,7 @@ export interface PreExecutionDecision {
 }
 
 export interface PostExecutionDecision {
-  nextAction: 'generate_next' | 'stop' | 'redesign' | 'retry';
+  action: 'generate_next' | 'stop' | 'redesign' | 'retry';
   reason: string;
   redesignTaskId?: string;
   nextTaskHints?: string[];
@@ -197,6 +198,25 @@ export class PlannerService {
       };
     }
 
+    const submittedTask = this.resolveSubmittedTaskFromToolPayload(parsed);
+    if (submittedTask) {
+      return {
+        action: submittedTask.action,
+        redesignTaskId: submittedTask.action === 'redesign' ? submittedTask.redesignTaskId : undefined,
+        createdTaskId: submittedTask.createdTaskId,
+        task: submittedTask.task,
+        isGoalReached: false,
+        reasoning: submittedTask.reasoning,
+      };
+    }
+
+    if (parsed.goalReached === true || parsed.isGoalReached === true) {
+      return {
+        isGoalReached: true,
+        reasoning: this.resolvePlannerReasoning(parsed),
+      };
+    }
+
     const taskCandidate = this.resolvePlannerTaskCandidate(parsed);
     const parsedAgentId = String(taskCandidate?.agentId || '').trim();
     const parsedAction = this.normalizePlannerAction(parsed?.action);
@@ -223,6 +243,7 @@ export class PlannerService {
     return {
       action: parsedAction,
       redesignTaskId: parsedAction === 'redesign' ? parsedRedesignTaskId : undefined,
+      createdTaskId: undefined,
       task: validatedTask,
       isGoalReached: Boolean(parsed.isGoalReached),
       reasoning: normalizedReasoning,
@@ -322,27 +343,22 @@ export class PlannerService {
     const parsed = this.tryParseJson(response);
     if (!parsed || typeof parsed !== 'object') {
       return {
-        nextAction: 'stop',
+        action: 'stop',
         reason: 'Failed to parse planner post-task response',
       };
     }
 
-    const nextActionRaw = String(parsed.nextAction || '').trim().toLowerCase();
-    const nextAction: PostExecutionDecision['nextAction'] =
-      nextActionRaw === 'generate_next'
-      || nextActionRaw === 'redesign'
-      || nextActionRaw === 'retry'
-        ? (nextActionRaw as PostExecutionDecision['nextAction'])
-        : 'stop';
+    const decisionCandidate = this.extractPostDecisionPayload(parsed);
+    const action = this.normalizePostDecisionAction(decisionCandidate.action ?? decisionCandidate.nextAction);
 
     return {
-      nextAction,
-      reason: String(parsed.reason || '').trim() || 'Planner post-task response missing reason',
-      redesignTaskId: String(parsed.redesignTaskId || '').trim() || undefined,
-      nextTaskHints: Array.isArray(parsed.nextTaskHints)
-        ? parsed.nextTaskHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+      action,
+      reason: String(decisionCandidate.reason || '').trim() || 'Planner post-task response missing reason',
+      redesignTaskId: String(decisionCandidate.redesignTaskId || '').trim() || undefined,
+      nextTaskHints: Array.isArray(decisionCandidate.nextTaskHints)
+        ? decisionCandidate.nextTaskHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
         : undefined,
-      validation: this.normalizePostValidationResult(parsed.validation),
+      validation: this.normalizePostValidationResult(decisionCandidate.validation),
     };
   }
 
@@ -474,9 +490,9 @@ export class PlannerService {
     const requirementAnchor = this.extractRequirementAnchor(context);
     const isDevelopment = options?.domainType === 'development';
 
-    // ── JSON schema 定义（业务规范，格式约束由 collaboration-context.builder 统一注入） ──
-    sections.push('JSON 输出 schema:');
-    sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development.plan|development.exec|development.review","requiredTools":["..."]},"isGoalReached":false,"reasoning":"..."}');
+    sections.push('你必须通过调用工具 builtin.sys-mg.mcp.orchestration.submit-task 提交下一步任务。');
+    sections.push('禁止直接输出纯文本 JSON 作为最终结果。');
+    sections.push('当目标已达成时，调用 submit-task 并传 isGoalReached=true。');
     sections.push('');
 
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
@@ -497,13 +513,13 @@ export class PlannerService {
         sections.push('[首步说明] 当前是计划第一步（已累计执行步骤数=0），requirementId 尚未选定。');
         sections.push('你的 system messages 中已注入 rd-workflow 技能，其中 step1 定义了本步的执行角色、动作和输出契约。');
         sections.push('请严格参照 skill 中 step1 的定义生成本步任务：');
-        sections.push('1. 你 **必须** 立即输出一个符合 schema 的 JSON，包含一个可执行 task。');
+        sections.push('1. 你 **必须** 立即调用 submit-task 提交一个可执行 task。');
         sections.push('2. task.title、task.description、task.taskType 必须与 skill step1 的定义一致。');
         sections.push('3. task.description 必须包含 step1 输出契约中要求的所有交付项。');
         sections.push('4. task.description 必须明确告知执行者：本步无上游依赖，执行者应主动使用需求管理工具查询需求池。');
         sections.push('5. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
         sections.push('6. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
-        sections.push('7. 禁止输出 task=null、TASK_INABILITY、error 或任何拒绝/错误性 JSON。');
+        sections.push('7. 禁止输出 task=null、TASK_INABILITY、error 或任何拒绝/错误性文本。');
       } else if (context.totalSteps === 0) {
         // ── 非 development 模式首步：保留原有豁免逻辑 ──
         sections.push('- requirementId: (尚未选定)');
@@ -511,13 +527,12 @@ export class PlannerService {
         sections.push('[首步豁免说明] 当前是计划第一步（覆盖 sourcePrompt 及下方常规约束）。');
         sections.push('当前是计划的第一步（已累计执行步骤数=0），requirementId 尚未选定。');
         sections.push('以下豁免规则的优先级高于 sourcePrompt / Plan 目标 / 执行者发现步骤 / 输出规则 中的任何约束：');
-        sections.push('1. 你 **必须** 立即输出一个符合 schema 的 JSON，包含一个可执行 task。');
+        sections.push('1. 你 **必须** 立即调用 submit-task 提交一个可执行 task。');
         sections.push('2. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
         sections.push('3. **豁免 requirement.get 前置调用**：本步的目标就是去选定需求，不需要先获取需求详情。');
         sections.push('4. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
-        sections.push('5. 禁止输出 task=null、TASK_INABILITY、missing_task_context、error、json_only_mode_conflict 或任何拒绝/错误性 JSON。');
-        sections.push('6. 直接输出以下格式（仅需替换 description 内容）：');
-        sections.push('   {"action":"new","task":{"title":"选定最高优先级需求","description":"从 EI 需求池中选择优先级最高且状态为 todo/open 的需求，输出 requirementId、标题原文、需求描述原文和选择依据","priority":"high","taskType":"general"},"isGoalReached":false,"reasoning":"首步：选定需求锚点"}');
+        sections.push('5. 禁止输出 task=null、TASK_INABILITY、missing_task_context、error、json_only_mode_conflict 或任何拒绝/错误性文本。');
+        sections.push('6. 本步 action 固定为 new，title 固定为“选定最高优先级需求”，并通过 submit-task 传入。');
       } else {
         sections.push('- requirementId: (unknown — 请从已完成任务的 outputSummary 中提取)');
       }
@@ -531,11 +546,11 @@ export class PlannerService {
     // ── development 模式：注入 skill 步骤引导指令 ──
     if (isDevelopment) {
       sections.push('## 角色边界（最高优先级，覆盖一切其他指令）');
-      sections.push('你是 Planner（规划器），不是执行者。你的唯一输出是符合 JSON schema 的任务卡片。');
+      sections.push('你是 Planner（规划器），不是执行者。你的唯一输出是通过 submit-task 工具提交任务卡片。');
       sections.push('- skill 中的"动作"描述是给**执行者**的指令，你只需将其转化为 task.description 的内容。');
       sections.push('- **禁止在规划阶段调用任何业务工具**（如需求查询、代码读写、状态更新等）。');
-      sections.push('- **禁止输出确认性文本**（如"已收到"、"我将按照..."）。只输出 JSON。');
-      sections.push('- **禁止输出 TASK_INABILITY**。即使上下文不完整，也必须按 skill 步骤定义输出任务 JSON。');
+      sections.push('- **禁止输出确认性文本**（如"已收到"、"我将按照..."）。');
+      sections.push('- **禁止输出 TASK_INABILITY**。即使上下文不完整，也必须按 skill 步骤定义提交任务。');
       sections.push('');
       sections.push('## 技能步骤引导（强制，优先级高于 sourcePrompt）');
       sections.push('你的 system messages 中已注入 rd-workflow 技能的完整流程定义，包含步骤序号（step1 → step2 → step3 → ...）、执行角色、输入、动作、输出契约和 taskType 约束。');
@@ -596,7 +611,7 @@ export class PlannerService {
     sections.push('1) 先调用 builtin.sys-mg.internal.agent-master.list-agents 获取当前可用 Agent 的实时列表。');
     sections.push('2) 按 requiredTools（如 repo-writer、save-prompt-template、web-search、web-fetch）过滤候选。');
     sections.push('3) 在工具满足的候选内，再按能力标签、角色、失败历史做选择。');
-    sections.push('4) 若本轮未调用 list-agents，不允许输出 task。请返回 isGoalReached=false、task=null，并在 reasoning 说明原因。');
+    sections.push('4) 若本轮未调用 list-agents，不允许提交 task。');
     sections.push('');
 
     sections.push('## 执行者选择规则（关键，严格遵守）');
@@ -611,7 +626,7 @@ export class PlannerService {
     sections.push('F) **【禁止】生成验证/预检类元任务**：执行者匹配必须在规划阶段通过 list-agents 结果直接完成，严禁外化为执行任务（如"核验可用执行者"、"确认谁具备某工具"等）。');
     sections.push('');
     sections.push('## 输出规则');
-    sections.push('1) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
+    sections.push('1) 若目标已全部达成，调用 submit-task 并设置 isGoalReached=true。');
     sections.push('2) 每个任务必须足够简单、明确、可快速验证。');
     sections.push('3) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
     sections.push('4) 你必须从本轮 list-agents 返回中选择一个真实存在的 agentId，不允许臆造。');
@@ -664,6 +679,89 @@ export class PlannerService {
   private normalizePlannerAction(input: unknown): 'new' | 'redesign' {
     const val = String(input || '').trim().toLowerCase();
     return val === 'redesign' ? 'redesign' : 'new';
+  }
+
+  private normalizePostDecisionAction(input: unknown): PostExecutionDecision['action'] {
+    const normalized = String(input || '').trim().toLowerCase();
+    if (
+      normalized === 'generate_next'
+      || normalized === 'stop'
+      || normalized === 'redesign'
+      || normalized === 'retry'
+    ) {
+      return normalized;
+    }
+    return 'stop';
+  }
+
+  private resolveSubmittedTaskFromToolPayload(parsed: any): {
+    action: 'new' | 'redesign';
+    redesignTaskId?: string;
+    createdTaskId: string;
+    task?: GenerateNextTaskResult['task'];
+    reasoning: string;
+  } | null {
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    const candidate = this.extractToolResultPayload(parsed);
+    if (!candidate) {
+      return null;
+    }
+
+    const taskId = String(candidate.taskId || '').trim();
+    if (!taskId) {
+      return null;
+    }
+
+    const action = this.normalizePlannerAction(candidate.plannerAction || candidate.action);
+    const title = String(candidate.title || '').trim();
+    const description = String(candidate.description || '').trim();
+    const runtimeTask = title && description
+      ? {
+          title,
+          description,
+          priority: this.normalizePriority(String(candidate.priority || 'medium')),
+          agentId: String(candidate.assignment?.executorId || candidate.agentId || '').trim() || undefined,
+          taskType: this.normalizeRuntimeTaskType(candidate.taskType),
+          requiredTools: undefined,
+        }
+      : undefined;
+
+    return {
+      action,
+      redesignTaskId: action === 'redesign' ? String(candidate.redesignTaskId || '').trim() || undefined : undefined,
+      createdTaskId: taskId,
+      task: runtimeTask,
+      reasoning: String(candidate.reasoning || candidate.reason || candidate.message || '').trim() || 'Task submitted via tool',
+    };
+  }
+
+  private extractToolResultPayload(parsed: any): Record<string, any> | null {
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    if (typeof parsed.taskId === 'string' && parsed.taskId.trim()) {
+      return parsed;
+    }
+    if (parsed.result && typeof parsed.result === 'object' && !Array.isArray(parsed.result)) {
+      const result = parsed.result as Record<string, any>;
+      if (typeof result.taskId === 'string' && result.taskId.trim()) {
+        return result;
+      }
+    }
+    return null;
+  }
+
+  private extractPostDecisionPayload(parsed: any): Record<string, any> {
+    if (!parsed || typeof parsed !== 'object') {
+      return {};
+    }
+    if (parsed.result && typeof parsed.result === 'object' && !Array.isArray(parsed.result)) {
+      return parsed.result as Record<string, any>;
+    }
+    return parsed as Record<string, any>;
   }
 
   private resolvePlannerTaskCandidate(parsed: any): Record<string, any> | null {

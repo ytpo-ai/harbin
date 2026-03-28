@@ -344,6 +344,128 @@ export class OrchestrationToolHandler {
     };
   }
 
+  async submitOrchestrationTask(
+    params: {
+      planId?: string;
+      action?: 'new' | 'redesign';
+      title?: string;
+      description?: string;
+      priority?: 'low' | 'medium' | 'high' | 'urgent';
+      taskType?: 'general' | 'research' | 'development.plan' | 'development.exec' | 'development.review';
+      agentId?: string;
+      requiredTools?: string[];
+      reasoning?: string;
+      redesignTaskId?: string;
+      isGoalReached?: boolean;
+    },
+  ): Promise<any> {
+    const planId = String(params?.planId || '').trim();
+    if (!planId) {
+      throw new Error('orchestration_submit_task requires planId');
+    }
+
+    if (params?.isGoalReached === true) {
+      const result = await this.internalApiClient.callOrchestrationApi(
+        'POST',
+        '/planner/submit-task',
+        {
+          planId,
+          action: params.action,
+          isGoalReached: true,
+          reasoning: params.reasoning,
+        },
+      );
+      return {
+        action: 'submit_task',
+        ...result,
+      };
+    }
+
+    const action = params?.action;
+    if (action !== 'new' && action !== 'redesign') {
+      throw new Error('orchestration_submit_task action must be new or redesign');
+    }
+    const title = String(params?.title || '').trim();
+    const description = String(params?.description || '').trim();
+    if (!title) {
+      throw new Error('orchestration_submit_task requires title');
+    }
+    if (!description) {
+      throw new Error('orchestration_submit_task requires description');
+    }
+    if (action === 'redesign' && !String(params?.redesignTaskId || '').trim()) {
+      throw new Error('orchestration_submit_task requires redesignTaskId when action=redesign');
+    }
+
+    const result = await this.internalApiClient.callOrchestrationApi(
+      'POST',
+      '/planner/submit-task',
+      {
+        planId,
+        action,
+        title,
+        description,
+        priority: params?.priority,
+        taskType: params?.taskType,
+        agentId: String(params?.agentId || '').trim() || undefined,
+        requiredTools: Array.isArray(params?.requiredTools)
+          ? params.requiredTools.map((toolId) => String(toolId || '').trim()).filter(Boolean)
+          : undefined,
+        reasoning: String(params?.reasoning || '').trim() || undefined,
+        redesignTaskId: String(params?.redesignTaskId || '').trim() || undefined,
+        isGoalReached: false,
+      },
+    );
+    return {
+      action: 'submit_task',
+      ...result,
+    };
+  }
+
+  async reportOrchestrationTaskRunResult(
+    params: {
+      planId?: string;
+      action?: 'generate_next' | 'stop' | 'redesign' | 'retry';
+      reason?: string;
+      redesignTaskId?: string;
+      nextTaskHints?: string[];
+    },
+  ): Promise<any> {
+    const planId = String(params?.planId || '').trim();
+    if (!planId) {
+      throw new Error('orchestration_report_task_run_result requires planId');
+    }
+    const action = String(params?.action || '').trim().toLowerCase();
+    if (!['generate_next', 'stop', 'redesign', 'retry'].includes(action)) {
+      throw new Error('orchestration_report_task_run_result action must be generate_next|stop|redesign|retry');
+    }
+    const reason = String(params?.reason || '').trim();
+    if (!reason) {
+      throw new Error('orchestration_report_task_run_result requires reason');
+    }
+    if (action === 'redesign' && !String(params?.redesignTaskId || '').trim()) {
+      throw new Error('orchestration_report_task_run_result requires redesignTaskId when action=redesign');
+    }
+
+    const result = await this.internalApiClient.callOrchestrationApi(
+      'POST',
+      '/planner/report-task-run-result',
+      {
+        planId,
+        action,
+        reason,
+        redesignTaskId: String(params?.redesignTaskId || '').trim() || undefined,
+        nextTaskHints: Array.isArray(params?.nextTaskHints)
+          ? params.nextTaskHints.map((item) => String(item || '').trim()).filter(Boolean)
+          : undefined,
+      },
+    );
+    return {
+      action: 'report_task_run_result',
+      ...result,
+    };
+  }
+
   async reassignOrchestrationTask(
     params: {
       taskId?: string;
