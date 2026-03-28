@@ -48,7 +48,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
         `${agenda ? `会议议程：${agenda}\n` : ''}` +
         `参与者：${participantCount}人在场\n` +
         `你的角色：${roleInMeeting === 'host' ? '主持人' : '参与者'}\n\n` +
-        `协作上下文(会议): ${JSON.stringify({
+        `Working Environment Context (Meeting): ${JSON.stringify({
           meetingId: meeting.meetingId,
           meetingTitle,
           meetingType: meeting.meetingType,
@@ -79,7 +79,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       const orchestration = resolvedContext as Record<string, unknown>;
       const upstreamOutputs = orchestration.upstreamOutputs || orchestration.dependencyContext || '';
       const contentParts: string[] = [
-        `协作上下文(编排): ${JSON.stringify({
+        `Working Environment Context (Orchestration): ${JSON.stringify({
           agentTier: orchestration.agentTier || 'operations',
           roleInPlan: orchestration.roleInPlan || 'executor',
           collaborators: orchestration.collaborators || [],
@@ -113,7 +113,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
     if (scenarioType === 'inner-message') {
       const inner = resolvedContext as Record<string, unknown>;
       const contentParts: string[] = [
-        `协作上下文(内部消息): ${JSON.stringify({
+        `Working Environment Context (Inner Message): ${JSON.stringify({
           messageId: inner.messageId,
           eventType: inner.eventType,
           triggerSource: inner.triggerSource,
@@ -144,7 +144,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
 
     const chat = resolvedContext as Record<string, unknown>;
     if (!Object.keys(chat).length) return [];
-    const fullContent = `协作上下文(聊天): ${JSON.stringify(chat)}`;
+    const fullContent = `Working Environment Context (Chat): ${JSON.stringify(chat)}`;
     const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
       scope: input.contextScope,
       blockType: 'collaboration',

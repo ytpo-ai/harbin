@@ -469,13 +469,8 @@ export class PlannerService {
     const sections: string[] = [];
     const requirementAnchor = this.extractRequirementAnchor(context);
 
-    // ── 最高优先级：输出格式强制约束（放在最前面，压制角色 prompt 影响） ──
-    sections.push('[输出格式约束] 当前为结构化 JSON 输出模式。');
-    sections.push('此模式下的硬性规则：');
-    sections.push('- 你只能输出一个合法 JSON 对象，绝对禁止输出任何自然语言、问候、确认、解释。');
-    sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
-    sections.push('- 不要回复"好的"、"收到"、"我来执行"等确认性文字。直接输出 JSON。');
-    sections.push('- JSON 必须严格符合以下 schema:');
+    // ── JSON schema 定义（业务规范，格式约束由 collaboration-context.builder 统一注入） ──
+    sections.push('JSON 输出 schema:');
     sections.push('  {"action":"new|redesign","redesignTaskId":"(redesign 时必填)","task":{"title":"...","description":"...","priority":"low|medium|high|urgent","agentId":"...","taskType":"general|research|development.plan|development.exec|development.review","requiredTools":["..."]},"isGoalReached":false,"reasoning":"..."}');
     sections.push('');
 
@@ -560,19 +555,15 @@ export class PlannerService {
     sections.push('E) **失败回避**：若某 agent 在本计划中已因"缺少工具"或"工具不匹配"失败，【禁止】再次将同类任务分配给该 agent，必须从失败 agent 列表中排除后重选。');
     sections.push('F) **【禁止】生成验证/预检类元任务**：执行者匹配必须在规划阶段通过 list-agents 结果直接完成，严禁外化为执行任务（如"核验可用执行者"、"确认谁具备某工具"等）。');
     sections.push('');
-    sections.push('## 输出规则（严格遵守）');
-    sections.push('1) 仅输出 JSON，禁止输出任何非 JSON 文本（包括问候、确认、解释、markdown fence 之外的内容）。');
-    sections.push('2) JSON 结构: {"action": "new|redesign", "redesignTaskId": "...", "task": {"title": "...", "description": "...", "priority": "low|medium|high|urgent", "agentId": "...", "taskType": "general|research|development.plan|development.exec|development.review", "requiredTools": ["..."]}, "isGoalReached": false, "reasoning": "..."}');
-    sections.push('3) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
-    sections.push('4) 每个任务必须足够简单、明确、可快速验证。');
-    sections.push('5) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
-    sections.push('6) 你必须从本轮 list-agents 返回中选择一个真实存在的 agentId，不允许臆造。');
-    sections.push('7) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
-    sections.push('8) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
-    sections.push('9) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');
-    sections.push('10) 对工具依赖明确的任务，尽量填写 task.requiredTools（例如 ["repo-writer"]、["save-prompt-template"]），便于系统做二次校验。');
-    sections.push('');
-    sections.push('再次强调：你的回复必须以 { 开头，以 } 结尾，中间是合法 JSON。不要输出任何其他内容。');
+    sections.push('## 输出规则');
+    sections.push('1) 若目标已全部达成，设置 isGoalReached=true，task 可为 null。');
+    sections.push('2) 每个任务必须足够简单、明确、可快速验证。');
+    sections.push('3) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
+    sections.push('4) 你必须从本轮 list-agents 返回中选择一个真实存在的 agentId，不允许臆造。');
+    sections.push('5) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
+    sections.push('6) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
+    sections.push('7) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');
+    sections.push('8) 对工具依赖明确的任务，尽量填写 task.requiredTools（例如 ["repo-writer"]、["save-prompt-template"]），便于系统做二次校验。');
 
     return sections.join('\n');
   }
