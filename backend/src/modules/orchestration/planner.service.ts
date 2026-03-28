@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../shared/types';
+import { CollaborationContextFactory } from '@libs/contracts';
 import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
@@ -166,12 +167,11 @@ export class PlannerService {
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
-      collaborationContext: {
+      collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        mode: 'planning',
-        format: 'json',
         roleInPlan: 'planner',
-      },
+        ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+      }),
       ...(options?.sessionId
         ? {
             sessionContext: {
@@ -255,12 +255,11 @@ export class PlannerService {
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
-      collaborationContext: {
+      collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        mode: 'planning',
-        format: 'json',
         roleInPlan: 'planner_pre_execution',
-      },
+        ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+      }),
       sessionContext: {
         sessionId,
       },
@@ -309,12 +308,11 @@ export class PlannerService {
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
-      collaborationContext: {
+      collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        mode: 'planning',
-        format: 'json',
         roleInPlan: 'planner_post_execution',
-      },
+        ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+      }),
       sessionContext: {
         sessionId,
       },
@@ -401,11 +399,10 @@ export class PlannerService {
 
     try {
       const response = await this.agentClientService.executeTask(plannerAgentId, task, {
-        collaborationContext: {
-          mode: 'planning',
-          format: 'json',
+        collaborationContext: CollaborationContextFactory.orchestration({
+          planId: 'legacy-planning-session',
           roleInPlan: 'planner',
-        },
+        }),
       });
       const parsed = this.tryParseJson(response);
       if (!parsed?.tasks || !Array.isArray(parsed.tasks) || parsed.tasks.length === 0) {
@@ -473,7 +470,7 @@ export class PlannerService {
     const requirementAnchor = this.extractRequirementAnchor(context);
 
     // ── 最高优先级：输出格式强制约束（放在最前面，压制角色 prompt 影响） ──
-    sections.push('[SYSTEM OVERRIDE] 你当前处于 **Planner JSON-only 模式**。');
+    sections.push('[输出格式约束] 当前为结构化 JSON 输出模式。');
     sections.push('此模式下的硬性规则：');
     sections.push('- 你只能输出一个合法 JSON 对象，绝对禁止输出任何自然语言、问候、确认、解释。');
     sections.push('- 如果你输出了非 JSON 内容，系统将视为失败并立即重试。');
@@ -496,7 +493,7 @@ export class PlannerService {
       if (context.totalSteps === 0) {
         sections.push('- requirementId: (尚未选定)');
         sections.push('');
-        sections.push('[SYSTEM OVERRIDE — 首步豁免（最高优先级，覆盖 sourcePrompt 及下方所有规则）]');
+        sections.push('[首步豁免说明] 当前是计划第一步（覆盖 sourcePrompt 及下方常规约束）。');
         sections.push('当前是计划的第一步（已累计执行步骤数=0），requirementId 尚未选定。');
         sections.push('以下豁免规则的优先级高于 sourcePrompt / Plan 目标 / 执行者发现步骤 / 输出规则 中的任何约束：');
         sections.push('1. 你 **必须** 立即输出一个符合 schema 的 JSON，包含一个可执行 task。');
@@ -634,6 +631,15 @@ export class PlannerService {
 
     if (parsed.nextTask && typeof parsed.nextTask === 'object' && !Array.isArray(parsed.nextTask)) {
       return parsed.nextTask as Record<string, any>;
+    }
+
+    // Fallback: if the root object directly contains title and description,
+    // treat the root object itself as the task candidate (planner may omit the "task" wrapper).
+    if (
+      typeof parsed.title === 'string' && parsed.title.trim()
+      && typeof parsed.description === 'string' && parsed.description.trim()
+    ) {
+      return parsed as Record<string, any>;
     }
 
     return null;

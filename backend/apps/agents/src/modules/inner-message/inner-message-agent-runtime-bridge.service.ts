@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { randomUUID } from 'crypto';
+import { CollaborationContextFactory } from '@libs/contracts';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { InnerMessage } from '@agents/schemas/inner-message.schema';
 import { InnerMessageService } from './inner-message.service';
@@ -60,9 +61,17 @@ export class InnerMessageAgentRuntimeBridgeService {
           updatedAt: new Date(),
         },
         {
-          collaborationContext: {
-            ...(this.resolveTeamContext(payload) || {}),
-          },
+          collaborationContext: CollaborationContextFactory.innerMessage({
+            messageId,
+            eventType,
+            senderAgentId: String(message?.senderAgentId || '').trim() || 'system',
+            triggerSource: 'inner-message-runtime-bridge',
+            meetingId: String(payload.meetingId || '').trim() || undefined,
+            planId: String(payload.planId || '').trim() || undefined,
+            scheduleId: String(payload.scheduleId || '').trim() || undefined,
+            runtimeTaskType: isScheduleMessage ? 'scheduled_task' : 'internal_message',
+            requireJsonResponse: true,
+          }),
           sessionContext: {
             runtimeTaskType: isScheduleMessage ? 'scheduled_task' : 'internal_message',
             runtimeChannelHint: 'native',
@@ -123,14 +132,6 @@ export class InnerMessageAgentRuntimeBridgeService {
       return payload as Record<string, unknown>;
     }
     return {};
-  }
-
-  private resolveTeamContext(payload: Record<string, unknown>): Record<string, unknown> | null {
-    const meetingId = String(payload.meetingId || '').trim();
-    if (meetingId) {
-      return { meetingId };
-    }
-    return null;
   }
 
   private buildPrompt(message: InnerMessage, payload: Record<string, unknown>): string {

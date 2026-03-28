@@ -1,7 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { CollaborationContext, CollaborationContextFactory } from '@libs/contracts';
 import { ChatMessage } from '../../../../../../src/shared/types';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
 import { ContextFingerprintService } from './context-fingerprint.service';
+
+const JSON_ONLY_DIRECTIVE = [
+  '[输出格式约束] 当前为结构化 JSON 输出模式。',
+  '回复必须是合法 JSON 对象，以 { 开头 } 结尾。',
+  '非 JSON 内容将被系统丢弃。',
+].join('\n');
+
+const JSON_PREFERRED_DIRECTIVE = [
+  '[输出格式偏好] 优先以 JSON 对象格式回复。',
+  '如确需自然语言说明，可在 JSON 的 "message" 字段中附加。',
+].join('\n');
 
 @Injectable()
 export class CollaborationContextBuilder implements ContextBlockBuilder {
@@ -11,15 +23,18 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
   constructor(private readonly contextFingerprintService: ContextFingerprintService) {}
 
   shouldInject(input: ContextBuildInput): boolean {
-    if (input.scenarioType === 'orchestration' || input.scenarioType === 'meeting') {
+    if (input.scenarioType === 'orchestration' || input.scenarioType === 'meeting' || input.scenarioType === 'inner-message') {
       return true;
     }
     return Boolean(input.persistedContext?.collaborationContext || input.context.collaborationContext);
   }
 
   async build(input: ContextBuildInput): Promise<ChatMessage[]> {
-    if (input.scenarioType === 'meeting') {
-      const meeting = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
+    const resolvedContext = this.resolveCollaborationContext(input);
+    const scenarioType = this.resolveScenarioType(input, resolvedContext);
+
+    if (scenarioType === 'meeting') {
+      const meeting = resolvedContext as Record<string, unknown>;
       const participantProfiles = Array.isArray(meeting.participantProfiles) ? (meeting.participantProfiles as Array<Record<string, unknown>>) : [];
       const participantCount = participantProfiles.length || (Array.isArray(meeting.participants) ? meeting.participants.length : 0);
       const meetingTitle = String(meeting.meetingTitle || '').trim();
@@ -60,13 +75,13 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
     }
 
-    if (input.scenarioType === 'orchestration') {
-      const orchestration = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
+    if (scenarioType === 'orchestration') {
+      const orchestration = resolvedContext as Record<string, unknown>;
       const upstreamOutputs = orchestration.upstreamOutputs || orchestration.dependencyContext || '';
       const contentParts: string[] = [
         `协作上下文(编排): ${JSON.stringify({
           agentTier: orchestration.agentTier || 'operations',
-          roleInPlan: orchestration.roleInPlan || 'execute_assigned_task',
+          roleInPlan: orchestration.roleInPlan || 'executor',
           collaborators: orchestration.collaborators || [],
           delegationRules: orchestration.delegationRules || {
             canDelegateTo: ['operations', 'temporary'],
@@ -75,17 +90,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           upstreamOutputs,
         })}`,
       ];
-
-      // JSON-only mode: 当编排上下文要求 format=json 时，追加强制 JSON 输出约束。
-      // 该指令作为 system prompt 注入，优先级高于 user message，可有效压制角色初始化寒暄。
-      if (String(orchestration.format || '').trim() === 'json') {
-        contentParts.push(
-          '\n[JSON-ONLY MODE] 你当前处于纯 JSON 输出模式。' +
-            '你的回复必须且只能是一个合法 JSON 对象，以 { 开头以 } 结尾。' +
-            '禁止输出任何自然语言文本、问候、确认、解释、markdown fence。' +
-            '违反此规则的回复将被系统丢弃并触发重试。',
-        );
-      }
+      this.pushResponseDirectiveConstraint(contentParts, orchestration);
 
       const fullContent = contentParts.join('\n');
       const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
@@ -96,7 +101,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           planId: String(orchestration.planId || '').trim(),
           collaboratorCount: Array.isArray(orchestration.collaborators) ? orchestration.collaborators.length : 0,
           upstreamOutputHash: this.contextFingerprintService.hashFingerprint(JSON.stringify(upstreamOutputs)),
-          format: String(orchestration.format || '').trim() || undefined,
+          responseDirective: String(orchestration.responseDirective || '').trim() || undefined,
         },
       });
       if (!resolvedContent) {
@@ -105,7 +110,39 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
     }
 
-    const chat = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
+    if (scenarioType === 'inner-message') {
+      const inner = resolvedContext as Record<string, unknown>;
+      const contentParts: string[] = [
+        `协作上下文(内部消息): ${JSON.stringify({
+          messageId: inner.messageId,
+          eventType: inner.eventType,
+          triggerSource: inner.triggerSource,
+          senderAgentId: inner.senderAgentId,
+          runtimeTaskType: inner.runtimeTaskType,
+          meetingId: inner.meetingId,
+          planId: inner.planId,
+        })}`,
+      ];
+      this.pushResponseDirectiveConstraint(contentParts, inner);
+
+      const fullContent = contentParts.join('\n');
+      const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
+        scope: input.contextScope,
+        blockType: 'collaboration',
+        fullContent,
+        snapshot: {
+          messageId: String(inner.messageId || '').trim() || undefined,
+          eventType: String(inner.eventType || '').trim() || undefined,
+          runtimeTaskType: String(inner.runtimeTaskType || '').trim() || undefined,
+        },
+      });
+      if (!resolvedContent) {
+        return [];
+      }
+      return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
+    }
+
+    const chat = resolvedContext as Record<string, unknown>;
     if (!Object.keys(chat).length) return [];
     const fullContent = `协作上下文(聊天): ${JSON.stringify(chat)}`;
     const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
@@ -120,5 +157,41 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       return [];
     }
     return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
+  }
+
+  private resolveCollaborationContext(input: ContextBuildInput): CollaborationContext | Record<string, unknown> {
+    const raw = (input.persistedContext?.collaborationContext || input.context.collaborationContext || {}) as Record<string, unknown>;
+    if (!raw || typeof raw !== 'object') {
+      return {};
+    }
+    return CollaborationContextFactory.fromLegacy(raw);
+  }
+
+  private resolveScenarioType(
+    input: ContextBuildInput,
+    context: CollaborationContext | Record<string, unknown>,
+  ): ContextBuildInput['scenarioType'] {
+    if ('scenarioMode' in context) {
+      const scenarioMode = String((context as CollaborationContext).scenarioMode || '').trim();
+      if (scenarioMode === 'meeting' || scenarioMode === 'orchestration' || scenarioMode === 'inner-message' || scenarioMode === 'chat') {
+        return scenarioMode;
+      }
+    }
+    return input.scenarioType;
+  }
+
+  private pushResponseDirectiveConstraint(contentParts: string[], context: Record<string, unknown>): void {
+    const responseDirective = String(context.responseDirective || '').trim();
+    if (responseDirective === 'json-only') {
+      contentParts.push(JSON_ONLY_DIRECTIVE);
+      return;
+    }
+    if (responseDirective === 'json-preferred') {
+      contentParts.push(JSON_PREFERRED_DIRECTIVE);
+      return;
+    }
+    if (String(context.format || '').trim() === 'json') {
+      contentParts.push(JSON_ONLY_DIRECTIVE);
+    }
   }
 }

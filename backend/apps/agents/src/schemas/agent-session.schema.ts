@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory, raw } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { CollaborationContext } from '@libs/contracts';
 
 export type AgentSessionDocument = AgentSession & Document;
 
@@ -82,7 +83,7 @@ export class AgentSession {
   };
 
   @Prop({ type: Object })
-  collaborationContext?: Record<string, unknown>;
+  collaborationContext?: CollaborationContext | Record<string, unknown>;
 
   @Prop({
     type: [{

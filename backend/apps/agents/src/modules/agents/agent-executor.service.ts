@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { RedisService } from '@libs/infra';
 import { DebugTimingProvider } from '@libs/common';
+import { CollaborationContext, CollaborationContextFactory } from '@libs/contracts';
 import { ApiKeyService } from '@legacy/modules/api-keys/api-key.service';
 import { Agent } from '@agent/schemas/agent.schema';
 import { Task, ChatMessage, AIModel } from '@legacy/shared/types';
@@ -59,9 +60,11 @@ import {
   isModelTimeoutError,
   getToolInputPreflightError,
   isToolInputErrorMessage,
+  resolveResponseFormatFromCollaborationContext,
   shouldRetryGenerationError,
   stripToolCallMarkup,
 } from './agent-executor.helpers';
+import { ScenarioType } from './context/context-block-builder.interface';
 import {
   AgentContext,
   ExecuteTaskResult,
@@ -917,7 +920,7 @@ export class AgentExecutorService {
     modelConfig: AIModel,
     runtimeContext?: RuntimeRunContext,
     executionContext?: {
-      collaborationContext?: Record<string, unknown>;
+      collaborationContext?: CollaborationContext | Record<string, unknown>;
       actor?: {
         employeeId?: string;
         role?: string;
@@ -1173,9 +1176,11 @@ export class AgentExecutorService {
       }
 
       try {
+        const responseFormat = resolveResponseFormatFromCollaborationContext(executionContext?.collaborationContext, modelConfig);
         const modelResult = await this.modelService.chat(modelConfig.id, messages, {
           temperature: modelConfig.temperature,
           maxTokens: modelConfig.maxTokens,
+          ...(responseFormat ? { responseFormat } : {}),
         });
         response = modelResult.response;
         usage = modelResult.usage;
@@ -1731,15 +1736,14 @@ export class AgentExecutorService {
       }
     }
 
-    const collaborationContext = (context.collaborationContext || {}) as Record<string, any>;
+    const collaborationContext = (context.collaborationContext || {}) as Record<string, unknown>;
+    const normalizedCollaborationContext =
+      collaborationContext && typeof collaborationContext === 'object'
+        ? CollaborationContextFactory.fromLegacy(collaborationContext)
+        : undefined;
     const mergedContext = { ...collaborationContext };
     const sessionContext = (context.sessionContext || {}) as Record<string, any>;
-    const scenarioType: 'orchestration' | 'meeting' | 'chat' =
-      String(mergedContext.meetingId || '').trim()
-        ? 'meeting'
-        : String(mergedContext.planId || '').trim()
-          ? 'orchestration'
-          : 'chat';
+    const scenarioType = this.resolveScenarioType(normalizedCollaborationContext, task);
 
     const assembledContext = await this.contextAssembler.assemble({
       agent,
@@ -1748,7 +1752,8 @@ export class AgentExecutorService {
       enabledSkills,
       scenarioType,
       contextScope: this.contextFingerprintService.resolveSystemContextScope(agent, task, {
-        collaborationContext,
+        collaborationContext: normalizedCollaborationContext || collaborationContext,
+        sessionContext,
       }),
       identityMemos,
       shared: {
@@ -1758,7 +1763,7 @@ export class AgentExecutorService {
       },
       persistedContext: {
         domainContext: sessionContext.domainContext || mergedContext.domainContext,
-        collaborationContext: sessionContext.collaborationContext || context.collaborationContext,
+        collaborationContext: sessionContext.collaborationContext || normalizedCollaborationContext || context.collaborationContext,
         runSummaries: sessionContext.runSummaries,
       },
     });
@@ -1770,6 +1775,30 @@ export class AgentExecutorService {
       scenarioType,
     });
     return messages;
+  }
+
+  private resolveScenarioType(
+    collaborationContext?: CollaborationContext | Record<string, unknown>,
+    task?: Task,
+  ): ScenarioType {
+    if (collaborationContext && typeof collaborationContext === 'object' && 'scenarioMode' in collaborationContext) {
+      const scenarioMode = String((collaborationContext as CollaborationContext).scenarioMode || '').trim();
+      if (scenarioMode === 'meeting' || scenarioMode === 'orchestration' || scenarioMode === 'inner-message' || scenarioMode === 'chat') {
+        return scenarioMode;
+      }
+    }
+
+    const legacyContext = collaborationContext as Record<string, unknown> | undefined;
+    if (legacyContext?.meetingId) {
+      return 'meeting';
+    }
+    if (legacyContext?.planId) {
+      return 'orchestration';
+    }
+    if (task?.type === 'internal_message') {
+      return 'inner-message';
+    }
+    return 'chat';
   }
 
   // ---- private helpers ----

@@ -1,4 +1,5 @@
-import { ChatMessage, Task } from '@legacy/shared/types';
+import { AIModel, ChatMessage, Task } from '@legacy/shared/types';
+import { CollaborationContext } from '@libs/contracts';
 
 import { compactLogText, toLogError } from './agent.constants';
 
@@ -24,7 +25,62 @@ export function isMeetingLikeTask(
     taskType?: string;
   },
 ): boolean {
-  return task.type === 'meeting' || context?.taskType === 'meeting'
+  if (task.type === 'meeting' || context?.taskType === 'meeting') {
+    return true;
+  }
+
+  const collaborationContext = context?.collaborationContext as Record<string, unknown> | undefined;
+  if (!collaborationContext || typeof collaborationContext !== 'object') {
+    return false;
+  }
+
+  if (String(collaborationContext.scenarioMode || '').trim() === 'meeting') {
+    return true;
+  }
+
+  return Boolean(collaborationContext.meetingId && collaborationContext.collaborationMode === 'meeting');
+}
+
+export function resolveResponseFormatFromCollaborationContext(
+  collaborationContext: CollaborationContext | Record<string, unknown> | undefined,
+  modelConfig?: AIModel,
+): { type: 'json_object' } | undefined {
+  if (!collaborationContext || typeof collaborationContext !== 'object') {
+    return undefined;
+  }
+
+  if (isReasoningModel(modelConfig)) {
+    return undefined;
+  }
+
+  const responseDirective = String((collaborationContext as Record<string, unknown>).responseDirective || '').trim();
+  if (responseDirective === 'json-only') {
+    return { type: 'json_object' };
+  }
+
+  if (String((collaborationContext as Record<string, unknown>).format || '').trim() === 'json') {
+    return { type: 'json_object' };
+  }
+
+  return undefined;
+}
+
+function isReasoningModel(modelConfig?: AIModel): boolean {
+  if (!modelConfig) {
+    return false;
+  }
+
+  const provider = String(modelConfig.provider || '').trim().toLowerCase();
+  if (provider !== 'openai') {
+    return false;
+  }
+
+  if (modelConfig.reasoning?.enabled) {
+    return true;
+  }
+
+  const modelName = String(modelConfig.model || '').trim().toLowerCase();
+  return modelName.startsWith('o1') || modelName.startsWith('o3') || modelName.startsWith('o4') || modelName.startsWith('gpt-5');
 }
 
 export function isMeaninglessAssistantResponse(response: string | undefined): boolean {

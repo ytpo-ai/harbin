@@ -16,6 +16,13 @@ export interface ProviderChatResult {
   cost?: number;
 }
 
+export interface LLMCallOptions {
+  temperature?: number;
+  maxTokens?: number;
+  topP?: number;
+  responseFormat?: { type: 'json_object' | 'text' };
+}
+
 export abstract class BaseAIProvider {
   protected model: AIModel;
   protected apiKey?: string;
@@ -25,10 +32,10 @@ export abstract class BaseAIProvider {
     this.apiKey = apiKey;
   }
 
-  abstract chat(messages: ChatMessage[], options?: any): Promise<string>;
-  abstract streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void>;
+  abstract chat(messages: ChatMessage[], options?: LLMCallOptions): Promise<string>;
+  abstract streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: LLMCallOptions): Promise<void>;
 
-  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+  async chatWithMeta(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
     const response = await this.chat(messages, options);
     return { response };
   }

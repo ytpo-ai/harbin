@@ -1,8 +1,9 @@
 import { ChatMessage, Task } from '../../../../../src/shared/types';
+import { CollaborationContext } from '@libs/contracts';
 
 export interface AgentContext {
   task: Task;
-  collaborationContext?: Record<string, unknown>;
+  collaborationContext?: CollaborationContext | Record<string, unknown>;
   sessionContext?: Record<string, unknown>;
   opencodeRuntime?: {
     endpoint?: string;

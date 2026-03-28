@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider } from './base-provider';
+import { BaseAIProvider, LLMCallOptions } from './base-provider';
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 
@@ -32,7 +32,7 @@ export class MoonshotProvider extends BaseAIProvider {
     this.client = new OpenAI(clientOptions);
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  async chat(messages: ChatMessage[], options?: LLMCallOptions): Promise<string> {
     this.ensureApiKey();
 
     const response = await this.client.chat.completions.create({
@@ -41,6 +41,7 @@ export class MoonshotProvider extends BaseAIProvider {
       max_tokens: options?.maxTokens || this.model.maxTokens,
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
+      ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
     });
 
     return response.choices[0]?.message?.content || '';
@@ -49,7 +50,7 @@ export class MoonshotProvider extends BaseAIProvider {
   async streamingChat(
     messages: ChatMessage[],
     onToken: (token: string) => void,
-    options?: any,
+    options?: LLMCallOptions,
   ): Promise<void> {
     this.ensureApiKey();
 
@@ -59,6 +60,7 @@ export class MoonshotProvider extends BaseAIProvider {
       max_tokens: options?.maxTokens || this.model.maxTokens,
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
+      ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
       stream: true,
     });
 

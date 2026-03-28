@@ -3,7 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ModelService } from '@agent/modules/models/model.service';
 import { RuntimeOrchestratorService } from '@agent/modules/runtime/runtime-orchestrator.service';
 
-import { extractToolCall } from '../agent-executor.helpers';
+import { extractToolCall, resolveResponseFormatFromCollaborationContext } from '../agent-executor.helpers';
 
 import { AgentExecutorEngine } from './agent-executor-engine.interface';
 import { AgentExecutorEngineInput, AgentExecutorEngineResult } from './agent-executor-engine.types';
@@ -64,6 +64,7 @@ export class NativeStreamingAgentExecutorEngine implements AgentExecutorEngine {
     input: AgentExecutorEngineInput,
     onToken: (token: string) => void,
   ): Promise<{ response: string; tokenChunks: number }> {
+    const responseFormat = resolveResponseFormatFromCollaborationContext(input.context?.collaborationContext, input.modelConfig);
     let fullResponse = '';
     let tokenChunks = 0;
     let streamSequence = 1;
@@ -103,6 +104,7 @@ export class NativeStreamingAgentExecutorEngine implements AgentExecutorEngine {
       {
         temperature: input.agent.model.temperature,
         maxTokens: input.agent.model.maxTokens,
+        ...(responseFormat ? { responseFormat } : {}),
       },
     );
 

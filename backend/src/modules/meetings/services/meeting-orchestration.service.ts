@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
+import { CollaborationContextFactory } from '@libs/contracts';
 import { Meeting, MeetingDocument, MeetingMessage, MeetingStatus } from '../../../shared/schemas/meeting.schema';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { Agent, ChatMessage } from '../../../shared/types';
@@ -82,17 +83,20 @@ export class MeetingOrchestrationService {
     triggerMessage: MeetingMessage,
     participantProfiles: ParticipantContextProfile[],
   ) {
-    return {
+    return CollaborationContextFactory.meeting({
       meetingId: meeting.id,
-      initiatorId: triggerMessage.senderId,
-      meetingType: meeting.type,
-      collaborationMode: 'meeting',
       meetingTitle: meeting.title,
       meetingDescription: meeting.description,
+      meetingType: meeting.type,
       agenda: meeting.agenda,
-      participants: meeting.participants.map((p) => p.participantId),
+      initiatorId: triggerMessage.senderId,
+      participants: meeting.participants.map((p) => ({
+        id: p.participantId,
+        type: p.participantType === 'employee' ? 'employee' : 'agent',
+        role: p.role === 'host' ? 'host' : 'participant',
+      })),
       participantProfiles,
-    };
+    });
   }
 
 

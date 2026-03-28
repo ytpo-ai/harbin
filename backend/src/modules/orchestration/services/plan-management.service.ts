@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { CollaborationContextFactory } from '@libs/contracts';
 import {
   CreatePlanFromPromptDto,
   ReplanPlanDto,
@@ -733,11 +734,10 @@ export class PlanManagementService {
       `Planner Session: ${planTitle}`,
       {
         orchestrationRunId: `replan-${Date.now()}`,
-        collaborationContext: {
-          mode: 'planning',
-          roleInPlan: 'planner',
+        collaborationContext: CollaborationContextFactory.orchestration({
           planId,
-        },
+          roleInPlan: 'planner',
+        }),
       },
     );
 

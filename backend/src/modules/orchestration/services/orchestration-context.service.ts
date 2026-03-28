@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { CollaborationContextFactory } from '@libs/contracts';
 import {
   OrchestrationTask,
   OrchestrationTaskDocument,
@@ -28,7 +29,7 @@ export class OrchestrationContextService {
       dependencyContext: string;
       isResearchTask: boolean;
       isReviewTask: boolean;
-      researchTaskKind?: 'city_population' | 'generic_research';
+      researchTaskKind?: 'generic_research';
       retryHint?: string;
       stepIndex?: number;
       currentTaskTitle?: string;
@@ -45,7 +46,7 @@ export class OrchestrationContextService {
       currentTaskTitle,
       runtimeTaskType,
     } = options;
-    const sections = [`【当前任务目标】\n${this.extractCurrentTaskGoal(baseDescription)}`];
+    const sections = [`【Task Target】\n${this.extractCurrentTaskGoal(baseDescription)}`];
     const stepStatusContext = this.buildStepStatusContext(stepIndex, runtimeTaskType, currentTaskTitle);
     if (stepStatusContext) {
       sections.push(stepStatusContext);
@@ -232,9 +233,6 @@ export class OrchestrationContextService {
     planGoal?: string;
   }): string {
     return [
-      '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
-      '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
-      '如果无法完成判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
       '先激活并严格遵循 skill: docs/skill/orchestration-runtime-tasktype-selection.md',
       '请进行执行前评估，并仅返回 JSON。',
       '目标：判断当前任务是否允许进入执行阶段。',
@@ -248,7 +246,6 @@ export class OrchestrationContextService {
       input.taskDescription,
       '输出 JSON schema:',
       '{"allowExecute":true,"executionHints":["..."],"riskFlags":["..."],"notes":"..."}',
-      '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
   }
 
@@ -297,9 +294,6 @@ export class OrchestrationContextService {
     executionError?: string;
   }): string {
     return [
-      '[SYSTEM OVERRIDE] 你当前处于 Planner JSON-only 模式。',
-      '硬性规则：只能输出一个合法 JSON 对象，禁止自然语言、解释、问候、markdown。',
-      '如果执行结果无法判断，也必须返回 schema 对应 JSON，禁止输出额外文本。',
       '请进行执行后决策，并仅返回 JSON。',
       '先激活并严格遵循 skill: docs/skill/orchestration-runtime-task-out-validation.md',
       '目标：根据当前任务执行结果，决定下一步动作。',
@@ -312,7 +306,6 @@ export class OrchestrationContextService {
       `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
       '输出 JSON schema:',
       '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."],"validation":{"passed":true,"verdict":"pass|needs_fix|blocked","missing":["..."],"ruleVersion":"post_execute_skill_v1"}}',
-      '再次强调：回复必须以 { 开头、以 } 结尾，且仅包含合法 JSON。',
     ].join('\n');
   }
 
@@ -320,15 +313,15 @@ export class OrchestrationContextService {
     task: OrchestrationTask | OrchestrationTaskDocument,
     options: { dependencyContext?: string; executorAgentId?: string } = {},
   ): Record<string, unknown> {
-    return {
-      mode: 'orchestration',
-      roleInPlan: 'execute_assigned_task',
+    return CollaborationContextFactory.orchestration({
+      planId: String((task as any).planId || '').trim(),
+      roleInPlan: 'executor',
       currentTaskId: this.getEntityId(task as any),
       currentTaskTitle: task.title,
       executorAgentId: options.executorAgentId,
       dependencies: task.dependencyTaskIds || [],
       upstreamOutputs: options.dependencyContext || '',
-    };
+    });
   }
 
   resolveRequirementIdFromPlan(plan: OrchestrationPlanDocument): string | undefined {

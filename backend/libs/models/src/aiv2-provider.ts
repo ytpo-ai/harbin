@@ -5,7 +5,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider, ProviderChatResult } from './v1/base-provider';
+import { BaseAIProvider, LLMCallOptions, ProviderChatResult } from './v1/base-provider';
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 const DEFAULT_ALIBABA_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
@@ -116,16 +116,51 @@ export class AIV2Provider extends BaseAIProvider {
     };
   }
 
-  private buildCallOptions(options?: any): {
+  private buildCallOptions(options?: LLMCallOptions): {
     maxOutputTokens?: number;
     temperature?: number;
     topP?: number;
+    responseFormat?: { type: 'json_object' | 'text' };
     providerOptions?: Record<string, any>;
   } {
     const tokenLimit = Number(options?.maxTokens || this.model.maxTokens);
     const maxOutputTokens = Number.isFinite(tokenLimit) && tokenLimit > 0 ? tokenLimit : undefined;
     const isReasoning = this.isOpenAIReasoningModel();
     const providerOptions = this.getReasoningProviderOptions();
+    const mergedProviderOptions = providerOptions ? { ...providerOptions } : undefined;
+    let responseFormat: { type: 'json_object' | 'text' } | undefined;
+    if (options?.responseFormat?.type === 'json_object') {
+      if (
+        this.providerName === 'openai'
+        || this.providerName === 'moonshot'
+        || this.providerName === 'kimi'
+        || this.providerName === 'alibaba'
+        || this.providerName === 'qwen'
+        || this.providerName === 'deepseek'
+      ) {
+        responseFormat = { type: 'json_object' };
+      }
+      if (this.providerName === 'google') {
+        const googleOptions = ((mergedProviderOptions || {}).google || {}) as Record<string, unknown>;
+        const nextProviderOptions = {
+          ...(mergedProviderOptions || {}),
+          google: {
+            ...googleOptions,
+            responseMimeType: 'application/json',
+          },
+        };
+        return {
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
+          ...(!isReasoning
+            ? {
+                temperature: options?.temperature ?? this.model.temperature ?? 0.7,
+                topP: options?.topP ?? this.model.topP ?? 1,
+              }
+            : {}),
+          providerOptions: nextProviderOptions,
+        };
+      }
+    }
 
     return {
       ...(maxOutputTokens ? { maxOutputTokens } : {}),
@@ -135,7 +170,8 @@ export class AIV2Provider extends BaseAIProvider {
             topP: options?.topP ?? this.model.topP ?? 1,
           }
         : {}),
-      ...(providerOptions ? { providerOptions } : {}),
+      ...(responseFormat ? { responseFormat } : {}),
+      ...(mergedProviderOptions ? { providerOptions: mergedProviderOptions } : {}),
     };
   }
 
@@ -181,7 +217,7 @@ export class AIV2Provider extends BaseAIProvider {
     };
   }
 
-  private async generateWithFallback(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+  private async generateWithFallback(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
     const result = await generateText({
       model: this.languageModel,
       messages: this.formatMessages(messages) as any,
@@ -195,7 +231,7 @@ export class AIV2Provider extends BaseAIProvider {
     };
   }
 
-  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+  async chatWithMeta(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
     try {
       return await this.generateWithFallback(messages, options);
     } catch (error) {
@@ -226,7 +262,7 @@ export class AIV2Provider extends BaseAIProvider {
     }
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  async chat(messages: ChatMessage[], options?: LLMCallOptions): Promise<string> {
     const result = await this.chatWithMeta(messages, options);
     return result.response;
   }
@@ -234,7 +270,7 @@ export class AIV2Provider extends BaseAIProvider {
   async streamingChat(
     messages: ChatMessage[],
     onToken: (token: string) => void,
-    options?: any,
+    options?: LLMCallOptions,
   ): Promise<void> {
     const runStream = async (model: any): Promise<void> => {
       const result = streamText({

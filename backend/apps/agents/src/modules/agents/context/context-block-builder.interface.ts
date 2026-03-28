@@ -3,7 +3,7 @@ import { Agent } from '@agent/schemas/agent.schema';
 import { ChatMessage, Task } from '../../../../../../src/shared/types';
 import { AgentContext, EnabledAgentSkillContext } from '../agent.types';
 
-export type ScenarioType = 'orchestration' | 'meeting' | 'chat';
+export type ScenarioType = 'orchestration' | 'meeting' | 'inner-message' | 'chat';
 
 export type ContextLayer = 'identity' | 'toolset' | 'domain' | 'collaboration' | 'task' | 'memory';
 

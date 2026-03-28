@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { InjectModel } from '@nestjs/mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
+import { CollaborationContextFactory } from '@libs/contracts';
 import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
@@ -550,11 +551,11 @@ export class OrchestrationStepDispatcherService {
       plannerAgentId,
       `Planner Session: ${plan.title}`,
       {
-        collaborationContext: {
-          mode: 'planning',
-          roleInPlan: 'planner',
+        collaborationContext: CollaborationContextFactory.orchestration({
           planId,
-        },
+          ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+          roleInPlan: 'planner',
+        }),
       },
     );
 

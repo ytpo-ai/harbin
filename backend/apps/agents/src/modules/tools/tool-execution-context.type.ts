@@ -1,5 +1,7 @@
+import { CollaborationContext } from '@libs/contracts';
+
 export interface ToolExecutionContext {
-  collaborationContext?: Record<string, any>;
+  collaborationContext?: CollaborationContext | Record<string, any>;
   taskType?: string;
   teamId?: string;
   taskId?: string;

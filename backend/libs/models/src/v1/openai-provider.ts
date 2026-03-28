@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { fetch as undiciFetch } from 'undici';
 import { AIModel, ChatMessage } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
-import { BaseAIProvider, ProviderChatResult } from './base-provider';
+import { BaseAIProvider, LLMCallOptions, ProviderChatResult } from './base-provider';
 
 export class OpenAIProvider extends BaseAIProvider {
   private client: OpenAI;
@@ -12,7 +12,7 @@ export class OpenAIProvider extends BaseAIProvider {
     return normalized.startsWith('gpt-5');
   }
 
-  private buildTokenLimitParams(options?: any): { max_tokens?: number; max_completion_tokens?: number } {
+  private buildTokenLimitParams(options?: LLMCallOptions): { max_tokens?: number; max_completion_tokens?: number } {
     const tokenLimit = Number(options?.maxTokens || this.model.maxTokens);
     if (!Number.isFinite(tokenLimit) || tokenLimit <= 0) {
       return {};
@@ -69,13 +69,14 @@ export class OpenAIProvider extends BaseAIProvider {
     return normalized;
   }
 
-  async chatWithMeta(messages: ChatMessage[], options?: any): Promise<ProviderChatResult> {
+  async chatWithMeta(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
     const response = await this.client.chat.completions.create({
       model: this.model.model,
       messages: this.formatMessages(messages),
       ...this.buildTokenLimitParams(options),
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
+      ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
     });
 
     const usage = response.usage;
@@ -100,7 +101,7 @@ export class OpenAIProvider extends BaseAIProvider {
     };
   }
 
-  async chat(messages: ChatMessage[], options?: any): Promise<string> {
+  async chat(messages: ChatMessage[], options?: LLMCallOptions): Promise<string> {
     const result = await this.chatWithMeta(messages, options);
     return result.response;
   }
@@ -108,7 +109,7 @@ export class OpenAIProvider extends BaseAIProvider {
   async streamingChat(
     messages: ChatMessage[],
     onToken: (token: string) => void,
-    options?: any,
+    options?: LLMCallOptions,
   ): Promise<void> {
     const stream = await this.client.chat.completions.create({
       model: this.model.model,
@@ -116,6 +117,7 @@ export class OpenAIProvider extends BaseAIProvider {
       ...this.buildTokenLimitParams(options),
       temperature: options?.temperature || this.model.temperature || 0.7,
       top_p: options?.topP || this.model.topP || 1,
+      ...(options?.responseFormat ? { response_format: options.responseFormat } : {}),
       stream: true,
     });
 
