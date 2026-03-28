@@ -172,6 +172,7 @@ export class PlannerService {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
         roleInPlan: 'planner',
+        responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       ...(options?.sessionId
@@ -333,6 +334,7 @@ export class PlannerService {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
         roleInPlan: 'planner_post_execution',
+        responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       sessionContext: {

@@ -32,7 +32,7 @@ export interface MeetingCollaborationContext extends CollaborationContextBase {
 
 export interface OrchestrationCollaborationContext extends CollaborationContextBase {
   scenarioMode: 'orchestration';
-  responseDirective: 'json-only';
+  responseDirective: ResponseDirective;
   planId: string;
   roleInPlan: 'planner' | 'executor' | 'planner_pre_execution' | 'planner_post_execution';
   agentTier?: 'leadership' | 'operations' | 'temporary';

@@ -517,7 +517,7 @@ export class OrchestrationStepDispatcherService {
       planId,
       step: state.currentStep,
       taskId: String(task._id),
-      nextAction: decision.action,
+      action: decision.action,
       reason: decision.reason,
     });
     this.eventEmitter.emit(ORCH_EVENTS.TASK_POST_PROCESSED, {

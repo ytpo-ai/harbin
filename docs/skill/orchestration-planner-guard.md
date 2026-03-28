@@ -32,7 +32,7 @@ Use this skill when an agent needs to create orchestration plans from requiremen
 - Keep planning behavior aligned with system design: **default is multi-agent assignment**.
 - Enforce stricter assignment only when policy explicitly requests it.
 - Prevent invalid assignment by requiring capability and permission checks before delegation.
-- Produce deterministic and auditable JSON outputs.
+- Produce deterministic and auditable outputs via tool calls (`submit-task` / `report-task-run-result`).
 
 ## 2) Assignment Policy Model
 
@@ -88,7 +88,7 @@ For development tasks sent to `fullstack_developer` in requirement-triage flows:
 5. Create one independent orchestration plan per TODO requirement.
 6. Assign tasks according to policy (default multi-agent, optional lock).
 7. Send notifications to assigned target agents.
-8. Return structured JSON with assignment and notification results.
+8. Submit tasks via `builtin.sys-mg.mcp.orchestration.submit-task` tool and return assignment results.
 
 ## 6) Validation Checklist
 
@@ -110,43 +110,15 @@ For development tasks sent to `fullstack_developer` in requirement-triage flows:
 - `code_review_role_violation`
   - code review assigned to a non-technical-expert role
 
-## 8) Recommended Output Shape
+## 8) Tool-Driven Output
 
-```json
-{
-  "result": "ok",
-  "checkedAt": "<timestamp>",
-  "planner": {
-    "agentId": "<plannerAgentId>"
-  },
-  "assignmentPolicy": {
-    "mode": "default_multi_agent",
-    "locked": false
-  },
-  "noTodoDemands": false,
-  "processedDemands": [
-    {
-      "demandId": "<id>",
-      "planAssignee": "<plannerAgentId>",
-      "capabilityChecks": {
-        "fullstack_developer": {
-          "agentId": "<id>",
-          "hasPermission": true,
-          "missing": []
-        },
-        "technical_expert": {
-          "agentId": "<id|null>",
-          "hasPermission": false,
-          "missing": ["<toolX>"]
-        }
-      },
-      "tasks": [],
-      "optionalTasks": [],
-      "notifications": []
-    }
-  ]
-}
-```
+Planner outputs are now submitted via tool calls rather than direct JSON text:
+
+- **Task creation**: call `builtin.sys-mg.mcp.orchestration.submit-task` with `planId`, `action`, `title`, `description`, `taskType`, `agentId`, etc.
+- **Post-execution decision**: call `builtin.sys-mg.mcp.orchestration.report-task-run-result` with `planId`, `action`, `reason`, etc.
+- **Goal reached**: call `submit-task` with `isGoalReached=true`.
+
+Tool parameter schemas enforce `required` fields, `enum` constraints, and `additionalProperties: false`, providing API-level validation that replaces free-form JSON generation.
 
 ## 9) Notes
 

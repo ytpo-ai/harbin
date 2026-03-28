@@ -16,9 +16,9 @@ metadata:
 
 ## 1) 硬约束
 
-- 仅输出一个合法 JSON 对象。
-- 禁止输出自然语言、markdown fence、解释文本。
-- 必须返回 `validation.passed`、`validation.verdict`、`validation.ruleVersion`。
+- 必须通过调用工具 `builtin.sys-mg.mcp.orchestration.report-task-run-result` 报告决策结果。
+- 禁止直接输出纯文本 JSON 作为最终结果。
+- 工具参数中 `action` 和 `reason` 为必填项。
 
 ## 2) 全局规则
 
@@ -47,19 +47,16 @@ metadata:
 
 - 输出应为可执行结果，不接受纯建议式内容作为完成结果。
 
-## 4) 输出结构
+## 4) 工具调用参数
 
-```json
-{
-  "nextAction": "generate_next|stop|redesign|retry",
-  "reason": "...",
-  "redesignTaskId": "...",
-  "nextTaskHints": ["..."],
-  "validation": {
-    "passed": true,
-    "verdict": "pass|needs_fix|blocked",
-    "missing": ["..."],
-    "ruleVersion": "post_execute_skill_v1"
-  }
-}
-```
+调用 `builtin.sys-mg.mcp.orchestration.report-task-run-result`，参数如下：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `planId` | string | 是 | 计划 ID |
+| `action` | string | 是 | `generate_next` / `stop` / `redesign` / `retry` |
+| `reason` | string | 是 | 决策原因（包含验收判定依据） |
+| `redesignTaskId` | string | action=redesign 时必填 | 目标 task ID |
+| `nextTaskHints` | string[] | 否 | 下一步任务提示 |
+
+在 `reason` 中应体现验收结论（如：校验通过、缺少证据、能力不足等），供审计追溯。

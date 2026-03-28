@@ -11,6 +11,7 @@ export class CollaborationContextFactory {
   static orchestration(params: {
     planId: string;
     roleInPlan: OrchestrationCollaborationContext['roleInPlan'];
+    responseDirective?: OrchestrationCollaborationContext['responseDirective'];
     skillActivation?: { mode: 'standard' | 'precise' };
     agentTier?: OrchestrationCollaborationContext['agentTier'];
     collaborators?: OrchestrationCollaborationContext['collaborators'];
@@ -21,10 +22,11 @@ export class CollaborationContextFactory {
     dependencies?: unknown;
     upstreamOutputs?: unknown;
   }): OrchestrationCollaborationContext {
+    const { responseDirective = 'json-only', ...rest } = params;
     return {
       scenarioMode: 'orchestration',
-      responseDirective: 'json-only',
-      ...params,
+      responseDirective,
+      ...rest,
     };
   }
 

@@ -14,6 +14,7 @@ interface RuntimeExecutionOptions {
   executionChannel: 'native' | 'opencode';
   executionData: Record<string, unknown>;
   collaborationContext?: Record<string, unknown>;
+  sessionContext?: { sessionId?: string; [key: string]: unknown };
 }
 
 @Injectable()
@@ -79,11 +80,16 @@ export class AgentExecutorRuntimeService {
       executionData,
       collaborationContext,
     } = options;
+    const { sessionContext } = options;
     const mergedCollaborationContext: Record<string, unknown> = {
       ...((collaborationContext || {}) as Record<string, unknown>),
     };
     const meetingId = String(mergedCollaborationContext.meetingId || '').trim();
-    const sessionId = String(mergedCollaborationContext.sessionId || '').trim() || undefined;
+    // sessionContext.sessionId 优先于 collaborationContext.sessionId，确保调用方显式指定的 session 被尊重
+    const sessionId =
+      String(sessionContext?.sessionId || '').trim() ||
+      String(mergedCollaborationContext.sessionId || '').trim() ||
+      undefined;
     const planId = String(mergedCollaborationContext.planId || '').trim() || undefined;
     const domainContext =
       mergedCollaborationContext.domainContext && typeof mergedCollaborationContext.domainContext === 'object'

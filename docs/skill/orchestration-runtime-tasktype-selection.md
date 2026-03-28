@@ -74,7 +74,7 @@ metadata:
 ## 6) 与执行链路的约束
 
 - 执行引擎不再做兜底分类；仅使用 `override > persisted > general`。
-- `planner` 输出 JSON 包含 `task.taskType`，缺失时系统兜底为 `general`。
+- `planner` 通过 `submit-task` 工具的 `taskType` 参数传递任务类型，缺失时系统兜底为 `general`。
 - 任务创建与 redesign 阶段写入 `taskType`，`runtimeTaskType` 仍由 pre 阶段回写。
 
 ## 7) 重试策略约束
@@ -84,7 +84,7 @@ metadata:
 
 ## 8) 校验清单
 
-- [ ] planner prompt 要求输出 `taskType`
+- [ ] planner 通过 `submit-task` 工具参数传递 `taskType`
 - [ ] 新任务创建写入 `taskType` 默认值
 - [ ] 新任务创建不写入 `runtimeTaskType`
 - [ ] `phasePreExecute` 推断并持久化 `runtimeTaskType`

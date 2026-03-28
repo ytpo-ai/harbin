@@ -759,6 +759,7 @@ export class AgentExecutorService {
       executionChannel,
       executionData,
       collaborationContext: input.context?.collaborationContext,
+      sessionContext: input.context?.sessionContext as { sessionId?: string; [key: string]: unknown } | undefined,
     });
     this.debugTiming(input.taskId, `${config.stagePrefix}.start_runtime_execution`, startRuntimeExecutionAt, {
       runId: runtimeContext.runId,

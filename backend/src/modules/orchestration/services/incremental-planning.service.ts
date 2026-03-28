@@ -704,12 +704,22 @@ export class IncrementalPlanningService {
     if (action === 'redesign' && !redesignedTaskId) {
       throw new ConflictException('redesignTaskId is required when action=redesign');
     }
+    // Resolve order from max existing task order + 1 to avoid collisions
+    // (generationState.currentStep may not yet be incremented by the dispatcher)
+    const maxOrderDoc = await this.taskModel
+      .findOne({ planId, status: { $ne: 'cancelled' } })
+      .sort({ order: -1 })
+      .select({ order: 1 })
+      .lean<{ order?: number }>()
+      .exec();
+    const nextOrder = typeof maxOrderDoc?.order === 'number' ? maxOrderDoc.order + 1 : 0;
+
     const createdTask = action === 'redesign'
       ? await this.redesignFailedTask(planId, redesignedTaskId, taskPayload)
       : await this.createTaskFromPlannerOutput(
         planId,
         taskPayload,
-        Math.max(0, Number(plan?.generationState?.currentStep || 0)),
+        nextOrder,
       );
 
     return {
