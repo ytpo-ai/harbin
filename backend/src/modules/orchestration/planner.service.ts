@@ -154,7 +154,8 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
-    const prompt = this.buildIncrementalPlannerPrompt(context);
+    const planDomainType = String((plan as any).domainType || 'general').trim();
+    const prompt = this.buildIncrementalPlannerPrompt(context, { domainType: planDomainType });
     const task: AgentExecutionTask = {
       title: 'Incremental planning: generate next task',
       description: prompt,
@@ -465,9 +466,13 @@ export class PlannerService {
     ];
   }
 
-  private buildIncrementalPlannerPrompt(context: IncrementalPlannerContext): string {
+  private buildIncrementalPlannerPrompt(
+    context: IncrementalPlannerContext,
+    options?: { domainType?: string },
+  ): string {
     const sections: string[] = [];
     const requirementAnchor = this.extractRequirementAnchor(context);
+    const isDevelopment = options?.domainType === 'development';
 
     // ── JSON schema 定义（业务规范，格式约束由 collaboration-context.builder 统一注入） ──
     sections.push('JSON 输出 schema:');
@@ -485,7 +490,22 @@ export class PlannerService {
       sections.push(`- requirementTitle: ${requirementAnchor.requirementTitle}`);
     }
     if (!requirementAnchor.requirementId) {
-      if (context.totalSteps === 0) {
+      if (context.totalSteps === 0 && isDevelopment) {
+        // ── development 模式首步：引导 Planner 参照 skill 中 step1 定义 ──
+        sections.push('- requirementId: (尚未选定)');
+        sections.push('');
+        sections.push('[首步说明] 当前是计划第一步（已累计执行步骤数=0），requirementId 尚未选定。');
+        sections.push('你的 system messages 中已注入 rd-workflow 技能，其中 step1 定义了本步的执行角色、动作和输出契约。');
+        sections.push('请严格参照 skill 中 step1 的定义生成本步任务：');
+        sections.push('1. 你 **必须** 立即输出一个符合 schema 的 JSON，包含一个可执行 task。');
+        sections.push('2. task.title、task.description、task.taskType 必须与 skill step1 的定义一致。');
+        sections.push('3. task.description 必须包含 step1 输出契约中要求的所有交付项。');
+        sections.push('4. task.description 必须明确告知执行者：本步无上游依赖，执行者应主动使用需求管理工具查询需求池。');
+        sections.push('5. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
+        sections.push('6. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
+        sections.push('7. 禁止输出 task=null、TASK_INABILITY、error 或任何拒绝/错误性 JSON。');
+      } else if (context.totalSteps === 0) {
+        // ── 非 development 模式首步：保留原有豁免逻辑 ──
         sections.push('- requirementId: (尚未选定)');
         sections.push('');
         sections.push('[首步豁免说明] 当前是计划第一步（覆盖 sourcePrompt 及下方常规约束）。');
@@ -507,14 +527,49 @@ export class PlannerService {
     sections.push('## Plan 目标（sourcePrompt 原文）');
     sections.push(context.planGoal);
     sections.push('');
+
+    // ── development 模式：注入 skill 步骤引导指令 ──
+    if (isDevelopment) {
+      sections.push('## 角色边界（最高优先级，覆盖一切其他指令）');
+      sections.push('你是 Planner（规划器），不是执行者。你的唯一输出是符合 JSON schema 的任务卡片。');
+      sections.push('- skill 中的"动作"描述是给**执行者**的指令，你只需将其转化为 task.description 的内容。');
+      sections.push('- **禁止在规划阶段调用任何业务工具**（如需求查询、代码读写、状态更新等）。');
+      sections.push('- **禁止输出确认性文本**（如"已收到"、"我将按照..."）。只输出 JSON。');
+      sections.push('- **禁止输出 TASK_INABILITY**。即使上下文不完整，也必须按 skill 步骤定义输出任务 JSON。');
+      sections.push('');
+      sections.push('## 技能步骤引导（强制，优先级高于 sourcePrompt）');
+      sections.push('你的 system messages 中已注入 rd-workflow 技能的完整流程定义，包含步骤序号（step1 → step2 → step3 → ...）、执行角色、输入、动作、输出契约和 taskType 约束。');
+      sections.push('**你必须严格按 skill 中定义的步骤顺序逐步生成任务，每次只生成一个步骤对应的任务。**');
+      const completedStepCount = context.completedTasks.length;
+      const nextStep = completedStepCount + 1;
+      sections.push('');
+      sections.push(`### 步骤进度（强制遵守）`);
+      sections.push(`- 已完成步骤数: ${completedStepCount}`);
+      sections.push(`- **你现在必须生成的步骤: step${nextStep}**`);
+      sections.push(`- 禁止生成 step1 ~ step${completedStepCount} 的任务（这些步骤已完成）`);
+      if (nextStep <= 5) {
+        sections.push(`- 请参照 skill 中 "### step${nextStep}" 的定义生成任务`);
+      }
+      sections.push('');
+      sections.push('步骤引导约束：');
+      sections.push('- task.description 必须反映该步骤定义的具体动作和输出契约，禁止抄写或复述流程定义本身。');
+      sections.push('- task.taskType 必须使用 skill 步骤中指定的任务类型（如 general、development.plan、development.exec、development.review）。');
+      sections.push('- 执行角色按 skill 步骤中的定义，通过 list-agents 结果匹配（首步豁免除外）。');
+      sections.push('- 当 skill 步骤中有"输出契约"时，task.description 必须明确列出需要交付的内容项。');
+      sections.push('- 当 skill 步骤中有"约束"时，task.description 必须体现这些约束。');
+      sections.push('- sourcePrompt 仅作为补充背景，步骤定义以 skill 内容为准。');
+      sections.push('');
+    }
     sections.push('## 当前编排进度');
     sections.push(`已累计执行步骤数: ${context.totalSteps}`);
     sections.push('');
 
     if (context.completedTasks.length > 0) {
       sections.push('## 已完成任务摘要');
-      for (const item of context.completedTasks) {
-        sections.push(`- [${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`);
+      for (let i = 0; i < context.completedTasks.length; i++) {
+        const item = context.completedTasks[i];
+        const stepLabel = isDevelopment ? `(对应 skill step${i + 1}) ` : '';
+        sections.push(`- ${stepLabel}[${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`);
       }
       sections.push('注意：如果 outputSummary 中出现"无法执行"、"无法完成"、"缺少工具"、"没有权限"等语义，该任务可能是"虚假完成"（被标记 completed 但实际未完成），应视为未完成并重新规划。');
       sections.push('');

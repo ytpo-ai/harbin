@@ -466,6 +466,8 @@ export class OrchestrationStepDispatcherService {
       executionStatus: task.status,
       executionOutput: task.result?.output || task.result?.summary,
       executionError: task.result?.error,
+      planDomainType,
+      totalGeneratedSteps: state.totalGenerated,
     });
     let decision: PostExecutionDecision;
     try {
@@ -551,6 +553,9 @@ export class OrchestrationStepDispatcherService {
       plannerAgentId,
       `Planner Session: ${plan.title}`,
       {
+        // 使用 'planner' 作为虚拟 orchestrationRunId，隔离 planner session 与 executor session
+        // 防止 planner agent 与 executor agent 为同一 agent 时共享 session 导致上下文污染
+        orchestrationRunId: 'planner',
         collaborationContext: CollaborationContextFactory.orchestration({
           planId,
           ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),

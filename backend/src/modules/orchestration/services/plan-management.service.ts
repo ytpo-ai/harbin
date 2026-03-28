@@ -321,22 +321,24 @@ export class PlanManagementService {
       throw new BadRequestException('Only incremental plans support generate-next');
     }
 
-    if (plan.generationState?.isComplete) {
-      throw new BadRequestException('Planning already completed');
-    }
-
-    // User-initiated retry: reset consecutive failures so the next attempt is not
-    // immediately blocked by checkTerminalConditions / maxRetries guard.
+    // User-initiated generate-next: reset isComplete and consecutive failures
+    // so the user can always manually trigger the next step (even after auto-stop).
     const currentState = plan.generationState;
-    if (currentState && Number(currentState.consecutiveFailures || 0) > 0) {
+    const needsReset =
+      currentState?.isComplete ||
+      Number(currentState?.consecutiveFailures || 0) > 0;
+    if (needsReset) {
       await this.orchestrationPlanModel
         .updateOne(
           { _id: planId },
           {
             $set: {
+              'generationState.isComplete': false,
               'generationState.consecutiveFailures': 0,
               'generationState.lastError': undefined,
               'generationState.currentPhase': 'idle',
+              'generationState.lastDecision': undefined,
+              status: 'planned',
             },
           },
         )

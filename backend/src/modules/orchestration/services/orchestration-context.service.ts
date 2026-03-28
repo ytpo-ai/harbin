@@ -292,8 +292,10 @@ export class OrchestrationContextService {
     executionStatus: string;
     executionOutput?: string;
     executionError?: string;
+    planDomainType?: string;
+    totalGeneratedSteps?: number;
   }): string {
-    return [
+    const lines = [
       '请进行执行后决策，并仅返回 JSON。',
       '先激活并严格遵循 skill: docs/skill/orchestration-runtime-task-out-validation.md',
       '目标：根据当前任务执行结果，决定下一步动作。',
@@ -304,9 +306,23 @@ export class OrchestrationContextService {
       `executionStatus: ${input.executionStatus}`,
       `executionOutput: ${String(input.executionOutput || '').slice(0, 3000)}`,
       `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
-      '输出 JSON schema:',
-      '{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."],"validation":{"passed":true,"verdict":"pass|needs_fix|blocked","missing":["..."],"ruleVersion":"post_execute_skill_v1"}}',
-    ].join('\n');
+    ];
+
+    // development 模式：注入多步流程进度提示，引导 Planner 继续生成下一步
+    if (input.planDomainType === 'development') {
+      const completed = input.totalGeneratedSteps ?? input.step;
+      lines.push('');
+      lines.push('## 多步流程进度');
+      lines.push(`当前计划类型: development（由 rd-workflow 技能定义的多步流程）`);
+      lines.push(`已完成步骤数: ${completed}`);
+      lines.push('rd-workflow 技能定义了 5 个步骤（step1 → step5），当前流程尚未全部完成。');
+      lines.push('决策指引：若当前任务 executionStatus=completed 且输出有效，应优先返回 nextAction="generate_next" 以继续下一步骤。');
+      lines.push('仅当所有 5 个步骤均已完成时，才应返回 nextAction="stop"。');
+    }
+
+    lines.push('输出 JSON schema:');
+    lines.push('{"nextAction":"generate_next|stop|redesign|retry","reason":"...","redesignTaskId":"...","nextTaskHints":["..."],"validation":{"passed":true,"verdict":"pass|needs_fix|blocked","missing":["..."],"ruleVersion":"post_execute_skill_v1"}}');
+    return lines.join('\n');
   }
 
   buildOrchestrationCollaborationContext(

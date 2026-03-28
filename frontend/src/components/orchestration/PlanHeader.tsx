@@ -130,7 +130,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
           {!isProductionPlan && (
             <button
               onClick={onGenerateNext}
-              disabled={!planId || generateLoading || runPlanLoading || generationCompleted}
+              disabled={!planId || generateLoading || runPlanLoading}
               className="inline-flex items-center gap-1 rounded-md border border-emerald-200 px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             >
               <PlusIcon className="h-4 w-4" />
