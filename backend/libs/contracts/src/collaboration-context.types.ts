@@ -34,7 +34,7 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   scenarioMode: 'orchestration';
   responseDirective: ResponseDirective;
   planId: string;
-  roleInPlan: 'planner' | 'executor' | 'planner_pre_execution' | 'planner_post_execution';
+  roleInPlan: 'planner' | 'planner_initialize' | 'executor' | 'planner_pre_execution' | 'planner_post_execution';
   agentTier?: 'leadership' | 'operations' | 'temporary';
   collaborators?: Array<{
     agentId: string;

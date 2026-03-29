@@ -253,7 +253,18 @@ export class OrchestrationStepDispatcherService {
     const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
     const requirementId = String(result.requirementId || existingTaskContext.requirementId || '').trim();
     if (domainType === 'development' && !requirementId) {
-      await this.failAndArchive(planId, 'phaseInitialize failed: requirementId is required for development domain');
+      const nextState = this.bumpFailureCounters(
+        state,
+        'phaseInitialize missing requirementId for development domain',
+      );
+      const advanced = await this.updateGenerationStateIfExpected(planId, state, {
+        ...nextState,
+        currentPhase: 'idle',
+      });
+      if (!advanced) {
+        return;
+      }
+      await this.autoAdvance(planId);
       return;
     }
 

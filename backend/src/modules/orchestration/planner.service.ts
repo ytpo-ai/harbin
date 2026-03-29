@@ -186,7 +186,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        roleInPlan: 'planner',
+        roleInPlan: 'planner_initialize',
         responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
@@ -907,6 +907,7 @@ export class PlannerService {
     sections.push('');
     sections.push('你正在执行 Orchestration 的 phaseInitialize 阶段。');
     sections.push('你必须在一次回复内完成所有工具调用，然后输出最终 JSON 结果。');
+    sections.push('本阶段严禁调用 `builtin.sys-mg.mcp.orchestration.submit-task`。');
     sections.push('');
 
     // ── 工具调用序列 ──

@@ -353,13 +353,35 @@ export class OrchestrationToolHandler {
       priority?: 'low' | 'medium' | 'high' | 'urgent';
       taskType?: 'general' | 'research' | 'development.plan' | 'development.exec' | 'development.review';
       agentId?: string;
+      executorId?: string;
       requiredTools?: string[];
       reasoning?: string;
       redesignTaskId?: string;
       isGoalReached?: boolean;
     },
+    executionContext?: { collaborationContext?: { planId?: string } & Record<string, any> },
   ): Promise<any> {
-    const planId = String(params?.planId || '').trim();
+    // --- 阶段拦截：initialize / pre_execute / post_execute 阶段禁止 submit-task ---
+    const roleInPlan = String(
+      (executionContext?.collaborationContext as Record<string, unknown> | undefined)?.roleInPlan || '',
+    ).trim();
+    if (
+      roleInPlan === 'planner_initialize'
+      || roleInPlan === 'planner_pre_execution'
+      || roleInPlan === 'planner_post_execution'
+    ) {
+      return {
+        action: 'submit_task_blocked',
+        error: roleInPlan === 'planner_initialize'
+          ? 'submit-task 在 planner_initialize 阶段被禁止。当前阶段只允许执行 requirement/list-agents 等初始化工具，不允许提交任务。'
+          : `submit-task 在 ${roleInPlan} 阶段被禁止。当前阶段只允许执行 pre_execute/post_execute 定义的工具调用，不允许提交新任务。`,
+      };
+    }
+
+    // 优先从 executionContext 中获取真实 planId，防止 LLM 幻觉
+    const contextPlanId = String(executionContext?.collaborationContext?.planId || '').trim();
+    const paramPlanId = String(params?.planId || '').trim();
+    const planId = contextPlanId || paramPlanId;
     if (!planId) {
       throw new Error('orchestration_submit_task requires planId');
     }
@@ -407,7 +429,7 @@ export class OrchestrationToolHandler {
         description,
         priority: params?.priority,
         taskType: params?.taskType,
-        agentId: String(params?.agentId || '').trim() || undefined,
+        agentId: String(params?.agentId || params?.executorId || '').trim() || undefined,
         requiredTools: Array.isArray(params?.requiredTools)
           ? params.requiredTools.map((toolId) => String(toolId || '').trim()).filter(Boolean)
           : undefined,
@@ -430,8 +452,12 @@ export class OrchestrationToolHandler {
       redesignTaskId?: string;
       nextTaskHints?: string[];
     },
+    executionContext?: { collaborationContext?: { planId?: string } & Record<string, any> },
   ): Promise<any> {
-    const planId = String(params?.planId || '').trim();
+    // 优先从 executionContext 中获取真实 planId，防止 LLM 幻觉
+    const contextPlanId = String(executionContext?.collaborationContext?.planId || '').trim();
+    const paramPlanId = String(params?.planId || '').trim();
+    const planId = contextPlanId || paramPlanId;
     if (!planId) {
       throw new Error('orchestration_report_task_run_result requires planId');
     }
