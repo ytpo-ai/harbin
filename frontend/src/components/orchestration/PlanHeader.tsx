@@ -7,6 +7,7 @@ import {
   PencilSquareIcon,
   PlayIcon,
   PlusIcon,
+  StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
 import { OrchestrationPlan, OrchestrationRun } from '../../services/orchestrationService';
@@ -26,7 +27,6 @@ interface PlanHeaderProps {
   generateLoading: boolean;
   stopGenerationLoading: boolean;
   deleteLoading: boolean;
-  generationCompleted: boolean;
   cancelRunLoading: boolean;
   publishLoading: boolean;
   unlockLoading: boolean;
@@ -60,7 +60,6 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
   generateLoading,
   stopGenerationLoading,
   deleteLoading,
-  generationCompleted,
   cancelRunLoading,
   publishLoading,
   unlockLoading,
@@ -217,6 +216,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     disabled={!planId || stopGenerationLoading}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                   >
+                    <StopIcon className="h-4 w-4" />
                     {stopGenerationLoading ? '停止中...' : '停止执行'}
                   </button>
                 )}

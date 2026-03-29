@@ -289,7 +289,6 @@ const PlanDetail: React.FC = () => {
     generateLoading: generateNextMutation.isLoading,
     stopGenerationLoading: stopGenerationMutation.isLoading,
     deleteLoading: deletePlanMutation.isLoading,
-    generationCompleted: Boolean(planDetail.generationState?.isComplete),
     cancelRunLoading: cancelRunMutation.isLoading,
     publishLoading: publishPlanMutation.isLoading,
     unlockLoading: unlockPlanMutation.isLoading,
