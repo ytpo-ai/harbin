@@ -109,6 +109,35 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ## 已完成内容概括
 
+### #9 Planner Session 隔离 + Skill phaseInitialize 裁剪 + 纯文本 Retry（2026-03-30）
+
+**问题**：Planner 四个阶段（initialize/generating/pre_execute/post_execute）共用一个 agent session，导致上下文污染；同时 rd-workflow skill 的 phaseInitialize 段落通过 system messages 注入到所有阶段，误导 planner 在 generating/pre_execute 阶段执行 requirement.list 等 initialize 指令。
+
+**修复摘要**：
+
+**Session 隔离**（可配置，`PLANNER_SESSION_ISOLATION_MODE=shared|isolated`）：
+- `orchestration-step-dispatcher.service.ts`：修复 `phaseInitialize`/`phaseGenerate` 中 `plannerSessionId` 硬编码为 `withPlannerSession()` 调用
+- `orchestration-plan.schema.ts`：`plannerSessionIds` 字段注释
+
+**Skill phaseInitialize 段落裁剪**：
+- `toolset-context.builder.ts`：新增 `stripPhaseInitializeSectionIfNeeded()`，当 `roleInPlan` 以 `planner` 开头时从 skill 内容中移除 phaseInitialize 段落
+
+**Prompt 阶段隔离声明**（4 个阶段）：
+- `planner.service.ts`：generating prompt 加阶段隔离声明 + initialize prompt 加反确认约束
+- `orchestration-context.service.ts`：pre_execute / post_execute prompt 加阶段隔离声明
+
+**Planner 纯文本 Retry**：
+- `agent-executor.service.ts`：新增 `isPlannerTextOnlyRetryNeeded()`，当 planner 输出纯文本时注入纠正指令 retry 一次
+
+**验证结果**：generating 阶段成功调用 submit-task 生成任务（totalGenerated=1），skill 裁剪生效，retry 机制触发。initialize 阶段 LLM 行为仍不稳定（待跟进 #18）。
+
+**关联文档**：
+- Fix: `docs/issue/fix/2026-03-30-planner-session-isolation-and-skill-phase-stripping.md`
+- Plan: `docs/plan/PLANNER_SESSION_ISOLATION_MODE_PLAN.md`
+- Commit: `f56c325`
+
+---
+
 ### #6 Capability-aware routing + post_execute prompt 重构 + pre_execute outline actions（2026-03-29~30）
 
 **问题**：计划 `69c91a02` 和 `69c93a37` 的全链路测试暴露了 3 个编排问题：
@@ -271,4 +300,5 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 14. **[P2] 前端 outline 展示**：`plan.metadata.outline` 和 `plan.metadata.taskContext` 新字段的前端展示（可后续迭代）
 15. **[P1] pre_execute outline actions 端到端验证**：验证 Planner 在 pre_execute 阶段是否能正确执行 outline 中定义的 preExecuteActions 工具调用（requirement.update-status），需求状态是否成功流转 assigned → in_progress → review
 16. **[P2] Planner planId 截断问题**：generate 阶段 Planner 仍偶发截断 planId（如 `69c95162f89f45faa79a4`），submit-task preflight 报错后重试成功但浪费 token
-17. **[P2] Planner generate 阶段确认文本**：Planner 仍偶发在第一轮输出确认文本（如"已收到"/"明白"）而非直接 tool_call，浪费一轮对话
+17. ~~**[P2] Planner generate 阶段确认文本**~~ → **已缓解**（#9 planner text-only retry 机制 + skill phaseInitialize 裁剪），retry 后 planner 能执行 tool_call，但 initialize 阶段仍偶发混淆 initialize/generating 职责
+18. **[P1] Initialize 阶段 LLM 行为不稳定**：planner 在 initialize 阶段 retry 后调用 submit-task（应调用 requirement.list），混淆了 initialize 和 generating 的职责。需进一步约束 initialize 阶段的可用工具范围或增强 prompt 设计
