@@ -51,8 +51,8 @@ phaseInitialize(planId)
   ├── planner 调用 requirement.list(status=todo) → 选定最高优先级需求
   │     └── 需求池为空/选择失败 → plan 直接 failed，终止
   ├── planner 调用 requirement.get(requirementId) → 需求详情进入 session context
+  ├── planner 调用 requirement.update-status(assigned) → 需求标记为已分配
   ├── 后端从工具返回提取 requirementId → 写入 plan.metadata.taskContext.requirementId
-  ├── 后端调用 requirement.update-status(assigned) → 需求标记为已分配
   ├── planner 生成任务大纲 → 后端解析写入 plan.metadata.outline
   └── 转入 idle → 触发 phaseGenerate
 ```
@@ -243,7 +243,7 @@ rd-workflow 各阶段行为定义：
 
 | 时机 | 状态 | 触发方 |
 |------|------|--------|
-| phaseInitialize 完成 | `assigned` | 后端代码（系统侧） |
+| phaseInitialize 完成 | `assigned` | Planner 工具调用（phaseInitialize 序列第 5 步） |
 | step1 pre_execute | `in_progress` | planner pre-execute 决策 |
 | step3 pre_execute | `review` | planner pre-execute 决策 |
 
