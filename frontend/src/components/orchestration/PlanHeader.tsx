@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ArrowUpTrayIcon,
   ArrowLeftIcon,
   ArrowPathIcon,
   ChevronDownIcon,
@@ -8,6 +7,7 @@ import {
   PencilSquareIcon,
   PlayIcon,
   PlusIcon,
+  RocketLaunchIcon,
   StopIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline';
@@ -208,7 +208,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     {publishLoading ? (
                       <ArrowPathIcon className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
                     ) : (
-                      <ArrowUpTrayIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <RocketLaunchIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
                     )}
                     {publishLoading ? '发布中...' : '发布生产'}
                   </button>
