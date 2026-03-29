@@ -300,6 +300,7 @@ export class OrchestrationContextService {
     executionError?: string;
     planDomainType?: string;
     totalGeneratedSteps?: number;
+    outlineStepCount?: number;
   }): string {
     const lines = [
       '请进行执行后决策。',
@@ -316,16 +317,20 @@ export class OrchestrationContextService {
       `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
     ];
 
-    // development 模式：注入多步流程进度提示，引导 Planner 继续生成下一步
-    if (input.planDomainType === 'development') {
+    // 多步流程进度提示：根据 outline 步骤数（或 development 兜底）引导 Planner 决策
+    const totalSteps = input.outlineStepCount;
+    if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
       const completed = input.totalGeneratedSteps ?? input.step;
+      const stepCount = totalSteps || 3;
       lines.push('');
       lines.push('## 多步流程进度');
-      lines.push(`当前计划类型: development（由 rd-workflow 技能定义的多步流程）`);
+      if (input.planDomainType === 'development') {
+        lines.push(`当前计划类型: development（由 rd-workflow 技能定义的多步流程）`);
+      }
       lines.push(`已完成步骤数: ${completed}`);
-      lines.push('rd-workflow 技能定义了 3 个步骤（step1 → step3），当前流程尚未全部完成。');
+      lines.push(`计划总步骤数: ${stepCount}（step1 → step${stepCount}）`);
       lines.push('决策指引：若当前任务 executionStatus=completed 且输出有效，应优先返回 action="generate_next" 以继续下一步骤。');
-      lines.push('仅当所有 3 个步骤均已完成时，才应返回 action="stop"。');
+      lines.push(`仅当所有 ${stepCount} 个步骤均已完成时，才应返回 action="stop"。`);
     }
 
     lines.push('工具参数约束: action=generate_next|stop|redesign|retry, reason 必填, action=redesign 时 redesignTaskId 必填。');

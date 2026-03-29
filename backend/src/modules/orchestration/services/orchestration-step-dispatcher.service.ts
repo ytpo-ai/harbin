@@ -127,11 +127,14 @@ export class OrchestrationStepDispatcherService {
         return { advanced: true, phase };
       }
       if (phase === 'post_execute') {
+        const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
+        const outlineStepCount = Array.isArray(metadata.outline) ? metadata.outline.length : undefined;
         await this.phasePostExecute(
           normalizedPlanId,
           state,
           plannerSessionId,
           String((plan as { domainType?: string } | null)?.domainType || 'general'),
+          outlineStepCount,
         );
         return { advanced: true, phase };
       }
@@ -556,6 +559,7 @@ export class OrchestrationStepDispatcherService {
     state: OrchestrationGenerationState,
     plannerSessionId: string,
     planDomainType: string = 'general',
+    outlineStepCount?: number,
   ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
     await this.sceneOptimizationService.applyPostExecuteOptimizations({
@@ -577,6 +581,7 @@ export class OrchestrationStepDispatcherService {
       executionError: task.result?.error,
       planDomainType,
       totalGeneratedSteps: state.totalGenerated,
+      outlineStepCount,
     });
     let decision: PostExecutionDecision;
     try {

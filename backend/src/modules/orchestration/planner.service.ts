@@ -882,20 +882,45 @@ export class PlannerService {
   }): string {
     const sections: string[] = [];
     const domainType = String(input.domainType || 'general').trim().toLowerCase();
+    const isDevelopment = domainType === 'development';
     const existingTaskContext = input.existingTaskContext || {};
     const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
 
     sections.push('你正在执行 Orchestration 的 phaseInitialize 阶段。');
-    sections.push('你必须在一次回复内完成初始化，并仅返回 JSON。');
+    sections.push('你必须在一次回复内完成所有工具调用，然后输出最终 JSON 结果。');
     sections.push('');
-    sections.push('## 目标');
-    sections.push('- 输出任务大纲 outline（step/title/taskType）。');
-    if (domainType === 'development') {
-      sections.push('- 选择并确认一个 requirementId（优先级最高、状态为 todo/open）。');
-      sections.push('- 提供 requirementTitle 与 requirementDescription。');
-      sections.push('- 如果 requirementId 已存在于既有 taskContext，直接沿用。');
+
+    // ── 工具调用序列 ──
+    sections.push('## 工具调用序列（必须按序执行）');
+    sections.push('');
+    sections.push('1. 调用 `builtin.sys-mg.internal.agent-master.list-agents` 获取可用 agent 列表。');
+    if (isDevelopment) {
+      if (existingRequirementId) {
+        sections.push(`2. requirementId 已存在（${existingRequirementId}），跳过 requirement.list。`);
+        sections.push(`3. 调用 \`builtin.sys-mg.mcp.requirement.get\`（参数 requirementId=${existingRequirementId}）获取需求详情。`);
+      } else {
+        sections.push('2. 调用 `builtin.sys-mg.mcp.requirement.list`（参数 status=todo）获取待办需求列表。');
+        sections.push('3. 从返回结果中选择优先级最高且可执行的需求。');
+        sections.push('4. 调用 `builtin.sys-mg.mcp.requirement.get`（参数 requirementId=<选定的ID>）获取该需求的完整详情。');
+        sections.push('5. 调用 `builtin.sys-mg.mcp.requirement.update-status`（参数 requirementId=<选定的ID>, status=assigned, changedByType=agent, changedByName=orchestration-planner-agent, note=phaseInitialize 选定需求）。');
+      }
     }
     sections.push('');
+
+    // ── 目标 ──
+    sections.push('## 目标');
+    if (isDevelopment) {
+      sections.push('- 通过上述工具调用选定一个 requirementId，获取其详情。');
+      sections.push('- 输出任务大纲 outline（step/title/taskType）。');
+      if (existingRequirementId) {
+        sections.push(`- requirementId 已锚定为 ${existingRequirementId}，直接沿用。`);
+      }
+    } else {
+      sections.push('- 输出任务大纲 outline（step/title/taskType）。');
+    }
+    sections.push('');
+
+    // ── 输入 ──
     sections.push('## 输入');
     sections.push(`- domainType: ${domainType}`);
     sections.push(`- sourcePrompt: ${input.sourcePrompt}`);
@@ -903,10 +928,23 @@ export class PlannerService {
       sections.push(`- existingRequirementId: ${existingRequirementId}`);
     }
     sections.push('');
-    sections.push('## 输出 JSON schema');
-    sections.push('{"requirementId":"","requirementTitle":"","requirementDescription":"","outline":[{"step":1,"title":"","taskType":"development.plan|development.exec|development.review|general|research"}],"reasoning":""}');
+
+    // ── 失败处理 ──
+    if (isDevelopment && !existingRequirementId) {
+      sections.push('## 失败处理');
+      sections.push('- 如果 requirement.list 返回空列表，输出 {"requirementId": null, "outline": [], "reasoning": "需求池为空"}。');
+      sections.push('- 如果工具调用失败，仍尽可能输出 outline 以确保后续流程可降级。');
+      sections.push('');
+    }
+
+    // ── 最终输出 ──
+    sections.push('## 最终输出');
+    sections.push('完成所有工具调用后，输出以下 JSON 作为最终结果（工具调用结果之外的唯一文本输出）：');
+    sections.push('```');
+    sections.push('{"requirementId":"<ID或null>","requirementTitle":"<标题>","requirementDescription":"<描述>","outline":[{"step":1,"title":"...","taskType":"development.plan|development.exec|development.review|general|research"}],"reasoning":"<理由>"}');
+    sections.push('```');
     sections.push('');
-    sections.push('约束：只返回 JSON 对象，不要输出解释文字。');
+    sections.push('约束：工具调用完成后，最终回复只包含上述 JSON 对象，不要附加解释文字。');
 
     return sections.join('\n');
   }
