@@ -1,4 +1,5 @@
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
@@ -21,6 +22,7 @@ import { AgentClientService } from '../../agents-client/agent-client.service';
 import { ORCH_EVENTS, OrchestrationSource } from '../orchestration-events';
 
 type Phase = 'idle' | 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
+type PlannerSessionPhase = Exclude<Phase, 'idle' | 'executing'>;
 
 const AUTO_RETRY_DISABLED_TASK_TYPES = new Set([
   'development.plan',
@@ -45,6 +47,7 @@ export class OrchestrationStepDispatcherService {
     private readonly sceneOptimizationService: SceneOptimizationService,
     private readonly eventEmitter: EventEmitter2,
     private readonly agentClientService: AgentClientService,
+    private readonly configService: ConfigService,
   ) {}
 
   async advanceOnce(
@@ -81,14 +84,18 @@ export class OrchestrationStepDispatcherService {
         return { advanced: false, phase };
       }
 
-      const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state);
-
       if (phase === 'idle') {
         const targetPhase: Phase = this.shouldRunInitialize(plan, state) ? 'initialize' : 'generating';
+        const plannerSessionId = await this.ensurePlannerSession(
+          normalizedPlanId,
+          plan,
+          state,
+          targetPhase as PlannerSessionPhase,
+        );
+        const stateWithSession = this.withPlannerSession(state, targetPhase as PlannerSessionPhase, plannerSessionId);
         const claimedState: OrchestrationGenerationState = {
-          ...state,
+          ...stateWithSession,
           currentPhase: targetPhase,
-          plannerSessionId,
         };
         const claimed = await this.updateGenerationStateIfExpected(
           normalizedPlanId,
@@ -109,17 +116,22 @@ export class OrchestrationStepDispatcherService {
       }
 
       if (phase === 'initialize') {
-        await this.phaseInitialize(normalizedPlanId, plan, state, plannerSessionId);
+        const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'initialize');
+        const effectiveState = this.withPlannerSession(state, 'initialize', plannerSessionId);
+        await this.phaseInitialize(normalizedPlanId, plan, effectiveState, plannerSessionId);
         return { advanced: true, phase };
       }
 
       if (phase === 'generating') {
-        const effectiveState = state;
+        const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'generating');
+        const effectiveState = this.withPlannerSession(state, 'generating', plannerSessionId);
         await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', effectiveState, plannerSessionId);
         return { advanced: true, phase: 'generating' };
       }
       if (phase === 'pre_execute') {
-        await this.phasePreExecute(normalizedPlanId, state, plannerSessionId);
+        const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'pre_execute');
+        const effectiveState = this.withPlannerSession(state, 'pre_execute', plannerSessionId);
+        await this.phasePreExecute(normalizedPlanId, effectiveState, plannerSessionId);
         return { advanced: true, phase };
       }
       if (phase === 'executing') {
@@ -127,11 +139,13 @@ export class OrchestrationStepDispatcherService {
         return { advanced: true, phase };
       }
       if (phase === 'post_execute') {
+        const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'post_execute');
+        const effectiveState = this.withPlannerSession(state, 'post_execute', plannerSessionId);
         const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
         const outlineStepCount = Array.isArray(metadata.outline) ? metadata.outline.length : undefined;
         await this.phasePostExecute(
           normalizedPlanId,
-          state,
+          effectiveState,
           plannerSessionId,
           String((plan as { domainType?: string } | null)?.domainType || 'general'),
           outlineStepCount,
@@ -194,18 +208,19 @@ export class OrchestrationStepDispatcherService {
       return { stopped: false, alreadyStopped: true };
     }
 
-    const sessionId = String(currentState.plannerSessionId || '').trim();
+    const sessionIds = this.resolvePlannerSessionIds(currentState);
     await this.updateGenerationState(normalizedPlanId, {
       ...currentState,
       isComplete: true,
       currentPhase: 'idle',
       currentTaskId: undefined,
       plannerSessionId: undefined,
+      plannerSessionIds: undefined,
       lastDecision: 'stop',
       lastError: undefined,
     });
 
-    if (sessionId) {
+    for (const sessionId of sessionIds) {
       try {
         await this.agentClientService.archiveSession(sessionId);
       } catch (error) {
@@ -660,8 +675,11 @@ export class OrchestrationStepDispatcherService {
     planId: string,
     plan: OrchestrationPlanDocument,
     state: OrchestrationGenerationState,
+    phase: PlannerSessionPhase,
   ): Promise<string> {
-    const existingSessionId = String(state.plannerSessionId || '').trim();
+    const existingSessionId = this.isIsolatedSessionMode
+      ? String(state.plannerSessionIds?.[phase] || '').trim()
+      : String(state.plannerSessionId || '').trim();
     if (existingSessionId) {
       return existingSessionId;
     }
@@ -676,9 +694,7 @@ export class OrchestrationStepDispatcherService {
       plannerAgentId,
       `Planner Session: ${plan.title}`,
       {
-        // 使用 'planner' 作为虚拟 orchestrationRunId，隔离 planner session 与 executor session
-        // 防止 planner agent 与 executor agent 为同一 agent 时共享 session 导致上下文污染
-        orchestrationRunId: 'planner',
+        orchestrationRunId: this.isIsolatedSessionMode ? `planner-${phase}` : 'planner',
         collaborationContext: CollaborationContextFactory.orchestration({
           planId,
           ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
@@ -694,7 +710,14 @@ export class OrchestrationStepDispatcherService {
 
     await this.updateGenerationState(planId, {
       ...state,
-      plannerSessionId: sessionId,
+      ...(this.isIsolatedSessionMode
+        ? {
+          plannerSessionIds: {
+            ...(state.plannerSessionIds || {}),
+            [phase]: sessionId,
+          },
+        }
+        : { plannerSessionId: sessionId }),
     });
 
     return sessionId;
@@ -791,11 +814,10 @@ export class OrchestrationStepDispatcherService {
   }
 
   private async archivePlannerSessionIfNeeded(state: OrchestrationGenerationState): Promise<void> {
-    const sessionId = String(state.plannerSessionId || '').trim();
-    if (!sessionId) {
-      return;
+    const sessionIds = this.resolvePlannerSessionIds(state);
+    for (const sessionId of sessionIds) {
+      await this.agentClientService.archiveSession(sessionId);
     }
-    await this.agentClientService.archiveSession(sessionId);
   }
 
   private async getCurrentTaskOrThrow(planId: string, taskId?: string): Promise<OrchestrationTaskDocument> {
@@ -844,6 +866,19 @@ export class OrchestrationStepDispatcherService {
   }
 
   private resolveGenerationState(state?: OrchestrationGenerationState): OrchestrationGenerationState {
+    const plannerSessionIds = Object.entries(state?.plannerSessionIds || {}).reduce<Record<string, string>>(
+      (acc, [phase, sessionId]) => {
+        const normalizedPhase = String(phase || '').trim();
+        const normalizedSessionId = String(sessionId || '').trim();
+        if (!normalizedPhase || !normalizedSessionId) {
+          return acc;
+        }
+        acc[normalizedPhase] = normalizedSessionId;
+        return acc;
+      },
+      {},
+    );
+
     return {
       currentStep: Number(state?.currentStep || 0),
       totalGenerated: Number(state?.totalGenerated || 0),
@@ -856,8 +891,53 @@ export class OrchestrationStepDispatcherService {
       currentPhase: state?.currentPhase || 'idle',
       lastDecision: state?.lastDecision,
       plannerSessionId: state?.plannerSessionId,
+      plannerSessionIds: Object.keys(plannerSessionIds).length ? plannerSessionIds : undefined,
       currentTaskId: state?.currentTaskId,
     };
+  }
+
+  private resolvePlannerSessionIds(state: OrchestrationGenerationState): string[] {
+    if (!this.isIsolatedSessionMode) {
+      const sessionId = String(state.plannerSessionId || '').trim();
+      return sessionId ? [sessionId] : [];
+    }
+
+    return Array.from(
+      new Set(
+        Object.values(state.plannerSessionIds || {})
+          .map((id) => String(id || '').trim())
+          .filter((id) => Boolean(id)),
+      ),
+    );
+  }
+
+  private withPlannerSession(
+    state: OrchestrationGenerationState,
+    phase: PlannerSessionPhase,
+    sessionId: string,
+  ): OrchestrationGenerationState {
+    if (this.isIsolatedSessionMode) {
+      return {
+        ...state,
+        plannerSessionIds: {
+          ...(state.plannerSessionIds || {}),
+          [phase]: sessionId,
+        },
+      };
+    }
+
+    return {
+      ...state,
+      plannerSessionId: sessionId,
+    };
+  }
+
+  private get isIsolatedSessionMode(): boolean {
+    const rawMode =
+      this.configService && typeof this.configService.get === 'function'
+        ? this.configService.get<string>('PLANNER_SESSION_ISOLATION_MODE')
+        : undefined;
+    return String(rawMode || 'shared').trim().toLowerCase() === 'isolated';
   }
 
   private isAutoRetryDisabledTaskType(runtimeTaskType?: string): boolean {

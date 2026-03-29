@@ -37,6 +37,7 @@ export interface OrchestrationGenerationState {
   currentPhase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
   lastDecision?: 'generate_next' | 'stop' | 'redesign' | 'retry';
   plannerSessionId?: string;
+  plannerSessionIds?: Record<string, string>;
   currentTaskId?: string;
 }
 
@@ -130,6 +131,7 @@ export class OrchestrationPlan {
     currentPhase: { type: String, enum: ['initialize', 'generating', 'pre_execute', 'executing', 'post_execute', 'idle'], default: 'idle' },
     lastDecision: { type: String, enum: ['generate_next', 'stop', 'redesign', 'retry'] },
     plannerSessionId: { type: String },
+    plannerSessionIds: { type: Object },
     currentTaskId: { type: String },
   }))
   generationState?: OrchestrationGenerationState;

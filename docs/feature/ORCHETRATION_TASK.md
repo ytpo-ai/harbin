@@ -70,6 +70,9 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 3. 支持 `POST /orchestration/plans/:id/replan` 覆盖重编排。
 5. 支持 `POST /orchestration/plans/:id/generate-next` 增量生成下一任务。
 6. 支持 `POST /orchestration/plans/:id/stop-generation` 手动停止当前计划生成流程。
+7. Planner session 支持两种模式：
+   - `shared`（默认）：`initialize/generating/pre_execute/post_execute` 复用 `generationState.plannerSessionId`
+   - `isolated`：按 phase 使用 `generationState.plannerSessionIds[phase]` 独立 session，减少跨阶段上下文污染
 
 ### 4.2 执行与取消
 

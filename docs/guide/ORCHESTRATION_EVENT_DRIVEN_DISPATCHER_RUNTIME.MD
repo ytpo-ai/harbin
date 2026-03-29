@@ -47,9 +47,11 @@
 
 ## Planner Session 与阶段协作
 
-- 调度器首次推进时调用 `agentClientService.getOrCreatePlanSession` 建立 planner session。
-- A/B/D 阶段通过 `PlannerService` 的 `sessionContext.sessionId` 复用同一 session。
-- 终态时归档 planner session。
+- 调度器支持通过 `PLANNER_SESSION_ISOLATION_MODE` 切换 session 策略：
+  - `shared`（默认）：首次推进建立单一 planner session，A/B/D 阶段复用 `generationState.plannerSessionId`
+  - `isolated`：`initialize/generating/pre_execute/post_execute` 各 phase 使用独立 session，记录在 `generationState.plannerSessionIds[phase]`
+- `isolated` 模式下 `getOrCreatePlanSession` 使用 `orchestrationRunId=planner-${phase}`，session ID 形如 `plan-${planId}-${agentId}-run-planner-${phase}`。
+- 终态归档会按模式处理：`shared` 归档单一 session，`isolated` 归档所有 phase session。
 
 ## 新增 Planner 阶段接口
 

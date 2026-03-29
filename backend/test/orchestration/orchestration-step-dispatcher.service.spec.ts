@@ -18,6 +18,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
 
     return { service, findOneAndUpdate };
@@ -143,6 +144,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       { emit: jest.fn() } as any,
       agentClientService,
+      {} as any,
     );
 
     const result = await service.advanceOnce('plan-1', {
@@ -191,6 +193,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       { emit: jest.fn() } as any,
       agentClientService,
+      {} as any,
     );
 
     const result = await service.advanceOnce('plan-1', {
@@ -200,6 +203,130 @@ describe('OrchestrationStepDispatcherService', () => {
     expect(result).toEqual({ advanced: false, phase: 'idle' });
     expect(agentClientService.archiveSession).toHaveBeenCalledWith('planner-session-1');
     expect(agentClientService.getOrCreatePlanSession).not.toHaveBeenCalled();
+  });
+
+  it('creates phase-scoped planner session in isolated mode', async () => {
+    const agentClientService = {
+      getOrCreatePlanSession: jest.fn().mockResolvedValue({ id: 'planner-pre-session-1' }),
+      archiveSession: jest.fn(),
+    } as any;
+
+    const service = new OrchestrationStepDispatcherService(
+      {
+        updateOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      agentClientService,
+      { get: jest.fn().mockReturnValue('isolated') } as any,
+    );
+
+    const updateSpy = jest.spyOn(service as any, 'updateGenerationState').mockResolvedValue(undefined);
+    const sessionId = await (service as any).ensurePlannerSession(
+      'plan-1',
+      {
+        title: 'plan',
+        strategy: { plannerAgentId: 'planner-1' },
+      },
+      {
+        currentStep: 1,
+        totalGenerated: 1,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'pre_execute',
+      },
+      'pre_execute',
+    );
+
+    expect(sessionId).toBe('planner-pre-session-1');
+    expect(agentClientService.getOrCreatePlanSession).toHaveBeenCalledWith(
+      'plan-1',
+      'planner-1',
+      'Planner Session: plan',
+      expect.objectContaining({
+        orchestrationRunId: 'planner-pre_execute',
+      }),
+    );
+    expect(updateSpy).toHaveBeenCalledWith(
+      'plan-1',
+      expect.objectContaining({
+        plannerSessionIds: {
+          pre_execute: 'planner-pre-session-1',
+        },
+      }),
+    );
+  });
+
+  it('archives all isolated planner sessions when stopping generation', async () => {
+    const updateOneExec = jest.fn().mockResolvedValue({});
+    const planModel = {
+      findById: jest.fn().mockReturnValue({
+        lean: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            generationState: {
+              currentStep: 2,
+              totalGenerated: 2,
+              totalRetries: 0,
+              consecutiveFailures: 0,
+              totalFailures: 0,
+              totalCost: 0,
+              isComplete: false,
+              currentPhase: 'post_execute',
+              plannerSessionIds: {
+                initialize: 'planner-initialize-1',
+                generating: 'planner-generating-1',
+              },
+            },
+          }),
+        }),
+      }),
+      updateOne: jest.fn().mockReturnValue({ exec: updateOneExec }),
+    } as any;
+
+    const agentClientService = {
+      getOrCreatePlanSession: jest.fn(),
+      archiveSession: jest.fn().mockResolvedValue({}),
+    } as any;
+
+    const service = new OrchestrationStepDispatcherService(
+      planModel,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { emit: jest.fn() } as any,
+      agentClientService,
+      { get: jest.fn().mockReturnValue('isolated') } as any,
+    );
+
+    const result = await service.stopGeneration('plan-1');
+
+    expect(result).toEqual({ stopped: true, alreadyStopped: false });
+    expect(agentClientService.archiveSession).toHaveBeenCalledTimes(2);
+    expect(agentClientService.archiveSession).toHaveBeenNthCalledWith(1, 'planner-initialize-1');
+    expect(agentClientService.archiveSession).toHaveBeenNthCalledWith(2, 'planner-generating-1');
+    expect(planModel.updateOne).toHaveBeenCalledWith(
+      { _id: 'plan-1' },
+      expect.objectContaining({
+        $set: {
+          generationState: expect.objectContaining({
+            plannerSessionIds: undefined,
+            plannerSessionId: undefined,
+            isComplete: true,
+          }),
+        },
+      }),
+    );
   });
 
   it('prevents concurrent internal and external advance from both progressing', async () => {
@@ -217,7 +344,7 @@ describe('OrchestrationStepDispatcherService', () => {
         totalFailures: 0,
         totalCost: 0,
         isComplete: false,
-        currentPhase: 'idle',
+        currentPhase: 'generating',
       },
     };
     const planModel = {
@@ -241,13 +368,16 @@ describe('OrchestrationStepDispatcherService', () => {
         }),
       } as any,
       {} as any,
-      {} as any,
+      {
+        resolvePlanTaskContextFromMetadata: jest.fn().mockReturnValue({}),
+      } as any,
       {} as any,
       { emit: jest.fn() } as any,
       {
         getOrCreatePlanSession: jest.fn().mockResolvedValue({ id: 'planner-session-1' }),
         archiveSession: jest.fn(),
       } as any,
+      {} as any,
     );
 
     const gate = createDeferred<void>();
@@ -324,6 +454,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {
         buildPreTaskContext: jest.fn().mockReturnValue('pre-task-context'),
         inferRuntimeTaskTypeFromPlanContext: jest.fn().mockReturnValue('general'),
+        resolvePlanTaskContextFromMetadata: jest.fn().mockReturnValue({}),
       } as any,
       {} as any,
       { emit: jest.fn() } as any,
@@ -331,6 +462,7 @@ describe('OrchestrationStepDispatcherService', () => {
         getOrCreatePlanSession: jest.fn(),
         archiveSession: jest.fn(),
       } as any,
+      {} as any,
     );
 
     jest.spyOn(service as any, 'autoAdvance').mockResolvedValue(undefined);
@@ -367,6 +499,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
+      {} as any,
       {} as any,
     );
 
@@ -406,7 +539,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       {
         executePostTask: jest.fn().mockResolvedValue({
-          nextAction: 'retry',
+          action: 'retry',
           reason: 'retry after failure',
         }),
       } as any,
@@ -419,6 +552,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
+      {} as any,
       {} as any,
     );
 
@@ -467,7 +601,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       {
         executePostTask: jest.fn().mockResolvedValue({
-          nextAction: 'retry',
+          action: 'retry',
           reason: 'retry after failure',
         }),
       } as any,
@@ -480,6 +614,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
+      {} as any,
       {} as any,
     );
 
@@ -528,7 +663,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       {
         executePostTask: jest.fn().mockResolvedValue({
-          nextAction: 'redesign',
+          action: 'redesign',
           reason: 'rebuild failed task',
           redesignTaskId: 'task-1',
         }),
@@ -542,6 +677,7 @@ describe('OrchestrationStepDispatcherService', () => {
       } as any,
       { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
       { emit: jest.fn() } as any,
+      {} as any,
       {} as any,
     );
 
@@ -625,6 +761,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       { emit: jest.fn() } as any,
       {} as any,
+      {} as any,
     );
 
     const updateSpy = jest.spyOn(service as any, 'updateGenerationState');
@@ -683,6 +820,7 @@ describe('OrchestrationStepDispatcherService', () => {
       {} as any,
       {} as any,
       { emit: jest.fn() } as any,
+      {} as any,
       {} as any,
     );
 
