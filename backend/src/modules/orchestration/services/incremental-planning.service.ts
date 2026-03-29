@@ -648,6 +648,7 @@ export class IncrementalPlanningService {
     priority?: 'low' | 'medium' | 'high' | 'urgent';
     taskType?: 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general';
     agentId?: string;
+    executorId?: string;
     requiredTools?: string[];
     reasoning?: string;
     redesignTaskId?: string;
@@ -703,7 +704,7 @@ export class IncrementalPlanningService {
       title,
       description,
       priority,
-      agentId: String(input?.agentId || '').trim() || undefined,
+      agentId: String(input?.agentId || input?.executorId || '').trim() || undefined,
       taskType,
       requiredTools: Array.isArray(input?.requiredTools)
         ? input.requiredTools.map((item) => String(item || '').trim()).filter(Boolean)
@@ -953,6 +954,7 @@ export class IncrementalPlanningService {
       description: taskResult.description,
       taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
+      requiredCapabilities: this.resolveRequiredCapabilitiesByTaskType(taskResult.taskType || 'general'),
     });
 
     return {
@@ -960,6 +962,21 @@ export class IncrementalPlanningService {
       executorId: fallback.executorId,
       reason: `${reasonPrefix}; fallback=${fallback.reason}`,
     };
+  }
+
+  private resolveRequiredCapabilitiesByTaskType(
+    taskType: NonNullable<GenerateNextTaskResult['task']>['taskType'],
+  ): string[] {
+    if (taskType === 'development.plan') {
+      return ['development_plan', 'opencode'];
+    }
+    if (taskType === 'development.exec') {
+      return ['development_exec', 'opencode'];
+    }
+    if (taskType === 'development.review') {
+      return ['development_review', 'opencode'];
+    }
+    return [];
   }
 
   private async resolveAssignmentForPlannerTask(

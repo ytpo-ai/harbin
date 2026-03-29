@@ -89,6 +89,12 @@ const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD ||
 /** Task types that require opencode execution capability. */
 const OPENCODE_REQUIRED_TASK_TYPES = new Set(['development.plan', 'development.exec', 'development.review']);
 
+const TASK_TYPE_REQUIRED_CAPABILITIES: Record<string, string[]> = {
+  'development.plan': ['development_plan', 'opencode'],
+  'development.exec': ['development_exec', 'opencode'],
+  'development.review': ['development_review', 'opencode'],
+};
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -243,6 +249,7 @@ export class ExecutorSelectionService {
 
     // 1. Resolve task type
     const taskType = ctx.taskType || 'general';
+    const requiredCapabilities = this.resolveRequiredCapabilities(taskType, ctx.requiredCapabilities);
 
     // 2. Load candidates + roles
     const [agents, employees, roles] = await Promise.all([
@@ -300,6 +307,16 @@ export class ExecutorSelectionService {
         breakdown.keywordRelevance = 0;
       }
 
+      const missingRequiredCapabilities = requiredCapabilities
+        .map((cap) => cap.toLowerCase())
+        .filter((cap) => !agentCaps.has(cap));
+      if (missingRequiredCapabilities.length > 0) {
+        breakdown.roleMatch = 0;
+        breakdown.toolCoverage = 0;
+        breakdown.capabilityMatch = 0;
+        breakdown.keywordRelevance = 0;
+      }
+
       // A-2. OpenCode capability gate — development runtime tasks MUST go to
       //      an agent whose config.execution.provider === 'opencode'. Agents without
       //      this capability cannot execute code operations, so zero out their scores.
@@ -316,10 +333,10 @@ export class ExecutorSelectionService {
         : this.computeInferredToolScore(agentToolSet, taskType);
 
       // C. Capability tags
-      if (ctx.requiredCapabilities?.length) {
-        const covered = ctx.requiredCapabilities.filter((c) => agentCaps.has(c.toLowerCase()));
+      if (requiredCapabilities.length > 0) {
+        const covered = requiredCapabilities.filter((c) => agentCaps.has(c.toLowerCase()));
         breakdown.capabilityMatch = Math.round(
-          (covered.length / ctx.requiredCapabilities.length) * W_CAPABILITY,
+          (covered.length / requiredCapabilities.length) * W_CAPABILITY,
         );
       } else {
         breakdown.capabilityMatch = 0;
@@ -570,6 +587,17 @@ export class ExecutorSelectionService {
       return taskType;
     }
     return 'general';
+  }
+
+  private resolveRequiredCapabilities(taskType: string, requiredCapabilities?: string[]): string[] {
+    const explicit = (requiredCapabilities || [])
+      .map((capability) => String(capability || '').trim())
+      .filter(Boolean);
+    if (explicit.length > 0) {
+      return explicit;
+    }
+
+    return TASK_TYPE_REQUIRED_CAPABILITIES[taskType] || [];
   }
 
   private getEntityId(entity: Record<string, any>): string {

@@ -188,6 +188,10 @@ export class PlannerSubmitTaskDto {
   agentId?: string;
 
   @IsOptional()
+  @IsString()
+  executorId?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   requiredTools?: string[];
