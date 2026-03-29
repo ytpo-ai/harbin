@@ -237,22 +237,68 @@ export class OrchestrationContextService {
     runtimeTaskType?: string;
     planDomainType?: string;
     planGoal?: string;
+    taskContext?: Record<string, unknown>;
+    outlineStep?: { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> };
   }): string {
-    return [
-      '先激活并严格遵循 skill: docs/skill/orchestration-runtime-tasktype-selection.md',
-      '请进行执行前评估，并仅返回 JSON。',
-      '目标：判断当前任务是否允许进入执行阶段。',
-      `step: ${input.step}`,
-      `taskId: ${input.taskId}`,
-      `taskTitle: ${input.taskTitle}`,
-      `planDomainType: ${input.planDomainType || 'general'}`,
-      `planGoal: ${String(input.planGoal || '').slice(0, 500)}`,
-      `runtimeTaskType: ${input.runtimeTaskType || 'general'}`,
-      'taskDescription:',
-      input.taskDescription,
-      '输出 JSON schema:',
-      '{"allowExecute":true,"executionHints":["..."],"riskFlags":["..."],"notes":"..."}',
-    ].join('\n');
+    const lines: string[] = [];
+
+    // --- 阶段目标 ---
+    lines.push('你正在执行 pre_execute 阶段。本阶段有两项职责：');
+    lines.push('1. 执行当前步骤在编排技能（skill）中定义的 pre_execute 动作（如工具调用）');
+    lines.push('2. 评估当前任务是否满足进入 execute 阶段的条件');
+    lines.push('');
+
+    // --- 任务信息 ---
+    lines.push('## 任务信息');
+    lines.push(`step: ${input.step}`);
+    lines.push(`taskId: ${input.taskId}`);
+    lines.push(`taskTitle: ${input.taskTitle}`);
+    lines.push(`planDomainType: ${input.planDomainType || 'general'}`);
+    lines.push(`runtimeTaskType: ${input.runtimeTaskType || 'general'}`);
+
+    // --- taskContext 变量映射表 ---
+    const tc = input.taskContext || {};
+    const tcEntries = Object.entries(tc)
+      .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
+      .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
+
+    if (tcEntries.length > 0) {
+      lines.push('');
+      lines.push('## taskContext 变量映射表');
+      lines.push('以下是当前编排注入的上下文变量及其**实际值**。');
+      lines.push('skill 定义中出现的 `{{taskContext.xxx}}` 就是这些值：');
+      for (const [key, value] of tcEntries) {
+        lines.push(`- {{taskContext.${key}}} = \`${value}\``);
+      }
+      lines.push('');
+      lines.push('**【禁止】在工具调用参数中传入 `{{taskContext.xxx}}` 字面量，必须使用上方的实际值。**');
+    }
+
+    // --- pre_execute 动作（从 outline 中读取）---
+    const preActions = input.outlineStep?.preExecuteActions || [];
+    if (preActions.length > 0) {
+      lines.push('');
+      lines.push('## pre_execute 必须执行的工具调用（最高优先级）');
+      lines.push('以下工具调用由编排大纲定义，参数已填好，你必须通过 <tool_call> 逐一完成：');
+      for (let i = 0; i < preActions.length; i++) {
+        const a = preActions[i];
+        lines.push(`${i + 1}. \`${a.tool}\` 参数: ${JSON.stringify(a.params)}`);
+      }
+      lines.push('完成后进入评估环节。');
+    } else {
+      lines.push('');
+      lines.push('## pre_execute 动作');
+      lines.push('当前步骤无需执行额外工具调用，直接进入评估环节。');
+    }
+
+    // --- 评估要求 ---
+    lines.push('');
+    lines.push('## 执行前评估');
+    lines.push('完成上述动作后，返回评估结论 JSON：');
+    lines.push('{"allowExecute":true,"actionsExecuted":["工具调用摘要..."],"riskFlags":["..."],"notes":"..."}');
+    lines.push('如果 pre_execute 工具调用失败，仍返回 allowExecute=true 并在 riskFlags 中记录。');
+
+    return lines.join('\n');
   }
 
   inferRuntimeTaskTypeFromPlanContext(input: {
@@ -302,22 +348,41 @@ export class OrchestrationContextService {
     totalGeneratedSteps?: number;
     outlineStepCount?: number;
   }): string {
+    const output = String(input.executionOutput || '').slice(0, 3000).trim();
+    const error = String(input.executionError || '').slice(0, 1000).trim();
+    const hasOutput = output.length > 0;
+    const hasError = error.length > 0;
+
     const lines = [
-      '请进行执行后决策。',
-      '先激活并严格遵循 skill: docs/skill/orchestration-runtime-task-out-validation.md',
-      '目标：根据当前任务执行结果，决定下一步动作。',
-      '你必须调用工具 builtin.sys-mg.mcp.orchestration.report-task-run-result 报告决策结果。',
-      '禁止直接输出纯文本 JSON 作为最终结果。',
-      `step: ${input.step}`,
-      `taskId: ${input.taskId}`,
-      `taskTitle: ${input.taskTitle}`,
-      `runtimeTaskType: ${input.runtimeTaskType || 'general'}`,
-      `executionStatus: ${input.executionStatus}`,
-      `executionOutput: ${String(input.executionOutput || '').slice(0, 3000)}`,
-      `executionError: ${String(input.executionError || '').slice(0, 1000)}`,
+      '请进行执行后决策，返回 JSON。',
     ];
 
-    // 多步流程进度提示：根据 outline 步骤数（或 development 兜底）引导 Planner 决策
+    // --- 任务元信息 ---
+    lines.push('');
+    lines.push('## 任务信息');
+    lines.push(`step: ${input.step}`);
+    lines.push(`taskId: ${input.taskId}`);
+    lines.push(`taskTitle: ${input.taskTitle}`);
+    lines.push(`runtimeTaskType: ${input.runtimeTaskType || 'general'}`);
+    lines.push(`executionStatus: ${input.executionStatus}`);
+
+    // --- 执行结果（使用 XML 标签明确边界）---
+    lines.push('');
+    lines.push('## 执行结果');
+    if (hasOutput) {
+      lines.push('<execution_output>');
+      lines.push(output);
+      lines.push('</execution_output>');
+    } else {
+      lines.push('executionOutput: (空)');
+    }
+    if (hasError) {
+      lines.push('<execution_error>');
+      lines.push(error);
+      lines.push('</execution_error>');
+    }
+
+    // --- 多步流程进度 ---
     const totalSteps = input.outlineStepCount;
     if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
       const completed = input.totalGeneratedSteps ?? input.step;
@@ -329,11 +394,30 @@ export class OrchestrationContextService {
       }
       lines.push(`已完成步骤数: ${completed}`);
       lines.push(`计划总步骤数: ${stepCount}（step1 → step${stepCount}）`);
-      lines.push('决策指引：若当前任务 executionStatus=completed 且输出有效，应优先返回 action="generate_next" 以继续下一步骤。');
-      lines.push(`仅当所有 ${stepCount} 个步骤均已完成时，才应返回 action="stop"。`);
     }
 
-    lines.push('工具参数约束: action=generate_next|stop|redesign|retry, reason 必填, action=redesign 时 redesignTaskId 必填。');
+    // --- 决策规则 ---
+    lines.push('');
+    lines.push('## 决策规则（严格遵守）');
+    if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
+      const stepCount = totalSteps || 3;
+      const completed = input.totalGeneratedSteps ?? input.step;
+      if (completed < stepCount) {
+        lines.push(`当前 ${completed}/${stepCount} 步已完成，流程尚未结束。`);
+        lines.push('- executionStatus=completed 且 <execution_output> 非空 → 必须返回 action="generate_next"');
+        lines.push('- executionStatus=failed → 返回 action="retry" 或 action="redesign"');
+        lines.push(`- 仅当全部 ${stepCount} 步都完成后才允许 action="stop"`);
+      } else {
+        lines.push(`全部 ${stepCount} 步已完成，应返回 action="stop"。`);
+      }
+    } else {
+      lines.push('- executionStatus=completed 且输出有效 → action="generate_next" 或 action="stop"');
+      lines.push('- executionStatus=failed → action="retry" 或 action="redesign"');
+    }
+
+    lines.push('');
+    lines.push('返回格式: {"action":"generate_next|stop|redesign|retry","reason":"..."}');
+    lines.push('action=redesign 时必须附带 redesignTaskId。');
     return lines.join('\n');
   }
 

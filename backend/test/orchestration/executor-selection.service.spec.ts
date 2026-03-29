@@ -30,7 +30,7 @@ describe('ExecutorSelectionService capability routing', () => {
         roleId: 'dev',
         tier: 'operations',
         tools: [],
-        capabilities: ['development_exec', 'opencode'],
+        capabilities: ['development.exec', 'opencode'],
         config: { execution: { provider: 'opencode' } },
       },
       {
@@ -41,7 +41,7 @@ describe('ExecutorSelectionService capability routing', () => {
         roleId: 'dev',
         tier: 'operations',
         tools: [],
-        capabilities: ['development_plan', 'opencode'],
+        capabilities: ['development.plan', 'opencode'],
         config: { execution: { provider: 'opencode' } },
       },
     ]);

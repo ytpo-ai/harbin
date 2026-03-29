@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-export type ResearchTaskKind = 'city_population' | 'generic_research';
+export type ResearchTaskKind = 'generic_research';
 
 @Injectable()
 export class TaskOutputValidationService {

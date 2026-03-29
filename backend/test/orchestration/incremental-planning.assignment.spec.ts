@@ -48,7 +48,7 @@ describe('IncrementalPlanningService assignment routing', () => {
     return service;
   }
 
-  it('passes inferred requiredCapabilities into fallback executor selection', async () => {
+  it('delegates to selectExecutor with taskType (capability inference is internal)', async () => {
     const selectExecutor = jest.fn().mockResolvedValue({
       executorType: 'agent',
       executorId: 'agent-doctor-w',
@@ -68,7 +68,10 @@ describe('IncrementalPlanningService assignment routing', () => {
 
     expect(selectExecutor).toHaveBeenCalledWith(expect.objectContaining({
       taskType: 'development.plan',
-      requiredCapabilities: ['development_plan', 'opencode'],
+    }));
+    // requiredCapabilities is no longer passed explicitly — executor-selection derives it from taskType
+    expect(selectExecutor).toHaveBeenCalledWith(expect.not.objectContaining({
+      requiredCapabilities: expect.anything(),
     }));
     expect(result.executorId).toBe('agent-doctor-w');
   });

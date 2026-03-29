@@ -109,6 +109,48 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ## 已完成内容概括
 
+### #6 Capability-aware routing + post_execute prompt 重构 + pre_execute outline actions（2026-03-29~30）
+
+**问题**：计划 `69c91a02` 和 `69c93a37` 的全链路测试暴露了 3 个编排问题：
+1. **P0 — executor 分配不准**：step1(development.plan) 被分配给 Coder-Van（development.exec 能力）而非 Docter-W（development.plan 能力），根因是 fallback routing 缺失 `requiredCapabilities`，且 capability gate 被后续评分维度覆盖
+2. **P1 — post_execute 误判 stop**：Planner 在 post_execute 阶段声称"缺少执行结果"返回 stop，实际 executionOutput 已注入 prompt 但 LLM 未正确识别（大段文本边界模糊 + "必须调工具"与 tryParseJson 矛盾）
+3. **P2 — pre_execute 需求状态未更新**：rd-workflow 要求 step1 pre_execute 更新需求为 in_progress，但 prompt 未包含动作指令 + JSON-only 约束禁止工具调用 + Planner 照抄 `{{taskContext.xxx}}` 字面量
+
+**修复摘要**：
+
+**Capability routing 重构**：
+- `executor-selection.service.ts`：删除 `TASK_TYPE_REQUIRED_CAPABILITIES` 硬编码映射表，改为 taskType 直接匹配 agent capabilities（`[taskType]`），agent 标签从 `development_plan` 统一为 `development.plan`；修复 capability gate 被 B/C/D 评分维度覆盖的 bug（gate 移到维度计算之后）
+- `incremental-planning.service.ts`：删除 `resolveRequiredCapabilitiesByTaskType()`，能力推导收敛到 executor-selection 内部
+- `dto/index.ts`：submit-task 新增 `executorId` 别名字段（Planner 经常输出 executorId 而非 agentId）
+
+**post_execute prompt 重构**：
+- `orchestration-context.service.ts`：`buildPostTaskContext` 重写——executionOutput 使用 `<execution_output>` XML 标签包裹明确边界；任务元信息/执行结果/流程进度/决策规则分为独立 section；决策规则按场景分支表述（未完成→必须 generate_next，全部完成→stop）；去掉"必须调工具"矛盾指令
+
+**pre_execute outline actions 机制**：
+- `docs/skill/rd-workflow.md`：outline 输出格式增加 `preExecuteActions` 字段（step1: status→in_progress，step3: status→review），参数要求用 phaseInitialize 获取的实际值填入
+- `orchestration-context.service.ts`：`buildPreTaskContext` 新增 `outlineStep` 参数，从 `plan.metadata.outline` 中读取当前 step 的 `preExecuteActions`，直接生成"参数已填好"的工具调用指令注入 prompt；同时注入 taskContext 变量映射表（含禁止传 `{{...}}` 字面量的约束）
+- `orchestration-step-dispatcher.service.ts`：`phasePreExecute` 从 plan.metadata.outline 中查找当前 step 条目传给 buildPreTaskContext
+- `planner.service.ts`：pre_execute 的 `responseDirective` 从默认 `json-only` 改为 `text`，解除 JSON-only 约束允许 Planner 输出 `<tool_call>`
+
+**Prompt 修复**：
+- `planner.service.ts`：修复 prompt 序号重复（两个 `5)` + 重复的纠偏规则）
+
+**测试**：
+- `executor-selection.service.spec.ts`：验证 development.plan 正确路由到 plan-capable agent，exec-only agent 被 gate 清零
+- `incremental-planning.assignment.spec.ts`：验证 fallback 路径不再传 requiredCapabilities（由 executor-selection 自推导）+ executorId 别名
+
+**验证结果**：
+- 计划 `69c94186`（第 2 次）：step1→step2→step3 全部 completed，executor 正确分配（Docter-W 执行 plan/review，Coder-Van 执行 exec），post_execute 正确返回 generate_next
+- 计划 `69c9531758554316b08bbd87`（第 6 次）：pre_execute prompt 成功注入 preExecuteActions 指令
+
+**待验证**：
+- pre_execute 中 Planner 是否成功执行 requirement.update-status 工具调用（第 6 次计划中 Planner 仍照抄了字面量，但 outline actions 机制已就位）
+
+**关联文档**：
+- Skill: `docs/skill/rd-workflow.md` v0.5.0（含 preExecuteActions）
+
+---
+
 ### #5 phaseInitialize 落地 + taskContext 通用上下文传播 + rd-workflow v0.5.0（2026-03-29）
 
 **问题**：研发需求流程中 step1（选定需求）依赖首部豁免机制，导致 prompt 分支复杂、requirementId 靠正则提取不稳定、step1 本身是"假任务"不产生研发价值。step2（确认需求范围）在结构化数据流下无存在必要。
@@ -218,12 +260,15 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 3. `fromLegacy()` 对孤立 `meetingId`（无 `collaborationMode`/`meetingTitle`）的归类问题
 4. 过渡期结束后（预计 2026-07）移除旧字段（`format`、`mode`、`collaborationMode`）和兼容逻辑
 5. 运行时验证：计划编排首步生成、planner pre/post 决策、executor 任务执行、内部消息触发、会议场景
-6. ~~**[P1] development 计划步骤推进验证**：新计划中 step1→step2→...→step5 是否能正确推进~~ → **已重构**（#5 phaseInitialize + rd-workflow v0.5.0，步骤缩减为 3 步，需重新验证 step1→step3 推进）
-7. ~~**[P2] pre-execute 需求状态更新验证**~~ → **已重构**（#5 assigned 改为 phaseInitialize 工具调用，in_progress/review 仍在 pre-execute）
-8. **[P2] Planner 输出稳定性**：post-execute 阶段 Planner 是否稳定返回 `generate_next` 而非 stop/无效 JSON
-9. **[P1] step1 任务执行失败排查**：计划 69c8325712cff082b097ff8c 中 step1 创建成功但执行后 `status=failed`，post_execute 决定 `stop`。需排查任务执行层面的失败原因
-10. **[P1] phaseInitialize 端到端验证**：创建新 development 计划，验证 initialize 阶段 planner 是否正确调用 list-agents → requirement.list → requirement.get → requirement.update-status(assigned)，taskContext 和 outline 是否正确写入 plan.metadata
-11. **[P1] rd-workflow v0.5.0 三步流程验证**：验证新计划 step1(development.plan) → step2(development.exec) → step3(development.review) 是否完整推进至 stop
-12. **[P2] phaseInitialize LLM 输出稳定性**：planner 在一轮对话中能否稳定完成多个工具调用并输出合规 JSON
+6. ~~**[P1] development 计划步骤推进验证**~~ → **已验证通过**（#6 计划 69c94186 step1→step2→step3 全部 completed）
+7. ~~**[P2] pre-execute 需求状态更新验证**~~ → **已实现 outline preExecuteActions 机制**（#6），待端到端验证 Planner 是否成功执行工具调用
+8. ~~**[P2] Planner 输出稳定性**：post-execute 阶段 Planner 是否稳定返回 `generate_next` 而非 stop/无效 JSON~~ → **已修复**（#6 post_execute prompt 重构，XML 边界标记 + 场景化决策规则）
+9. ~~**[P1] step1 任务执行失败排查**~~ → **已修复**（#6 capability routing 修复，executor 正确分配）
+10. ~~**[P1] phaseInitialize 端到端验证**~~ → **已验证通过**（#6 多个计划均正确完成 initialize 5 步工具调用链）
+11. ~~**[P1] rd-workflow v0.5.0 三步流程验证**~~ → **已验证通过**（#6 计划 69c94186）
+12. ~~**[P2] phaseInitialize LLM 输出稳定性**~~ → **已验证通过**（#6 多个计划均稳定输出合规 JSON）
 13. **[P2] 非 development 域 phaseInitialize 验证**：general/research 域计划是否正确跳过 requirement 选择，仅生成 outline
 14. **[P2] 前端 outline 展示**：`plan.metadata.outline` 和 `plan.metadata.taskContext` 新字段的前端展示（可后续迭代）
+15. **[P1] pre_execute outline actions 端到端验证**：验证 Planner 在 pre_execute 阶段是否能正确执行 outline 中定义的 preExecuteActions 工具调用（requirement.update-status），需求状态是否成功流转 assigned → in_progress → review
+16. **[P2] Planner planId 截断问题**：generate 阶段 Planner 仍偶发截断 planId（如 `69c95162f89f45faa79a4`），submit-task preflight 报错后重试成功但浪费 token
+17. **[P2] Planner generate 阶段确认文本**：Planner 仍偶发在第一轮输出确认文本（如"已收到"/"明白"）而非直接 tool_call，浪费一轮对话

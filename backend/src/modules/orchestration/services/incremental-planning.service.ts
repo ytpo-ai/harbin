@@ -954,7 +954,6 @@ export class IncrementalPlanningService {
       description: taskResult.description,
       taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
-      requiredCapabilities: this.resolveRequiredCapabilitiesByTaskType(taskResult.taskType || 'general'),
     });
 
     return {
@@ -962,21 +961,6 @@ export class IncrementalPlanningService {
       executorId: fallback.executorId,
       reason: `${reasonPrefix}; fallback=${fallback.reason}`,
     };
-  }
-
-  private resolveRequiredCapabilitiesByTaskType(
-    taskType: NonNullable<GenerateNextTaskResult['task']>['taskType'],
-  ): string[] {
-    if (taskType === 'development.plan') {
-      return ['development_plan', 'opencode'];
-    }
-    if (taskType === 'development.exec') {
-      return ['development_exec', 'opencode'];
-    }
-    if (taskType === 'development.review') {
-      return ['development_review', 'opencode'];
-    }
-    return [];
   }
 
   private async resolveAssignmentForPlannerTask(

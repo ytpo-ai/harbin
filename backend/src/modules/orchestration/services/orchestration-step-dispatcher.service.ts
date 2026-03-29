@@ -114,7 +114,7 @@ export class OrchestrationStepDispatcherService {
       }
 
       if (phase === 'generating') {
-        let effectiveState = state;
+        const effectiveState = state;
         await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', effectiveState, plannerSessionId);
         return { advanced: true, phase: 'generating' };
       }
@@ -448,6 +448,13 @@ export class OrchestrationStepDispatcherService {
       task.runtimeTaskType = inferredRuntimeTaskType;
     }
 
+    const metadata = ((planSnapshot as unknown as { metadata?: Record<string, unknown> })?.metadata || {}) as Record<string, unknown>;
+    const taskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
+    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
+    const outlineStep = outline.find((o) => Number(o.step) === state.currentStep) as
+      | { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> }
+      | undefined;
+
     const prompt = this.contextService.buildPreTaskContext({
       step: state.currentStep,
       taskId: String(task._id),
@@ -456,6 +463,8 @@ export class OrchestrationStepDispatcherService {
       runtimeTaskType: task.runtimeTaskType,
       planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
       planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
+      taskContext,
+      outlineStep,
     });
 
     const decision = await this.plannerService.executePreTask(planId, prompt, plannerSessionId);

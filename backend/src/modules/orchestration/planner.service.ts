@@ -295,6 +295,7 @@ export class PlannerService {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
         roleInPlan: 'planner_pre_execution',
+        responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       sessionContext: {
@@ -698,7 +699,6 @@ export class PlannerService {
     sections.push('3) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
     sections.push('4) 你必须从本轮 list-agents 返回中选择一个真实存在的 agentId，不允许臆造。');
     sections.push('5) 调用 submit-task 时必须显式传 agentId（或兼容字段 executorId），不得省略执行者字段。');
-    sections.push('5) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
     sections.push('6) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
     sections.push('7) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
     sections.push('8) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');

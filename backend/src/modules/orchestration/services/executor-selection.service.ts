@@ -89,11 +89,7 @@ const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD ||
 /** Task types that require opencode execution capability. */
 const OPENCODE_REQUIRED_TASK_TYPES = new Set(['development.plan', 'development.exec', 'development.review']);
 
-const TASK_TYPE_REQUIRED_CAPABILITIES: Record<string, string[]> = {
-  'development.plan': ['development_plan', 'opencode'],
-  'development.exec': ['development_exec', 'opencode'],
-  'development.review': ['development_review', 'opencode'],
-};
+
 
 // ---------------------------------------------------------------------------
 // Service
@@ -300,33 +296,6 @@ export class ExecutorSelectionService {
         breakdown.roleMatch = 0;
       }
 
-      if (plannerTier && !canDelegateAcrossTier(plannerTier, tier)) {
-        breakdown.roleMatch = 0;
-        breakdown.toolCoverage = 0;
-        breakdown.capabilityMatch = 0;
-        breakdown.keywordRelevance = 0;
-      }
-
-      const missingRequiredCapabilities = requiredCapabilities
-        .map((cap) => cap.toLowerCase())
-        .filter((cap) => !agentCaps.has(cap));
-      if (missingRequiredCapabilities.length > 0) {
-        breakdown.roleMatch = 0;
-        breakdown.toolCoverage = 0;
-        breakdown.capabilityMatch = 0;
-        breakdown.keywordRelevance = 0;
-      }
-
-      // A-2. OpenCode capability gate — development runtime tasks MUST go to
-      //      an agent whose config.execution.provider === 'opencode'. Agents without
-      //      this capability cannot execute code operations, so zero out their scores.
-      if (OPENCODE_REQUIRED_TASK_TYPES.has(taskType) && !this.isOpenCodeCapable(agent)) {
-        breakdown.roleMatch = 0;
-        breakdown.toolCoverage = 0;
-        breakdown.capabilityMatch = 0;
-        breakdown.keywordRelevance = 0;
-      }
-
       // B. Tool coverage
       breakdown.toolCoverage = ctx.requiredTools?.length
         ? this.computeExplicitToolScore(agentToolSet, ctx.requiredTools)
@@ -344,6 +313,37 @@ export class ExecutorSelectionService {
 
       // D. Keyword relevance (lightweight, preserved for breadth)
       breakdown.keywordRelevance = this.computeKeywordScore(ctx.title, ctx.description, agent, role);
+
+      // --- Hard gates (applied AFTER dimension scoring to avoid overwrite) ---
+
+      // Gate 1: Tier delegation — planner tier cannot delegate to this agent tier
+      if (plannerTier && !canDelegateAcrossTier(plannerTier, tier)) {
+        breakdown.roleMatch = 0;
+        breakdown.toolCoverage = 0;
+        breakdown.capabilityMatch = 0;
+        breakdown.keywordRelevance = 0;
+      }
+
+      // Gate 2: Required capabilities — agent must have ALL required caps
+      if (requiredCapabilities.length > 0) {
+        const missing = requiredCapabilities
+          .map((cap) => cap.toLowerCase())
+          .filter((cap) => !agentCaps.has(cap));
+        if (missing.length > 0) {
+          breakdown.roleMatch = 0;
+          breakdown.toolCoverage = 0;
+          breakdown.capabilityMatch = 0;
+          breakdown.keywordRelevance = 0;
+        }
+      }
+
+      // Gate 3: OpenCode provider — development tasks require opencode execution
+      if (OPENCODE_REQUIRED_TASK_TYPES.has(taskType) && !this.isOpenCodeCapable(agent)) {
+        breakdown.roleMatch = 0;
+        breakdown.toolCoverage = 0;
+        breakdown.capabilityMatch = 0;
+        breakdown.keywordRelevance = 0;
+      }
 
       const score = Object.values(breakdown).reduce((a, b) => a + b, 0);
       return { agentId, score, breakdown, agentToolSet, tier };
@@ -589,6 +589,13 @@ export class ExecutorSelectionService {
     return 'general';
   }
 
+  /**
+   * Resolve required capabilities for a task.
+   * Priority: explicit list > auto-derive from taskType.
+   * Convention: taskType itself (e.g. 'development.plan') is treated as a required
+   * capability, so agent capabilities can be tagged with the same string — no
+   * mapping table needed. OpenCode requirement is enforced separately by Gate 3.
+   */
   private resolveRequiredCapabilities(taskType: string, requiredCapabilities?: string[]): string[] {
     const explicit = (requiredCapabilities || [])
       .map((capability) => String(capability || '').trim())
@@ -597,7 +604,11 @@ export class ExecutorSelectionService {
       return explicit;
     }
 
-    return TASK_TYPE_REQUIRED_CAPABILITIES[taskType] || [];
+    if (taskType && taskType !== 'general') {
+      return [taskType];
+    }
+
+    return [];
   }
 
   private getEntityId(entity: Record<string, any>): string {
