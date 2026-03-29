@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowLeftIcon,
+  ArrowUpOnSquareIcon,
   ArrowPathIcon,
   ChevronDownIcon,
   DocumentDuplicateIcon,
@@ -204,6 +205,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     disabled={!planId || publishLoading || runPlanLoading}
                     className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                   >
+                    <ArrowUpOnSquareIcon className="h-4 w-4" aria-hidden="true" />
                     {publishLoading ? '发布中...' : '发布生产'}
                   </button>
                 )}
