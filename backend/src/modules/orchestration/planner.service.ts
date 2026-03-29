@@ -49,6 +49,20 @@ export interface IncrementalPlannerContext {
   lastError?: string;
   /** plan.metadata.requirementId — 已锚定的需求 ID，replan 时从 metadata 透传 */
   requirementId?: string;
+  requirementTitle?: string;
+  requirementDescription?: string;
+}
+
+export interface PhaseInitializeResult {
+  requirementId?: string;
+  requirementTitle?: string;
+  requirementDescription?: string;
+  outline: Array<{
+    step: number;
+    title: string;
+    taskType: 'development.plan' | 'development.exec' | 'development.review' | 'general' | 'research';
+  }>;
+  reasoning?: string;
 }
 
 export interface GenerateNextTaskResult {
@@ -156,9 +170,9 @@ export class PlannerService {
     }
 
     const planDomainType = String((plan as any).domainType || 'general').trim();
-    const prompt = this.buildIncrementalPlannerPrompt(context, { domainType: planDomainType });
+    const prompt = this.buildIncrementalPlannerPrompt(context, { domainType: planDomainType, planId });
     const task: AgentExecutionTask = {
-      title: 'Incremental planning: generate next task',
+      title: `[Incremental Planning] ${plan.title} generate next task`,
       description: prompt,
       type: 'planning',
       priority: 'high',
@@ -267,7 +281,7 @@ export class PlannerService {
     }
 
     const task: AgentExecutionTask = {
-      title: 'Incremental planning: pre-execution decision',
+      title: `[Incremental Planning] ${plan.title} pre-execution`,
       description: taskContext,
       type: 'planning',
       priority: 'high',
@@ -305,6 +319,78 @@ export class PlannerService {
     };
   }
 
+  async initializePlan(
+    planId: string,
+    input: {
+      sourcePrompt: string;
+      domainType: string;
+      existingTaskContext?: Record<string, unknown>;
+    },
+    options?: { sessionId?: string },
+  ): Promise<PhaseInitializeResult> {
+    const plan = await this.planModel.findById(planId).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim();
+    if (!plannerAgentId) {
+      throw new BadRequestException('Plan has no planner agent configured');
+    }
+
+    const prompt = this.buildPhaseInitializePrompt({
+      sourcePrompt: input.sourcePrompt,
+      domainType: input.domainType,
+      existingTaskContext: input.existingTaskContext,
+    });
+
+    const task: AgentExecutionTask = {
+      title: `[Incremental Planning] ${plan.title} initialize`,
+      description: prompt,
+      type: 'planning',
+      priority: 'high',
+      status: 'pending',
+      assignedAgents: [plannerAgentId],
+      teamId: 'orchestration',
+      messages: [],
+    };
+
+    const response = await this.agentClientService.executeTask(plannerAgentId, task, {
+      collaborationContext: CollaborationContextFactory.orchestration({
+        planId,
+        roleInPlan: 'planner',
+        responseDirective: 'text',
+        ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+      }),
+      ...(options?.sessionId
+        ? {
+            sessionContext: {
+              sessionId: options.sessionId,
+            },
+          }
+        : {}),
+    });
+
+    const parsed = this.tryParseJson(response);
+    if (!parsed || typeof parsed !== 'object') {
+      return {
+        outline: this.buildDefaultOutline(input.domainType),
+        reasoning: 'Failed to parse initialize response, fallback to default outline',
+      };
+    }
+
+    const result = this.extractPostDecisionPayload(parsed);
+    const outline = this.normalizeOutline(result.outline, input.domainType);
+
+    return {
+      requirementId: String(result.requirementId || '').trim() || undefined,
+      requirementTitle: String(result.requirementTitle || '').trim() || undefined,
+      requirementDescription: String(result.requirementDescription || '').trim() || undefined,
+      outline,
+      reasoning: String(result.reasoning || result.reason || '').trim() || undefined,
+    };
+  }
+
   async executePostTask(
     planId: string,
     executionResult: string,
@@ -320,7 +406,7 @@ export class PlannerService {
     }
 
     const task: AgentExecutionTask = {
-      title: 'Incremental planning: post-execution decision',
+      title: `[Incremental Planning] ${plan.title} post-execution`,
       description: executionResult,
       type: 'planning',
       priority: 'high',
@@ -486,58 +572,37 @@ export class PlannerService {
 
   private buildIncrementalPlannerPrompt(
     context: IncrementalPlannerContext,
-    options?: { domainType?: string },
+    options?: { domainType?: string; planId?: string },
   ): string {
     const sections: string[] = [];
-    const requirementAnchor = this.extractRequirementAnchor(context);
     const isDevelopment = options?.domainType === 'development';
 
     sections.push('你必须通过调用工具 builtin.sys-mg.mcp.orchestration.submit-task 提交下一步任务。');
+    if (options?.planId) {
+      sections.push(`调用 submit-task 时，planId 参数必须填写: ${options.planId}`);
+    }
     sections.push('禁止直接输出纯文本 JSON 作为最终结果。');
     sections.push('当目标已达成时，调用 submit-task 并传 isGoalReached=true。');
+    sections.push('');
+    sections.push('【最高优先级行为约束】');
+    sections.push('- 你的第一条回复必须是 <tool_call> 工具调用，禁止输出任何确认性文本（如"已收到"、"我将按照..."、"好的"等）。');
+    sections.push('- 每次回复只允许包含一个 <tool_call> 标签，标签外不要有其他文本。');
+    sections.push('- **每次调用只提交一个 submit-task**。提交成功后必须立即停止，不要继续提交后续步骤。系统会在任务执行完成后自动再次调用你生成下一步。');
     sections.push('');
 
     sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
     sections.push('请确保每一步都可验证、可执行、可被单个执行者独立完成。');
     sections.push('');
     sections.push('## 上下文锚点（高优先级）');
-    if (requirementAnchor.requirementId) {
-      sections.push(`- requirementId: ${requirementAnchor.requirementId}`);
+    sections.push(`- requirementId: ${context.requirementId || '(none)'}`);
+    if (context.requirementTitle) {
+      sections.push(`- requirementTitle: ${context.requirementTitle}`);
     }
-    if (requirementAnchor.requirementTitle) {
-      sections.push(`- requirementTitle: ${requirementAnchor.requirementTitle}`);
+    if (context.requirementDescription) {
+      sections.push(`- requirementDescription: ${context.requirementDescription.slice(0, 800)}`);
     }
-    if (!requirementAnchor.requirementId) {
-      if (context.totalSteps === 0 && isDevelopment) {
-        // ── development 模式首步：引导 Planner 参照 skill 中 step1 定义 ──
-        sections.push('- requirementId: (尚未选定)');
-        sections.push('');
-        sections.push('[首步说明] 当前是计划第一步（已累计执行步骤数=0），requirementId 尚未选定。');
-        sections.push('你的 system messages 中已注入 rd-workflow 技能，其中 step1 定义了本步的执行角色、动作和输出契约。');
-        sections.push('请严格参照 skill 中 step1 的定义生成本步任务：');
-        sections.push('1. 你 **必须** 立即调用 submit-task 提交一个可执行 task。');
-        sections.push('2. task.title、task.description、task.taskType 必须与 skill step1 的定义一致。');
-        sections.push('3. task.description 必须包含 step1 输出契约中要求的所有交付项。');
-        sections.push('4. task.description 必须明确告知执行者：本步无上游依赖，执行者应主动使用需求管理工具查询需求池。');
-        sections.push('5. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
-        sections.push('6. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
-        sections.push('7. 禁止输出 task=null、TASK_INABILITY、error 或任何拒绝/错误性文本。');
-      } else if (context.totalSteps === 0) {
-        // ── 非 development 模式首步：保留原有豁免逻辑 ──
-        sections.push('- requirementId: (尚未选定)');
-        sections.push('');
-        sections.push('[首步豁免说明] 当前是计划第一步（覆盖 sourcePrompt 及下方常规约束）。');
-        sections.push('当前是计划的第一步（已累计执行步骤数=0），requirementId 尚未选定。');
-        sections.push('以下豁免规则的优先级高于 sourcePrompt / Plan 目标 / 执行者发现步骤 / 输出规则 中的任何约束：');
-        sections.push('1. 你 **必须** 立即调用 submit-task 提交一个可执行 task。');
-        sections.push('2. **豁免 list-agents 前置调用**：本步无需调用任何工具，也无需填写 agentId。系统会自动分配执行者。');
-        sections.push('3. **豁免 requirement.get 前置调用**：本步的目标就是去选定需求，不需要先获取需求详情。');
-        sections.push('4. sourcePrompt 中出现的 `${info.requirementId}` 等未替换占位符是无效模板变量，**请忽略**。');
-        sections.push('5. 禁止输出 task=null、TASK_INABILITY、missing_task_context、error、json_only_mode_conflict 或任何拒绝/错误性文本。');
-        sections.push('6. 本步 action 固定为 new，title 固定为“选定最高优先级需求”，并通过 submit-task 传入。');
-      } else {
-        sections.push('- requirementId: (unknown — 请从已完成任务的 outputSummary 中提取)');
-      }
+    if (isDevelopment && !context.requirementId) {
+      sections.push('- development 计划必须沿用 phaseInitialize 注入的 requirementId，缺失时应停止并报告原因。');
     }
     sections.push('- 若 Plan 目标中出现 `${...}` 形式占位符，请忽略占位符字面值，以本节锚点为准。');
     sections.push('');
@@ -564,14 +629,14 @@ export class PlannerService {
       sections.push(`- 已完成步骤数: ${completedStepCount}`);
       sections.push(`- **你现在必须生成的步骤: step${nextStep}**`);
       sections.push(`- 禁止生成 step1 ~ step${completedStepCount} 的任务（这些步骤已完成）`);
-      if (nextStep <= 5) {
+      if (nextStep <= 3) {
         sections.push(`- 请参照 skill 中 "### step${nextStep}" 的定义生成任务`);
       }
       sections.push('');
       sections.push('步骤引导约束：');
       sections.push('- task.description 必须反映该步骤定义的具体动作和输出契约，禁止抄写或复述流程定义本身。');
       sections.push('- task.taskType 必须使用 skill 步骤中指定的任务类型（如 general、development.plan、development.exec、development.review）。');
-      sections.push('- 执行角色按 skill 步骤中的定义，通过 list-agents 结果匹配（首步豁免除外）。');
+      sections.push('- 执行角色按 skill 步骤中的定义，通过 list-agents 结果匹配。');
       sections.push('- 当 skill 步骤中有"输出契约"时，task.description 必须明确列出需要交付的内容项。');
       sections.push('- 当 skill 步骤中有"约束"时，task.description 必须体现这些约束。');
       sections.push('- sourcePrompt 仅作为补充背景，步骤定义以 skill 内容为准。');
@@ -810,56 +875,84 @@ export class PlannerService {
     return '';
   }
 
-  private extractRequirementAnchor(context: IncrementalPlannerContext): {
-    requirementId?: string;
-    requirementTitle?: string;
-  } {
-    // 优先使用 plan.metadata 中已锚定的 requirementId（replan 场景下的唯一可靠来源）
-    let requirementId: string | undefined = context.requirementId;
-    let requirementTitle: string | undefined;
+  private buildPhaseInitializePrompt(input: {
+    sourcePrompt: string;
+    domainType: string;
+    existingTaskContext?: Record<string, unknown>;
+  }): string {
+    const sections: string[] = [];
+    const domainType = String(input.domainType || 'general').trim().toLowerCase();
+    const existingTaskContext = input.existingTaskContext || {};
+    const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
 
-    const sources = [
-      context.planGoal,
-      ...context.completedTasks.map((item) => item.outputSummary),
-      ...context.failedTasks.map((item) => item.error),
-    ].filter(Boolean);
+    sections.push('你正在执行 Orchestration 的 phaseInitialize 阶段。');
+    sections.push('你必须在一次回复内完成初始化，并仅返回 JSON。');
+    sections.push('');
+    sections.push('## 目标');
+    sections.push('- 输出任务大纲 outline（step/title/taskType）。');
+    if (domainType === 'development') {
+      sections.push('- 选择并确认一个 requirementId（优先级最高、状态为 todo/open）。');
+      sections.push('- 提供 requirementTitle 与 requirementDescription。');
+      sections.push('- 如果 requirementId 已存在于既有 taskContext，直接沿用。');
+    }
+    sections.push('');
+    sections.push('## 输入');
+    sections.push(`- domainType: ${domainType}`);
+    sections.push(`- sourcePrompt: ${input.sourcePrompt}`);
+    if (existingRequirementId) {
+      sections.push(`- existingRequirementId: ${existingRequirementId}`);
+    }
+    sections.push('');
+    sections.push('## 输出 JSON schema');
+    sections.push('{"requirementId":"","requirementTitle":"","requirementDescription":"","outline":[{"step":1,"title":"","taskType":"development.plan|development.exec|development.review|general|research"}],"reasoning":""}');
+    sections.push('');
+    sections.push('约束：只返回 JSON 对象，不要输出解释文字。');
 
-    const requirementIdPatterns = [
-      /"requirementId"\s*:\s*"([^"\n]+)"/i,
-      /requirementId\s*[=:：]\s*([a-zA-Z0-9._:-]+)/i,
-    ];
-    const requirementTitlePatterns = [
-      /"标题原文"\s*:\s*"([^"\n]+)"/i,
-      /标题(?:原文)?\s*[=:：]\s*([^\n]+)/i,
-    ];
+    return sections.join('\n');
+  }
 
-    for (const source of sources) {
-      if (!requirementId) {
-        for (const pattern of requirementIdPatterns) {
-          const matched = source.match(pattern)?.[1]?.trim();
-          if (matched) {
-            requirementId = matched;
-            break;
-          }
-        }
-      }
-
-      if (!requirementTitle) {
-        for (const pattern of requirementTitlePatterns) {
-          const matched = source.match(pattern)?.[1]?.trim();
-          if (matched) {
-            requirementTitle = matched;
-            break;
-          }
-        }
-      }
-
-      if (requirementId && requirementTitle) {
-        break;
-      }
+  private normalizeOutline(
+    outline: unknown,
+    domainType: string,
+  ): PhaseInitializeResult['outline'] {
+    if (!Array.isArray(outline)) {
+      return this.buildDefaultOutline(domainType);
     }
 
-    return { requirementId, requirementTitle };
+    const normalized = outline
+      .map((item: unknown, index: number) => {
+        const row = (item && typeof item === 'object' && !Array.isArray(item))
+          ? item as Record<string, unknown>
+          : {};
+        const taskType = this.normalizeRuntimeTaskType(row.taskType);
+        const title = String(row.title || '').trim();
+        return {
+          step: typeof row.step === 'number' && Number.isInteger(row.step) ? Number(row.step) : index + 1,
+          title: title || `步骤 ${index + 1}`,
+          taskType,
+        };
+      })
+      .filter((item) => Boolean(item.title));
+
+    if (normalized.length === 0) {
+      return this.buildDefaultOutline(domainType);
+    }
+
+    return normalized;
+  }
+
+  private buildDefaultOutline(domainType: string): PhaseInitializeResult['outline'] {
+    const normalized = String(domainType || 'general').trim().toLowerCase();
+    if (normalized === 'development') {
+      return [
+        { step: 1, title: '制定技术开发计划', taskType: 'development.plan' },
+        { step: 2, title: '执行开发', taskType: 'development.exec' },
+        { step: 3, title: '实现评估', taskType: 'development.review' },
+      ];
+    }
+    return [
+      { step: 1, title: '执行任务', taskType: normalized === 'research' ? 'research' : 'general' },
+    ];
   }
 
   private normalizeRuntimeTaskType(

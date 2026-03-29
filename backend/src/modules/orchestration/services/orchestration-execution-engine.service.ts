@@ -8,6 +8,10 @@ import {
   OrchestrationTaskStatus,
 } from '../../../shared/schemas/orchestration-task.schema';
 import {
+  OrchestrationPlan,
+  OrchestrationPlanDocument,
+} from '../../../shared/schemas/orchestration-plan.schema';
+import {
   OrchestrationRunTask,
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
@@ -34,6 +38,8 @@ export class OrchestrationExecutionEngineService {
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
 
   constructor(
+    @InjectModel(OrchestrationPlan.name)
+    private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(OrchestrationRunTask.name)
@@ -68,6 +74,7 @@ export class OrchestrationExecutionEngineService {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
     });
+    const planTaskContext = await this.loadPlanTaskContext(planId);
 
     await this.orchestrationTaskModel
       .updateOne(
@@ -165,6 +172,7 @@ export class OrchestrationExecutionEngineService {
       stepIndex: typeof (task as any).order === 'number' ? (task as any).order : undefined,
       currentTaskTitle: task.title,
       runtimeTaskType,
+      planTaskContext,
     });
     const agentTaskIdempotencyKey = `orch:${planId}:${taskId}:${new Date().getTime()}`;
 
@@ -341,6 +349,7 @@ export class OrchestrationExecutionEngineService {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
     });
+    const planTaskContext = await this.loadRunTaskContext(runId, runTask.planId);
 
     await this.orchestrationRunTaskModel
       .updateOne(
@@ -400,6 +409,7 @@ export class OrchestrationExecutionEngineService {
       stepIndex: typeof (runTask as any).order === 'number' ? (runTask as any).order : undefined,
       currentTaskTitle: runTask.title,
       runtimeTaskType,
+      planTaskContext,
     });
     const agentTaskIdempotencyKey = `orch-run:${runId}:${runTaskId}:${new Date().getTime()}`;
 
@@ -762,6 +772,28 @@ export class OrchestrationExecutionEngineService {
   private async isRunCancelled(runId: string): Promise<boolean> {
     const run = await this.orchestrationRunModel.findOne({ _id: runId }).select({ status: 1 }).lean().exec();
     return Boolean(run && run.status === 'cancelled');
+  }
+
+  private async loadRunTaskContext(runId: string, planId: string): Promise<Record<string, unknown>> {
+    const run = await this.orchestrationRunModel
+      .findOne({ _id: runId })
+      .select({ metadata: 1 })
+      .lean<{ metadata?: Record<string, unknown> }>()
+      .exec();
+    const runTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(run?.metadata);
+    if (Object.keys(runTaskContext).length > 0) {
+      return runTaskContext;
+    }
+    return this.loadPlanTaskContext(planId);
+  }
+
+  private async loadPlanTaskContext(planId: string): Promise<Record<string, unknown>> {
+    const plan = await this.orchestrationPlanModel
+      .findOne({ _id: planId })
+      .select({ metadata: 1 })
+      .lean<{ metadata?: Record<string, unknown> }>()
+      .exec();
+    return this.contextService.resolvePlanTaskContextFromMetadata(plan?.metadata);
   }
 
   private isRunCancelledError(error: unknown): boolean {

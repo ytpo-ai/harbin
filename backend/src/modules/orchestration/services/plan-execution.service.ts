@@ -152,6 +152,8 @@ export class PlanExecutionService {
     await this.planStatsService.setPlanSessionStatus(planId, 'planned');
 
     const startedAt = new Date();
+    const taskContext = this.contextService.resolvePlanTaskContextFromMetadata((plan.metadata || {}) as Record<string, unknown>);
+
     const run = await new this.orchestrationRunModel({
       planId,
       triggerType,
@@ -163,6 +165,9 @@ export class PlanExecutionService {
         completedTasks: 0,
         failedTasks: 0,
         waitingHumanTasks: 0,
+      },
+      metadata: {
+        taskContext,
       },
     }).save();
 

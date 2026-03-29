@@ -438,6 +438,9 @@ export class IncrementalPlanningService {
     }
 
     const startedAt = new Date();
+    const runTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(
+      ((await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec() as { metadata?: Record<string, unknown> } | null)?.metadata),
+    );
     const run = await new this.runModel({
       planId,
       triggerType: 'autorun',
@@ -453,6 +456,7 @@ export class IncrementalPlanningService {
         source: 'incremental_generation',
         step,
         isRedesign,
+        taskContext: runTaskContext,
       },
     }).save();
 
@@ -622,6 +626,7 @@ export class IncrementalPlanningService {
       }));
 
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
+    const taskContext = this.contextService.resolvePlanTaskContextFromMetadata((plan?.metadata || {}) as Record<string, unknown>);
 
     return {
       planGoal: sourcePrompt,
@@ -630,6 +635,8 @@ export class IncrementalPlanningService {
       totalSteps: tasks.length,
       lastError: plan?.generationState?.lastError,
       requirementId,
+      requirementTitle: String(taskContext.requirementTitle || '').trim() || undefined,
+      requirementDescription: String(taskContext.requirementDescription || '').trim() || undefined,
     };
   }
 
@@ -649,6 +656,9 @@ export class IncrementalPlanningService {
     const planId = String(input?.planId || '').trim();
     if (!planId) {
       throw new NotFoundException('Plan not found');
+    }
+    if (!Types.ObjectId.isValid(planId)) {
+      throw new NotFoundException(`Plan not found: invalid planId format "${planId}"`);
     }
 
     if (input?.isGoalReached === true) {
@@ -751,6 +761,9 @@ export class IncrementalPlanningService {
     if (!planId) {
       throw new NotFoundException('Plan not found');
     }
+    if (!Types.ObjectId.isValid(planId)) {
+      throw new NotFoundException(`Plan not found: invalid planId format "${planId}"`);
+    }
 
     const planExists = await this.planModel.exists({ _id: planId });
     if (!planExists) {
@@ -789,8 +802,7 @@ export class IncrementalPlanningService {
     order: number,
   ): Promise<OrchestrationTaskDocument> {
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const plannerAgentId = await this.resolvePlanPlannerAgentId(planId);
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, plannerAgentId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
 
     const requirementId = await this.resolveRequirementObjectId(planId);
 
@@ -838,6 +850,8 @@ export class IncrementalPlanningService {
       )
       .exec();
 
+    await this.validateTaskContextInjection(planId, task);
+
     await this.planStatsService.refreshPlanStats(planId);
     await this.planStatsService.syncPlanSessionTasks(planId);
     return task;
@@ -866,8 +880,7 @@ export class IncrementalPlanningService {
     }
 
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const plannerAgentId = await this.resolvePlanPlannerAgentId(planId);
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, plannerAgentId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
     const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
     await this.taskModel
       .updateOne(
@@ -952,7 +965,6 @@ export class IncrementalPlanningService {
   private async resolveAssignmentForPlannerTask(
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     taskAgentId: string,
-    planPlannerAgentId?: string,
   ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
     const mode = this.resolvePlannerAgentSelectionMode();
     const validAgentId = await this.resolveValidAgentId(taskAgentId);
@@ -965,22 +977,6 @@ export class IncrementalPlanningService {
     }
 
     if (!validAgentId) {
-      // When planner doesn't provide an agentId, fall back to the plan's planner agent
-      // for general-type tasks (e.g. step1/step2 CTO tasks in rd-workflow).
-      const normalizedTaskType = String(taskResult.taskType || 'general').trim().toLowerCase();
-      const validPlannerAgentId = planPlannerAgentId
-        ? await this.resolveValidAgentId(planPlannerAgentId)
-        : undefined;
-      if (validPlannerAgentId && normalizedTaskType === 'general') {
-        this.logger.log(
-          `[planner_fallback_to_plan_planner] taskAgent=empty planPlanner=${validPlannerAgentId} title="${taskResult.title.slice(0, 60)}"`,
-        );
-        return {
-          executorType: 'agent',
-          executorId: validPlannerAgentId,
-          reason: 'Planner did not provide agentId; fallback to plan planner agent for general task',
-        };
-      }
       return this.resolveFallbackAssignment(taskResult, 'Planner did not provide valid agentId');
     }
 
@@ -1228,20 +1224,37 @@ export class IncrementalPlanningService {
     return String((agent as any).id || (agent as any)._id?.toString() || '').trim() || null;
   }
 
-  private async resolvePlanPlannerAgentId(planId: string): Promise<string | undefined> {
-    const plan = await this.planModel
-      .findById(planId)
-      .select({ 'strategy.plannerAgentId': 1 })
-      .lean()
-      .exec();
-    const plannerAgentId = String((plan as any)?.strategy?.plannerAgentId || '').trim();
-    return plannerAgentId || undefined;
-  }
-
   private async resolveRequirementObjectId(planId: string): Promise<Types.ObjectId | undefined> {
     const plan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
     const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
     return this.contextService.parseRequirementObjectId(requirementId);
+  }
+
+  private async validateTaskContextInjection(
+    planId: string,
+    task: OrchestrationTaskDocument,
+  ): Promise<void> {
+    const plan = await this.planModel
+      .findById(planId)
+      .select({ metadata: 1 })
+      .lean<{ metadata?: Record<string, unknown> }>()
+      .exec();
+    const planTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(plan?.metadata);
+    const requirementId = String(planTaskContext.requirementId || '').trim();
+    if (!requirementId) {
+      return;
+    }
+
+    const taskRequirementId = String((task as any).requirementId || '').trim();
+    if (!taskRequirementId) {
+      this.logger.error(`[TaskContext Injection Validation] task ${String(task._id)} missing requirementId from plan.taskContext`);
+      return;
+    }
+
+    const expected = this.contextService.parseRequirementObjectId(requirementId)?.toString() || requirementId;
+    if (taskRequirementId !== expected) {
+      this.logger.error(`[TaskContext Injection Validation] task ${String(task._id)} requirementId mismatch: expected=${expected}, actual=${taskRequirementId}`);
+    }
   }
 
 }

@@ -65,9 +65,11 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 
 1. `POST /orchestration/plans/from-prompt` 创建计划占位并返回 `planId`。
 2. 后台异步生成任务并推送 SSE：`plan.status.changed`、`plan.task.generated`、`plan.completed`、`plan.failed`。
+3. incremental + dispatcher 链路在首次推进时先执行 `phaseInitialize`：产出 `plan.metadata.taskContext` 与 `plan.metadata.outline`。
+4. development 域由 `phaseInitialize` 先锚定 `requirementId`，后续 step 不再依赖执行结果正则回填。
 3. 支持 `POST /orchestration/plans/:id/replan` 覆盖重编排。
-4. 支持 `POST /orchestration/plans/:id/generate-next` 增量生成下一任务。
-5. 支持 `POST /orchestration/plans/:id/stop-generation` 手动停止当前计划生成流程。
+5. 支持 `POST /orchestration/plans/:id/generate-next` 增量生成下一任务。
+6. 支持 `POST /orchestration/plans/:id/stop-generation` 手动停止当前计划生成流程。
 
 ### 4.2 执行与取消
 
@@ -89,6 +91,12 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 - 当前有效值：`general`、`research`、`development.plan`、`development.exec`、`development.review`。
 - `development.*` 任务默认禁用自动生成模式下的 retry 原地重试，post 阶段会转为 redesign 路径。
 - 已移除编排上下文中的关键词分类函数（`isPlanningLikeTask` / `isResearchLikeTask` / `isCodeReviewLikeTask` / `isCodeLikeTask`）。
+
+### 4.5 taskContext 计划级上下文（当前规则）
+
+- 初始化阶段写入：`plan.metadata.taskContext`（development 常见字段：`requirementId`、`requirementTitle`、`requirementDescription`）。
+- 执行阶段自动注入：`buildTaskDescription()` 在 prompt 中加入“计划上下文（系统自动注入）”区块。
+- 运行追溯快照：创建 run 时快照到 `run.metadata.taskContext`（manual run 与 incremental autorun 均覆盖）。
 
 ## 5. API 清单（当前有效）
 

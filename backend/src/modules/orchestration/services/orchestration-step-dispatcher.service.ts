@@ -20,7 +20,7 @@ import { SceneOptimizationService } from './scene-optimization.service';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { ORCH_EVENTS, OrchestrationSource } from '../orchestration-events';
 
-type Phase = 'idle' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
+type Phase = 'idle' | 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
 
 const AUTO_RETRY_DISABLED_TASK_TYPES = new Set([
   'development.plan',
@@ -83,24 +83,38 @@ export class OrchestrationStepDispatcherService {
 
       const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state);
 
-      if (phase === 'idle' || phase === 'generating') {
-        let effectiveState = state;
-        if (phase === 'idle') {
-          const claimedState: OrchestrationGenerationState = {
-            ...state,
-            currentPhase: 'generating',
-            plannerSessionId,
-          };
-          const claimed = await this.updateGenerationStateIfExpected(
-            normalizedPlanId,
-            state,
-            claimedState,
-          );
-          if (!claimed) {
-            return { advanced: false, phase };
-          }
-          effectiveState = claimedState;
+      if (phase === 'idle') {
+        const targetPhase: Phase = this.shouldRunInitialize(plan, state) ? 'initialize' : 'generating';
+        const claimedState: OrchestrationGenerationState = {
+          ...state,
+          currentPhase: targetPhase,
+          plannerSessionId,
+        };
+        const claimed = await this.updateGenerationStateIfExpected(
+          normalizedPlanId,
+          state,
+          claimedState,
+        );
+        if (!claimed) {
+          return { advanced: false, phase };
         }
+
+        if (targetPhase === 'initialize') {
+          await this.phaseInitialize(normalizedPlanId, plan, claimedState, plannerSessionId);
+          return { advanced: true, phase: 'initialize' };
+        }
+
+        await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', claimedState, plannerSessionId);
+        return { advanced: true, phase: 'generating' };
+      }
+
+      if (phase === 'initialize') {
+        await this.phaseInitialize(normalizedPlanId, plan, state, plannerSessionId);
+        return { advanced: true, phase };
+      }
+
+      if (phase === 'generating') {
+        let effectiveState = state;
         await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', effectiveState, plannerSessionId);
         return { advanced: true, phase: 'generating' };
       }
@@ -198,6 +212,75 @@ export class OrchestrationStepDispatcherService {
     }
 
     return { stopped: true, alreadyStopped: false };
+  }
+
+  private async phaseInitialize(
+    planId: string,
+    plan: OrchestrationPlanDocument,
+    state: OrchestrationGenerationState,
+    plannerSessionId: string,
+  ): Promise<void> {
+    const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
+    const existingTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
+    const result = await this.plannerService.initializePlan(
+      planId,
+      {
+        sourcePrompt: plan.sourcePrompt || '',
+        domainType: String((plan as { domainType?: string }).domainType || 'general'),
+        existingTaskContext,
+      },
+      { sessionId: plannerSessionId },
+    );
+
+    const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
+    const requirementId = String(result.requirementId || existingTaskContext.requirementId || '').trim();
+    if (domainType === 'development' && !requirementId) {
+      await this.failAndArchive(planId, 'phaseInitialize failed: requirementId is required for development domain');
+      return;
+    }
+
+    const taskContext: Record<string, unknown> = {
+      ...existingTaskContext,
+      ...(requirementId ? { requirementId } : {}),
+      ...(result.requirementTitle ? { requirementTitle: result.requirementTitle } : {}),
+      ...(result.requirementDescription ? { requirementDescription: result.requirementDescription } : {}),
+    };
+
+    const nextMetadata: Record<string, unknown> = {
+      ...metadata,
+      taskContext,
+      outline: result.outline,
+      ...(requirementId ? { requirementId } : {}),
+    };
+
+    await this.planModel
+      .updateOne(
+        { _id: planId },
+        {
+          $set: {
+            metadata: nextMetadata,
+          },
+        },
+      )
+      .exec();
+
+    const advanced = await this.updateGenerationStateIfExpected(planId, state, {
+      ...state,
+      currentPhase: 'idle',
+      plannerSessionId,
+      lastError: undefined,
+    });
+    if (!advanced) {
+      return;
+    }
+
+    this.eventStream.emitPlanStreamEvent(planId, 'planning.initialized', {
+      planId,
+      requirementId: requirementId || undefined,
+      outline: result.outline,
+    });
+
+    await this.autoAdvance(planId);
   }
 
   private async phaseGenerate(
@@ -601,6 +684,18 @@ export class OrchestrationStepDispatcherService {
     });
 
     return sessionId;
+  }
+
+  private shouldRunInitialize(plan: OrchestrationPlanDocument, _state: OrchestrationGenerationState): boolean {
+    const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
+    const taskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
+    const hasOutline = Array.isArray(metadata.outline) && metadata.outline.length > 0;
+    const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
+    if (domainType !== 'development') {
+      return !hasOutline;
+    }
+    const requirementId = String(taskContext.requirementId || metadata.requirementId || '').trim();
+    return !hasOutline || !requirementId;
   }
 
   private async checkTerminalConditions(
