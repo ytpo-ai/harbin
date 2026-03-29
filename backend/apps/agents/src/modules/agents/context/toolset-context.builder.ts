@@ -35,7 +35,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
 
       messages.push({
         role: 'system',
-        content: `Enabled Skills for this agent:\n${skillLines}\n\n以下为技能索引。请按任务上下文激活并严格遵循对应技能方法论。`,
+        content: `Enabled Skills for this agent:\n${skillLines}\n\n`,
         timestamp: new Date(),
       });
 
@@ -43,8 +43,13 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         if (!this.contextStrategyService.shouldActivateSkillContent(skill, input.task, input.context)) {
           continue;
         }
-        const rawContent = input.shared.skillContents.get(skill.id);
+        let rawContent = input.shared.skillContents.get(skill.id);
         if (!rawContent) continue;
+
+        // Orchestration planner 阶段裁剪 phaseInitialize 段落：
+        // initialize 阶段有独立的 buildPhaseInitializePrompt 提供工具指令，
+        // generating/pre_execute/post_execute 阶段不需要 phaseInitialize 指令（会误导 LLM 执行 requirement.list 等操作）
+        rawContent = this.stripPhaseInitializeSectionIfNeeded(rawContent, input.context);
 
         const content =
           rawContent.length > SKILL_CONTENT_MAX_INJECT_LENGTH
@@ -52,7 +57,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
             : rawContent;
         messages.push({
           role: 'system',
-          content: `【激活技能方法论 - ${skill.name}】\n\n${content}`,
+          content: `【enabled skill - ${skill.name}】\n\n${content}`,
           timestamp: new Date(),
         });
       }
@@ -124,5 +129,27 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
     }
 
     return messages;
+  }
+
+  /**
+   * Orchestration planner 场景下，裁剪 skill 文档中的 phaseInitialize 段落。
+   *
+   * 原因：phaseInitialize 的工具调用序列（requirement.list / requirement.get / update-status）
+   * 在 system prompt 中会误导 LLM 在 generating / pre_execute / post_execute 阶段执行需求查询操作，
+   * 即使 user prompt 中明确禁止。initialize 阶段有独立的 buildPhaseInitializePrompt 提供指令，
+   * 因此所有 planner 阶段都不需要 skill 中的 phaseInitialize 段落。
+   */
+  private stripPhaseInitializeSectionIfNeeded(content: string, context?: unknown): string {
+    const collaborationCtx = ((context as any)?.collaborationContext || {}) as Record<string, unknown>;
+    const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
+
+    // 仅对 orchestration planner 角色生效
+    if (!roleInPlan || !roleInPlan.startsWith('planner')) {
+      return content;
+    }
+
+    // 裁剪 "## phaseInitialize 行为" 段落（从该标题到下一个 ## 标题之前）
+    const phaseInitPattern = /## phaseInitialize[\s\S]*?(?=\n## |\n---\s*$|$)/i;
+    return content.replace(phaseInitPattern, '## phaseInitialize 行为\n\n> 此段落已由系统在独立的 initialize 会话中执行完毕，此处省略。\n');
   }
 }

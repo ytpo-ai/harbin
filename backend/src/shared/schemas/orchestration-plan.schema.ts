@@ -36,7 +36,9 @@ export interface OrchestrationGenerationState {
   lastError?: string;
   currentPhase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
   lastDecision?: 'generate_next' | 'stop' | 'redesign' | 'retry';
+  /** shared 模式下使用的单一 planner session ID */
   plannerSessionId?: string;
+  /** isolated 模式下按 phase 隔离的 planner session IDs（key = phase name） */
   plannerSessionIds?: Record<string, string>;
   currentTaskId?: string;
 }

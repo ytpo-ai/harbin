@@ -282,10 +282,10 @@ export class OrchestrationStepDispatcherService {
       )
       .exec();
 
+    const stateWithSession = this.withPlannerSession(state, 'initialize', plannerSessionId);
     const advanced = await this.updateGenerationStateIfExpected(planId, state, {
-      ...state,
+      ...stateWithSession,
       currentPhase: 'idle',
-      plannerSessionId,
       lastError: undefined,
     });
     if (!advanced) {
@@ -320,10 +320,10 @@ export class OrchestrationStepDispatcherService {
       sessionId: plannerSessionId,
     });
 
+    const stateWithSession = this.withPlannerSession(state, 'generating', plannerSessionId);
     const mergedState: OrchestrationGenerationState = {
-      ...state,
+      ...stateWithSession,
       totalCost: Number(state.totalCost || 0) + Number(nextTaskResult.costTokens || 0),
-      plannerSessionId,
     };
 
     if (nextTaskResult.isGoalReached) {

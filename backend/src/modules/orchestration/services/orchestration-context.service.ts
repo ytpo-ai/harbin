@@ -241,62 +241,71 @@ export class OrchestrationContextService {
     outlineStep?: { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> };
   }): string {
     const lines: string[] = [];
+    const preActions = input.outlineStep?.preExecuteActions || [];
 
-    // --- 阶段目标 ---
-    lines.push('你正在执行 pre_execute 阶段。本阶段有两项职责：');
-    lines.push('1. 执行当前步骤在编排技能（skill）中定义的 pre_execute 动作（如工具调用）');
-    lines.push('2. 评估当前任务是否满足进入 execute 阶段的条件');
+    // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
+    lines.push('【当前阶段声明 — 最高优先级】');
+    lines.push('你当前处于 **pre_execute** 阶段（执行前决策阶段），不是 phaseInitialize 阶段，也不是 generate 阶段。');
+    lines.push('- phaseInitialize 已由系统在之前的独立会话中完成，需求已选定、outline 已生成。');
+    lines.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、输出 outline JSON 等）。');
+    lines.push('- **本阶段禁止调用 submit-task。** submit-task 仅在 generate 阶段可用。');
+    lines.push('- 你在本阶段**只需执行下方列出的工具调用（如有）**，然后返回评估 JSON。');
     lines.push('');
 
-    // --- 任务信息 ---
-    lines.push('## 任务信息');
-    lines.push(`step: ${input.step}`);
-    lines.push(`taskId: ${input.taskId}`);
-    lines.push(`taskTitle: ${input.taskTitle}`);
-    lines.push(`planDomainType: ${input.planDomainType || 'general'}`);
-    lines.push(`runtimeTaskType: ${input.runtimeTaskType || 'general'}`);
+    // --- 阶段声明 + 禁令 ---
+    lines.push('[pre_execute 阶段] step ' + input.step + ' — ' + input.taskTitle);
+    lines.push('');
 
-    // --- taskContext 变量映射表 ---
-    const tc = input.taskContext || {};
-    const tcEntries = Object.entries(tc)
-      .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
-      .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
-
-    if (tcEntries.length > 0) {
-      lines.push('');
-      lines.push('## taskContext 变量映射表');
-      lines.push('以下是当前编排注入的上下文变量及其**实际值**。');
-      lines.push('skill 定义中出现的 `{{taskContext.xxx}}` 就是这些值：');
-      for (const [key, value] of tcEntries) {
-        lines.push(`- {{taskContext.${key}}} = \`${value}\``);
-      }
-      lines.push('');
-      lines.push('**【禁止】在工具调用参数中传入 `{{taskContext.xxx}}` 字面量，必须使用上方的实际值。**');
-    }
-
-    // --- pre_execute 动作（从 outline 中读取）---
-    const preActions = input.outlineStep?.preExecuteActions || [];
     if (preActions.length > 0) {
+      const tc = input.taskContext || {};
+      const tcEntries = Object.entries(tc)
+        .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
+        .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
+
+      if (tcEntries.length > 0) {
+        lines.push('taskContext:');
+        for (const [key, value] of tcEntries) {
+          lines.push(`  ${key}: ${value}`);
+        }
+        lines.push('');
+      }
+      // ---- 有 preExecuteActions：给出完整 tool_call 模板 ----
+      lines.push('你需要执行 ' + preActions.length + ' 个预定义工具调用，然后返回评估 JSON。');
       lines.push('');
-      lines.push('## pre_execute 必须执行的工具调用（最高优先级）');
-      lines.push('以下工具调用由编排大纲定义，参数已填好，你必须通过 <tool_call> 逐一完成：');
+      lines.push('**请直接使用以下参数 tool_call**');
+      lines.push('requirementId 需要用替换为taskContext中requirementId(req-* 格式!!!,不要截断)，不要用其他 ID 或 placeholder');
       for (let i = 0; i < preActions.length; i++) {
         const a = preActions[i];
-        lines.push(`${i + 1}. \`${a.tool}\` 参数: ${JSON.stringify(a.params)}`);
+        // const toolCallJson = JSON.stringify({ tool: a.tool, parameters: a.params });
+        // lines.push(toolCallJson);
+        lines.push(`工具ID（tool）: ${a.tool}`);
+        lines.push(`参数（parameters）: ${JSON.stringify(a.params)}`); 
+        lines.push('');
       }
-      lines.push('完成后进入评估环节。');
-    } else {
+      lines.push('工具调用完成后，返回：');
+      lines.push('{"allowExecute":true,"riskFlags":[],"notes":""}');
       lines.push('');
-      lines.push('## pre_execute 动作');
-      lines.push('当前步骤无需执行额外工具调用，直接进入评估环节。');
-    }
+      lines.push('约束：');
+      lines.push('- 第一条回复只能是 <tool_call>，前面不要有任何文字');
+      lines.push('- 只调用上面列出的工具');
+    } else {
+      // ---- 无 preExecuteActions：注入 taskContext + 直接评估 ----
+      const tc = input.taskContext || {};
+      const tcEntries = Object.entries(tc)
+        .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
+        .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
 
-    // --- 评估要求 ---
-    lines.push('');
-    lines.push('## 执行前评估');
-    lines.push('完成上述动作后，返回评估结论 JSON：');
-    lines.push('{"allowExecute":true,"actionsExecuted":["工具调用摘要..."],"riskFlags":["..."],"notes":"..."}');
-    lines.push('如果 pre_execute 工具调用失败，仍返回 allowExecute=true 并在 riskFlags 中记录。');
+      if (tcEntries.length > 0) {
+        lines.push('taskContext:');
+        for (const [key, value] of tcEntries) {
+          lines.push(`  ${key}: ${value}`);
+        }
+        lines.push('');
+      }
+
+      lines.push('当前步骤无预定义工具调用。直接返回评估 JSON：');
+      lines.push('{"allowExecute":true,"actionsExecuted":[],"riskFlags":[],"notes":"无 pre_execute 动作"}');
+    }
 
     return lines.join('\n');
   }
@@ -353,9 +362,17 @@ export class OrchestrationContextService {
     const hasOutput = output.length > 0;
     const hasError = error.length > 0;
 
-    const lines = [
-      '请进行执行后决策，返回 JSON。',
-    ];
+    const lines: string[] = [];
+
+    // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
+    lines.push('【当前阶段声明 — 最高优先级】');
+    lines.push('你当前处于 **post_execute** 阶段（执行后决策阶段），不是 phaseInitialize 阶段，也不是 generate 阶段。');
+    lines.push('- phaseInitialize 已由系统在之前的独立会话中完成。');
+    lines.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、输出 outline JSON 等）。');
+    lines.push('- **本阶段禁止调用 submit-task 和 requirement.* 工具。**');
+    lines.push('- 你在本阶段只需分析执行结果，返回决策 JSON。');
+    lines.push('');
+    lines.push('请进行执行后决策，返回 JSON。');
 
     // --- 任务元信息 ---
     lines.push('');

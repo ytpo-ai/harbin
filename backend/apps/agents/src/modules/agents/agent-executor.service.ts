@@ -938,6 +938,7 @@ export class AgentExecutorService {
     const meetingLike = isMeetingLikeTask(task, executionContext);
     let emptyResponseRetryUsed = false;
     let errorRetryUsed = false;
+    let plannerTextOnlyRetryUsed = false;
     const emptyMeetingResponseFallback = await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyMeetingResponseFallback);
     const generationErrorRetryPrompt = meetingLike
       ? await this.resolveAgentPromptContent(AGENT_PROMPTS.generationErrorRetryInstruction)
@@ -1267,6 +1268,12 @@ export class AgentExecutorService {
 
       // 若未识别到工具调用，则尝试返回最终答案。
       const toolCall = extractToolCall(response);
+      if (!toolCall && /<tool_call>/i.test(response)) {
+        // LLM 输出了 <tool_call> 标签但 JSON 解析失败，记录警告便于排查
+        this.logger.warn(
+          `[tool_call_parse_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} responseLen=${response.length} preview=${JSON.stringify(response.slice(0, 500))}`,
+        );
+      }
       if (!toolCall) {
         const afterStepHookResult = await this.runAfterStepHooks(
           {
@@ -1388,12 +1395,57 @@ export class AgentExecutorService {
           continue;
         }
 
-        const cleaned = stripToolCallMarkup(response);
+        let cleaned = stripToolCallMarkup(response);
+        // 防御：stripToolCallMarkup 删除了 <tool_call> 标签后内容变空，
+        // 但原始 response 有内容 — 回退保留原始文本避免信息丢失
+        if (!cleaned && response.trim().length > 0) {
+          this.logger.warn(
+            `[strip_markup_empty_fallback] agent=${agent.name} taskId=${task.id} round=${round + 1} originalLen=${response.length}`,
+          );
+          cleaned = response.replace(/<\/?tool_call>/gi, '').trim();
+        }
         stepParts.push({
           type: 'text',
           status: 'completed',
           content: cleaned,
         });
+
+        // Orchestration planner 纯文本 retry：
+        // 当 roleInPlan 以 planner 开头（planner / planner_pre_execution / planner_post_execution）时，
+        // planner 被明确要求输出 <tool_call>，但返回了纯文本（确认性文本 / phaseInitialize 输出等）。
+        // 仅 retry 一次，注入强制工具调用指令。
+        if (!plannerTextOnlyRetryUsed && this.isPlannerTextOnlyRetryNeeded(cleaned, executionContext)) {
+          plannerTextOnlyRetryUsed = true;
+          this.logger.warn(
+            `[planner_text_only_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} responsePreview=${JSON.stringify(cleaned.slice(0, 120))}`,
+          );
+          messages.push({
+            role: 'system',
+            content: [
+              '【系统纠正】你刚才输出了纯文本，但本阶段要求你输出 <tool_call> 工具调用。',
+              '请立即输出 <tool_call> 标签调用工具，不要输出任何其他文本。',
+              '回顾上方的用户指令，按要求执行工具调用。',
+            ].join('\n'),
+            timestamp: new Date(),
+          });
+          stepParts.push({
+            type: 'system_event',
+            status: 'completed',
+            content: 'planner_text_only_retry',
+          });
+          await persistStepMessage({
+            round,
+            response: cleaned,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+          continue;
+        }
+
         if (meetingLike && isMeaninglessAssistantResponse(cleaned)) {
           if (!emptyResponseRetryUsed) {
             emptyResponseRetryUsed = true;
@@ -1587,6 +1639,26 @@ export class AgentExecutorService {
           toolCallId,
           output: toolResultPayload,
         });
+
+        // submit-task 成功后立即返回结果，阻止 agent 在同一 run 中继续提交后续任务。
+        // 增量编排设计要求每次只生成一个任务，由编排系统驱动下一轮。
+        if (normalizedToolCallId === 'builtin.sys-mg.mcp.orchestration.submit-task' && toolResultPayload?.taskId) {
+          const earlyResult = JSON.stringify(toolResultPayload);
+          this.logger.log(
+            `[submit_task_early_return] agent=${agent.name} taskId=${task.id} round=${round + 1} createdTaskId=${toolResultPayload.taskId}`,
+          );
+          await persistStepMessage({
+            round,
+            response: earlyResult,
+            finish: 'stop',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+          return earlyResult;
+        }
 
         messages.push({
           role: 'system',
@@ -2156,6 +2228,25 @@ export class AgentExecutorService {
       return Math.floor(configuredRounds);
     }
     return DEFAULT_MAX_TOOL_ROUNDS;
+  }
+
+  /**
+   * 判断是否需要 orchestration planner 纯文本 retry。
+   * 条件：roleInPlan 以 planner 开头 + 响应是纯文本（无 tool_call）+ round 0（首轮）。
+   * 仅在 planner 被明确要求输出 tool_call 时触发（planner 场景下 prompt 总是要求 tool_call）。
+   */
+  private isPlannerTextOnlyRetryNeeded(
+    cleaned: string,
+    executionContext?: { collaborationContext?: Record<string, unknown> | any },
+  ): boolean {
+    const collaborationCtx = (executionContext?.collaborationContext || {}) as Record<string, unknown>;
+    const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
+    if (!roleInPlan.startsWith('planner')) {
+      return false;
+    }
+    // 如果 cleaned 为空（LLM 返回了空字符串），也应该 retry
+    // 如果 cleaned 有内容但不包含 tool_call（确认性文本），也应该 retry
+    return cleaned.length === 0 || !/<tool_call>/i.test(cleaned);
   }
 
   // 抽取工具执行结果中的 data 载荷，统一返回结构。

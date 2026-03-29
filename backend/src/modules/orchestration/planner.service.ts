@@ -61,6 +61,7 @@ export interface PhaseInitializeResult {
     step: number;
     title: string;
     taskType: 'development.plan' | 'development.exec' | 'development.review' | 'general' | 'research';
+    preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }>;
   }>;
   reasoning?: string;
 }
@@ -578,6 +579,16 @@ export class PlannerService {
     const sections: string[] = [];
     const isDevelopment = options?.domainType === 'development';
 
+    // ── 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰 generating 阶段）──
+    sections.push('【当前阶段声明 — 最高优先级】');
+    sections.push('你当前处于 **generating** 阶段（任务生成阶段），不是 phaseInitialize 阶段。');
+    sections.push('- phaseInitialize 已由系统在之前的独立会话中完成，需求已选定、outline 已生成、requirementId 已锚定。');
+    sections.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、requirement.update-status、输出 outline JSON 等）。');
+    sections.push('- 你在本阶段**唯一允许调用的工具**是：');
+    sections.push('  1. `builtin.sys-mg.internal.agent-master.list-agents`（发现可用执行者）');
+    sections.push('  2. `builtin.sys-mg.mcp.orchestration.submit-task`（提交任务）');
+    sections.push('- 调用任何其他工具（如 requirement.*）将被视为严重违规。');
+    sections.push('');
     sections.push('你必须通过调用工具 builtin.sys-mg.mcp.orchestration.submit-task 提交下一步任务。');
     if (options?.planId) {
       sections.push(`调用 submit-task 时，planId 参数必须填写: ${options.planId}`);
@@ -888,6 +899,12 @@ export class PlannerService {
     const existingTaskContext = input.existingTaskContext || {};
     const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
 
+    // ── 行为约束（最高优先级，防止 skill 注入触发确认性输出）──
+    sections.push('【最高优先级行为约束】');
+    sections.push('- 你的第一条回复必须是 <tool_call> 工具调用，禁止输出任何确认性文本（如"已收到"、"我将按照..."、"好的"、"已收到约束"等）。');
+    sections.push('- system messages 中注入的 skill 说明仅供参考，你当前正在执行 phaseInitialize 阶段，按下方工具调用序列逐步执行即可。');
+    sections.push('- **不要复述、确认或总结 skill 中的规则**，直接开始工具调用。');
+    sections.push('');
     sections.push('你正在执行 Orchestration 的 phaseInitialize 阶段。');
     sections.push('你必须在一次回复内完成所有工具调用，然后输出最终 JSON 结果。');
     sections.push('');
@@ -966,10 +983,30 @@ export class PlannerService {
           : {};
         const taskType = this.normalizeRuntimeTaskType(row.taskType);
         const title = String(row.title || '').trim();
+
+        // 透传 preExecuteActions（基本类型校验：必须是数组且每个元素含 tool 字符串）
+        let preExecuteActions: Array<{ tool: string; params: Record<string, unknown> }> | undefined;
+        if (Array.isArray(row.preExecuteActions) && row.preExecuteActions.length > 0) {
+          const valid = row.preExecuteActions.filter(
+            (a: unknown) =>
+              a && typeof a === 'object' && !Array.isArray(a) &&
+              typeof (a as Record<string, unknown>).tool === 'string',
+          ) as Array<{ tool: string; params: Record<string, unknown> }>;
+          if (valid.length > 0) {
+            preExecuteActions = valid.map((a) => ({
+              tool: String(a.tool),
+              params: (a.params && typeof a.params === 'object' && !Array.isArray(a.params))
+                ? a.params as Record<string, unknown>
+                : {},
+            }));
+          }
+        }
+
         return {
           step: typeof row.step === 'number' && Number.isInteger(row.step) ? Number(row.step) : index + 1,
           title: title || `步骤 ${index + 1}`,
           taskType,
+          ...(preExecuteActions ? { preExecuteActions } : {}),
         };
       })
       .filter((item) => Boolean(item.title));
