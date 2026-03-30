@@ -186,7 +186,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        roleInPlan: 'planner_initialize',
+        roleInPlan: 'planner',
         responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
@@ -360,7 +360,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
-        roleInPlan: 'planner',
+        roleInPlan: 'planner_initialize',
         responseDirective: 'text',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
@@ -375,9 +375,16 @@ export class PlannerService {
 
     const parsed = this.tryParseJson(response);
     if (!parsed || typeof parsed !== 'object') {
+      // 降级：从纯文本 response 中尝试提取 requirementId（LLM 常在文本中提及）
+      const fallback = this.extractInitializeFieldsFromText(response);
+      this.logger.warn(
+        `[initialize_json_parse_failed] planId=${planId} responseLen=${(response || '').length} fallbackRequirementId=${fallback.requirementId || 'none'}`,
+      );
       return {
+        requirementId: fallback.requirementId,
+        requirementTitle: fallback.requirementTitle,
         outline: this.buildDefaultOutline(input.domainType),
-        reasoning: 'Failed to parse initialize response, fallback to default outline',
+        reasoning: 'Failed to parse initialize response as JSON, extracted fields from text fallback',
       };
     }
 
@@ -1108,5 +1115,43 @@ export class PlannerService {
     }
 
     return lines.join('\n').trim();
+  }
+
+  /**
+   * 降级提取：从 initialize 阶段的纯文本 response 中尝试提取 requirementId 和 requirementTitle。
+   * 当 LLM 未输出合规 JSON 但在工具调用或文本中提及了 requirementId 时使用。
+   */
+  private extractInitializeFieldsFromText(response: string): {
+    requirementId?: string;
+    requirementTitle?: string;
+  } {
+    const text = (response || '').trim();
+    if (!text) {
+      return {};
+    }
+
+    // 匹配 req- 开头的 requirementId（如 req-1774816103218-n2evu4）
+    const reqIdMatch = text.match(/\b(req-[\w-]+)\b/i);
+    const requirementId = reqIdMatch?.[1] || undefined;
+
+    // 尝试从文本中提取标题：常见模式 "标题：xxx" / "标题: xxx" / **标题**: xxx
+    let requirementTitle: string | undefined;
+    const titlePatterns = [
+      /\*{0,2}标题\*{0,2}\s*[:：]\s*(.+)/i,
+      /\*{0,2}requirementTitle\*{0,2}\s*[:：]\s*(.+)/i,
+      /\*{0,2}需求\*{0,2}\s*[:：]\s*(.+)/i,
+    ];
+    for (const pattern of titlePatterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) {
+        requirementTitle = match[1].replace(/[`*]/g, '').trim().slice(0, 200);
+        break;
+      }
+    }
+
+    return {
+      requirementId,
+      requirementTitle,
+    };
   }
 }

@@ -253,14 +253,26 @@ export class OrchestrationStepDispatcherService {
     const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
     const requirementId = String(result.requirementId || existingTaskContext.requirementId || '').trim();
     if (domainType === 'development' && !requirementId) {
+      // 归档失败的 initialize session，清除 sessionId 使重试时创建全新 session，避免历史上下文污染
+      await this.agentClientService.archiveSession(plannerSessionId).catch(() => {});
       const nextState = this.bumpFailureCounters(
         state,
         'phaseInitialize missing requirementId for development domain',
       );
-      const advanced = await this.updateGenerationStateIfExpected(planId, state, {
-        ...nextState,
-        currentPhase: 'idle',
-      });
+      const stateWithClearedSession = this.isIsolatedSessionMode
+        ? {
+            ...nextState,
+            currentPhase: 'idle' as const,
+            plannerSessionIds: {
+              ...(nextState.plannerSessionIds || {}),
+              initialize: undefined,
+            },
+          }
+        : {
+            ...nextState,
+            currentPhase: 'idle' as const,
+          };
+      const advanced = await this.updateGenerationStateIfExpected(planId, state, stateWithClearedSession);
       if (!advanced) {
         return;
       }

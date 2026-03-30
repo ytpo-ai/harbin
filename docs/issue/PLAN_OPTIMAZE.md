@@ -3,12 +3,14 @@
 此文档是我们执行问题交互的追踪文档，目标会随着问题结局而变化，我会在必要时更新。
 
 ## 目标
-优化系统提示词以及计划执行Prompt的设计，注入时机和注入条件。
+优化系统提示词以及计划执行Prompt的设计，注入时机和注入条件。（以已部分实现，但不彻底）
+当前通过计划编排任务继续优化
+
 
 ## 当前需要解决的问题
-1. ~~在计划编排过程，Agent的输出不稳定，导致计划编排失败率较高。~~ → **已解决**（见下方已完成项 #1）
-2. ~~当前Prompt设计不够合理，导致不必要的注入污染上下文。~~ → **已解决**（见下方已完成项 #1）
-3. ~~Prompt注入条件和时机需要更完善的设计。~~ → **已解决**（见下方已完成项 #1）
+1. 在计划编排过程，Agent的输出不稳定，导致计划编排失败率较高。 → 
+2. 当前Prompt设计不够合理，导致不必要的注入污染上下文。
+3. Prompt注入条件和时机需要更完善的设计。
 
 ## 测试token
 Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbXBsb3llZUlkIjoiMzViODhhODMtOTBjZS00MDMyLWExOGMtMDc5ZDg4Y2ExOWYwIiwiZW1haWwiOiJhZG1pbkBhaS10ZWFtLmNvbSIsImV4cCI6MTc3NTMyNzUxNzQ5OX0.GRUEBP2KtmzcMnx3r1e52vXhLnFFr_9dPAsBIer7eSY
@@ -108,6 +110,39 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 
 ## 已完成内容概括
+
+### #10 roleInPlan 交叉赋值修复 + Initialize 三层纵深防御（2026-03-30）
+
+**问题**：计划在 phaseInitialize 阶段就执行了任务生成（submit-task），LLM 混淆 initialize 和 generating 阶段职责。根因有三层叠加：
+
+1. **roleInPlan 交叉赋值 bug**：`initializePlan()` 赋值 `'planner'`，`generateNextTask()` 赋值 `'planner_initialize'`，二者反了。导致 initialize 阶段 submit-task 没有硬拦截（tool handler 检查 `roleInPlan === 'planner_initialize'` 不命中），generating 阶段 submit-task 反而被误拦截。
+2. **Initialize 重试复用同一 session**：`PLANNER_SESSION_ISOLATION_MODE=isolated` 生效，但失败重试时 `ensurePlannerSession` 发现 `plannerSessionIds.initialize` 已有值直接复用旧 session，LLM 看到前一轮的工具调用结果和确认文本后误认为 initialize 已完成，跳到 generating 行为。
+3. **text-only retry 纠正指令不够精确**：通用的"请输出 tool_call"没有告知 LLM 当前在 phaseInitialize 阶段，LLM retry 后调了 submit-task 而非继续 initialize 工具序列。
+
+**修复摘要**（四项变更，4 个文件）：
+
+**roleInPlan 交叉赋值修复**：
+- `planner.service.ts`：`initializePlan()` roleInPlan `'planner'` → `'planner_initialize'`；`generateNextTask()` roleInPlan `'planner_initialize'` → `'planner'`
+
+**Initialize 失败重试 session 隔离**：
+- `orchestration-step-dispatcher.service.ts`：`phaseInitialize` 失败分支归档旧 session + 清除 `plannerSessionIds.initialize`，重试时创建全新 session 避免上下文污染
+
+**text-only retry 纠正指令 initialize 特化**：
+- `agent-executor.service.ts`：当 `roleInPlan === 'planner_initialize'` 时，纠正指令明确说明"当前是 phaseInitialize 阶段"，要求继续未完成的工具调用序列或输出最终 JSON，严禁 submit-task
+
+**submit-task 拦截消息引导输出 JSON**：
+- `orchestration-tool-handler.service.ts`：initialize 阶段 submit-task 被拦截时，错误消息明确告知"你处于 phaseInitialize 阶段，不是 generating 阶段"，给出最终 JSON 的具体格式引导
+
+**initializePlan 纯文本降级提取**：
+- `planner.service.ts`：新增 `extractInitializeFieldsFromText()`，当 `tryParseJson` 失败时通过正则从纯文本中提取 `req-xxx` 格式的 requirementId 和标题，配合 default outline 返回，避免直接进入失败重试循环
+
+**防御层次**：
+1. **硬拦截层**：roleInPlan 修正后 submit-task 在 initialize 阶段被 tool handler 硬拦截
+2. **prompt 引导层**：text-only retry 特化指令 + submit-task 拦截消息 → 引导 LLM 回到正确路径
+3. **解析降级层**：即使 LLM 始终不输出 JSON，也能从文本中提取 requirementId，不进入失败循环
+4. **session 隔离层**：即使失败重试，也使用干净 session，不受历史上下文污染
+
+---
 
 ### #9 Planner Session 隔离 + Skill phaseInitialize 裁剪 + 纯文本 Retry（2026-03-30）
 
@@ -301,4 +336,4 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 15. **[P1] pre_execute outline actions 端到端验证**：验证 Planner 在 pre_execute 阶段是否能正确执行 outline 中定义的 preExecuteActions 工具调用（requirement.update-status），需求状态是否成功流转 assigned → in_progress → review
 16. **[P2] Planner planId 截断问题**：generate 阶段 Planner 仍偶发截断 planId（如 `69c95162f89f45faa79a4`），submit-task preflight 报错后重试成功但浪费 token
 17. ~~**[P2] Planner generate 阶段确认文本**~~ → **已缓解**（#9 planner text-only retry 机制 + skill phaseInitialize 裁剪），retry 后 planner 能执行 tool_call，但 initialize 阶段仍偶发混淆 initialize/generating 职责
-18. **[P1] Initialize 阶段 LLM 行为不稳定**：planner 在 initialize 阶段 retry 后调用 submit-task（应调用 requirement.list），混淆了 initialize 和 generating 的职责。需进一步约束 initialize 阶段的可用工具范围或增强 prompt 设计
+18. ~~**[P1] Initialize 阶段 LLM 行为不稳定**~~ → **已修复**（#10 roleInPlan 交叉赋值修复 + 三层纵深防御：硬拦截/prompt 引导/解析降级/session 隔离）

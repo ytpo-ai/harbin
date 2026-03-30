@@ -373,7 +373,7 @@ export class OrchestrationToolHandler {
       return {
         action: 'submit_task_blocked',
         error: roleInPlan === 'planner_initialize'
-          ? 'submit-task 在 planner_initialize 阶段被禁止。当前阶段只允许执行 requirement/list-agents 等初始化工具，不允许提交任务。'
+          ? 'submit-task 在 phaseInitialize 阶段被禁止。你当前处于 phaseInitialize 阶段，不是 generating 阶段。请停止调用 submit-task，直接输出最终 JSON 结果：{"requirementId":"...","requirementTitle":"...","requirementDescription":"...","outline":[...],"reasoning":"..."}。如果还有未完成的初始化工具调用（requirement.list/requirement.get/requirement.update-status），请先完成它们再输出 JSON。'
           : `submit-task 在 ${roleInPlan} 阶段被禁止。当前阶段只允许执行 pre_execute/post_execute 定义的工具调用，不允许提交新任务。`,
       };
     }

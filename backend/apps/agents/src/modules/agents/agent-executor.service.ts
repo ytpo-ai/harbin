@@ -1411,21 +1411,32 @@ export class AgentExecutorService {
         });
 
         // Orchestration planner 纯文本 retry：
-        // 当 roleInPlan 以 planner 开头（planner / planner_pre_execution / planner_post_execution）时，
+        // 当 roleInPlan 以 planner 开头（planner / planner_initialize / planner_pre_execution / planner_post_execution）时，
         // planner 被明确要求输出 <tool_call>，但返回了纯文本（确认性文本 / phaseInitialize 输出等）。
         // 仅 retry 一次，注入强制工具调用指令。
         if (!plannerTextOnlyRetryUsed && this.isPlannerTextOnlyRetryNeeded(cleaned, executionContext)) {
           plannerTextOnlyRetryUsed = true;
+          const retryRoleInPlan = String(
+            ((executionContext?.collaborationContext || {}) as Record<string, unknown>).roleInPlan || '',
+          ).trim();
           this.logger.warn(
-            `[planner_text_only_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} responsePreview=${JSON.stringify(cleaned.slice(0, 120))}`,
+            `[planner_text_only_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} roleInPlan=${retryRoleInPlan} responsePreview=${JSON.stringify(cleaned.slice(0, 120))}`,
           );
+          const retryInstruction = retryRoleInPlan === 'planner_initialize'
+            ? [
+                '【系统纠正 — phaseInitialize 阶段】你刚才输出了纯文本，但当前是 phaseInitialize 阶段，要求你输出 <tool_call> 工具调用。',
+                '请严格按照用户指令中的"工具调用序列"继续执行尚未完成的工具调用。',
+                '严禁调用 submit-task，严禁输出确认性文本。',
+                '如果所有工具调用已完成，请直接输出最终 JSON 结果（包含 requirementId、outline 等字段），不要附加任何解释文字。',
+              ].join('\n')
+            : [
+                '【系统纠正】你刚才输出了纯文本，但本阶段要求你输出 <tool_call> 工具调用。',
+                '请立即输出 <tool_call> 标签调用工具，不要输出任何其他文本。',
+                '回顾上方的用户指令，按要求执行工具调用。',
+              ].join('\n');
           messages.push({
             role: 'system',
-            content: [
-              '【系统纠正】你刚才输出了纯文本，但本阶段要求你输出 <tool_call> 工具调用。',
-              '请立即输出 <tool_call> 标签调用工具，不要输出任何其他文本。',
-              '回顾上方的用户指令，按要求执行工具调用。',
-            ].join('\n'),
+            content: retryInstruction,
             timestamp: new Date(),
           });
           stepParts.push({
