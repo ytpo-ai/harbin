@@ -1991,6 +1991,8 @@ export class AgentExecutorService {
 
       const persisted = await this.runtimePersistence.setSessionInitialSystemMessages(sessionId, systemMessages);
       if (persisted && systemMessages.length > 0) {
+        // Session-level system messages are intentionally stored under a synthetic runId.
+        // They are queried via session.messageIds instead of runtime run linkage.
         const runId = `system-init-${sessionId}`;
         for (let index = 0; index < systemMessages.length; index++) {
           const systemMessage = systemMessages[index];
@@ -2034,6 +2036,10 @@ export class AgentExecutorService {
             })),
             ...previousNonSystemMessages,
           ];
+        } else {
+          this.logger.warn(
+            `[session_system_messages_cache_miss_after_persist] taskId=${task.id} sessionId=${sessionId} persisted=${persisted} fallback=assembled_messages`,
+          );
         }
       }
     }
