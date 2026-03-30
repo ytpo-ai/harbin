@@ -8,6 +8,8 @@ import { PromptResolverService } from '@agent/modules/prompt-registry/prompt-res
 
 @Injectable()
 export class IdentityContextBuilder implements ContextBlockBuilder {
+  private static readonly MIN_SYSTEM_PROMPT_LENGTH = 5;
+
   readonly layer = 'identity' as const;
   readonly meta = { scope: 'run', stability: 'semi-static' } as const;
 
@@ -24,7 +26,10 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
   async build(input: ContextBuildInput): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
     const guidelineContent = await this.contextPromptService.resolvePromptContent(AGENT_PROMPTS.agentWorkingGuideline);
-    const systemPromptContent = String(input.agent.systemPrompt || '').trim();
+    const normalizedSystemPrompt = String(input.agent.systemPrompt || '').trim();
+    const systemPromptContent = normalizedSystemPrompt.length >= IdentityContextBuilder.MIN_SYSTEM_PROMPT_LENGTH
+      ? normalizedSystemPrompt
+      : '';
     const agentPromptTemplateRef = this.normalizePromptTemplateRef((input.agent as any).promptTemplateRef);
     const agentPromptTemplateContent = await this.resolvePromptTemplateRefContent(agentPromptTemplateRef, '');
     const identityBaseFullContent = [guidelineContent, systemPromptContent, agentPromptTemplateContent]
@@ -90,14 +95,14 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
     const identityMessage = await this.contextFingerprintService.resolveSystemContextBlockContent({
       scope: input.contextScope,
       blockType: 'identity',
-      fullContent: `【身份与职责】以下是你的身份定义，请始终以此为准：\n\n${identityContent}`,
+      fullContent: `Identity Context: \n\n${identityContent}`,
       snapshot: { items: identitySnapshot },
       buildDelta: (previous, current) =>
         this.contextFingerprintService.buildIdentityMemoDelta(
           Array.isArray((previous as any)?.items) ? (previous as any).items : [],
           Array.isArray((current as any)?.items) ? (current as any).items : [],
         ),
-      deltaPrefix: '【身份与职责增量更新】',
+      deltaPrefix: '【Identity Context Delta】',
     });
 
     if (identityMessage) {
@@ -131,7 +136,6 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
         scene: ref.scene,
         role: ref.role,
         defaultContent,
-        cacheOnly: true,
       });
       return String(resolved.content || '').trim();
     } catch {

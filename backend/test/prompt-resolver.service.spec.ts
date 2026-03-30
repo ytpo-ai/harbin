@@ -48,19 +48,18 @@ describe('PromptResolverService', () => {
 
     expect(result.source).toBe('db_published');
     expect(result.content).toBe('db-content');
+    expect(redisService.get).toHaveBeenCalled();
     expect(redisService.set).toHaveBeenCalled();
   });
 
-  it('falls back to redis cache when db has no published template', async () => {
+  it('falls back to db when redis misses and db has published template', async () => {
     const { service, findOneExec, redisService } = createService();
-    findOneExec.mockResolvedValue(null);
-    redisService.get.mockResolvedValue(
-      JSON.stringify({
-        content: 'cached-content',
-        version: 2,
-        updatedAt: '2026-03-18T10:00:00.000Z',
-      }),
-    );
+    redisService.get.mockResolvedValue(null);
+    findOneExec.mockResolvedValue({
+      content: 'db-content-on-miss',
+      version: 9,
+      updatedAt: new Date('2026-03-18T10:00:00.000Z'),
+    });
 
     const result = await service.resolve({
       scene: 'meeting',
@@ -69,15 +68,15 @@ describe('PromptResolverService', () => {
     });
 
     expect(result).toEqual({
-      content: 'cached-content',
-      source: 'redis_cache',
-      version: 2,
+      content: 'db-content-on-miss',
+      source: 'db_published',
+      version: 9,
       updatedAt: '2026-03-18T10:00:00.000Z',
     });
   });
 
-  it('uses redis only in cacheOnly mode and skips db', async () => {
-    const { service, promptTemplateModel, redisService } = createService();
+  it('uses redis cache before db lookup', async () => {
+    const { service, promptTemplateModel, redisService, findOneExec } = createService();
     redisService.get.mockResolvedValue(
       JSON.stringify({
         content: 'cache-only-content',
@@ -90,7 +89,6 @@ describe('PromptResolverService', () => {
       scene: 'meeting',
       role: 'execution-policy',
       defaultContent: 'default',
-      cacheOnly: true,
     });
 
     expect(result).toEqual({
@@ -99,26 +97,22 @@ describe('PromptResolverService', () => {
       version: 5,
       updatedAt: '2026-03-18T11:00:00.000Z',
     });
+    expect(findOneExec).not.toHaveBeenCalled();
     expect(promptTemplateModel.findOne).not.toHaveBeenCalled();
   });
 
-  it('returns default in cacheOnly mode when redis misses even if db has data', async () => {
+  it('returns default when redis/db both miss', async () => {
     const { service, promptTemplateModel, findOneExec, redisService } = createService();
-    findOneExec.mockResolvedValue({
-      content: 'db-content',
-      version: 6,
-      updatedAt: new Date('2026-03-18T12:00:00.000Z'),
-    });
     redisService.get.mockResolvedValue(null);
+    findOneExec.mockResolvedValue(null);
 
     const result = await service.resolve({
       scene: 'meeting',
       role: 'execution-policy',
       defaultContent: 'default',
-      cacheOnly: true,
     });
 
     expect(result).toEqual({ content: 'default', source: 'code_default' });
-    expect(promptTemplateModel.findOne).not.toHaveBeenCalled();
+    expect(promptTemplateModel.findOne).toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import { OrchestrationContextService } from './orchestration-context.service';
 
 describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () => {
-  const service = new OrchestrationContextService({} as any, {} as any, { buildResearchOutputContract: jest.fn() } as any);
+  const service = new OrchestrationContextService({} as any, {} as any, { resolvePrompt: jest.fn() } as any);
 
   it('uses explicit taskType for review task', () => {
     const runtimeTaskType = service.inferRuntimeTaskTypeFromPlanContext({
@@ -68,36 +68,78 @@ describe('OrchestrationContextService inferRuntimeTaskTypeFromPlanContext', () =
   });
 });
 
-describe('OrchestrationContextService phase prompt injection', () => {
-  const service = new OrchestrationContextService({} as any, {} as any, { buildResearchOutputContract: jest.fn() } as any);
+describe('OrchestrationContextService buildPreTaskContext', () => {
+  const service = new OrchestrationContextService(
+    {} as any,
+    {} as any,
+    {
+      resolvePrompt: jest.fn().mockResolvedValue({
+        content: 'pre_execute\n{{preActionsSection}}\n{"allowExecute":true}',
+        source: 'code_default',
+      }),
+    } as any,
+  );
 
-  it('uses pre_execute phase prompt when provided', () => {
-    const prompt = service.buildPreTaskContext({
+  it('builds prompt with preExecuteActions tool call templates', async () => {
+    const prompt = await service.buildPreTaskContext({
       step: 1,
       taskId: 'task-1',
       taskTitle: 'step1',
       taskDescription: 'desc',
-      outlineStep: {
-        phasePrompts: {
-          pre_execute: '必须先核验输入再放行',
-        },
-      },
+      taskContext: { requirementId: 'req-123' },
+      preExecuteActions: [
+        { tool: 'builtin.sys-mg.mcp.requirement.update-status', params: { requirementId: 'req-123', status: 'in_progress' } },
+      ],
     });
 
-    expect(prompt).toContain('必须先核验输入再放行');
+    expect(prompt).toContain('pre_execute');
+    expect(prompt).toContain('builtin.sys-mg.mcp.requirement.update-status');
     expect(prompt).toContain('allowExecute');
   });
+});
 
-  it('uses post_execute phase prompt when provided', () => {
-    const prompt = service.buildPostTaskContext({
+describe('OrchestrationContextService buildPostTaskContext', () => {
+  const service = new OrchestrationContextService(
+    {} as any,
+    {} as any,
+    {
+      resolvePrompt: jest.fn().mockResolvedValue({
+        content: '{{decisionRulesSection}}\n{{progressSection}}\npost_execute',
+        source: 'code_default',
+      }),
+    } as any,
+  );
+
+  it('uses system decision rules for multi-step development plan', async () => {
+    const prompt = await service.buildPostTaskContext({
       step: 1,
       taskId: 'task-1',
       taskTitle: 'step1',
       executionStatus: 'completed',
       executionOutput: 'ok',
-      postExecutePrompt: '若输出证据充分则 generate_next，否则 redesign',
+      planDomainType: 'development',
+      totalGeneratedSteps: 1,
+      outlineStepCount: 3,
     });
 
-    expect(prompt).toContain('若输出证据充分则 generate_next，否则 redesign');
+    expect(prompt).toContain('generate_next');
+    expect(prompt).toContain('post_execute');
+    expect(prompt).toContain('1/3');
+  });
+
+  it('returns stop decision rule when all steps completed', async () => {
+    const prompt = await service.buildPostTaskContext({
+      step: 3,
+      taskId: 'task-3',
+      taskTitle: 'step3',
+      executionStatus: 'completed',
+      executionOutput: 'review done',
+      planDomainType: 'development',
+      totalGeneratedSteps: 3,
+      outlineStepCount: 3,
+    });
+
+    expect(prompt).toContain('stop');
+    expect(prompt).toContain('全部 3 步已完成');
   });
 });

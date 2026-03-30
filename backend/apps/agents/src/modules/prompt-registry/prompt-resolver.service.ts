@@ -14,7 +14,6 @@ export interface PromptResolveInput {
   role: string;
   defaultContent: string;
   sessionOverride?: string;
-  cacheOnly?: boolean;
 }
 
 export interface PromptResolveResult {
@@ -61,7 +60,6 @@ export class PromptResolverService {
     const role = String(input.role || '').trim();
     const defaultContent = String(input.defaultContent || '').trim();
     const sessionOverride = String(input.sessionOverride || '').trim();
-    const cacheOnly = Boolean(input.cacheOnly);
 
     if (!scene || !role) {
       return { content: defaultContent, source: 'code_default' };
@@ -73,18 +71,14 @@ export class PromptResolverService {
 
     const redisKey = this.cacheKey(scene, role);
 
-    if (cacheOnly) {
-      const cached = await this.readPublishedCache(scene, role, redisKey);
-      if (cached) {
-        return {
-          content: cached.content,
-          source: 'redis_cache',
-          version: cached.version,
-          updatedAt: cached.updatedAt,
-        };
-      }
-
-      return { content: defaultContent, source: 'code_default' };
+    const cached = await this.readPublishedCache(scene, role, redisKey);
+    if (cached) {
+      return {
+        content: cached.content,
+        source: 'redis_cache',
+        version: cached.version,
+        updatedAt: cached.updatedAt,
+      };
     }
 
     try {
@@ -108,16 +102,6 @@ export class PromptResolverService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(`[prompt_registry_db_read_failed] scene=${scene} role=${role} error=${message}`);
-    }
-
-    const cached = await this.readPublishedCache(scene, role, redisKey);
-    if (cached) {
-      return {
-        content: cached.content,
-        source: 'redis_cache',
-        version: cached.version,
-        updatedAt: cached.updatedAt,
-      };
     }
 
     return { content: defaultContent, source: 'code_default' };

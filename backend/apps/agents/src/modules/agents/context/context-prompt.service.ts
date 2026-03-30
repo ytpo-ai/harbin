@@ -16,7 +16,6 @@ export class ContextPromptService {
       scene: template.scene,
       role: template.role,
       defaultContent,
-      cacheOnly: true,
     });
     return {
       content: resolved.content,

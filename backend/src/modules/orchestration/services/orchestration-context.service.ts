@@ -11,7 +11,8 @@ import {
   OrchestrationRunTaskDocument,
 } from '../../../shared/schemas/orchestration-run-task.schema';
 import { OrchestrationPlanDocument } from '../../../shared/schemas/orchestration-plan.schema';
-import { TaskOutputValidationService } from './task-output-validation.service';
+import { AgentClientService } from '../../agents-client/agent-client.service';
+import { ORCHESTRATION_PROMPTS, OrchestrationPromptEntry } from '../orchestration-prompt-catalog';
 
 @Injectable()
 export class OrchestrationContextService {
@@ -20,10 +21,10 @@ export class OrchestrationContextService {
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
     @InjectModel(OrchestrationRunTask.name)
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
-    private readonly taskOutputValidationService: TaskOutputValidationService,
+    private readonly agentClientService: AgentClientService,
   ) {}
 
-  buildTaskDescription(
+  async buildTaskDescription(
     baseDescription: string,
     options: {
       dependencyContext: string;
@@ -37,7 +38,7 @@ export class OrchestrationContextService {
       planTaskContext?: Record<string, unknown>;
       executePrompt?: string;
     },
-  ): string {
+  ): Promise<string> {
     const {
       dependencyContext,
       isResearchTask,
@@ -69,7 +70,7 @@ export class OrchestrationContextService {
       sections.push(`## 执行指导\n${executePrompt}`);
     }
     if (isResearchTask) {
-      sections.push(this.taskOutputValidationService.buildResearchOutputContract(researchTaskKind || 'generic_research'));
+      sections.push(await this.buildResearchOutputContract(researchTaskKind || 'generic_research'));
     }
     if (isReviewTask) {
       sections.push(
@@ -194,6 +195,241 @@ export class OrchestrationContextService {
       .join('\n\n');
   }
 
+  async buildGeneratingPrompt(
+    context: {
+      planGoal: string;
+      completedTasks: Array<{ title: string; agentId?: string; outputSummary: string }>;
+      failedTasks: Array<{ taskId: string; title: string; agentId?: string; agentTools?: string[]; error: string }>;
+      totalSteps: number;
+      lastError?: string;
+      requirementId?: string;
+    },
+    options?: { domainType?: string; planId?: string; plan?: OrchestrationPlanDocument },
+  ): Promise<string> {
+    const nextStep = Math.max(1, context.completedTasks.length + 1);
+    const metadata = ((options?.plan as unknown as { metadata?: Record<string, unknown> } | undefined)?.metadata || {}) as Record<string, unknown>;
+    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
+    const currentOutlineStep = outline.find((item) => Number(item.step) === nextStep);
+    const phasePrompts = currentOutlineStep?.phasePrompts;
+    const generatingPrompt = phasePrompts && typeof phasePrompts === 'object'
+      ? String((phasePrompts as Record<string, unknown>).generating || '').trim()
+      : '';
+
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerGenerating);
+
+    const currentStepGuidanceSection = generatingPrompt
+      ? ['## 当前步骤指导（Step {{nextStep}}）', '{{generatingPrompt}}', ''].join('\n')
+      : '';
+
+    const completedTasksSummary = context.completedTasks.length > 0
+      ? `- 已完成任务: ${context.completedTasks.map((item) => item.title).join(' | ')}`
+      : '';
+
+    const fallbackRulesSection = generatingPrompt
+      ? ''
+      : [
+        '## 降级规则（无预编译提示时）',
+        '- 先调用 list-agents 获取执行者，再提交一个可执行任务。',
+        '- task.description 需包含输入、动作、产出与验证标准。',
+        '- 任务类型使用 general/research/development.plan/development.exec/development.review。',
+        '',
+      ].join('\n');
+
+    const completedTasksBlock = context.completedTasks.length > 0
+      ? [
+        '## 已完成任务摘要',
+        ...context.completedTasks.map((item, index) => {
+          const stepLabel = options?.domainType === 'development' ? `(对应 step${index + 1}) ` : '';
+          return `- ${stepLabel}[${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`;
+        }),
+        '注意：如果 outputSummary 中出现"无法执行"、"无法完成"、"缺少工具"、"没有权限"等语义，该任务可能是"虚假完成"（被标记 completed 但实际未完成），应视为未完成并重新规划。',
+        '',
+      ].join('\n')
+      : '';
+
+    const failedTasksBlock = context.failedTasks.length > 0
+      ? [
+        '## 失败任务（请调整策略）',
+        ...context.failedTasks.map((item) => {
+          const agentLabel = item.agentId || 'unknown';
+          const toolsLabel = item.agentTools?.length ? item.agentTools.join(', ') : 'unknown';
+          return `- [${item.title}] (taskId=${item.taskId}, agent=${agentLabel}, tools=[${toolsLabel}]): ${item.error}`;
+        }),
+        '重要：当 action="redesign" 时，redesignTaskId 必须填写上方失败任务中的 taskId 原值，禁止臆造或替换为其他系统 task id。',
+        '',
+      ].join('\n')
+      : '';
+
+    const lastErrorBlock = context.lastError
+      ? ['## 最近失败原因', context.lastError, ''].join('\n')
+      : '';
+
+    return this.renderTemplate(template, {
+      planId: options?.planId || '(unknown)',
+      nextStep: String(nextStep),
+      totalSteps: String(Math.max(nextStep, outline.length || 1)),
+      requirementId: context.requirementId || '(none)',
+      planGoal: context.planGoal,
+      generatingPrompt,
+      createdTaskCount: String(context.totalSteps),
+      completedTasksSummary,
+      currentStepGuidanceSection,
+      fallbackRulesSection,
+      completedTasksBlock,
+      failedTasksBlock,
+      lastErrorBlock,
+    });
+  }
+
+  async buildPhaseInitializePrompt(input: {
+    planId: string;
+    sourcePrompt: string;
+    domainType: string;
+    existingTaskContext?: Record<string, unknown>;
+  }): Promise<string> {
+    const domainType = String(input.domainType || 'general').trim().toLowerCase();
+    const existingTaskContext = input.existingTaskContext || {};
+    const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerInitialize);
+
+    const existingRequirementHint = existingRequirementId
+      ? `- existingRequirementId: ${existingRequirementId}`
+      : '';
+    const extensionStepHint = existingRequirementId
+      ? `提示：已有 requirementId=${existingRequirementId}，可直接用于扩展步骤。`
+      : '提示：如需 requirementId，请在扩展步骤中按 skill 指导获取并写入 taskContext。';
+
+    return this.renderTemplate(template, {
+      planId: input.planId,
+      domainType,
+      sourcePrompt: input.sourcePrompt,
+      existingRequirementHint,
+      extensionStepHint,
+    });
+  }
+
+  async buildDefaultOutline(
+    domainType: string,
+  ): Promise<Array<{
+    step: number;
+    title: string;
+    taskType: 'development.plan' | 'development.exec' | 'development.review' | 'general' | 'research';
+    phasePrompts: {
+      generating: string;
+      pre_execute?: string;
+      execute?: string;
+      post_execute: string;
+    };
+  }>> {
+    const normalized = String(domainType || 'general').trim().toLowerCase();
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerDefaultOutline);
+    const parsed = this.tryParseJsonObject(template);
+    const candidate = parsed && typeof parsed === 'object'
+      ? (parsed[normalized] || parsed.general)
+      : null;
+
+    const rows = Array.isArray(candidate) ? candidate : [];
+    if (rows.length === 0) {
+      return normalized === 'development'
+        ? [
+          {
+            step: 1,
+            title: '制定技术开发计划',
+            taskType: 'development.plan',
+            phasePrompts: {
+              generating: '生成技术规划任务，要求输出结构化开发计划与验收要点。',
+              post_execute: '验证开发计划是否完整；完整则 generate_next，否则 redesign/retry。',
+            },
+          },
+          {
+            step: 2,
+            title: '执行开发',
+            taskType: 'development.exec',
+            phasePrompts: {
+              generating: '生成开发执行任务，要求按上一步计划落地代码变更并附验证证据。',
+              post_execute: '验证是否完成代码变更与必要验证；通过则 generate_next。',
+            },
+          },
+          {
+            step: 3,
+            title: '实现评估',
+            taskType: 'development.review',
+            phasePrompts: {
+              generating: '生成实现评审任务，要求输出评审结论与修复建议。',
+              post_execute: '验证评审结论是否完整，完成则 stop。',
+            },
+          },
+        ]
+        : [
+          {
+            step: 1,
+            title: '执行任务',
+            taskType: normalized === 'research' ? 'research' : 'general',
+            phasePrompts: {
+              generating: '生成可执行任务，明确输入、动作、产出与验收标准。',
+              post_execute: '根据执行结果判断 generate_next 或 stop。',
+            },
+          },
+        ];
+    }
+
+    return rows
+      .map((item, index) => {
+        const row = item && typeof item === 'object' && !Array.isArray(item) ? item as Record<string, unknown> : {};
+        const phasePrompts = row.phasePrompts && typeof row.phasePrompts === 'object' && !Array.isArray(row.phasePrompts)
+          ? row.phasePrompts as Record<string, unknown>
+          : {};
+        return {
+          step: Number(row.step) || index + 1,
+          title: String(row.title || `步骤 ${index + 1}`).trim(),
+          taskType: this.normalizeRuntimeTaskType(String(row.taskType || 'general')),
+          phasePrompts: {
+            generating: String(phasePrompts.generating || '').trim(),
+            post_execute: String(phasePrompts.post_execute || '').trim(),
+          },
+        };
+      })
+      .filter((item) => item.phasePrompts.generating && item.phasePrompts.post_execute);
+  }
+
+  async resolvePlannerTaskPrompt(input: {
+    prompt: string;
+    mode: 'sequential' | 'parallel' | 'hybrid';
+    requirementId?: string;
+    sessionOverride?: string;
+  }): Promise<string> {
+    const requirementScope = input.requirementId
+      ? `来源需求ID: ${input.requirementId}，请确保任务拆解围绕该需求交付闭环。`
+      : '若存在来源需求ID，应保持任务拆解与需求范围一致。';
+
+    const template = input.sessionOverride
+      ? input.sessionOverride
+      : await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerTaskDecomposition);
+
+    const replaced = this.renderTemplate(template, {
+      prompt: input.prompt,
+      mode: input.mode,
+      requirementScope,
+    });
+
+    const lines = [replaced.trim()];
+    if (!/{{\s*prompt\s*}}/i.test(template) && !replaced.includes('需求:')) {
+      lines.push(`需求: ${input.prompt}`);
+    }
+    if (!/{{\s*mode\s*}}/i.test(template) && !replaced.includes(input.mode)) {
+      lines.push(`mode 优先使用 ${input.mode}。`);
+    }
+    if (!/{{\s*requirementScope\s*}}/i.test(template) && !replaced.includes(requirementScope)) {
+      lines.push(requirementScope);
+    }
+    return lines.join('\n').trim();
+  }
+
+  async buildResearchOutputContract(_kind: 'generic_research'): Promise<string> {
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.researchOutputContract);
+    return template.trim();
+  }
+
   private buildTaskContextBlock(stepNo: number, title: string, status: string, output: string): string {
     const statusLabel = this.toTaskStatusLabel(status);
     return [
@@ -234,7 +470,7 @@ export class OrchestrationContextService {
     return normalized || '未知';
   }
 
-  buildPreTaskContext(input: {
+  async buildPreTaskContext(input: {
     step: number;
     taskId: string;
     taskTitle: string;
@@ -243,88 +479,35 @@ export class OrchestrationContextService {
     planDomainType?: string;
     planGoal?: string;
     taskContext?: Record<string, unknown>;
-    outlineStep?: {
-      phasePrompts?: { pre_execute?: string };
-      preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }>;
-    };
-  }): string {
-    const lines: string[] = [];
-    const preActions = input.outlineStep?.preExecuteActions || [];
-    const preExecutePrompt = String(input.outlineStep?.phasePrompts?.pre_execute || '').trim();
+    preExecuteActions: Array<{ tool: string; params: Record<string, unknown> }>;
+  }): Promise<string> {
+    const preActions = input.preExecuteActions;
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.preExecuteContext);
 
-    // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
-    lines.push('【当前阶段声明 — 最高优先级】');
-    lines.push('你当前处于 **pre_execute** 阶段（执行前决策阶段），不是 phaseInitialize 阶段，也不是 generate 阶段。');
-    lines.push('- phaseInitialize 已由系统在之前的独立会话中完成，需求已选定、outline 已生成。');
-    lines.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、输出 outline JSON 等）。');
-    lines.push('- **本阶段禁止调用 submit-task。** submit-task 仅在 generate 阶段可用。');
-    lines.push('- 你在本阶段**只需执行下方列出的工具调用（如有）**，然后返回评估 JSON。');
-    lines.push('');
+    const tc = input.taskContext || {};
+    const tcEntries = Object.entries(tc)
+      .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
+      .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
 
-    // --- 阶段声明 + 禁令 ---
-    lines.push('[pre_execute 阶段] step ' + input.step + ' — ' + input.taskTitle);
-    lines.push('');
+    const taskContextSection = tcEntries.length > 0
+      ? ['taskContext:', ...tcEntries.map(([key, value]) => `  ${key}: ${value}`), ''].join('\n')
+      : '';
 
-    if (preExecutePrompt) {
-      lines.push('## Pre-Execute 指令');
-      lines.push(preExecutePrompt);
-      lines.push('');
-      lines.push('返回格式：{"allowExecute":true,"executionHints":[],"riskFlags":[],"notes":""}');
-      return lines.join('\n');
+    const preActionLines: string[] = [];
+    for (let i = 0; i < preActions.length; i++) {
+      const a = preActions[i];
+      preActionLines.push(`工具ID（tool）: ${a.tool}`);
+      preActionLines.push(`参数（parameters）: ${JSON.stringify(a.params)}`);
+      preActionLines.push('');
     }
 
-    if (preActions.length > 0) {
-      const tc = input.taskContext || {};
-      const tcEntries = Object.entries(tc)
-        .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
-        .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
-
-      if (tcEntries.length > 0) {
-        lines.push('taskContext:');
-        for (const [key, value] of tcEntries) {
-          lines.push(`  ${key}: ${value}`);
-        }
-        lines.push('');
-      }
-      // ---- 有 preExecuteActions：给出完整 tool_call 模板 ----
-      lines.push('你需要执行 ' + preActions.length + ' 个预定义工具调用，然后返回评估 JSON。');
-      lines.push('');
-      lines.push('**请直接使用以下参数 tool_call**');
-      lines.push('requirementId 需要用替换为taskContext中requirementId(req-* 格式!!!,不要截断)，不要用其他 ID 或 placeholder');
-      for (let i = 0; i < preActions.length; i++) {
-        const a = preActions[i];
-        // const toolCallJson = JSON.stringify({ tool: a.tool, parameters: a.params });
-        // lines.push(toolCallJson);
-        lines.push(`工具ID（tool）: ${a.tool}`);
-        lines.push(`参数（parameters）: ${JSON.stringify(a.params)}`);
-        lines.push('');
-      }
-      lines.push('工具调用完成后，返回：');
-      lines.push('{"allowExecute":true,"riskFlags":[],"notes":""}');
-      lines.push('');
-      lines.push('约束：');
-      lines.push('- 第一条回复只能是 <tool_call>，前面不要有任何文字');
-      lines.push('- 只调用上面列出的工具');
-    } else {
-      // ---- 无 preExecuteActions：注入 taskContext + 直接评估 ----
-      const tc = input.taskContext || {};
-      const tcEntries = Object.entries(tc)
-        .filter(([, v]) => v !== undefined && v !== null && String(v).trim())
-        .map(([k, v]) => [k, String(v).slice(0, 500)] as [string, string]);
-
-      if (tcEntries.length > 0) {
-        lines.push('taskContext:');
-        for (const [key, value] of tcEntries) {
-          lines.push(`  ${key}: ${value}`);
-        }
-        lines.push('');
-      }
-
-      lines.push('当前步骤无预定义工具调用。直接返回评估 JSON：');
-      lines.push('{"allowExecute":true,"actionsExecuted":[],"riskFlags":[],"notes":"无 pre_execute 动作"}');
-    }
-
-    return lines.join('\n');
+    return this.renderTemplate(template, {
+      step: String(input.step),
+      taskTitle: input.taskTitle,
+      taskContextSection,
+      preActionsCount: String(preActions.length),
+      preActionsSection: preActionLines.join('\n').trim(),
+    }).trim();
   }
 
   inferRuntimeTaskTypeFromPlanContext(input: {
@@ -362,7 +545,7 @@ export class OrchestrationContextService {
     return 'general';
   }
 
-  buildPostTaskContext(input: {
+  async buildPostTaskContext(input: {
     step: number;
     taskId: string;
     taskTitle: string;
@@ -373,89 +556,62 @@ export class OrchestrationContextService {
     planDomainType?: string;
     totalGeneratedSteps?: number;
     outlineStepCount?: number;
-    postExecutePrompt?: string;
-  }): string {
+  }): Promise<string> {
     const output = String(input.executionOutput || '').slice(0, 3000).trim();
     const error = String(input.executionError || '').slice(0, 1000).trim();
     const hasOutput = output.length > 0;
     const hasError = error.length > 0;
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.postExecuteContext);
 
-    const lines: string[] = [];
-    const postExecutePrompt = String(input.postExecutePrompt || '').trim();
+    const executionOutputSection = hasOutput
+      ? ['<execution_output>', output, '</execution_output>'].join('\n')
+      : 'executionOutput: (空)';
+    const executionErrorSection = hasError
+      ? ['<execution_error>', error, '</execution_error>'].join('\n')
+      : '';
 
-    // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
-    lines.push('【当前阶段声明 — 最高优先级】');
-    lines.push('你当前处于 **post_execute** 阶段（执行后决策阶段），不是 phaseInitialize 阶段，也不是 generate 阶段。');
-    lines.push('- phaseInitialize 已由系统在之前的独立会话中完成。');
-    lines.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、输出 outline JSON 等）。');
-    lines.push('- **本阶段禁止调用 submit-task 和 requirement.* 工具。**');
-    lines.push('- 你在本阶段只需分析执行结果，返回决策 JSON。');
-    lines.push('');
-    lines.push('请进行执行后决策，返回 JSON。');
-
-    // --- 任务元信息 ---
-    lines.push('');
-    lines.push('## 任务信息');
-    lines.push(`step: ${input.step}`);
-    lines.push(`taskId: ${input.taskId}`);
-    lines.push(`taskTitle: ${input.taskTitle}`);
-    lines.push(`runtimeTaskType: ${input.runtimeTaskType || 'general'}`);
-    lines.push(`executionStatus: ${input.executionStatus}`);
-
-    // --- 执行结果（使用 XML 标签明确边界）---
-    lines.push('');
-    lines.push('## 执行结果');
-    if (hasOutput) {
-      lines.push('<execution_output>');
-      lines.push(output);
-      lines.push('</execution_output>');
-    } else {
-      lines.push('executionOutput: (空)');
-    }
-    if (hasError) {
-      lines.push('<execution_error>');
-      lines.push(error);
-      lines.push('</execution_error>');
-    }
-
-    // --- 多步流程进度 ---
     const totalSteps = input.outlineStepCount;
+    let progressSection = '';
     if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
       const completed = input.totalGeneratedSteps ?? input.step;
       const stepCount = totalSteps || 3;
-      lines.push('');
-      lines.push('## 多步流程进度');
+      const progressLines = ['## 多步流程进度'];
       if (input.planDomainType === 'development') {
-        lines.push(`当前计划类型: development（由 rd-workflow 技能定义的多步流程）`);
+        progressLines.push('当前计划类型: development（由 rd-workflow 技能定义的多步流程）');
       }
-      lines.push(`已完成步骤数: ${completed}`);
-      lines.push(`计划总步骤数: ${stepCount}（step1 → step${stepCount}）`);
+      progressLines.push(`已完成步骤数: ${completed}`);
+      progressLines.push(`计划总步骤数: ${stepCount}（step1 → step${stepCount}）`);
+      progressSection = progressLines.join('\n');
     }
 
-    lines.push('');
-    lines.push('## 决策规则（严格遵守）');
-    if (postExecutePrompt) {
-      lines.push(postExecutePrompt);
-    } else if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
+    const decisionRules: string[] = [];
+    if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
       const stepCount = totalSteps || 3;
       const completed = input.totalGeneratedSteps ?? input.step;
       if (completed < stepCount) {
-        lines.push(`当前 ${completed}/${stepCount} 步已完成，流程尚未结束。`);
-        lines.push('- executionStatus=completed 且 <execution_output> 非空 → 必须返回 action="generate_next"');
-        lines.push('- executionStatus=failed → 返回 action="retry" 或 action="redesign"');
-        lines.push(`- 仅当全部 ${stepCount} 步都完成后才允许 action="stop"`);
+        decisionRules.push(`当前 ${completed}/${stepCount} 步已完成，流程尚未结束。`);
+        decisionRules.push('- executionStatus=completed 且 <execution_output> 非空 → 必须返回 action="generate_next"');
+        decisionRules.push('- executionStatus=failed → 返回 action="retry" 或 action="redesign"');
+        decisionRules.push(`- 仅当全部 ${stepCount} 步都完成后才允许 action="stop"`);
       } else {
-        lines.push(`全部 ${stepCount} 步已完成，应返回 action="stop"。`);
+        decisionRules.push(`全部 ${stepCount} 步已完成，应返回 action="stop"。`);
       }
     } else {
-      lines.push('- executionStatus=completed 且输出有效 → action="generate_next" 或 action="stop"');
-      lines.push('- executionStatus=failed → action="retry" 或 action="redesign"');
+      decisionRules.push('- executionStatus=completed 且输出有效 → action="generate_next" 或 action="stop"');
+      decisionRules.push('- executionStatus=failed → action="retry" 或 action="redesign"');
     }
 
-    lines.push('');
-    lines.push('返回格式: {"action":"generate_next|stop|redesign|retry","reason":"..."}');
-    lines.push('action=redesign 时必须附带 redesignTaskId。');
-    return lines.join('\n');
+    return this.renderTemplate(template, {
+      step: String(input.step),
+      taskId: input.taskId,
+      taskTitle: input.taskTitle,
+      runtimeTaskType: input.runtimeTaskType || 'general',
+      executionStatus: input.executionStatus,
+      executionOutputSection,
+      executionErrorSection,
+      progressSection,
+      decisionRulesSection: decisionRules.join('\n'),
+    }).trim();
   }
 
   buildOrchestrationCollaborationContext(
@@ -547,6 +703,51 @@ export class OrchestrationContextService {
       }
     }
     return '';
+  }
+
+  private async resolvePromptFromRegistry(entry: OrchestrationPromptEntry): Promise<string> {
+    const resolved = await this.agentClientService.resolvePrompt({
+      scene: entry.scene,
+      role: entry.role,
+      defaultContent: entry.buildDefaultContent(),
+    });
+    return String(resolved.content || '').trim() || entry.buildDefaultContent();
+  }
+
+  private renderTemplate(template: string, params: Record<string, unknown>): string {
+    return String(template || '').replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_, key: string) => {
+      const value = params[key];
+      return value === undefined || value === null ? '' : String(value);
+    });
+  }
+
+  private tryParseJsonObject(content: string): Record<string, any> | null {
+    const normalized = String(content || '').trim();
+    if (!normalized) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(normalized);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private normalizeRuntimeTaskType(
+    input: unknown,
+  ): 'research' | 'development.plan' | 'development.exec' | 'development.review' | 'general' {
+    const normalized = String(input || '').trim().toLowerCase();
+    if (
+      normalized === 'research'
+      || normalized === 'development.plan'
+      || normalized === 'development.exec'
+      || normalized === 'development.review'
+      || normalized === 'general'
+    ) {
+      return normalized;
+    }
+    return 'general';
   }
 
   private getEntityId(entity: Record<string, any>): string {

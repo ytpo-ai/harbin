@@ -41,7 +41,6 @@ import { PlanStatsService } from './services/plan-stats.service';
 import { PlanEventStreamService } from './services/plan-event-stream.service';
 import { OrchestrationContextService } from './services/orchestration-context.service';
 import { OrchestrationExecutionEngineService } from './services/orchestration-execution-engine.service';
-import { PromptRegistryModule } from '../../../apps/agents/src/modules/prompt-registry/prompt-registry.module';
 import { OrchestrationStepDispatcherService } from './services/orchestration-step-dispatcher.service';
 import { OrchestrationEventListenerService } from './services/orchestration-event-listener.service';
 
@@ -49,7 +48,6 @@ import { OrchestrationEventListenerService } from './services/orchestration-even
   imports: [
     AuthModule,
     AgentClientModule,
-    PromptRegistryModule,
     MessagesModule,
     MongooseModule.forFeature([
       { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },

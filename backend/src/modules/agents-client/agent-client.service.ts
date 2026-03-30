@@ -145,6 +145,45 @@ export class AgentClientService {
     };
   }
 
+  async resolvePrompt(input: {
+    scene: string;
+    role: string;
+    defaultContent: string;
+  }): Promise<{ content: string; source: string; version?: number }> {
+    try {
+      const response = await axios.get(`${this.baseUrl}/api/prompt-registry/templates/effective`, {
+        params: {
+          scene: input.scene,
+          role: input.role,
+        },
+        headers: this.buildSignedHeaders(),
+        timeout: this.timeout,
+      });
+
+      const content = String(response.data?.content || '').trim();
+      if (content) {
+        return {
+          content,
+          source: String(response.data?.source || 'api'),
+          version: typeof response.data?.version === 'number' ? response.data.version : undefined,
+        };
+      }
+
+      return {
+        content: input.defaultContent,
+        source: 'code_default',
+      };
+    } catch (error) {
+      this.logger.warn(
+        `[prompt_resolve_http_failed] scene=${input.scene} role=${input.role} error=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      return {
+        content: input.defaultContent,
+        source: 'code_default',
+      };
+    }
+  }
+
   async getAgent(agentId: string): Promise<Agent | null> {
     try {
       const response = await axios.get<Agent>(`${this.baseUrl}/api/agents/${agentId}`, {

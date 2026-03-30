@@ -116,7 +116,6 @@ describe('AgentExecutorService prompt resolve redis guard', () => {
       scene: 'meeting',
       role: 'meeting-execution-policy',
       defaultContent: 'default-content',
-      cacheOnly: true,
     });
     expect(result).toEqual({
       content: 'cached-prompt',
@@ -464,7 +463,6 @@ describe('AgentExecutorService system prompt ordering', () => {
       scene: 'technical',
       role: 'engineering:frontend-developer',
       defaultContent: 'skill-raw-content',
-      cacheOnly: true,
     });
   });
 });

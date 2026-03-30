@@ -1921,7 +1921,6 @@ export class AgentExecutorService {
               scene: promptTemplateRef.scene,
               role: promptTemplateRef.role,
               defaultContent: rawContent,
-              cacheOnly: true,
             });
             resolvedContent = String(resolved.content || '').trim();
           } catch {
@@ -2268,7 +2267,6 @@ export class AgentExecutorService {
         scene: template.scene,
         role: template.role,
         defaultContent,
-        cacheOnly: true,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'unknown');

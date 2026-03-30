@@ -55,7 +55,50 @@ describe('IdentityContextBuilder', () => {
       scene: 'technical',
       role: 'engineering:frontend-developer',
       defaultContent: '',
-      cacheOnly: true,
     });
+  });
+
+  it('does not inject agent systemPrompt when trimmed length is less than 5', async () => {
+    const contextPromptService = {
+      resolvePromptContent: jest.fn().mockResolvedValue('agent-working-guideline'),
+    } as any;
+    const contextFingerprintService = {
+      hashFingerprint: jest.fn().mockImplementation((value: string) => `hash:${value}`),
+      resolveSystemContextBlockContent: jest.fn().mockResolvedValue('identity-base-content'),
+      buildIdentityMemoDelta: jest.fn(),
+    } as any;
+    const promptResolverService = {
+      resolve: jest.fn(),
+    } as any;
+
+    const builder = new IdentityContextBuilder(
+      contextPromptService,
+      contextFingerprintService,
+      promptResolverService,
+    );
+
+    const messages = await builder.build({
+      agent: {
+        id: 'agent-1',
+        systemPrompt: ' abc ',
+      },
+      task: { id: 'task-1', title: 't', description: 'd', type: 'chat', priority: 'low' },
+      context: {
+        task: { id: 'task-1', title: 't', description: 'd', type: 'chat', priority: 'low' },
+        previousMessages: [],
+        workingMemory: new Map(),
+      },
+      enabledSkills: [],
+      scenarioType: 'chat',
+      contextScope: 'session:test',
+      identityMemos: [],
+      shared: {
+        allowedToolIds: [],
+        assignedTools: [],
+        skillContents: new Map(),
+      },
+    } as any);
+
+    expect(messages.map((message) => message.content)).toEqual(['agent-working-guideline']);
   });
 });

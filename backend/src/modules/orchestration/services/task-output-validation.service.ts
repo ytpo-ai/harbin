@@ -1,7 +1,5 @@
 import { Injectable } from '@nestjs/common';
 
-export type ResearchTaskKind = 'generic_research';
-
 @Injectable()
 export class TaskOutputValidationService {
   private readonly generalInabilitySignalPatterns: RegExp[] = [
@@ -10,20 +8,6 @@ export class TaskOutputValidationService {
     /\b(?:i don't have|i do not have|missing tool|lack the ability|not equipped|don't have direct access)\b/i,
     /(?:无法执行|无法完成|无法按|我没有|缺少工具|没有可用的|无法直接|不具备|无法访问|无法浏览|我这边无法|当前会话没有|没有接入)/u,
   ];
-
-  buildResearchOutputContract(kind: ResearchTaskKind): string {
-    return [
-      'Research output contract (MUST follow one format):',
-      'Preferred JSON format:',
-      '{"findings":[{"rank":1,"title":"...","summary":"...","source":"https://..."}]}',
-      'Execution proof (REQUIRED):',
-      'RESEARCH_EXECUTION_PROOF: {"toolCalls":["websearch","webfetch"],"fetchedUrls":["https://...","https://..."]}',
-      'Requirements:',
-      '- at least 3 findings',
-      '- each finding includes title/summary/source',
-      '- source should be URL',
-    ].join('\n');
-  }
 
   validateGeneralOutput(output: string): { valid: boolean; reason?: string; missing?: string[] } {
     const text = (output || '').trim();

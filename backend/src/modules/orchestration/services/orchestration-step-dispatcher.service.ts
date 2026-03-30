@@ -485,14 +485,53 @@ export class OrchestrationStepDispatcherService {
     const outlineStep = outline.find((o) => Number(o.step) === state.currentStep) as
       | { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> }
       | undefined;
-    const outlinePrompts = outlineStep && typeof outlineStep === 'object'
-      ? (outlineStep as Record<string, unknown>).phasePrompts
-      : undefined;
-    const normalizedPreExecutePrompt = outlinePrompts && typeof outlinePrompts === 'object' && !Array.isArray(outlinePrompts)
-      ? String((outlinePrompts as Record<string, unknown>).pre_execute || '').trim() || undefined
-      : undefined;
+    const preActions = outlineStep?.preExecuteActions;
+    const hasPreActions = Array.isArray(preActions) && preActions.length > 0;
 
-    const prompt = this.contextService.buildPreTaskContext({
+    // 无 preExecuteActions 时系统直接跳过，不调 LLM
+    if (!hasPreActions) {
+      const advanced = await this.updateGenerationStateIfExpected(planId, state, {
+        ...state,
+        currentPhase: 'executing',
+      });
+      if (!advanced) {
+        return;
+      }
+      await this.taskModel
+        .updateOne(
+          { _id: task._id },
+          {
+            $push: {
+              runLogs: {
+                timestamp: new Date(),
+                level: 'info',
+                message: 'Pre-execute skipped: no preExecuteActions defined',
+                metadata: { step: state.currentStep },
+              },
+            },
+          },
+        )
+        .exec();
+      this.eventStream.emitPlanStreamEvent(planId, 'planning.task.pre_executed', {
+        planId,
+        step: state.currentStep,
+        taskId: String(task._id),
+        allowExecute: true,
+        riskFlags: [],
+      });
+      this.eventEmitter.emit(ORCH_EVENTS.TASK_PRE_EXECUTED, {
+        planId,
+        taskId: String(task._id),
+        step: state.currentStep,
+        phase: 'pre_execute',
+        result: { allowExecute: true, riskFlags: [] },
+      });
+      await this.autoAdvance(planId);
+      return;
+    }
+
+    // 有 preExecuteActions 时走 LLM 执行工具调用
+    const prompt = await this.contextService.buildPreTaskContext({
       step: state.currentStep,
       taskId: String(task._id),
       taskTitle: task.title,
@@ -501,10 +540,7 @@ export class OrchestrationStepDispatcherService {
       planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
       planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
       taskContext,
-      outlineStep: {
-        preExecuteActions: outlineStep?.preExecuteActions,
-        phasePrompts: normalizedPreExecutePrompt ? { pre_execute: normalizedPreExecutePrompt } : undefined,
-      },
+      preExecuteActions: preActions,
     });
 
     const decision = await this.plannerService.executePreTask(planId, prompt, plannerSessionId);
@@ -575,7 +611,6 @@ export class OrchestrationStepDispatcherService {
     const phasePrompts = outlineStep && typeof outlineStep.phasePrompts === 'object' && !Array.isArray(outlineStep.phasePrompts)
       ? outlineStep.phasePrompts as Record<string, unknown>
       : undefined;
-    const postExecutePrompt = String(phasePrompts?.post_execute || '').trim() || undefined;
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.executing', {
       planId,
       step: state.currentStep,
@@ -632,7 +667,7 @@ export class OrchestrationStepDispatcherService {
       taskOutput: String(task.result?.output || task.result?.summary || ''),
     });
 
-    const postPrompt = this.contextService.buildPostTaskContext({
+    const postPrompt = await this.contextService.buildPostTaskContext({
       step: state.currentStep,
       taskId: String(task._id),
       taskTitle: task.title,
@@ -643,7 +678,6 @@ export class OrchestrationStepDispatcherService {
       planDomainType,
       totalGeneratedSteps: state.totalGenerated,
       outlineStepCount,
-      postExecutePrompt,
     });
     let decision: PostExecutionDecision;
     try {

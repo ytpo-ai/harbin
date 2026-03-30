@@ -165,7 +165,7 @@ export class OrchestrationExecutionEngineService {
     let requestedSessionId = `plan-${planId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, task.description);
-    const taskPrompt = this.contextService.buildTaskDescription(task.description, {
+    const taskPrompt = await this.contextService.buildTaskDescription(task.description, {
       dependencyContext,
       isResearchTask: effectiveIsResearchTask,
       isReviewTask: effectiveIsReviewTask,
@@ -405,7 +405,7 @@ export class OrchestrationExecutionEngineService {
     let requestedSessionId = `run-${runId}-${assignment.executorId || 'unassigned'}`;
     let planSessionSnapshot: any = null;
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, runTask.description);
-    const taskPrompt = this.contextService.buildTaskDescription(runTask.description, {
+    const taskPrompt = await this.contextService.buildTaskDescription(runTask.description, {
       dependencyContext,
       isResearchTask: effectiveIsResearchTask,
       isReviewTask: effectiveIsReviewTask,
