@@ -317,6 +317,33 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 - Technical: `docs/technical/COLLABORATION_CONTEXT_SCENARIO_DRIVEN_DESIGN.md`
 - Commits: `e01a7cf`, `ff4e2fb`
 
+### #11 Planner Prompt 未注入 LLM + Skill phaseInitialize 指令冲突修复（2026-03-31）
+
+**问题**：phaseInitialize 阶段 LLM 100% 跳过 Phase 1（outline 生成），只执行 skill 的需求锚定步骤，导致 `metadata.outline` 为空 → initialize 反复失败。经多轮 session log 分析和代码链路追查，发现两个叠加根因：
+
+1. **P0 — Planner prompt 从未到达 LLM**：`planner.service.ts` 的 4 个方法（initializePlan / generateNextTask / executePreTask / executePostTask）将 prompt 放入 `task.description`，`task.messages = []`。但 `TaskContextBuilder` 检测到 `descriptionWillBePrompt = true`（有 description 无 user message）时抑制了 description 注入，假设"其他代码会作为 user message 注入"——实际没有任何代码这样做。**LLM 从未看到我们构建的 Phase 1/Phase 2 prompt**。
+2. **P1 — Skill 扩展步骤覆盖 prompt 指令**：rd-workflow 的 `## phaseInitialize 扩展步骤`（4 步具体工具序列：requirement.list → get → plan-initialize(taskContext) → update-status）作为 system message 注入，是 LLM 唯一看到的 initialize 指令。即使修复了 prompt 注入，skill 的具体指令仍会与 prompt 的 Phase 1 指令冲突。
+
+**修复摘要**（3 个文件）：
+
+**Planner prompt 注入修复**：
+- `planner.service.ts`：4 个 planner 方法的 `task.messages` 从 `[]` 改为 `[{ role: 'user', content: prompt, timestamp: new Date() }]`，确保 prompt 作为 user message 进入 LLM 上下文
+
+**buildPhaseInitializePrompt 优化**：
+- `planner.service.ts`：Phase 1 增加 OutlineItem JSON Schema 定义 + 完整 `plan-initialize(mode=outline)` tool_call 模板；顶部增加"执行顺序（严格遵守）"section 强调 Phase 1 → Phase 2 先后关系；existingRequirementId 存在时 Phase 2 跳过 requirement.list/get 直接给出预填参数的 tool_call 模板
+
+**Skill phaseInitialize 段落裁剪扩大**：
+- `toolset-context.builder.ts`：`stripPhaseInitializeSectionIfNeeded()` 从"仅对非 initialize 的 planner 角色生效"改为"对所有 planner 角色生效（含 planner_initialize）"。planner_initialize 阶段使用特化替换文本引导 LLM 按 user prompt 执行
+
+**影响范围**：所有 4 个 planner 阶段（initialize / generating / pre_execute / post_execute）
+
+**关联文档**：
+- Guide: `docs/guide/PLANNER_INITIALIZE_PROMPT_AND_SKILL_CONFLICT.MD`
+- Guide: `docs/guide/PLANNER_INITIALIZE_PROMPT_TOOL_EXECUTION_CHAIN.MD`
+- Commit: `0dedcfa`
+
+---
+
 ## 待跟进
 
 1. `agent-task.worker.ts` 嵌套 `collaborationContext.collaborationContext` 问题（独立修复）
@@ -337,3 +364,7 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 16. **[P2] Planner planId 截断问题**：generate 阶段 Planner 仍偶发截断 planId（如 `69c95162f89f45faa79a4`），submit-task preflight 报错后重试成功但浪费 token
 17. ~~**[P2] Planner generate 阶段确认文本**~~ → **已缓解**（#9 planner text-only retry 机制 + skill phaseInitialize 裁剪），retry 后 planner 能执行 tool_call，但 initialize 阶段仍偶发混淆 initialize/generating 职责
 18. ~~**[P1] Initialize 阶段 LLM 行为不稳定**~~ → **已修复**（#10 roleInPlan 交叉赋值修复 + 三层纵深防御：硬拦截/prompt 引导/解析降级/session 隔离）
+19. ~~**[P0] Planner prompt 未注入 LLM 上下文**~~ → **已修复**（#11 task.messages 注入 user message，4 个 planner 方法统一修复）
+20. ~~**[P1] Skill phaseInitialize 扩展步骤与 prompt Phase 1 指令冲突**~~ → **已修复**（#11 所有 planner 角色裁剪 skill 的 phaseInitialize 段落）
+21. **[P1] #11 修复端到端验证**：验证 initialize 阶段 LLM 是否按 Phase 1 → Phase 2 顺序执行（list-agents → outline → taskContext → update-status），outline 是否成功写入 metadata
+22. **[P2] AgentExecutionTask.description → prompt 语义重命名**：涉及 24 个文件（含 schema/DTO/execution engine），需单独 session 执行
