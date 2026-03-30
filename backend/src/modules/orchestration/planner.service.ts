@@ -602,9 +602,10 @@ export class PlannerService {
     options?: { domainType?: string; planId?: string; plan?: OrchestrationPlanDocument },
   ): string {
     const sections: string[] = [];
+    const nextStep = Math.max(1, context.completedTasks.length + 1);
     const metadata = ((options?.plan as unknown as { metadata?: Record<string, unknown> } | undefined)?.metadata || {}) as Record<string, unknown>;
     const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
-    const currentOutlineStep = outline.find((item) => Number(item.step) === context.totalSteps + 1);
+    const currentOutlineStep = outline.find((item) => Number(item.step) === nextStep);
     const phasePrompts = currentOutlineStep?.phasePrompts;
     const generatingPrompt = phasePrompts && typeof phasePrompts === 'object'
       ? String((phasePrompts as Record<string, unknown>).generating || '').trim()
@@ -621,13 +622,13 @@ export class PlannerService {
     sections.push('');
 
     if (generatingPrompt) {
-      sections.push(`## 当前步骤指导（Step ${context.totalSteps + 1}）`);
+      sections.push(`## 当前步骤指导（Step ${nextStep}）`);
       sections.push(generatingPrompt);
       sections.push('');
     }
 
     sections.push('## 计划上下文');
-    sections.push(`- 当前步骤: ${context.totalSteps + 1} / ${Math.max(context.totalSteps + 1, outline.length || 1)}`);
+    sections.push(`- 当前步骤: ${nextStep} / ${Math.max(nextStep, outline.length || 1)}`);
     sections.push(`- requirementId: ${context.requirementId || '(none)'}`);
     sections.push(`- Plan 目标: ${context.planGoal}`);
     if (context.completedTasks.length > 0) {
@@ -643,7 +644,7 @@ export class PlannerService {
     }
 
     sections.push('## 当前编排进度');
-    sections.push(`已累计执行步骤数: ${context.totalSteps}`);
+    sections.push(`已创建任务数: ${context.totalSteps}`);
     sections.push('');
 
     if (context.completedTasks.length > 0) {

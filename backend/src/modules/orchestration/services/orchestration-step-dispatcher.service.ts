@@ -269,16 +269,7 @@ export class OrchestrationStepDispatcherService {
     const outline = Array.isArray(refreshedMetadata.outline)
       ? refreshedMetadata.outline as Array<Record<string, unknown>>
       : [];
-    const hasValidOutline = outline.length > 0
-      && outline.every((item) => {
-        const prompts = item?.phasePrompts;
-        if (!prompts || typeof prompts !== 'object' || Array.isArray(prompts)) {
-          return false;
-        }
-        const generating = String((prompts as Record<string, unknown>).generating || '').trim();
-        const postExecute = String((prompts as Record<string, unknown>).post_execute || '').trim();
-        return Boolean(generating && postExecute);
-      });
+    const hasValidOutline = this.hasValidOutlineWithPrompts(outline);
 
     if (!hasValidOutline) {
       await this.agentClientService.archiveSession(plannerSessionId).catch(() => {});
@@ -776,11 +767,15 @@ export class OrchestrationStepDispatcherService {
   private shouldRunInitialize(plan: OrchestrationPlanDocument, _state: OrchestrationGenerationState): boolean {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
     const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
-    if (outline.length === 0) {
-      return true;
+    return !this.hasValidOutlineWithPrompts(outline);
+  }
+
+  private hasValidOutlineWithPrompts(outline: Array<Record<string, unknown>>): boolean {
+    if (!Array.isArray(outline) || outline.length === 0) {
+      return false;
     }
 
-    const hasValidPrompts = outline.every((item) => {
+    return outline.every((item) => {
       const prompts = item?.phasePrompts;
       if (!prompts || typeof prompts !== 'object' || Array.isArray(prompts)) {
         return false;
@@ -789,8 +784,6 @@ export class OrchestrationStepDispatcherService {
       const postExecute = String((prompts as Record<string, unknown>).post_execute || '').trim();
       return Boolean(generating && postExecute);
     });
-
-    return !hasValidPrompts;
   }
 
   private async checkTerminalConditions(

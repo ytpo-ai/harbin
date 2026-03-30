@@ -70,13 +70,13 @@ export class OrchestrationExecutionEngineService {
     const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(task);
-    const stepNumber = typeof (task as any).order === 'number' ? Number((task as any).order) + 1 : undefined;
+    const stepOrder = typeof (task as any).order === 'number' ? Number((task as any).order) : undefined;
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(task, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
     });
     const planTaskContext = await this.loadPlanTaskContext(planId);
-    const executePrompt = await this.loadPlanStepExecutePrompt(planId, stepNumber);
+    const executePrompt = await this.loadPlanStepExecutePrompt(planId, stepOrder);
 
     await this.orchestrationTaskModel
       .updateOne(
@@ -348,13 +348,13 @@ export class OrchestrationExecutionEngineService {
     const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
-    const stepNumber = typeof (runTask as any).order === 'number' ? Number((runTask as any).order) + 1 : undefined;
+    const stepOrder = typeof (runTask as any).order === 'number' ? Number((runTask as any).order) : undefined;
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(runTask as any as OrchestrationTask, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
     });
     const planTaskContext = await this.loadRunTaskContext(runId, runTask.planId);
-    const executePrompt = await this.loadPlanStepExecutePrompt(runTask.planId, stepNumber);
+    const executePrompt = await this.loadPlanStepExecutePrompt(runTask.planId, stepOrder);
 
     await this.orchestrationRunTaskModel
       .updateOne(
@@ -802,8 +802,8 @@ export class OrchestrationExecutionEngineService {
     return this.contextService.resolvePlanTaskContextFromMetadata(plan?.metadata);
   }
 
-  private async loadPlanStepExecutePrompt(planId: string, stepNumber?: number): Promise<string | undefined> {
-    if (!Number.isInteger(stepNumber) || Number(stepNumber) <= 0) {
+  private async loadPlanStepExecutePrompt(planId: string, stepOrder?: number): Promise<string | undefined> {
+    if (!Number.isInteger(stepOrder) || Number(stepOrder) < 0) {
       return undefined;
     }
 
@@ -814,7 +814,10 @@ export class OrchestrationExecutionEngineService {
       .exec();
     const metadata = (plan?.metadata || {}) as Record<string, unknown>;
     const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
-    const outlineStep = outline.find((item) => Number(item.step) === Number(stepNumber));
+    const orderAsIs = Number(stepOrder);
+    const orderPlusOne = orderAsIs + 1;
+    const outlineStep = outline.find((item) => Number(item.step) === orderAsIs)
+      || outline.find((item) => Number(item.step) === orderPlusOne);
     const phasePrompts = outlineStep?.phasePrompts;
     if (!phasePrompts || typeof phasePrompts !== 'object' || Array.isArray(phasePrompts)) {
       return undefined;
