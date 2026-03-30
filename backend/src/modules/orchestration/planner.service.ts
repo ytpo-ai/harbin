@@ -197,7 +197,7 @@ export class PlannerService {
       status: 'pending',
       assignedAgents: [plannerAgentId],
       teamId: 'orchestration',
-      messages: [],
+      messages: [{ role: 'user', content: prompt, timestamp: new Date() }],
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
@@ -309,7 +309,7 @@ export class PlannerService {
       status: 'pending',
       assignedAgents: [plannerAgentId],
       teamId: 'orchestration',
-      messages: [],
+      messages: [{ role: 'user', content: taskContext, timestamp: new Date() }],
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
@@ -379,7 +379,7 @@ export class PlannerService {
       status: 'pending',
       assignedAgents: [plannerAgentId],
       teamId: 'orchestration',
-      messages: [],
+      messages: [{ role: 'user', content: prompt, timestamp: new Date() }],
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
@@ -437,7 +437,7 @@ export class PlannerService {
       status: 'pending',
       assignedAgents: [plannerAgentId],
       teamId: 'orchestration',
-      messages: [],
+      messages: [{ role: 'user', content: executionResult, timestamp: new Date() }],
     };
 
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
@@ -862,31 +862,137 @@ export class PlannerService {
     const domainType = String(input.domainType || 'general').trim().toLowerCase();
     const existingTaskContext = input.existingTaskContext || {};
     const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
+    const existingRequirementTitle = String(existingTaskContext.requirementTitle || '').trim();
+    const existingRequirementDesc = String(existingTaskContext.requirementDescription || '').trim();
 
+    // ── 阶段声明 ──
     sections.push('## 你正在执行 phaseInitialize 阶段');
     sections.push('');
+
+    // ── 执行顺序强约束 ──
+    sections.push('### 执行顺序（严格遵守）');
+    sections.push('本阶段分为 Phase 1 和 Phase 2，**必须按顺序执行**：');
+    sections.push('1. 先完成 Phase 1 的全部工具调用（写入 outline）');
+    sections.push('2. Phase 1 完成后，再执行 Phase 2 的工具调用（写入 taskContext）');
+    sections.push('3. 每个工具只调用一次，禁止重复调用同一工具');
+    sections.push('');
+
+    // ── Phase 1：大纲与 Prompt 预编译 ──
     sections.push('### Phase 1：大纲与 Prompt 预编译（必做）');
-    sections.push('1. 调用 `builtin.sys-mg.internal.agent-master.list-agents` 获取可用 agent 列表。');
-    sections.push('2. 结合 domainType、sourcePrompt 与已注入 skill 定义，产出执行步骤 outline。');
-    sections.push('3. 为每个步骤生成 phasePrompts：`generating`、`pre_execute`、`execute`、`post_execute`。');
-    sections.push('4. 为每个步骤选择推荐执行 agent（recommendedAgent）和可选 phaseTools。');
-    sections.push('5. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入 outline：');
-    sections.push(`   - planId=${input.planId}`);
-    sections.push('   - mode="outline"');
-    sections.push('   - data=OutlineItem[]（每项必须包含 step/title/taskType/phasePrompts）');
     sections.push('');
-    sections.push('### Phase 2：扩展步骤（可选）');
-    sections.push('- 若技能文档中存在 `## phaseInitialize 扩展步骤`，按该段落执行相关工具调用。');
-    sections.push('- 需要共享到后续阶段的数据，统一调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入：');
-    sections.push(`  - planId=${input.planId}`);
-    sections.push('  - mode="taskContext"');
-    sections.push('  - data={...}');
+    sections.push('**步骤**：');
+    sections.push('1. 调用 `builtin.sys-mg.internal.agent-master.list-agents` 获取可用 agent 列表（含 capabilitySet）。');
+    sections.push('2. 根据 domainType、sourcePrompt 和已注入 skill 的步骤定义，确定执行步骤大纲。');
+    sections.push('3. 为每个步骤生成 4 个阶段的 phasePrompts，并选择推荐执行 agent。');
+    sections.push(`4. 调用 \`builtin.sys-mg.mcp.orchestration.plan-initialize\` 写入 outline（planId=${input.planId}，mode="outline"）。`);
     sections.push('');
+
+    // ── OutlineItem Schema 定义 ──
+    sections.push('**OutlineItem 数据结构**（data 数组中每个元素必须符合）：');
+    sections.push('```');
+    sections.push('{');
+    sections.push('  "step": number,          // 步骤序号，从 1 开始');
+    sections.push('  "title": string,          // 步骤标题');
+    sections.push('  "taskType": string,       // 合法值: general | research | development.plan | development.exec | development.review');
+    sections.push('  "recommendedAgent": {     // 推荐执行 agent（根据 capabilitySet 匹配 taskType）');
+    sections.push('    "agentId": string,');
+    sections.push('    "agentName": string,');
+    sections.push('    "reason": string');
+    sections.push('  },');
+    sections.push('  "phasePrompts": {         // 各阶段预编译 prompt（generating 和 post_execute 必填）');
+    sections.push('    "generating": string,   // planner 生成 task 时的指令');
+    sections.push('    "pre_execute": string,  // planner 执行前检查的动作指令');
+    sections.push('    "execute": string,      // executor 执行任务时的详细指导');
+    sections.push('    "post_execute": string  // planner 执行后评估的决策规则');
+    sections.push('  }');
+    sections.push('}');
+    sections.push('```');
+    sections.push('');
+
+    // ── Phase 1 调用示例 ──
+    sections.push('**Phase 1 工具调用示例**（以 development 域 3 步流程为例）：');
+    sections.push('```');
+    sections.push('<tool_call>{"tool":"builtin.sys-mg.mcp.orchestration.plan-initialize","parameters":{');
+    sections.push(`  "planId":"${input.planId}",`);
+    sections.push('  "mode":"outline",');
+    sections.push('  "data":[');
+    sections.push('    {');
+    sections.push('      "step":1,');
+    sections.push('      "title":"制定技术开发计划",');
+    sections.push('      "taskType":"development.plan",');
+    sections.push('      "recommendedAgent":{"agentId":"...","agentName":"...","reason":"具备 development.plan 能力"},');
+    sections.push('      "phasePrompts":{');
+    sections.push('        "generating":"生成任务描述，引用 taskContext 中的需求信息，要求执行者输出结构化开发计划（含实现步骤、涉及文件/接口清单、测试要点）",');
+    sections.push('        "pre_execute":"检查执行者工具匹配度；执行 preExecuteActions",');
+    sections.push('        "execute":"分析需求规格，设计实现方案，拆解开发子任务，评估技术风险，输出结构化开发计划",');
+    sections.push('        "post_execute":"验证输出包含完整开发计划（实现步骤+涉及文件+测试要点），决定 generate_next"');
+    sections.push('      }');
+    sections.push('    },');
+    sections.push('    {');
+    sections.push('      "step":2,');
+    sections.push('      "title":"执行开发",');
+    sections.push('      "taskType":"development.exec",');
+    sections.push('      "recommendedAgent":{"agentId":"...","agentName":"...","reason":"具备 development.exec 能力"},');
+    sections.push('      "phasePrompts":{');
+    sections.push('        "generating":"生成任务描述，引用 step1 的开发计划作为执行依据",');
+    sections.push('        "pre_execute":"检查 step1 输出可用（开发计划存在且有效）",');
+    sections.push('        "execute":"按开发计划实施代码变更并提交，输出 commit 信息（含变更文件列表和变更摘要）",');
+    sections.push('        "post_execute":"验证输出包含 commit 信息，决定 generate_next"');
+    sections.push('      }');
+    sections.push('    },');
+    sections.push('    {');
+    sections.push('      "step":3,');
+    sections.push('      "title":"实现评估",');
+    sections.push('      "taskType":"development.review",');
+    sections.push('      "recommendedAgent":{"agentId":"...","agentName":"...","reason":"具备 development.review 能力"},');
+    sections.push('      "phasePrompts":{');
+    sections.push('        "generating":"生成评审任务描述，要求执行者对照验收标准逐项评估",');
+    sections.push('        "pre_execute":"执行 preExecuteActions",');
+    sections.push('        "execute":"对照验收标准评估实现质量，给出通过/修改意见",');
+    sections.push('        "post_execute":"验证评审结论完整（包含逐项评估+最终结论），决定 stop"');
+    sections.push('      }');
+    sections.push('    }');
+    sections.push('  ]');
+    sections.push('}}</tool_call>');
+    sections.push('```');
+    sections.push('');
+
+    // ── Phase 2：扩展步骤 ──
+    sections.push('### Phase 2：扩展步骤（Phase 1 完成后执行）');
+    sections.push('');
+    if (existingRequirementId) {
+      // ── 已有 requirementId：跳过 list/get，直接写入 taskContext ──
+      sections.push(`已有需求锚点（existingRequirementId=${existingRequirementId}），跳过需求查询，直接执行以下两步：`);
+      sections.push('');
+      sections.push(`1. 调用 \`builtin.sys-mg.mcp.orchestration.plan-initialize\` 写入 taskContext：`);
+      sections.push('```');
+      sections.push(`<tool_call>{"tool":"builtin.sys-mg.mcp.orchestration.plan-initialize","parameters":{"planId":"${input.planId}","mode":"taskContext","data":{"requirementId":"${existingRequirementId}","requirementTitle":"${existingRequirementTitle}","requirementDescription":"${existingRequirementDesc}"}}}</tool_call>`);
+      sections.push('```');
+      sections.push('');
+      sections.push(`2. 调用 \`builtin.sys-mg.mcp.requirement.update-status\` 将需求状态置为 assigned：`);
+      sections.push('```');
+      sections.push(`<tool_call>{"tool":"builtin.sys-mg.mcp.requirement.update-status","parameters":{"requirementId":"${existingRequirementId}","status":"assigned"}}</tool_call>`);
+      sections.push('```');
+    } else {
+      // ── 无 requirementId：按 skill 扩展步骤执行 ──
+      sections.push('若技能文档中存在 `## phaseInitialize 扩展步骤`，按该段落依次执行工具调用。');
+      sections.push('需要共享到后续阶段的数据，调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入：');
+      sections.push(`  - planId=${input.planId}`);
+      sections.push('  - mode="taskContext"');
+      sections.push('  - data={...}');
+    }
+    sections.push('');
+
+    // ── 约束 ──
     sections.push('### 约束');
+    sections.push('- **执行顺序**：Phase 1（outline）必须先于 Phase 2（taskContext）完成。');
     sections.push('- 禁止调用 `builtin.sys-mg.mcp.orchestration.submit-task`。');
     sections.push('- 所有初始化产出必须通过 `plan-initialize` 工具写入 metadata。');
     sections.push('- 禁止输出确认性文本。优先使用工具调用。');
+    sections.push('- 每个工具只调用一次，禁止重复调用。');
     sections.push('');
+
+    // ── 输入 ──
     sections.push('### 输入');
     sections.push(`- planId: ${input.planId}`);
     sections.push(`- domainType: ${domainType}`);

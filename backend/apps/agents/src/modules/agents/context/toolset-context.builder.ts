@@ -141,22 +141,26 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
   /**
    * Orchestration planner 场景下，裁剪 skill 文档中的 phaseInitialize 段落。
    *
-   * 原因：phaseInitialize 的工具调用序列（requirement.list / requirement.get / update-status）
-   * 在 system prompt 中会误导 LLM 在 generating / pre_execute / post_execute 阶段执行需求查询操作，
-   * 即使 user prompt 中明确禁止。initialize 阶段有独立的 buildPhaseInitializePrompt 提供指令，
-   * initialize 之外的 planner 阶段不需要 skill 中的 phaseInitialize 段落。
+   * 所有 planner 阶段（包括 planner_initialize 自身）都裁剪该段落：
+   * - generating / pre_execute / post_execute：该段落会误导 LLM 执行 requirement.list 等操作
+   * - planner_initialize：buildPhaseInitializePrompt() 已提供完整的 Phase 1（outline）+
+   *   Phase 2（扩展步骤，含 existingRequirementId 条件分支）指引，skill 中的扩展步骤
+   *   是冗余信息源，且其具体工具序列会覆盖 prompt 中的 Phase 1 指令导致 LLM 跳过 outline 生成
    */
   private stripPhaseInitializeSectionIfNeeded(content: string, context?: unknown): string {
     const collaborationCtx = ((context as any)?.collaborationContext || {}) as Record<string, unknown>;
     const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
 
-    // 仅对非 initialize 的 planner 角色生效
-    if (!roleInPlan || !roleInPlan.startsWith('planner') || roleInPlan === 'planner_initialize') {
+    // 对所有 planner 角色生效（包括 planner_initialize）
+    if (!roleInPlan || !roleInPlan.startsWith('planner')) {
       return content;
     }
 
-    // 裁剪 "## phaseInitialize 行为" 段落（从该标题到下一个 ## 标题之前）
+    // 裁剪 "## phaseInitialize 扩展步骤" / "## phaseInitialize 行为" 段落（从该标题到下一个 ## 标题之前）
     const phaseInitPattern = /## phaseInitialize[\s\S]*?(?=\n## |\n---\s*$|$)/i;
-    return content.replace(phaseInitPattern, '## phaseInitialize 行为\n\n> 此段落已由系统在独立的 initialize 会话中执行完毕，此处省略。\n');
+    const replacement = roleInPlan === 'planner_initialize'
+      ? '## phaseInitialize 扩展步骤\n\n> 扩展步骤指令已由 phaseInitialize prompt 统一提供，此处省略。请按 user prompt 中的 Phase 1 / Phase 2 顺序执行。\n'
+      : '## phaseInitialize 行为\n\n> 此段落已由系统在独立的 initialize 会话中执行完毕，此处省略。\n';
+    return content.replace(phaseInitPattern, replacement);
   }
 }
