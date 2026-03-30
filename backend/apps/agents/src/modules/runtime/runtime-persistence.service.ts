@@ -50,6 +50,7 @@ export type AgentSessionDetailView = AgentSession & {
 };
 
 type InitialSystemMessageRecord = {
+  id: string;
   content: string;
   metadata?: Record<string, unknown>;
 };
@@ -58,35 +59,26 @@ type InitialSystemMessageRecord = {
 export class RuntimePersistenceService {
   private readonly maxSessionMessages = Number(process.env.AGENT_SESSION_MAX_MESSAGES || 1200);
 
-  private normalizeInitialSystemMessages(input: unknown): InitialSystemMessageRecord[] {
+  private normalizeSessionInitialSystemMessages(input: unknown): InitialSystemMessageRecord[] {
     if (!Array.isArray(input)) {
       return [];
     }
-    const seen = new Set<string>();
     const normalized: InitialSystemMessageRecord[] = [];
     for (const item of input) {
-      if (typeof item === 'string') {
-        const content = item.trim();
-        if (!content || seen.has(content)) {
-          continue;
-        }
-        seen.add(content);
-        normalized.push({ content });
-        continue;
-      }
       if (!item || typeof item !== 'object') {
         continue;
       }
+      const id = String((item as { id?: unknown }).id || '').trim();
       const content = String((item as { content?: unknown }).content || '').trim();
-      if (!content || seen.has(content)) {
+      if (!id || !content) {
         continue;
       }
       const metadata = (item as { metadata?: unknown }).metadata;
       const normalizedMetadata = metadata && typeof metadata === 'object'
         ? ({ ...(metadata as Record<string, unknown>) } as Record<string, unknown>)
         : undefined;
-      seen.add(content);
       normalized.push({
+        id,
         content,
         ...(normalizedMetadata ? { metadata: normalizedMetadata } : {}),
       });
@@ -140,6 +132,7 @@ export class RuntimePersistenceService {
     };
     domainContext?: AgentSession['domainContext'];
     collaborationContext?: AgentSession['collaborationContext'];
+    initialSystemMessages?: InitialSystemMessageRecord[];
     metadata?: Record<string, unknown>;
   }): Promise<AgentSession> {
     const sessionId = input.sessionId?.trim() || `session-${uuidv4()}`;
@@ -159,6 +152,7 @@ export class RuntimePersistenceService {
             runIds: [],
             memoIds: [],
             messageIds: [],
+            ...(input.initialSystemMessages !== undefined ? { initialSystemMessages: input.initialSystemMessages } : {}),
             metadata: input.metadata || {},
           },
           $set: {
@@ -209,6 +203,7 @@ export class RuntimePersistenceService {
       meetingType?: string;
       latestSummary?: string;
     },
+    initialSystemMessages?: InitialSystemMessageRecord[],
   ): Promise<AgentSession> {
     const existing = await this.sessionModel
       .findOne({
@@ -224,6 +219,9 @@ export class RuntimePersistenceService {
         { _id: existing._id },
         { $set: { lastActiveAt: new Date(), title, meetingContext } },
       );
+      if (initialSystemMessages) {
+        await this.setSessionInitialSystemMessages(existing.id, initialSystemMessages);
+      }
       return this.sessionModel.findById(existing._id).exec() as Promise<AgentSession>;
     }
 
@@ -234,6 +232,7 @@ export class RuntimePersistenceService {
       ownerId: agentId,
       title,
       meetingContext,
+      initialSystemMessages,
     });
   }
 
@@ -287,6 +286,7 @@ export class RuntimePersistenceService {
       orchestrationRunId?: string;
       domainContext?: AgentSession['domainContext'];
       collaborationContext?: AgentSession['collaborationContext'];
+      initialSystemMessages?: InitialSystemMessageRecord[];
     },
   ): Promise<AgentSession> {
     const orchRunId = options?.orchestrationRunId;
@@ -325,6 +325,9 @@ export class RuntimePersistenceService {
           },
         },
       );
+      if (options?.initialSystemMessages) {
+        await this.setSessionInitialSystemMessages(existing.id, options.initialSystemMessages);
+      }
       return this.sessionModel.findById(existing._id).exec() as Promise<AgentSession>;
     }
 
@@ -339,6 +342,7 @@ export class RuntimePersistenceService {
       planContext,
       domainContext: options?.domainContext,
       collaborationContext: options?.collaborationContext,
+      initialSystemMessages: options?.initialSystemMessages,
     });
   }
 
@@ -447,6 +451,7 @@ export class RuntimePersistenceService {
   }
 
   async createMessage(input: {
+    id?: string;
     runId: string;
     agentId: string;
     sessionId?: string;
@@ -473,7 +478,7 @@ export class RuntimePersistenceService {
   }): Promise<AgentMessage> {
     const messageContent = this.normalizeMessageContent(input.content);
     const message = new this.messageModel({
-      id: `msg-${uuidv4()}`,
+      id: input.id || `msg-${uuidv4()}`,
       ...input,
       content: messageContent,
       status: input.status || 'completed',
@@ -648,6 +653,37 @@ export class RuntimePersistenceService {
     await this.sessionModel.updateOne({ id: sessionId }, { $set: { memoSnapshot: snapshot } }).exec();
   }
 
+  async getSessionInitialSystemMessages(sessionId: string): Promise<InitialSystemMessageRecord[] | undefined> {
+    if (!sessionId) {
+      return undefined;
+    }
+    const session = await this.sessionModel
+      .findOne({ id: sessionId }, { initialSystemMessages: 1 })
+      .lean<{ initialSystemMessages?: unknown }>()
+      .exec();
+    if (!session) {
+      return undefined;
+    }
+    if (!Object.prototype.hasOwnProperty.call(session, 'initialSystemMessages')) {
+      return undefined;
+    }
+    return this.normalizeSessionInitialSystemMessages(session.initialSystemMessages);
+  }
+
+  async setSessionInitialSystemMessages(sessionId: string, messages: InitialSystemMessageRecord[]): Promise<boolean> {
+    if (!sessionId) {
+      return false;
+    }
+    const normalizedMessages = this.normalizeSessionInitialSystemMessages(messages);
+    const result = await this.sessionModel
+      .updateOne(
+        { id: sessionId, initialSystemMessages: { $exists: false } },
+        { $set: { initialSystemMessages: normalizedMessages } },
+      )
+      .exec();
+    return (result.modifiedCount || 0) > 0;
+  }
+
   async getSessionById(sessionId: string): Promise<AgentSession | null> {
     return this.sessionModel.findOne({ id: sessionId }).exec();
   }
@@ -657,22 +693,17 @@ export class RuntimePersistenceService {
     if (!session) return null;
 
     const runTaskMap = new Map<string, string | undefined>();
-    const runStartedAtMap = new Map<string, Date | undefined>();
-    const runInitialSystemMessagesMap = new Map<string, InitialSystemMessageRecord[]>();
     const runIds = Array.isArray(session.runIds)
       ? session.runIds.filter((runId): runId is string => typeof runId === 'string' && runId.trim().length > 0)
       : [];
     if (runIds.length > 0) {
       const runs = await this.runModel
         .find({ id: { $in: runIds } })
-        .select({ id: 1, taskId: 1, metadata: 1, startedAt: 1, createdAt: 1 })
-        .lean<Array<{ id: string; taskId?: string; metadata?: Record<string, unknown>; startedAt?: Date; createdAt?: Date }>>()
+        .select({ id: 1, taskId: 1 })
+        .lean<Array<{ id: string; taskId?: string }>>()
         .exec();
       for (const run of runs) {
         runTaskMap.set(run.id, run.taskId);
-        runStartedAtMap.set(run.id, run.startedAt || run.createdAt);
-        const initialSystemMessages = this.normalizeInitialSystemMessages(run.metadata?.initialSystemMessages);
-        runInitialSystemMessagesMap.set(run.id, initialSystemMessages);
       }
     }
 
@@ -703,15 +734,7 @@ export class RuntimePersistenceService {
     for (const message of messages) {
       mergedMessageMap.set(message.id, message);
     }
-    // Deduplicate supplemental system messages by content across runs.
-    // Identical system prompts from different runs are collapsed to avoid session view bloat.
-    const seenSystemContent = new Set<string>();
     for (const message of supplementalMessages) {
-      if (message.role === 'system') {
-        const contentKey = (message.content || '').trim();
-        if (seenSystemContent.has(contentKey)) continue;
-        seenSystemContent.add(contentKey);
-      }
       mergedMessageMap.set(message.id, message);
     }
     const mergedMessages = Array.from(mergedMessageMap.values()).sort((a, b) => {
@@ -748,42 +771,6 @@ export class RuntimePersistenceService {
       stepIndex: this.normalizeTokenValue(message.stepIndex),
       timestamp: message.updatedAt || message.createdAt || new Date(),
     }));
-
-    // Deduplicate system messages by content (not runId::content) to prevent
-    // identical system prompts from appearing multiple times across runs.
-    const existingSystemContentFingerprint = new Set(
-      projectedMessages
-        .filter((message) => message.role === 'system')
-        .map((message) => (message.content || '').trim()),
-    );
-
-    // Only inject initialSystemMessages from the latest run to avoid duplicating
-    // system context that is regenerated fresh for each run.
-    const latestRunId = runIds.length > 0 ? runIds[runIds.length - 1] : undefined;
-    if (latestRunId) {
-      const initialSystemMessages = runInitialSystemMessagesMap.get(latestRunId) || [];
-      initialSystemMessages.forEach((message, index) => {
-        const contentFingerprint = (message.content || '').trim();
-        if (!contentFingerprint || existingSystemContentFingerprint.has(contentFingerprint)) {
-          return;
-        }
-        existingSystemContentFingerprint.add(contentFingerprint);
-        projectedMessages.push({
-          id: `virtual-system-${latestRunId}-${index + 1}`,
-          runId: latestRunId,
-          taskId: runTaskMap.get(latestRunId),
-          role: 'system',
-          sequence: index + 1,
-          content: message.content,
-          status: 'completed',
-          metadata: {
-            ...(message.metadata || {}),
-            source: 'runtime.run.metadata.initialSystemMessages',
-          },
-          timestamp: runStartedAtMap.get(latestRunId) || new Date(),
-        });
-      });
-    }
 
     projectedMessages.sort((a, b) => {
       const at = (a.timestamp || new Date(0)).getTime();

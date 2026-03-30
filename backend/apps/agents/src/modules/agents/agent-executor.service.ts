@@ -947,6 +947,36 @@ export class AgentExecutorService {
       ? await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyResponseRetryInstruction)
       : '';
     const toolRoundLimitMessage = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolRoundLimitMessage);
+    const initialSystemMessageCount = messages.filter((message) => message.role === 'system').length;
+
+    const persistIntermediateSystemMessage = async (
+      round: number,
+      offset: number,
+      content: string,
+      metadata: Record<string, unknown>,
+    ): Promise<void> => {
+      if (!runtimeContext?.sessionId) {
+        return;
+      }
+      try {
+        await this.runtimePersistence.createMessage({
+          runId: runtimeContext.runId,
+          agentId: agentRuntimeId,
+          sessionId: runtimeContext.sessionId,
+          taskId: task.id,
+          role: 'system',
+          sequence: this.computeIntermediateSystemSequence(initialSystemMessageCount, round, offset),
+          content,
+          status: 'completed',
+          metadata,
+        });
+      } catch (error) {
+        const logError = toLogError(error);
+        this.logger.warn(
+          `[persist_intermediate_system_message_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} error=${logError.message}`,
+        );
+      }
+    };
 
     const persistStepMessage = async (input: {
       round: number;
@@ -1032,7 +1062,7 @@ export class AgentExecutorService {
           sessionId: runtimeContext.sessionId,
           taskId: task.id,
           role: 'assistant',
-          sequence: input.round + 2,
+          sequence: initialSystemMessageCount + input.round + 2,
           content: input.response,
           status: input.finish === 'error' ? 'error' : 'completed',
           parentMessageId: runtimeContext.userMessageId,
@@ -1080,6 +1110,7 @@ export class AgentExecutorService {
         startedAt?: Date;
         endedAt?: Date;
       }> = [];
+      let intermediateSystemOffset = 1;
       const stepStartedAt = new Date();
       const roundStartAt = Date.now();
       this.logger.log(
@@ -1439,6 +1470,12 @@ export class AgentExecutorService {
             content: retryInstruction,
             timestamp: new Date(),
           });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            retryInstruction,
+            { source: 'tool-calling-loop.planner-text-only-retry' },
+          );
           stepParts.push({
             type: 'system_event',
             status: 'completed',
@@ -1465,6 +1502,12 @@ export class AgentExecutorService {
               content: emptyResponseRetryPrompt,
               timestamp: new Date(),
             });
+            await persistIntermediateSystemMessage(
+              round,
+              intermediateSystemOffset++,
+              emptyResponseRetryPrompt,
+              { source: 'tool-calling-loop.empty-response-retry' },
+            );
             stepParts.push({
               type: 'system_event',
               status: 'completed',
@@ -1532,13 +1575,23 @@ export class AgentExecutorService {
         this.logger.warn(
           `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId}`,
         );
+        const toolDeniedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolDeniedInstruction, {
+          normalizedToolId: normalizedToolCallId,
+        });
         messages.push({
           role: 'system',
-          content: await this.resolveAgentPromptContent(AGENT_PROMPTS.toolDeniedInstruction, {
-            normalizedToolId: normalizedToolCallId,
-          }),
+          content: toolDeniedInstruction,
           timestamp: new Date(),
         });
+        await persistIntermediateSystemMessage(
+          round,
+          intermediateSystemOffset++,
+          toolDeniedInstruction,
+          {
+            source: 'tool-calling-loop.tool-denied',
+            toolId: normalizedToolCallId,
+          },
+        );
         stepParts.push({
           type: 'system_event',
           status: 'error',
@@ -1564,16 +1617,26 @@ export class AgentExecutorService {
         this.logger.warn(
           `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
         );
+        const toolInputRepairInstruction = buildToolInputRepairInstruction(
+          normalizedToolCallId,
+          inputContract.schema,
+          toolCall.parameters || {},
+          preflightInputError,
+        );
         messages.push({
           role: 'system',
-          content: buildToolInputRepairInstruction(
-            normalizedToolCallId,
-            inputContract.schema,
-            toolCall.parameters || {},
-            preflightInputError,
-          ),
+          content: toolInputRepairInstruction,
           timestamp: new Date(),
         });
+        await persistIntermediateSystemMessage(
+          round,
+          intermediateSystemOffset++,
+          toolInputRepairInstruction,
+          {
+            source: 'tool-calling-loop.tool-input-preflight-failed',
+            toolId: normalizedToolCallId,
+          },
+        );
         stepParts.push({
           type: 'system_event',
           status: 'error',
@@ -1671,11 +1734,21 @@ export class AgentExecutorService {
           return earlyResult;
         }
 
+        const toolResultContent = `工具 ${normalizedToolCallId} 调用结果: ${JSON.stringify(toolResultPayload || {})}`;
         messages.push({
           role: 'system',
-          content: `工具 ${normalizedToolCallId} 调用结果: ${JSON.stringify(toolResultPayload || {})}`,
+          content: toolResultContent,
           timestamp: new Date(),
         });
+        await persistIntermediateSystemMessage(
+          round,
+          intermediateSystemOffset++,
+          toolResultContent,
+          {
+            source: 'tool-calling-loop.tool-result',
+            toolId: normalizedToolCallId,
+          },
+        );
         await persistStepMessage({
           round,
           response,
@@ -1710,28 +1783,48 @@ export class AgentExecutorService {
         });
 
         const message = logError.message;
+        const toolFailedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolFailedInstruction, {
+          normalizedToolId: normalizedToolCallId,
+          message,
+        });
         messages.push({
           role: 'system',
-          content: await this.resolveAgentPromptContent(AGENT_PROMPTS.toolFailedInstruction, {
-            normalizedToolId: normalizedToolCallId,
-            message,
-          }),
+          content: toolFailedInstruction,
           timestamp: new Date(),
         });
+        await persistIntermediateSystemMessage(
+          round,
+          intermediateSystemOffset++,
+          toolFailedInstruction,
+          {
+            source: 'tool-calling-loop.tool-failed',
+            toolId: normalizedToolCallId,
+          },
+        );
 
         // 参数契约错误时附加修复指令，引导模型自我修正参数。
         if (isToolInputErrorMessage(message)) {
           const latestInputContract = inputContract || (await this.toolService.getToolInputContract(normalizedToolCallId));
           if (latestInputContract?.schema) {
+            const toolRepairInstruction = buildToolInputRepairInstruction(
+              normalizedToolCallId,
+              latestInputContract.schema,
+              toolCall.parameters || {},
+            );
             messages.push({
               role: 'system',
-              content: buildToolInputRepairInstruction(
-                normalizedToolCallId,
-                latestInputContract.schema,
-                toolCall.parameters || {},
-              ),
+              content: toolRepairInstruction,
               timestamp: new Date(),
             });
+            await persistIntermediateSystemMessage(
+              round,
+              intermediateSystemOffset++,
+              toolRepairInstruction,
+              {
+                source: 'tool-calling-loop.tool-input-repair',
+                toolId: normalizedToolCallId,
+              },
+            );
           }
         }
 
@@ -1777,6 +1870,29 @@ export class AgentExecutorService {
   ): Promise<ChatMessage[]> {
     const buildStartAt = Date.now();
     const taskId = String(task.id || 'unknown');
+    const sessionId = String(((context.sessionContext || {}) as Record<string, unknown>).sessionId || '').trim() || undefined;
+    const previousNonSystemMessages = (context.previousMessages || []).filter((message) => message?.role !== 'system');
+
+    if (sessionId) {
+      const cachedSystemMessages = await this.runtimePersistence.getSessionInitialSystemMessages(sessionId);
+      if (cachedSystemMessages !== undefined) {
+        const cachedMessages: ChatMessage[] = cachedSystemMessages.map((message) => ({
+          role: 'system',
+          content: message.content,
+          metadata: message.metadata,
+          timestamp: new Date(),
+        }));
+        cachedMessages.push(...previousNonSystemMessages);
+        this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
+          totalMessages: cachedMessages.length,
+          systemBlockCount: cachedSystemMessages.length,
+          scenarioType: this.resolveScenarioType(context.collaborationContext, task),
+          cacheHit: true,
+        });
+        return cachedMessages;
+      }
+    }
+
     const loadIdentityStartAt = Date.now();
     const identityMemos = await this.memoService.getIdentityMemos(agent.id || '');
     this.debugTiming(taskId, 'build_messages.load_identity_memos', loadIdentityStartAt, {
@@ -1851,14 +1967,88 @@ export class AgentExecutorService {
         runSummaries: sessionContext.runSummaries,
       },
     });
-    const messages = assembledContext.messages;
+    let messages = assembledContext.messages;
+
+    if (sessionId) {
+      const runtimeAgentId = agent.id || (agent as any)._id?.toString?.() || '';
+      const systemMessages = messages
+        .filter((message) => message.role === 'system')
+        .map((message) => {
+          const content = String(message.content || '').trim();
+          if (!content) {
+            return null;
+          }
+          const metadata = message.metadata && typeof message.metadata === 'object'
+            ? ({ ...(message.metadata as Record<string, unknown>) } as Record<string, unknown>)
+            : undefined;
+          return {
+            id: `msg-${uuidv4()}`,
+            content,
+            ...(metadata ? { metadata } : {}),
+          };
+        })
+        .filter((message): message is { id: string; content: string; metadata?: Record<string, unknown> } => Boolean(message));
+
+      const persisted = await this.runtimePersistence.setSessionInitialSystemMessages(sessionId, systemMessages);
+      if (persisted && systemMessages.length > 0) {
+        const runId = `system-init-${sessionId}`;
+        for (let index = 0; index < systemMessages.length; index++) {
+          const systemMessage = systemMessages[index];
+          await this.runtimePersistence.createMessage({
+            id: systemMessage.id,
+            runId,
+            agentId: runtimeAgentId,
+            sessionId,
+            taskId: task.id,
+            role: 'system',
+            sequence: index + 1,
+            content: systemMessage.content,
+            status: 'completed',
+            metadata: {
+              ...(systemMessage.metadata || {}),
+              source: 'session.initialSystemMessages',
+            },
+          });
+        }
+      }
+
+      if (persisted) {
+        messages = [
+          ...systemMessages.map((message) => ({
+            role: 'system' as const,
+            content: message.content,
+            ...(message.metadata ? { metadata: message.metadata } : {}),
+            timestamp: new Date(),
+          })),
+          ...previousNonSystemMessages,
+        ];
+      } else {
+        const cachedAfterPersist = await this.runtimePersistence.getSessionInitialSystemMessages(sessionId);
+        if (cachedAfterPersist !== undefined) {
+          messages = [
+            ...cachedAfterPersist.map((message) => ({
+              role: 'system' as const,
+              content: message.content,
+              ...(message.metadata ? { metadata: message.metadata } : {}),
+              timestamp: new Date(),
+            })),
+            ...previousNonSystemMessages,
+          ];
+        }
+      }
+    }
 
     this.debugTiming(taskId, 'build_messages.total', buildStartAt, {
       totalMessages: messages.length,
       systemBlockCount: assembledContext.systemBlockCount,
       scenarioType,
+      cacheHit: false,
     });
     return messages;
+  }
+
+  private computeIntermediateSystemSequence(base: number, round: number, offset: number): number {
+    return base + (round + 2) * 100 + offset;
   }
 
   private resolveScenarioType(

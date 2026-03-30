@@ -33,6 +33,20 @@ export class AgentSession {
   @Prop({ type: [String], default: [] })
   messageIds: string[];
 
+  @Prop({
+    type: [{
+      id: { type: String, required: true },
+      content: { type: String, required: true },
+      metadata: { type: Object },
+    }],
+    default: undefined,
+  })
+  initialSystemMessages?: Array<{
+    id: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+  }>;
+
   @Prop(raw({
     linkedPlanId: { type: String },
     orchestrationRunId: { type: String },

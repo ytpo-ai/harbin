@@ -101,22 +101,6 @@ export class AgentExecutorRuntimeService {
       roleCode,
       executionChannel,
       executionData,
-      initialSystemMessages: messages
-        .filter((msg) => msg.role === 'system')
-        .map((msg) => {
-          const content = String(msg.content || '').trim();
-          if (!content) {
-            return null;
-          }
-          const metadata = msg.metadata && typeof msg.metadata === 'object'
-            ? ({ ...(msg.metadata as Record<string, unknown>) } as Record<string, unknown>)
-            : undefined;
-          return {
-            content,
-            ...(metadata ? { metadata } : {}),
-          };
-        })
-        .filter((item): item is { content: string; metadata?: Record<string, unknown> } => Boolean(item)),
       sync: {
         state: 'pending',
         retryCount: 0,

@@ -52,46 +52,6 @@ export class RuntimeOrchestratorService {
     });
   }
 
-  private extractInitialSystemMessages(
-    metadata: Record<string, unknown>,
-  ): Array<{ content: string; metadata?: Record<string, unknown> }> {
-    const raw = metadata?.initialSystemMessages;
-    if (!Array.isArray(raw)) {
-      return [];
-    }
-    const seen = new Set<string>();
-    return raw
-      .map((item) => {
-        if (typeof item === 'string') {
-          const content = item.trim();
-          return content ? { content } : null;
-        }
-        if (!item || typeof item !== 'object') {
-          return null;
-        }
-        const content = String((item as { content?: unknown }).content || '').trim();
-        if (!content) {
-          return null;
-        }
-        const metadata = (item as { metadata?: unknown }).metadata;
-        const normalizedMetadata = metadata && typeof metadata === 'object'
-          ? ({ ...(metadata as Record<string, unknown>) } as Record<string, unknown>)
-          : undefined;
-        return {
-          content,
-          ...(normalizedMetadata ? { metadata: normalizedMetadata } : {}),
-        };
-      })
-      .filter((item): item is { content: string; metadata?: Record<string, unknown> } => Boolean(item))
-      .filter((item) => {
-        if (seen.has(item.content)) {
-          return false;
-        }
-        seen.add(item.content);
-        return true;
-      });
-  }
-
   constructor(
     private readonly persistence: RuntimePersistenceService,
     private readonly hookDispatcher: HookDispatcherService,
@@ -107,8 +67,6 @@ export class RuntimeOrchestratorService {
     const input = RuntimeStartRunInputSchema.parse(rawInput);
     const runOrTaskId = input.taskId || input.sessionId || `ephemeral-${input.agentId}`;
     const metadataRecord = { ...(input.metadata || {}) } as Record<string, unknown>;
-    const initialSystemMessages = this.extractInitialSystemMessages(metadataRecord);
-    metadataRecord.initialSystemMessages = initialSystemMessages;
 
     let ensuredSession;
     const meetingContext = metadataRecord?.meetingContext as
@@ -224,6 +182,9 @@ export class RuntimeOrchestratorService {
     this.debugTiming(runOrTaskId, 'start_run.ensure_session', ensureSessionAt, { sessionId: ensuredSession.id });
 
     const sessionId = ensuredSession.id;
+    const initialSystemMessageCount = Array.isArray(ensuredSession.initialSystemMessages)
+      ? ensuredSession.initialSystemMessages.length
+      : 0;
 
     const refreshMemoSnapshotAt = Date.now();
     await this.refreshSessionMemoSnapshot(ensuredSession, input.agentId);
@@ -267,7 +228,7 @@ export class RuntimeOrchestratorService {
         sessionId,
         taskId: input.taskId,
         role: 'user',
-        sequence: 1,
+        sequence: initialSystemMessageCount + 1,
         content: input.userContent || input.taskDescription,
         status: 'completed',
         metadata: { source: 'runtime.startRun' },
@@ -287,7 +248,6 @@ export class RuntimeOrchestratorService {
     this.debugTiming(runOrTaskId, 'start_run.seed_initial_messages', seedMessageAt, {
       runId: run.id,
       hasUserMessage: Boolean(userMessage),
-      initialSystemMessageCount: initialSystemMessages.length,
     });
 
     const emitLifecycleEventsAt = Date.now();
@@ -659,7 +619,7 @@ export class RuntimeOrchestratorService {
           sessionId: input.sessionId,
           taskId: input.taskId,
           role: 'assistant',
-          sequence: 2,
+          sequence: (latestUserMessage?.sequence || 1) + 1,
           content: input.assistantContent,
           status: 'completed',
           parentMessageId: latestUserMessage?.id,

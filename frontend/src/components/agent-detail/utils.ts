@@ -106,10 +106,15 @@ export const getSystemMessageTag = (message: AgentRuntimeSessionMessage): string
   if (
     content.includes('you are') ||
     content.includes('system prompt') ||
+    source.includes('session.initialsystemmessages') ||
     source.includes('initialsystemmessages') ||
     source.includes('appendsystemmessagestosession')
   ) {
     return 'Agent Prompt';
+  }
+
+  if (source.includes('tool-calling-loop')) {
+    return '系统注入';
   }
 
   return '系统规则';
