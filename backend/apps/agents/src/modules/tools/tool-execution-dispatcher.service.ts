@@ -159,6 +159,8 @@ export class ToolExecutionDispatcherService {
         return this.orchestrationToolHandler.getOrchestrationPlan(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.list-plans':
         return this.orchestrationToolHandler.listOrchestrationPlans(agentId, executionContext);
+      case 'builtin.sys-mg.mcp.orchestration.plan-initialize':
+        return this.orchestrationToolHandler.planInitialize(parameters, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.submit-task':
         return this.orchestrationToolHandler.submitOrchestrationTask(parameters, executionContext);
       case 'builtin.sys-mg.mcp.orchestration.report-task-run-result':
@@ -182,14 +184,10 @@ export class ToolExecutionDispatcherService {
         return this.requirementToolHandler.createRequirement(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.requirement.update-status':
         return this.requirementToolHandler.updateRequirementStatus(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.assign':
-        return this.requirementToolHandler.assignRequirement(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.comment':
-        return this.requirementToolHandler.commentRequirement(parameters, agentId, executionContext);
+      case 'builtin.sys-mg.mcp.requirement.update':
+        return this.requirementToolHandler.mutateRequirement(parameters, agentId, executionContext);
       case 'builtin.sys-mg.mcp.requirement.sync-github':
         return this.requirementToolHandler.syncRequirementGithub(parameters, agentId);
-      case 'builtin.sys-mg.mcp.requirement.board':
-        return this.requirementToolHandler.getRequirementBoard(agentId);
       default:
         return undefined;
     }

@@ -54,15 +54,28 @@ export interface IncrementalPlannerContext {
 }
 
 export interface PhaseInitializeResult {
-  requirementId?: string;
-  requirementTitle?: string;
-  requirementDescription?: string;
   outline: Array<{
     step: number;
     title: string;
     taskType: 'development.plan' | 'development.exec' | 'development.review' | 'general' | 'research';
-    preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }>;
+    recommendedAgent?: {
+      agentId: string;
+      agentName: string;
+      reason: string;
+    };
+    phasePrompts: {
+      generating: string;
+      pre_execute?: string;
+      execute?: string;
+      post_execute: string;
+    };
+    phaseTools?: {
+      pre_execute?: string[];
+      execute?: string[];
+      post_execute?: string[];
+    };
   }>;
+  taskContext?: Record<string, unknown>;
   reasoning?: string;
 }
 
@@ -171,7 +184,11 @@ export class PlannerService {
     }
 
     const planDomainType = String((plan as any).domainType || 'general').trim();
-    const prompt = this.buildIncrementalPlannerPrompt(context, { domainType: planDomainType, planId });
+    const prompt = this.buildIncrementalPlannerPrompt(context, {
+      domainType: planDomainType,
+      planId,
+      plan,
+    });
     const task: AgentExecutionTask = {
       title: `[Incremental Planning] ${plan.title} generate next task`,
       description: prompt,
@@ -188,6 +205,9 @@ export class PlannerService {
         planId,
         roleInPlan: 'planner',
         responseDirective: 'text',
+        domainType: planDomainType as 'general' | 'development' | 'research',
+        phase: 'generating',
+        taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       ...(options?.sessionId
@@ -297,6 +317,9 @@ export class PlannerService {
         planId,
         roleInPlan: 'planner_pre_execution',
         responseDirective: 'text',
+        domainType: String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as 'general' | 'development' | 'research',
+        phase: 'pre_execute',
+        taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       sessionContext: {
@@ -340,9 +363,11 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
+    const planDomainType = String((plan as { domainType?: string }).domainType || input.domainType || 'general').trim().toLowerCase();
     const prompt = this.buildPhaseInitializePrompt({
+      planId,
       sourcePrompt: input.sourcePrompt,
-      domainType: input.domainType,
+      domainType: planDomainType,
       existingTaskContext: input.existingTaskContext,
     });
 
@@ -362,6 +387,9 @@ export class PlannerService {
         planId,
         roleInPlan: 'planner_initialize',
         responseDirective: 'text',
+        domainType: planDomainType as 'general' | 'development' | 'research',
+        phase: 'initialize',
+        taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       ...(options?.sessionId
@@ -373,30 +401,17 @@ export class PlannerService {
         : {}),
     });
 
+    const refreshedPlan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
+    const metadata = ((refreshedPlan as { metadata?: Record<string, unknown> } | null)?.metadata || {}) as Record<string, unknown>;
+    const taskContext = this.resolveTaskContextFromMetadata(metadata);
+    const outline = this.normalizeOutline(metadata.outline, planDomainType);
     const parsed = this.tryParseJson(response);
-    if (!parsed || typeof parsed !== 'object') {
-      // 降级：从纯文本 response 中尝试提取 requirementId（LLM 常在文本中提及）
-      const fallback = this.extractInitializeFieldsFromText(response);
-      this.logger.warn(
-        `[initialize_json_parse_failed] planId=${planId} responseLen=${(response || '').length} fallbackRequirementId=${fallback.requirementId || 'none'}`,
-      );
-      return {
-        requirementId: fallback.requirementId,
-        requirementTitle: fallback.requirementTitle,
-        outline: this.buildDefaultOutline(input.domainType),
-        reasoning: 'Failed to parse initialize response as JSON, extracted fields from text fallback',
-      };
-    }
-
-    const result = this.extractPostDecisionPayload(parsed);
-    const outline = this.normalizeOutline(result.outline, input.domainType);
+    const parsedResult = parsed && typeof parsed === 'object' ? this.extractPostDecisionPayload(parsed) : {};
 
     return {
-      requirementId: String(result.requirementId || '').trim() || undefined,
-      requirementTitle: String(result.requirementTitle || '').trim() || undefined,
-      requirementDescription: String(result.requirementDescription || '').trim() || undefined,
       outline,
-      reasoning: String(result.reasoning || result.reason || '').trim() || undefined,
+      taskContext,
+      reasoning: String(parsedResult.reasoning || parsedResult.reason || '').trim() || undefined,
     };
   }
 
@@ -430,6 +445,9 @@ export class PlannerService {
         planId,
         roleInPlan: 'planner_post_execution',
         responseDirective: 'text',
+        domainType: String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as 'general' | 'development' | 'research',
+        phase: 'post_execute',
+        taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
       sessionContext: {
@@ -581,86 +599,49 @@ export class PlannerService {
 
   private buildIncrementalPlannerPrompt(
     context: IncrementalPlannerContext,
-    options?: { domainType?: string; planId?: string },
+    options?: { domainType?: string; planId?: string; plan?: OrchestrationPlanDocument },
   ): string {
     const sections: string[] = [];
-    const isDevelopment = options?.domainType === 'development';
+    const metadata = ((options?.plan as unknown as { metadata?: Record<string, unknown> } | undefined)?.metadata || {}) as Record<string, unknown>;
+    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
+    const currentOutlineStep = outline.find((item) => Number(item.step) === context.totalSteps + 1);
+    const phasePrompts = currentOutlineStep?.phasePrompts;
+    const generatingPrompt = phasePrompts && typeof phasePrompts === 'object'
+      ? String((phasePrompts as Record<string, unknown>).generating || '').trim()
+      : '';
 
-    // ── 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰 generating 阶段）──
     sections.push('【当前阶段声明 — 最高优先级】');
-    sections.push('你当前处于 **generating** 阶段（任务生成阶段），不是 phaseInitialize 阶段。');
-    sections.push('- phaseInitialize 已由系统在之前的独立会话中完成，需求已选定、outline 已生成、requirementId 已锚定。');
-    sections.push('- **严禁执行 skill 中"phaseInitialize 行为"一节的任何指令**（如 requirement.list、requirement.get、requirement.update-status、输出 outline JSON 等）。');
-    sections.push('- 你在本阶段**唯一允许调用的工具**是：');
-    sections.push('  1. `builtin.sys-mg.internal.agent-master.list-agents`（发现可用执行者）');
-    sections.push('  2. `builtin.sys-mg.mcp.orchestration.submit-task`（提交任务）');
-    sections.push('- 调用任何其他工具（如 requirement.*）将被视为严重违规。');
-    sections.push('');
-    sections.push('你必须通过调用工具 builtin.sys-mg.mcp.orchestration.submit-task 提交下一步任务。');
+    sections.push('你当前处于 generating 阶段，只负责提交下一步任务。');
+    sections.push('- 仅允许调用 `builtin.sys-mg.internal.agent-master.list-agents` 与 `builtin.sys-mg.mcp.orchestration.submit-task`。');
+    sections.push('- 禁止调用 requirement.* 工具，禁止输出确认性文本。');
+    sections.push('- 每次只提交一个任务。');
     if (options?.planId) {
-      sections.push(`调用 submit-task 时，planId 参数必须填写: ${options.planId}`);
+      sections.push(`- submit-task 的 planId 必须是: ${options.planId}`);
     }
-    sections.push('禁止直接输出纯文本 JSON 作为最终结果。');
-    sections.push('当目标已达成时，调用 submit-task 并传 isGoalReached=true。');
-    sections.push('');
-    sections.push('【最高优先级行为约束】');
-    sections.push('- 你的第一条回复必须是 <tool_call> 工具调用，禁止输出任何确认性文本（如"已收到"、"我将按照..."、"好的"等）。');
-    sections.push('- 每次回复只允许包含一个 <tool_call> 标签，标签外不要有其他文本。');
-    sections.push('- **每次调用只提交一个 submit-task**。提交成功后必须立即停止，不要继续提交后续步骤。系统会在任务执行完成后自动再次调用你生成下一步。');
     sections.push('');
 
-    sections.push('你是一个计划编排器 (Planner)，负责逐步生成可执行任务来达成用户目标。');
-    sections.push('请确保每一步都可验证、可执行、可被单个执行者独立完成。');
-    sections.push('');
-    sections.push('## 上下文锚点（高优先级）');
+    if (generatingPrompt) {
+      sections.push(`## 当前步骤指导（Step ${context.totalSteps + 1}）`);
+      sections.push(generatingPrompt);
+      sections.push('');
+    }
+
+    sections.push('## 计划上下文');
+    sections.push(`- 当前步骤: ${context.totalSteps + 1} / ${Math.max(context.totalSteps + 1, outline.length || 1)}`);
     sections.push(`- requirementId: ${context.requirementId || '(none)'}`);
-    if (context.requirementTitle) {
-      sections.push(`- requirementTitle: ${context.requirementTitle}`);
+    sections.push(`- Plan 目标: ${context.planGoal}`);
+    if (context.completedTasks.length > 0) {
+      sections.push(`- 已完成任务: ${context.completedTasks.map((item) => item.title).join(' | ')}`);
     }
-    if (context.requirementDescription) {
-      sections.push(`- requirementDescription: ${context.requirementDescription.slice(0, 800)}`);
-    }
-    if (isDevelopment && !context.requirementId) {
-      sections.push('- development 计划必须沿用 phaseInitialize 注入的 requirementId，缺失时应停止并报告原因。');
-    }
-    sections.push('- 若 Plan 目标中出现 `${...}` 形式占位符，请忽略占位符字面值，以本节锚点为准。');
-    sections.push('');
-    sections.push('## Plan 目标（sourcePrompt 原文）');
-    sections.push(context.planGoal);
-    sections.push('');
 
-    // ── development 模式：注入 skill 步骤引导指令 ──
-    if (isDevelopment) {
-      sections.push('## 角色边界（最高优先级，覆盖一切其他指令）');
-      sections.push('你是 Planner（规划器），不是执行者。你的唯一输出是通过 submit-task 工具提交任务卡片。');
-      sections.push('- skill 中的"动作"描述是给**执行者**的指令，你只需将其转化为 task.description 的内容。');
-      sections.push('- **禁止在规划阶段调用任何业务工具**（如需求查询、代码读写、状态更新等）。');
-      sections.push('- **禁止输出确认性文本**（如"已收到"、"我将按照..."）。');
-      sections.push('- **禁止输出 TASK_INABILITY**。即使上下文不完整，也必须按 skill 步骤定义提交任务。');
+    if (!generatingPrompt) {
       sections.push('');
-      sections.push('## 技能步骤引导（强制，优先级高于 sourcePrompt）');
-      sections.push('你的 system messages 中已注入 rd-workflow 技能的完整流程定义，包含步骤序号（step1 → step2 → step3 → ...）、执行角色、输入、动作、输出契约和 taskType 约束。');
-      sections.push('**你必须严格按 skill 中定义的步骤顺序逐步生成任务，每次只生成一个步骤对应的任务。**');
-      const completedStepCount = context.completedTasks.length;
-      const nextStep = completedStepCount + 1;
-      sections.push('');
-      sections.push(`### 步骤进度（强制遵守）`);
-      sections.push(`- 已完成步骤数: ${completedStepCount}`);
-      sections.push(`- **你现在必须生成的步骤: step${nextStep}**`);
-      sections.push(`- 禁止生成 step1 ~ step${completedStepCount} 的任务（这些步骤已完成）`);
-      if (nextStep <= 3) {
-        sections.push(`- 请参照 skill 中 "### step${nextStep}" 的定义生成任务`);
-      }
-      sections.push('');
-      sections.push('步骤引导约束：');
-      sections.push('- task.description 必须反映该步骤定义的具体动作和输出契约，禁止抄写或复述流程定义本身。');
-      sections.push('- task.taskType 必须使用 skill 步骤中指定的任务类型（如 general、development.plan、development.exec、development.review）。');
-      sections.push('- 执行角色按 skill 步骤中的定义，通过 list-agents 结果匹配。');
-      sections.push('- 当 skill 步骤中有"输出契约"时，task.description 必须明确列出需要交付的内容项。');
-      sections.push('- 当 skill 步骤中有"约束"时，task.description 必须体现这些约束。');
-      sections.push('- sourcePrompt 仅作为补充背景，步骤定义以 skill 内容为准。');
-      sections.push('');
+      sections.push('## 降级规则（无预编译提示时）');
+      sections.push('- 先调用 list-agents 获取执行者，再提交一个可执行任务。');
+      sections.push('- task.description 需包含输入、动作、产出与验证标准。');
+      sections.push('- 任务类型使用 general/research/development.plan/development.exec/development.review。');
     }
+
     sections.push('## 当前编排进度');
     sections.push(`已累计执行步骤数: ${context.totalSteps}`);
     sections.push('');
@@ -669,7 +650,7 @@ export class PlannerService {
       sections.push('## 已完成任务摘要');
       for (let i = 0; i < context.completedTasks.length; i++) {
         const item = context.completedTasks[i];
-        const stepLabel = isDevelopment ? `(对应 skill step${i + 1}) ` : '';
+        const stepLabel = options?.domainType === 'development' ? `(对应 step${i + 1}) ` : '';
         sections.push(`- ${stepLabel}[${item.title}] (agent=${item.agentId || 'unknown'}): ${item.outputSummary}`);
       }
       sections.push('注意：如果 outputSummary 中出现"无法执行"、"无法完成"、"缺少工具"、"没有权限"等语义，该任务可能是"虚假完成"（被标记 completed 但实际未完成），应视为未完成并重新规划。');
@@ -692,35 +673,10 @@ export class PlannerService {
       sections.push(context.lastError);
       sections.push('');
     }
-
-    sections.push('## 执行者发现步骤（每次规划都必须执行）');
-    sections.push('1) 先调用 builtin.sys-mg.internal.agent-master.list-agents 获取当前可用 Agent 的实时列表。');
-    sections.push('2) 按 requiredTools（如 repo-writer、save-prompt-template、web-search、web-fetch）过滤候选。');
-    sections.push('3) 在工具满足的候选内，再按能力标签、角色、失败历史做选择。');
-    sections.push('4) 若本轮未调用 list-agents，不允许提交 task。');
-    sections.push('');
-
-    sections.push('## 执行者选择规则（关键，严格遵守）');
-    sections.push('选择 agentId 时必须按以下优先级判断：');
-    sections.push('A) **工具匹配优先（强制）**：先确定本任务需要的工具（如 repo-writer、save-prompt-template、web-search、web-fetch 等），再逐个核对 list-agents 返回结果中的工具列表。');
-    sections.push('   - 【禁止】将任务分配给缺少所需工具的 agent，即使该 agent 在能力标签或角色层级上更匹配。');
-    sections.push('   - 若无任何 agent 拥有所需工具，必须在 reasoning 明确说明，并给出可执行的替代路径。');
-    sections.push('B) **多人有工具时可委派**：若多个 agent 都拥有所需工具，优先选择职级更低/更专注的执行者，让高层级 agent 专注决策。');
-    sections.push('C) **仅自己有工具时必须选自己**：若实时清单显示只有你自己拥有所需工具，必须选择自己（你的 agentId）执行，不得委派给没有相应工具的 agent。');
-    sections.push('D) **无工具需求时按能力匹配**：若任务不依赖特定工具，按能力标签和角色匹配度选择。');
-    sections.push('E) **失败回避**：若某 agent 在本计划中已因"缺少工具"或"工具不匹配"失败，【禁止】再次将同类任务分配给该 agent，必须从失败 agent 列表中排除后重选。');
-    sections.push('F) **【禁止】生成验证/预检类元任务**：执行者匹配必须在规划阶段通过 list-agents 结果直接完成，严禁外化为执行任务（如"核验可用执行者"、"确认谁具备某工具"等）。');
-    sections.push('');
     sections.push('## 输出规则');
-    sections.push('1) 若目标已全部达成，调用 submit-task 并设置 isGoalReached=true。');
-    sections.push('2) 每个任务必须足够简单、明确、可快速验证。');
-    sections.push('3) task.description 必须包含具体执行信息（输入、动作、产出），禁止空泛描述。');
-    sections.push('4) 你必须从本轮 list-agents 返回中选择一个真实存在的 agentId，不允许臆造。');
-    sections.push('5) 调用 submit-task 时必须显式传 agentId（或兼容字段 executorId），不得省略执行者字段。');
-    sections.push('6) 当存在失败任务时，下一步【必须】满足至少一项纠偏条件：a) 更换执行 agent；b) 根本性改变任务描述与执行路径。仅增加解释或细化措辞不算有效纠偏。');
-    sections.push('7) 相邻任务若可由同一 agent 在一次交付中完成，请倾向生成可合并的连续步骤，避免过碎任务。');
-    sections.push('8) 当失败根因是 agent 工具缺失或分配不当时，优先使用 action="redesign" 并填写 redesignTaskId，重新指定 agent，而不是继续新增任务。');
-    sections.push('9) 对工具依赖明确的任务，尽量填写 task.requiredTools（例如 ["repo-writer"]、["save-prompt-template"]），便于系统做二次校验。');
+    sections.push('1) 若目标已达成，调用 submit-task 并传 isGoalReached=true。');
+    sections.push('2) 调用 submit-task 时必须传真实 agentId。');
+    sections.push('3) 禁止直接输出文本 JSON，结果必须通过工具调用给出。');
 
     return sections.join('\n');
   }
@@ -896,82 +852,47 @@ export class PlannerService {
   }
 
   private buildPhaseInitializePrompt(input: {
+    planId: string;
     sourcePrompt: string;
     domainType: string;
     existingTaskContext?: Record<string, unknown>;
   }): string {
     const sections: string[] = [];
     const domainType = String(input.domainType || 'general').trim().toLowerCase();
-    const isDevelopment = domainType === 'development';
     const existingTaskContext = input.existingTaskContext || {};
     const existingRequirementId = String(existingTaskContext.requirementId || '').trim();
 
-    // ── 行为约束（最高优先级，防止 skill 注入触发确认性输出）──
-    sections.push('【最高优先级行为约束】');
-    sections.push('- 你的第一条回复必须是 <tool_call> 工具调用，禁止输出任何确认性文本（如"已收到"、"我将按照..."、"好的"、"已收到约束"等）。');
-    sections.push('- system messages 中注入的 skill 说明仅供参考，你当前正在执行 phaseInitialize 阶段，按下方工具调用序列逐步执行即可。');
-    sections.push('- **不要复述、确认或总结 skill 中的规则**，直接开始工具调用。');
+    sections.push('## 你正在执行 phaseInitialize 阶段');
     sections.push('');
-    sections.push('你正在执行 Orchestration 的 phaseInitialize 阶段。');
-    sections.push('你必须在一次回复内完成所有工具调用，然后输出最终 JSON 结果。');
-    sections.push('本阶段严禁调用 `builtin.sys-mg.mcp.orchestration.submit-task`。');
-    sections.push('');
-
-    // ── 工具调用序列 ──
-    sections.push('## 工具调用序列（必须按序执行）');
-    sections.push('');
+    sections.push('### Phase 1：大纲与 Prompt 预编译（必做）');
     sections.push('1. 调用 `builtin.sys-mg.internal.agent-master.list-agents` 获取可用 agent 列表。');
-    if (isDevelopment) {
-      if (existingRequirementId) {
-        sections.push(`2. requirementId 已存在（${existingRequirementId}），跳过 requirement.list。`);
-        sections.push(`3. 调用 \`builtin.sys-mg.mcp.requirement.get\`（参数 requirementId=${existingRequirementId}）获取需求详情。`);
-      } else {
-        sections.push('2. 调用 `builtin.sys-mg.mcp.requirement.list`（参数 status=todo）获取待办需求列表。');
-        sections.push('3. 从返回结果中选择优先级最高且可执行的需求。');
-        sections.push('4. 调用 `builtin.sys-mg.mcp.requirement.get`（参数 requirementId=<选定的ID>）获取该需求的完整详情。');
-        sections.push('5. 调用 `builtin.sys-mg.mcp.requirement.update-status`（参数 requirementId=<选定的ID>, status=assigned, changedByType=agent, changedByName=orchestration-planner-agent, note=phaseInitialize 选定需求）。');
-      }
-    }
+    sections.push('2. 结合 domainType、sourcePrompt 与已注入 skill 定义，产出执行步骤 outline。');
+    sections.push('3. 为每个步骤生成 phasePrompts：`generating`、`pre_execute`、`execute`、`post_execute`。');
+    sections.push('4. 为每个步骤选择推荐执行 agent（recommendedAgent）和可选 phaseTools。');
+    sections.push('5. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入 outline：');
+    sections.push(`   - planId=${input.planId}`);
+    sections.push('   - mode="outline"');
+    sections.push('   - data=OutlineItem[]（每项必须包含 step/title/taskType/phasePrompts）');
     sections.push('');
-
-    // ── 目标 ──
-    sections.push('## 目标');
-    if (isDevelopment) {
-      sections.push('- 通过上述工具调用选定一个 requirementId，获取其详情。');
-      sections.push('- 输出任务大纲 outline（step/title/taskType）。');
-      if (existingRequirementId) {
-        sections.push(`- requirementId 已锚定为 ${existingRequirementId}，直接沿用。`);
-      }
-    } else {
-      sections.push('- 输出任务大纲 outline（step/title/taskType）。');
-    }
+    sections.push('### Phase 2：扩展步骤（可选）');
+    sections.push('- 若技能文档中存在 `## phaseInitialize 扩展步骤`，按该段落执行相关工具调用。');
+    sections.push('- 需要共享到后续阶段的数据，统一调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入：');
+    sections.push(`  - planId=${input.planId}`);
+    sections.push('  - mode="taskContext"');
+    sections.push('  - data={...}');
     sections.push('');
-
-    // ── 输入 ──
-    sections.push('## 输入');
+    sections.push('### 约束');
+    sections.push('- 禁止调用 `builtin.sys-mg.mcp.orchestration.submit-task`。');
+    sections.push('- 所有初始化产出必须通过 `plan-initialize` 工具写入 metadata。');
+    sections.push('- 禁止输出确认性文本。优先使用工具调用。');
+    sections.push('');
+    sections.push('### 输入');
+    sections.push(`- planId: ${input.planId}`);
     sections.push(`- domainType: ${domainType}`);
     sections.push(`- sourcePrompt: ${input.sourcePrompt}`);
     if (existingRequirementId) {
       sections.push(`- existingRequirementId: ${existingRequirementId}`);
     }
-    sections.push('');
-
-    // ── 失败处理 ──
-    if (isDevelopment && !existingRequirementId) {
-      sections.push('## 失败处理');
-      sections.push('- 如果 requirement.list 返回空列表，输出 {"requirementId": null, "outline": [], "reasoning": "需求池为空"}。');
-      sections.push('- 如果工具调用失败，仍尽可能输出 outline 以确保后续流程可降级。');
-      sections.push('');
-    }
-
-    // ── 最终输出 ──
-    sections.push('## 最终输出');
-    sections.push('完成所有工具调用后，输出以下 JSON 作为最终结果（工具调用结果之外的唯一文本输出）：');
-    sections.push('```');
-    sections.push('{"requirementId":"<ID或null>","requirementTitle":"<标题>","requirementDescription":"<描述>","outline":[{"step":1,"title":"...","taskType":"development.plan|development.exec|development.review|general|research"}],"reasoning":"<理由>"}');
-    sections.push('```');
-    sections.push('');
-    sections.push('约束：工具调用完成后，最终回复只包含上述 JSON 对象，不要附加解释文字。');
 
     return sections.join('\n');
   }
@@ -992,32 +913,57 @@ export class PlannerService {
         const taskType = this.normalizeRuntimeTaskType(row.taskType);
         const title = String(row.title || '').trim();
 
-        // 透传 preExecuteActions（基本类型校验：必须是数组且每个元素含 tool 字符串）
-        let preExecuteActions: Array<{ tool: string; params: Record<string, unknown> }> | undefined;
-        if (Array.isArray(row.preExecuteActions) && row.preExecuteActions.length > 0) {
-          const valid = row.preExecuteActions.filter(
-            (a: unknown) =>
-              a && typeof a === 'object' && !Array.isArray(a) &&
-              typeof (a as Record<string, unknown>).tool === 'string',
-          ) as Array<{ tool: string; params: Record<string, unknown> }>;
-          if (valid.length > 0) {
-            preExecuteActions = valid.map((a) => ({
-              tool: String(a.tool),
-              params: (a.params && typeof a.params === 'object' && !Array.isArray(a.params))
-                ? a.params as Record<string, unknown>
-                : {},
-            }));
-          }
-        }
+        const rawPrompts = row.phasePrompts;
+        const promptObj = rawPrompts && typeof rawPrompts === 'object' && !Array.isArray(rawPrompts)
+          ? rawPrompts as Record<string, unknown>
+          : {};
+        const generating = String(promptObj.generating || '').trim();
+        const postExecute = String(promptObj.post_execute || '').trim();
+        const preExecute = String(promptObj.pre_execute || '').trim() || undefined;
+        const execute = String(promptObj.execute || '').trim() || undefined;
+
+        const phaseToolsCandidate = row.phaseTools;
+        const phaseTools = phaseToolsCandidate && typeof phaseToolsCandidate === 'object' && !Array.isArray(phaseToolsCandidate)
+          ? {
+              pre_execute: Array.isArray((phaseToolsCandidate as Record<string, unknown>).pre_execute)
+                ? ((phaseToolsCandidate as Record<string, unknown>).pre_execute as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+                : undefined,
+              execute: Array.isArray((phaseToolsCandidate as Record<string, unknown>).execute)
+                ? ((phaseToolsCandidate as Record<string, unknown>).execute as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+                : undefined,
+              post_execute: Array.isArray((phaseToolsCandidate as Record<string, unknown>).post_execute)
+                ? ((phaseToolsCandidate as Record<string, unknown>).post_execute as unknown[]).map((v) => String(v || '').trim()).filter(Boolean)
+                : undefined,
+            }
+          : undefined;
+
+        const recommendedAgentCandidate = row.recommendedAgent;
+        const recommendedAgent = recommendedAgentCandidate
+          && typeof recommendedAgentCandidate === 'object'
+          && !Array.isArray(recommendedAgentCandidate)
+          && String((recommendedAgentCandidate as Record<string, unknown>).agentId || '').trim()
+          ? {
+              agentId: String((recommendedAgentCandidate as Record<string, unknown>).agentId || '').trim(),
+              agentName: String((recommendedAgentCandidate as Record<string, unknown>).agentName || '').trim() || '',
+              reason: String((recommendedAgentCandidate as Record<string, unknown>).reason || '').trim() || '',
+            }
+          : undefined;
 
         return {
           step: typeof row.step === 'number' && Number.isInteger(row.step) ? Number(row.step) : index + 1,
           title: title || `步骤 ${index + 1}`,
           taskType,
-          ...(preExecuteActions ? { preExecuteActions } : {}),
+          phasePrompts: {
+            generating,
+            ...(preExecute ? { pre_execute: preExecute } : {}),
+            ...(execute ? { execute } : {}),
+            post_execute: postExecute,
+          },
+          ...(recommendedAgent ? { recommendedAgent } : {}),
+          ...(phaseTools ? { phaseTools } : {}),
         };
       })
-      .filter((item) => Boolean(item.title));
+      .filter((item) => Boolean(item.title) && Boolean(item.phasePrompts.generating) && Boolean(item.phasePrompts.post_execute));
 
     if (normalized.length === 0) {
       return this.buildDefaultOutline(domainType);
@@ -1030,13 +976,45 @@ export class PlannerService {
     const normalized = String(domainType || 'general').trim().toLowerCase();
     if (normalized === 'development') {
       return [
-        { step: 1, title: '制定技术开发计划', taskType: 'development.plan' },
-        { step: 2, title: '执行开发', taskType: 'development.exec' },
-        { step: 3, title: '实现评估', taskType: 'development.review' },
+        {
+          step: 1,
+          title: '制定技术开发计划',
+          taskType: 'development.plan',
+          phasePrompts: {
+            generating: '生成技术规划任务，要求输出结构化开发计划与验收要点。',
+            post_execute: '验证开发计划是否完整；完整则 generate_next，否则 redesign/retry。',
+          },
+        },
+        {
+          step: 2,
+          title: '执行开发',
+          taskType: 'development.exec',
+          phasePrompts: {
+            generating: '生成开发执行任务，要求按上一步计划落地代码变更并附验证证据。',
+            post_execute: '验证是否完成代码变更与必要验证；通过则 generate_next。',
+          },
+        },
+        {
+          step: 3,
+          title: '实现评估',
+          taskType: 'development.review',
+          phasePrompts: {
+            generating: '生成实现评审任务，要求输出评审结论与修复建议。',
+            post_execute: '验证评审结论是否完整，完成则 stop。',
+          },
+        },
       ];
     }
     return [
-      { step: 1, title: '执行任务', taskType: normalized === 'research' ? 'research' : 'general' },
+      {
+        step: 1,
+        title: '执行任务',
+        taskType: normalized === 'research' ? 'research' : 'general',
+        phasePrompts: {
+          generating: '生成可执行任务，明确输入、动作、产出与验收标准。',
+          post_execute: '根据执行结果判断 generate_next 或 stop。',
+        },
+      },
     ];
   }
 
@@ -1117,41 +1095,14 @@ export class PlannerService {
     return lines.join('\n').trim();
   }
 
-  /**
-   * 降级提取：从 initialize 阶段的纯文本 response 中尝试提取 requirementId 和 requirementTitle。
-   * 当 LLM 未输出合规 JSON 但在工具调用或文本中提及了 requirementId 时使用。
-   */
-  private extractInitializeFieldsFromText(response: string): {
-    requirementId?: string;
-    requirementTitle?: string;
-  } {
-    const text = (response || '').trim();
-    if (!text) {
+  private resolveTaskContextFromMetadata(metadata?: Record<string, unknown>): Record<string, unknown> {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
       return {};
     }
-
-    // 匹配 req- 开头的 requirementId（如 req-1774816103218-n2evu4）
-    const reqIdMatch = text.match(/\b(req-[\w-]+)\b/i);
-    const requirementId = reqIdMatch?.[1] || undefined;
-
-    // 尝试从文本中提取标题：常见模式 "标题：xxx" / "标题: xxx" / **标题**: xxx
-    let requirementTitle: string | undefined;
-    const titlePatterns = [
-      /\*{0,2}标题\*{0,2}\s*[:：]\s*(.+)/i,
-      /\*{0,2}requirementTitle\*{0,2}\s*[:：]\s*(.+)/i,
-      /\*{0,2}需求\*{0,2}\s*[:：]\s*(.+)/i,
-    ];
-    for (const pattern of titlePatterns) {
-      const match = text.match(pattern);
-      if (match?.[1]) {
-        requirementTitle = match[1].replace(/[`*]/g, '').trim().slice(0, 200);
-        break;
-      }
+    const taskContext = (metadata as Record<string, unknown>).taskContext;
+    if (!taskContext || typeof taskContext !== 'object' || Array.isArray(taskContext)) {
+      return {};
     }
-
-    return {
-      requirementId,
-      requirementTitle,
-    };
+    return taskContext as Record<string, unknown>;
   }
 }

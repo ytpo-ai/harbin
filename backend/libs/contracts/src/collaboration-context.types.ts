@@ -52,6 +52,9 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   executorAgentId?: string;
   dependencies?: unknown;
   upstreamOutputs?: unknown;
+  domainType?: 'general' | 'development' | 'research';
+  phase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
+  taskType?: string;
   skillActivation?: { mode: 'standard' | 'precise' };
   format?: 'json';
   mode?: 'planning' | 'orchestration';

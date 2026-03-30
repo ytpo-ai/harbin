@@ -256,6 +256,62 @@ export class PlanManagementService {
     return this.getPlanById(planId);
   }
 
+  async updatePlanMetadata(
+    planId: string,
+    patch: { $set?: Record<string, unknown>; $unset?: Record<string, unknown> },
+  ): Promise<any> {
+    const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).select({ _id: 1 }).lean().exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const setPayload: Record<string, unknown> = {};
+    const unsetPayload: Record<string, unknown> = {};
+
+    const rawSet = patch?.$set;
+    if (rawSet && typeof rawSet === 'object' && !Array.isArray(rawSet)) {
+      for (const [key, value] of Object.entries(rawSet)) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+          continue;
+        }
+        setPayload[`metadata.${normalizedKey}`] = value;
+      }
+    }
+
+    const rawUnset = patch?.$unset;
+    if (rawUnset && typeof rawUnset === 'object' && !Array.isArray(rawUnset)) {
+      for (const key of Object.keys(rawUnset)) {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey) {
+          continue;
+        }
+        unsetPayload[`metadata.${normalizedKey}`] = 1;
+      }
+    }
+
+    if (!Object.keys(setPayload).length && !Object.keys(unsetPayload).length) {
+      throw new BadRequestException('At least one metadata patch operation is required');
+    }
+
+    await this.orchestrationPlanModel
+      .updateOne(
+        { _id: planId },
+        {
+          ...(Object.keys(setPayload).length ? { $set: setPayload } : {}),
+          ...(Object.keys(unsetPayload).length ? { $unset: unsetPayload } : {}),
+        },
+      )
+      .exec();
+
+    return {
+      success: true,
+      planId,
+      setKeys: Object.keys(setPayload),
+      unsetKeys: Object.keys(unsetPayload),
+    };
+  }
+
   async deletePlan(planId: string): Promise<{ success: boolean; deletedTasks: number }> {
     const plan = await this.orchestrationPlanModel.findOne({ _id: planId }).exec();
     if (!plan) {

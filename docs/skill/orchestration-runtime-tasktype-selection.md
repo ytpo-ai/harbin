@@ -14,6 +14,8 @@ metadata:
     - pre-execute
     - task-type-migration
     - orchestration
+    - roleInPlan:planner,planner_pre_execution:must
+    - phase:pre_execute:must
   risk_level: medium
 ---
 

@@ -164,6 +164,18 @@ export class OrchestrationController {
     return this.orchestrationService.updatePlan(planId, dto);
   }
 
+  @Patch('plans/:id/metadata')
+  async updatePlanMetadata(
+    @Param('id') planId: string,
+    @Body() patch: { $set?: Record<string, unknown>; $unset?: Record<string, unknown> },
+    @Headers('authorization') authHeader: string,
+    @Headers('x-user-context') internalContext?: string,
+    @Headers('x-user-signature') internalSignature?: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
+    return this.orchestrationService.updatePlanMetadata(planId, patch || {});
+  }
+
   @Delete('plans/:id')
   async deletePlan(@Param('id') planId: string, @Headers('authorization') authHeader: string) {
     const user = await this.getUserFromAuthHeader(authHeader);

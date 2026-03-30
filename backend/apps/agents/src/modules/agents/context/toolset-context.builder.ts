@@ -40,15 +40,22 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
       });
 
       for (const skill of input.enabledSkills) {
-        if (!this.contextStrategyService.shouldActivateSkillContent(skill, input.task, input.context)) {
+        const collaborationCtx = ((input.context as any)?.collaborationContext || {}) as Record<string, unknown>;
+        const activationContext = {
+          domainType: String(collaborationCtx.domainType || '').trim() || undefined,
+          taskType: String(collaborationCtx.taskType || input.task.type || '').trim() || undefined,
+          phase: String(collaborationCtx.phase || '').trim() || undefined,
+          roleInPlan: String(collaborationCtx.roleInPlan || '').trim() || undefined,
+        };
+        if (!this.contextStrategyService.shouldActivateSkillContent(skill, input.task, input.context, activationContext)) {
           continue;
         }
         let rawContent = input.shared.skillContents.get(skill.id);
         if (!rawContent) continue;
 
         // Orchestration planner 阶段裁剪 phaseInitialize 段落：
-        // initialize 阶段有独立的 buildPhaseInitializePrompt 提供工具指令，
-        // generating/pre_execute/post_execute 阶段不需要 phaseInitialize 指令（会误导 LLM 执行 requirement.list 等操作）
+    // initialize 阶段保留 phaseInitialize 指令，
+    // generating/pre_execute/post_execute 阶段不需要该段落（会误导 LLM 执行 requirement.list 等操作）
         rawContent = this.stripPhaseInitializeSectionIfNeeded(rawContent, input.context);
 
         const content =
@@ -137,14 +144,14 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
    * 原因：phaseInitialize 的工具调用序列（requirement.list / requirement.get / update-status）
    * 在 system prompt 中会误导 LLM 在 generating / pre_execute / post_execute 阶段执行需求查询操作，
    * 即使 user prompt 中明确禁止。initialize 阶段有独立的 buildPhaseInitializePrompt 提供指令，
-   * 因此所有 planner 阶段都不需要 skill 中的 phaseInitialize 段落。
+   * initialize 之外的 planner 阶段不需要 skill 中的 phaseInitialize 段落。
    */
   private stripPhaseInitializeSectionIfNeeded(content: string, context?: unknown): string {
     const collaborationCtx = ((context as any)?.collaborationContext || {}) as Record<string, unknown>;
     const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
 
-    // 仅对 orchestration planner 角色生效
-    if (!roleInPlan || !roleInPlan.startsWith('planner')) {
+    // 仅对非 initialize 的 planner 角色生效
+    if (!roleInPlan || !roleInPlan.startsWith('planner') || roleInPlan === 'planner_initialize') {
       return content;
     }
 

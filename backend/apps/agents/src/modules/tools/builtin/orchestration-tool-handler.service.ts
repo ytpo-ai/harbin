@@ -1,9 +1,19 @@
 import { Injectable } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { InternalApiClient } from '../internal-api-client.service';
 import { ToolExecutionContext } from '../tool-execution-context.type';
 
 @Injectable()
 export class OrchestrationToolHandler {
+  private static readonly PLAN_INITIALIZE_ALLOWED_MODES = new Set(['outline', 'taskContext']);
+  private static readonly VALID_RUNTIME_TASK_TYPES = new Set([
+    'general',
+    'research',
+    'development.plan',
+    'development.exec',
+    'development.review',
+  ]);
+
   constructor(private readonly internalApiClient: InternalApiClient) {}
 
   private resolveMeetingContext(executionContext?: ToolExecutionContext): {
@@ -344,6 +354,117 @@ export class OrchestrationToolHandler {
     };
   }
 
+  private validateOutlineData(data: unknown): { valid: boolean; reason?: string } {
+    if (!Array.isArray(data) || data.length === 0) {
+      return { valid: false, reason: 'plan-initialize mode=outline requires a non-empty array' };
+    }
+
+    for (let index = 0; index < data.length; index += 1) {
+      const row = data[index] as Record<string, unknown>;
+      if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return { valid: false, reason: `outline[${index}] must be an object` };
+      }
+      if (!Number.isInteger(row.step) || Number(row.step) < 1) {
+        return { valid: false, reason: `outline[${index}].step must be an integer >= 1` };
+      }
+      const title = String(row.title || '').trim();
+      if (!title) {
+        return { valid: false, reason: `outline[${index}].title is required` };
+      }
+      const taskType = String(row.taskType || '').trim();
+      if (!OrchestrationToolHandler.VALID_RUNTIME_TASK_TYPES.has(taskType)) {
+        return {
+          valid: false,
+          reason: `outline[${index}].taskType is invalid, allowed=${Array.from(OrchestrationToolHandler.VALID_RUNTIME_TASK_TYPES).join('|')}`,
+        };
+      }
+
+      const phasePrompts = row.phasePrompts;
+      if (!phasePrompts || typeof phasePrompts !== 'object' || Array.isArray(phasePrompts)) {
+        return { valid: false, reason: `outline[${index}].phasePrompts is required` };
+      }
+      const promptFields = ['generating', 'pre_execute', 'execute', 'post_execute'] as const;
+      const requiredPromptFields = new Set(['generating', 'post_execute']);
+      for (const field of promptFields) {
+        const value = (phasePrompts as Record<string, unknown>)[field];
+        const normalized = String(value || '').trim();
+        if (requiredPromptFields.has(field) && !normalized) {
+          return { valid: false, reason: `outline[${index}].phasePrompts.${field} is required` };
+        }
+        if (normalized && normalized.length > 2000) {
+          return { valid: false, reason: `outline[${index}].phasePrompts.${field} exceeds 2000 characters` };
+        }
+      }
+    }
+
+    return { valid: true };
+  }
+
+  async planInitialize(
+    params: {
+      planId?: string;
+      mode?: string;
+      data?: unknown;
+    },
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const contextPlanId = String((executionContext?.collaborationContext as Record<string, unknown> | undefined)?.planId || '').trim();
+    const paramPlanId = String(params?.planId || '').trim();
+    const planId = contextPlanId || paramPlanId;
+    if (!planId || !Types.ObjectId.isValid(planId)) {
+      throw new Error('orchestration_plan_initialize requires valid planId');
+    }
+
+    const roleInPlan = String((executionContext?.collaborationContext as Record<string, unknown> | undefined)?.roleInPlan || '').trim();
+    if (roleInPlan !== 'planner_initialize') {
+      return {
+        action: 'plan_initialize_blocked',
+        error: `plan-initialize 仅在 phaseInitialize 阶段可用，当前 roleInPlan=${roleInPlan || 'unknown'}`,
+      };
+    }
+
+    const mode = String(params?.mode || '').trim();
+    if (!mode || !OrchestrationToolHandler.PLAN_INITIALIZE_ALLOWED_MODES.has(mode)) {
+      throw new Error('orchestration_plan_initialize mode must be outline|taskContext');
+    }
+
+    if (mode === 'outline') {
+      const validation = this.validateOutlineData(params?.data);
+      if (!validation.valid) {
+        throw new Error(validation.reason || 'orchestration_plan_initialize outline validation failed');
+      }
+    }
+
+    if (mode === 'taskContext') {
+      if (!params?.data || typeof params.data !== 'object' || Array.isArray(params.data)) {
+        throw new Error('orchestration_plan_initialize mode=taskContext requires object data');
+      }
+      await this.internalApiClient.callOrchestrationApi('PATCH', `/plans/${planId}/metadata`, {
+        $set: Object.fromEntries(
+          Object.entries(params.data).map(([key, value]) => [`taskContext.${key}`, value]),
+        ),
+      });
+      return {
+        action: 'plan_initialize',
+        mode,
+        planId,
+        writtenKeys: Object.keys(params.data),
+      };
+    }
+
+    await this.internalApiClient.callOrchestrationApi('PATCH', `/plans/${planId}/metadata`, {
+      $set: {
+        [mode]: params?.data,
+      },
+    });
+    return {
+      action: 'plan_initialize',
+      mode,
+      planId,
+      writtenKeys: ['outline'],
+    };
+  }
+
   async submitOrchestrationTask(
     params: {
       planId?: string;
@@ -373,7 +494,7 @@ export class OrchestrationToolHandler {
       return {
         action: 'submit_task_blocked',
         error: roleInPlan === 'planner_initialize'
-          ? 'submit-task 在 phaseInitialize 阶段被禁止。你当前处于 phaseInitialize 阶段，不是 generating 阶段。请停止调用 submit-task，直接输出最终 JSON 结果：{"requirementId":"...","requirementTitle":"...","requirementDescription":"...","outline":[...],"reasoning":"..."}。如果还有未完成的初始化工具调用（requirement.list/requirement.get/requirement.update-status），请先完成它们再输出 JSON。'
+          ? 'submit-task 在 phaseInitialize 阶段被禁止。请改用 builtin.sys-mg.mcp.orchestration.plan-initialize 写入 metadata（mode=outline 或 mode=taskContext），不要输出纯文本 JSON。'
           : `submit-task 在 ${roleInPlan} 阶段被禁止。当前阶段只允许执行 pre_execute/post_execute 定义的工具调用，不允许提交新任务。`,
       };
     }

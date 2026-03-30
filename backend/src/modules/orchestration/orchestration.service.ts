@@ -87,6 +87,13 @@ export class OrchestrationService {
     return this.planManagementService.updatePlan(planId, dto);
   }
 
+  async updatePlanMetadata(
+    planId: string,
+    patch: { $set?: Record<string, unknown>; $unset?: Record<string, unknown> },
+  ): Promise<any> {
+    return this.planManagementService.updatePlanMetadata(planId, patch);
+  }
+
   async deletePlan(planId: string): Promise<{ success: boolean; deletedTasks: number }> {
     return this.planManagementService.deletePlan(planId);
   }

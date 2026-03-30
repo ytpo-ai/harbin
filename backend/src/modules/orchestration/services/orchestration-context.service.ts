@@ -35,6 +35,7 @@ export class OrchestrationContextService {
       currentTaskTitle?: string;
       runtimeTaskType?: string;
       planTaskContext?: Record<string, unknown>;
+      executePrompt?: string;
     },
   ): string {
     const {
@@ -47,6 +48,7 @@ export class OrchestrationContextService {
       currentTaskTitle,
       runtimeTaskType,
       planTaskContext,
+      executePrompt,
     } = options;
     const sections = [`【Task Target】\n${this.extractCurrentTaskGoal(baseDescription)}`];
     const planTaskContextSection = this.buildPlanTaskContextSection(planTaskContext);
@@ -62,6 +64,9 @@ export class OrchestrationContextService {
     }
     if (retryHint) {
       sections.push(`Previous failed attempt hint:\n${retryHint}`);
+    }
+    if (executePrompt) {
+      sections.push(`## 执行指导\n${executePrompt}`);
     }
     if (isResearchTask) {
       sections.push(this.taskOutputValidationService.buildResearchOutputContract(researchTaskKind || 'generic_research'));
@@ -238,10 +243,14 @@ export class OrchestrationContextService {
     planDomainType?: string;
     planGoal?: string;
     taskContext?: Record<string, unknown>;
-    outlineStep?: { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> };
+    outlineStep?: {
+      phasePrompts?: { pre_execute?: string };
+      preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }>;
+    };
   }): string {
     const lines: string[] = [];
     const preActions = input.outlineStep?.preExecuteActions || [];
+    const preExecutePrompt = String(input.outlineStep?.phasePrompts?.pre_execute || '').trim();
 
     // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
     lines.push('【当前阶段声明 — 最高优先级】');
@@ -255,6 +264,14 @@ export class OrchestrationContextService {
     // --- 阶段声明 + 禁令 ---
     lines.push('[pre_execute 阶段] step ' + input.step + ' — ' + input.taskTitle);
     lines.push('');
+
+    if (preExecutePrompt) {
+      lines.push('## Pre-Execute 指令');
+      lines.push(preExecutePrompt);
+      lines.push('');
+      lines.push('返回格式：{"allowExecute":true,"executionHints":[],"riskFlags":[],"notes":""}');
+      return lines.join('\n');
+    }
 
     if (preActions.length > 0) {
       const tc = input.taskContext || {};
@@ -279,7 +296,7 @@ export class OrchestrationContextService {
         // const toolCallJson = JSON.stringify({ tool: a.tool, parameters: a.params });
         // lines.push(toolCallJson);
         lines.push(`工具ID（tool）: ${a.tool}`);
-        lines.push(`参数（parameters）: ${JSON.stringify(a.params)}`); 
+        lines.push(`参数（parameters）: ${JSON.stringify(a.params)}`);
         lines.push('');
       }
       lines.push('工具调用完成后，返回：');
@@ -356,6 +373,7 @@ export class OrchestrationContextService {
     planDomainType?: string;
     totalGeneratedSteps?: number;
     outlineStepCount?: number;
+    postExecutePrompt?: string;
   }): string {
     const output = String(input.executionOutput || '').slice(0, 3000).trim();
     const error = String(input.executionError || '').slice(0, 1000).trim();
@@ -363,6 +381,7 @@ export class OrchestrationContextService {
     const hasError = error.length > 0;
 
     const lines: string[] = [];
+    const postExecutePrompt = String(input.postExecutePrompt || '').trim();
 
     // --- 阶段隔离声明（最高优先级，防止 skill 中 phaseInitialize 指令干扰）---
     lines.push('【当前阶段声明 — 最高优先级】');
@@ -413,10 +432,11 @@ export class OrchestrationContextService {
       lines.push(`计划总步骤数: ${stepCount}（step1 → step${stepCount}）`);
     }
 
-    // --- 决策规则 ---
     lines.push('');
     lines.push('## 决策规则（严格遵守）');
-    if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
+    if (postExecutePrompt) {
+      lines.push(postExecutePrompt);
+    } else if (input.planDomainType === 'development' || (totalSteps && totalSteps > 1)) {
       const stepCount = totalSteps || 3;
       const completed = input.totalGeneratedSteps ?? input.step;
       if (completed < stepCount) {

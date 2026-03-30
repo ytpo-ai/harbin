@@ -111,7 +111,12 @@ export class OrchestrationStepDispatcherService {
           return { advanced: true, phase: 'initialize' };
         }
 
-        await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', claimedState, plannerSessionId);
+        await this.phaseGenerate(
+          normalizedPlanId,
+          plan.sourcePrompt || '',
+          claimedState,
+          plannerSessionId,
+        );
         return { advanced: true, phase: 'generating' };
       }
 
@@ -125,7 +130,12 @@ export class OrchestrationStepDispatcherService {
       if (phase === 'generating') {
         const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'generating');
         const effectiveState = this.withPlannerSession(state, 'generating', plannerSessionId);
-        await this.phaseGenerate(normalizedPlanId, plan.sourcePrompt || '', effectiveState, plannerSessionId);
+        await this.phaseGenerate(
+          normalizedPlanId,
+          plan.sourcePrompt || '',
+          effectiveState,
+          plannerSessionId,
+        );
         return { advanced: true, phase: 'generating' };
       }
       if (phase === 'pre_execute') {
@@ -240,7 +250,7 @@ export class OrchestrationStepDispatcherService {
   ): Promise<void> {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
     const existingTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
-    const result = await this.plannerService.initializePlan(
+    await this.plannerService.initializePlan(
       planId,
       {
         sourcePrompt: plan.sourcePrompt || '',
@@ -250,14 +260,31 @@ export class OrchestrationStepDispatcherService {
       { sessionId: plannerSessionId },
     );
 
-    const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
-    const requirementId = String(result.requirementId || existingTaskContext.requirementId || '').trim();
-    if (domainType === 'development' && !requirementId) {
-      // 归档失败的 initialize session，清除 sessionId 使重试时创建全新 session，避免历史上下文污染
+    const refreshedPlan = await this.planModel
+      .findById(planId)
+      .select({ metadata: 1 })
+      .lean<{ metadata?: Record<string, unknown> }>()
+      .exec();
+    const refreshedMetadata = (refreshedPlan?.metadata || {}) as Record<string, unknown>;
+    const outline = Array.isArray(refreshedMetadata.outline)
+      ? refreshedMetadata.outline as Array<Record<string, unknown>>
+      : [];
+    const hasValidOutline = outline.length > 0
+      && outline.every((item) => {
+        const prompts = item?.phasePrompts;
+        if (!prompts || typeof prompts !== 'object' || Array.isArray(prompts)) {
+          return false;
+        }
+        const generating = String((prompts as Record<string, unknown>).generating || '').trim();
+        const postExecute = String((prompts as Record<string, unknown>).post_execute || '').trim();
+        return Boolean(generating && postExecute);
+      });
+
+    if (!hasValidOutline) {
       await this.agentClientService.archiveSession(plannerSessionId).catch(() => {});
       const nextState = this.bumpFailureCounters(
         state,
-        'phaseInitialize missing requirementId for development domain',
+        'phaseInitialize missing valid metadata.outline',
       );
       const stateWithClearedSession = this.isIsolatedSessionMode
         ? {
@@ -280,31 +307,6 @@ export class OrchestrationStepDispatcherService {
       return;
     }
 
-    const taskContext: Record<string, unknown> = {
-      ...existingTaskContext,
-      ...(requirementId ? { requirementId } : {}),
-      ...(result.requirementTitle ? { requirementTitle: result.requirementTitle } : {}),
-      ...(result.requirementDescription ? { requirementDescription: result.requirementDescription } : {}),
-    };
-
-    const nextMetadata: Record<string, unknown> = {
-      ...metadata,
-      taskContext,
-      outline: result.outline,
-      ...(requirementId ? { requirementId } : {}),
-    };
-
-    await this.planModel
-      .updateOne(
-        { _id: planId },
-        {
-          $set: {
-            metadata: nextMetadata,
-          },
-        },
-      )
-      .exec();
-
     const stateWithSession = this.withPlannerSession(state, 'initialize', plannerSessionId);
     const advanced = await this.updateGenerationStateIfExpected(planId, state, {
       ...stateWithSession,
@@ -317,8 +319,8 @@ export class OrchestrationStepDispatcherService {
 
     this.eventStream.emitPlanStreamEvent(planId, 'planning.initialized', {
       planId,
-      requirementId: requirementId || undefined,
-      outline: result.outline,
+      requirementId: this.contextService.resolvePlanTaskContextFromMetadata(refreshedMetadata).requirementId,
+      outline,
     });
 
     await this.autoAdvance(planId);
@@ -492,6 +494,12 @@ export class OrchestrationStepDispatcherService {
     const outlineStep = outline.find((o) => Number(o.step) === state.currentStep) as
       | { preExecuteActions?: Array<{ tool: string; params: Record<string, unknown> }> }
       | undefined;
+    const outlinePrompts = outlineStep && typeof outlineStep === 'object'
+      ? (outlineStep as Record<string, unknown>).phasePrompts
+      : undefined;
+    const normalizedPreExecutePrompt = outlinePrompts && typeof outlinePrompts === 'object' && !Array.isArray(outlinePrompts)
+      ? String((outlinePrompts as Record<string, unknown>).pre_execute || '').trim() || undefined
+      : undefined;
 
     const prompt = this.contextService.buildPreTaskContext({
       step: state.currentStep,
@@ -502,7 +510,10 @@ export class OrchestrationStepDispatcherService {
       planDomainType: String((planSnapshot as { domainType?: string } | null)?.domainType || 'general'),
       planGoal: String((planSnapshot as { sourcePrompt?: string } | null)?.sourcePrompt || ''),
       taskContext,
-      outlineStep,
+      outlineStep: {
+        preExecuteActions: outlineStep?.preExecuteActions,
+        phasePrompts: normalizedPreExecutePrompt ? { pre_execute: normalizedPreExecutePrompt } : undefined,
+      },
     });
 
     const decision = await this.plannerService.executePreTask(planId, prompt, plannerSessionId);
@@ -562,6 +573,18 @@ export class OrchestrationStepDispatcherService {
 
   private async phaseExecute(planId: string, state: OrchestrationGenerationState): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
+    const planSnapshot = await this.planModel
+      .findById(planId)
+      .select({ metadata: 1 })
+      .lean<{ metadata?: Record<string, unknown> }>()
+      .exec();
+    const metadata = (planSnapshot?.metadata || {}) as Record<string, unknown>;
+    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
+    const outlineStep = outline.find((o) => Number(o.step) === state.currentStep) as Record<string, unknown> | undefined;
+    const phasePrompts = outlineStep && typeof outlineStep.phasePrompts === 'object' && !Array.isArray(outlineStep.phasePrompts)
+      ? outlineStep.phasePrompts as Record<string, unknown>
+      : undefined;
+    const postExecutePrompt = String(phasePrompts?.post_execute || '').trim() || undefined;
     this.eventStream.emitPlanStreamEvent(planId, 'planning.task.executing', {
       planId,
       step: state.currentStep,
@@ -629,6 +652,7 @@ export class OrchestrationStepDispatcherService {
       planDomainType,
       totalGeneratedSteps: state.totalGenerated,
       outlineStepCount,
+      postExecutePrompt,
     });
     let decision: PostExecutionDecision;
     try {
@@ -722,6 +746,9 @@ export class OrchestrationStepDispatcherService {
           planId,
           ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
           roleInPlan: 'planner',
+          domainType: String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as 'general' | 'development' | 'research',
+          phase,
+          taskType: 'planning',
         }),
       },
     );
@@ -748,14 +775,22 @@ export class OrchestrationStepDispatcherService {
 
   private shouldRunInitialize(plan: OrchestrationPlanDocument, _state: OrchestrationGenerationState): boolean {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
-    const taskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
-    const hasOutline = Array.isArray(metadata.outline) && metadata.outline.length > 0;
-    const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase();
-    if (domainType !== 'development') {
-      return !hasOutline;
+    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
+    if (outline.length === 0) {
+      return true;
     }
-    const requirementId = String(taskContext.requirementId || metadata.requirementId || '').trim();
-    return !hasOutline || !requirementId;
+
+    const hasValidPrompts = outline.every((item) => {
+      const prompts = item?.phasePrompts;
+      if (!prompts || typeof prompts !== 'object' || Array.isArray(prompts)) {
+        return false;
+      }
+      const generating = String((prompts as Record<string, unknown>).generating || '').trim();
+      const postExecute = String((prompts as Record<string, unknown>).post_execute || '').trim();
+      return Boolean(generating && postExecute);
+    });
+
+    return !hasValidPrompts;
   }
 
   private async checkTerminalConditions(

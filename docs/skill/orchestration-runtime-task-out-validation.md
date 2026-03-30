@@ -8,6 +8,11 @@ metadata:
   applies_to:
     - orchestration
     - planner-post-execute
+  tags:
+    - orchestration
+    - post-execute
+    - roleInPlan:planner,planner_post_execution:must
+    - phase:post_execute:must
 ---
 
 # Orchestration Runtime Task Output Validation

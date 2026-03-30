@@ -21,6 +21,9 @@ export class CollaborationContextFactory {
     executorAgentId?: string;
     dependencies?: unknown;
     upstreamOutputs?: unknown;
+    domainType?: OrchestrationCollaborationContext['domainType'];
+    phase?: OrchestrationCollaborationContext['phase'];
+    taskType?: string;
   }): OrchestrationCollaborationContext {
     const { responseDirective = 'json-only', ...rest } = params;
     return {

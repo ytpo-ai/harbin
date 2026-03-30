@@ -699,6 +699,28 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
+        id: 'builtin.sys-mg.mcp.orchestration.plan-initialize',
+        name: 'Orchestration Plan Initialize',
+        description: 'Write structured initialize data to plan metadata',
+        type: 'api_call' as const,
+        category: 'Orchestration',
+        requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
+        tokenCost: 3,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            required: ['planId', 'mode', 'data'],
+            additionalProperties: false,
+            properties: {
+              planId: { type: 'string', description: '计划 ID' },
+              mode: { type: 'string', description: '写入模式，当前支持 outline/taskContext' },
+              data: { type: 'object', description: '写入内容，mode=outline 时可传数组' },
+            },
+          },
+        },
+      },
+      {
         id: 'builtin.sys-mg.mcp.orchestration.submit-task',
         name: 'Orchestration Submit Task',
         description: 'Planner submits and creates next orchestration task',
@@ -724,6 +746,7 @@ export const BUILTIN_TOOLS = [
                 description: '任务类型',
               },
               agentId: { type: 'string', description: '指定执行者 agent ID' },
+              executorId: { type: 'string', description: '指定执行者 agent ID（兼容字段，等价于 agentId）' },
               requiredTools: { type: 'array', items: { type: 'string' }, description: '任务所需工具列表' },
               reasoning: { type: 'string', description: '规划依据' },
               redesignTaskId: { type: 'string', description: 'action=redesign 时必填，目标 taskId' },
@@ -759,7 +782,7 @@ export const BUILTIN_TOOLS = [
       {
         id: 'builtin.sys-mg.mcp.requirement.list',
         name: 'Requirement List',
-        description: 'List EI requirements with filters',
+        description: 'List EI requirements with filters or board view',
         type: 'api_call' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'requirement_read', name: 'Requirement Read', level: 'basic' }],
@@ -767,6 +790,7 @@ export const BUILTIN_TOOLS = [
         implementation: {
           type: 'built_in' as const,
           parameters: {
+            view: 'string',
             status: 'string',
             assigneeAgentId: 'string',
             localProjectId: 'string',
@@ -835,11 +859,11 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.assign',
-        name: 'Requirement Assign',
-        description: 'Assign EI requirement to agent',
+        id: 'builtin.sys-mg.mcp.requirement.update',
+        name: 'Requirement Update',
+        description: 'Update requirement by action (assign/comment/update_status)',
         prompt:
-          '会议分配场景执行 requirement.assign 后，必须补充结构化三段式回执：动作1（已分配：requirementId/执行人/状态）+ 动作2（已通知：消息摘要）+ 下一步（检查时间点）。用户明确同意后直接执行，不重复确认语气。',
+          '会议分配场景执行 requirement.update(action=assign) 后，必须补充结构化三段式回执：动作1（已分配：requirementId/执行人/状态）+ 动作2（已通知：消息摘要）+ 下一步（检查时间点）。用户明确同意后直接执行，不重复确认语气。',
         type: 'api_call' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'requirement_write', name: 'Requirement Write', level: 'intermediate' }],
@@ -847,27 +871,18 @@ export const BUILTIN_TOOLS = [
         implementation: {
           type: 'built_in' as const,
           parameters: {
+            action: 'string',
             requirementId: 'string',
+            status: 'string',
+            changedById: 'string',
+            changedByName: 'string',
+            changedByType: 'string',
+            note: 'string',
             toAgentId: 'string',
             toAgentName: 'string',
             assignedById: 'string',
             assignedByName: 'string',
             reason: 'string',
-          },
-        },
-      },
-      {
-        id: 'builtin.sys-mg.mcp.requirement.comment',
-        name: 'Requirement Comment',
-        description: 'Append EI requirement comment',
-        type: 'api_call' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'requirement_write', name: 'Requirement Write', level: 'basic' }],
-        tokenCost: 2,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            requirementId: 'string',
             content: 'string',
             authorId: 'string',
             authorName: 'string',
@@ -891,19 +906,6 @@ export const BUILTIN_TOOLS = [
             repo: 'string',
             labels: 'string[]',
           },
-        },
-      },
-      {
-        id: 'builtin.sys-mg.mcp.requirement.board',
-        name: 'Requirement Board',
-        description: 'Get EI requirement board view',
-        type: 'api_call' as const,
-        category: 'Engineering Intelligence',
-        requiredPermissions: [{ id: 'requirement_read', name: 'Requirement Read', level: 'basic' }],
-        tokenCost: 2,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {},
         },
       },
       {
