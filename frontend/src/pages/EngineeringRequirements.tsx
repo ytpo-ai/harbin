@@ -213,46 +213,52 @@ const EngineeringRequirements: React.FC = () => {
 
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <p className="text-sm font-semibold text-gray-900">新建需求</p>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
-          <select
-            value={selectedLocalProjectId}
-            onChange={(e) => setSelectedLocalProjectId(e.target.value)}
-            className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
-          >
-            <option value="">请选择所属本地项目</option>
-            {localProjects.map((item) => (
-              <option key={item._id} value={item._id}>{item.name}</option>
-            ))}
-          </select>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="需求标题"
-            className="md:col-span-5 border border-gray-300 rounded px-3 py-2 text-sm"
-          />
-          <select
-            value={priority}
-            onChange={(e) => setPriority(e.target.value as RequirementPriority)}
-            className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
-          >
-            {PRIORITY_OPTIONS.map((item) => (
-              <option key={item} value={item}>{PRIORITY_LABEL[item]}</option>
-            ))}
-          </select>
-          <input
-            value={labelsInput}
-            onChange={(e) => setLabelsInput(e.target.value)}
-            placeholder="标签，用逗号分隔"
-            className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
-          />
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="需求描述"
-            rows={3}
-            className="md:col-span-12 border border-gray-300 rounded px-3 py-2 text-sm"
-          />
-          <div className="md:col-span-12 flex justify-end">
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+            <select
+              value={selectedLocalProjectId}
+              onChange={(e) => setSelectedLocalProjectId(e.target.value)}
+              className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              <option value="">请选择所属本地项目</option>
+              {localProjects.map((item) => (
+                <option key={item._id} value={item._id}>{item.name}</option>
+              ))}
+            </select>
+            <select
+              value={priority}
+              onChange={(e) => setPriority(e.target.value as RequirementPriority)}
+              className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              {PRIORITY_OPTIONS.map((item) => (
+                <option key={item} value={item}>{PRIORITY_LABEL[item]}</option>
+              ))}
+            </select>
+            <input
+              value={labelsInput}
+              onChange={(e) => setLabelsInput(e.target.value)}
+              placeholder="标签，用逗号分隔"
+              className="md:col-span-5 border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="需求标题"
+              className="border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="需求描述"
+              rows={4}
+              className="border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex justify-end">
             <button
               onClick={submitCreateRequirement}
               disabled={!title.trim() || !selectedLocalProjectId.trim() || createMutation.isLoading}
