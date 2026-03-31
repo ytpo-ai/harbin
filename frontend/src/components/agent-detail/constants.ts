@@ -46,6 +46,35 @@ export const ACTION_SEMANTIC_MAP: Record<string, { label: string; color: string;
   chat_tool_call: { label: '工具调用', color: 'text-amber-600 bg-amber-50 ring-amber-200/60', icon: '#' },
 };
 
+export const SCORE_RULE_LABEL: Record<string, string> = {
+  D1: '工具参数预检失败',
+  D2: '多 tool_call 批量输出',
+  D3: '连续两轮调用相同工具',
+  D4: '工具执行失败（非参数类）',
+  D5: '工具执行失败（参数类）',
+  D6: '调用未授权工具',
+  D7: 'tool_call JSON 解析失败',
+  D8: '文本意图未执行',
+  D9: 'Planner 纯文本重试触发',
+  D10: '空/无意义响应',
+  D11: '达到最大轮次上限',
+  D12: 'LLM 调用超时/网络错误',
+};
+
+export const getScoreBadgeClass = (score: number): string => {
+  if (score >= 80) return 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  if (score >= 60) return 'border-amber-200 bg-amber-50 text-amber-700';
+  return 'border-rose-200 bg-rose-50 text-rose-700';
+};
+
+export type TaskGroupDetailTab = 'flow' | 'raw' | 'score';
+
+export const TASK_GROUP_DETAIL_TABS: Array<{ key: TaskGroupDetailTab; label: string }> = [
+  { key: 'flow', label: '执行流程' },
+  { key: 'raw', label: '原始信息' },
+  { key: 'score', label: '扣分记录' },
+];
+
 export interface TaskGroup {
   groupKey: string;
   title: string;

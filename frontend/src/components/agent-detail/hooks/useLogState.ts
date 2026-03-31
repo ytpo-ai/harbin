@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
-import { agentService } from '../../../services/agentService';
+import { AgentRunScore, agentService } from '../../../services/agentService';
 import {
   agentActionLogService,
   AgentActionLogItem,
   AgentActionLogQuery,
 } from '../../../services/agentActionLogService';
-import { AGENT_DETAIL_QUERY_KEYS, DEFAULT_LOG_PAGE_SIZE, LogStatus, TaskGroup } from '../constants';
+import { AGENT_DETAIL_QUERY_KEYS, DEFAULT_LOG_PAGE_SIZE, LogStatus, TaskGroup, TaskGroupDetailTab } from '../constants';
 import { getActionDescription, getActionSemantic } from '../utils';
 
 type LogEnvironmentType = TaskGroup['environmentType'];
@@ -94,7 +94,8 @@ export const useLogState = (agentId: string) => {
     contextType: '',
   });
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Record<string, boolean>>({});
-  const [taskViewModes, setTaskViewModes] = useState<Record<string, 'readable' | 'raw'>>({});
+  const [detailTabs, setDetailTabs] = useState<Record<string, TaskGroupDetailTab>>({});
+  const [runScores, setRunScores] = useState<Record<string, { loading: boolean; data: AgentRunScore | null; error?: string }>>({});
   const [handlingApprovalRunId, setHandlingApprovalRunId] = useState('');
 
   const logQuery = useQuery(
@@ -133,18 +134,74 @@ export const useLogState = (agentId: string) => {
     },
   );
 
+  const loadRunScore = async (runId: string) => {
+    if (!runId || runId.startsWith('ungrouped-')) {
+      return;
+    }
+
+    let shouldFetch = false;
+    setRunScores((prev) => {
+      const cached = prev[runId];
+      if (cached?.loading) {
+        return prev;
+      }
+      if (cached && !cached.error && cached.data !== undefined) {
+        return prev;
+      }
+      shouldFetch = true;
+      return {
+        ...prev,
+        [runId]: {
+          loading: true,
+          data: null,
+        },
+      };
+    });
+
+    if (!shouldFetch) {
+      return;
+    }
+
+    try {
+      const data = await agentService.getRunScore(runId);
+      setRunScores((prev) => ({
+        ...prev,
+        [runId]: {
+          loading: false,
+          data,
+        },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '评分加载失败';
+      setRunScores((prev) => ({
+        ...prev,
+        [runId]: {
+          loading: false,
+          data: null,
+          error: message,
+        },
+      }));
+    }
+  };
+
   const updateLogFilter = (patch: Partial<AgentActionLogQuery>) => {
     setLogFilters((prev) => ({ ...prev, ...patch, page: 1 }));
   };
 
   const toggleTaskExpanded = (key: string) => {
-    setExpandedTaskKeys((prev) => ({ ...prev, [key]: !prev[key] }));
+    setExpandedTaskKeys((prev) => {
+      const nextExpanded = !prev[key];
+      if (nextExpanded) {
+        void loadRunScore(key);
+      }
+      return { ...prev, [key]: nextExpanded };
+    });
   };
 
-  const toggleTaskViewMode = (key: string) => {
-    setTaskViewModes((prev) => ({
+  const setDetailTab = (key: string, tab: TaskGroupDetailTab) => {
+    setDetailTabs((prev) => ({
       ...prev,
-      [key]: prev[key] === 'raw' ? 'readable' : 'raw',
+      [key]: tab,
     }));
     setExpandedTaskKeys((prev) => ({ ...prev, [key]: true }));
   };
@@ -260,7 +317,8 @@ export const useLogState = (agentId: string) => {
     logFilters,
     setLogFilters,
     expandedTaskKeys,
-    taskViewModes,
+    detailTabs,
+    runScores,
     handlingApprovalRunId,
     logQuery,
     runtimeRunQuery,
@@ -269,7 +327,7 @@ export const useLogState = (agentId: string) => {
     approvalTargetRunId,
     updateLogFilter,
     toggleTaskExpanded,
-    toggleTaskViewMode,
+    setDetailTab,
     handleApprovalDecision,
   };
 };

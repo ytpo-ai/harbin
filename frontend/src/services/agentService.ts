@@ -183,6 +183,35 @@ export interface AgentRuntimeRun {
   error?: string;
 }
 
+export interface AgentRunScoreDeduction {
+  ruleId: string;
+  points: number;
+  round: number;
+  toolId?: string;
+  detail?: string;
+  timestamp: string;
+}
+
+export interface AgentRunScore {
+  id: string;
+  runId: string;
+  agentId: string;
+  taskId?: string;
+  sessionId?: string;
+  score: number;
+  baseScore: number;
+  totalDeductions: number;
+  stats: {
+    totalRounds: number;
+    totalToolCalls: number;
+    successfulToolCalls: number;
+    failedToolCalls: number;
+  };
+  deductionsByRule: Record<string, { count: number; totalPoints: number }>;
+  deductions: AgentRunScoreDeduction[];
+  ruleVersion: string;
+}
+
 export interface AgentTaskEvent {
   id: string;
   type: 'status' | 'progress' | 'token' | 'tool' | 'result' | 'error' | 'heartbeat';
@@ -403,6 +432,18 @@ export const agentService = {
   async getRuntimeRun(runId: string): Promise<AgentRuntimeRun | null> {
     const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}`);
     return response.data?.run || null;
+  },
+
+  async getRunScore(runId: string): Promise<AgentRunScore | null> {
+    try {
+      const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}/score`);
+      return response.data || null;
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   async resumeRuntimeRun(runId: string, reason?: string): Promise<{ success: boolean }> {
