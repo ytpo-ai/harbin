@@ -65,9 +65,6 @@ export class OrchestrationExecutionEngineService {
     const runtimeTaskTypeOverride = this.contextService.normalizeRuntimeTaskTypeOverride(options?.runtimeTaskTypeOverride);
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((task as any).runtimeTaskType);
     const runtimeTaskType = runtimeTaskTypeOverride || persistedRuntimeTaskType || 'general';
-    const effectiveIsResearchTask = runtimeTaskType === 'research';
-    const effectiveIsReviewTask = runtimeTaskType === 'development.review';
-    const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(task);
     const stepOrder = typeof (task as any).order === 'number' ? Number((task as any).order) : undefined;
@@ -167,9 +164,6 @@ export class OrchestrationExecutionEngineService {
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, task.description);
     const taskPrompt = await this.contextService.buildTaskDescription(task.description, {
       dependencyContext,
-      isResearchTask: effectiveIsResearchTask,
-      isReviewTask: effectiveIsReviewTask,
-      researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
       stepIndex: typeof (task as any).order === 'number' ? (task as any).order : undefined,
       currentTaskTitle: task.title,
@@ -212,8 +206,8 @@ export class OrchestrationExecutionEngineService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          researchTaskKind: effectiveResearchTaskKind,
-          reviewValidationRequired: effectiveIsReviewTask,
+          researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
+          reviewValidationRequired: runtimeTaskType === 'development.review',
         },
       });
 
@@ -343,9 +337,6 @@ export class OrchestrationExecutionEngineService {
     const assignment = runTask.assignment || { executorType: 'unassigned' as const };
     const persistedRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride((runTask as any).runtimeTaskType);
     const runtimeTaskType = persistedRuntimeTaskType || 'general';
-    const effectiveIsResearchTask = runtimeTaskType === 'research';
-    const effectiveIsReviewTask = runtimeTaskType === 'development.review';
-    const effectiveResearchTaskKind = effectiveIsResearchTask ? 'generic_research' : null;
     const dependencyContext = await this.contextService.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
     const stepOrder = typeof (runTask as any).order === 'number' ? Number((runTask as any).order) : undefined;
@@ -407,9 +398,6 @@ export class OrchestrationExecutionEngineService {
     const runtimeChannelHint = this.resolveRuntimeChannelHint(runtimeTaskType, runTask.description);
     const taskPrompt = await this.contextService.buildTaskDescription(runTask.description, {
       dependencyContext,
-      isResearchTask: effectiveIsResearchTask,
-      isReviewTask: effectiveIsReviewTask,
-      researchTaskKind: effectiveResearchTaskKind || undefined,
       retryHint,
       stepIndex: typeof (runTask as any).order === 'number' ? (runTask as any).order : undefined,
       currentTaskTitle: runTask.title,
@@ -453,8 +441,8 @@ export class OrchestrationExecutionEngineService {
           dependencyContext,
           runtimeTaskType,
           runtimeChannelHint,
-          researchTaskKind: effectiveResearchTaskKind,
-          reviewValidationRequired: effectiveIsReviewTask,
+          researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
+          reviewValidationRequired: runtimeTaskType === 'development.review',
         },
       });
 
