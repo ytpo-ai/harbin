@@ -84,6 +84,8 @@ fi
 
 sleep 2
 
+echo "开始重启后端服务（将先执行 build，再启动 dist）..."
+
 if [ -n "$TARGET_PORT" ]; then
     bash "$SCRIPT_DIR/start.sh" "$ENV" -p "$TARGET_PORT"
 else

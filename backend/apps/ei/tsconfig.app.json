@@ -2,10 +2,10 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "module": "NodeNext",
-    "outDir": "../../dist/apps/ei",
+    "outDir": "../../dist",
     "rootDir": "../../",
     "declaration": false
   },
   "include": ["./src/**/*.ts", "../../src/config/**/*.ts", "../../libs/**/*.ts"],
-  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+  "exclude": ["node_modules", "dist", "test", "./src/**/*.spec.ts", "../../src/config/**/*.spec.ts", "../../libs/**/*.spec.ts", "**/*.spec.ts"]
 }

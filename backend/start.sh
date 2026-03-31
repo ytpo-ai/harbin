@@ -55,13 +55,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ "$ENV" = "development" ]; then
-    WATCH_ARG="--watch"
-    echo "开发模式: 启动后端服务（watch 已开启）"
-else
-    WATCH_ARG=""
-    echo "非开发模式: 启动后端服务（watch 未开启）"
-fi
+echo "启动后端服务，运行环境: $ENV"
 
 wait_for_service() {
     local port=$1
@@ -83,19 +77,19 @@ wait_for_service() {
 resolve_service_by_port() {
     case "$1" in
         3001)
-            echo "legacy|start:legacy|$LOG_DIR/legacy-app.log"
+            echo "legacy|build:legacy|start:prod:legacy|$LOG_DIR/legacy-app.log"
             ;;
         3100)
-            echo "gateway|start:gateway|$LOG_DIR/gateway-app.log"
+            echo "gateway|build:gateway|start:prod:gateway|$LOG_DIR/gateway-app.log"
             ;;
         3002)
-            echo "agents|start:agents|$LOG_DIR/agents-app.log"
+            echo "agents|build:agents|start:prod:agents|$LOG_DIR/agents-app.log"
             ;;
         3003)
-            echo "ws|start:ws|$LOG_DIR/ws-app.log"
+            echo "ws|build:ws|start:prod:ws|$LOG_DIR/ws-app.log"
             ;;
         3004)
-            echo "ei|start:ei|$LOG_DIR/ei-app.log"
+            echo "ei|build:ei|start:prod:ei|$LOG_DIR/ei-app.log"
             ;;
         *)
             return 1
@@ -106,17 +100,16 @@ resolve_service_by_port() {
 start_backend_service() {
     local service_name=$1
     local service_port=$2
-    local start_script=$3
-    local log_file=$4
+    local build_script=$3
+    local start_script=$4
+    local log_file=$5
 
     echo "========================================"
+    echo "构建 $service_name 服务..."
+    pnpm run "$build_script"
     echo "启动 $service_name 服务 (端口 $service_port)..."
 
-    if [ -n "$WATCH_ARG" ]; then
-        pnpm run "$start_script" -- --watch </dev/null > "$log_file" 2>&1 &
-    else
-        nohup pnpm run "$start_script" > "$log_file" 2>&1 &
-    fi
+    nohup env NODE_ENV="$ENV" pnpm run "$start_script" > "$log_file" 2>&1 &
 
     wait_for_service "$service_port" "$service_name"
 }
@@ -133,19 +126,19 @@ if [ -n "$TARGET_PORT" ]; then
         exit 1
     fi
 
-    IFS='|' read -r service_name start_script log_file <<< "$service_line"
-    start_backend_service "$service_name" "$TARGET_PORT" "$start_script" "$log_file"
+    IFS='|' read -r service_name build_script start_script log_file <<< "$service_line"
+    start_backend_service "$service_name" "$TARGET_PORT" "$build_script" "$start_script" "$log_file"
 
     echo "========================================"
     echo "后端服务已启动，日志文件位于: $log_file"
     exit 0
 fi
 
-start_backend_service "legacy" 3001 "start:legacy" "$LOG_DIR/legacy-app.log"
-start_backend_service "gateway" 3100 "start:gateway" "$LOG_DIR/gateway-app.log"
-start_backend_service "agents" 3002 "start:agents" "$LOG_DIR/agents-app.log"
-start_backend_service "ws" 3003 "start:ws" "$LOG_DIR/ws-app.log"
-start_backend_service "ei" 3004 "start:ei" "$LOG_DIR/ei-app.log"
+start_backend_service "legacy" 3001 "build:legacy" "start:prod:legacy" "$LOG_DIR/legacy-app.log"
+start_backend_service "gateway" 3100 "build:gateway" "start:prod:gateway" "$LOG_DIR/gateway-app.log"
+start_backend_service "agents" 3002 "build:agents" "start:prod:agents" "$LOG_DIR/agents-app.log"
+start_backend_service "ws" 3003 "build:ws" "start:prod:ws" "$LOG_DIR/ws-app.log"
+start_backend_service "ei" 3004 "build:ei" "start:prod:ei" "$LOG_DIR/ei-app.log"
 
 echo "========================================"
 echo "后端服务已启动，日志文件位于: $LOG_DIR"

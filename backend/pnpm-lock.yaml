@@ -77,6 +77,9 @@ importers:
       eventemitter2:
         specifier: ^6.4.9
         version: 6.4.9
+      express:
+        specifier: ^4.22.1
+        version: 4.22.1
       google-auth-library:
         specifier: ^9.0.0
         version: 9.15.1
