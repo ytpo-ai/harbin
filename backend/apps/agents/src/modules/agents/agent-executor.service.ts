@@ -20,8 +20,10 @@ import { PromptResolverService } from '@agent/modules/prompt-registry/prompt-res
 import { RuntimeEiSyncService } from '@agent/modules/runtime/runtime-ei-sync.service';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '@agent/modules/runtime/runtime-orchestrator.service';
 import { RuntimePersistenceService } from '@agent/modules/runtime/runtime-persistence.service';
+import { AgentRunScoreService } from '@agent/modules/runtime/agent-run-score.service';
 import { HookPipelineService } from '@agent/modules/runtime/hooks/hook-pipeline.service';
 import { LifecycleHookContext } from '@agent/modules/runtime/hooks/lifecycle-hook.types';
+import { TaskExecutionScorer } from '@agent/modules/runtime/task-execution-scorer';
 import { ToolService } from '@agent/modules/tools/tool.service';
 import { Skill, SkillDocument } from '@agent/schemas/agent-skill.schema';
 import { ContextAssemblerService } from './context/context-assembler.service';
@@ -116,6 +118,7 @@ export class AgentExecutorService {
     private readonly memoEventBus: MemoEventBusService,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
     private readonly runtimePersistence: RuntimePersistenceService,
+    private readonly agentRunScoreService: AgentRunScoreService,
     private readonly runtimeEiSyncService: RuntimeEiSyncService,
     private readonly openCodeExecutionService: OpenCodeExecutionService,
     private readonly redisService: RedisService,
@@ -950,6 +953,7 @@ export class AgentExecutorService {
       : '';
     const toolRoundLimitMessage = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolRoundLimitMessage);
     const initialSystemMessageCount = messages.filter((message) => message.role === 'system').length;
+    const scorer = new TaskExecutionScorer();
 
     const persistIntermediateSystemMessage = async (
       round: number,
@@ -1084,8 +1088,10 @@ export class AgentExecutorService {
       );
     };
 
-    // 多轮循环：模型 -> 解析工具调用 -> 执行工具 -> 回灌结果。
-    for (let round = 0; round <= maxToolRounds; round++) {
+    try {
+      // 多轮循环：模型 -> 解析工具调用 -> 执行工具 -> 回灌结果。
+      for (let round = 0; round <= maxToolRounds; round++) {
+        scorer.markRound(round);
       if (runtimeContext) {
         await this.runtimeOrchestrator.assertRunnable(runtimeContext.runId);
       }
@@ -1224,6 +1230,11 @@ export class AgentExecutorService {
           `[tool_round_response] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt} responseLength=${response.length}`,
         );
       } catch (error) {
+        if (shouldRetryGenerationError(error)) {
+          scorer.deduct('D12', round, {
+            detail: toLogError(error).message,
+          });
+        }
         if (isModelTimeoutError(error)) {
           this.logger.warn(
             `[tool_round_timeout] agent=${agent.name} taskId=${task.id} round=${round + 1} durationMs=${Date.now() - roundStartAt}`,
@@ -1302,6 +1313,7 @@ export class AgentExecutorService {
       // 若未识别到工具调用，则尝试返回最终答案。
       const toolCalls = extractAllToolCalls(response);
       if (toolCalls.length === 0 && /<tool_call>/i.test(response)) {
+        scorer.deduct('D7', round);
         // LLM 输出了 <tool_call> 标签但 JSON 解析失败，记录警告便于排查
         this.logger.warn(
           `[tool_call_parse_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} responseLen=${response.length} preview=${JSON.stringify(response.slice(0, 500))}`,
@@ -1312,6 +1324,11 @@ export class AgentExecutorService {
       const toolCall = toolCalls.length > 0 ? toolCalls[0] : null;
       const droppedToolCalls = toolCalls.length > 1 ? toolCalls.slice(1) : [];
       if (droppedToolCalls.length > 0) {
+        for (const droppedToolCall of droppedToolCalls) {
+          scorer.deduct('D2', round, {
+            toolId: normalizeToolId(droppedToolCall.tool),
+          });
+        }
         this.logger.log(
           `[multi_tool_call_dropped] agent=${agent.name} taskId=${task.id} round=${round + 1} executed=${toolCall?.tool} dropped=${droppedToolCalls.map((t) => t.tool).join(',')}`,
         );
@@ -1384,6 +1401,7 @@ export class AgentExecutorService {
 
         // hook 请求重试当前 step：不返回结果，继续下一轮循环
         if (afterStepHookResult.retryRequested) {
+          scorer.deduct('D8', round);
           this.logger.log(`[after_step_hook_retry] agent=${agent.name} taskId=${task.id} round=${round + 1}`);
           if (afterStepHookResult.appendSystemMessages.length > 0) {
             for (const instruction of afterStepHookResult.appendSystemMessages) {
@@ -1457,6 +1475,7 @@ export class AgentExecutorService {
         // planner 被明确要求输出 <tool_call>，但返回了纯文本（确认性文本 / phaseInitialize 输出等）。
         // 仅 retry 一次，注入强制工具调用指令。
         if (!plannerTextOnlyRetryUsed && this.isPlannerTextOnlyRetryNeeded(cleaned, executionContext)) {
+          scorer.deduct('D9', round);
           plannerTextOnlyRetryUsed = true;
           const retryRoleInPlan = String(
             ((executionContext?.collaborationContext || {}) as Record<string, unknown>).roleInPlan || '',
@@ -1503,6 +1522,10 @@ export class AgentExecutorService {
             stepEndAt: new Date(),
           });
           continue;
+        }
+
+        if (isMeaninglessAssistantResponse(cleaned)) {
+          scorer.deduct('D10', round);
         }
 
         if (meetingLike && isMeaninglessAssistantResponse(cleaned)) {
@@ -1583,6 +1606,9 @@ export class AgentExecutorService {
         });
         // 工具权限校验：未授权工具直接驳回并提示模型改写。
         if (!assignedToolIds.has(normalizedToolCallId)) {
+          scorer.deduct('D6', round, {
+            toolId: normalizedToolCallId,
+          });
           this.logger.warn(
             `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId}`,
           );
@@ -1625,6 +1651,10 @@ export class AgentExecutorService {
         const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
         const preflightInputError = getToolInputPreflightError(inputContract?.schema, toolCall.parameters);
         if (preflightInputError && inputContract?.schema) {
+          scorer.deduct('D1', round, {
+            toolId: normalizedToolCallId,
+            detail: preflightInputError,
+          });
           this.logger.warn(
             `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
           );
@@ -1667,6 +1697,13 @@ export class AgentExecutorService {
           continue;
         }
 
+        if (scorer.lastToolId === normalizedToolCallId) {
+          scorer.deduct('D3', round, {
+            toolId: normalizedToolCallId,
+          });
+        }
+        scorer.trackToolCall(normalizedToolCallId);
+
         const toolCallId = `toolcall-${uuidv4()}`;
         let runtimeToolPartId: string | undefined;
         const runtimeToolEventBase = runtimeContext
@@ -1703,6 +1740,7 @@ export class AgentExecutorService {
             task.id,
             executionContext,
           );
+          scorer.trackToolSuccess();
           executedToolIds.add(normalizedToolCallId);
           const toolResultPayload = this.extractToolResultPayload(execution);
           this.logger.log(
@@ -1792,6 +1830,18 @@ export class AgentExecutorService {
           });
         } catch (error) {
           const logError = toLogError(error);
+          scorer.trackToolFailure();
+          if (isToolInputErrorMessage(logError.message)) {
+            scorer.deduct('D5', round, {
+              toolId: normalizedToolCallId,
+              detail: logError.message,
+            });
+          } else {
+            scorer.deduct('D4', round, {
+              toolId: normalizedToolCallId,
+              detail: logError.message,
+            });
+          }
           this.logger.error(
             `[tool_execute_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${logError.message}`,
             logError.stack,
@@ -1870,24 +1920,38 @@ export class AgentExecutorService {
             stepEndAt: new Date(),
            });
         }
+      }
+
+      scorer.deduct('D11', maxToolRounds, {
+        detail: 'reached_max_tool_rounds',
+      });
+      await persistStepMessage({
+        round: maxToolRounds,
+        response: toolRoundLimitMessage,
+        finish: 'max-rounds',
+        parts: [
+          {
+            type: 'text',
+            status: 'completed',
+            content: toolRoundLimitMessage,
+          },
+        ],
+        stepStartAt: new Date(),
+        stepEndAt: new Date(),
+      });
+
+      return toolRoundLimitMessage;
+    } finally {
+      if (runtimeContext?.runId) {
+        await this.agentRunScoreService.saveScore({
+          runId: runtimeContext.runId,
+          agentId: agentRuntimeId,
+          taskId: task.id,
+          sessionId: runtimeContext.sessionId,
+          summary: scorer.summarize(),
+        });
+      }
     }
-
-    await persistStepMessage({
-      round: maxToolRounds,
-      response: toolRoundLimitMessage,
-      finish: 'max-rounds',
-      parts: [
-        {
-          type: 'text',
-          status: 'completed',
-          content: toolRoundLimitMessage,
-        },
-      ],
-      stepStartAt: new Date(),
-      stepEndAt: new Date(),
-    });
-
-    return toolRoundLimitMessage;
   }
 
   // ---- message building ----

@@ -10,12 +10,15 @@ import {
   AgentRuntimeMaintenanceAuditSchema,
 } from '@agent/schemas/agent-runtime-maintenance-audit.schema';
 import { AgentSession, AgentSessionSchema } from '@agent/schemas/agent-session.schema';
+import { AgentRunScore, AgentRunScoreSchema } from '@agent/schemas/agent-run-score.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
 import { RuntimeActionLogIngestionService } from './runtime-action-log.service';
 import { RuntimeEiSyncService } from './runtime-ei-sync.service';
 import { RuntimeController } from './runtime.controller';
+import { AgentRunScoreController } from './agent-run-score.controller';
+import { AgentRunScoreService } from './agent-run-score.service';
 import { MemoModule } from '../memos/memo.module';
 import { RuntimeMemoSnapshotQueueService } from './runtime-memo-snapshot-queue.service';
 import { HookRegistryService } from './hooks/hook-registry.service';
@@ -35,11 +38,13 @@ import { DebugTimingProvider } from '@libs/common';
       { name: AgentEventOutbox.name, schema: AgentEventOutboxSchema },
       { name: AgentRuntimeMaintenanceAudit.name, schema: AgentRuntimeMaintenanceAuditSchema },
       { name: AgentSession.name, schema: AgentSessionSchema },
+      { name: AgentRunScore.name, schema: AgentRunScoreSchema },
     ]),
   ],
-  controllers: [RuntimeController],
+  controllers: [RuntimeController, AgentRunScoreController],
   providers: [
     RuntimePersistenceService,
+    AgentRunScoreService,
     HookDispatcherService,
     RuntimeOrchestratorService,
     RuntimeActionLogIngestionService,
@@ -51,6 +56,7 @@ import { DebugTimingProvider } from '@libs/common';
   ],
   exports: [
     RuntimePersistenceService,
+    AgentRunScoreService,
     HookDispatcherService,
     RuntimeOrchestratorService,
     RuntimeActionLogIngestionService,
