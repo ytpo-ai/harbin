@@ -433,6 +433,16 @@ export const orchestrationService = {
     return response.data;
   },
 
+  async stopPlanGeneration(
+    planId: string,
+    reason?: string,
+  ): Promise<{ success: boolean; planId: string; stopped: boolean; alreadyStopped?: boolean }> {
+    const response = await api.post(`/orchestration/plans/${planId}/stop-generation`, {
+      reason,
+    });
+    return response.data;
+  },
+
   async getPlanRuns(planId: string, limit = 20): Promise<OrchestrationRun[]> {
     const response = await api.get(`/orchestration/plans/${planId}/runs`, {
       params: { limit },

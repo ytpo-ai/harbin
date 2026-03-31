@@ -24,22 +24,32 @@ export class TaskContextBuilder implements ContextBlockBuilder {
     const meetingLikeTask = input.scenarioType === 'meeting';
 
     if (!meetingLikeTask) {
+      const normalizedDescription = String(input.task.description || '').trim();
+      const descriptionPreview =
+        normalizedDescription.length > 120 ? `${normalizedDescription.slice(0, 120)}...` : normalizedDescription;
+      const hasTaskUserMessage = (input.task.messages || []).some(
+        (msg) => msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim().length > 0,
+      );
+      const hasHistoryUserMessage = input.context.previousMessages.some(
+        (msg) => msg.role === 'user' && typeof msg.content === 'string' && msg.content.trim().length > 0,
+      );
+      const descriptionWillBePrompt = Boolean(normalizedDescription) && !hasTaskUserMessage && !hasHistoryUserMessage;
       const descAlreadyInHistory =
-        input.task.description &&
-        input.task.description.length > 50 &&
+        normalizedDescription.length > 50 &&
         input.context.previousMessages.some(
           (msg) =>
             msg.role === 'user' &&
             typeof msg.content === 'string' &&
-            msg.content.includes(input.task.description.slice(0, 100)),
+            msg.content.includes(normalizedDescription.slice(0, 100)),
         );
+      const shouldSuppressDescription = descAlreadyInHistory || descriptionWillBePrompt;
       const taskInfoSnapshot = {
         title: String(input.task.title || '').trim(),
-        description: String(input.task.description || '').trim(),
+        description: descriptionPreview,
         type: String(input.task.type || '').trim(),
         priority: String(input.task.priority || '').trim(),
       };
-      const fullTaskInfoContent = descAlreadyInHistory
+      const fullTaskInfoContent = shouldSuppressDescription
         ? `任务信息:\n标题: ${taskInfoSnapshot.title}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`
         : `任务信息:\n标题: ${taskInfoSnapshot.title}\n描述: ${taskInfoSnapshot.description}\n类型: ${taskInfoSnapshot.type}\n优先级: ${taskInfoSnapshot.priority}`;
       const taskInfoContent = await this.contextFingerprintService.resolveSystemContextBlockContent({

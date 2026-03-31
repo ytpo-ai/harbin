@@ -79,5 +79,6 @@ export class AgentRunScore {
 export const AgentRunScoreSchema = SchemaFactory.createForClass(AgentRunScore);
 
 AgentRunScoreSchema.index({ runId: 1 }, { unique: true, name: 'uk_runId' });
+AgentRunScoreSchema.index({ id: 1 }, { unique: true, name: 'uk_id' });
 AgentRunScoreSchema.index({ agentId: 1, createdAt: -1 }, { name: 'idx_agent_created' });
 AgentRunScoreSchema.index({ score: 1, createdAt: -1 }, { name: 'idx_score' });

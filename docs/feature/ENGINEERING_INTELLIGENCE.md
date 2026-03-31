@@ -113,7 +113,7 @@
 
 ### 1.10 CTO 日常研发闭环（本轮新增）
 
-- Agents 侧新增 requirement MCP 工具集（list/get/create/update-status/assign/comment/sync-github/board），用于 CTO 治理链路直接操作 EI 需求。
+- Agents 侧 requirement MCP 工具集为（list/get/create/update-status/update/sync-github）；其中分配与评论通过 `requirement.update`（`action=assign|comment`）承载，看板能力并入 `requirement.list`（`view=board`），用于 CTO 治理链路直接操作 EI 需求。
 - 编排任务支持 `requirementId` 关联；创建计划与重规划可透传来源需求。
 - 编排运行链路在计划启动时回写需求 `in_progress`，计划完成后回写 `review -> done`（best-effort，不阻塞主链路）。
 - 需求状态流转到 `done` 自动关闭关联 GitHub Issue；从 `done` 回退时自动 reopen（失败仅记录 `lastError`）。

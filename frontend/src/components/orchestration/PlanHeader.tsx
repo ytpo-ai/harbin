@@ -179,9 +179,9 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                       onOpenReplan();
                     }}
                     disabled={!planId || replanLoading || replanPending || runPlanLoading || !isPlanEditable}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                    className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
                   >
-                    <ArrowPathIcon className={`h-4 w-4 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
+                    <ArrowPathIcon className={`h-4 w-4 shrink-0 ${(replanLoading || replanPending) ? 'animate-spin' : ''}`} />
                     {(replanLoading || replanPending) ? '重新编排中...' : '重新编排'}
                   </button>
                 )}
@@ -191,9 +191,9 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     onDeletePlan();
                   }}
                   disabled={!planId || deleteLoading || replanLoading || replanPending || runPlanLoading}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                  className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                 >
-                  <TrashIcon className="h-4 w-4" />
+                  <TrashIcon className="h-4 w-4 shrink-0" />
                   {deleteLoading ? '删除中...' : '删除计划'}
                 </button>
                 {planDetail.status === 'planned' && (
@@ -203,14 +203,14 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                       onPublish();
                     }}
                     disabled={!planId || publishLoading || runPlanLoading}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                   >
                     {publishLoading ? (
                       <ArrowPathIcon className="h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
                     ) : (
                       <RocketLaunchIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
                     )}
-                    {publishLoading ? '发布中...' : '发布生产'}
+                    <span className="min-w-0">{publishLoading ? '发布中...' : '发布生产'}</span>
                   </button>
                 )}
                 {planDetail.status === 'drafting' && (
@@ -220,9 +220,9 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                       onStopGeneration();
                     }}
                     disabled={!planId || stopGenerationLoading}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                   >
-                    <StopIcon className="h-4 w-4" />
+                    <StopIcon className="h-4 w-4 shrink-0" />
                     {stopGenerationLoading ? '停止中...' : '停止执行'}
                   </button>
                 )}
@@ -231,9 +231,9 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                     setMoreActionsOpen(false);
                     onCopyMarkdown();
                   }}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
+                  className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
                 >
-                  <DocumentDuplicateIcon className="h-4 w-4" /> 复制任务MD
+                  <DocumentDuplicateIcon className="h-4 w-4 shrink-0" /> 复制任务MD
                 </button>
               </div>
             )}

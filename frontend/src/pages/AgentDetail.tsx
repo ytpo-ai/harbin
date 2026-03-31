@@ -5,7 +5,7 @@ import { LogTab, MemoTab, SessionTab, useAgentDetail } from '../components/agent
 
 const AgentDetail: React.FC = () => {
   const { agentId = '' } = useParams<{ agentId: string }>();
-  const [activeTab, setActiveTab] = useState<'memo' | 'log' | 'session'>('memo');
+  const [activeTab, setActiveTab] = useState<'session' | 'log' | 'memo'>('session');
   const [pendingSessionId, setPendingSessionId] = useState('');
 
   const { data: agent, isLoading: isAgentLoading, goBackToList } = useAgentDetail(agentId);
@@ -67,28 +67,29 @@ const AgentDetail: React.FC = () => {
 
       <div className="relative">
         <nav className="flex gap-1 border-b border-slate-200/60">
-          {(['memo', 'log', 'session'] as const).map((tab) => (
+          {(['session', 'log', 'memo'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`relative px-4 py-3 text-sm font-medium transition-all duration-200 ${activeTab === tab ? 'text-primary-600' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              <span className="relative z-10">{tab === 'memo' ? '备忘录' : tab === 'log' ? '日志' : 'Session'}</span>
+              <span className="relative z-10">{tab === 'session' ? 'Session' : tab === 'log' ? '日志' : '备忘录'}</span>
               {activeTab === tab && <span className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full bg-gradient-to-r from-primary-500 to-primary-600" />}
             </button>
           ))}
         </nav>
       </div>
 
-      {activeTab === 'memo' && <MemoTab agentId={agentId} agentName={agent?.name} />}
-      {activeTab === 'log' && <LogTab agentId={agentId} onViewSession={handleViewSessionFromLog} />}
       {activeTab === 'session' && (
         <SessionTab
           agentId={agentId}
+          agentName={agent?.name}
           externalSessionId={pendingSessionId}
           onExternalSessionHandled={() => setPendingSessionId('')}
         />
       )}
+      {activeTab === 'log' && <LogTab agentId={agentId} onViewSession={handleViewSessionFromLog} />}
+      {activeTab === 'memo' && <MemoTab agentId={agentId} agentName={agent?.name} />}
     </div>
   );
 };

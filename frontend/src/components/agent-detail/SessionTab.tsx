@@ -6,11 +6,12 @@ import { SessionDrawer } from './SessionDrawer';
 
 interface SessionTabProps {
   agentId: string;
+  agentName?: string;
   externalSessionId?: string;
   onExternalSessionHandled?: () => void;
 }
 
-export const SessionTab: React.FC<SessionTabProps> = ({ agentId, externalSessionId, onExternalSessionHandled }) => {
+export const SessionTab: React.FC<SessionTabProps> = ({ agentId, agentName, externalSessionId, onExternalSessionHandled }) => {
   const state = useSessionState(agentId);
   const { setSessionIdInput, setSelectedSessionId, setIsSessionDrawerOpen } = state;
 
@@ -178,7 +179,7 @@ export const SessionTab: React.FC<SessionTabProps> = ({ agentId, externalSession
         )}
       </div>
 
-      <SessionDrawer state={state} />
+      <SessionDrawer state={state} agentName={agentName} />
     </>
   );
 };

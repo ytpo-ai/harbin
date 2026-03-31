@@ -98,4 +98,32 @@ describe('AgentRunScoreService', () => {
       totalPoints: -20,
     });
   });
+
+  it('does not throw when saveScore write fails', async () => {
+    const { service, scoreModel } = createService();
+    scoreModel.updateOne.mockImplementation(() => {
+      throw new Error('db unavailable');
+    });
+
+    await expect(
+      service.saveScore({
+        runId: 'run-failed',
+        agentId: 'agent-1',
+        summary: {
+          score: 100,
+          baseScore: 100,
+          totalDeductions: 0,
+          stats: {
+            totalRounds: 0,
+            totalToolCalls: 0,
+            successfulToolCalls: 0,
+            failedToolCalls: 0,
+          },
+          deductionsByRule: {},
+          deductions: [],
+          ruleVersion: '1.0',
+        },
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

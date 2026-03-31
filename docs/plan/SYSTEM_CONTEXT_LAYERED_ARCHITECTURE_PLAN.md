@@ -1,5 +1,9 @@
 # 系统上下文分层架构 -- 根治多轮对话 System Prompt 重复注入
 
+> 状态：已弃用（2026-03-30）
+> 弃用原因：计划中的持久化假设（system 仅保留在 `run.metadata.initialSystemMessages`）已与当前代码演进方向不一致。
+> 替代文档：`docs/plan/SESSION_SYSTEM_MESSAGE_PERSISTENCE_PLAN.md`、`docs/technical/SESSION_SYSTEM_MESSAGE_PERSISTENCE_DESIGN.MD`
+
 ## 背景
 
 在多轮会话（尤其是会议场景）中，system prompt 被反复注入上下文，导致：

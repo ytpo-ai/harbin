@@ -27,7 +27,7 @@ export class DomainContextBuilder implements ContextBlockBuilder {
       ? `\n知识引用:\n${domain.knowledgeRefs.map((item) => `- ${item}`).join('\n')}`
       : '';
 
-    const content = `业务领域上下文:\n- domainType: ${domain.domainType || 'general'}\n- description: ${domain.description || ''}${constraints}${refs}`;
+    const content = `Domain Context:\n- domainType: ${domain.domainType || 'general'}\n- description: ${domain.description || ''}${constraints}${refs}`;
     const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
       scope: input.contextScope,
       blockType: 'domain',

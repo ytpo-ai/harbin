@@ -24,10 +24,8 @@ export const REQUIREMENT_TOOL_IDS = {
   get: 'builtin.sys-mg.mcp.requirement.get',
   create: 'builtin.sys-mg.mcp.requirement.create',
   updateStatus: 'builtin.sys-mg.mcp.requirement.update-status',
-  assign: 'builtin.sys-mg.mcp.requirement.assign',
-  comment: 'builtin.sys-mg.mcp.requirement.comment',
+  update: 'builtin.sys-mg.mcp.requirement.update',
   syncGithub: 'builtin.sys-mg.mcp.requirement.sync-github',
-  board: 'builtin.sys-mg.mcp.requirement.board',
 } as const;
 
 export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {

@@ -25,8 +25,6 @@ const RUNTIME_COLLECTIONS = [
   'agent_action_logs',
   'agent_tool_executions',
   'agent_events_outbox',
-  'orchestration_plan_sessions',
-  'orchestration_tasks',
 ] as const;
 
 type RuntimeCollectionName = (typeof RUNTIME_COLLECTIONS)[number];

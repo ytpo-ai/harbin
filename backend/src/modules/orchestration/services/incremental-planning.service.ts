@@ -805,7 +805,7 @@ export class IncrementalPlanningService {
     const normalizedAgentId = String(taskResult.agentId || '').trim();
     const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
 
-    const requirementId = await this.resolveRequirementObjectId(planId);
+    const requirementId = await this.resolveRequirementId(planId);
 
     // 增量规划：自动将前序已完成任务设为依赖，确保执行层能注入前序输出上下文。
     const completedPredecessors = await this.taskModel
@@ -1225,10 +1225,9 @@ export class IncrementalPlanningService {
     return String((agent as any).id || (agent as any)._id?.toString() || '').trim() || null;
   }
 
-  private async resolveRequirementObjectId(planId: string): Promise<Types.ObjectId | undefined> {
+  private async resolveRequirementId(planId: string): Promise<string | undefined> {
     const plan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();
-    const requirementId = this.contextService.resolveRequirementIdFromPlan(plan as any);
-    return this.contextService.parseRequirementObjectId(requirementId);
+    return this.contextService.resolveRequirementIdFromPlan(plan as any);
   }
 
   private async validateTaskContextInjection(
@@ -1246,15 +1245,14 @@ export class IncrementalPlanningService {
       return;
     }
 
-    const taskRequirementId = String((task as any).requirementId || '').trim();
+    const taskRequirementId = String(task.requirementId || '').trim();
     if (!taskRequirementId) {
       this.logger.error(`[TaskContext Injection Validation] task ${String(task._id)} missing requirementId from plan.taskContext`);
       return;
     }
 
-    const expected = this.contextService.parseRequirementObjectId(requirementId)?.toString() || requirementId;
-    if (taskRequirementId !== expected) {
-      this.logger.error(`[TaskContext Injection Validation] task ${String(task._id)} requirementId mismatch: expected=${expected}, actual=${taskRequirementId}`);
+    if (taskRequirementId !== requirementId) {
+      this.logger.error(`[TaskContext Injection Validation] task ${String(task._id)} requirementId mismatch: expected=${requirementId}, actual=${taskRequirementId}`);
     }
   }
 

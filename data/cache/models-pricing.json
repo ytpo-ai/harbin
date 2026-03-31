@@ -1,6 +1,6 @@
 {
   "source": "models.dev",
-  "updatedAt": "2026-03-27T12:43:02.054Z",
+  "updatedAt": "2026-03-31T18:39:22.221Z",
   "records": [
     {
       "provider": "moark",
@@ -339,6 +339,15 @@
         "input": 2,
         "output": 8,
         "cache_read": 0.5
+      }
+    },
+    {
+      "provider": "openai",
+      "model": "gpt-5.3-chat-latest",
+      "cost": {
+        "input": 1.75,
+        "output": 14,
+        "cache_read": 0.175
       }
     },
     {
@@ -1871,6 +1880,16 @@
       "cost": {
         "input": 0,
         "output": 0
+      }
+    },
+    {
+      "provider": "zai-coding-plan",
+      "model": "glm-5.1",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
       }
     },
     {
@@ -4518,6 +4537,15 @@
     },
     {
       "provider": "poe",
+      "model": "xai/grok-4.20-multi-agent",
+      "cost": {
+        "input": 2,
+        "output": 6,
+        "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "poe",
       "model": "xai/grok-4-fast-reasoning",
       "cost": {
         "input": 0.2,
@@ -4635,6 +4663,15 @@
       "cost": {
         "input": 0.25,
         "output": 1.5
+      }
+    },
+    {
+      "provider": "poe",
+      "model": "novita/deepseek-v3.2",
+      "cost": {
+        "input": 0.27,
+        "output": 0.4,
+        "cache_read": 0.13
       }
     },
     {
@@ -4778,6 +4815,15 @@
         "input": 1.75,
         "output": 14,
         "cache_read": 0.175
+      }
+    },
+    {
+      "provider": "opencode",
+      "model": "qwen3.6-plus-free",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
       }
     },
     {
@@ -6525,6 +6571,15 @@
     },
     {
       "provider": "firmware",
+      "model": "zai-glm-5",
+      "cost": {
+        "input": 1,
+        "output": 3.2,
+        "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "firmware",
       "model": "gpt-5-mini",
       "cost": {
         "input": 0.25,
@@ -6643,15 +6698,6 @@
     },
     {
       "provider": "firmware",
-      "model": "glm-5",
-      "cost": {
-        "input": 1,
-        "output": 3.2,
-        "cache_read": 0.2
-      }
-    },
-    {
-      "provider": "firmware",
       "model": "gpt-5-nano",
       "cost": {
         "input": 0.05,
@@ -6734,6 +6780,14 @@
     },
     {
       "provider": "google",
+      "model": "gemma-3n-e2b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "google",
       "model": "gemini-2.5-flash-preview-05-20",
       "cost": {
         "input": 0.15,
@@ -6748,6 +6802,30 @@
         "input": 2,
         "output": 12,
         "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "google",
+      "model": "gemma-3-27b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "google",
+      "model": "gemma-3-4b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "google",
+      "model": "gemma-3n-e4b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -6925,6 +7003,14 @@
         "input": 0.3,
         "output": 2.5,
         "cache_read": 0.075
+      }
+    },
+    {
+      "provider": "google",
+      "model": "gemma-3-12b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -14546,14 +14632,6 @@
     },
     {
       "provider": "openrouter",
-      "model": "nvidia/nemotron-3-super-120b-a12b-free",
-      "cost": {
-        "input": 0,
-        "output": 0
-      }
-    },
-    {
-      "provider": "openrouter",
       "model": "nvidia/nemotron-nano-12b-v2-vl:free",
       "cost": {
         "input": 0,
@@ -14566,6 +14644,14 @@
       "cost": {
         "input": 0.04,
         "output": 0.16
+      }
+    },
+    {
+      "provider": "openrouter",
+      "model": "nvidia/nemotron-3-super-120b-a12b:free",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -15101,6 +15187,14 @@
       "cost": {
         "input": 0.14,
         "output": 1.4
+      }
+    },
+    {
+      "provider": "openrouter",
+      "model": "qwen/qwen3.6-plus-preview:free",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -15677,16 +15771,6 @@
     },
     {
       "provider": "zenmux",
-      "model": "anthropic/claude-3.5-sonnet",
-      "cost": {
-        "input": 3,
-        "output": 15,
-        "cache_read": 0.3,
-        "cache_write": 3.75
-      }
-    },
-    {
-      "provider": "zenmux",
       "model": "anthropic/claude-sonnet-4.5",
       "cost": {
         "input": 3,
@@ -15967,16 +16051,6 @@
       "cost": {
         "input": 0.25,
         "output": 1.5
-      }
-    },
-    {
-      "provider": "zenmux",
-      "model": "google/gemini-3-pro-image-preview",
-      "cost": {
-        "input": 2,
-        "output": 12,
-        "cache_read": 0.2,
-        "cache_write": 4.5
       }
     },
     {
@@ -19388,6 +19462,15 @@
     },
     {
       "provider": "vercel",
+      "model": "kwaipilot/kat-coder-pro-v2",
+      "cost": {
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": 0.06
+      }
+    },
+    {
+      "provider": "vercel",
       "model": "morph/morph-v3-fast",
       "cost": {
         "input": 0.8,
@@ -19837,6 +19920,14 @@
         "input": 0.2,
         "output": 0.5,
         "cache_read": 0.05
+      }
+    },
+    {
+      "provider": "vercel",
+      "model": "nvidia/nemotron-3-super-120b-a12b",
+      "cost": {
+        "input": 0.15,
+        "output": 0.65
       }
     },
     {
@@ -20595,8 +20686,8 @@
       "provider": "vercel",
       "model": "mistral/mistral-small",
       "cost": {
-        "input": 0.1,
-        "output": 0.3
+        "input": 0.15,
+        "output": 0.6
       }
     },
     {
@@ -20930,6 +21021,15 @@
       "cost": {
         "input": 0.8,
         "output": 0.8
+      }
+    },
+    {
+      "provider": "synthetic",
+      "model": "hf:qwen/qwen3.5-397b-a17b",
+      "cost": {
+        "input": 0.6,
+        "output": 3,
+        "cache_read": 0.6
       }
     },
     {
@@ -22742,10 +22842,34 @@
     },
     {
       "provider": "groq",
+      "model": "whisper-large-v3",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "whisper-large-v3-turbo",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "groq",
       "model": "llama3-8b-8192",
       "cost": {
         "input": 0.05,
         "output": 0.08
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "allam-2-7b",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -22758,10 +22882,35 @@
     },
     {
       "provider": "groq",
+      "model": "openai/gpt-oss-safeguard-20b",
+      "cost": {
+        "input": 0.075,
+        "output": 0.3,
+        "cache_read": 0.037
+      }
+    },
+    {
+      "provider": "groq",
       "model": "openai/gpt-oss-20b",
       "cost": {
         "input": 0.075,
         "output": 0.3
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "canopylabs/orpheus-arabic-saudi",
+      "cost": {
+        "input": 40,
+        "output": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "canopylabs/orpheus-v1-english",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -22782,6 +22931,14 @@
     },
     {
       "provider": "groq",
+      "model": "meta-llama/llama-prompt-guard-2-22m",
+      "cost": {
+        "input": 0.03,
+        "output": 0.03
+      }
+    },
+    {
+      "provider": "groq",
       "model": "meta-llama/llama-4-maverick-17b-128e-instruct",
       "cost": {
         "input": 0.2,
@@ -22790,10 +22947,34 @@
     },
     {
       "provider": "groq",
+      "model": "meta-llama/llama-prompt-guard-2-86m",
+      "cost": {
+        "input": 0.04,
+        "output": 0.04
+      }
+    },
+    {
+      "provider": "groq",
       "model": "qwen/qwen3-32b",
       "cost": {
         "input": 0.29,
         "output": 0.59
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "groq/compound-mini",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "groq",
+      "model": "groq/compound",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -25028,6 +25209,14 @@
     },
     {
       "provider": "mistral",
+      "model": "mistral-small-2603",
+      "cost": {
+        "input": 0.15,
+        "output": 0.6
+      }
+    },
+    {
+      "provider": "mistral",
       "model": "ministral-3b-latest",
       "cost": {
         "input": 0.04,
@@ -25182,8 +25371,8 @@
       "provider": "mistral",
       "model": "mistral-small-latest",
       "cost": {
-        "input": 0.1,
-        "output": 0.3
+        "input": 0.15,
+        "output": 0.6
       }
     },
     {
@@ -25677,6 +25866,15 @@
     },
     {
       "provider": "venice",
+      "model": "aion-labs.aion-2-0",
+      "cost": {
+        "input": 1,
+        "output": 2,
+        "cache_read": 0.25
+      }
+    },
+    {
+      "provider": "venice",
       "model": "qwen3-next-80b",
       "cost": {
         "input": 0.35,
@@ -25721,15 +25919,6 @@
     },
     {
       "provider": "venice",
-      "model": "gemini-3-pro-preview",
-      "cost": {
-        "input": 2.5,
-        "output": 15,
-        "cache_read": 0.625
-      }
-    },
-    {
-      "provider": "venice",
       "model": "olafangensan-glm-4.7-flash-heretic",
       "cost": {
         "input": 0.14,
@@ -25769,6 +25958,15 @@
         "input": 2.5,
         "output": 7.5,
         "cache_read": 0.25
+      }
+    },
+    {
+      "provider": "venice",
+      "model": "openai-gpt-54-mini",
+      "cost": {
+        "input": 0.9375,
+        "output": 5.625,
+        "cache_read": 0.09375
       }
     },
     {
@@ -25922,14 +26120,6 @@
     },
     {
       "provider": "venice",
-      "model": "qwen3-4b",
-      "cost": {
-        "input": 0.05,
-        "output": 0.15
-      }
-    },
-    {
-      "provider": "venice",
       "model": "hermes-3-llama-3.1-405b",
       "cost": {
         "input": 1.1,
@@ -25952,14 +26142,6 @@
       "cost": {
         "input": 0.7,
         "output": 2.8
-      }
-    },
-    {
-      "provider": "venice",
-      "model": "mistral-31-24b",
-      "cost": {
-        "input": 0.5,
-        "output": 2
       }
     },
     {
@@ -26148,38 +26330,6 @@
     },
     {
       "provider": "vultr",
-      "model": "deepseek-r1-distill-llama-70b",
-      "cost": {
-        "input": 2,
-        "output": 2
-      }
-    },
-    {
-      "provider": "vultr",
-      "model": "deepseek-r1-distill-qwen-32b",
-      "cost": {
-        "input": 0.3,
-        "output": 0.3
-      }
-    },
-    {
-      "provider": "vultr",
-      "model": "nvidia-nemotron-3-super-120b-a12b-nvfp4",
-      "cost": {
-        "input": 0.2,
-        "output": 0.8
-      }
-    },
-    {
-      "provider": "vultr",
-      "model": "gpt-oss-120b",
-      "cost": {
-        "input": 0.15,
-        "output": 0.6
-      }
-    },
-    {
-      "provider": "vultr",
       "model": "kimi-k2.5",
       "cost": {
         "input": 0.55,
@@ -26208,14 +26358,6 @@
       "cost": {
         "input": 0.55,
         "output": 1.65
-      }
-    },
-    {
-      "provider": "vultr",
-      "model": "llama-3_1-nemotron-ultra-253b-v1",
-      "cost": {
-        "input": 0.55,
-        "output": 1.8
       }
     },
     {
@@ -29332,6 +29474,14 @@
     },
     {
       "provider": "nano-gpt",
+      "model": "zai-org/glm-5.1:thinking",
+      "cost": {
+        "input": 0.3,
+        "output": 2.55
+      }
+    },
+    {
+      "provider": "nano-gpt",
       "model": "zai-org/glm-5:thinking",
       "cost": {
         "input": 0.3,
@@ -29341,6 +29491,14 @@
     {
       "provider": "nano-gpt",
       "model": "zai-org/glm-5",
+      "cost": {
+        "input": 0.3,
+        "output": 2.55
+      }
+    },
+    {
+      "provider": "nano-gpt",
+      "model": "zai-org/glm-5.1",
       "cost": {
         "input": 0.3,
         "output": 2.55
@@ -31969,6 +32127,16 @@
         "output": 1,
         "cache_read": 0.25,
         "cache_write": 1
+      }
+    },
+    {
+      "provider": "zhipuai-coding-plan",
+      "model": "glm-5.1",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
       }
     },
     {

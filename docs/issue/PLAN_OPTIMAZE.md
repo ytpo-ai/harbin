@@ -512,6 +512,55 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ---
 
+### #18 Agent Run 执行质量评分系统（2026-03-31）
+
+**目标**：在 agent runtime 的 tool-calling loop 中实时追踪 LLM 行为质量，以扣分制量化错误行为，产出 Run 级评分（满分 100），为 Prompt/Skill 优化效果提供可量化基准。
+
+**设计决策**：
+- **评分主体**：Agent Run（非 Task），因为扣分事件全部发生在 `executeWithToolCalling` 循环内
+- **存储方案**：独立 `agent_run_scores` collection（非嵌入 AgentRun），避免 run 文档膨胀、支持规则迭代后独立重算
+- **评分体系独立运作**，不耦合现有 memo 聚合系统
+
+**扣分规则 v1.0**（基准 100 分，12 条规则）：
+
+| 规则 | 错误行为 | 扣分 |
+|------|---------|------|
+| D1 | 工具参数 preflight 失败 | -5 |
+| D2 | 多 tool_call 批量输出（每个丢弃的调用） | -8 |
+| D3 | 连续两轮调用相同工具 | -10 |
+| D4 | 工具执行失败（非参数类） | -8 |
+| D5 | 工具执行失败（参数类） | -5 |
+| D6 | 调用未授权工具 | -10 |
+| D7 | tool_call JSON 解析失败 | -3 |
+| D8 | 文本意图未执行（说要调但没 tool_call） | -5 |
+| D9 | Planner 纯文本重试触发 | -5 |
+| D10 | 空/无意义响应 | -3 |
+| D11 | 达到最大轮次上限 | -15 |
+| D12 | LLM 调用超时/网络错误 | -2 |
+
+**改动摘要**（8 个文件，+762 / -19）：
+
+- **新增 `task-execution-scorer.ts`**：纯逻辑评分类，无 DI 依赖，每个 run 一个实例，在 executor 循环内实时 `deduct()`，结束时 `summarize()` 输出评分汇总
+- **新增 `agent-run-score.schema.ts`**：Mongoose schema，含 `runId` 唯一索引、`agentId+createdAt` 聚合索引、`score+createdAt` 筛选索引
+- **新增 `agent-run-score.service.ts`**：CRUD + 聚合查询（`saveScore` upsert + try/catch 保护主流程、`getScoreByRunId`、`getScoresByAgent` 分页、`getAgentScoreStats` 聚合统计含 top N 规则频次）
+- **新增 `agent-run-score.controller.ts`**：3 个 API 端点（`GET runs/:runId/score`、`GET scores`、`GET scores/stats`）
+- **修改 `agent-executor.service.ts`**：在 tool-calling loop 中嵌入 12 个检测点，`finally` 块写入评分
+- **修改 `runtime.module.ts`**：注册 schema / service / controller
+
+**Review 发现的待修复项**：
+
+- **P1**：D8 检测条件绑定 `retryRequested` 过于宽泛，应检查 hook metadata 区分具体原因
+- **P1**：D3 重复工具检测中 `trackToolCall` 在 preflight 之后调用，导致 preflight 失败的轮次不更新 `lastToolId`，连续两轮选同一工具但首轮 preflight 失败时不触发 D3
+- **P1**：`saveScore` 跳过时（`runtimeContext` 为空）无日志
+- **P2**：Controller 缺少认证守卫
+- **P2**：测试覆盖可加强（saveScore 失败不抛异常的测试、单规则边界测试、controller 测试）
+
+**关联文档**：
+- Plan: `docs/plan/AGENT_RUN_SCORING_SYSTEM_PLAN.md`
+- Commit: `40d60fd`
+
+---
+
 ## 待跟进
 
 1. `agent-task.worker.ts` 嵌套 `collaborationContext.collaborationContext` 问题（独立修复）

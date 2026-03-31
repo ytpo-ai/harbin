@@ -52,4 +52,24 @@ describe('TaskExecutionScorer', () => {
     const summary = scorer.summarize();
     expect(summary.score).toBe(0);
   });
+
+  it('tracks rounds with non-incremental input', () => {
+    const scorer = new TaskExecutionScorer();
+    scorer.markRound(3);
+    scorer.markRound(1);
+    scorer.markRound(2);
+
+    const summary = scorer.summarize();
+    expect(summary.stats.totalRounds).toBe(4);
+  });
+
+  it('applies single rule deduction correctly', () => {
+    const scorer = new TaskExecutionScorer();
+    scorer.deduct('D12', 0);
+
+    const summary = scorer.summarize();
+    expect(summary.totalDeductions).toBe(Math.abs(AGENT_RUN_SCORE_RULE_POINTS.D12));
+    expect(summary.score).toBe(100 - Math.abs(AGENT_RUN_SCORE_RULE_POINTS.D12));
+    expect(summary.deductionsByRule.D12.count).toBe(1);
+  });
 });

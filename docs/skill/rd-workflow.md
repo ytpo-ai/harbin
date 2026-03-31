@@ -10,11 +10,9 @@ metadata:
     - multi-agent-rd
   tags:
     - rd-workflow
-    - requirement-triage
-    - planning
     - multi-agent
     - domainType:development:must
-    - phase:initialize:enable
+    - phase:initialize:must
   capabilities:
     - requirement-clarification
     - demand-classification-and-tagging
@@ -52,8 +50,9 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 
 1. 调用 `builtin.sys-mg.mcp.requirement.list`（参数 `status=todo`）获取待办需求列表。
 2. 选择优先级最高且可执行的需求后，调用 `builtin.sys-mg.mcp.requirement.get` 获取详情。
-3. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`。
-4. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入共享上下文：
+3. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入共享上下文：
+4. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`。
+
 
 ```json
 {
@@ -78,7 +77,6 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
   - **generate**: 生成任务描述，引用 taskContext 中的 requirementId 和需求标题，明确要求执行者输出结构化开发计划
   - **pre_execute**:
     1. **必须执行**: preExecuteActions
-    2. 检查执行者工具匹配度
   - **execute**: 执行者分析需求规格，设计实现方案，拆解开发子任务，评估技术风险
   - **post_execute**: 验证输出包含完整开发计划（实现步骤 + 涉及文件 + 测试要点），决定 `generate_next`
 
@@ -90,7 +88,7 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 - **Constraints**: 描述中使用"读取代码"、"修改代码"、"提交变更"等自然语言，禁止引用内部工具名称
 - **Four-Phase Behavior**:
   - **generate**: 生成任务描述，引用 step1 的开发计划作为执行依据
-  - **pre_execute**: 检查 step1 输出可用（开发计划存在且有效）
+  - **pre_execute**: -
   - **execute**: 按计划实施代码变更并提交
   - **post_execute**: 验证输出包含 commit 信息，决定 `generate_next`
 

@@ -12,7 +12,7 @@ export interface Agent {
 	model: AIModel;
 	config?: Record<string, unknown>;
 	capabilities: string[];
-	systemPrompt: string;
+	systemPrompt?: string;
 	isActive: boolean;
 	tools: string[]; // 可使用的工具ID列表
 	skills?: string[]; // 已启用技能ID列表

@@ -18,7 +18,7 @@ import { PromptTemplateRef, Skill } from '../types';
 
 const statusOptions: Array<Skill['status']> = ['active', 'experimental', 'deprecated', 'disabled'];
 const sourceOptions: Array<Skill['sourceType']> = ['manual', 'github', 'web', 'internal'];
-const skillCategoryOptions = ['会议', '计划', '通用'] as const;
+const skillCategoryOptions = ['meeting', 'plan', 'general'] as const;
 
 const statusLabelMap: Record<Skill['status'], string> = {
   active: '启用',
@@ -34,6 +34,15 @@ const categoryLabelMap: Record<string, string> = {
   会议: '会议',
   计划: '计划',
   通用: '通用',
+};
+
+const categoryAliasMap: Record<string, string> = {
+  meeting: 'meeting',
+  plan: 'plan',
+  general: 'general',
+  会议: 'meeting',
+  计划: 'plan',
+  通用: 'general',
 };
 
 type SkillFormPayload = {
@@ -58,7 +67,14 @@ type SkillQueryCache = SkillPagedResponse | Skill[] | undefined;
 
 const formatCategory = (category: string) => {
   if (!category) return '未分类';
-  return categoryLabelMap[category] || category;
+  const normalizedCategory = normalizeCategory(category);
+  return categoryLabelMap[normalizedCategory] || categoryLabelMap[category] || category;
+};
+
+const normalizeCategory = (category: string | undefined | null) => {
+  const normalized = String(category || '').trim();
+  if (!normalized) return '';
+  return categoryAliasMap[normalized] || normalized;
 };
 
 const formatMetadataJson = (metadata: Skill['metadata']) => {
@@ -97,7 +113,7 @@ const Skills: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') || '');
-  const [categoryFilter, setCategoryFilter] = useState(searchParams.get('category') || '');
+  const [categoryFilter, setCategoryFilter] = useState(normalizeCategory(searchParams.get('category') || ''));
   const [searchKeyword, setSearchKeyword] = useState(searchParams.get('search') || '');
   const [debouncedSearchKeyword, setDebouncedSearchKeyword] = useState('');
   const [currentPage, setCurrentPage] = useState(() => {
@@ -600,7 +616,7 @@ const SkillDetailDrawer: React.FC<{
   const [form, setForm] = useState<SkillFormPayload>({
     name: '',
     description: '',
-    category: '通用',
+    category: 'general',
     tags: [],
     sourceType: 'manual',
     sourceUrl: '',
@@ -636,7 +652,7 @@ const SkillDetailDrawer: React.FC<{
     setForm({
       name: skill.name,
       description: skill.description,
-      category: skill.category || '通用',
+      category: normalizeCategory(skill.category) || 'general',
       tags: skill.tags || [],
       sourceType: skill.sourceType,
       sourceUrl: skill.sourceUrl || '',
@@ -715,7 +731,7 @@ const SkillDetailDrawer: React.FC<{
                 <label className="mb-1 block text-xs font-medium text-gray-600">category</label>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
                   {skillCategoryOptions.map((category) => (
-                    <option key={category} value={category}>{category}</option>
+                    <option key={category} value={category}>{formatCategory(category)}</option>
                   ))}
                 </select>
               </div>
@@ -810,7 +826,7 @@ const SkillDetailDrawer: React.FC<{
                       ...form,
                       name: form.name.trim(),
                       description: form.description.trim(),
-                      category: form.category.trim() || '通用',
+                      category: normalizeCategory(form.category) || 'general',
                       provider: form.provider.trim() || 'system',
                       version: form.version.trim() || '1.0.0',
                       tags: tagsText.split(',').map((item) => item.trim()).filter(Boolean),
@@ -991,7 +1007,7 @@ const SkillFormModal: React.FC<{
   const [form, setForm] = useState<SkillFormPayload>({
     name: '',
     description: '',
-    category: '通用',
+    category: 'general',
     tags: [],
     sourceType: 'manual',
     sourceUrl: '',
@@ -1012,7 +1028,7 @@ const SkillFormModal: React.FC<{
     setForm({
       name: '',
       description: '',
-      category: '通用',
+      category: 'general',
       tags: [],
       sourceType: 'manual',
       sourceUrl: '',
@@ -1045,7 +1061,7 @@ const SkillFormModal: React.FC<{
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="rounded-md border border-gray-300 px-3 py-2 text-sm" placeholder="skill 名称" />
           <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
             {skillCategoryOptions.map((category) => (
-              <option key={category} value={category}>{category}</option>
+              <option key={category} value={category}>{formatCategory(category)}</option>
             ))}
           </select>
           <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="rounded-md border border-gray-300 px-3 py-2 text-sm md:col-span-2" rows={3} placeholder="描述" />
@@ -1086,7 +1102,7 @@ const SkillFormModal: React.FC<{
                   ...form,
                   name: form.name.trim(),
                   description: form.description.trim(),
-                  category: form.category.trim() || '通用',
+                  category: normalizeCategory(form.category) || 'general',
                   provider: form.provider.trim() || 'system',
                   version: form.version.trim() || '1.0.0',
                   tags: tagsText.split(',').map((item) => item.trim()).filter(Boolean),

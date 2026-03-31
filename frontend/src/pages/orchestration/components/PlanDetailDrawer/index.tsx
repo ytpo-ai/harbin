@@ -39,6 +39,7 @@ type Props = {
   savePlanPromptLoading: boolean;
   replanPlanLoading: boolean;
   runPlanLoading: boolean;
+  stopGenerationLoading: boolean;
   addTaskLoading: boolean;
   batchUpdateTasksLoading: boolean;
   reorderTaskLoading: boolean;
@@ -53,6 +54,7 @@ type Props = {
   onReplan: () => void;
   onCopyToCreate: () => void;
   onRunPlan: () => void;
+  onStopGeneration: () => void;
   onDeletePlan: () => void;
   onOpenAddTaskModal: () => void;
   onSaveTaskEdits: () => void;
@@ -98,6 +100,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
   savePlanPromptLoading,
   replanPlanLoading,
   runPlanLoading,
+  stopGenerationLoading,
   addTaskLoading,
   batchUpdateTasksLoading,
   reorderTaskLoading,
@@ -112,6 +115,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
   onReplan,
   onCopyToCreate,
   onRunPlan,
+  onStopGeneration,
   onDeletePlan,
   onOpenAddTaskModal,
   onSaveTaskEdits,
@@ -197,6 +201,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
                   savePlanPromptLoading={savePlanPromptLoading}
                   replanPlanLoading={replanPlanLoading}
                   runPlanLoading={runPlanLoading}
+                  stopGenerationLoading={stopGenerationLoading}
                   addTaskLoading={addTaskLoading}
                   batchUpdateTasksLoading={batchUpdateTasksLoading}
                   reorderTaskLoading={reorderTaskLoading}
@@ -209,6 +214,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
                   onReplan={onReplan}
                   onCopyToCreate={onCopyToCreate}
                   onRunPlan={onRunPlan}
+                  onStopGeneration={onStopGeneration}
                   onDeletePlan={onDeletePlan}
                   onOpenAddTaskModal={onOpenAddTaskModal}
                   onSaveTaskEdits={onSaveTaskEdits}

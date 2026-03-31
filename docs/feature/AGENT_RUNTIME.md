@@ -198,14 +198,16 @@
 ### 1.7 Session 与上下文协同
 
 - 会话模型支持 `meeting/task` 两类，并可按 `meetingId` 或 `taskId` 复用会话。
-- system context 改为 run 级 envelope：由 ContextAssembler 动态组装并仅发送给 LLM，不再写入 `session.messages` 与 `agent_messages`。
-- `run.metadata.initialSystemMessages` 保留 system 快照用于审计查询，替代 message 集合中的 system 文档沉积。
+- system context 仍由 ContextAssembler 动态组装；`run.metadata.initialSystemMessages` 继续保留初始 system 快照。
+- 历史描述“system 不写入 `agent_messages`（已弃用）”：当前实现在部分 tool-calling 分支会持久化中间 system 消息（如 tool denied / input preflight failed / retry instruction）。
 - Agent 运行前会按“已授权工具”读取工具配置中的 `prompt` 字段并注入 system 消息，实现工具级策略约束。
 - runtime 启动时可刷新 `memoSnapshot`（identity/todo/topic），并改为通过 Redis 队列异步写入 session 缓存，避免主链路同步落库阻塞。
 - Agent 详情页 Session 抽屉支持“按角色默认展开策略”（`system` 默认折叠，其他角色默认展开）；消息正文折叠态不再展示前置片段，需手动展开查看完整内容。
 - Session 消息卡片默认隐藏 `runId/taskId/messageId` 等标识字段，新增“查看原始信息”面板按需展开，并支持一键复制原始 message JSON。
 - Session 抽屉头部提供刷新图标按钮，可手动重载当前 Session 详情与列表数据。
-- Session 详情查询会补齐 run 级 `user/system` 消息：除 `session.messageIds` 外，额外按 `runId` 回查缺失的 `user/system` 记录，并将 `run.metadata.initialSystemMessages` 以虚拟 system message 返回，确保前端完整展示 system/user/assistant 轨迹。
+- Session 详情查询会补齐 run 级 `user/system` 消息：除 `session.messageIds` 外，额外按 `runId` 回查缺失的 `user/system` 记录。
+- Agent 详情页日志列表按 `runId` 精简为“每个任务一条最终摘要”；展开后改为「执行流程 / 原始信息 / 扣分记录」三 Tab，并在展开时懒加载 `GET /agents/runtime/runs/:runId/score` 扣分详情。
+- 历史描述“注入 `run.metadata.initialSystemMessages` 虚拟 system message 返回”（已弃用）：当前实现不再注入 `virtual-system-*` 消息。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
 - legacy `inner-message` 分发链路支持 Runtime Bridge：内部消息可统一桥接到 Agent `executeTask` 执行入口，由 Agent 按角色能力自主处理。
 - Agent 主执行链路已按职责拆分协作：
@@ -223,6 +225,7 @@
   - `modules/agents/agent-mcp-profile.service.ts`（MCP profile 映射与权限集逻辑）
 - Agent Prompt 文案已集中到 `modules/prompt-registry/agent-prompt-catalog.ts`，按 `symbol/slug/scene/role/defaultContent` 管理；执行时仅在 Redis 存在已发布模板缓存时才触发 resolver 读取，Redis 未命中统一回退 `code_default`（不再依赖 DB 兜底）。
 - Agent/Skill 已支持 `promptTemplateRef: { scene, role }` 绑定：Identity Layer 在 `systemPrompt` 后追加 Agent 绑定模板；Toolset Layer 在技能激活时优先解析 Skill 绑定模板并替换 `skill.content`，失败回退原技能正文。
+- Identity Layer 注入门槛：`systemPrompt` 在 `trim` 后长度 `< 5` 时不注入 session 上下文（同时不参与 identity base 内容拼装）。
 - Agent Task Worker 会透传 `sessionContext.runtimeTaskType/runtimeChannelHint` 到 `context.runtimeRouting`，用于异步任务执行时的 runtime 通道路由。
 - Agent Task Tool 级状态会写入 Redis（`pending/running/completed/failed`），任务终态（成功/失败/取消/超时）统一回写 `idle`，供 MCP `list-agents` 实时查询。
 - 当路由命中 `opencode` 时，非流式与流式执行均强制走 OpenCode 通道；流式路径不再回落到 native `streamingChat`。
@@ -251,6 +254,7 @@
 | `AGENT_PROMPT_RESOLVER_REFACTOR_PLAN.md` | Agent Prompt 文案集中化与模板渲染接入计划 |
 | `PROMPT_RESOLVE_REDIS_GUARD_PLAN.md` | Prompt 发布写 Redis 与执行阶段 Redis 门禁回退计划 |
 | `AGENT_LIFECYCLE_HOOK_STANDARDIZATION_PLAN.md` | Agent Lifecycle Hook 标准化设计计划 |
+| `AGENT_PROMPT_OPTIONAL_MIN_LENGTH_INJECTION_PLAN.md` | Agent Prompt 可选化与最小注入长度优化计划 |
 
 ### 开发总结 (docs/development/)
 

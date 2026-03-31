@@ -1401,7 +1401,9 @@ export class AgentExecutorService {
 
         // hook 请求重试当前 step：不返回结果，继续下一轮循环
         if (afterStepHookResult.retryRequested) {
-          scorer.deduct('D8', round);
+          if (afterStepHookResult.decision === 'inject_instruction') {
+            scorer.deduct('D8', round);
+          }
           this.logger.log(`[after_step_hook_retry] agent=${agent.name} taskId=${task.id} round=${round + 1}`);
           if (afterStepHookResult.appendSystemMessages.length > 0) {
             for (const instruction of afterStepHookResult.appendSystemMessages) {
@@ -1598,6 +1600,12 @@ export class AgentExecutorService {
       });
 
       const normalizedToolCallId = normalizeToolId(toolCall.tool);
+        if (scorer.lastToolId === normalizedToolCallId) {
+          scorer.deduct('D3', round, {
+            toolId: normalizedToolCallId,
+          });
+        }
+        scorer.trackToolCall(normalizedToolCallId);
         stepParts.push({
           type: 'tool_call',
           status: 'completed',
@@ -1696,13 +1704,6 @@ export class AgentExecutorService {
           });
           continue;
         }
-
-        if (scorer.lastToolId === normalizedToolCallId) {
-          scorer.deduct('D3', round, {
-            toolId: normalizedToolCallId,
-          });
-        }
-        scorer.trackToolCall(normalizedToolCallId);
 
         const toolCallId = `toolcall-${uuidv4()}`;
         let runtimeToolPartId: string | undefined;
@@ -1950,6 +1951,10 @@ export class AgentExecutorService {
           sessionId: runtimeContext.sessionId,
           summary: scorer.summarize(),
         });
+      } else {
+        this.logger.debug(
+          `[run_score_skip] agent=${agent.name} taskId=${task.id} reason=missing_runtime_context`,
+        );
       }
     }
   }

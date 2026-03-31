@@ -53,10 +53,8 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         let rawContent = input.shared.skillContents.get(skill.id);
         if (!rawContent) continue;
 
-        // Orchestration planner 阶段裁剪 phaseInitialize 段落：
-    // initialize 阶段保留 phaseInitialize 指令，
-    // generating/pre_execute/post_execute 阶段不需要该段落（会误导 LLM 执行 requirement.list 等操作）
-        rawContent = this.stripPhaseInitializeSectionIfNeeded(rawContent, input.context);
+        // Skill 激活门控（Tag-Based Activation）已精确控制各阶段加载哪些 skill，
+        // 无需在此裁剪 phaseInitialize 段落。
 
         const content =
           rawContent.length > SKILL_CONTENT_MAX_INJECT_LENGTH
@@ -138,29 +136,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
     return messages;
   }
 
-  /**
-   * Orchestration planner 场景下，裁剪 skill 文档中的 phaseInitialize 段落。
-   *
-   * 所有 planner 阶段（包括 planner_initialize 自身）都裁剪该段落：
-   * - generating / pre_execute / post_execute：该段落会误导 LLM 执行 requirement.list 等操作
-   * - planner_initialize：buildPhaseInitializePrompt() 已提供完整的 Phase 1（outline）+
-   *   Phase 2（扩展步骤，含 existingRequirementId 条件分支）指引，skill 中的扩展步骤
-   *   是冗余信息源，且其具体工具序列会覆盖 prompt 中的 Phase 1 指令导致 LLM 跳过 outline 生成
-   */
-  private stripPhaseInitializeSectionIfNeeded(content: string, context?: unknown): string {
-    const collaborationCtx = ((context as any)?.collaborationContext || {}) as Record<string, unknown>;
-    const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
-
-    // 对所有 planner 角色生效（包括 planner_initialize）
-    if (!roleInPlan || !roleInPlan.startsWith('planner')) {
-      return content;
-    }
-
-    // 裁剪 "## phaseInitialize 扩展步骤" / "## phaseInitialize 行为" 段落（从该标题到下一个 ## 标题之前）
-    const phaseInitPattern = /## phaseInitialize[\s\S]*?(?=\n## |\n---\s*$|$)/i;
-    const replacement = roleInPlan === 'planner_initialize'
-      ? '## phaseInitialize 扩展步骤\n\n> 扩展步骤指令已由 phaseInitialize prompt 统一提供，此处省略。请按 user prompt 中的 Phase 1 / Phase 2 顺序执行。\n'
-      : '## phaseInitialize 行为\n\n> 此段落已由系统在独立的 initialize 会话中执行完毕，此处省略。\n';
-    return content.replace(phaseInitPattern, replacement);
-  }
+  // stripPhaseInitializeSectionIfNeeded 已移除：
+  // Skill 激活门控（Tag-Based Activation #12）已精确控制各阶段加载哪些 skill，
+  // generating/pre_execute/post_execute 阶段不会加载 rd-workflow，无需代码层裁剪。
 }

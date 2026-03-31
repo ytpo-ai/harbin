@@ -30,8 +30,8 @@ export class OrchestrationTask {
   @Prop()
   planId?: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'EiRequirement', required: false })
-  requirementId?: Types.ObjectId;
+  @Prop({ type: String, required: false })
+  requirementId?: string;
 
   @Prop({ required: true })
   title: string;

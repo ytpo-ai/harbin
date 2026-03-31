@@ -17,6 +17,7 @@
 5. Config 编辑：创建/编辑弹窗新增 `config` JSON 输入区，初期采用纯 JSON 文本编辑，不引入结构化表单。
 6. 工具权限可视化：创建/编辑 Agent 时，工具项显示 `requiredPermissions`，并提供“自动赋权”开关（默认开启），可在勾选工具时自动补齐 `agent.permissions`。
 7. 菜单归属：前端导航将“Role”入口挂载到“智能体管理”分组下，统一 Agent 与角色配置入口。
+8. 基础信息布局：编辑弹窗中“能力集（逗号分隔）”字段位于“描述”字段下方，便于连续维护职责与能力标签。
 
 ### 1.3 Agent Config 设计（本轮新增）
 
@@ -37,6 +38,7 @@
 - 模型密钥：API Key 按模型 provider 过滤，仅展示匹配且活跃的密钥。
 - Config 兼容：当 `config` 缺失或为空对象时，不影响历史 Agent 管理与执行流程。
 - 角色主数据：由 agents 服务内 `agent_roles` 集合维护，Agent 侧通过 `/agents/roles*` 读取与校验。
+- Prompt 可选：`systemPrompt` 允许为空，创建时由后端默认 prompt 兜底；编辑时前端不再强制必填。
 
 ---
 

@@ -429,7 +429,18 @@ export class OrchestrationToolHandler {
     }
 
     if (mode === 'outline') {
-      const validation = this.validateOutlineData(params?.data);
+      // LLM may wrap array in object (e.g. {items:[...]}, {data:[...]}, {outline:[...]})
+      // due to schema declaring data as object. Auto-unwrap to the inner array.
+      let outlineData = params?.data;
+      if (outlineData && typeof outlineData === 'object' && !Array.isArray(outlineData)) {
+        const wrapped = outlineData as Record<string, unknown>;
+        const innerArray = wrapped.items ?? wrapped.data ?? wrapped.outline;
+        if (Array.isArray(innerArray) && innerArray.length > 0) {
+          outlineData = innerArray;
+          params = { ...params, data: outlineData };
+        }
+      }
+      const validation = this.validateOutlineData(outlineData);
       if (!validation.valid) {
         throw new Error(validation.reason || 'orchestration_plan_initialize outline validation failed');
       }

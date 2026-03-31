@@ -63,8 +63,8 @@ export class Agent {
   @Prop({ type: [String], default: [] })
   capabilities: string[];
 
-  @Prop({ required: true })
-  systemPrompt: string;
+  @Prop()
+  systemPrompt?: string;
 
   @Prop(raw({
     scene: { type: String, required: true, trim: true },

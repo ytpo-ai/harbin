@@ -46,7 +46,7 @@ export interface Agent {
   model: AIModel;
   config?: Record<string, unknown>;
   capabilities: string[];
-  systemPrompt: string;
+  systemPrompt?: string;
   promptTemplateRef?: PromptTemplateRef;
   isActive: boolean;
   tools: string[]; // 可使用的工具ID列表

@@ -91,7 +91,6 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
       case 'task.completed':
       case 'orchestration.task_completed':
         try {
-          await this.identityAggregationService.aggregateIdentity(event.agentId);
           await this.evaluationAggregationService.aggregateEvaluation(event.agentId);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';

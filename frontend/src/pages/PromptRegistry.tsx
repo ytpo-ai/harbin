@@ -10,6 +10,7 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline';
 import { promptRegistryService, PromptTemplateItem } from '../services/promptRegistryService';
+import { PromptRegistryStatusFilter, usePromptRegistryStore } from '../stores/promptRegistryStore';
 
 const statusTagClass: Record<string, string> = {
   draft: 'bg-amber-100 text-amber-700',
@@ -25,10 +26,16 @@ const categoryTagClass: Record<string, string> = {
 const PromptRegistry: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [scene, setScene] = useState('');
-  const [role, setRole] = useState('');
-  const [categoryTab, setCategoryTab] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published' | 'archived'>('all');
+  const {
+    scene,
+    role,
+    categoryTab,
+    statusFilter,
+    setScene,
+    setRole,
+    setCategoryTab,
+    setStatusFilter,
+  } = usePromptRegistryStore();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createMode, setCreateMode] = useState<'create' | 'copy'>('create');
   const [createCategory, setCreateCategory] = useState('system');
@@ -118,7 +125,6 @@ const PromptRegistry: React.FC = () => {
     templatesQueryKey,
     () =>
       promptRegistryService.listTemplates({
-        category: categoryTab || undefined,
         scene,
         role,
         status: statusFilter,
@@ -129,15 +135,19 @@ const PromptRegistry: React.FC = () => {
 
   React.useEffect(() => {
     if (!sceneOptions.length) {
-      setScene('');
-      setRole('');
+      if (scene) {
+        setScene('');
+      }
+      if (role) {
+        setRole('');
+      }
       return;
     }
     if (!scene || !sceneOptions.includes(scene)) {
       setScene(sceneOptions[0]);
       return;
     }
-    const nextRoleOptions = filterOptions?.sceneRoleMap?.[scene] || [];
+    const nextRoleOptions = roleOptions;
     if (!nextRoleOptions.length) {
       setRole('');
       return;
@@ -145,7 +155,7 @@ const PromptRegistry: React.FC = () => {
     if (!role || !nextRoleOptions.includes(role)) {
       setRole(nextRoleOptions[0]);
     }
-  }, [filterOptions?.sceneRoleMap, role, scene, sceneOptions]);
+  }, [role, roleOptions, scene, sceneOptions]);
 
   const refresh = () => {
     queryClient.invalidateQueries('prompt-templates');
@@ -332,11 +342,11 @@ const PromptRegistry: React.FC = () => {
             ))}
           </select>
 
-          <select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value as any)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
-          >
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as PromptRegistryStatusFilter)}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            >
             <option value="all">全部状态</option>
             {statusOptions.map((item) => (
               <option key={item} value={item}>

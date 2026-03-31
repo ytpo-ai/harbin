@@ -53,6 +53,7 @@ export class RequirementToolHandler {
 
   async listRequirements(
     params: {
+      view?: string;
       status?: string;
       assigneeAgentId?: string;
       localProjectId?: string;
@@ -62,10 +63,26 @@ export class RequirementToolHandler {
     agentId?: string,
     _executionContext?: ToolExecutionContext,
   ): Promise<any> {
+    const view = String(params?.view || 'list')
+      .trim()
+      .toLowerCase();
+    if (view === 'board') {
+      const board = await this.internalApiClient.callEiApi('GET', '/requirements/board');
+      return {
+        action: 'requirement_list',
+        view: 'board',
+        initiatorAgentId: agentId,
+        total: Number(board?.total || 0),
+        board,
+        fetchedAt: new Date().toISOString(),
+      };
+    }
+
     const query = this.buildRequirementQuery(params || {});
     const result = await this.internalApiClient.callEiApi('GET', `/requirements${query}`);
     return {
       action: 'requirement_list',
+      view: 'list',
       initiatorAgentId: agentId,
       total: Array.isArray(result) ? result.length : 0,
       requirements: result,
@@ -160,6 +177,82 @@ export class RequirementToolHandler {
       requirement: result,
       updatedAt: new Date().toISOString(),
     };
+  }
+
+  async mutateRequirement(
+    params: {
+      action?: 'update_status' | 'assign' | 'comment';
+      requirementId?: string;
+      status?: 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
+      changedById?: string;
+      changedByName?: string;
+      changedByType?: 'human' | 'agent' | 'system';
+      note?: string;
+      toAgentId?: string;
+      toAgentName?: string;
+      assignedById?: string;
+      assignedByName?: string;
+      reason?: string;
+      content?: string;
+      authorId?: string;
+      authorName?: string;
+      authorType?: 'human' | 'agent' | 'system';
+    },
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
+    const action = String(params?.action || '')
+      .trim()
+      .toLowerCase();
+    if (!action) {
+      throw new Error('requirement_update requires action');
+    }
+
+    if (action === 'update_status') {
+      return this.updateRequirementStatus(
+        {
+          requirementId: params?.requirementId,
+          status: params?.status,
+          changedById: params?.changedById,
+          changedByName: params?.changedByName,
+          changedByType: params?.changedByType,
+          note: params?.note,
+        },
+        agentId,
+        executionContext,
+      );
+    }
+
+    if (action === 'assign') {
+      return this.assignRequirement(
+        {
+          requirementId: params?.requirementId,
+          toAgentId: params?.toAgentId,
+          toAgentName: params?.toAgentName,
+          assignedById: params?.assignedById,
+          assignedByName: params?.assignedByName,
+          reason: params?.reason,
+        },
+        agentId,
+        executionContext,
+      );
+    }
+
+    if (action === 'comment') {
+      return this.commentRequirement(
+        {
+          requirementId: params?.requirementId,
+          content: params?.content,
+          authorId: params?.authorId,
+          authorName: params?.authorName,
+          authorType: params?.authorType,
+        },
+        agentId,
+        executionContext,
+      );
+    }
+
+    throw new Error('requirement_update requires action in [update_status, assign, comment]');
   }
 
   async assignRequirement(
@@ -260,13 +353,4 @@ export class RequirementToolHandler {
     };
   }
 
-  async getRequirementBoard(agentId?: string): Promise<any> {
-    const result = await this.internalApiClient.callEiApi('GET', '/requirements/board');
-    return {
-      action: 'requirement_board',
-      initiatorAgentId: agentId,
-      board: result,
-      fetchedAt: new Date().toISOString(),
-    };
-  }
 }

@@ -41,6 +41,7 @@ type Props = {
   savePlanPromptLoading: boolean;
   replanPlanLoading: boolean;
   runPlanLoading: boolean;
+  stopGenerationLoading: boolean;
   addTaskLoading: boolean;
   batchUpdateTasksLoading: boolean;
   reorderTaskLoading: boolean;
@@ -53,6 +54,7 @@ type Props = {
   onReplan: () => void;
   onCopyToCreate: () => void;
   onRunPlan: () => void;
+  onStopGeneration: () => void;
   onDeletePlan: () => void;
   onOpenAddTaskModal: () => void;
   onSaveTaskEdits: () => void;
@@ -85,6 +87,7 @@ const SettingsTab: React.FC<Props> = ({
   savePlanPromptLoading,
   replanPlanLoading,
   runPlanLoading,
+  stopGenerationLoading,
   addTaskLoading,
   batchUpdateTasksLoading,
   reorderTaskLoading,
@@ -97,6 +100,7 @@ const SettingsTab: React.FC<Props> = ({
   onReplan,
   onCopyToCreate,
   onRunPlan,
+  onStopGeneration,
   onDeletePlan,
   onOpenAddTaskModal,
   onSaveTaskEdits,
@@ -143,6 +147,15 @@ const SettingsTab: React.FC<Props> = ({
         >
           <PlayIcon className="h-3.5 w-3.5" /> 运行计划
         </button>
+        {planDetail.status === 'drafting' && (
+          <button
+            onClick={onStopGeneration}
+            disabled={!selectedPlanId || stopGenerationLoading}
+            className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+          >
+            {stopGenerationLoading ? '停止中...' : '停止执行'}
+          </button>
+        )}
         <button
           onClick={onDeletePlan}
           className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-3 py-1.5 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-50"

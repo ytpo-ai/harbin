@@ -11,16 +11,20 @@ export class ContextFingerprintService {
   resolveSystemContextScope(
     agent: { id?: string; _id?: { toString?: () => string } },
     task: { id?: string; title?: string; type?: string; teamId?: string },
-    context?: { collaborationContext?: Record<string, unknown> },
+    context?: {
+      collaborationContext?: Record<string, unknown>;
+      sessionContext?: Record<string, unknown>;
+    },
   ): string {
     const agentId = String(agent.id || agent._id?.toString?.() || 'unknown').trim() || 'unknown';
     const collaborationContext = (context?.collaborationContext || {}) as Record<string, unknown>;
+    const sessionContext = (context?.sessionContext || {}) as Record<string, unknown>;
 
     const meetingId = String(collaborationContext?.meetingId || '').trim();
     if (meetingId) {
       return `meeting:${meetingId}:agent:${agentId}`;
     }
-    const sessionId = String(collaborationContext?.sessionId || '').trim();
+    const sessionId = String(collaborationContext?.sessionId || sessionContext?.sessionId || '').trim();
     if (sessionId) {
       return `session:${sessionId}:agent:${agentId}`;
     }

@@ -126,7 +126,8 @@ enum ParticipantRole {
 - 会议结束时同时发布消息中心事件 `meeting.session.ended` 到 Redis Streams，由 Message Center 消费并生成系统通知。
 - 会议执行链路由 ContextAssembler 统一注入 system context；Meeting Service 仅传递会话历史（user/assistant）与触发用户消息，不再在 `task.messages` 注入 system prompt
 - 会议上下文采用分层注入与 fingerprint 抑制：静态/半静态 blocks（身份基线、领域、协作、工具规格、任务信息）仅在首次或变更时注入，变更时优先增量
-- runtime 持久化分层：`session.messages` 与 `agent_messages` 不再落盘 system 消息，system 快照写入 `run.metadata.initialSystemMessages` 供审计
+- runtime 持久化分层：初始 system 快照写入 `run.metadata.initialSystemMessages` 供审计。
+- 历史描述“`agent_messages` 不落盘 system 消息”（已弃用）：当前实现在部分 tool-calling 分支会落库中间 system 消息。
 - 会议分配执行遵循闭环规则：优先由 `meeting-sensitive-planner` 技能约束“一次确认后自动执行”，回执优先输出“已分配 + 已通知 + 下一检查点”三段式结构
 - 会议异常兜底：优先由 `meeting-resilience` 技能处理空回复/生成异常；未命中技能时自动重试一次，仍为空则返回“操作进行中，1 分钟内补充回执。”
 - 系统上下文注入顺序改为由 builder 链统一编排（identity -> toolset -> domain -> collaboration -> task -> memory），避免多源 system prompt 冲突

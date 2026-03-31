@@ -171,12 +171,6 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
       setActiveTab('basic');
       return;
     }
-    if (!systemPrompt.trim()) {
-      alert('Prompt 不能为空');
-      setActiveTab('basic');
-      return;
-    }
-
     const configParsed = parseConfigText(configText);
     if (configParsed.error) {
       alert(configParsed.error);
@@ -555,6 +549,17 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">能力集 (逗号分隔)</label>
+              <input
+                type="text"
+                value={capabilitiesText}
+                onChange={(e) => setCapabilitiesText(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: 文本生成, 代码编写, 数据分析"
+              />
+            </div>
+
+            <div>
               <PromptTemplateRefPicker
                 value={promptTemplateRef}
                 onChange={setPromptTemplateRef}
@@ -563,7 +568,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Prompt <span className="text-red-500">*</span></label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
               <textarea
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
@@ -585,16 +590,6 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
               <p className="mt-1 text-xs text-gray-500">编辑并保存后将更新 Agent 的 `config` 字段。</p>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">能力集 (逗号分隔)</label>
-              <input
-                type="text"
-                value={capabilitiesText}
-                onChange={(e) => setCapabilitiesText(e.target.value)}
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                placeholder="例如: 文本生成, 代码编写, 数据分析"
-              />
-            </div>
           </div>
         )}
 
