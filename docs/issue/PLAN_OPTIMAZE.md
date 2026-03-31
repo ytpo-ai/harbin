@@ -448,6 +448,37 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ---
 
+### #16 通用终态工具（Terminal Tool）机制 — post_execute 死循环修复（2026-03-31）
+
+**问题**：计划 `69cb75cc` 的 post_execute 阶段，Planner 调用 `report-task-run-result` 工具成功返回 `{ accepted: true, action: "generate_next" }` 后，executor 不终止 session，LLM 反复重复调用同一工具 30+ 轮直到轮次上限。
+
+**根因**：`agent-executor.service.ts` 的 tool-calling 循环中，只有 `submit-task` 有 hardcoded early return（检查 `toolResultPayload?.taskId`），`report-task-run-result` 执行后走通用路径——结果被序列化为 system message 推入消息历史，loop 继续下一轮，LLM 看到工具结果后再次调用，形成无限循环。
+
+**方案**：引入通用"终态工具"（Terminal Tool）机制，替代 hardcoded 单工具检查。
+
+**修复摘要**（4 个文件）：
+
+**Tool Schema 新增 `terminal` 字段**：
+- `tool.schema.ts`：新增 `@Prop({ default: false }) terminal?: boolean;`，标记工具成功执行后是否应终止 agent executor 的 tool-calling 循环
+
+**Builtin Tool Catalog 标记终态工具**：
+- `builtin-tool-catalog.ts`：`submit-task` 和 `report-task-run-result` 添加 `terminal: true`；新增导出 `TERMINAL_TOOL_IDS: ReadonlySet<string>`，从 `BUILTIN_TOOLS` 静态过滤（无运行时 DB 查询）
+
+**Tool Registry 同步新字段**：
+- `tool-registry.service.ts`：`initializeBuiltinTools` 的 `$set` 块增加 `terminal` 字段同步
+
+**Executor 循环通用 terminal early return**：
+- `agent-executor.service.ts`：导入 `TERMINAL_TOOL_IDS`；将原 `submit-task` hardcoded early return 替换为通用检查 `if (TERMINAL_TOOL_IDS.has(normalizedToolCallId))`，成功即 `return`；日志 tag 从 `submit_task_early_return` 改为 `terminal_tool_early_return`
+
+**设计决策**：
+- Terminal early return 无额外条件——工具执行成功（未进入 catch）即终止
+- Terminal tool set 来源为静态 `BUILTIN_TOOLS` 过滤，不查 DB
+- 未来新增终态工具只需在 catalog 中加 `terminal: true`，无需改 executor
+
+**验证结果**：TypeScript 编译通过，65 个相关测试全部通过（agent-executor 14 + orchestration 50 + tool-registry 1）
+
+---
+
 ## 待跟进
 
 1. `agent-task.worker.ts` 嵌套 `collaborationContext.collaborationContext` 问题（独立修复）
@@ -455,19 +486,30 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 3. `fromLegacy()` 对孤立 `meetingId`（无 `collaborationMode`/`meetingTitle`）的归类问题
 4. 过渡期结束后（预计 2026-07）移除旧字段（`format`、`mode`、`collaborationMode`）和兼容逻辑
 5. 运行时验证：计划编排首步生成、planner pre/post 决策、executor 任务执行、内部消息触发、会议场景
-### #15 多 tool_call 顺序执行 + phaseInitialize text-only retry 纠正指令修复（2026-03-31）
+### #15 多 tool_call 丢弃通知 + phaseInitialize text-only retry 纠正指令修复（2026-03-31）
 
 **问题**：计划 `69cac0a7` 和 `69cb6675` 的 phaseInitialize 阶段暴露了两个问题：
 
-1. **P1 — LLM 单次输出多个 tool_call 时后续调用被丢弃**：LLM 在一次回复中同时输出 `list-agents` + `plan-initialize` + `requirement.list` 三个 tool_call，但 `extractToolCall()` 只提取第一个（非贪婪正则 `([\s\S]*?)`），其余被静默丢弃。后续轮次 LLM 不知道哪些被丢弃，用过时参数重新提交（如 agentId 填 `"TBD"`），导致执行链断裂和数据错误。
+1. **P1 — LLM 单次输出多个 tool_call 时后续调用被静默丢弃**：LLM 在一次回复中同时输出 `list-agents` + `plan-initialize` + `requirement.list` 三个 tool_call，但 `extractToolCall()` 只提取第一个（非贪婪正则 `([\s\S]*?)`），其余被静默丢弃。后续轮次 LLM 不知道哪些被执行、哪些被丢弃，用过时参数重新提交（如 agentId 填 `"TBD"`），导致执行链断裂和数据错误。
 
 2. **P2 — text-only retry 纠正指令误导 LLM 调 get-plan**：纠正指令说"请直接输出最终 JSON 结果（包含 requirementId、outline 等字段）"，LLM 解读为需要输出包含 outline 完整数据的 JSON，于是调 `get-plan` 想读回已写入的数据——但 `get-plan` 不在 Planner 工具列表中（`Tool not assigned`）。
 
+**方案演进**：
+
+最初方案是"extractAllToolCalls + for 循环顺序执行全部"，但分析后发现这不能解决参数依赖问题——LLM 在生成第二个 tool_call 时还没看到第一个的结果，参数已经"冻结"了（如 plan-initialize 的 agentId 填 `"TBD"` 因为 list-agents 还没返回）。顺序执行全部 ≠ 解决了参数依赖。
+
+考虑过"检测到多个就全部拒绝、要求 LLM 重试只输出一个"的方案，但：
+- 浪费已有推理结果——第一个 tool_call 通常是正确的（LLM 按依赖顺序排列）
+- 重试不保证收敛——较弱模型会反复犯同样的错，超过重试次数后降级为报错
+- 增加延迟——每次重试是一个完整的 LLM round trip
+
+**最终方案：执行第一个 + 丢弃通知**。系统只执行第一个 tool_call，成功后向 messages 追加结构化通知告知 LLM 哪些调用被跳过，LLM 在下一轮基于真实结果重新发起后续调用。
+
 **修复摘要**（3 个文件）：
 
-**多 tool_call 顺序执行**：
+**多 tool_call 检测与丢弃通知**：
 - `agent-executor.helpers.ts`：新增 `extractAllToolCalls()` 函数，使用全局正则 `/<tool_call>[\s\S]*?<\/tool_call>/gi` 提取所有闭合 tool_call 块；原 `extractToolCall()` 改为调用 `extractAllToolCalls()[0]`（向后兼容）
-- `agent-executor.service.ts`：主循环从 `extractToolCall()` 改为 `extractAllToolCalls()`，用内层 `for` 循环逐个顺序 await 执行每个 tool_call。权限拒绝/preflight 失败/工具执行失败时 `break` 内循环，让 LLM 在下一轮纠正。submit-task early return 保持不变。多工具调用时记录 `[multi_tool_call]` 日志
+- `agent-executor.service.ts`：主循环从 `extractToolCall()` 改为 `extractAllToolCalls()`，`toolCall = toolCalls[0]`，`droppedToolCalls = toolCalls.slice(1)`。只执行第一个工具。成功后若 `droppedToolCalls.length > 0`，向 messages 追加 system 消息：`"你在同一条回复中输出了 N 个 tool_call，系统只执行了第一个（xxx）。被跳过的工具：yyy。请根据上方工具返回结果，在下一条回复中逐个发起后续工具调用。"` 通知同时持久化到 session（source: `tool-calling-loop.dropped-tool-calls`）。日志记录 `[multi_tool_call_dropped]` 含 executed/dropped 工具名
 
 **text-only retry 纠正指令修复**：
 - `agent-executor.service.ts`：phaseInitialize 阶段的纠正指令从"输出最终 JSON 结果（包含 requirementId、outline 等字段）"改为"直接回复 phaseInitialize completed 即可，不需要输出 JSON"；显式禁止调用 `get-plan`

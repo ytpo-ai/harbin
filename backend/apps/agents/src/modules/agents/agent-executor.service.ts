@@ -39,6 +39,7 @@ import {
   compactLogText,
   toLogError,
 } from './agent.constants';
+import { TERMINAL_TOOL_IDS } from '@agent/modules/tools/builtin-tool-catalog';
 import { AgentExecutorRuntimeService } from './agent-executor-runtime.service';
 import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
 import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
@@ -1724,12 +1725,13 @@ export class AgentExecutorService {
             output: toolResultPayload,
           });
 
-          // submit-task 成功后立即返回结果，阻止 agent 在同一 run 中继续提交后续任务。
-          // 增量编排设计要求每次只生成一个任务，由编排系统驱动下一轮。
-          if (normalizedToolCallId === 'builtin.sys-mg.mcp.orchestration.submit-task' && toolResultPayload?.taskId) {
+          // 终态工具（terminal tool）成功执行后立即终止 tool-calling 循环。
+          // 典型场景：submit-task（增量编排每次只生成一个任务）、report-task-run-result（post_execute 决策完成）。
+          // 终态工具集合由 BUILTIN_TOOLS 中 terminal: true 的工具静态导出，无运行时 DB 查询。
+          if (TERMINAL_TOOL_IDS.has(normalizedToolCallId)) {
             const earlyResult = JSON.stringify(toolResultPayload);
             this.logger.log(
-              `[submit_task_early_return] agent=${agent.name} taskId=${task.id} round=${round + 1} createdTaskId=${toolResultPayload.taskId}`,
+              `[terminal_tool_early_return] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} result=${compactLogText(earlyResult, 200)}`,
             );
             await persistStepMessage({
               round,

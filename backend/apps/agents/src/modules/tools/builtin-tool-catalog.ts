@@ -715,7 +715,7 @@ export const BUILTIN_TOOLS = [
             properties: {
               planId: { type: 'string', description: '计划 ID' },
               mode: { type: 'string', description: '写入模式，当前支持 outline/taskContext' },
-              data: { type: 'object', description: '写入内容，mode=outline 时可传数组' },
+              data: { description: '写入内容：mode=outline 时传数组 [{step,title,taskType,recommendedAgent,phasePrompts}]，mode=taskContext 时传对象 {key:value}' },
             },
           },
         },
@@ -726,6 +726,7 @@ export const BUILTIN_TOOLS = [
         description: 'Planner submits and creates next orchestration task',
         type: 'api_call' as const,
         category: 'Orchestration',
+        terminal: true,
         requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
         tokenCost: 3,
         implementation: {
@@ -761,6 +762,7 @@ export const BUILTIN_TOOLS = [
         description: 'Planner reports post-execution decision for current task',
         type: 'api_call' as const,
         category: 'Orchestration',
+        terminal: true,
         requiredPermissions: [{ id: 'orchestration_write', name: 'Orchestration Write', level: 'intermediate' }],
         tokenCost: 2,
         implementation: {
@@ -1016,3 +1018,11 @@ export const IMPLEMENTED_TOOL_IDS = [
   ...BUILTIN_TOOLS.map((tool) => tool.id),
   LEGACY_AGENT_LIST_TOOL_ID,
 ];
+
+/**
+ * 终态工具 ID 集合：这些工具成功执行后，agent executor 立即终止 tool-calling 循环。
+ * 从 BUILTIN_TOOLS 静态过滤，避免运行时 DB 查询。
+ */
+export const TERMINAL_TOOL_IDS: ReadonlySet<string> = new Set(
+  BUILTIN_TOOLS.filter((t) => (t as any).terminal === true).map((t) => t.id),
+);

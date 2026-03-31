@@ -258,6 +258,7 @@ export class ToolRegistryService {
               prompt: toolData.prompt,
               type: toolData.type,
               category: toolData.category,
+              terminal: (toolData as any).terminal ?? false,
               requiredPermissions: toolData.requiredPermissions,
               tokenCost: toolData.tokenCost,
               implementation: toolData.implementation,

@@ -90,6 +90,13 @@ export class Tool {
     level: 'basic' | 'intermediate' | 'advanced' | 'admin';
   }[];
 
+  /**
+   * 终态工具标记：当此工具成功执行后，agent executor 立即终止当前 session 的 tool-calling 循环。
+   * 用于 submit-task、report-task-run-result 等"执行即终结"的编排工具，防止 LLM 重复调用导致死循环。
+   */
+  @Prop({ default: false })
+  terminal?: boolean;
+
   @Prop({ default: 0 })
   tokenCost?: number;
 
