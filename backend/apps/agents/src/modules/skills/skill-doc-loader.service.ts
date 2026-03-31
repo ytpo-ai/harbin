@@ -209,10 +209,13 @@ export class SkillDocLoaderService {
         continue;
       }
 
-      const inlineSeparator = rest.indexOf(':');
+      // YAML spec: inline key-value in array requires ": " (colon + space).
+      // Plain colons without trailing space (e.g. "domainType:development:must")
+      // must be preserved as scalar strings.
+      const inlineSeparator = rest.indexOf(': ');
       if (inlineSeparator > 0) {
         const key = rest.slice(0, inlineSeparator).trim();
-        const valuePart = rest.slice(inlineSeparator + 1).trim();
+        const valuePart = rest.slice(inlineSeparator + 2).trim();
         const item: Record<string, any> = {};
         if (valuePart) {
           item[key] = this.parseScalar(valuePart);
