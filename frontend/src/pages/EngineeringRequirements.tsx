@@ -181,6 +181,14 @@ const EngineeringRequirements: React.FC = () => {
     syncMutation.mutate({ item: syncTarget, owner, repo, labels });
   };
 
+  const submitCreateRequirement = () => {
+    if (!selectedLocalProjectId.trim()) {
+      showToast('error', '请选择项目');
+      return;
+    }
+    createMutation.mutate();
+  };
+
   const groupedCount = useMemo(() => {
     const counts: Record<RequirementStatus, number> = {
       todo: 0,
@@ -206,6 +214,16 @@ const EngineeringRequirements: React.FC = () => {
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <p className="text-sm font-semibold text-gray-900">新建需求</p>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+          <select
+            value={selectedLocalProjectId}
+            onChange={(e) => setSelectedLocalProjectId(e.target.value)}
+            className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
+          >
+            <option value="">请选择所属本地项目</option>
+            {localProjects.map((item) => (
+              <option key={item._id} value={item._id}>{item.name}</option>
+            ))}
+          </select>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -227,14 +245,6 @@ const EngineeringRequirements: React.FC = () => {
             placeholder="标签，用逗号分隔"
             className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
           />
-          <button
-            onClick={() => createMutation.mutate()}
-            disabled={!title.trim() || createMutation.isLoading}
-            className="md:col-span-2 inline-flex items-center justify-center gap-1 bg-primary-600 text-white rounded px-3 py-2 text-sm disabled:bg-gray-300"
-          >
-            <PlusIcon className="h-4 w-4" />
-            创建
-          </button>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -242,16 +252,16 @@ const EngineeringRequirements: React.FC = () => {
             rows={3}
             className="md:col-span-12 border border-gray-300 rounded px-3 py-2 text-sm"
           />
-          <select
-            value={selectedLocalProjectId}
-            onChange={(e) => setSelectedLocalProjectId(e.target.value)}
-            className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
-          >
-            <option value="">选择所属本地项目（可选）</option>
-            {localProjects.map((item) => (
-              <option key={item._id} value={item._id}>{item.name}</option>
-            ))}
-          </select>
+          <div className="md:col-span-12 flex justify-end">
+            <button
+              onClick={submitCreateRequirement}
+              disabled={!title.trim() || !selectedLocalProjectId.trim() || createMutation.isLoading}
+              className="inline-flex items-center justify-center gap-1 bg-primary-600 text-white rounded px-3 py-2 text-sm disabled:bg-gray-300"
+            >
+              <PlusIcon className="h-4 w-4" />
+              新建
+            </button>
+          </div>
         </div>
       </div>
 
