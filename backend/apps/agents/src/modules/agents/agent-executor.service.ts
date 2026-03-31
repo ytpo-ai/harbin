@@ -55,6 +55,7 @@ import {
   buildTaskResultMemo,
   buildToolInputRepairInstruction,
   extractToolCall,
+  extractAllToolCalls,
   isMeaninglessAssistantResponse,
   isMeetingLikeTask,
   isModelTimeoutError,
@@ -1298,11 +1299,20 @@ export class AgentExecutorService {
       }
 
       // 若未识别到工具调用，则尝试返回最终答案。
-      const toolCall = extractToolCall(response);
-      if (!toolCall && /<tool_call>/i.test(response)) {
+      const toolCalls = extractAllToolCalls(response);
+      if (toolCalls.length === 0 && /<tool_call>/i.test(response)) {
         // LLM 输出了 <tool_call> 标签但 JSON 解析失败，记录警告便于排查
         this.logger.warn(
           `[tool_call_parse_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} responseLen=${response.length} preview=${JSON.stringify(response.slice(0, 500))}`,
+        );
+      }
+      // 每轮只执行第一个 tool_call（后续调用的参数可能依赖前一个的输出，
+      // LLM 生成时还没看到结果，参数不可靠）。丢弃后续 tool_call 并通知 LLM。
+      const toolCall = toolCalls.length > 0 ? toolCalls[0] : null;
+      const droppedToolCalls = toolCalls.length > 1 ? toolCalls.slice(1) : [];
+      if (droppedToolCalls.length > 0) {
+        this.logger.log(
+          `[multi_tool_call_dropped] agent=${agent.name} taskId=${task.id} round=${round + 1} executed=${toolCall?.tool} dropped=${droppedToolCalls.map((t) => t.tool).join(',')}`,
         );
       }
       if (!toolCall) {
@@ -1457,8 +1467,8 @@ export class AgentExecutorService {
             ? [
                 '【系统纠正 — phaseInitialize 阶段】你刚才输出了纯文本，但当前是 phaseInitialize 阶段，要求你输出 <tool_call> 工具调用。',
                 '请严格按照用户指令中的"工具调用序列"继续执行尚未完成的工具调用。',
-                '严禁调用 submit-task，严禁输出确认性文本。',
-                '如果所有工具调用已完成，请直接输出最终 JSON 结果（包含 requirementId、outline 等字段），不要附加任何解释文字。',
+                '严禁调用 submit-task、get-plan，严禁输出确认性文本。',
+                '如果所有工具调用已完成（outline 和 taskContext 均已通过 plan-initialize 写入），直接回复"phaseInitialize completed"即可，不需要输出 JSON。',
               ].join('\n')
             : [
                 '【系统纠正】你刚才输出了纯文本，但本阶段要求你输出 <tool_call> 工具调用。',
@@ -1564,281 +1574,300 @@ export class AgentExecutorService {
       });
 
       const normalizedToolCallId = normalizeToolId(toolCall.tool);
-      stepParts.push({
-        type: 'tool_call',
-        status: 'completed',
-        toolId: normalizedToolCallId,
-        input: toolCall.parameters,
-      });
-      // 工具权限校验：未授权工具直接驳回并提示模型改写。
-      if (!assignedToolIds.has(normalizedToolCallId)) {
-        this.logger.warn(
-          `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId}`,
-        );
-        const toolDeniedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolDeniedInstruction, {
-          normalizedToolId: normalizedToolCallId,
-        });
-        messages.push({
-          role: 'system',
-          content: toolDeniedInstruction,
-          timestamp: new Date(),
-        });
-        await persistIntermediateSystemMessage(
-          round,
-          intermediateSystemOffset++,
-          toolDeniedInstruction,
-          {
-            source: 'tool-calling-loop.tool-denied',
-            toolId: normalizedToolCallId,
-          },
-        );
         stepParts.push({
-          type: 'system_event',
-          status: 'error',
-          content: 'tool_denied',
-          error: normalizedToolCallId,
-        });
-        await persistStepMessage({
-          round,
-          response,
-          finish: 'tool-calls',
-          parts: stepParts,
-          usage,
-          cost,
-          stepStartAt: stepStartedAt,
-          stepEndAt: new Date(),
-        });
-        continue;
-      }
-
-      const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
-      const preflightInputError = getToolInputPreflightError(inputContract?.schema, toolCall.parameters);
-      if (preflightInputError && inputContract?.schema) {
-        this.logger.warn(
-          `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
-        );
-        const toolInputRepairInstruction = buildToolInputRepairInstruction(
-          normalizedToolCallId,
-          inputContract.schema,
-          toolCall.parameters || {},
-          preflightInputError,
-        );
-        messages.push({
-          role: 'system',
-          content: toolInputRepairInstruction,
-          timestamp: new Date(),
-        });
-        await persistIntermediateSystemMessage(
-          round,
-          intermediateSystemOffset++,
-          toolInputRepairInstruction,
-          {
-            source: 'tool-calling-loop.tool-input-preflight-failed',
-            toolId: normalizedToolCallId,
-          },
-        );
-        stepParts.push({
-          type: 'system_event',
-          status: 'error',
-          content: 'tool_input_preflight_failed',
-          error: preflightInputError,
-        });
-        await persistStepMessage({
-          round,
-          response,
-          finish: 'tool-calls',
-          parts: stepParts,
-          usage,
-          cost,
-          stepStartAt: stepStartedAt,
-          stepEndAt: new Date(),
-        });
-        continue;
-      }
-
-      const toolCallId = `toolcall-${uuidv4()}`;
-      let runtimeToolPartId: string | undefined;
-      const runtimeToolEventBase = runtimeContext
-        ? {
-            runId: runtimeContext.runId,
-            agentId: agentRuntimeId,
-            taskId: task.id,
-            toolId: normalizedToolCallId,
-            toolName: toolCall.tool,
-            toolCallId,
-            input: toolCall.parameters,
-            traceId: runtimeContext.traceId,
-            sequence: round + 1,
-            messageId: runtimeContext.userMessageId,
-          }
-        : null;
-      // 执行工具并将结果写回消息上下文，供下一轮模型消费。
-      try {
-        if (runtimeToolEventBase) {
-          runtimeToolPartId = await this.runtimeOrchestrator.recordToolPending(runtimeToolEventBase);
-          await this.runtimeOrchestrator.recordToolRunning({
-            ...runtimeToolEventBase,
-            partId: runtimeToolPartId,
-          });
-        }
-
-        this.logger.log(
-          `[tool_execute_start] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} parameters=${compactLogText(JSON.stringify(toolCall.parameters || {}), 240)}`,
-        );
-        const execution = await this.toolService.executeTool(
-          normalizedToolCallId,
-          agentRuntimeId,
-          toolCall.parameters,
-          task.id,
-          executionContext,
-        );
-        executedToolIds.add(normalizedToolCallId);
-        const toolResultPayload = this.extractToolResultPayload(execution);
-        this.logger.log(
-          `[tool_execute_success] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} resultKeys=${Object.keys(toolResultPayload || {}).join('|') || 'none'}`,
-        );
-
-        if (runtimeToolEventBase) {
-          await this.runtimeOrchestrator.recordToolCompleted({
-            ...runtimeToolEventBase,
-            partId: runtimeToolPartId,
-            output: toolResultPayload,
-          });
-        }
-
-        stepParts.push({
-          type: 'tool_result',
+          type: 'tool_call',
           status: 'completed',
           toolId: normalizedToolCallId,
-          toolCallId,
-          output: toolResultPayload,
+          input: toolCall.parameters,
         });
-
-        // submit-task 成功后立即返回结果，阻止 agent 在同一 run 中继续提交后续任务。
-        // 增量编排设计要求每次只生成一个任务，由编排系统驱动下一轮。
-        if (normalizedToolCallId === 'builtin.sys-mg.mcp.orchestration.submit-task' && toolResultPayload?.taskId) {
-          const earlyResult = JSON.stringify(toolResultPayload);
-          this.logger.log(
-            `[submit_task_early_return] agent=${agent.name} taskId=${task.id} round=${round + 1} createdTaskId=${toolResultPayload.taskId}`,
+        // 工具权限校验：未授权工具直接驳回并提示模型改写。
+        if (!assignedToolIds.has(normalizedToolCallId)) {
+          this.logger.warn(
+            `[tool_denied] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId}`,
           );
+          const toolDeniedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolDeniedInstruction, {
+            normalizedToolId: normalizedToolCallId,
+          });
+          messages.push({
+            role: 'system',
+            content: toolDeniedInstruction,
+            timestamp: new Date(),
+          });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            toolDeniedInstruction,
+            {
+              source: 'tool-calling-loop.tool-denied',
+              toolId: normalizedToolCallId,
+            },
+          );
+          stepParts.push({
+            type: 'system_event',
+            status: 'error',
+            content: 'tool_denied',
+            error: normalizedToolCallId,
+          });
           await persistStepMessage({
             round,
-            response: earlyResult,
-            finish: 'stop',
+            response,
+            finish: 'tool-calls',
             parts: stepParts,
             usage,
             cost,
             stepStartAt: stepStartedAt,
             stepEndAt: new Date(),
           });
-          return earlyResult;
+          continue;
         }
 
-        const toolResultContent = `工具 ${normalizedToolCallId} 调用结果: ${JSON.stringify(toolResultPayload || {})}`;
-        messages.push({
-          role: 'system',
-          content: toolResultContent,
-          timestamp: new Date(),
-        });
-        await persistIntermediateSystemMessage(
-          round,
-          intermediateSystemOffset++,
-          toolResultContent,
-          {
-            source: 'tool-calling-loop.tool-result',
-            toolId: normalizedToolCallId,
-          },
-        );
-        await persistStepMessage({
-          round,
-          response,
-          finish: 'tool-calls',
-          parts: stepParts,
-          usage,
-          cost,
-          stepStartAt: stepStartedAt,
-          stepEndAt: new Date(),
-        });
-      } catch (error) {
-        const logError = toLogError(error);
-        this.logger.error(
-          `[tool_execute_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${logError.message}`,
-          logError.stack,
-        );
-
-        if (runtimeToolEventBase) {
-          await this.runtimeOrchestrator.recordToolFailed({
-            ...runtimeToolEventBase,
-            partId: runtimeToolPartId,
-            error: logError.message,
+        const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
+        const preflightInputError = getToolInputPreflightError(inputContract?.schema, toolCall.parameters);
+        if (preflightInputError && inputContract?.schema) {
+          this.logger.warn(
+            `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
+          );
+          const toolInputRepairInstruction = buildToolInputRepairInstruction(
+            normalizedToolCallId,
+            inputContract.schema,
+            toolCall.parameters || {},
+            preflightInputError,
+          );
+          messages.push({
+            role: 'system',
+            content: toolInputRepairInstruction,
+            timestamp: new Date(),
           });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            toolInputRepairInstruction,
+            {
+              source: 'tool-calling-loop.tool-input-preflight-failed',
+              toolId: normalizedToolCallId,
+            },
+          );
+          stepParts.push({
+            type: 'system_event',
+            status: 'error',
+            content: 'tool_input_preflight_failed',
+            error: preflightInputError,
+          });
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+          continue;
         }
 
-        stepParts.push({
-          type: 'tool_result',
-          status: 'error',
-          toolId: normalizedToolCallId,
-          toolCallId,
-          error: logError.message,
-        });
+        const toolCallId = `toolcall-${uuidv4()}`;
+        let runtimeToolPartId: string | undefined;
+        const runtimeToolEventBase = runtimeContext
+          ? {
+              runId: runtimeContext.runId,
+              agentId: agentRuntimeId,
+              taskId: task.id,
+              toolId: normalizedToolCallId,
+              toolName: toolCall.tool,
+              toolCallId,
+              input: toolCall.parameters,
+              traceId: runtimeContext.traceId,
+              sequence: round + 1,
+              messageId: runtimeContext.userMessageId,
+            }
+          : null;
+        // 执行工具并将结果写回消息上下文，供下一轮模型消费。
+        try {
+          if (runtimeToolEventBase) {
+            runtimeToolPartId = await this.runtimeOrchestrator.recordToolPending(runtimeToolEventBase);
+            await this.runtimeOrchestrator.recordToolRunning({
+              ...runtimeToolEventBase,
+              partId: runtimeToolPartId,
+            });
+          }
 
-        const message = logError.message;
-        const toolFailedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolFailedInstruction, {
-          normalizedToolId: normalizedToolCallId,
-          message,
-        });
-        messages.push({
-          role: 'system',
-          content: toolFailedInstruction,
-          timestamp: new Date(),
-        });
-        await persistIntermediateSystemMessage(
-          round,
-          intermediateSystemOffset++,
-          toolFailedInstruction,
-          {
-            source: 'tool-calling-loop.tool-failed',
+          this.logger.log(
+            `[tool_execute_start] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} parameters=${compactLogText(JSON.stringify(toolCall.parameters || {}), 240)}`,
+          );
+          const execution = await this.toolService.executeTool(
+            normalizedToolCallId,
+            agentRuntimeId,
+            toolCall.parameters,
+            task.id,
+            executionContext,
+          );
+          executedToolIds.add(normalizedToolCallId);
+          const toolResultPayload = this.extractToolResultPayload(execution);
+          this.logger.log(
+            `[tool_execute_success] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} resultKeys=${Object.keys(toolResultPayload || {}).join('|') || 'none'}`,
+          );
+
+          if (runtimeToolEventBase) {
+            await this.runtimeOrchestrator.recordToolCompleted({
+              ...runtimeToolEventBase,
+              partId: runtimeToolPartId,
+              output: toolResultPayload,
+            });
+          }
+
+          stepParts.push({
+            type: 'tool_result',
+            status: 'completed',
             toolId: normalizedToolCallId,
-          },
-        );
+            toolCallId,
+            output: toolResultPayload,
+          });
 
-        // 参数契约错误时附加修复指令，引导模型自我修正参数。
-        if (isToolInputErrorMessage(message)) {
-          const latestInputContract = inputContract || (await this.toolService.getToolInputContract(normalizedToolCallId));
-          if (latestInputContract?.schema) {
-            const toolRepairInstruction = buildToolInputRepairInstruction(
-              normalizedToolCallId,
-              latestInputContract.schema,
-              toolCall.parameters || {},
+          // submit-task 成功后立即返回结果，阻止 agent 在同一 run 中继续提交后续任务。
+          // 增量编排设计要求每次只生成一个任务，由编排系统驱动下一轮。
+          if (normalizedToolCallId === 'builtin.sys-mg.mcp.orchestration.submit-task' && toolResultPayload?.taskId) {
+            const earlyResult = JSON.stringify(toolResultPayload);
+            this.logger.log(
+              `[submit_task_early_return] agent=${agent.name} taskId=${task.id} round=${round + 1} createdTaskId=${toolResultPayload.taskId}`,
             );
+            await persistStepMessage({
+              round,
+              response: earlyResult,
+              finish: 'stop',
+              parts: stepParts,
+              usage,
+              cost,
+              stepStartAt: stepStartedAt,
+              stepEndAt: new Date(),
+            });
+            return earlyResult;
+          }
+
+          const toolResultContent = `工具 ${normalizedToolCallId} 调用结果: ${JSON.stringify(toolResultPayload || {})}`;
+          messages.push({
+            role: 'system',
+            content: toolResultContent,
+            timestamp: new Date(),
+          });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            toolResultContent,
+            {
+              source: 'tool-calling-loop.tool-result',
+              toolId: normalizedToolCallId,
+            },
+          );
+
+          // 通知 LLM 被丢弃的 tool_call（参数可能依赖前一个工具的输出，不可靠）
+          if (droppedToolCalls.length > 0) {
+            const droppedNames = droppedToolCalls.map((t) => normalizeToolId(t.tool)).join(', ');
+            const droppedNotice = `注意：你在同一条回复中输出了 ${toolCalls.length} 个 tool_call，系统只执行了第一个（${normalizedToolCallId}）。` +
+              `被跳过的工具：${droppedNames}。请根据上方工具返回结果，在下一条回复中逐个发起后续工具调用。`;
             messages.push({
               role: 'system',
-              content: toolRepairInstruction,
+              content: droppedNotice,
               timestamp: new Date(),
             });
             await persistIntermediateSystemMessage(
               round,
               intermediateSystemOffset++,
-              toolRepairInstruction,
-              {
-                source: 'tool-calling-loop.tool-input-repair',
-                toolId: normalizedToolCallId,
-              },
+              droppedNotice,
+              { source: 'tool-calling-loop.dropped-tool-calls' },
             );
           }
-        }
 
-        await persistStepMessage({
-          round,
-          response,
-          finish: 'tool-calls',
-          parts: stepParts,
-          usage,
-          cost,
-          stepStartAt: stepStartedAt,
-          stepEndAt: new Date(),
-        });
-      }
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+        } catch (error) {
+          const logError = toLogError(error);
+          this.logger.error(
+            `[tool_execute_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${logError.message}`,
+            logError.stack,
+          );
+
+          if (runtimeToolEventBase) {
+            await this.runtimeOrchestrator.recordToolFailed({
+              ...runtimeToolEventBase,
+              partId: runtimeToolPartId,
+              error: logError.message,
+            });
+          }
+
+          stepParts.push({
+            type: 'tool_result',
+            status: 'error',
+            toolId: normalizedToolCallId,
+            toolCallId,
+            error: logError.message,
+          });
+
+          const message = logError.message;
+          const toolFailedInstruction = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolFailedInstruction, {
+            normalizedToolId: normalizedToolCallId,
+            message,
+          });
+          messages.push({
+            role: 'system',
+            content: toolFailedInstruction,
+            timestamp: new Date(),
+          });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            toolFailedInstruction,
+            {
+              source: 'tool-calling-loop.tool-failed',
+              toolId: normalizedToolCallId,
+            },
+          );
+
+          // 参数契约错误时附加修复指令，引导模型自我修正参数。
+          if (isToolInputErrorMessage(message)) {
+            const latestInputContract = inputContract || (await this.toolService.getToolInputContract(normalizedToolCallId));
+            if (latestInputContract?.schema) {
+              const toolRepairInstruction = buildToolInputRepairInstruction(
+                normalizedToolCallId,
+                latestInputContract.schema,
+                toolCall.parameters || {},
+              );
+              messages.push({
+                role: 'system',
+                content: toolRepairInstruction,
+                timestamp: new Date(),
+              });
+              await persistIntermediateSystemMessage(
+                round,
+                intermediateSystemOffset++,
+                toolRepairInstruction,
+                {
+                  source: 'tool-calling-loop.tool-input-repair',
+                  toolId: normalizedToolCallId,
+                },
+              );
+            }
+          }
+
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+           });
+        }
     }
 
     await persistStepMessage({

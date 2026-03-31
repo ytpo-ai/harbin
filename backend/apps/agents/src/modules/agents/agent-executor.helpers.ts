@@ -179,21 +179,44 @@ export function resolveOpenCodeRuntimeOptions(
 }
 
 export function extractToolCall(response: string): { tool: string; parameters: any } | null {
-  const closedTagMatch = response.match(/<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/i);
-  if (closedTagMatch) {
-    return parseToolCallPayload(closedTagMatch[1]);
+  const all = extractAllToolCalls(response);
+  return all.length > 0 ? all[0] : null;
+}
+
+export function extractAllToolCalls(response: string): Array<{ tool: string; parameters: any }> {
+  const results: Array<{ tool: string; parameters: any }> = [];
+
+  // Strategy 1: Match all closed <tool_call>...</tool_call> blocks
+  const closedTagRegex = /<tool_call>\s*([\s\S]*?)\s*<\/tool_call>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = closedTagRegex.exec(response)) !== null) {
+    const parsed = parseToolCallPayload(match[1]);
+    if (parsed) {
+      results.push(parsed);
+    }
+  }
+  if (results.length > 0) {
+    return results;
   }
 
+  // Strategy 2: Match dangling <tool_call> with no closing tag (single only)
   const openTagOnlyMatch = response.match(/<tool_call>\s*([\s\S]*)$/i);
   if (openTagOnlyMatch) {
-    return parseToolCallPayload(openTagOnlyMatch[1]);
+    const parsed = parseToolCallPayload(openTagOnlyMatch[1]);
+    if (parsed) {
+      return [parsed];
+    }
   }
 
+  // Strategy 3: Bare JSON with "tool" and "parameters" keys (single only)
   if (response.includes('"tool"') && response.includes('"parameters"')) {
-    return parseToolCallPayload(response);
+    const parsed = parseToolCallPayload(response);
+    if (parsed) {
+      return [parsed];
+    }
   }
 
-  return null;
+  return [];
 }
 
 export function isToolInputErrorMessage(message: string): boolean {
@@ -296,30 +319,62 @@ export function buildTaskResultMemo(response: string): string {
   return `${normalized.slice(0, 797)}...`;
 }
 
+function sanitizeJsonString(raw: string): string {
+  // 将实际换行/回车/制表符替换为 JSON 转义序列（LLM 最常见的 JSON 缺陷）
+  let s = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+  // 移除其他控制字符
+  s = s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+  // 移除尾部多余逗号: ,} → } 和 ,] → ]
+  s = s.replace(/,\s*([}\]])/g, '$1');
+  return s;
+}
+
+function tryParseToolJson(text: string): { tool: string; parameters: any } | null {
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed && typeof parsed === 'object' && typeof parsed.tool === 'string') {
+      return {
+        tool: parsed.tool,
+        parameters: parsed.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : {},
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 function parseToolCallPayload(payload: string): { tool: string; parameters: any } | null {
   const cleaned = payload.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
-  const candidates = [cleaned];
+  const candidates: string[] = [];
 
+  // 候选 1: 原始清理后的文本
+  candidates.push(cleaned);
+
+  // 候选 2: 第一个 { 到最后一个 } 之间的内容
   const firstBrace = cleaned.indexOf('{');
   const lastBrace = cleaned.lastIndexOf('}');
   if (firstBrace >= 0 && lastBrace > firstBrace) {
     candidates.push(cleaned.slice(firstBrace, lastBrace + 1).trim());
   }
 
+  // 对每个候选：原始 → sanitize → 逐步去尾部多余 }
   for (const candidate of candidates) {
     if (!candidate) continue;
-    try {
-      const parsed = JSON.parse(candidate);
-      if (!parsed || typeof parsed !== 'object' || typeof parsed.tool !== 'string') {
-        continue;
-      }
+    for (const text of [candidate, sanitizeJsonString(candidate)]) {
+      const result = tryParseToolJson(text);
+      if (result) return result;
 
-      return {
-        tool: parsed.tool,
-        parameters: parsed.parameters && typeof parsed.parameters === 'object' ? parsed.parameters : {},
-      };
-    } catch {
-      continue;
+      // 尾部多余 } 修复：LLM 有时会多输出一个闭合大括号
+      if (text.endsWith('}')) {
+        let trimmed = text;
+        for (let i = 0; i < 3; i++) {
+          trimmed = trimmed.slice(0, -1).trim();
+          if (!trimmed.endsWith('}')) break;
+          const r = tryParseToolJson(trimmed);
+          if (r) return r;
+        }
+      }
     }
   }
 

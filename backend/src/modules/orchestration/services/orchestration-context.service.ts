@@ -28,9 +28,6 @@ export class OrchestrationContextService {
     baseDescription: string,
     options: {
       dependencyContext: string;
-      isResearchTask: boolean;
-      isReviewTask: boolean;
-      researchTaskKind?: 'generic_research';
       retryHint?: string;
       stepIndex?: number;
       currentTaskTitle?: string;
@@ -41,9 +38,6 @@ export class OrchestrationContextService {
   ): Promise<string> {
     const {
       dependencyContext,
-      isResearchTask,
-      isReviewTask,
-      researchTaskKind,
       retryHint,
       stepIndex,
       currentTaskTitle,
@@ -51,6 +45,9 @@ export class OrchestrationContextService {
       planTaskContext,
       executePrompt,
     } = options;
+    const normalizedRuntimeTaskType = this.normalizeRuntimeTaskType(runtimeTaskType);
+    const isResearchTask = normalizedRuntimeTaskType === 'research';
+    const isReviewTask = normalizedRuntimeTaskType === 'development.review';
     const sections = [`【Task Target】\n${this.extractCurrentTaskGoal(baseDescription)}`];
     const planTaskContextSection = this.buildPlanTaskContextSection(planTaskContext);
     if (planTaskContextSection) {
@@ -70,7 +67,7 @@ export class OrchestrationContextService {
       sections.push(`## 执行指导\n${executePrompt}`);
     }
     if (isResearchTask) {
-      sections.push(await this.buildResearchOutputContract(researchTaskKind || 'generic_research'));
+      sections.push(await this.buildResearchOutputContract());
     }
     if (isReviewTask) {
       sections.push(
@@ -425,7 +422,7 @@ export class OrchestrationContextService {
     return lines.join('\n').trim();
   }
 
-  async buildResearchOutputContract(_kind: 'generic_research'): Promise<string> {
+  async buildResearchOutputContract(): Promise<string> {
     const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.researchOutputContract);
     return template.trim();
   }

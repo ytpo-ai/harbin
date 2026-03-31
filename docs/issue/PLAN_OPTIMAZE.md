@@ -344,6 +344,110 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ---
 
+### #12 Planner Initialize 重构 + Skill 激活门控 + 预编译 Prompt 注入（2026-03-31）
+
+**问题**：经 fix1~#11 修复后，计划编排仍存在两个结构性问题：
+1. **Skill 全文在所有阶段注入**：rd-workflow / orchestration-runtime-tasktype-selection 等 skill 在 planner 的 generating / pre_execute / post_execute 阶段都被激活注入，LLM 上下文膨胀、指令冲突导致行为偏移
+2. **phaseInitialize 与业务强绑定**：initialize 硬编码了 requirement 获取逻辑，无法复用于 general/research 域
+
+**设计思路**：
+
+核心理念：**Skill 全文只在 initialize 阶段出现一次，后续阶段读取预编译的 phasePrompts**。
+
+- **Planner Initialize = 核心职责 + Skill 扩展**
+  - Phase 1（核心，所有计划必做）：list-agents → 读取 skill 定义 → 确定步骤大纲 outline → 为每步每阶段生成专用 prompt（generating / pre_execute / execute / post_execute）→ 通过 `plan-initialize(mode=outline)` 工具写入 `plan.metadata.outline`
+  - Phase 2（扩展，由 skill 定义）：执行 skill 中 `## phaseInitialize 扩展步骤` 定义的额外工具调用（如 rd-workflow 的 requirement 获取）→ 通过 `plan-initialize(mode=taskContext)` 写入共享上下文
+  - 所有数据写入通过工具调用完成（非 LLM 输出 JSON 文本），避免解析不稳定
+
+- **Skill 激活门控（Tag-Based Activation Rule）**
+  - Tag 格式：`field:value[,value2]:rule`，rule = must / no / enable
+  - 匹配优先级：no > must > enable
+  - 非激活格式 tag 走原有语义匹配逻辑（向后兼容）
+  - 示例：`domainType:development:must`（仅 development 域激活）、`phase:pre_execute:must`（仅 pre_execute 阶段激活）、`taskType:development.exec:no`（exec 类型排除）
+
+- **后续阶段 prompt 来源切换**
+  - generating / pre_execute / execute / post_execute 四个阶段从 `plan.metadata.outline[step].phasePrompts[$phase]` 读取预编译 prompt
+  - 各阶段保留框架性 prompt（阶段声明、工具说明、行为约束），步骤指导部分替换为预编译内容
+  - 降级路径：无预编译 prompt 时走原有硬编码逻辑
+
+**改动摘要**（20 个文件，+961 / -391）：
+
+- **Skill 激活门控**：`context-strategy.service.ts` 新增 `parseActivationTags()` / `evaluateActivationTags()`，`shouldActivateSkillContent()` 支持 tag-based 判断；`collaboration-context.types.ts` 新增 `domainType` / `phase` / `taskType` 字段透传
+- **plan-initialize 工具**：`builtin-tool-catalog.ts` 注册工具；`orchestration-tool-handler.service.ts` 实现 `planInitialize()`（含 outline 校验 + taskContext merge + roleInPlan 拦截）；`plan-management.service.ts` 新增 `updatePlanMetadata()` + controller 端点 `PATCH /plans/:id/metadata`
+- **phaseInitialize 重构**：`planner.service.ts` 重写 `buildPhaseInitializePrompt()`（Phase 1 核心 + Phase 2 扩展）；initialize 完成判断改为从 DB 检查 metadata.outline 含 phasePrompts；移除 `extractInitializeFieldsFromText()` 降级逻辑
+- **prompt 注入改造**：generating 从 outline 读取 `phasePrompts.generating`；pre_execute / post_execute 优先使用预编译 prompt；execute 阶段通过 `loadPlanStepExecutePrompt()` 注入
+- **Skill 文档更新**：rd-workflow 添加 `domainType:development:must`；tasktype-selection 添加 `phase:pre_execute:must`；task-out-validation 添加 `phase:post_execute:must`；rd-workflow phaseInitialize 段落改为扩展步骤格式
+
+**关联文档**：
+- Plan: `docs/plan/PLANNER_INITIALIZE_REFACTOR_AND_SKILL_ACTIVATION_GATE.md`
+- Technical: `docs/technical/PLANNER_INITIALIZE_REFACTOR_AND_SKILL_ACTIVATION_GATE_DESIGN.md`
+- Commit: `5da0b75`
+
+---
+
+### #13 plan-initialize(mode=outline) Schema 与 Handler 校验矛盾 — 死循环修复（2026-03-31）
+
+**问题**：phaseInitialize 阶段 LLM 调用 `plan-initialize(mode=outline)` 100% 失败，进入死循环。Session log 显示 14+ 轮重试后 outline 始终无法写入，只有 taskContext 降级成功。
+
+**根因**：三层校验对 `data` 参数的类型期望矛盾：
+1. **Schema 声明**（`builtin-tool-catalog.ts:718`）：`data: { type: 'object' }` — 声明为 object
+2. **Preflight 校验**（`agent-executor.helpers.ts:279`）：按 schema 检查，`Array.isArray(value)` 为 true 时返回 `"field 'data' must be object"` — array 被拦截，不进入 handler
+3. **Handler 校验**（`orchestration-tool-handler.service.ts:358`）：`validateOutlineData()` 要求 `Array.isArray(data)` — 要求必须是 array
+
+死循环过程：LLM 传 array → Preflight 拦截 "must be object" → LLM 改传 object({items:[...]}) → Preflight 通过 → Handler 拦截 "requires non-empty array" → LLM 改回 array → 循环
+
+**修复摘要**（2 个文件）：
+
+**Schema 声明修复**：
+- `builtin-tool-catalog.ts`：`data` 字段移除 `type: 'object'` 约束，仅保留 `description` 说明两种 mode 下的数据格式（array/object）。Preflight 校验发现无 `type` 声明时 `continue` 跳过类型检查，不再拦截 array。
+
+**Handler 兼容逻辑**：
+- `orchestration-tool-handler.service.ts`：`planInitialize()` 在 `mode=outline` 时新增 object-to-array unwrap 兼容——若 `data` 是 object 且包含 `items`/`data`/`outline` 子字段为 array，自动提取内层 array 传递给 `validateOutlineData()`。防止 LLM 因修正指令包裹 object 后仍被 handler 拒绝。
+
+**防御层次**：
+1. **Schema 层**：不声明 type → preflight 不做类型拦截 → array 和 object 均可到达 handler
+2. **Handler 层**：array 直接校验通过；object 包裹的 array 自动 unwrap 后校验
+3. **Prompt 层**：`buildPhaseInitializePrompt` 示例已使用 `"data":[...]` array 格式（无需改动）
+
+---
+
+### #14 pre_execute 无 actions 直接跳过 + phasePrompts.pre_execute/post_execute 停止消费 + preExecuteActions 结构化 Prompt（2026-03-31）
+
+**问题**：计划 `69cac0a7` Step2 在 pre_execute 阶段被反复 blocked 4 次后用户手动停止。根因分析：
+
+1. **P0 — pre_execute 阶段职责错位**：`phasePrompts.pre_execute` 生成了"检查 step1 输出可执行"等审查类指令，但 pre_execute 阶段的 Planner 上下文中**没有注入前置步骤的执行结果**，Planner 通过 `memory.search-memo`、`repo-read grep` 均无法获取 Step1 输出，于是反复返回 `allowExecute=false`
+2. **P1 — phasePrompts.pre_execute/post_execute 实际价值为零**：LLM 在 phaseInitialize 阶段生成的 pre_execute/post_execute prompt 文本要么是空洞的系统术语（"执行 preExecuteActions"），要么是无法满足的审查指令（"检查 step1 输出"），注入后反而误导 Planner
+3. **P1 — preExecuteActions 结构化数据未生成**：outline 中 3 个 step 的 `preExecuteActions` 全部为 null，LLM 只在 `phasePrompts.pre_execute` 文本里写了"执行 preExecuteActions"但没有生成实际的结构化数组
+
+**设计决策**：
+- **pre_execute 的唯一职责**：执行 `preExecuteActions`（如 requirement.update-status）。无 actions 时系统直接跳过，不调 LLM
+- **post_execute 的决策规则**：统一使用系统内置的多步流程进度逻辑，不再由 LLM 生成的 prompt 覆盖
+- **phasePrompts 字段保留**：DB 中仍存储 `pre_execute`/`post_execute` 字段（不破坏 schema），但 dispatcher 不再消费
+
+**修复摘要**（4 个文件）：
+
+**dispatcher phasePreExecute 短路跳过**：
+- `orchestration-step-dispatcher.service.ts`：提取 `preExecuteActions` 后判断——为空则直接 `allowExecute=true` 跳到 executing，写入 runLog "Pre-execute skipped: no preExecuteActions defined"，发出事件；有 actions 时仍走 LLM 执行工具调用。删除 `normalizedPreExecutePrompt` / `outlinePrompts` 读取逻辑
+
+**dispatcher phasePostExecute 去除 prompt 注入**：
+- `orchestration-step-dispatcher.service.ts`：删除从 `outline.phasePrompts.post_execute` 读取 `postExecutePrompt` 并传递给 `buildPostTaskContext` 的逻辑；删除不再需要的 `planSnapshot` 查询
+
+**buildPreTaskContext 简化**：
+- `orchestration-context.service.ts`：签名从 `outlineStep?: { phasePrompts?, preExecuteActions? }` 改为 `preExecuteActions: Array<...>`；删除 `phasePrompts.pre_execute` 参数、preExecutePrompt 分支、无 actions 的兜底分支；精简阶段隔离声明
+
+**buildPostTaskContext 去除 prompt 参数**：
+- `orchestration-context.service.ts`：删除 `postExecutePrompt?: string` 参数和对应注入分支；决策规则统一走系统内置的多步流程进度逻辑（已完成/总步数 → generate_next 或 stop）
+
+**buildPhaseInitializePrompt 增加 preExecuteActions 结构化定义**：
+- `planner.service.ts`：OutlineItem Schema 增加 `preExecuteActions` 数组字段定义（含 tool、params 说明）；Phase 1 示例中 step1/step3 增加 preExecuteActions 示例（requirement.update-status）；step2 无 preExecuteActions 示例；增加 preExecuteActions 用法说明段落；phasePrompts 中删除 `pre_execute` 字段的示例
+
+**测试更新**：
+- `orchestration-context.service.spec.ts`：更新 buildPreTaskContext 测试（传入 preExecuteActions 数组）；更新 buildPostTaskContext 测试（验证系统决策规则，不再传 postExecutePrompt）
+
+**验证结果**：TypeScript 编译通过，23 个相关测试全部通过
+
+---
+
 ## 待跟进
 
 1. `agent-task.worker.ts` 嵌套 `collaborationContext.collaborationContext` 问题（独立修复）
@@ -351,6 +455,27 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 3. `fromLegacy()` 对孤立 `meetingId`（无 `collaborationMode`/`meetingTitle`）的归类问题
 4. 过渡期结束后（预计 2026-07）移除旧字段（`format`、`mode`、`collaborationMode`）和兼容逻辑
 5. 运行时验证：计划编排首步生成、planner pre/post 决策、executor 任务执行、内部消息触发、会议场景
+### #15 多 tool_call 顺序执行 + phaseInitialize text-only retry 纠正指令修复（2026-03-31）
+
+**问题**：计划 `69cac0a7` 和 `69cb6675` 的 phaseInitialize 阶段暴露了两个问题：
+
+1. **P1 — LLM 单次输出多个 tool_call 时后续调用被丢弃**：LLM 在一次回复中同时输出 `list-agents` + `plan-initialize` + `requirement.list` 三个 tool_call，但 `extractToolCall()` 只提取第一个（非贪婪正则 `([\s\S]*?)`），其余被静默丢弃。后续轮次 LLM 不知道哪些被丢弃，用过时参数重新提交（如 agentId 填 `"TBD"`），导致执行链断裂和数据错误。
+
+2. **P2 — text-only retry 纠正指令误导 LLM 调 get-plan**：纠正指令说"请直接输出最终 JSON 结果（包含 requirementId、outline 等字段）"，LLM 解读为需要输出包含 outline 完整数据的 JSON，于是调 `get-plan` 想读回已写入的数据——但 `get-plan` 不在 Planner 工具列表中（`Tool not assigned`）。
+
+**修复摘要**（3 个文件）：
+
+**多 tool_call 顺序执行**：
+- `agent-executor.helpers.ts`：新增 `extractAllToolCalls()` 函数，使用全局正则 `/<tool_call>[\s\S]*?<\/tool_call>/gi` 提取所有闭合 tool_call 块；原 `extractToolCall()` 改为调用 `extractAllToolCalls()[0]`（向后兼容）
+- `agent-executor.service.ts`：主循环从 `extractToolCall()` 改为 `extractAllToolCalls()`，用内层 `for` 循环逐个顺序 await 执行每个 tool_call。权限拒绝/preflight 失败/工具执行失败时 `break` 内循环，让 LLM 在下一轮纠正。submit-task early return 保持不变。多工具调用时记录 `[multi_tool_call]` 日志
+
+**text-only retry 纠正指令修复**：
+- `agent-executor.service.ts`：phaseInitialize 阶段的纠正指令从"输出最终 JSON 结果（包含 requirementId、outline 等字段）"改为"直接回复 phaseInitialize completed 即可，不需要输出 JSON"；显式禁止调用 `get-plan`
+
+**验证结果**：TypeScript 编译通过，78 个相关测试全部通过（14 agent-executor + 64 orchestration）
+
+---
+
 6. ~~**[P1] development 计划步骤推进验证**~~ → **已验证通过**（#6 计划 69c94186 step1→step2→step3 全部 completed）
 7. ~~**[P2] pre-execute 需求状态更新验证**~~ → **已实现 outline preExecuteActions 机制**（#6），待端到端验证 Planner 是否成功执行工具调用
 8. ~~**[P2] Planner 输出稳定性**：post-execute 阶段 Planner 是否稳定返回 `generate_next` 而非 stop/无效 JSON~~ → **已修复**（#6 post_execute prompt 重构，XML 边界标记 + 场景化决策规则）
