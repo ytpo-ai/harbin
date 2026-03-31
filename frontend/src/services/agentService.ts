@@ -436,8 +436,17 @@ export const agentService = {
 
   async getRunScore(runId: string): Promise<AgentRunScore | null> {
     try {
-      const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}/score`);
-      return response.data || null;
+      const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}/score`, {
+        timeout: 10000,
+      });
+      const payload = response.data;
+      if (payload && typeof payload === 'object') {
+        const nestedScore = (payload as { score?: unknown }).score;
+        if (nestedScore && typeof nestedScore === 'object') {
+          return nestedScore as AgentRunScore;
+        }
+      }
+      return (payload as AgentRunScore) || null;
     } catch (error: any) {
       if (error?.response?.status === 404) {
         return null;

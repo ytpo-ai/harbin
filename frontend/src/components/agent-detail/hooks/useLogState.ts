@@ -86,6 +86,21 @@ const resolveTaskTitle = (items: AgentActionLogItem[]): string => {
   return '';
 };
 
+const resolveTaskId = (items: AgentActionLogItem[]): string => {
+  for (const item of items) {
+    const details = item.details || {};
+    const taskId = pickFirstNonEmpty(details.taskId);
+    if (taskId) {
+      return taskId;
+    }
+  }
+  return '';
+};
+
+const isTerminalStatus = (status: LogStatus): boolean => {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+};
+
 export const useLogState = (agentId: string) => {
   const [logFilters, setLogFilters] = useState<AgentActionLogQuery>({
     page: 1,
@@ -95,7 +110,13 @@ export const useLogState = (agentId: string) => {
   });
   const [expandedTaskKeys, setExpandedTaskKeys] = useState<Record<string, boolean>>({});
   const [detailTabs, setDetailTabs] = useState<Record<string, TaskGroupDetailTab>>({});
-  const [runScores, setRunScores] = useState<Record<string, { loading: boolean; data: AgentRunScore | null; error?: string }>>({});
+  const [runScores, setRunScores] = useState<Record<string, {
+    loading: boolean;
+    data: AgentRunScore | null;
+    error?: string;
+    errorCode?: number;
+    loadingStartedAt?: number;
+  }>>({});
   const [handlingApprovalRunId, setHandlingApprovalRunId] = useState('');
 
   const logQuery = useQuery(
@@ -143,7 +164,10 @@ export const useLogState = (agentId: string) => {
     setRunScores((prev) => {
       const cached = prev[runId];
       if (cached?.loading) {
-        return prev;
+        const loadingForMs = Date.now() - Number(cached.loadingStartedAt || 0);
+        if (loadingForMs < 15000) {
+          return prev;
+        }
       }
       if (cached && !cached.error && cached.data !== undefined) {
         return prev;
@@ -154,6 +178,7 @@ export const useLogState = (agentId: string) => {
         [runId]: {
           loading: true,
           data: null,
+          loadingStartedAt: Date.now(),
         },
       };
     });
@@ -169,16 +194,20 @@ export const useLogState = (agentId: string) => {
         [runId]: {
           loading: false,
           data,
+          loadingStartedAt: undefined,
         },
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : '评分加载失败';
+      const errorCode = typeof (error as any)?.response?.status === 'number' ? Number((error as any).response.status) : undefined;
       setRunScores((prev) => ({
         ...prev,
         [runId]: {
           loading: false,
           data: null,
           error: message,
+          errorCode,
+          loadingStartedAt: undefined,
         },
       }));
     }
@@ -218,7 +247,7 @@ export const useLogState = (agentId: string) => {
       else groupMap.set(key, [item]);
     }
 
-    const groups: TaskGroup[] = [];
+    const groups: Array<TaskGroup & { hasRunId: boolean; taskId: string; hasTerminal: boolean }> = [];
     for (const [groupKey, items] of groupMap) {
       const sorted = [...items].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
       const first = sorted[0];
@@ -227,6 +256,7 @@ export const useLogState = (agentId: string) => {
       const meetingTitle = resolveMeetingTitle(sorted);
       const planTitle = resolvePlanTitle(sorted, first.contextId);
       const explicitTaskTitle = resolveTaskTitle(sorted);
+      const taskId = resolveTaskId(sorted);
 
       let finalStatus: LogStatus = 'unknown';
       for (let i = sorted.length - 1; i >= 0; i -= 1) {
@@ -284,11 +314,39 @@ export const useLogState = (agentId: string) => {
         lastActionSummary,
         actions: sorted,
         totalDurationMs,
+        hasRunId: !groupKey.startsWith('ungrouped-'),
+        taskId,
+        hasTerminal: isTerminalStatus(finalStatus),
       });
     }
 
-    groups.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
-    return groups;
+    const terminalTaskIds = new Set(
+      groups
+        .filter((group) => group.hasTerminal && group.taskId)
+        .map((group) => group.taskId),
+    );
+
+    const terminalTitleEnvSet = new Set(
+      groups
+        .filter((group) => group.hasTerminal && group.title)
+        .map((group) => `${group.environmentType}::${group.title}`),
+    );
+
+    const deduplicatedGroups = groups.filter((group) => {
+      if (group.hasRunId || group.hasTerminal) {
+        return true;
+      }
+      if (group.taskId && terminalTaskIds.has(group.taskId)) {
+        return false;
+      }
+      if (!group.taskId && group.title && terminalTitleEnvSet.has(`${group.environmentType}::${group.title}`)) {
+        return false;
+      }
+      return true;
+    });
+
+    deduplicatedGroups.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
+    return deduplicatedGroups.map(({ hasRunId: _hasRunId, taskId: _taskId, hasTerminal: _hasTerminal, ...rest }) => rest);
   }, [logs]);
 
   const handleApprovalDecision = async (approved: boolean) => {

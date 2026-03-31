@@ -1,9 +1,9 @@
 import React from 'react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import { AgentActionLogQuery } from '../../services/agentActionLogService';
-import { LOG_STATUS_META, LogStatus, SCORE_RULE_LABEL, TASK_GROUP_DETAIL_TABS, getScoreBadgeClass } from './constants';
+import { SCORE_RULE_LABEL, TASK_GROUP_DETAIL_TABS, getScoreBadgeClass } from './constants';
 import { useLogState } from './hooks/useLogState';
-import { formatSyncState, getActionDescription, getActionSemantic, getTaskStatusMeta } from './utils';
+import { getActionDescription, getActionSemantic, getTaskStatusMeta } from './utils';
 
 interface LogTabProps {
   agentId: string;
@@ -81,51 +81,6 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">最新运行</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {state.runtimeRunQuery.data?.status
-              ? LOG_STATUS_META[state.runtimeRunQuery.data.status as LogStatus]?.label || state.runtimeRunQuery.data.status
-              : '-'}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">步骤 {state.runtimeRunQuery.data?.currentStep ?? '-'}</p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">同步状态</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">{formatSyncState(state.runtimeRunQuery.data)}</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {state.runtimeRunQuery.data?.sync?.lastSyncAt
-              ? `最近同步: ${new Date(state.runtimeRunQuery.data.sync.lastSyncAt).toLocaleString()}`
-              : '暂无同步记录'}
-          </p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-400">授权处理</p>
-          <p className="mt-2 text-sm font-semibold text-slate-900">
-            {state.approvalRunCandidates.length > 0 ? `${state.approvalRunCandidates.length} 条待处理` : '无待处理'}
-          </p>
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => state.handleApprovalDecision(true)}
-              disabled={!state.approvalTargetRunId || state.handlingApprovalRunId === state.approvalTargetRunId}
-              className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-40"
-            >
-              同意
-            </button>
-            <button
-              onClick={() => state.handleApprovalDecision(false)}
-              disabled={!state.approvalTargetRunId || state.handlingApprovalRunId === state.approvalTargetRunId}
-              className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 transition-colors hover:bg-rose-100 disabled:opacity-40"
-            >
-              拒绝
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div className="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200/50">
         {state.logQuery.isLoading ? (
           <div className="space-y-3 p-4">
@@ -154,6 +109,20 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
               const scoreState = state.runScores[group.groupKey];
               const scoreData = scoreState?.data;
               const scoreBadgeClass = typeof scoreData?.score === 'number' ? getScoreBadgeClass(scoreData.score) : '';
+              const scoreBadgeText =
+                typeof scoreData?.score === 'number'
+                  ? `${Math.round(scoreData.score)}分`
+                  : scoreState?.loading
+                    ? '评分加载中'
+                    : scoreState?.errorCode === 403
+                      ? '无权限'
+                      : scoreState?.error
+                        ? '评分失败'
+                        : '评分: --';
+              const scoreBadgeFallbackClass =
+                scoreState?.errorCode === 403 || scoreState?.error
+                  ? 'border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border-slate-200 bg-slate-100 text-slate-600';
               const scoreDetailExpanded = expandedScoreDetails[group.groupKey] === true;
               const durationStr =
                 group.totalDurationMs >= 1000 ? `${(group.totalDurationMs / 1000).toFixed(1)}s` : `${group.totalDurationMs}ms`;
@@ -165,33 +134,15 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                     className="w-full px-5 py-4 text-left transition-colors hover:bg-slate-50/50"
                   >
                     <div className="flex items-center gap-4">
-                      <div className="mt-0.5 flex-shrink-0">
-                        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-sm font-bold ring-1 ${statusMeta.badgeClass}`}>
-                          {group.finalStatus === 'completed'
-                            ? 'v'
-                            : group.finalStatus === 'failed'
-                              ? '!'
-                              : group.finalStatus === 'running' || group.finalStatus === 'started'
-                                ? '>'
-                                : group.finalStatus === 'paused'
-                                  ? '||'
-                                  : group.finalStatus === 'asked'
-                                    ? '?'
-                                    : '.'}
-                        </span>
-                      </div>
-
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           <h3 className="truncate text-sm font-semibold text-slate-900">{group.title || '未命名任务'}</h3>
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${statusMeta.badgeClass}`}>
                             {statusMeta.label}
                           </span>
-                          {typeof scoreData?.score === 'number' && (
-                            <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${scoreBadgeClass}`}>
-                              {Math.round(scoreData.score)}分
-                            </span>
-                          )}
+                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${scoreBadgeClass || scoreBadgeFallbackClass}`}>
+                            {scoreBadgeText}
+                          </span>
                           <span className="text-slate-500">耗时: {durationStr}</span>
                           <span className="truncate text-slate-500">环境: {group.environmentLabel}</span>
                         </div>
