@@ -406,6 +406,7 @@ export class PlannerService {
     planId: string,
     executionResult: string,
     sessionId: string,
+    progressHint?: { totalGenerated?: number; outlineStepCount?: number },
   ): Promise<PostExecutionDecision> {
     const plan = await this.planModel.findById(planId).exec();
     if (!plan) {
@@ -444,9 +445,17 @@ export class PlannerService {
 
     const parsed = this.tryParseJson(response);
     if (!parsed || typeof parsed !== 'object') {
+      // 修复1-2: 当 outline 中仍有未完成步骤时，解析失败应继续而非终止
+      const hasRemainingSteps = progressHint?.outlineStepCount
+        && progressHint?.totalGenerated != null
+        && progressHint.totalGenerated < progressHint.outlineStepCount;
+      const fallbackAction = hasRemainingSteps ? 'generate_next' : 'stop';
+      this.logger.warn(
+        `[post_task_parse_fallback] planId=${planId} fallbackAction=${fallbackAction} totalGenerated=${progressHint?.totalGenerated} outlineStepCount=${progressHint?.outlineStepCount}`,
+      );
       return {
-        action: 'stop',
-        reason: 'Failed to parse planner post-task response',
+        action: fallbackAction,
+        reason: `Failed to parse planner post-task response (fallback=${fallbackAction})`,
       };
     }
 

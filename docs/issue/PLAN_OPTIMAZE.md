@@ -479,6 +479,39 @@ Planner planId 幻觉 + JSON 解析失败 + 多任务批量提交的完整追溯
 
 ---
 
+### #17 goalReached 判断过早修复 + generating 阶段 Agent 选择优化（2026-03-31）
+
+**问题**：计划编排在 step 2 执行完后即显示 `goalReached: true`，不再生成 review step（step 3）；generating 阶段未参考大纲推荐的 agent executor，LLM 需尝试多次才选对正确 agent。
+
+**根因**：
+1. **goalReached 判断标准模糊**：generating prompt 的输出规则只说"若目标已达成，调用 submit-task 并传 isGoalReached=true"，未与 outline 进度绑定。LLM 看到开发执行完成后误判目标已达成。
+2. **recommendedAgent 数据断裂**：phaseInitialize 阶段 LLM 生成 outline 时填入了 `recommendedAgent`，但 `buildGeneratingPrompt()` 只读取 `phasePrompts.generating`，完全忽略 `recommendedAgent` 字段。LLM 不知道该用哪个 agent。
+
+**修复摘要**（4 个文件）：
+
+**generating prompt 注入 outline 剩余步骤 + isGoalReached 规则绑定**：
+- `orchestration-prompt-catalog.ts`：输出规则第1条从"若目标已达成"改为"仅当大纲中所有步骤均已提交任务后才允许 isGoalReached=true"；新增 `{{remainingStepsSection}}` 和 `{{recommendedAgentSection}}` 占位符
+- `orchestration-context.service.ts`：`buildGeneratingPrompt()` 新增——(1) 从 outline 提取尚未完成的步骤列表注入 `remainingStepsSection`；(2) 从 `currentOutlineStep.recommendedAgent` 读取 agentId/agentName 注入 `recommendedAgentSection` + `recommendedAgentHint`
+
+**post_execute JSON 解析失败降级优化**：
+- `planner.service.ts`：`executePostTask()` 新增 `progressHint` 参数（totalGenerated/outlineStepCount）；JSON 解析失败时，若 `totalGenerated < outlineStepCount` 则默认 `generate_next` 而非 `stop`
+
+**dispatcher 安全兜底**：
+- `orchestration-step-dispatcher.service.ts`：`phasePostExecute()` 在事件发射前检查——若 LLM 返回 `stop` 但 `totalGenerated < outlineStepCount`，记录 warn 日志并强制覆写为 `generate_next`
+
+**防御层次**：
+1. **Prompt 引导层**：generating prompt 明确列出剩余步骤 + 绑定 isGoalReached 到 outline 完成度
+2. **推荐 Agent 层**：generating prompt 注入 outline 的 recommendedAgent，减少 LLM 猜测
+3. **解析降级层**：post_execute JSON 解析失败时按进度选择 fallback action
+4. **Dispatcher 硬兜底层**：即使 LLM 返回 stop，系统层面也会根据 outline 进度强制覆写
+
+**验证结果**：TypeScript 编译通过，9 个 orchestration-context 测试全部通过
+
+**关联文档**：
+- Plan: `docs/plan/ORCHESTRATION_GOALREACHED_AND_AGENT_SELECTION_OPTIMIZATION_PLAN.md`
+
+---
+
 ## 待跟进
 
 1. `agent-task.worker.ts` 嵌套 `collaborationContext.collaborationContext` 问题（独立修复）

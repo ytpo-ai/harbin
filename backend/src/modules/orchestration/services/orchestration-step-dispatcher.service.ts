@@ -681,7 +681,10 @@ export class OrchestrationStepDispatcherService {
     });
     let decision: PostExecutionDecision;
     try {
-      decision = await this.plannerService.executePostTask(planId, postPrompt, plannerSessionId);
+      decision = await this.plannerService.executePostTask(planId, postPrompt, plannerSessionId, {
+        totalGenerated: state.totalGenerated,
+        outlineStepCount,
+      });
     } catch (error) {
       decision = {
         action: 'stop',
@@ -694,6 +697,22 @@ export class OrchestrationStepDispatcherService {
         ...decision,
         action: 'redesign',
         reason: `${decision.reason} (auto retry disabled for ${task.runtimeTaskType})`,
+      };
+    }
+
+    // 修复1-3: dispatcher 安全兜底 — outline 中仍有未完成步骤时，禁止 LLM 误判 stop
+    if (
+      decision.action === 'stop'
+      && outlineStepCount
+      && state.totalGenerated < outlineStepCount
+    ) {
+      this.logger.warn(
+        `[post_execute_stop_override] planId=${planId} step=${state.currentStep} totalGenerated=${state.totalGenerated} outlineStepCount=${outlineStepCount} originalReason=${decision.reason} — overriding stop to generate_next`,
+      );
+      decision = {
+        ...decision,
+        action: 'generate_next',
+        reason: `${decision.reason} (system override: ${state.totalGenerated}/${outlineStepCount} steps completed, forced generate_next)`,
       };
     }
 

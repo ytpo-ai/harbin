@@ -212,6 +212,36 @@ export class OrchestrationContextService {
       ? String((phasePrompts as Record<string, unknown>).generating || '').trim()
       : '';
 
+    // --- 修复2: 读取当前步骤的 recommendedAgent ---
+    const recommendedAgentRaw = currentOutlineStep?.recommendedAgent as Record<string, unknown> | undefined;
+    const recommendedAgentId = recommendedAgentRaw ? String(recommendedAgentRaw.agentId || '').trim() : '';
+    const recommendedAgentName = recommendedAgentRaw ? String(recommendedAgentRaw.agentName || '').trim() : '';
+    const recommendedAgentSection = recommendedAgentId
+      ? [
+        '## 推荐执行 Agent（大纲指定）',
+        `- agentId: ${recommendedAgentId}`,
+        `- agentName: ${recommendedAgentName || '(unknown)'}`,
+        `- 说明: 大纲在 phaseInitialize 阶段根据 agent 能力匹配为当前步骤选定了此 agent，submit-task 时请直接使用该 agentId。`,
+        '',
+      ].join('\n')
+      : '';
+    const recommendedAgentHint = recommendedAgentId
+      ? `大纲为当前步骤推荐了 agent ${recommendedAgentId}（${recommendedAgentName}），优先使用。`
+      : '';
+
+    // --- 修复1-1: 构建 outline 中尚未生成的步骤列表 ---
+    const remainingSteps = outline
+      .filter((item) => Number(item.step) > context.completedTasks.length)
+      .map((item) => `- step${Number(item.step)}: ${String(item.title || '(untitled)')} (taskType=${String(item.taskType || 'general')})`);
+    const remainingStepsSection = remainingSteps.length > 0
+      ? [
+        '## 大纲中尚未完成的步骤（禁止跳过）',
+        ...remainingSteps,
+        `共 ${remainingSteps.length} 个步骤待完成，当前应生成 step${nextStep} 的任务。`,
+        '',
+      ].join('\n')
+      : '';
+
     const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerGenerating);
 
     const currentStepGuidanceSection = generatingPrompt
@@ -275,6 +305,9 @@ export class OrchestrationContextService {
       completedTasksBlock,
       failedTasksBlock,
       lastErrorBlock,
+      remainingStepsSection,
+      recommendedAgentSection,
+      recommendedAgentHint,
     });
   }
 

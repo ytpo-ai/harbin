@@ -20,7 +20,7 @@ const DEFAULT_PLANNER_TASK_DECOMPOSITION_PROMPT = [
 const DEFAULT_PLANNER_GENERATING_PROMPT = [
   '【当前阶段声明 — 最高优先级】',
   '你当前处于 generating 阶段，只负责提交下一步任务。',
-  '- 仅允许调用 `builtin.sys-mg.internal.agent-master.list-agents` 与 `builtin.sys-mg.mcp.orchestration.submit-task`。',
+  '- 仅允许调用 `builtin.sys-mg.mcp.orchestration.submit-task`。',
   '- 禁止调用 requirement.* 工具，禁止输出确认性文本。',
   '- 每次只提交一个任务。',
   '- submit-task 的 planId 必须是: {{planId}}',
@@ -39,9 +39,11 @@ const DEFAULT_PLANNER_GENERATING_PROMPT = [
   '{{completedTasksBlock}}',
   '{{failedTasksBlock}}',
   '{{lastErrorBlock}}',
+  '{{remainingStepsSection}}',
+  '{{recommendedAgentSection}}',
   '## 输出规则',
-  '1) 若目标已达成，调用 submit-task 并传 isGoalReached=true。',
-  '2) 调用 submit-task 时必须传真实 agentId。',
+  '1) isGoalReached 判断：仅当大纲中所有步骤均已提交任务后才允许 isGoalReached=true。当前仍有未完成步骤时，禁止设置 isGoalReached=true。',
+  '2) 调用 submit-task 时必须传真实 agentId。{{recommendedAgentHint}}',
   '3) 禁止直接输出文本 JSON，结果必须通过工具调用给出。',
 ].join('\n');
 
