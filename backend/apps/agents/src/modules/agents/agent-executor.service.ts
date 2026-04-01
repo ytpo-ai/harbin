@@ -1327,6 +1327,7 @@ export class AgentExecutorService {
         for (const droppedToolCall of droppedToolCalls) {
           scorer.deduct('D2', round, {
             toolId: normalizeToolId(droppedToolCall.tool),
+            detail: `executed=${toolCall?.tool} dropped=${droppedToolCall.tool}; 每轮只能输出一个 tool_call`,
           });
         }
         this.logger.log(
@@ -1477,11 +1478,13 @@ export class AgentExecutorService {
         // planner 被明确要求输出 <tool_call>，但返回了纯文本（确认性文本 / phaseInitialize 输出等）。
         // 仅 retry 一次，注入强制工具调用指令。
         if (!plannerTextOnlyRetryUsed && this.isPlannerTextOnlyRetryNeeded(cleaned, executionContext)) {
-          scorer.deduct('D9', round);
-          plannerTextOnlyRetryUsed = true;
           const retryRoleInPlan = String(
             ((executionContext?.collaborationContext || {}) as Record<string, unknown>).roleInPlan || '',
           ).trim();
+          scorer.deduct('D9', round, {
+            detail: `roleInPlan=${retryRoleInPlan}; 输出纯文本而非 tool_call: "${cleaned.slice(0, 80)}"`,
+          });
+          plannerTextOnlyRetryUsed = true;
           this.logger.warn(
             `[planner_text_only_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} roleInPlan=${retryRoleInPlan} responsePreview=${JSON.stringify(cleaned.slice(0, 120))}`,
           );
@@ -1603,6 +1606,7 @@ export class AgentExecutorService {
         if (scorer.lastToolId === normalizedToolCallId) {
           scorer.deduct('D3', round, {
             toolId: normalizedToolCallId,
+            detail: `round ${round} 与 round ${round - 1} 连续调用 ${normalizedToolCallId}`,
           });
         }
         scorer.trackToolCall(normalizedToolCallId);

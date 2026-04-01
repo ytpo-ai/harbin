@@ -33,6 +33,15 @@ const SCORE_RULE_ADVICE: Record<string, string> = {
   D12: '此为系统层面错误（超时/网络），非你直接控制，但请尽量精简请求',
 };
 
+interface RecentDeductionSnapshot {
+  ruleId: string;
+  toolId?: string;
+  detail?: string;
+  round: number;
+  score: number;
+  runCreatedAt: string;
+}
+
 interface DeductionCacheItem {
   content?: string;
   payload?: {
@@ -40,6 +49,7 @@ interface DeductionCacheItem {
       totalRuns?: number;
       totalScoreSum?: number;
       ruleFrequency?: Record<string, { count: number; totalPoints: number }>;
+      recentDeductions?: RecentDeductionSnapshot[];
     };
   };
 }
@@ -116,22 +126,40 @@ export class DeductionContextBuilder implements ContextBlockBuilder {
     const lines: string[] = [];
     lines.push('【执行质量提醒 - 历史扣分分析】');
     lines.push('');
-    lines.push(`历史 ${totalRuns} 次执行平均得分：${avgScore} 分。以下是你最常犯的错误，请务必避免重复：`);
+    lines.push(`历史 ${totalRuns} 次执行平均得分：${avgScore} 分。`);
     lines.push('');
 
+    // Part 1: 高频错误 + 建议
+    lines.push('## 高频错误与改进要求');
+    lines.push('');
     const topRules = sortedRules.slice(0, 5);
     for (let i = 0; i < topRules.length; i++) {
       const [ruleId, stat] = topRules[i];
       const label = SCORE_RULE_LABEL[ruleId] || ruleId;
       const advice = SCORE_RULE_ADVICE[ruleId] || '';
-      lines.push(`${i + 1}. 【${ruleId} ${label} | 历史触发 ${stat.count} 次，累计 ${stat.totalPoints} 分】`);
+      lines.push(`${i + 1}. 【${ruleId} ${label} | 触发 ${stat.count} 次 累计 ${stat.totalPoints} 分】`);
       if (advice) {
-        lines.push(`   改进建议：${advice}`);
+        lines.push(`   要求：${advice}`);
       }
     }
-
     lines.push('');
-    lines.push('请在每次工具调用前自检上述问题，提升执行质量。');
+
+    // Part 2: 近期具体错误案例
+    const recentDeductions = historySummary.recentDeductions || [];
+    const casesWithDetail = recentDeductions.filter((d) => d.detail);
+    if (casesWithDetail.length > 0) {
+      lines.push('## 近期具体错误案例（从真实执行中提取，务必避免重现）');
+      lines.push('');
+      const shownCases = casesWithDetail.slice(0, 8);
+      for (const item of shownCases) {
+        const label = SCORE_RULE_LABEL[item.ruleId] || item.ruleId;
+        const toolInfo = item.toolId ? ` tool=${item.toolId}` : '';
+        lines.push(`- [${item.ruleId}] ${label}${toolInfo}: ${item.detail}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('在每次输出前自检上述问题。严格遵守：每轮只输出一个 tool_call；不连续调用同一工具；Planner 必须输出 tool_call 而非纯文本。');
 
     return lines.join('\n');
   }

@@ -28,11 +28,21 @@ interface RuleStat {
   totalPoints: number;
 }
 
+interface RecentDeductionSnapshot {
+  ruleId: string;
+  toolId?: string;
+  detail?: string;
+  round: number;
+  score: number;
+  runCreatedAt: string;
+}
+
 interface HistorySummaryPayload {
   totalRuns: number;
   totalScoreSum: number;
   ruleFrequency: Record<string, { count: number; totalPoints: number }>;
   lastAggregatedAt: string;
+  recentDeductions: RecentDeductionSnapshot[];
 }
 
 @Injectable()
@@ -56,6 +66,7 @@ export class DeductionAggregationService {
         totalScoreSum: 0,
         ruleFrequency: {},
         lastAggregatedAt: '',
+        recentDeductions: [],
       };
 
       const [recentRuns, twoDayStats, incrementalScores] = await Promise.all([
@@ -65,6 +76,7 @@ export class DeductionAggregationService {
       ]);
 
       const updatedHistory = this.mergeHistorySummary(previousHistory, incrementalScores);
+      updatedHistory.recentDeductions = this.buildRecentDeductions(recentRuns);
       const content = this.buildDeductionContent(recentRuns, twoDayStats, updatedHistory);
 
       await this.updateDeductionMemo(agentId, content, updatedHistory, existingMemo);
@@ -149,6 +161,7 @@ export class DeductionAggregationService {
       totalScoreSum,
       ruleFrequency,
       lastAggregatedAt: new Date().toISOString(),
+      recentDeductions: [],
     };
   }
 
@@ -249,6 +262,30 @@ export class DeductionAggregationService {
         return `${label}: ${this.compact(info, 40)}`;
       })
       .join('; ');
+  }
+
+  private buildRecentDeductions(recentRuns: AgentRunScore[]): RecentDeductionSnapshot[] {
+    const snapshots: RecentDeductionSnapshot[] = [];
+    // 从近期 run 中提取有 detail 或 toolId 的扣分明细，限制总量
+    for (const run of recentRuns.slice(0, 5)) {
+      const runCreatedAt = (run as any).createdAt
+        ? new Date((run as any).createdAt).toISOString()
+        : '';
+      for (const deduction of run.deductions || []) {
+        if (!deduction.detail && !deduction.toolId) continue;
+        snapshots.push({
+          ruleId: deduction.ruleId,
+          toolId: deduction.toolId,
+          detail: deduction.detail ? this.compact(deduction.detail, 120) : undefined,
+          round: deduction.round,
+          score: run.score,
+          runCreatedAt,
+        });
+        if (snapshots.length >= 20) break;
+      }
+      if (snapshots.length >= 20) break;
+    }
+    return snapshots;
   }
 
   private compact(text: string, maxLength: number): string {
