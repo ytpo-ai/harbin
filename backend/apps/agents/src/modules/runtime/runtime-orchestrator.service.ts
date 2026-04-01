@@ -95,46 +95,20 @@ export class RuntimeOrchestratorService {
       );
     } else if (input.sessionId && planId) {
       // Explicit sessionId + planId: caller specified an exact session to use.
-      // Check if the caller is a planner (roleInPlan starts with 'planner') — planner sessions
-      // must be isolated from executor sessions to prevent context pollution.
-      const roleInPlan = typeof (collaborationContext as any)?.roleInPlan === 'string'
-        ? (collaborationContext as any).roleInPlan
-        : '';
-      const isPlannerSession = roleInPlan.startsWith('planner');
-
-      if (isPlannerSession) {
-        // Planner session: use the explicit sessionId directly via ensureSession,
-        // bypassing the planId+agentId lookup that would collide with executor sessions.
-        ensuredSession = await this.persistence.ensureSession({
-          sessionId: input.sessionId,
-          sessionType: 'plan',
-          ownerType: 'agent',
-          ownerId: input.agentId,
-          title: input.taskTitle,
-          planContext: {
-            linkedPlanId: planId,
-            currentTaskId: input.taskId,
-          },
-          domainContext: domainContext as any,
-          collaborationContext,
-        });
-      } else {
-        // Non-planner with explicit sessionId: fall through to default planId routing
-        const orchestrationRunId = typeof (collaborationContext as any)?.orchestrationRunId === 'string'
-          ? (collaborationContext as any).orchestrationRunId
-          : undefined;
-        ensuredSession = await this.persistence.getOrCreatePlanSession(
-          planId,
-          input.agentId,
-          input.taskTitle,
-          {
-            currentTaskId: input.taskId,
-            orchestrationRunId,
-            domainContext: domainContext as any,
-            collaborationContext,
-          },
-        );
-      }
+      // Use the explicit sessionId directly — no role-based branching needed.
+      ensuredSession = await this.persistence.ensureSession({
+        sessionId: input.sessionId,
+        sessionType: 'plan',
+        ownerType: 'agent',
+        ownerId: input.agentId,
+        title: input.taskTitle,
+        planContext: {
+          linkedPlanId: planId,
+          currentTaskId: input.taskId,
+        },
+        domainContext: domainContext as any,
+        collaborationContext,
+      });
     } else if (planId) {
       const orchestrationRunId = typeof (collaborationContext as any)?.orchestrationRunId === 'string'
         ? (collaborationContext as any).orchestrationRunId

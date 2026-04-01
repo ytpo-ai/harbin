@@ -415,14 +415,6 @@ export class OrchestrationToolHandler {
       throw new Error('orchestration_plan_initialize requires valid planId');
     }
 
-    const roleInPlan = String((executionContext?.collaborationContext as Record<string, unknown> | undefined)?.roleInPlan || '').trim();
-    if (roleInPlan !== 'planner_initialize') {
-      return {
-        action: 'plan_initialize_blocked',
-        error: `plan-initialize 仅在 phaseInitialize 阶段可用，当前 roleInPlan=${roleInPlan || 'unknown'}`,
-      };
-    }
-
     const mode = String(params?.mode || '').trim();
     if (!mode || !OrchestrationToolHandler.PLAN_INITIALIZE_ALLOWED_MODES.has(mode)) {
       throw new Error('orchestration_plan_initialize mode must be outline|taskContext');
@@ -493,23 +485,6 @@ export class OrchestrationToolHandler {
     },
     executionContext?: { collaborationContext?: { planId?: string } & Record<string, any> },
   ): Promise<any> {
-    // --- 阶段拦截：initialize / pre_execute / post_execute 阶段禁止 submit-task ---
-    const roleInPlan = String(
-      (executionContext?.collaborationContext as Record<string, unknown> | undefined)?.roleInPlan || '',
-    ).trim();
-    if (
-      roleInPlan === 'planner_initialize'
-      || roleInPlan === 'planner_pre_execution'
-      || roleInPlan === 'planner_post_execution'
-    ) {
-      return {
-        action: 'submit_task_blocked',
-        error: roleInPlan === 'planner_initialize'
-          ? 'submit-task 在 phaseInitialize 阶段被禁止。请改用 builtin.sys-mg.mcp.orchestration.plan-initialize 写入 metadata（mode=outline 或 mode=taskContext），不要输出纯文本 JSON。'
-          : `submit-task 在 ${roleInPlan} 阶段被禁止。当前阶段只允许执行 pre_execute/post_execute 定义的工具调用，不允许提交新任务。`,
-      };
-    }
-
     // 优先从 executionContext 中获取真实 planId，防止 LLM 幻觉
     const contextPlanId = String(executionContext?.collaborationContext?.planId || '').trim();
     const paramPlanId = String(params?.planId || '').trim();
