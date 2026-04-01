@@ -12,6 +12,7 @@ import {
 import { AgentSession, AgentSessionSchema } from '@agent/schemas/agent-session.schema';
 import { AgentRunScore, AgentRunScoreSchema } from '@agent/schemas/agent-run-score.schema';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
+import { ApiKeysModule } from '../../../../../src/modules/api-keys/api-keys.module';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
@@ -34,6 +35,7 @@ import { RuntimeRunDiagnosisService } from './runtime-run-diagnosis.service';
     InfraModule,
     ModelModule,
     MemoModule,
+    ApiKeysModule,
     AgentActionLogModule,
     MongooseModule.forFeature([
       { name: AgentRun.name, schema: AgentRunSchema },

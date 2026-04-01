@@ -748,7 +748,42 @@ export class RuntimeController {
 
   @Get('runs/:runId/messages')
   async getRunMessages(@Param('runId') runId: string) {
-    const messages = await this.persistence.listRunMessagesWithParts(runId);
+    const [runMessages, run] = await Promise.all([
+      this.persistence.listRunMessagesWithParts(runId),
+      this.persistence.getRun(runId),
+    ]);
+
+    // 补入该 run 所属 session 的 initialSystemMessages，
+    // 让决策回溯等场景可以看到完整的 system prompt（Identity/Toolset/Deduction 等）。
+    // initialSystemMessages 被持久化在 agent_sessions 集合（以 session 为粒度缓存），
+    // 不属于任何具体 task run 的 agent_messages。
+    let messages = runMessages;
+    if (run?.sessionId) {
+      const initialSysMessages = await this.persistence.getSessionInitialSystemMessages(run.sessionId);
+      if (initialSysMessages?.length) {
+        const systemMessageViews = initialSysMessages.map((msg, index) => ({
+          id: msg.id || `sys-init-${index}`,
+          runId,
+          taskId: run.taskId,
+          parentMessageId: undefined,
+          role: 'system' as const,
+          sequence: index + 1,
+          content: msg.content,
+          status: 'completed' as const,
+          metadata: { ...(msg.metadata || {}), source: 'session.initialSystemMessages' },
+          modelID: undefined,
+          providerID: undefined,
+          finish: undefined,
+          tokens: undefined,
+          cost: undefined,
+          stepIndex: undefined,
+          timestamp: (run as any).createdAt || new Date(),
+          parts: [] as any[],
+        }));
+        messages = [...systemMessageViews, ...runMessages];
+      }
+    }
+
     return {
       runId,
       total: messages.length,

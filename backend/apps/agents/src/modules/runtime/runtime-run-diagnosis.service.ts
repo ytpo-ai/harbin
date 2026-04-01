@@ -1,18 +1,22 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AIModel, ChatMessage } from '../../../../../src/shared/types';
 import { Agent, AgentDocument } from '../../schemas/agent.schema';
+import { ApiKeyService } from '@legacy/modules/api-keys/api-key.service';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { AgentRunScoreService } from './agent-run-score.service';
 import { ModelService } from '../models/model.service';
 
 @Injectable()
 export class RuntimeRunDiagnosisService {
+  private readonly logger = new Logger(RuntimeRunDiagnosisService.name);
+
   constructor(
     private readonly persistence: RuntimePersistenceService,
     private readonly runScoreService: AgentRunScoreService,
     private readonly modelService: ModelService,
+    private readonly apiKeyService: ApiKeyService,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
   ) {}
 
@@ -50,10 +54,11 @@ export class RuntimeRunDiagnosisService {
       throw new NotFoundException('Runtime run not found');
     }
 
-    const [messagesWithParts, score, agent] = await Promise.all([
+    const [messagesWithParts, score, agent, initialSysMessages] = await Promise.all([
       this.persistence.listRunMessagesWithParts(runId),
       this.runScoreService.getScoreByRunId(runId),
       this.agentModel.findOne({ $or: [{ id: run.agentId }, { _id: run.agentId }] }).lean().exec(),
+      run.sessionId ? this.persistence.getSessionInitialSystemMessages(run.sessionId) : Promise.resolve(undefined),
     ]);
 
     if (!agent?.model?.id || !agent?.model?.name || !agent?.model?.provider || !agent?.model?.model) {
@@ -70,15 +75,39 @@ export class RuntimeRunDiagnosisService {
       topP: Number(agent.model.topP ?? 1),
       reasoning: agent.model.reasoning,
     };
-    this.modelService.ensureProvider(modelConfig);
 
-    const systemMessages = messagesWithParts
+    // 从 Agent 绑定的 apiKeyId 解密获取自定义 API Key，与正常任务执行链路一致
+    let resolvedApiKey: string | undefined;
+    const apiKeyId = (agent as any).apiKeyId;
+    if (apiKeyId) {
+      const decrypted = await this.apiKeyService.getDecryptedKey(String(apiKeyId));
+      if (decrypted) {
+        resolvedApiKey = decrypted;
+        this.logger.log(`[diagnose_api_key] runId=${runId} agent=${agent.name} source=custom`);
+      } else {
+        this.logger.warn(`[diagnose_api_key] runId=${runId} agent=${agent.name} customApiKeyNotAvailable fallback=system`);
+      }
+    }
+    this.modelService.ensureProviderWithKey(modelConfig, resolvedApiKey);
+
+    // 初始 system messages（Identity/Toolset/Deduction 等）存于 session 级缓存，
+    // 不在 agent_messages 的 task run 消息中，需单独补入。
+    const initialSystemChatMessages: Array<{ role: 'system'; content: string; timestamp: Date }> =
+      (initialSysMessages || []).map((msg) => ({
+        role: 'system' as const,
+        content: String(msg.content || ''),
+        timestamp: new Date((run as any).createdAt || Date.now()),
+      }));
+
+    const runSystemMessages = messagesWithParts
       .filter((message) => message.role === 'system')
       .map((message) => ({
         role: 'system' as const,
         content: String(message.content || ''),
         timestamp: new Date(message.timestamp || Date.now()),
       }));
+
+    const systemMessages = [...initialSystemChatMessages, ...runSystemMessages];
 
     const interactionMessages = this.buildRecentContext(
       messagesWithParts
