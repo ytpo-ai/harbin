@@ -138,6 +138,7 @@ describe('ToolExecutionDispatcherService', () => {
       toolId: 'builtin.sys-mg.mcp.orchestration.submit-task',
       found: true,
       schema: { type: 'object', properties: { title: { type: 'string' } } },
+      hint: expect.stringContaining('工具参数契约 builtin.sys-mg.mcp.orchestration.submit-task:'),
     });
   });
 

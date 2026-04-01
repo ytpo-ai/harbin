@@ -365,13 +365,14 @@ function sanitizeJsonString(raw: string): string {
   // 将实际换行/回车/制表符替换为 JSON 转义序列（LLM 最常见的 JSON 缺陷）
   let s = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
   // 移除其他控制字符
-  s = s
-    .split('')
-    .filter((char) => {
-      const code = char.charCodeAt(0);
-      return code >= 32;
-    })
-    .join('');
+  let normalized = '';
+  for (let i = 0; i < s.length; i += 1) {
+    const char = s[i];
+    if (char.charCodeAt(0) >= 32) {
+      normalized += char;
+    }
+  }
+  s = normalized;
   // 移除尾部多余逗号: ,} → } 和 ,] → ]
   s = s.replace(/,\s*([}\]])/g, '$1');
   return s;

@@ -2,14 +2,17 @@ import {
   MODEL_ADD_TOOL_ID,
   MODEL_LIST_TOOL_ID,
 } from './model-management-agent.constants';
+import {
+  GET_TOOL_SCHEMA_TOOL_ID,
+  SEND_INTERNAL_MESSAGE_TOOL_ID,
+} from '@agent/modules/tools/builtin-tool-definitions';
 
 export const CODE_DOCS_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-read';
 export const CODE_UPDATES_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.updates-read';
 export const REPO_READ_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-read';
 export const MEMO_MCP_SEARCH_TOOL_ID = 'builtin.sys-mg.internal.memory.search-memo';
 export const MEMO_MCP_APPEND_TOOL_ID = 'builtin.sys-mg.internal.memory.append-memo';
-export const GET_TOOL_SCHEMA_TOOL_ID = 'builtin.sys-mg.internal.tool-meta.get-tool-schema';
-export const SEND_INTERNAL_MESSAGE_TOOL_ID = 'builtin.sys-mg.mcp.inner-message.send-internal-message';
+export { GET_TOOL_SCHEMA_TOOL_ID, SEND_INTERNAL_MESSAGE_TOOL_ID };
 
 export const ORCHESTRATION_TOOL_IDS = {
   createPlan: 'builtin.sys-mg.mcp.orchestration.create-plan',

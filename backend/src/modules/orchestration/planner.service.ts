@@ -198,14 +198,10 @@ export class PlannerService {
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
-      ...(options?.sessionId
-        ? {
-            sessionContext: {
-              sessionId: options.sessionId,
-              preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task'],
-            },
-          }
-        : {}),
+      sessionContext: {
+        ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+        preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task'],
+      },
     });
 
     this.logger.log(
@@ -383,17 +379,13 @@ export class PlannerService {
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
       }),
-      ...(options?.sessionId
-        ? {
-            sessionContext: {
-              sessionId: options.sessionId,
-              preactivatedToolIds: [
-                'builtin.sys-mg.mcp.orchestration.plan-initialize',
-                'builtin.sys-mg.internal.agent-master.list-agents',
-              ],
-            },
-          }
-        : {}),
+      sessionContext: {
+        ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+        preactivatedToolIds: [
+          'builtin.sys-mg.mcp.orchestration.plan-initialize',
+          'builtin.sys-mg.internal.agent-master.list-agents',
+        ],
+      },
     });
 
     const refreshedPlan = await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec();

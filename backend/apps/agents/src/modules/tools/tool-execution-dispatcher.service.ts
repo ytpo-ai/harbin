@@ -226,6 +226,44 @@ export class ToolExecutionDispatcherService {
       toolId: contract.toolId,
       found: true,
       schema: contract.schema,
+      hint: this.buildToolSchemaHint(contract.toolId, contract.schema),
     };
+  }
+
+  private buildToolSchemaHint(toolId: string, schema: Record<string, unknown>): string | null {
+    const properties = (schema as any)?.properties;
+    if (!properties || typeof properties !== 'object') {
+      return null;
+    }
+
+    const required = new Set(
+      Array.isArray((schema as any).required)
+        ? (schema as any).required.map((item: unknown) => String(item || '').trim()).filter(Boolean)
+        : [],
+    );
+
+    const rows = Object.entries(properties as Record<string, any>);
+    if (!rows.length) {
+      return null;
+    }
+
+    const lines = [`工具参数契约 ${toolId}:`];
+    if (required.size > 0) {
+      lines.push(`required: [${Array.from(required).join(', ')}]`);
+    }
+    if ((schema as any).additionalProperties === false) {
+      lines.push('additionalProperties: false');
+    }
+    lines.push('properties:');
+    for (const [key, spec] of rows) {
+      const type = String(spec?.type || 'any');
+      const enumText = Array.isArray(spec?.enum) ? `, enum=${JSON.stringify(spec.enum)}` : '';
+      const requiredText = required.has(key) ? ' (required)' : '';
+      const description = String(spec?.description || '').trim();
+      const descText = description ? ` - ${description}` : '';
+      lines.push(`  ${key}: ${type}${enumText}${requiredText}${descText}`);
+    }
+
+    return lines.join('\n');
   }
 }

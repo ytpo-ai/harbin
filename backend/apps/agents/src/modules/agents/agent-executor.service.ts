@@ -1782,15 +1782,19 @@ export class AgentExecutorService {
           this.logger.log(
             `[tool_execute_start] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} parameters=${compactLogText(JSON.stringify(toolCall.parameters || {}), 240)}`,
           );
+          const toolExecutionContext =
+            normalizedToolCallId === GET_TOOL_SCHEMA_TOOL_ID
+              ? {
+                ...(executionContext || {}),
+                assignedToolIds: Array.from(assignedToolIds),
+              }
+              : executionContext;
           const execution = await this.toolService.executeTool(
             normalizedToolCallId,
             agentRuntimeId,
             toolCall.parameters,
             task.id,
-            {
-              ...(executionContext || {}),
-              assignedToolIds: Array.from(assignedToolIds),
-            },
+            toolExecutionContext,
           );
           scorer.trackToolSuccess();
           if (normalizedToolCallId === GET_TOOL_SCHEMA_TOOL_ID) {
