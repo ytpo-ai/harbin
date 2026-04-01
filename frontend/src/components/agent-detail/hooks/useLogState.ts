@@ -1,164 +1,78 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from 'react-query';
 import { AgentRunScore, agentService } from '../../../services/agentService';
-import {
-  agentActionLogService,
-  AgentActionLogItem,
-  AgentActionLogQuery,
-} from '../../../services/agentActionLogService';
-import { AGENT_DETAIL_QUERY_KEYS, DEFAULT_LOG_PAGE_SIZE, LogStatus, TaskGroup, TaskGroupDetailTab } from '../constants';
-import { getActionDescription, getActionSemantic } from '../utils';
+import { AGENT_DETAIL_QUERY_KEYS, DEFAULT_LOG_PAGE_SIZE, RunDetailTab } from '../constants';
 
-type LogEnvironmentType = TaskGroup['environmentType'];
+export interface AgentRunLogFilters {
+  from?: string;
+  to?: string;
+  status?: string;
+  page: number;
+  pageSize: number;
+}
 
-const pickFirstNonEmpty = (...values: Array<unknown>): string => {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return '';
+type RunScoreState = {
+  loading: boolean;
+  data: AgentRunScore | null;
+  error?: string;
+  errorCode?: number;
+  loadingStartedAt?: number;
 };
 
-const compactId = (value: string): string => {
-  const normalized = value.trim();
-  if (!normalized) return '';
-  if (normalized.length <= 12) return normalized;
-  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
-};
-
-const resolveEnvironmentType = (
-  items: AgentActionLogItem[],
-  contextType: AgentActionLogItem['contextType'],
-): LogEnvironmentType => {
-  for (const item of items) {
-    const details = item.details || {};
-    const explicit = details.environmentType;
-    if (explicit === 'internal_message' || explicit === 'meeting_chat' || explicit === 'orchestration_plan' || explicit === 'chat') {
-      return explicit;
-    }
-    const taskType = String(details.taskType || '').trim();
-    const taskId = String(details.taskId || '').trim();
-    if (taskType === 'internal_message' || taskId.startsWith('inner-message:')) {
-      return 'internal_message';
-    }
-  }
-
-  if (contextType === 'orchestration') {
-    return 'orchestration_plan';
-  }
-  return 'meeting_chat';
-};
-
-const resolveMeetingTitle = (items: AgentActionLogItem[]): string => {
-  for (const item of items) {
-    const details = item.details || {};
-    const title = pickFirstNonEmpty(details.meetingTitle);
-    if (title) {
-      return title;
-    }
-  }
-  return '';
-};
-
-const resolvePlanTitle = (items: AgentActionLogItem[], contextId?: string): string => {
-  for (const item of items) {
-    const details = item.details || {};
-    const title = pickFirstNonEmpty(details.planTitle);
-    if (title) {
-      return title;
-    }
-  }
-  if (typeof contextId === 'string' && contextId.trim()) {
-    return `计划#${compactId(contextId)}`;
-  }
-  return '未命名计划';
-};
-
-const resolveTaskTitle = (items: AgentActionLogItem[]): string => {
-  for (const item of items) {
-    const details = item.details || {};
-    const title = pickFirstNonEmpty(details.taskTitle);
-    if (title) {
-      return title;
-    }
-  }
-  return '';
-};
-
-const resolveTaskId = (items: AgentActionLogItem[]): string => {
-  for (const item of items) {
-    const details = item.details || {};
-    const taskId = pickFirstNonEmpty(details.taskId);
-    if (taskId) {
-      return taskId;
-    }
-  }
-  return '';
-};
-
-const isTerminalStatus = (status: LogStatus): boolean => {
-  return status === 'completed' || status === 'failed' || status === 'cancelled';
+type RunMessagesState = {
+  loading: boolean;
+  data: Array<{
+    id: string;
+    role: 'system' | 'user' | 'assistant' | 'tool';
+    content: string;
+    timestamp: string;
+    parts: Array<{
+      id: string;
+      type: string;
+      status: string;
+      toolId?: string;
+      content?: string;
+      error?: string;
+    }>;
+  }>;
+  error?: string;
 };
 
 export const useLogState = (agentId: string) => {
-  const [logFilters, setLogFilters] = useState<AgentActionLogQuery>({
+  const [logFilters, setLogFilters] = useState<AgentRunLogFilters>({
     page: 1,
     pageSize: DEFAULT_LOG_PAGE_SIZE,
     status: '',
-    contextType: '',
   });
-  const [expandedTaskKeys, setExpandedTaskKeys] = useState<Record<string, boolean>>({});
-  const [detailTabs, setDetailTabs] = useState<Record<string, TaskGroupDetailTab>>({});
-  const [runScores, setRunScores] = useState<Record<string, {
-    loading: boolean;
-    data: AgentRunScore | null;
-    error?: string;
-    errorCode?: number;
-    loadingStartedAt?: number;
-  }>>({});
+  const [expandedRunKeys, setExpandedRunKeys] = useState<Record<string, boolean>>({});
+  const [detailTabs, setDetailTabs] = useState<Record<string, RunDetailTab>>({});
+  const [runScores, setRunScores] = useState<Record<string, RunScoreState>>({});
+  const [runMessages, setRunMessages] = useState<Record<string, RunMessagesState>>({});
   const [handlingApprovalRunId, setHandlingApprovalRunId] = useState('');
 
   const logQuery = useQuery(
     AGENT_DETAIL_QUERY_KEYS.logs(agentId, logFilters),
-    () => agentActionLogService.getAgentActionLogs({ ...logFilters, agentId }),
+    () =>
+      agentService.listAgentRuns(agentId, {
+        status: logFilters.status || undefined,
+        from: logFilters.from,
+        to: logFilters.to,
+        page: logFilters.page,
+        pageSize: logFilters.pageSize,
+      }),
     { enabled: !!agentId, keepPreviousData: true },
   );
 
-  const logs = logQuery.data?.logs || [];
+  const runs = logQuery.data?.items || [];
 
-  const latestRunIdFromLogs = useMemo(() => {
-    for (const item of logs) {
-      const runId = item.details?.runId;
-      if (typeof runId === 'string' && runId.trim()) {
-        return runId.trim();
-      }
-    }
-    return '';
-  }, [logs]);
-
-  const approvalRunCandidates = useMemo(() => {
-    return logs
-      .filter((item) => item.details?.status === 'asked')
-      .map((item) => String(item.details?.runId || '').trim())
-      .filter(Boolean);
-  }, [logs]);
-
+  const approvalRunCandidates = useMemo(
+    () => runs.filter((item) => item.status === 'paused').map((item) => item.id),
+    [runs],
+  );
   const approvalTargetRunId = approvalRunCandidates[0] || '';
 
-  const runtimeRunQuery = useQuery(
-    AGENT_DETAIL_QUERY_KEYS.runtimeRun(latestRunIdFromLogs),
-    () => agentService.getRuntimeRun(latestRunIdFromLogs),
-    {
-      enabled: !!latestRunIdFromLogs,
-      retry: false,
-    },
-  );
-
   const loadRunScore = async (runId: string) => {
-    if (!runId || runId.startsWith('ungrouped-')) {
-      return;
-    }
+    if (!runId) return;
 
     let shouldFetch = false;
     setRunScores((prev) => {
@@ -183,9 +97,7 @@ export const useLogState = (agentId: string) => {
       };
     });
 
-    if (!shouldFetch) {
-      return;
-    }
+    if (!shouldFetch) return;
 
     try {
       const data = await agentService.getRunScore(runId);
@@ -197,9 +109,9 @@ export const useLogState = (agentId: string) => {
           loadingStartedAt: undefined,
         },
       }));
-    } catch (error) {
+    } catch (error: any) {
       const message = error instanceof Error ? error.message : '评分加载失败';
-      const errorCode = typeof (error as any)?.response?.status === 'number' ? Number((error as any).response.status) : undefined;
+      const errorCode = typeof error?.response?.status === 'number' ? Number(error.response.status) : undefined;
       setRunScores((prev) => ({
         ...prev,
         [runId]: {
@@ -213,141 +125,89 @@ export const useLogState = (agentId: string) => {
     }
   };
 
-  const updateLogFilter = (patch: Partial<AgentActionLogQuery>) => {
+  const loadRunMessages = async (runId: string) => {
+    if (!runId) return;
+    const cached = runMessages[runId];
+    if (cached?.loading || cached?.data?.length) {
+      return;
+    }
+
+    setRunMessages((prev) => ({
+      ...prev,
+      [runId]: {
+        loading: true,
+        data: [],
+      },
+    }));
+
+    try {
+      const result = await agentService.getRuntimeRunMessages(runId);
+      setRunMessages((prev) => ({
+        ...prev,
+        [runId]: {
+          loading: false,
+          data: result.messages.map((message) => ({
+            id: message.id,
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp,
+            parts: (message.parts || []).map((part) => ({
+              id: part.id,
+              type: part.type,
+              status: part.status,
+              toolId: part.toolId,
+              content: part.content,
+              error: part.error,
+            })),
+          })),
+        },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '执行流程加载失败';
+      setRunMessages((prev) => ({
+        ...prev,
+        [runId]: {
+          loading: false,
+          data: [],
+          error: message,
+        },
+      }));
+    }
+  };
+
+  const updateLogFilter = (patch: Partial<AgentRunLogFilters>) => {
     setLogFilters((prev) => ({ ...prev, ...patch, page: 1 }));
   };
 
-  const toggleTaskExpanded = (key: string) => {
-    setExpandedTaskKeys((prev) => {
-      const nextExpanded = !prev[key];
+  const toggleTaskExpanded = (runId: string) => {
+    setExpandedRunKeys((prev) => {
+      const nextExpanded = !prev[runId];
       if (nextExpanded) {
-        void loadRunScore(key);
+        void loadRunScore(runId);
+        void loadRunMessages(runId);
       }
-      return { ...prev, [key]: nextExpanded };
+      return { ...prev, [runId]: nextExpanded };
     });
   };
 
-  const setDetailTab = (key: string, tab: TaskGroupDetailTab) => {
+  const setDetailTab = (runId: string, tab: RunDetailTab) => {
     setDetailTabs((prev) => ({
       ...prev,
-      [key]: tab,
+      [runId]: tab,
     }));
-    setExpandedTaskKeys((prev) => ({ ...prev, [key]: true }));
+    setExpandedRunKeys((prev) => ({ ...prev, [runId]: true }));
   };
 
-  const taskGroups = useMemo(() => {
-    if (!logs.length) return [];
-
-    const groupMap = new Map<string, AgentActionLogItem[]>();
-    for (const item of logs) {
-      const runId = item.details?.runId;
-      const key = typeof runId === 'string' && runId.trim() ? runId.trim() : `ungrouped-${item.id}`;
-      const arr = groupMap.get(key);
-      if (arr) arr.push(item);
-      else groupMap.set(key, [item]);
-    }
-
-    const groups: Array<TaskGroup & { hasRunId: boolean; taskId: string; hasTerminal: boolean }> = [];
-    for (const [groupKey, items] of groupMap) {
-      const sorted = [...items].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      const first = sorted[0];
-      const last = sorted[sorted.length - 1];
-      const environmentType = resolveEnvironmentType(sorted, first.contextType);
-      const meetingTitle = resolveMeetingTitle(sorted);
-      const planTitle = resolvePlanTitle(sorted, first.contextId);
-      const explicitTaskTitle = resolveTaskTitle(sorted);
-      const taskId = resolveTaskId(sorted);
-
-      let finalStatus: LogStatus = 'unknown';
-      for (let i = sorted.length - 1; i >= 0; i -= 1) {
-        const status = sorted[i].details?.status;
-        if (status && status !== 'unknown') {
-          finalStatus = status;
-          break;
-        }
-      }
-      if (sorted.some((item) => item.details?.status === 'failed')) finalStatus = 'failed';
-
-      let title = explicitTaskTitle;
-      if (!title) {
-        if (environmentType === 'meeting_chat') {
-          title = `执行${meetingTitle || '当前'}会议中任务`;
-        } else if (environmentType === 'orchestration_plan') {
-          title = `执行${planTitle}中任务`;
-        } else if (environmentType === 'internal_message') {
-          title = '执行内部消息触发任务';
-        }
-      }
-
-      const environmentLabel =
-        environmentType === 'internal_message'
-          ? '内部消息触发'
-          : environmentType === 'meeting_chat'
-            ? `会议/聊天 · ${meetingTitle || first.contextId || '未命名会议'}`
-            : environmentType === 'orchestration_plan'
-              ? `计划编排 · ${planTitle} · 任务：${explicitTaskTitle || '未命名任务'}`
-              : `聊天会话 · ${first.contextId || '-'}`;
-
-      let totalDurationMs = 0;
-      const terminalAction = sorted.find((item) => item.details?.status === 'completed' || item.details?.status === 'failed');
-      if (terminalAction?.details?.durationMs && typeof terminalAction.details.durationMs === 'number') {
-        totalDurationMs = terminalAction.details.durationMs;
-      } else {
-        totalDurationMs = new Date(last.timestamp).getTime() - new Date(first.timestamp).getTime();
-      }
-
-      const lastSemantic = getActionSemantic(last.action);
-      const lastDesc = getActionDescription(last);
-      const lastActionSummary = lastDesc ? `${lastSemantic.label} · ${lastDesc}` : lastSemantic.label;
-
-      groups.push({
-        groupKey,
-        title,
-        contextId: first.contextId,
-        contextType: first.contextType,
-        environmentType,
-        environmentLabel,
-        finalStatus,
-        startTime: first.timestamp,
-        endTime: last.timestamp,
-        actionCount: sorted.length,
-        lastActionSummary,
-        actions: sorted,
-        totalDurationMs,
-        hasRunId: !groupKey.startsWith('ungrouped-'),
-        taskId,
-        hasTerminal: isTerminalStatus(finalStatus),
-      });
-    }
-
-    const terminalTaskIds = new Set(
-      groups
-        .filter((group) => group.hasTerminal && group.taskId)
-        .map((group) => group.taskId),
-    );
-
-    const terminalTitleEnvSet = new Set(
-      groups
-        .filter((group) => group.hasTerminal && group.title)
-        .map((group) => `${group.environmentType}::${group.title}`),
-    );
-
-    const deduplicatedGroups = groups.filter((group) => {
-      if (group.hasRunId || group.hasTerminal) {
-        return true;
-      }
-      if (group.taskId && terminalTaskIds.has(group.taskId)) {
-        return false;
-      }
-      if (!group.taskId && group.title && terminalTitleEnvSet.has(`${group.environmentType}::${group.title}`)) {
-        return false;
-      }
-      return true;
-    });
-
-    deduplicatedGroups.sort((a, b) => new Date(b.endTime).getTime() - new Date(a.endTime).getTime());
-    return deduplicatedGroups.map(({ hasRunId: _hasRunId, taskId: _taskId, hasTerminal: _hasTerminal, ...rest }) => rest);
-  }, [logs]);
+  const runItems = useMemo(
+    () =>
+      runs.map((run) => {
+        const start = new Date(run.startedAt).getTime();
+        const end = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
+        const totalDurationMs = Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : 0;
+        return { run, totalDurationMs };
+      }),
+    [runs],
+  );
 
   const handleApprovalDecision = async (approved: boolean) => {
     if (!approvalTargetRunId) {
@@ -362,7 +222,7 @@ export const useLogState = (agentId: string) => {
       } else {
         await agentService.cancelRuntimeRun(approvalTargetRunId, 'rejected_from_agent_detail');
       }
-      await Promise.all([logQuery.refetch(), runtimeRunQuery.refetch()]);
+      await logQuery.refetch();
     } catch (error) {
       const message = error instanceof Error ? error.message : '授权处理失败';
       window.alert(message);
@@ -374,13 +234,13 @@ export const useLogState = (agentId: string) => {
   return {
     logFilters,
     setLogFilters,
-    expandedTaskKeys,
+    expandedRunKeys,
     detailTabs,
     runScores,
+    runMessages,
     handlingApprovalRunId,
     logQuery,
-    runtimeRunQuery,
-    taskGroups,
+    runItems,
     approvalRunCandidates,
     approvalTargetRunId,
     updateLogFilter,

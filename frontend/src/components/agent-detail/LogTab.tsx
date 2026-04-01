@@ -1,9 +1,7 @@
 import React from 'react';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { AgentActionLogQuery } from '../../services/agentActionLogService';
-import { SCORE_RULE_LABEL, TASK_GROUP_DETAIL_TABS, getScoreBadgeClass } from './constants';
+import { RUN_DETAIL_TABS, RUN_STATUS_META, SCORE_RULE_LABEL, getScoreBadgeClass } from './constants';
 import { useLogState } from './hooks/useLogState';
-import { getActionDescription, getActionSemantic, getTaskStatusMeta } from './utils';
 
 interface LogTabProps {
   agentId: string;
@@ -19,7 +17,7 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-lg font-bold tracking-tight text-slate-900">Agent 日志</h2>
-          <p className="mt-1 text-sm text-slate-500">按任务维度查看执行轨迹，点击展开查看执行流程、原始信息与扣分记录</p>
+          <p className="mt-1 text-sm text-slate-500">按 Run 查看执行流程、原始信息与扣分记录</p>
         </div>
         <button
           onClick={() => state.logQuery.refetch()}
@@ -31,7 +29,7 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
       </div>
 
       <div className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/50">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <input
             type="datetime-local"
             value={state.logFilters.from || ''}
@@ -47,32 +45,22 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
             placeholder="结束时间"
           />
           <select
-            value={state.logFilters.contextType || ''}
-            onChange={(e) => state.updateLogFilter({ contextType: e.target.value as AgentActionLogQuery['contextType'] })}
-            className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
-          >
-            <option value="">全部上下文</option>
-            <option value="chat">Chat</option>
-            <option value="orchestration">Orchestration</option>
-          </select>
-          <select
             value={state.logFilters.status || ''}
-            onChange={(e) => state.updateLogFilter({ status: e.target.value as AgentActionLogQuery['status'] })}
+            onChange={(e) => state.updateLogFilter({ status: e.target.value || undefined })}
             className="rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm transition-all focus:border-primary-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-100"
           >
             <option value="">全部状态</option>
+            <option value="pending">待执行</option>
+            <option value="running">运行中</option>
             <option value="completed">成功</option>
             <option value="failed">失败</option>
-            <option value="running">运行中</option>
             <option value="paused">已暂停</option>
-            <option value="asked">待授权</option>
             <option value="cancelled">已取消</option>
           </select>
         </div>
         <div className="mt-4 flex items-center justify-between text-sm text-slate-500">
           <span>
-            共 <span className="font-semibold text-slate-700">{state.logQuery.data?.total || 0}</span> 条日志，聚合为{' '}
-            <span className="font-semibold text-slate-700">{state.taskGroups.length}</span> 个任务
+            共 <span className="font-semibold text-slate-700">{state.logQuery.data?.total || 0}</span> 条运行记录
           </span>
           <span>
             页码 <span className="font-semibold text-slate-700">{state.logQuery.data?.page || 1}</span>/
@@ -94,24 +82,25 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
           </div>
         ) : state.logQuery.error ? (
           <div className="flex flex-col items-center justify-center p-12 text-red-500">
-            <p className="text-sm font-medium">日志查询失败，请检查权限或筛选条件</p>
+            <p className="text-sm font-medium">运行记录查询失败，请检查权限或筛选条件</p>
           </div>
-        ) : state.taskGroups.length === 0 ? (
+        ) : state.runItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center p-12 text-slate-400">
-            <p className="text-sm">暂无日志数据</p>
+            <p className="text-sm">暂无运行记录</p>
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {state.taskGroups.map((group) => {
-              const isExpanded = state.expandedTaskKeys[group.groupKey] === true;
-              const activeTab = state.detailTabs[group.groupKey] || 'flow';
-              const statusMeta = getTaskStatusMeta(group.finalStatus);
-              const scoreState = state.runScores[group.groupKey];
+            {state.runItems.map(({ run, totalDurationMs }) => {
+              const isExpanded = state.expandedRunKeys[run.id] === true;
+              const activeTab = state.detailTabs[run.id] || 'flow';
+              const statusMeta = RUN_STATUS_META[run.status] || RUN_STATUS_META.running;
+              const scoreState = state.runScores[run.id];
               const scoreData = scoreState?.data;
-              const scoreBadgeClass = typeof scoreData?.score === 'number' ? getScoreBadgeClass(scoreData.score) : '';
+              const scoreValue = typeof run.score === 'number' ? run.score : scoreData?.score;
+              const scoreBadgeClass = typeof scoreValue === 'number' ? getScoreBadgeClass(scoreValue) : '';
               const scoreBadgeText =
-                typeof scoreData?.score === 'number'
-                  ? `${Math.round(scoreData.score)}分`
+                typeof scoreValue === 'number'
+                  ? `${Math.round(scoreValue)}分`
                   : scoreState?.loading
                     ? '评分加载中'
                     : scoreState?.errorCode === 403
@@ -123,20 +112,25 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                 scoreState?.errorCode === 403 || scoreState?.error
                   ? 'border-rose-200 bg-rose-50 text-rose-700'
                   : 'border-slate-200 bg-slate-100 text-slate-600';
-              const scoreDetailExpanded = expandedScoreDetails[group.groupKey] === true;
+              const scoreDetailExpanded = expandedScoreDetails[run.id] === true;
               const durationStr =
-                group.totalDurationMs >= 1000 ? `${(group.totalDurationMs / 1000).toFixed(1)}s` : `${group.totalDurationMs}ms`;
+                run.status === 'running' || run.status === 'pending'
+                  ? '进行中'
+                  : totalDurationMs >= 1000
+                    ? `${(totalDurationMs / 1000).toFixed(1)}s`
+                    : `${totalDurationMs}ms`;
+              const runMessages = state.runMessages[run.id];
 
               return (
-                <div key={group.groupKey}>
+                <div key={run.id}>
                   <button
-                    onClick={() => state.toggleTaskExpanded(group.groupKey)}
+                    onClick={() => state.toggleTaskExpanded(run.id)}
                     className="w-full px-5 py-4 text-left transition-colors hover:bg-slate-50/50"
                   >
                     <div className="flex items-center gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2 text-xs">
-                          <h3 className="truncate text-sm font-semibold text-slate-900">{group.title || '未命名任务'}</h3>
+                          <h3 className="truncate text-sm font-semibold text-slate-900">{run.taskTitle || '未命名任务'}</h3>
                           <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${statusMeta.badgeClass}`}>
                             {statusMeta.label}
                           </span>
@@ -144,7 +138,7 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                             {scoreBadgeText}
                           </span>
                           <span className="text-slate-500">耗时: {durationStr}</span>
-                          <span className="truncate text-slate-500">环境: {group.environmentLabel}</span>
+                          <span className="truncate text-slate-500">Agent: {run.agentName || '-'}</span>
                         </div>
                       </div>
 
@@ -159,14 +153,14 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                   {isExpanded && (
                     <div className="border-t border-slate-100 bg-slate-50/30 px-5 py-4">
                       <div className="mb-4 flex flex-wrap gap-2">
-                        {TASK_GROUP_DETAIL_TABS.map((tab) => {
+                        {RUN_DETAIL_TABS.map((tab) => {
                           const selected = activeTab === tab.key;
                           return (
                             <button
                               key={tab.key}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                state.setDetailTab(group.groupKey, tab.key);
+                                state.setDetailTab(run.id, tab.key);
                               }}
                               className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                                 selected
@@ -182,78 +176,57 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
 
                       {activeTab === 'raw' && (
                         <div className="space-y-3">
-                          <p className="text-xs font-medium text-slate-500">原始任务数据（JSON）</p>
+                          <p className="text-xs font-medium text-slate-500">原始运行数据（JSON）</p>
                           <pre className="max-h-[420px] overflow-auto rounded-lg border border-slate-200 bg-slate-900 p-4 text-[11px] leading-relaxed text-slate-100">
-                            {JSON.stringify(
-                              {
-                                groupKey: group.groupKey,
-                                title: group.title,
-                                contextType: group.contextType,
-                                finalStatus: group.finalStatus,
-                                startTime: group.startTime,
-                                endTime: group.endTime,
-                                actionCount: group.actionCount,
-                                totalDurationMs: group.totalDurationMs,
-                                actions: group.actions,
-                              },
-                              null,
-                              2,
-                            )}
+                            {JSON.stringify(run, null, 2)}
                           </pre>
                         </div>
                       )}
 
                       {activeTab === 'flow' && (
-                        <div className="relative ml-4 space-y-0 border-l-2 border-slate-200 pl-6">
-                          {group.actions.map((item, idx) => {
-                            const semantic = getActionSemantic(item.action);
-                            const desc = getActionDescription(item);
-                            const isLast = idx === group.actions.length - 1;
-                            const sessionId = item.details?.agentSessionId || item.details?.sessionId;
-                            const hasError = !!item.details?.error;
-
-                            return (
-                              <div key={item.id} className="relative pb-4 last:pb-0">
-                                <div className="absolute -left-[31px] top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-white ring-2 ring-slate-200">
-                                  <span className={`text-[10px] leading-none ${semantic.color.split(' ')[0]}`}>{semantic.icon}</span>
+                        <div className="space-y-3">
+                          {runMessages?.loading ? (
+                            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">执行流程加载中...</div>
+                          ) : runMessages?.error ? (
+                            <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-600">执行流程加载失败：{runMessages.error}</div>
+                          ) : runMessages?.data?.length ? (
+                            runMessages.data.map((message) => (
+                              <div key={message.id} className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                  <span className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-medium text-slate-700">{message.role}</span>
+                                  <span className="text-slate-400">{new Date(message.timestamp).toLocaleTimeString()}</span>
                                 </div>
-
-                                <div className={`rounded-lg border bg-white px-4 py-3 transition-all ${hasError ? 'border-red-200/60' : 'border-slate-200/60'}`}>
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <span className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ring-1 ${semantic.color}`}>{semantic.label}</span>
-                                    <span className="text-[11px] text-slate-400">{new Date(item.timestamp).toLocaleTimeString()}</span>
-                                    {typeof item.details?.durationMs === 'number' && item.details.durationMs > 0 && (
-                                      <span className="text-[11px] text-slate-400">
-                                        {item.details.durationMs >= 1000
-                                          ? `${(item.details.durationMs / 1000).toFixed(1)}s`
-                                          : `${item.details.durationMs}ms`}
-                                      </span>
-                                    )}
+                                {message.content && (
+                                  <p className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-700">{message.content}</p>
+                                )}
+                                {message.parts.length > 0 && (
+                                  <div className="mt-2 space-y-1">
+                                    {message.parts.map((part) => (
+                                      <div key={part.id} className="text-[11px] text-slate-500">
+                                        {part.type}
+                                        {part.toolId ? ` · ${part.toolId}` : ''}
+                                        {part.error ? ` · ${part.error}` : ''}
+                                      </div>
+                                    ))}
                                   </div>
-
-                                  {desc && <p className="mt-1.5 text-xs text-slate-600">{desc}</p>}
-
-                                  {hasError && (
-                                    <div className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-600">
-                                      {String(item.details?.error).slice(0, 200)}
-                                    </div>
-                                  )}
-
-                                  {isLast && typeof sessionId === 'string' && sessionId && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onViewSession(sessionId);
-                                      }}
-                                      className="mt-2 inline-flex items-center text-[11px] font-medium text-primary-600 transition-colors hover:text-primary-700"
-                                    >
-                                      查看 Session -&gt;
-                                    </button>
-                                  )}
-                                </div>
+                                )}
                               </div>
-                            );
-                          })}
+                            ))
+                          ) : (
+                            <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500">暂无执行流程数据</div>
+                          )}
+
+                          {run.sessionId && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onViewSession(run.sessionId as string);
+                              }}
+                              className="inline-flex items-center text-[11px] font-medium text-primary-600 transition-colors hover:text-primary-700"
+                            >
+                              查看 Session -&gt;
+                            </button>
+                          )}
                         </div>
                       )}
 
@@ -322,7 +295,7 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
                                     e.stopPropagation();
                                     setExpandedScoreDetails((prev) => ({
                                       ...prev,
-                                      [group.groupKey]: !prev[group.groupKey],
+                                      [run.id]: !prev[run.id],
                                     }));
                                   }}
                                   className="w-full px-4 py-2 text-left text-xs font-medium text-slate-600 hover:bg-slate-50"

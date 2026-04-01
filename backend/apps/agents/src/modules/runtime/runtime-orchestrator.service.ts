@@ -336,6 +336,9 @@ export class RuntimeOrchestratorService {
     id: string;
     status: string;
     currentStep: number;
+    taskTitle: string;
+    taskDescription: string;
+    agentName: string;
     taskId?: string;
     sessionId?: string;
     roleCode?: string;
@@ -346,7 +349,8 @@ export class RuntimeOrchestratorService {
       lastSyncAt?: Date;
       retryCount: number;
     };
-    
+    metadata?: Record<string, unknown>;
+    score?: number;
     agentId: string;
     startedAt: Date;
     finishedAt?: Date;
@@ -358,17 +362,79 @@ export class RuntimeOrchestratorService {
       id: run.id,
       status: run.status,
       currentStep: run.currentStep,
+      taskTitle: run.taskTitle,
+      taskDescription: run.taskDescription,
+      agentName: run.agentName,
       taskId: run.taskId,
       sessionId: run.sessionId,
       roleCode: run.roleCode,
       executionChannel: run.executionChannel,
       executionData: run.executionData,
       sync: run.sync,
-      
+      metadata: run.metadata,
+      score: run.score,
       agentId: run.agentId,
       startedAt: run.startedAt,
       finishedAt: run.finishedAt,
       error: run.error,
+    };
+  }
+
+  async listRuns(
+    agentId: string,
+    options?: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+      page?: number;
+      pageSize?: number;
+    },
+  ): Promise<{
+    total: number;
+    page: number;
+    pageSize: number;
+    items: Array<{
+      id: string;
+      agentId: string;
+      agentName: string;
+      taskTitle: string;
+      taskDescription: string;
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+      currentStep: number;
+      startedAt: Date;
+      finishedAt?: Date;
+      error?: string;
+      sessionId?: string;
+      taskId?: string;
+      roleCode?: string;
+      executionChannel?: 'native' | 'opencode';
+      metadata?: Record<string, unknown>;
+      score?: number;
+    }>;
+  }> {
+    const result = await this.persistence.listRunsByAgent(agentId, options);
+    return {
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      items: result.runs.map((run) => ({
+        id: run.id,
+        agentId: run.agentId,
+        agentName: run.agentName,
+        taskTitle: run.taskTitle,
+        taskDescription: run.taskDescription,
+        status: run.status,
+        currentStep: run.currentStep,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        error: run.error,
+        sessionId: run.sessionId,
+        taskId: run.taskId,
+        roleCode: run.roleCode,
+        executionChannel: run.executionChannel,
+        metadata: run.metadata,
+        score: run.score,
+      })),
     };
   }
 

@@ -183,6 +183,33 @@ export interface AgentRuntimeRun {
   error?: string;
 }
 
+export interface AgentRunListItem {
+  id: string;
+  agentId: string;
+  agentName: string;
+  taskTitle: string;
+  taskDescription: string;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+  currentStep: number;
+  startedAt: string;
+  finishedAt?: string;
+  error?: string;
+  sessionId?: string;
+  taskId?: string;
+  roleCode?: string;
+  executionChannel?: 'native' | 'opencode';
+  metadata?: Record<string, unknown>;
+  score?: number;
+}
+
+export interface AgentRunListResponse {
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  items: AgentRunListItem[];
+}
+
 export interface AgentRunScoreDeduction {
   ruleId: string;
   points: number;
@@ -432,6 +459,33 @@ export const agentService = {
   async getRuntimeRun(runId: string): Promise<AgentRuntimeRun | null> {
     const response = await api.get(`/agents/runtime/runs/${encodeURIComponent(runId)}`);
     return response.data?.run || null;
+  },
+
+  async listAgentRuns(
+    agentId: string,
+    filters?: {
+      status?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      pageSize?: number;
+    },
+  ): Promise<AgentRunListResponse> {
+    const params = new URLSearchParams();
+    params.set('agentId', String(agentId || '').trim());
+    Object.entries(filters || {}).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      params.set(key, String(value));
+    });
+    const response = await api.get(`/agents/runtime/runs?${params.toString()}`);
+    const payload = response.data || {};
+    return {
+      total: Number(payload.total || 0),
+      page: Number(payload.page || 1),
+      pageSize: Number(payload.pageSize || 20),
+      totalPages: Number(payload.totalPages || 1),
+      items: Array.isArray(payload.items) ? payload.items : [],
+    };
   },
 
   async getRunScore(runId: string): Promise<AgentRunScore | null> {

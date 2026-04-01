@@ -429,6 +429,66 @@ export class RuntimePersistenceService {
     return this.runModel.findOne({ id: runId }).exec();
   }
 
+  async listRunsByAgent(
+    agentId: string,
+    options?: {
+      status?: string;
+      from?: Date;
+      to?: Date;
+      page?: number;
+      pageSize?: number;
+    },
+  ): Promise<{ total: number; page: number; pageSize: number; runs: AgentRun[] }> {
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) {
+      return {
+        total: 0,
+        page: 1,
+        pageSize: 20,
+        runs: [],
+      };
+    }
+
+    const page = Math.max(1, Number(options?.page || 1));
+    const pageSize = Math.max(1, Math.min(100, Number(options?.pageSize || 20)));
+    const filter: Record<string, unknown> = {
+      agentId: normalizedAgentId,
+    };
+
+    const status = String(options?.status || '').trim();
+    if (status) {
+      filter.status = status;
+    }
+
+    if (options?.from || options?.to) {
+      const range: Record<string, Date> = {};
+      if (options.from) {
+        range.$gte = options.from;
+      }
+      if (options.to) {
+        range.$lte = options.to;
+      }
+      filter.startedAt = range;
+    }
+
+    const [total, runs] = await Promise.all([
+      this.runModel.countDocuments(filter).exec(),
+      this.runModel
+        .find(filter)
+        .sort({ startedAt: -1 })
+        .skip((page - 1) * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+
+    return {
+      total,
+      page,
+      pageSize,
+      runs,
+    };
+  }
+
   async findLatestActiveRun(agentId: string, sessionId?: string, taskId?: string): Promise<AgentRun | null> {
     const filter: Record<string, unknown> = {
       agentId,

@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
 import { Request } from 'express';
 import { GatewayUserContext } from '@libs/contracts';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
@@ -87,6 +87,66 @@ export class RuntimeController {
       actorId: body?.actorId || context.employeeId || 'unknown-actor',
       actorType,
       reason: body?.reason,
+    };
+  }
+
+  private toDateOrUndefined(value?: string): Date | undefined {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return undefined;
+    }
+    const parsed = new Date(normalized);
+    if (Number.isNaN(parsed.getTime())) {
+      return undefined;
+    }
+    return parsed;
+  }
+
+  private toPositiveNumberOrUndefined(value?: string): number | undefined {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return undefined;
+    }
+    const parsed = Number(normalized);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return undefined;
+    }
+    return Math.floor(parsed);
+  }
+
+  @Get('runs')
+  async listRuns(
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Query('agentId') agentId: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+
+    const normalizedAgentId = String(agentId || '').trim();
+    if (!normalizedAgentId) {
+      throw new BadRequestException('agentId is required');
+    }
+
+    const result = await this.runtimeOrchestrator.listRuns(normalizedAgentId, {
+      status: String(status || '').trim() || undefined,
+      from: this.toDateOrUndefined(from),
+      to: this.toDateOrUndefined(to),
+      page: this.toPositiveNumberOrUndefined(page),
+      pageSize: this.toPositiveNumberOrUndefined(pageSize),
+    });
+
+    return {
+      success: true,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalPages: Math.max(1, Math.ceil(result.total / result.pageSize)),
+      items: result.items,
     };
   }
 

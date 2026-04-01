@@ -75,6 +75,24 @@ export const TASK_GROUP_DETAIL_TABS: Array<{ key: TaskGroupDetailTab; label: str
   { key: 'score', label: '扣分记录' },
 ];
 
+export type RunDetailTab = 'flow' | 'raw' | 'score';
+export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+
+export const RUN_DETAIL_TABS: Array<{ key: RunDetailTab; label: string }> = [
+  { key: 'flow', label: '执行流程' },
+  { key: 'raw', label: '原始信息' },
+  { key: 'score', label: '扣分记录' },
+];
+
+export const RUN_STATUS_META: Record<RunStatus, { label: string; badgeClass: string }> = {
+  pending: { label: '待执行', badgeClass: 'border-slate-200 bg-slate-100 text-slate-700' },
+  running: { label: '运行中', badgeClass: 'border-sky-200 bg-sky-50 text-sky-700' },
+  completed: { label: '成功', badgeClass: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  failed: { label: '失败', badgeClass: 'border-rose-200 bg-rose-50 text-rose-700' },
+  cancelled: { label: '已取消', badgeClass: 'border-zinc-200 bg-zinc-100 text-zinc-700' },
+  paused: { label: '已暂停', badgeClass: 'border-orange-200 bg-orange-50 text-orange-700' },
+};
+
 export interface TaskGroup {
   groupKey: string;
   title: string;

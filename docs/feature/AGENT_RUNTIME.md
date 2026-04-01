@@ -182,6 +182,7 @@
 内部 API 前缀：`/agents/runtime`
 
 - run 控制：`GET runs/:runId`、`POST runs/:runId/pause|resume|cancel|replay`
+- run 列表：`GET runs?agentId=...`（支持 `status/from/to/page/pageSize` 分页筛选，按 `startedAt desc`）
 - EI 同步补偿：`POST runs/:runId/sync-ei-replay`、`GET sync-ei/dead-letter`、`POST sync-ei/dead-letter/requeue`
 - 运行观测：`GET metrics`
 - session 查询：`GET sessions`、`GET sessions/:id`
