@@ -10,6 +10,11 @@ interface ExecutionTimelineProps {
   roundRefs: React.MutableRefObject<Record<number, HTMLDivElement | null>>;
 }
 
+export interface TimelineRound {
+  round: number;
+  messages: RunMessageRecord[];
+}
+
 const toJsonPreview = (value: unknown): string => {
   try {
     const raw = JSON.stringify(value);
@@ -20,10 +25,10 @@ const toJsonPreview = (value: unknown): string => {
   }
 };
 
-const buildRounds = (messages: RunMessageRecord[]) => {
+export const buildTimelineRounds = (messages: RunMessageRecord[]): TimelineRound[] => {
   const nonSystem = messages.filter((message) => message.role !== 'system');
   const hasStepIndex = nonSystem.some((message) => typeof message.stepIndex === 'number');
-  const rounds: Array<{ round: number; messages: RunMessageRecord[] }> = [];
+  const rounds: TimelineRound[] = [];
 
   if (hasStepIndex) {
     const map = new Map<number, RunMessageRecord[]>();
@@ -43,7 +48,8 @@ const buildRounds = (messages: RunMessageRecord[]) => {
 
   let current: RunMessageRecord[] = [];
   for (const message of nonSystem) {
-    if (message.role === 'assistant' && current.length > 0) {
+    const currentHasAssistant = current.some((item) => item.role === 'assistant');
+    if (message.role === 'assistant' && currentHasAssistant) {
       rounds.push({ round: rounds.length + 1, messages: current });
       current = [message];
     } else {
@@ -58,7 +64,7 @@ const buildRounds = (messages: RunMessageRecord[]) => {
 
 export const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ messages, deductions, activeRound, onActiveRoundChange, roundRefs }) => {
   const [expandedJson, setExpandedJson] = React.useState<Record<string, boolean>>({});
-  const rounds = React.useMemo(() => buildRounds(messages), [messages]);
+  const rounds = React.useMemo(() => buildTimelineRounds(messages), [messages]);
 
   return (
     <div className="space-y-3">

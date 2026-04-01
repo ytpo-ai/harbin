@@ -4,7 +4,7 @@ import { AgentRunListItem, AgentRunScore } from '../../services/agentService';
 import { TRACEBACK_TABS, TracebackTab, getScoreBadgeClass } from './constants';
 import { RunMessageRecord } from './hooks/useLogState';
 import { PromptInspector } from './traceback/PromptInspector';
-import { ExecutionTimeline } from './traceback/ExecutionTimeline';
+import { buildTimelineRounds, ExecutionTimeline } from './traceback/ExecutionTimeline';
 import { DiagnosisPanel } from './traceback/DiagnosisPanel';
 import { RoundNavigator } from './traceback/RoundNavigator';
 
@@ -29,23 +29,24 @@ export const DecisionTracebackDrawer: React.FC<DecisionTracebackDrawerProps> = (
   const [activeRound, setActiveRound] = React.useState(1);
   const roundRefs = React.useRef<Record<number, HTMLDivElement | null>>({});
 
-  const timelineMessages = React.useMemo(() => messages.filter((message) => message.role !== 'system'), [messages]);
+  const timelineRounds = React.useMemo(() => buildTimelineRounds(messages), [messages]);
   const rounds = React.useMemo(() => {
-    const maxRound = Math.max(
-      1,
-      scoreData?.stats.totalRounds || 0,
-      ...timelineMessages.map((message) => (typeof message.stepIndex === 'number' ? message.stepIndex + 1 : 1)),
-    );
-    return Array.from({ length: maxRound }).map((_, index) => {
-      const round = index + 1;
+    const roundSet = new Set<number>(timelineRounds.map((item) => item.round));
+    (scoreData?.deductions || []).forEach((item) => {
+      if (item.round > 0) roundSet.add(item.round);
+    });
+    const sortedRounds = Array.from(roundSet).sort((a, b) => a - b);
+    if (sortedRounds.length === 0) {
+      sortedRounds.push(1);
+    }
+
+    return sortedRounds.map((round) => {
       const hasDeduction = (scoreData?.deductions || []).some((item) => item.round === round);
-      const hasError = timelineMessages.some((message) => {
-        if (typeof message.stepIndex === 'number' && message.stepIndex + 1 !== round) return false;
-        return message.parts.some((part) => !!part.error || part.status === 'error');
-      });
+      const timelineRound = timelineRounds.find((item) => item.round === round);
+      const hasError = (timelineRound?.messages || []).some((message) => message.parts.some((part) => !!part.error || part.status === 'error'));
       return { round, hasDeduction, hasError };
     });
-  }, [scoreData, timelineMessages]);
+  }, [scoreData, timelineRounds]);
 
   if (!open) return null;
 
@@ -64,7 +65,7 @@ export const DecisionTracebackDrawer: React.FC<DecisionTracebackDrawerProps> = (
                 <span>Agent: {run.agentName || '-'}</span>
                 <span className={`inline-flex rounded-full px-2 py-0.5 ring-1 ${getScoreBadgeClass(scoreValue)}`}>{scoreValue}/100分</span>
                 <span>耗时: {durationText}</span>
-                <span>轮次: {scoreData?.stats.totalRounds || rounds.length}</span>
+                <span>轮次: {Math.max(scoreData?.stats.totalRounds || 0, rounds.length)}</span>
                 <span>总扣分: {scoreData?.totalDeductions || 0}</span>
               </div>
             </div>

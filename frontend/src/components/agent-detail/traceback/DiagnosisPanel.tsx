@@ -22,24 +22,42 @@ export const DiagnosisPanel: React.FC<DiagnosisPanelProps> = ({ runId, scoreData
   const [loading, setLoading] = React.useState(false);
   const [answer, setAnswer] = React.useState('');
   const [error, setError] = React.useState('');
+  const controllerRef = React.useRef<AbortController | null>(null);
 
   const presets = React.useMemo(() => buildPresetQuestions(scoreData), [scoreData]);
+
+  React.useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+      controllerRef.current = null;
+    };
+  }, []);
 
   const ask = async (value: string) => {
     const nextQuestion = String(value || '').trim();
     if (!nextQuestion || loading) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setLoading(true);
     setError('');
     setAnswer('');
     try {
       await agentService.diagnoseRun(runId, nextQuestion, {
+        signal: controller.signal,
         onChunk: (chunk) => {
           setAnswer((prev) => prev + chunk);
         },
       });
     } catch (err) {
+      if (controller.signal.aborted) {
+        return;
+      }
       setError(err instanceof Error ? err.message : '诊断请求失败');
     } finally {
+      if (controllerRef.current === controller) {
+        controllerRef.current = null;
+      }
       setLoading(false);
     }
   };

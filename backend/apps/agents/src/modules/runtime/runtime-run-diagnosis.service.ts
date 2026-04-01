@@ -44,7 +44,7 @@ export class RuntimeRunDiagnosisService {
     }
   }
 
-  async diagnose(runId: string, question: string): Promise<string> {
+  private async buildDiagnosisInput(runId: string, question: string): Promise<{ modelConfig: AIModel; chatMessages: ChatMessage[] }> {
     const run = await this.persistence.getRun(runId);
     if (!run) {
       throw new NotFoundException('Runtime run not found');
@@ -136,11 +136,44 @@ export class RuntimeRunDiagnosisService {
       userPrompt,
     ];
 
+    return {
+      modelConfig,
+      chatMessages,
+    };
+  }
+
+  async diagnose(runId: string, question: string): Promise<string> {
+    const { modelConfig, chatMessages } = await this.buildDiagnosisInput(runId, question);
+
     const result = await this.modelService.chat(modelConfig.id, chatMessages, {
       temperature: 0.2,
       maxTokens: 1800,
     });
 
     return String(result.response || '').trim();
+  }
+
+  async diagnoseStream(runId: string, question: string, onChunk: (chunk: string) => void): Promise<string> {
+    const { modelConfig, chatMessages } = await this.buildDiagnosisInput(runId, question);
+
+    let fullText = '';
+    await this.modelService.streamingChat(
+      modelConfig.id,
+      chatMessages,
+      (token) => {
+        const chunk = String(token || '');
+        if (!chunk) {
+          return;
+        }
+        fullText += chunk;
+        onChunk(chunk);
+      },
+      {
+        temperature: 0.2,
+        maxTokens: 1800,
+      },
+    );
+
+    return fullText.trim();
   }
 }

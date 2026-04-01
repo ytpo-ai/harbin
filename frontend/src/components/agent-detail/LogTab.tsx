@@ -112,8 +112,20 @@ export const LogTab: React.FC<LogTabProps> = ({ agentId, onViewSession }) => {
               const hasListScore = typeof run.score === 'number';
               const scoreValue = hasListScore ? run.score : scoreData?.score;
               const hasScore = typeof scoreValue === 'number';
-              const scoreBadgeClass = hasScore ? getScoreBadgeClass(scoreValue!) : 'border-slate-200 bg-slate-100 text-slate-600';
-              const scoreBadgeText = hasScore ? `${Math.round(scoreValue!)}分` : '无评分';
+              const scoreBadgeClass = hasScore
+                ? getScoreBadgeClass(scoreValue!)
+                : scoreState?.loading
+                  ? 'border-sky-200 bg-sky-50 text-sky-700'
+                  : scoreState?.error
+                    ? 'border-rose-200 bg-rose-50 text-rose-700'
+                    : 'border-slate-200 bg-slate-100 text-slate-600';
+              const scoreBadgeText = hasScore
+                ? `${Math.round(scoreValue!)}分`
+                : scoreState?.loading
+                  ? '评分加载中'
+                  : scoreState?.error
+                    ? '评分失败'
+                    : '无评分';
               const scoreDetailExpanded = expandedScoreDetails[run.id] === true;
               const durationStr =
                 run.status === 'running' || run.status === 'pending'

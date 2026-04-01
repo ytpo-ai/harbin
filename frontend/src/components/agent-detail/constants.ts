@@ -94,7 +94,7 @@ export const TRACEBACK_TABS: Array<{ key: TracebackTab; label: string }> = [
 export const CONTEXT_LAYER_PATTERNS: Array<{ layer: string; patterns: string[] }> = [
   { layer: '扣分记忆', patterns: ['执行质量提醒'] },
   { layer: 'Identity', patterns: ['你是', 'You are'] },
-  { layer: 'Toolset', patterns: ['可用工具', 'Available tools', 'tool_call'] },
+  { layer: 'Toolset', patterns: ['可用工具', 'Available tools', '工具列表'] },
   { layer: 'Task', patterns: ['任务描述', 'Task:', '任务目标'] },
 ];
 

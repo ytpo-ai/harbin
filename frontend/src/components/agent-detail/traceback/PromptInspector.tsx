@@ -18,8 +18,13 @@ const detectLayer = (content: string, index: number): string => {
 export const PromptInspector: React.FC<PromptInspectorProps> = ({ messages }) => {
   const systemMessages = React.useMemo(() => messages.filter((message) => message.role === 'system'), [messages]);
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({});
+  const initializedKeyRef = React.useRef('');
 
   React.useEffect(() => {
+    const currentKey = systemMessages.map((msg) => msg.id).join('|');
+    if (currentKey && initializedKeyRef.current === currentKey) {
+      return;
+    }
     const next: Record<string, boolean> = {};
     systemMessages.forEach((msg) => {
       const content = String(msg.content || '');
@@ -28,6 +33,7 @@ export const PromptInspector: React.FC<PromptInspectorProps> = ({ messages }) =>
       }
     });
     setExpanded(next);
+    initializedKeyRef.current = currentKey;
   }, [systemMessages]);
 
   const hasDeductionContext = systemMessages.some((msg) => String(msg.content || '').includes('执行质量提醒'));

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, Header, NotFoundException, Param, Post, Query, Req, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Header, Logger, NotFoundException, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { Request } from 'express';
 import { Response } from 'express';
 import { GatewayUserContext } from '@libs/contracts';
@@ -28,6 +28,11 @@ import {
 
 @Controller('agents/runtime')
 export class RuntimeController {
+  private readonly logger = new Logger(RuntimeController.name);
+  private readonly diagnoseRateWindowMs = 60_000;
+  private readonly diagnoseRateLimit = 10;
+  private readonly diagnoseRateTracker = new Map<string, number[]>();
+
   constructor(
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
     private readonly hookDispatcher: HookDispatcherService,
@@ -115,6 +120,18 @@ export class RuntimeController {
       return undefined;
     }
     return Math.floor(parsed);
+  }
+
+  private assertDiagnoseRateLimit(context: GatewayUserContext): void {
+    const actorId = String(context.employeeId || context.role || 'anonymous').trim();
+    const now = Date.now();
+    const cutoff = now - this.diagnoseRateWindowMs;
+    const history = (this.diagnoseRateTracker.get(actorId) || []).filter((ts) => ts >= cutoff);
+    if (history.length >= this.diagnoseRateLimit) {
+      throw new BadRequestException('诊断请求过于频繁，请稍后重试');
+    }
+    history.push(now);
+    this.diagnoseRateTracker.set(actorId, history);
   }
 
   @Get('runs')
@@ -754,20 +771,20 @@ export class RuntimeController {
     if (!question) {
       throw new BadRequestException('question is required');
     }
+    await this.getAuthorizedRun(runId, context);
+    this.assertDiagnoseRateLimit(context);
 
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.flushHeaders?.();
 
     try {
-      const content = await this.runDiagnosisService.diagnose(runId, question);
-      const chunkSize = 500;
-      for (let i = 0; i < content.length; i += chunkSize) {
-        const chunk = content.slice(i, i + chunkSize);
+      await this.runDiagnosisService.diagnoseStream(runId, question, (chunk) => {
         res.write(`event: chunk\ndata: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
-      }
+      });
       res.write(`event: done\ndata: ${JSON.stringify({ type: 'done' })}\n\n`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'diagnose_failed';
+      this.logger.warn(`diagnose_run_failed runId=${runId}: ${message}`);
       res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: message })}\n\n`);
     } finally {
       res.end();

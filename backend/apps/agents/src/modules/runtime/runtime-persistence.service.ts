@@ -951,9 +951,18 @@ export class RuntimePersistenceService {
       modelID: message.modelID,
       providerID: message.providerID,
       finish: message.finish,
-      tokens: message.tokens,
-      cost: message.cost,
-      stepIndex: message.stepIndex,
+      tokens: message.tokens
+        ? {
+            input: this.normalizeTokenValue(message.tokens.input),
+            output: this.normalizeTokenValue(message.tokens.output),
+            reasoning: this.normalizeTokenValue(message.tokens.reasoning),
+            cacheRead: this.normalizeTokenValue(message.tokens.cacheRead),
+            cacheWrite: this.normalizeTokenValue(message.tokens.cacheWrite),
+            total: this.normalizeTokenValue(message.tokens.total),
+          }
+        : undefined,
+      cost: this.normalizeTokenValue(message.cost),
+      stepIndex: this.normalizeTokenValue(message.stepIndex),
       timestamp: message.updatedAt || message.createdAt || new Date(),
       parts: partMap.get(message.id) || [],
     }));
