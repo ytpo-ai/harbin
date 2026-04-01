@@ -77,11 +77,25 @@ export const TASK_GROUP_DETAIL_TABS: Array<{ key: TaskGroupDetailTab; label: str
 
 export type RunDetailTab = 'flow' | 'raw' | 'score';
 export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+export type TracebackTab = 'prompt' | 'timeline' | 'diagnosis';
 
 export const RUN_DETAIL_TABS: Array<{ key: RunDetailTab; label: string }> = [
   { key: 'flow', label: '执行流程' },
   { key: 'raw', label: '原始信息' },
   { key: 'score', label: '扣分记录' },
+];
+
+export const TRACEBACK_TABS: Array<{ key: TracebackTab; label: string }> = [
+  { key: 'prompt', label: 'Prompt 审查' },
+  { key: 'timeline', label: '执行时间线' },
+  { key: 'diagnosis', label: '诊断分析' },
+];
+
+export const CONTEXT_LAYER_PATTERNS: Array<{ layer: string; patterns: string[] }> = [
+  { layer: '扣分记忆', patterns: ['执行质量提醒'] },
+  { layer: 'Identity', patterns: ['你是', 'You are'] },
+  { layer: 'Toolset', patterns: ['可用工具', 'Available tools', 'tool_call'] },
+  { layer: 'Task', patterns: ['任务描述', 'Task:', '任务目标'] },
 ];
 
 export const RUN_STATUS_META: Record<RunStatus, { label: string; badgeClass: string }> = {
@@ -159,6 +173,7 @@ export const todoStatusOptions: Array<NonNullable<AgentMemo['todoStatus']>> = ['
 
 export const AGENT_DETAIL_QUERY_KEYS = {
   detail: (agentId: string) => ['agent-detail', agentId] as const,
+  roles: ['agent-detail', 'roles'] as const,
   memosBase: (agentId: string) => ['agent-memos', agentId] as const,
   memos: (agentId: string, memoSearch: string, memoPage: number, memoCategory: 'standard' | 'topic') =>
     ['agent-memos', agentId, memoSearch, memoPage, memoCategory] as const,

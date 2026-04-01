@@ -11,6 +11,37 @@ export interface AgentRunLogFilters {
   pageSize: number;
 }
 
+export type RunMessagePartRecord = {
+  id: string;
+  type: string;
+  status: string;
+  toolId?: string;
+  toolCallId?: string;
+  content?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: string;
+  startedAt?: string;
+  endedAt?: string;
+};
+
+export type RunMessageRecord = {
+  id: string;
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  timestamp: string;
+  stepIndex?: number;
+  tokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  parts: RunMessagePartRecord[];
+};
+
 type RunScoreState = {
   loading: boolean;
   data: AgentRunScore | null;
@@ -21,20 +52,7 @@ type RunScoreState = {
 
 type RunMessagesState = {
   loading: boolean;
-  data: Array<{
-    id: string;
-    role: 'system' | 'user' | 'assistant' | 'tool';
-    content: string;
-    timestamp: string;
-    parts: Array<{
-      id: string;
-      type: string;
-      status: string;
-      toolId?: string;
-      content?: string;
-      error?: string;
-    }>;
-  }>;
+  data: RunMessageRecord[];
   error?: string;
 };
 
@@ -151,13 +169,20 @@ export const useLogState = (agentId: string) => {
             role: message.role,
             content: message.content,
             timestamp: message.timestamp,
+            stepIndex: message.stepIndex,
+            tokens: message.tokens,
             parts: (message.parts || []).map((part) => ({
               id: part.id,
               type: part.type,
               status: part.status,
               toolId: part.toolId,
+              toolCallId: part.toolCallId,
               content: part.content,
+              input: part.input,
+              output: part.output,
               error: part.error,
+              startedAt: part.startedAt,
+              endedAt: part.endedAt,
             })),
           })),
         },

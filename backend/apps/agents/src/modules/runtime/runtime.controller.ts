@@ -1,10 +1,12 @@
-import { BadRequestException, Body, Controller, ForbiddenException, Get, NotFoundException, Param, Post, Query, Req } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, Header, NotFoundException, Param, Post, Query, Req, Res } from '@nestjs/common';
 import { Request } from 'express';
+import { Response } from 'express';
 import { GatewayUserContext } from '@libs/contracts';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { RuntimeEiSyncService } from './runtime-ei-sync.service';
+import { RuntimeRunDiagnosisService } from './runtime-run-diagnosis.service';
 import {
   RuntimeControlBody,
   RuntimeControlBodySchema,
@@ -31,6 +33,7 @@ export class RuntimeController {
     private readonly hookDispatcher: HookDispatcherService,
     private readonly persistence: RuntimePersistenceService,
     private readonly runtimeEiSyncService: RuntimeEiSyncService,
+    private readonly runDiagnosisService: RuntimeRunDiagnosisService,
   ) {}
 
   private getUserContext(req: Request & { userContext?: GatewayUserContext }): GatewayUserContext {
@@ -734,6 +737,41 @@ export class RuntimeController {
       total: messages.length,
       messages,
     };
+  }
+
+  @Post('runs/:runId/diagnose')
+  @Header('Cache-Control', 'no-cache, no-transform')
+  @Header('Connection', 'keep-alive')
+  async diagnoseRun(
+    @Param('runId') runId: string,
+    @Body() body: { question?: string },
+    @Req() req: Request & { userContext?: GatewayUserContext },
+    @Res() res: Response,
+  ): Promise<void> {
+    const context = this.getUserContext(req);
+    this.assertRuntimeControlPermission(context);
+    const question = String(body?.question || '').trim();
+    if (!question) {
+      throw new BadRequestException('question is required');
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.flushHeaders?.();
+
+    try {
+      const content = await this.runDiagnosisService.diagnose(runId, question);
+      const chunkSize = 500;
+      for (let i = 0; i < content.length; i += chunkSize) {
+        const chunk = content.slice(i, i + chunkSize);
+        res.write(`event: chunk\ndata: ${JSON.stringify({ type: 'chunk', content: chunk })}\n\n`);
+      }
+      res.write(`event: done\ndata: ${JSON.stringify({ type: 'done' })}\n\n`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'diagnose_failed';
+      res.write(`event: error\ndata: ${JSON.stringify({ type: 'error', error: message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @Post('sessions/:id/archive')

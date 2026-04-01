@@ -1,0 +1,146 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import { AIModel, ChatMessage } from '../../../../../src/shared/types';
+import { Agent, AgentDocument } from '../../schemas/agent.schema';
+import { RuntimePersistenceService } from './runtime-persistence.service';
+import { AgentRunScoreService } from './agent-run-score.service';
+import { ModelService } from '../models/model.service';
+
+@Injectable()
+export class RuntimeRunDiagnosisService {
+  constructor(
+    private readonly persistence: RuntimePersistenceService,
+    private readonly runScoreService: AgentRunScoreService,
+    private readonly modelService: ModelService,
+    @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
+  ) {}
+
+  private buildRecentContext(
+    messages: Array<{ role: string; content: string; timestamp: Date }>,
+  ): Array<{ role: string; content: string; timestamp: Date }> {
+    const result: Array<{ role: string; content: string; timestamp: Date }> = [];
+    let assistantRounds = 0;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const item = messages[index];
+      result.push(item);
+      if (item.role === 'assistant') {
+        assistantRounds += 1;
+      }
+      if (assistantRounds >= 15) {
+        break;
+      }
+    }
+    return result.reverse();
+  }
+
+  private toCompactJson(value: unknown): string {
+    try {
+      const raw = JSON.stringify(value);
+      if (!raw) return '-';
+      return raw.length > 1200 ? `${raw.slice(0, 1200)}...(truncated)` : raw;
+    } catch {
+      return '-';
+    }
+  }
+
+  async diagnose(runId: string, question: string): Promise<string> {
+    const run = await this.persistence.getRun(runId);
+    if (!run) {
+      throw new NotFoundException('Runtime run not found');
+    }
+
+    const [messagesWithParts, score, agent] = await Promise.all([
+      this.persistence.listRunMessagesWithParts(runId),
+      this.runScoreService.getScoreByRunId(runId),
+      this.agentModel.findOne({ $or: [{ id: run.agentId }, { _id: run.agentId }] }).lean().exec(),
+    ]);
+
+    if (!agent?.model?.id || !agent?.model?.name || !agent?.model?.provider || !agent?.model?.model) {
+      throw new NotFoundException('Agent model config not found');
+    }
+
+    const modelConfig: AIModel = {
+      id: String(agent.model.id),
+      name: String(agent.model.name),
+      provider: String(agent.model.provider) as AIModel['provider'],
+      model: String(agent.model.model),
+      maxTokens: Number(agent.model.maxTokens || 4096),
+      temperature: 0.2,
+      topP: Number(agent.model.topP ?? 1),
+      reasoning: agent.model.reasoning,
+    };
+    this.modelService.ensureProvider(modelConfig);
+
+    const systemMessages = messagesWithParts
+      .filter((message) => message.role === 'system')
+      .map((message) => ({
+        role: 'system' as const,
+        content: String(message.content || ''),
+        timestamp: new Date(message.timestamp || Date.now()),
+      }));
+
+    const interactionMessages = this.buildRecentContext(
+      messagesWithParts
+        .filter((message) => message.role !== 'system')
+        .map((message) => {
+          const partSummary = (message.parts || [])
+            .map((part) => `${part.type}${part.toolId ? `(${part.toolId})` : ''}:${part.error || part.content || this.toCompactJson(part.output || part.input)}`)
+            .join('\n');
+          const merged = [String(message.content || ''), partSummary].filter(Boolean).join('\n');
+          return {
+            role: message.role,
+            content: merged,
+            timestamp: new Date(message.timestamp || Date.now()),
+          };
+        }),
+    );
+
+    const diagnosticSystem: ChatMessage = {
+      role: 'system',
+      content:
+        '你是一个 AI Agent 调试分析师。你会基于完整执行记录进行因果分析，明确指出具体轮次、触发规则、证据片段，并给出可执行改进建议。不要泛泛而谈。',
+      timestamp: new Date(),
+    };
+
+    const scoreSummary = score
+      ? `score=${Math.round(score.score)}/100 totalDeductions=${score.totalDeductions} rounds=${score.stats.totalRounds} toolCalls=${score.stats.totalToolCalls}`
+      : 'score=unknown';
+
+    const userPrompt: ChatMessage = {
+      role: 'user',
+      content: [
+        `RunId: ${runId}`,
+        `TaskTitle: ${run.taskTitle || '-'}`,
+        `Status: ${run.status}`,
+        `ScoreSummary: ${scoreSummary}`,
+        `Deductions: ${this.toCompactJson(score?.deductions || [])}`,
+        '--- User Question ---',
+        question,
+        '--- Requirements ---',
+        '1) 明确回答问题。',
+        '2) 引用关键证据（轮次/消息/工具调用/扣分规则）。',
+        '3) 输出 3-5 条可执行改进建议。',
+      ].join('\n'),
+      timestamp: new Date(),
+    };
+
+    const chatMessages: ChatMessage[] = [
+      diagnosticSystem,
+      ...systemMessages,
+      ...interactionMessages.map((msg) => ({
+        role: msg.role as ChatMessage['role'],
+        content: msg.content,
+        timestamp: msg.timestamp,
+      })),
+      userPrompt,
+    ];
+
+    const result = await this.modelService.chat(modelConfig.id, chatMessages, {
+      temperature: 0.2,
+      maxTokens: 1800,
+    });
+
+    return String(result.response || '').trim();
+  }
+}

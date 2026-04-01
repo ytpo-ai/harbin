@@ -286,6 +286,11 @@ export interface StreamAgentTaskEventsOptions {
   onOpen?: () => void;
 }
 
+export interface DiagnoseRunOptions {
+  signal?: AbortSignal;
+  onChunk?: (chunk: string) => void;
+}
+
 export const agentService = {
   normalizeAgentList(raw: unknown): Agent[] {
     const list = Array.isArray(raw)
@@ -521,6 +526,81 @@ export const agentService = {
       reason: reason || 'manual_cancel_from_ui',
     });
     return response.data;
+  },
+
+  async diagnoseRun(runId: string, question: string, options?: DiagnoseRunOptions): Promise<string> {
+    const baseUrl = ((import.meta as any).env?.VITE_API_URL || api.defaults.baseURL || '/api').replace(/\/$/, '');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const response = await fetch(`${baseUrl}/agents/runtime/runs/${encodeURIComponent(runId)}/diagnose`, {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ question }),
+      signal: options?.signal,
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`诊断请求失败（${response.status}）`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let eventType = '';
+    let eventData: string[] = [];
+    let answer = '';
+
+    const flush = () => {
+      if (eventData.length === 0) {
+        eventType = '';
+        return;
+      }
+      const raw = eventData.join('\n');
+      eventData = [];
+      try {
+        const parsed = JSON.parse(raw) as { type?: string; content?: string; error?: string };
+        if (eventType === 'error' || parsed.type === 'error') {
+          throw new Error(parsed.error || '诊断流式返回失败');
+        }
+        if (eventType === 'chunk' || parsed.type === 'chunk') {
+          const chunk = String(parsed.content || '');
+          answer += chunk;
+          options?.onChunk?.(chunk);
+        }
+      } finally {
+        eventType = '';
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) {
+        flush();
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line) {
+          flush();
+          continue;
+        }
+        if (line.startsWith('event:')) {
+          eventType = line.slice(6).trim();
+          continue;
+        }
+        if (line.startsWith('data:')) {
+          eventData.push(line.slice(5).trimStart());
+        }
+      }
+    }
+
+    return answer;
   },
 
   async createAgentTask(payload: CreateAgentTaskPayload): Promise<{ taskId: string; runId?: string; status: string }> {

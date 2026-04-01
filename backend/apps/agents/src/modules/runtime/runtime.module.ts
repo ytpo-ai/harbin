@@ -11,6 +11,7 @@ import {
 } from '@agent/schemas/agent-runtime-maintenance-audit.schema';
 import { AgentSession, AgentSessionSchema } from '@agent/schemas/agent-session.schema';
 import { AgentRunScore, AgentRunScoreSchema } from '@agent/schemas/agent-run-score.schema';
+import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { HookDispatcherService } from './hook-dispatcher.service';
 import { RuntimeOrchestratorService } from './runtime-orchestrator.service';
@@ -25,10 +26,13 @@ import { HookRegistryService } from './hooks/hook-registry.service';
 import { HookPipelineService } from './hooks/hook-pipeline.service';
 import { AgentActionLogModule } from '../action-logs/agent-action-log.module';
 import { DebugTimingProvider } from '@libs/common';
+import { ModelModule } from '../models/model.module';
+import { RuntimeRunDiagnosisService } from './runtime-run-diagnosis.service';
 
 @Module({
   imports: [
     InfraModule,
+    ModelModule,
     MemoModule,
     AgentActionLogModule,
     MongooseModule.forFeature([
@@ -39,6 +43,7 @@ import { DebugTimingProvider } from '@libs/common';
       { name: AgentRuntimeMaintenanceAudit.name, schema: AgentRuntimeMaintenanceAuditSchema },
       { name: AgentSession.name, schema: AgentSessionSchema },
       { name: AgentRunScore.name, schema: AgentRunScoreSchema },
+      { name: Agent.name, schema: AgentSchema },
     ]),
   ],
   controllers: [RuntimeController, AgentRunScoreController],
@@ -53,6 +58,7 @@ import { DebugTimingProvider } from '@libs/common';
     HookRegistryService,
     HookPipelineService,
     DebugTimingProvider,
+    RuntimeRunDiagnosisService,
   ],
   exports: [
     RuntimePersistenceService,
@@ -65,6 +71,7 @@ import { DebugTimingProvider } from '@libs/common';
     HookRegistryService,
     HookPipelineService,
     DebugTimingProvider,
+    RuntimeRunDiagnosisService,
   ],
 })
 export class RuntimeModule {}
