@@ -208,6 +208,7 @@ export class OrchestrationExecutionEngineService {
           runtimeChannelHint,
           researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
           reviewValidationRequired: runtimeTaskType === 'development.review',
+          preactivatedToolIds: this.resolvePreactivatedToolIds(task as any),
         },
       });
 
@@ -443,6 +444,7 @@ export class OrchestrationExecutionEngineService {
           runtimeChannelHint,
           researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
           reviewValidationRequired: runtimeTaskType === 'development.review',
+          preactivatedToolIds: this.resolvePreactivatedToolIds(runTask as any),
         },
       });
 
@@ -757,6 +759,15 @@ export class OrchestrationExecutionEngineService {
       || normalizedDescription.includes('save-prompt-template');
 
     return requiresInternalTools ? 'native' : 'opencode';
+  }
+
+  private resolvePreactivatedToolIds(task: { requiredTools?: string[]; runtimeTaskType?: string }): string[] | undefined {
+    const requiredTools = Array.isArray(task?.requiredTools)
+      ? task.requiredTools.map((toolId) => String(toolId || '').trim()).filter(Boolean)
+      : [];
+
+    const normalized = Array.from(new Set(requiredTools));
+    return normalized.length > 0 ? normalized : undefined;
   }
 
   private async sleep(ms: number): Promise<void> {

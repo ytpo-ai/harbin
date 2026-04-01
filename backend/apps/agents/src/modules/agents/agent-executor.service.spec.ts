@@ -1,6 +1,8 @@
 import { AgentExecutorService } from './agent-executor.service';
 import {
+  buildToolSchemaHint,
   buildToolInputRepairInstruction,
+  hasEffectiveSchema,
   getToolInputPreflightError,
   isMeaninglessAssistantResponse,
   isToolInputErrorMessage,
@@ -527,5 +529,30 @@ describe('AgentExecutorService tool input repair helpers', () => {
         content: 'world',
       }),
     ).toBeNull();
+  });
+});
+
+describe('AgentExecutorService schema helper functions', () => {
+  it('builds compact schema hint text from json schema', () => {
+    const hint = buildToolSchemaHint('builtin.sys-mg.mcp.orchestration.submit-task', {
+      type: 'object',
+      required: ['title'],
+      additionalProperties: false,
+      properties: {
+        title: { type: 'string', description: '任务标题' },
+        action: { type: 'string', enum: ['new', 'redesign'] },
+      },
+    });
+
+    expect(hint).toContain('工具参数契约');
+    expect(hint).toContain('required: [title]');
+    expect(hint).toContain('additionalProperties: false');
+    expect(hint).toContain('action: string');
+  });
+
+  it('detects effective schema by properties presence', () => {
+    expect(hasEffectiveSchema({ type: 'object', properties: { title: { type: 'string' } } })).toBe(true);
+    expect(hasEffectiveSchema({ type: 'object', properties: {} })).toBe(false);
+    expect(hasEffectiveSchema({ type: 'object' })).toBe(false);
   });
 });

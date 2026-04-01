@@ -17,4 +17,5 @@ export interface ToolExecutionContext {
     employeeId?: string;
     role?: string;
   };
+  assignedToolIds?: string[];
 }

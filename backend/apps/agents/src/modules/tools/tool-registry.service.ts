@@ -259,6 +259,7 @@ export class ToolRegistryService {
               type: toolData.type,
               category: toolData.category,
               terminal: (toolData as any).terminal ?? false,
+              authFree: (toolData as any).authFree ?? false,
               requiredPermissions: toolData.requiredPermissions,
               tokenCost: toolData.tokenCost,
               implementation: toolData.implementation,

@@ -31,8 +31,7 @@ import { ContextFingerprintService } from './context/context-fingerprint.service
 import { ContextStrategyService } from './context/context-strategy.service';
 
 import {
-  MEMO_MCP_SEARCH_TOOL_ID,
-  MEMO_MCP_APPEND_TOOL_ID,
+  GET_TOOL_SCHEMA_TOOL_ID,
   DEFAULT_MAX_TOOL_ROUNDS,
   SKILL_CONTENT_MAX_INJECT_LENGTH,
   AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS,
@@ -56,6 +55,7 @@ import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
 import { AgentRoleService } from './agent-role.service';
 import {
   buildTaskResultMemo,
+  buildToolSchemaHint,
   buildToolInputRepairInstruction,
   extractToolCall,
   extractAllToolCalls,
@@ -65,6 +65,7 @@ import {
   getToolInputPreflightError,
   isToolInputErrorMessage,
   resolveResponseFormatFromCollaborationContext,
+  hasEffectiveSchema,
   shouldRetryGenerationError,
   stripToolCallMarkup,
 } from './agent-executor.helpers';
@@ -933,6 +934,7 @@ export class AgentExecutorService {
       };
       taskType?: string;
       teamId?: string;
+      preactivatedToolIds?: string[];
     },
   ): Promise<string> {
     const maxToolRounds = this.getMaxToolRounds();
@@ -954,6 +956,23 @@ export class AgentExecutorService {
     const toolRoundLimitMessage = await this.resolveAgentPromptContent(AGENT_PROMPTS.toolRoundLimitMessage);
     const initialSystemMessageCount = messages.filter((message) => message.role === 'system').length;
     const scorer = new TaskExecutionScorer();
+    const schemaInjectedToolIds = new Set<string>();
+
+    const preactivatedToolIds = this.extractPreactivatedToolIds(executionContext);
+    for (const toolId of preactivatedToolIds) {
+      const inputContract = await this.toolService.getToolInputContract(toolId);
+      if (inputContract?.schema && hasEffectiveSchema(inputContract.schema)) {
+        const schemaHint = buildToolSchemaHint(toolId, inputContract.schema);
+        if (schemaHint) {
+          messages.push({
+            role: 'system',
+            content: schemaHint,
+            timestamp: new Date(),
+          });
+          schemaInjectedToolIds.add(toolId);
+        }
+      }
+    }
 
     const persistIntermediateSystemMessage = async (
       round: number,
@@ -1603,7 +1622,8 @@ export class AgentExecutorService {
       });
 
       const normalizedToolCallId = normalizeToolId(toolCall.tool);
-        if (scorer.lastToolId === normalizedToolCallId) {
+        const isMetaTool = normalizedToolCallId === GET_TOOL_SCHEMA_TOOL_ID;
+        if (scorer.lastToolId === normalizedToolCallId && !isMetaTool) {
           scorer.deduct('D3', round, {
             toolId: normalizedToolCallId,
             detail: `round ${round} 与 round ${round - 1} 连续调用 ${normalizedToolCallId}`,
@@ -1663,13 +1683,34 @@ export class AgentExecutorService {
         const inputContract = await this.toolService.getToolInputContract(normalizedToolCallId);
         const preflightInputError = getToolInputPreflightError(inputContract?.schema, toolCall.parameters);
         if (preflightInputError && inputContract?.schema) {
-          scorer.deduct('D1', round, {
-            toolId: normalizedToolCallId,
-            detail: preflightInputError,
-          });
+          const schemaHint = buildToolSchemaHint(normalizedToolCallId, inputContract.schema);
+          const seenSchemaBefore = schemaInjectedToolIds.has(normalizedToolCallId);
+          if (seenSchemaBefore) {
+            scorer.deduct('D1', round, {
+              toolId: normalizedToolCallId,
+              detail: preflightInputError,
+            });
+          }
           this.logger.warn(
             `[tool_input_preflight_failed] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} error=${preflightInputError}`,
           );
+          if (!seenSchemaBefore && schemaHint) {
+            messages.push({
+              role: 'system',
+              content: schemaHint,
+              timestamp: new Date(),
+            });
+            await persistIntermediateSystemMessage(
+              round,
+              intermediateSystemOffset++,
+              schemaHint,
+              {
+                source: 'tool-calling-loop.tool-schema-injected',
+                toolId: normalizedToolCallId,
+              },
+            );
+            schemaInjectedToolIds.add(normalizedToolCallId);
+          }
           const toolInputRepairInstruction = buildToolInputRepairInstruction(
             normalizedToolCallId,
             inputContract.schema,
@@ -1686,7 +1727,9 @@ export class AgentExecutorService {
             intermediateSystemOffset++,
             toolInputRepairInstruction,
             {
-              source: 'tool-calling-loop.tool-input-preflight-failed',
+              source: seenSchemaBefore
+                ? 'tool-calling-loop.tool-input-preflight-failed'
+                : 'tool-calling-loop.tool-input-preflight-first-fail',
               toolId: normalizedToolCallId,
             },
           );
@@ -1708,6 +1751,7 @@ export class AgentExecutorService {
           });
           continue;
         }
+        schemaInjectedToolIds.add(normalizedToolCallId);
 
         const toolCallId = `toolcall-${uuidv4()}`;
         let runtimeToolPartId: string | undefined;
@@ -1743,9 +1787,18 @@ export class AgentExecutorService {
             agentRuntimeId,
             toolCall.parameters,
             task.id,
-            executionContext,
+            {
+              ...(executionContext || {}),
+              assignedToolIds: Array.from(assignedToolIds),
+            },
           );
           scorer.trackToolSuccess();
+          if (normalizedToolCallId === GET_TOOL_SCHEMA_TOOL_ID) {
+            const queriedToolId = normalizeToolId(String(toolCall.parameters?.toolId || ''));
+            if (queriedToolId) {
+              schemaInjectedToolIds.add(queriedToolId);
+            }
+          }
           executedToolIds.add(normalizedToolCallId);
           const toolResultPayload = this.extractToolResultPayload(execution);
           this.logger.log(
@@ -2537,6 +2590,22 @@ export class AgentExecutorService {
       return Math.floor(configuredRounds);
     }
     return DEFAULT_MAX_TOOL_ROUNDS;
+  }
+
+  private extractPreactivatedToolIds(executionContext?: {
+    preactivatedToolIds?: string[];
+  }): string[] {
+    if (!Array.isArray(executionContext?.preactivatedToolIds)) {
+      return [];
+    }
+
+    return Array.from(
+      new Set(
+        executionContext.preactivatedToolIds
+          .map((toolId) => normalizeToolId(String(toolId || '').trim()))
+          .filter(Boolean),
+      ),
+    );
   }
 
   /**

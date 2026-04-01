@@ -204,6 +204,8 @@
 - 满分 100，只减不加，最低 0 分。12 条扣分规则（D1-D12），规则版本 v1.0。
 - 循环结束后 `AgentRunScoreService.saveScore()` 持久化到 `agent_run_scores` 集合，并冗余更新 `agent_runs.score`。
 - 扣分不影响 run 的 success/failure 判定（仅质量指标）。
+- 工具参数校验引入分层策略：首次参数错误且尚未注入该工具 schema 时，不扣 D1，先回填 schema 指引；仅在已注入 schema 后再次参数错误才扣 D1。
+- `get-tool-schema` 连续调用场景豁免 D3，避免批量查询多个工具参数契约时被误判为重复调用扣分。
 
 #### 1.7.2 扣分 Memo 聚合
 

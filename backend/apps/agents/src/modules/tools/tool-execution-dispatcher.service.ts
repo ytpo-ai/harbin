@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { Tool } from '../../schemas/tool.schema';
 import { ToolExecutionContext } from './tool-execution-context.type';
 import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler } from './builtin';
-import { AGENT_CREATE_TOOL_ID, AGENT_LIST_TOOL_ID, AGENT_ROLE_CREATE_TOOL_ID, AGENT_ROLE_DELETE_TOOL_ID, AGENT_ROLE_LIST_TOOL_ID, AGENT_ROLE_UPDATE_TOOL_ID, LEGACY_AGENT_LIST_TOOL_ID, PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID, PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID, PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID, RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from './builtin-tool-definitions';
+import { AGENT_CREATE_TOOL_ID, AGENT_LIST_TOOL_ID, AGENT_ROLE_CREATE_TOOL_ID, AGENT_ROLE_DELETE_TOOL_ID, AGENT_ROLE_LIST_TOOL_ID, AGENT_ROLE_UPDATE_TOOL_ID, GET_TOOL_SCHEMA_TOOL_ID, LEGACY_AGENT_LIST_TOOL_ID, PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID, PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID, PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID, RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from './builtin-tool-definitions';
 import { IMPLEMENTED_TOOL_IDS } from './builtin-tool-catalog';
+import { ToolRegistryService } from './tool-registry.service';
 
 @Injectable()
 export class ToolExecutionDispatcherService {
@@ -22,6 +23,7 @@ export class ToolExecutionDispatcherService {
     private readonly memoToolHandler: MemoToolHandler,
     private readonly communicationToolHandler: CommunicationToolHandler,
     private readonly rdIntelligenceToolHandler: RdIntelligenceToolHandler,
+    private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
   async executeToolImplementation(
@@ -92,6 +94,8 @@ export class ToolExecutionDispatcherService {
         return this.memoToolHandler.searchMemoMemory(parameters, agentId);
       case 'builtin.sys-mg.internal.memory.append-memo':
         return this.memoToolHandler.appendMemoMemory(parameters, agentId, executionContext);
+      case GET_TOOL_SCHEMA_TOOL_ID:
+        return this.getToolSchema(parameters, executionContext);
       case 'builtin.sys-mg.mcp.skill-master.list-skills':
         return this.skillToolHandler.listSkillsByTitle(parameters);
       case 'builtin.sys-mg.mcp.skill-master.create-skill':
@@ -194,5 +198,34 @@ export class ToolExecutionDispatcherService {
   }
   getImplementedToolIds(): string[] {
     return IMPLEMENTED_TOOL_IDS;
+  }
+
+  private async getToolSchema(parameters: any, executionContext?: ToolExecutionContext): Promise<any> {
+    const queriedToolId = String(parameters?.toolId || '').trim();
+    if (!queriedToolId) {
+      throw new Error('get-tool-schema requires toolId');
+    }
+
+    const assignedToolIds = new Set(
+      (executionContext?.assignedToolIds || []).map((id) => String(id || '').trim()).filter(Boolean),
+    );
+    if (assignedToolIds.size > 0 && !assignedToolIds.has(queriedToolId)) {
+      throw new Error(`tool schema access denied: ${queriedToolId}`);
+    }
+
+    const contract = await this.toolRegistryService.getToolInputContract(queriedToolId);
+    if (!contract?.schema) {
+      return {
+        toolId: queriedToolId,
+        found: false,
+        message: `工具 ${queriedToolId} 未找到或没有参数定义`,
+      };
+    }
+
+    return {
+      toolId: contract.toolId,
+      found: true,
+      schema: contract.schema,
+    };
   }
 }

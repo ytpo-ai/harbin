@@ -97,6 +97,12 @@ export class Tool {
   @Prop({ default: false })
   terminal?: boolean;
 
+  /**
+   * 免授权标记：该工具默认分配给所有 Agent，无需角色/Profile 授权。
+   */
+  @Prop({ default: false })
+  authFree?: boolean;
+
   @Prop({ default: 0 })
   tokenCost?: number;
 

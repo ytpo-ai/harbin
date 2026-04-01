@@ -176,8 +176,9 @@ export class PlannerService {
       planId,
       plan,
     });
+    const stepn = Number(context.totalSteps || 0) + 1;
     const task: AgentExecutionTask = {
-      title: `[Incremental Planning] ${plan.title} generate next task`,
+      title: `[Incremental Planning] ${plan.title} 任务#${stepn} generating`,
       description: prompt,
       type: 'planning',
       priority: 'high',
@@ -201,6 +202,7 @@ export class PlannerService {
         ? {
             sessionContext: {
               sessionId: options.sessionId,
+              preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task'],
             },
           }
         : {}),
@@ -278,6 +280,7 @@ export class PlannerService {
     planId: string,
     taskContext: string,
     sessionId: string,
+    preactivatedToolIds?: string[],
   ): Promise<PreExecutionDecision> {
     const plan = await this.planModel.findById(planId).exec();
     if (!plan) {
@@ -311,6 +314,7 @@ export class PlannerService {
       }),
       sessionContext: {
         sessionId,
+        preactivatedToolIds: this.normalizePreactivatedToolIds(preactivatedToolIds),
       },
     });
 
@@ -383,6 +387,10 @@ export class PlannerService {
         ? {
             sessionContext: {
               sessionId: options.sessionId,
+              preactivatedToolIds: [
+                'builtin.sys-mg.mcp.orchestration.plan-initialize',
+                'builtin.sys-mg.internal.agent-master.list-agents',
+              ],
             },
           }
         : {}),
@@ -440,6 +448,7 @@ export class PlannerService {
       }),
       sessionContext: {
         sessionId,
+        preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.report-task-run-result'],
       },
     });
 
@@ -871,5 +880,14 @@ export class PlannerService {
       return {};
     }
     return taskContext as Record<string, unknown>;
+  }
+
+  private normalizePreactivatedToolIds(toolIds?: string[]): string[] | undefined {
+    if (!Array.isArray(toolIds) || toolIds.length === 0) {
+      return undefined;
+    }
+
+    const normalized = Array.from(new Set(toolIds.map((item) => String(item || '').trim()).filter(Boolean)));
+    return normalized.length > 0 ? normalized : undefined;
   }
 }

@@ -10,12 +10,11 @@ import {
   AgentToolPermissionSet,
 } from './agent.types';
 import {
-  MEMO_MCP_SEARCH_TOOL_ID,
-  MEMO_MCP_APPEND_TOOL_ID,
   normalizeToolId,
   normalizeToolIds,
   uniqueStrings,
 } from './agent.constants';
+import { AUTH_FREE_TOOL_IDS } from '@agent/modules/tools/builtin-tool-catalog';
 import {
   AgentRoleTier,
   getTierByAgentRoleCode,
@@ -266,7 +265,7 @@ export class AgentRoleService {
   async getAllowedToolIds(agent: { tools?: string[]; roleId: string }): Promise<string[]> {
     const role = await this.getRoleById(agent.roleId);
     const profile = await this.agentMcpProfileService.getMcpProfileByRoleCode(role?.code);
-    const merged = uniqueStrings(agent.tools || [], profile.tools || [], [MEMO_MCP_SEARCH_TOOL_ID, MEMO_MCP_APPEND_TOOL_ID])
+    const merged = uniqueStrings(agent.tools || [], profile.tools || [], [...AUTH_FREE_TOOL_IDS])
       .map((toolId) => normalizeToolId(toolId));
 
     return merged;

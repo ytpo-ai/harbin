@@ -49,6 +49,9 @@ export class NativeStreamingAgentExecutorEngine implements AgentExecutorEngine {
           actor: input.context?.actor,
           taskType: input.task.type,
           teamId: input.task.teamId,
+          preactivatedToolIds: Array.isArray((input.context?.sessionContext as any)?.preactivatedToolIds)
+            ? ((input.context?.sessionContext as any).preactivatedToolIds as string[])
+            : undefined,
         },
       );
       return { response, tokenChunks: firstRound.tokenChunks };

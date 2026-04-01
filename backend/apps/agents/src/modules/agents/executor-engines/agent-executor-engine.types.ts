@@ -26,6 +26,7 @@ export interface NativeToolExecutionContext {
   };
   taskType?: string;
   teamId?: string;
+  preactivatedToolIds?: string[];
 }
 
 export interface AgentExecutorEngineInput {

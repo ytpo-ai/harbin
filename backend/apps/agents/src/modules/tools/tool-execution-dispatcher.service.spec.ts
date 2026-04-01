@@ -16,6 +16,7 @@ describe('ToolExecutionDispatcherService', () => {
     const memoToolHandler = { searchMemoMemory: jest.fn() };
     const communicationToolHandler = { sendSlackMessage: jest.fn() };
     const rdIntelligenceToolHandler = { runEngineeringStatistics: jest.fn() };
+    const toolRegistryService = { getToolInputContract: jest.fn() };
 
     const service = new ToolExecutionDispatcherService(
       orchestrationToolHandler as any,
@@ -32,6 +33,7 @@ describe('ToolExecutionDispatcherService', () => {
       memoToolHandler as any,
       communicationToolHandler as any,
       rdIntelligenceToolHandler as any,
+      toolRegistryService as any,
     );
 
     return {
@@ -39,6 +41,7 @@ describe('ToolExecutionDispatcherService', () => {
       agentMasterToolHandler,
       requirementToolHandler,
       orchestrationToolHandler,
+      toolRegistryService,
     };
   };
 
@@ -115,5 +118,38 @@ describe('ToolExecutionDispatcherService', () => {
       undefined,
     );
     expect(result).toEqual({ action: 'plan_initialize', mode: 'outline' });
+  });
+
+  it('returns tool schema for assigned tool', async () => {
+    const { service, toolRegistryService } = createService();
+    toolRegistryService.getToolInputContract.mockResolvedValue({
+      toolId: 'builtin.sys-mg.mcp.orchestration.submit-task',
+      schema: { type: 'object', properties: { title: { type: 'string' } } },
+    });
+
+    const result = await service.executeToolImplementation(
+      { id: 'builtin.sys-mg.internal.tool-meta.get-tool-schema' } as any,
+      { toolId: 'builtin.sys-mg.mcp.orchestration.submit-task' },
+      'agent-1',
+      { assignedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task'] } as any,
+    );
+
+    expect(result).toEqual({
+      toolId: 'builtin.sys-mg.mcp.orchestration.submit-task',
+      found: true,
+      schema: { type: 'object', properties: { title: { type: 'string' } } },
+    });
+  });
+
+  it('rejects tool schema query for unassigned tool', async () => {
+    const { service } = createService();
+    await expect(
+      service.executeToolImplementation(
+        { id: 'builtin.sys-mg.internal.tool-meta.get-tool-schema' } as any,
+        { toolId: 'builtin.sys-mg.mcp.orchestration.submit-task' },
+        'agent-1',
+        { assignedToolIds: ['builtin.sys-mg.mcp.requirement.list'] } as any,
+      ),
+    ).rejects.toThrow('tool schema access denied');
   });
 });

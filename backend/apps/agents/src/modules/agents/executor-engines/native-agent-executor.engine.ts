@@ -22,13 +22,16 @@ export class NativeAgentExecutorEngine implements AgentExecutorEngine {
       input.messages,
       input.modelConfig,
       input.runtimeContext,
-      {
-        collaborationContext: input.context?.collaborationContext,
-        actor: input.context?.actor,
-        taskType: input.task.type,
-        teamId: input.task.teamId,
-      },
-    );
+        {
+          collaborationContext: input.context?.collaborationContext,
+          actor: input.context?.actor,
+          taskType: input.task.type,
+          teamId: input.task.teamId,
+          preactivatedToolIds: Array.isArray((input.context?.sessionContext as any)?.preactivatedToolIds)
+            ? ((input.context?.sessionContext as any).preactivatedToolIds as string[])
+            : undefined,
+        },
+      );
 
     return { response };
   }

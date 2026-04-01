@@ -10,6 +10,8 @@ export const RD_REPO_WRITER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-w
 export const PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.save-template';
 export const PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.list-templates';
 export const PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.get-template';
+export const GET_TOOL_SCHEMA_TOOL_ID = 'builtin.sys-mg.internal.tool-meta.get-tool-schema';
+export const SEND_INTERNAL_MESSAGE_TOOL_ID = 'builtin.sys-mg.mcp.inner-message.send-internal-message';
 
 export const VIRTUAL_TOOL_IDS = [
   'web_search',

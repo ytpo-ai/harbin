@@ -5,12 +5,14 @@ import {
   AGENT_ROLE_DELETE_TOOL_ID,
   AGENT_ROLE_LIST_TOOL_ID,
   AGENT_ROLE_UPDATE_TOOL_ID,
+  GET_TOOL_SCHEMA_TOOL_ID,
   LEGACY_AGENT_LIST_TOOL_ID,
   PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
   PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
   PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
   RD_DOCS_WRITE_TOOL_ID,
   RD_REPO_WRITER_TOOL_ID,
+  SEND_INTERNAL_MESSAGE_TOOL_ID,
 } from './builtin-tool-definitions';
 
 export const BUILTIN_TOOLS = [
@@ -37,7 +39,14 @@ export const BUILTIN_TOOLS = [
         tokenCost: 10,
         implementation: {
           type: 'built_in' as const,
-          parameters: { query: 'string', maxResults: 'number' },
+          parameters: {
+            type: 'object',
+            required: ['query'],
+            properties: {
+              query: { type: 'string', description: '搜索关键词' },
+              maxResults: { type: 'number', description: '最大结果数' },
+            },
+          },
         },
       },
       {
@@ -76,7 +85,14 @@ export const BUILTIN_TOOLS = [
         tokenCost: 15,
         implementation: {
           type: 'built_in' as const,
-          parameters: { channel: 'string', text: 'string' },
+          parameters: {
+            type: 'object',
+            required: ['channel', 'text'],
+            properties: {
+              channel: { type: 'string', description: 'Slack 频道名称或 ID' },
+              text: { type: 'string', description: '消息内容' },
+            },
+          },
         },
       },
       {
@@ -89,17 +105,27 @@ export const BUILTIN_TOOLS = [
         tokenCost: 20,
         implementation: {
           type: 'built_in' as const,
-          parameters: { to: 'string', subject: 'string', body: 'string', action: 'string' },
+          parameters: {
+            type: 'object',
+            required: ['to', 'subject', 'body'],
+            properties: {
+              to: { type: 'string', description: '收件人邮箱' },
+              subject: { type: 'string', description: '邮件主题' },
+              body: { type: 'string', description: '邮件正文' },
+              action: { type: 'string', enum: ['send', 'draft'], description: '发送或存为草稿' },
+            },
+          },
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.inner-message.send-internal-message',
+        id: SEND_INTERNAL_MESSAGE_TOOL_ID,
         name: 'Send Internal Message',
         description: 'Send direct internal message to another agent',
         prompt:
           '当你需要通知其他 Agent 时，调用 builtin.sys-mg.mcp.inner-message.send-internal-message。默认使用短版开工通知（任务一句话+截止点），仅当用户明确要求时再补充验收细节。只有拿到返回中的 messageId，才可以对用户确认“已发送”。',
         type: 'api_call' as const,
         category: 'Communication',
+        authFree: true,
         requiredPermissions: [{ id: 'inner_message_write', name: 'Inner Message Write', level: 'basic' }],
         tokenCost: 3,
         implementation: {
@@ -116,6 +142,32 @@ export const BUILTIN_TOOLS = [
               payload: { type: 'object' },
               dedupKey: { type: 'string' },
               maxAttempts: { type: 'number' },
+            },
+          },
+        },
+      },
+      {
+        id: GET_TOOL_SCHEMA_TOOL_ID,
+        name: 'Get Tool Schema',
+        description:
+          '查询指定工具的参数契约（inputSchema），返回 required 字段、属性类型和枚举约束。在调用不熟悉的工具前，先用此工具查询参数格式。',
+        prompt:
+          '当你不确定某个工具的参数格式时，先调用 get-tool-schema 查询其 inputSchema，然后根据返回的参数契约正确构造 tool_call。不要猜测参数结构。',
+        type: 'api_call' as const,
+        category: 'System',
+        authFree: true,
+        requiredPermissions: [],
+        tokenCost: 1,
+        implementation: {
+          type: 'built_in' as const,
+          parameters: {
+            type: 'object',
+            required: ['toolId'],
+            properties: {
+              toolId: {
+                type: 'string',
+                description: '要查询的工具 ID（如 builtin.sys-mg.mcp.orchestration.submit-task）',
+              },
             },
           },
         },
@@ -504,6 +556,7 @@ export const BUILTIN_TOOLS = [
         prompt: '在处理任务时，优先调用 builtin.sys-mg.internal.memory.search-memo 检索相关历史备忘录。',
         type: 'data_analysis' as const,
         category: 'Memory',
+        authFree: true,
         requiredPermissions: [{ id: 'memo_read', name: 'Agent Memo Read', level: 'basic' }],
         tokenCost: 2,
         implementation: {
@@ -525,6 +578,7 @@ export const BUILTIN_TOOLS = [
           '当形成关键结论或后续动作时，调用 builtin.sys-mg.internal.memory.append-memo 追加到目标Agent备忘录。必须显式传 targetAgentId（或 agentId）写入目标对象；topic 必须 memoType=knowledge；achievement/criticism 必须 memoType=standard 且按追加模式写入，已有内容前先插入分割线“—”再追加新记录，禁止覆盖历史。',
         type: 'data_analysis' as const,
         category: 'Memory',
+        authFree: true,
         requiredPermissions: [{ id: 'memo_write', name: 'Agent Memo Write', level: 'basic' }],
         tokenCost: 3,
         implementation: {
@@ -1032,4 +1086,12 @@ export const IMPLEMENTED_TOOL_IDS = [
  */
 export const TERMINAL_TOOL_IDS: ReadonlySet<string> = new Set(
   BUILTIN_TOOLS.filter((t) => (t as any).terminal === true).map((t) => t.id),
+);
+
+/**
+ * 免授权工具 ID 集合：所有 Agent 默认携带，无需 MCP Profile 或角色授权。
+ * 从 BUILTIN_TOOLS 静态过滤，避免运行时 DB 查询。
+ */
+export const AUTH_FREE_TOOL_IDS: ReadonlySet<string> = new Set(
+  BUILTIN_TOOLS.filter((t) => (t as any).authFree === true).map((t) => t.id),
 );

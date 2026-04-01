@@ -543,7 +543,16 @@ export class OrchestrationStepDispatcherService {
       preExecuteActions: preActions,
     });
 
-    const decision = await this.plannerService.executePreTask(planId, prompt, plannerSessionId);
+    const decision = await this.plannerService.executePreTask(
+      planId,
+      prompt,
+      plannerSessionId,
+      Array.isArray(preActions)
+        ? preActions
+          .map((action) => String(action?.tool || '').trim())
+          .filter(Boolean)
+        : undefined,
+    );
     const nextPhase: Phase = decision.allowExecute ? 'executing' : 'post_execute';
 
     if (!decision.allowExecute) {

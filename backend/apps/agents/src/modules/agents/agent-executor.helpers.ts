@@ -251,6 +251,48 @@ export function buildToolInputRepairInstruction(
     .join('\n');
 }
 
+export function buildToolSchemaHint(toolId: string, schema: Record<string, unknown>): string | null {
+  const properties = (schema as any)?.properties;
+  if (!properties || typeof properties !== 'object') return null;
+
+  const required = new Set(
+    Array.isArray((schema as any).required)
+      ? (schema as any).required.map((r: unknown) => String(r || ''))
+      : [],
+  );
+
+  const propEntries = Object.entries(properties as Record<string, any>);
+  if (propEntries.length === 0) return null;
+
+  const lines: string[] = [`工具参数契约 ${toolId}:`];
+
+  if (required.size > 0) {
+    lines.push(`required: [${[...required].join(', ')}]`);
+  }
+
+  const additionalProperties = (schema as any)?.additionalProperties;
+  if (additionalProperties === false) {
+    lines.push('additionalProperties: false（禁止传入未定义的字段）');
+  }
+
+  lines.push('properties:');
+  for (const [key, spec] of propEntries) {
+    const type = spec?.type || 'any';
+    const enumValues = Array.isArray(spec?.enum) ? `, enum=${JSON.stringify(spec.enum)}` : '';
+    const desc = spec?.description ? ` - ${spec.description}` : '';
+    const req = required.has(key) ? ' (必填)' : '';
+    lines.push(`  ${key}: ${type}${enumValues}${req}${desc}`);
+  }
+
+  return lines.join('\n');
+}
+
+export function hasEffectiveSchema(schema: Record<string, unknown>): boolean {
+  const properties = (schema as any)?.properties;
+  if (!properties || typeof properties !== 'object') return false;
+  return Object.keys(properties).length > 0;
+}
+
 export function getToolInputPreflightError(
   schema: Record<string, unknown> | undefined,
   parameters: any,
@@ -323,7 +365,13 @@ function sanitizeJsonString(raw: string): string {
   // 将实际换行/回车/制表符替换为 JSON 转义序列（LLM 最常见的 JSON 缺陷）
   let s = raw.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
   // 移除其他控制字符
-  s = s.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+  s = s
+    .split('')
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32;
+    })
+    .join('');
   // 移除尾部多余逗号: ,} → } 和 ,] → ]
   s = s.replace(/,\s*([}\]])/g, '$1');
   return s;

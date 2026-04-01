@@ -53,6 +53,8 @@
 24. RD 仓库写入工具：新增 `builtin.sys-mg.internal.rd-related.repo-writer`，支持 `git-clone` 到 `data/repos/**`，并内置 HTTPS 协议限制与目录沙箱防护。
 25. Prompt Registry 写入工具：新增 `builtin.sys-mg.mcp.prompt-registry.save-template`，支持单条/批量保存 PromptTemplate，按 `scene+role` 自动递增版本并可选自动发布；`category` 必须为 `system/recruitment`，且 `recruitment` 类强制 `role=<domain>:<persona-role>`。
 26. Prompt Registry 读取工具：新增 `builtin.sys-mg.mcp.prompt-registry.list-templates`（摘要列表，不含 content）与 `builtin.sys-mg.mcp.prompt-registry.get-template`（按 `scene+role` 或 `templateId` 获取完整内容），支持 Agent 在绑定前先检索后读取。
+27. 新增元工具 `builtin.sys-mg.internal.tool-meta.get-tool-schema`：允许 Agent 在不确定参数结构时先查询目标工具 `inputSchema`，减少盲猜参数导致的重试扣分。
+28. 内置工具新增 `authFree` 标记：`search-memo`、`append-memo`、`send-internal-message`、`get-tool-schema` 改为默认免授权工具，通过 `AUTH_FREE_TOOL_IDS` 静态集合统一分配给全部 Agent。
 
 ---
 
