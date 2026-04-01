@@ -73,8 +73,8 @@ const EngineeringRequirements: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<RequirementPriority>('medium');
-  const [category, setCategory] = useState<RequirementCategory | ''>('');
-  const [complexity, setComplexity] = useState<RequirementComplexity>('medium');
+  const [category, setCategory] = useState<RequirementCategory>('optimize');
+  const [complexity, setComplexity] = useState<RequirementComplexity>('low');
   const [labelsInput, setLabelsInput] = useState('');
   const [selectedLocalProjectId, setSelectedLocalProjectId] = useState('');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -125,7 +125,7 @@ const EngineeringRequirements: React.FC = () => {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
-        category: category || undefined,
+        category,
         complexity,
         labels,
         localProjectId: selectedLocalProjectId || undefined,
@@ -139,8 +139,8 @@ const EngineeringRequirements: React.FC = () => {
         setTitle('');
         setDescription('');
         setPriority('medium');
-        setCategory('');
-        setComplexity('medium');
+        setCategory('optimize');
+        setComplexity('low');
         setLabelsInput('');
         setSelectedLocalProjectId('');
         queryClient.invalidateQueries('ei-requirements');
@@ -257,10 +257,9 @@ const EngineeringRequirements: React.FC = () => {
             </select>
             <select
               value={category}
-              onChange={(e) => setCategory(e.target.value as RequirementCategory | '')}
+              onChange={(e) => setCategory(e.target.value as RequirementCategory)}
               className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
             >
-              <option value="">分类</option>
               {CATEGORY_OPTIONS.map((item) => (
                 <option key={item} value={item}>{CATEGORY_LABEL[item]}</option>
               ))}
@@ -403,9 +402,22 @@ const EngineeringRequirements: React.FC = () => {
               ) : (
                 requirements.map((item) => (
                   <tr key={item.requirementId} className="border-t border-gray-100">
-                    <td className="px-3 py-2 text-xs text-gray-500 font-mono whitespace-nowrap">{item.requirementId}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
+                      <Link
+                        to={`/ei/requirements/${item.requirementId}`}
+                        className="text-primary-700 hover:underline font-mono"
+                        title={`查看需求 ${item.requirementId}`}
+                        aria-label={`查看需求 ${item.requirementId}`}
+                      >
+                        {item.requirementId}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2 text-xs">
-                      <Link to={`/ei/requirements/${item.requirementId}`} className="text-primary-700 hover:underline">
+                      <Link
+                        to={`/ei/requirements/${item.requirementId}`}
+                        className="block max-w-[360px] truncate text-primary-700 hover:underline"
+                        title={item.title}
+                      >
                         {item.title}
                       </Link>
                     </td>
@@ -416,16 +428,12 @@ const EngineeringRequirements: React.FC = () => {
                     <td className="px-3 py-2 text-xs text-gray-700">{item.currentAssigneeAgentName || item.currentAssigneeAgentId || '-'}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.localProjectId ? localProjectById.get(item.localProjectId)?.name || item.localProjectId : '-'}</td>
                     <td className="px-3 py-2 text-xs">
-                      {item.githubLink?.issueUrl ? (
+                      {item.githubLink?.issueNumber && item.githubLink.issueNumber > 0 && item.githubLink?.issueUrl ? (
                         <a href={item.githubLink.issueUrl} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline">
                           #{item.githubLink.issueNumber}
                         </a>
-                      ) : item.localProjectId && localProjectById.get(item.localProjectId)?.githubBindingId ? (
-                        <span className="text-amber-600">已绑定仓库，未同步</span>
-                      ) : item.localProjectId ? (
-                        <span className="text-rose-600">未绑定 GitHub</span>
                       ) : (
-                        <span className="text-gray-400">未选择项目</span>
+                        <span className="text-gray-400">-</span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-xs text-right">
@@ -439,7 +447,7 @@ const EngineeringRequirements: React.FC = () => {
                         className="inline-flex items-center gap-1 px-2 py-1 border border-gray-300 rounded"
                       >
                         <ArrowUpOnSquareIcon className="h-3.5 w-3.5" />
-                        同步 GitHub
+                        Github
                       </button>
                         );
                       })()}
