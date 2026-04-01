@@ -54,16 +54,36 @@ export interface TaskExecutionScoreSummary {
   ruleVersion: string;
 }
 
+/**
+ * D2/D9 延迟裁决阈值：
+ * 当 run 结束时成功执行的不同工具数 >= 此值，说明是多步工具调用场景，
+ * D2（多 tool_call 批量输出）和 D9（纯文本重试）的 pending 扣分予以豁免。
+ */
+const MULTI_STEP_TOOL_THRESHOLD = 3;
+
+/** 适用延迟裁决的规则 ID */
+const DEFERRED_RULE_IDS: ReadonlySet<ScoreRuleId> = new Set(['D2', 'D9']);
+
 export class TaskExecutionScorer {
   private readonly deductions: ScoreDeduction[] = [];
+  /** D2/D9 的待定扣分，summarize 时根据实际执行情况决定是否生效 */
+  private readonly pendingDeductions: ScoreDeduction[] = [];
+  private readonly distinctExecutedToolIds = new Set<string>();
   private maxRoundSeen = -1;
   private totalToolCalls = 0;
   private successfulToolCalls = 0;
   private failedToolCalls = 0;
   private lastToolIdValue?: string;
+  /** 上一轮工具调用是否通过了 preflight（true = 实际执行，false = preflight 被拒） */
+  private lastToolExecuted = false;
 
   get lastToolId(): string | undefined {
     return this.lastToolIdValue;
+  }
+
+  /** 上一轮工具是否真正执行过（未被 preflight 拒绝） */
+  get lastToolWasExecuted(): boolean {
+    return this.lastToolExecuted;
   }
 
   markRound(round: number): void {
@@ -78,6 +98,16 @@ export class TaskExecutionScorer {
     }
     this.totalToolCalls += 1;
     this.lastToolIdValue = toolId;
+    // 默认标记为未执行，由外部在工具实际执行成功后调用 markLastToolExecuted()
+    this.lastToolExecuted = false;
+  }
+
+  /** 标记当前轮工具已实际执行（通过 preflight 并进入执行） */
+  markLastToolExecuted(): void {
+    this.lastToolExecuted = true;
+    if (this.lastToolIdValue) {
+      this.distinctExecutedToolIds.add(this.lastToolIdValue);
+    }
   }
 
   trackToolSuccess(): void {
@@ -88,22 +118,37 @@ export class TaskExecutionScorer {
     this.failedToolCalls += 1;
   }
 
+  /**
+   * 记录扣分。D2/D9 先进入 pending 队列，在 summarize() 时根据实际执行情况裁决；
+   * 其他规则立即生效。
+   */
   deduct(ruleId: ScoreRuleId, round: number, options?: { toolId?: string; detail?: string }): void {
     const points = AGENT_RUN_SCORE_RULE_POINTS[ruleId];
-    this.deductions.push({
+    const record: ScoreDeduction = {
       ruleId,
       points,
       round,
       toolId: options?.toolId,
       detail: options?.detail,
       timestamp: new Date(),
-    });
+    };
+    if (DEFERRED_RULE_IDS.has(ruleId)) {
+      this.pendingDeductions.push(record);
+    } else {
+      this.deductions.push(record);
+    }
   }
 
   summarize(): TaskExecutionScoreSummary {
+    // 延迟裁决：成功执行的不同工具数 < 阈值 → pending 扣分生效，否则豁免
+    const isMultiStep = this.distinctExecutedToolIds.size >= MULTI_STEP_TOOL_THRESHOLD;
+    const effectiveDeductions = isMultiStep
+      ? this.deductions
+      : [...this.deductions, ...this.pendingDeductions];
+
     const deductionsByRule: Record<string, { count: number; totalPoints: number }> = {};
     let deductedPoints = 0;
-    for (const item of this.deductions) {
+    for (const item of effectiveDeductions) {
       deductedPoints += Math.abs(item.points);
       if (!deductionsByRule[item.ruleId]) {
         deductionsByRule[item.ruleId] = {
@@ -126,7 +171,7 @@ export class TaskExecutionScorer {
         failedToolCalls: this.failedToolCalls,
       },
       deductionsByRule,
-      deductions: [...this.deductions],
+      deductions: [...effectiveDeductions],
       ruleVersion: AGENT_RUN_SCORE_RULE_VERSION,
     };
   }

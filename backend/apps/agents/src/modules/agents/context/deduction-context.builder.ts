@@ -35,7 +35,7 @@ const SCORE_RULE_ADVICE: Record<string, string> = {
 
 /**
  * 根据 roleInPlan 判定当前执行阶段类别。
- * - 'multi_step': initialize 等需要多轮工具调用的阶段，D2 提示弱化为"分轮完成"
+ * - 'multi_step': initialize 等需要多轮工具调用的阶段，D2/D9 提示弱化为"分轮完成"
  * - 'single_step': generating/pre/post 等单步阶段，D2/D9 提示保持强调
  * - 'none': 非 planner 场景
  */
@@ -92,9 +92,8 @@ export class DeductionContextBuilder implements ContextBlockBuilder {
 
       const collaborationCtx = (input.context.collaborationContext || {}) as Record<string, unknown>;
       const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
-      const phaseCategory = resolvePhaseCategory(roleInPlan);
 
-      const prompt = this.buildDeductionPrompt(deductionMemo, phaseCategory);
+      const prompt = this.buildDeductionPrompt(deductionMemo, roleInPlan);
       if (!prompt) return [];
 
       return [
@@ -126,7 +125,7 @@ export class DeductionContextBuilder implements ContextBlockBuilder {
     }
   }
 
-  private buildDeductionPrompt(memo: DeductionCacheItem, phaseCategory: PhaseCategory): string {
+  private buildDeductionPrompt(memo: DeductionCacheItem, roleInPlan: string): string {
     const historySummary = memo.payload?.historySummary;
     if (!historySummary || !historySummary.ruleFrequency) return '';
 
@@ -143,6 +142,7 @@ export class DeductionContextBuilder implements ContextBlockBuilder {
       : 0;
 
     // multi_step 阶段（如 initialize）降低 D2/D9 的强调权重
+    const phaseCategory = resolvePhaseCategory(roleInPlan);
     const suppressedRules = phaseCategory === 'multi_step' ? new Set(['D2', 'D9']) : new Set<string>();
 
     const lines: string[] = [];

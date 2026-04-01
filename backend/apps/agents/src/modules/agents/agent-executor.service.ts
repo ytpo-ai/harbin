@@ -945,6 +945,7 @@ export class AgentExecutorService {
     const meetingLike = isMeetingLikeTask(task, executionContext);
     let emptyResponseRetryUsed = false;
     let errorRetryUsed = false;
+    let plannerTextOnlyRetryUsed = false;
     const emptyMeetingResponseFallback = await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyMeetingResponseFallback);
     const generationErrorRetryPrompt = meetingLike
       ? await this.resolveAgentPromptContent(AGENT_PROMPTS.generationErrorRetryInstruction)
@@ -1490,6 +1491,62 @@ export class AgentExecutorService {
           status: 'completed',
           content: cleaned,
         });
+
+        // Orchestration planner 纯文本 retry：
+        // 当 roleInPlan 以 planner 开头（planner / planner_initialize / planner_pre_execution / planner_post_execution）时，
+        // planner 被明确要求输出 <tool_call>，但返回了纯文本（确认性文本 / phaseInitialize 输出等）。
+        // 仅 retry 一次，注入强制工具调用指令。
+        if (!plannerTextOnlyRetryUsed && this.isPlannerTextOnlyRetryNeeded(cleaned, executionContext)) {
+          const retryRoleInPlan = String(
+            ((executionContext?.collaborationContext || {}) as Record<string, unknown>).roleInPlan || '',
+          ).trim();
+          scorer.deduct('D9', round, {
+            detail: `roleInPlan=${retryRoleInPlan}; 输出纯文本而非 tool_call: "${cleaned.slice(0, 80)}"`,
+          });
+          plannerTextOnlyRetryUsed = true;
+          this.logger.warn(
+            `[planner_text_only_retry] agent=${agent.name} taskId=${task.id} round=${round + 1} roleInPlan=${retryRoleInPlan} responsePreview=${JSON.stringify(cleaned.slice(0, 120))}`,
+          );
+          const retryInstruction = retryRoleInPlan === 'planner_initialize'
+            ? [
+                '【系统纠正 — phaseInitialize 阶段】你刚才输出了纯文本，但当前是 phaseInitialize 阶段，要求你输出 <tool_call> 工具调用。',
+                '请严格按照用户指令中的"工具调用序列"继续执行尚未完成的工具调用。',
+                '严禁调用 submit-task、get-plan，严禁输出确认性文本。',
+                '如果所有工具调用已完成（outline 和 taskContext 均已通过 plan-initialize 写入），直接回复"phaseInitialize completed"即可，不需要输出 JSON。',
+              ].join('\n')
+            : [
+                '【系统纠正】你刚才输出了纯文本，但本阶段要求你输出 <tool_call> 工具调用。',
+                '请立即输出 <tool_call> 标签调用工具，不要输出任何其他文本。',
+                '回顾上方的用户指令，按要求执行工具调用。',
+              ].join('\n');
+          messages.push({
+            role: 'system',
+            content: retryInstruction,
+            timestamp: new Date(),
+          });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            retryInstruction,
+            { source: 'tool-calling-loop.planner-text-only-retry' },
+          );
+          stepParts.push({
+            type: 'system_event',
+            status: 'completed',
+            content: 'planner_text_only_retry',
+          });
+          await persistStepMessage({
+            round,
+            response: cleaned,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+          continue;
+        }
 
         if (isMeaninglessAssistantResponse(cleaned)) {
           scorer.deduct('D10', round);
@@ -2553,6 +2610,25 @@ export class AgentExecutorService {
           .filter(Boolean),
       ),
     );
+  }
+
+  /**
+   * 判断是否需要 orchestration planner 纯文本 retry。
+   * 条件：roleInPlan 以 planner 开头 + 响应是纯文本（无 tool_call）+ round 0（首轮）。
+   * 仅在 planner 被明确要求输出 tool_call 时触发（planner 场景下 prompt 总是要求 tool_call）。
+   */
+  private isPlannerTextOnlyRetryNeeded(
+    cleaned: string,
+    executionContext?: { collaborationContext?: Record<string, unknown> | any },
+  ): boolean {
+    const collaborationCtx = (executionContext?.collaborationContext || {}) as Record<string, unknown>;
+    const roleInPlan = String(collaborationCtx.roleInPlan || '').trim();
+    if (!roleInPlan.startsWith('planner')) {
+      return false;
+    }
+    // 如果 cleaned 为空（LLM 返回了空字符串），也应该 retry
+    // 如果 cleaned 有内容但不包含 tool_call（确认性文本），也应该 retry
+    return cleaned.length === 0 || !/<tool_call>/i.test(cleaned);
   }
 
   // 抽取工具执行结果中的 data 载荷，统一返回结构。
