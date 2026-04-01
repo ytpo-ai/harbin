@@ -167,7 +167,10 @@ export class EiRequirementsService {
         description,
         status: 'todo',
         priority: payload.priority || 'medium',
+        category: payload.category || undefined,
+        complexity: payload.complexity || 'medium',
         labels,
+        linkedPlanIds: [],
         createdById: payload.createdById ? String(payload.createdById).trim() : undefined,
         createdByName: payload.createdByName ? String(payload.createdByName).trim() : undefined,
         createdByType: payload.createdByType || 'human',
@@ -362,11 +365,25 @@ export class EiRequirementsService {
       changedByName: payload.changedByName ? String(payload.changedByName).trim() : undefined,
       changedByType: payload.changedByType || 'human',
       note: payload.note ? String(payload.note).trim() : undefined,
+      taskType: payload.taskType ? String(payload.taskType).trim() : undefined,
+      executorAgentId: payload.executorAgentId ? String(payload.executorAgentId).trim() : undefined,
+      executorAgentName: payload.executorAgentName ? String(payload.executorAgentName).trim() : undefined,
+      planId: payload.planId ? String(payload.planId).trim() : undefined,
+      taskTitle: payload.taskTitle ? String(payload.taskTitle).trim() : undefined,
       changedAt: new Date(),
     };
 
     requirement.statusHistory = [...(requirement.statusHistory || []), statusEvent];
     requirement.lastBoardEventAt = new Date();
+
+    // 如果传了 planId，追加到 linkedPlanIds（去重）
+    if (payload.planId) {
+      const planIdStr = String(payload.planId).trim();
+      const existing = requirement.linkedPlanIds || [];
+      if (!existing.includes(planIdStr)) {
+        requirement.linkedPlanIds = [...existing, planIdStr];
+      }
+    }
 
     await this.syncGithubIssueLifecycle(requirement, toStatus);
 

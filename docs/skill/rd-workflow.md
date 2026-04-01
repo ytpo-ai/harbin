@@ -51,9 +51,9 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 1. 调用 `builtin.sys-mg.mcp.requirement.list`（参数 `status=todo`）获取待办需求列表。
 2. 选择优先级最高且可执行的需求后，调用 `builtin.sys-mg.mcp.requirement.get` 获取详情。
 3. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入共享上下文：
-4. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`。
+4. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`，同时设置需求负责人为 Planner Agent（CTO）并关联当前计划。
 
-
+步骤 3 的 `plan-initialize` 参数：
 ```json
 {
   "mode": "taskContext",
@@ -64,6 +64,18 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
   }
 }
 ```
+
+步骤 4 的 `requirement.update-status` 参数（**必须包含以下字段**）：
+```json
+{
+  "requirementId": "<选定的需求ID>",
+  "status": "assigned",
+  "toAgentId": "<Planner Agent 自身的 agentId>",
+  "toAgentName": "<Planner Agent 自身的名称>",
+  "note": "需求已分配至计划编排，由 CTO 负责协调执行"
+}
+```
+> 说明：`planId` 会由系统从编排上下文自动注入，无需手动传入。`toAgentId`/`toAgentName` 用于将需求负责人设置为当前 Planner Agent（CTO 角色）。
 
 ## 步骤定义（严格按序执行，共 3 步）
 
@@ -107,8 +119,11 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 
 ## 需求状态更新规则
 
-| 时机 | 状态 | 触发方 | 工具 |
-|------|------|--------|------|
-| phaseInitialize 完成 | `assigned` | Planner 工具调用 | `builtin.sys-mg.mcp.requirement.update-status` |
-| step1 pre-execute | `in_progress` | Planner 工具调用 | `builtin.sys-mg.mcp.requirement.update-status` |
-| step3 pre-execute | `review` | Planner 工具调用 | `builtin.sys-mg.mcp.requirement.update-status` |
+| 时机 | 状态 | 触发方 | 工具 | 必传上下文字段 |
+|------|------|--------|------|--------------|
+| phaseInitialize 完成 | `assigned` | Planner 工具调用 | `requirement.update-status` | `toAgentId`(CTO agentId), `toAgentName`(CTO name) |
+| step1 pre-execute | `in_progress` | Planner 工具调用 | `requirement.update-status` | `taskType`=development.plan |
+| step3 pre-execute | `review` | Planner 工具调用 | `requirement.update-status` | `taskType`=development.review |
+
+> 所有 `requirement.update-status` 调用中，`planId` 由系统自动从 `collaborationContext.planId` 注入，无需 Planner 手动传入。
+> `toAgentId`/`toAgentName` 仅在 phaseInitialize 的 assigned 阶段需要传入（设置需求负责人为 CTO）。

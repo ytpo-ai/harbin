@@ -7,6 +7,8 @@ import {
   RequirementItem,
   RequirementPriority,
   RequirementStatus,
+  RequirementCategory,
+  RequirementComplexity,
 } from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
 import { rdConversationService, RdProject } from '../services/rdConversationService';
@@ -15,6 +17,8 @@ import Toast from '../components/Toast';
 
 const STATUS_OPTIONS: RequirementStatus[] = ['todo', 'assigned', 'in_progress', 'review', 'done', 'blocked'];
 const PRIORITY_OPTIONS: RequirementPriority[] = ['low', 'medium', 'high', 'critical'];
+const CATEGORY_OPTIONS: RequirementCategory[] = ['fix', 'feature', 'optimize'];
+const COMPLEXITY_OPTIONS: RequirementComplexity[] = ['low', 'medium', 'high', 'very_high'];
 
 const STATUS_LABEL: Record<RequirementStatus, string> = {
   todo: 'Todo',
@@ -30,6 +34,19 @@ const PRIORITY_LABEL: Record<RequirementPriority, string> = {
   medium: 'Medium',
   high: 'High',
   critical: 'Critical',
+};
+
+const CATEGORY_LABEL: Record<RequirementCategory, string> = {
+  fix: 'Bug 修复',
+  feature: '新功能',
+  optimize: '优化',
+};
+
+const COMPLEXITY_LABEL: Record<RequirementComplexity, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  very_high: '超高',
 };
 
 function extractRequestErrorMessage(error: any): string {
@@ -56,6 +73,8 @@ const EngineeringRequirements: React.FC = () => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<RequirementPriority>('medium');
+  const [category, setCategory] = useState<RequirementCategory | ''>('');
+  const [complexity, setComplexity] = useState<RequirementComplexity>('medium');
   const [labelsInput, setLabelsInput] = useState('');
   const [selectedLocalProjectId, setSelectedLocalProjectId] = useState('');
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -75,6 +94,13 @@ const EngineeringRequirements: React.FC = () => {
     localProjects.forEach((item) => map.set(item._id, item));
     return map;
   }, [localProjects]);
+
+  // 只有一个项目时自动选中
+  React.useEffect(() => {
+    if (localProjects.length === 1 && !selectedLocalProjectId) {
+      setSelectedLocalProjectId(localProjects[0]._id);
+    }
+  }, [localProjects, selectedLocalProjectId]);
 
   const { data: requirements = [], isLoading, refetch } = useQuery(
     ['ei-requirements', statusFilter, search, localProjectFilterId],
@@ -99,6 +125,8 @@ const EngineeringRequirements: React.FC = () => {
         title: title.trim(),
         description: description.trim() || undefined,
         priority,
+        category: category || undefined,
+        complexity,
         labels,
         localProjectId: selectedLocalProjectId || undefined,
         createdById: user?.id,
@@ -111,6 +139,8 @@ const EngineeringRequirements: React.FC = () => {
         setTitle('');
         setDescription('');
         setPriority('medium');
+        setCategory('');
+        setComplexity('medium');
         setLabelsInput('');
         setSelectedLocalProjectId('');
         queryClient.invalidateQueries('ei-requirements');
@@ -214,11 +244,11 @@ const EngineeringRequirements: React.FC = () => {
       <div className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <p className="text-sm font-semibold text-gray-900">新建需求</p>
         <div className="space-y-2">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-12 gap-2">
             <select
               value={selectedLocalProjectId}
               onChange={(e) => setSelectedLocalProjectId(e.target.value)}
-              className="md:col-span-4 border border-gray-300 rounded px-3 py-2 text-sm"
+              className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
             >
               <option value="">请选择所属本地项目</option>
               {localProjects.map((item) => (
@@ -226,19 +256,38 @@ const EngineeringRequirements: React.FC = () => {
               ))}
             </select>
             <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value as RequirementCategory | '')}
+              className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              <option value="">分类</option>
+              {CATEGORY_OPTIONS.map((item) => (
+                <option key={item} value={item}>{CATEGORY_LABEL[item]}</option>
+              ))}
+            </select>
+            <select
               value={priority}
               onChange={(e) => setPriority(e.target.value as RequirementPriority)}
-              className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
+              className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
             >
               {PRIORITY_OPTIONS.map((item) => (
                 <option key={item} value={item}>{PRIORITY_LABEL[item]}</option>
+              ))}
+            </select>
+            <select
+              value={complexity}
+              onChange={(e) => setComplexity(e.target.value as RequirementComplexity)}
+              className="md:col-span-2 border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              {COMPLEXITY_OPTIONS.map((item) => (
+                <option key={item} value={item}>复杂度: {COMPLEXITY_LABEL[item]}</option>
               ))}
             </select>
             <input
               value={labelsInput}
               onChange={(e) => setLabelsInput(e.target.value)}
               placeholder="标签，用逗号分隔"
-              className="md:col-span-5 border border-gray-300 rounded px-3 py-2 text-sm"
+              className="md:col-span-3 border border-gray-300 rounded px-3 py-2 text-sm"
             />
           </div>
           <div className="grid grid-cols-1 gap-2">
@@ -330,9 +379,12 @@ const EngineeringRequirements: React.FC = () => {
           <table className="min-w-full text-sm">
             <thead className="bg-gray-50">
               <tr>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">编号</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">标题</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">分类</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">状态</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">优先级</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">复杂度</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">负责人</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">项目</th>
                 <th className="px-3 py-2 text-left text-xs font-semibold text-gray-600">GitHub</th>
@@ -342,22 +394,25 @@ const EngineeringRequirements: React.FC = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td className="px-3 py-3 text-xs text-gray-500" colSpan={7}>加载中...</td>
+                  <td className="px-3 py-3 text-xs text-gray-500" colSpan={10}>加载中...</td>
                 </tr>
               ) : requirements.length === 0 ? (
                 <tr>
-                  <td className="px-3 py-3 text-xs text-gray-400" colSpan={7}>暂无需求</td>
+                  <td className="px-3 py-3 text-xs text-gray-400" colSpan={10}>暂无需求</td>
                 </tr>
               ) : (
                 requirements.map((item) => (
                   <tr key={item.requirementId} className="border-t border-gray-100">
+                    <td className="px-3 py-2 text-xs text-gray-500 font-mono whitespace-nowrap">{item.requirementId}</td>
                     <td className="px-3 py-2 text-xs">
                       <Link to={`/ei/requirements/${item.requirementId}`} className="text-primary-700 hover:underline">
                         {item.title}
                       </Link>
                     </td>
+                    <td className="px-3 py-2 text-xs text-gray-700">{item.category ? CATEGORY_LABEL[item.category] : '-'}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{STATUS_LABEL[item.status]}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{PRIORITY_LABEL[item.priority]}</td>
+                    <td className="px-3 py-2 text-xs text-gray-700">{item.complexity ? COMPLEXITY_LABEL[item.complexity] : '-'}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.currentAssigneeAgentName || item.currentAssigneeAgentId || '-'}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.localProjectId ? localProjectById.get(item.localProjectId)?.name || item.localProjectId : '-'}</td>
                     <td className="px-3 py-2 text-xs">

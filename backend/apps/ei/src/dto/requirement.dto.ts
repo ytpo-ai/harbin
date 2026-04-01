@@ -32,6 +32,14 @@ export class CreateRequirementDto {
   createdByType?: 'human' | 'agent' | 'system';
 
   @IsOptional()
+  @IsIn(['fix', 'feature', 'optimize'])
+  category?: 'fix' | 'feature' | 'optimize';
+
+  @IsOptional()
+  @IsIn(['low', 'medium', 'high', 'very_high'])
+  complexity?: 'low' | 'medium' | 'high' | 'very_high';
+
+  @IsOptional()
   @IsString()
   localProjectId?: string;
 }
@@ -133,6 +141,26 @@ export class UpdateRequirementStatusDto {
   @IsOptional()
   @IsBoolean()
   forceComplete?: boolean;
+
+  @IsOptional()
+  @IsString()
+  planId?: string;
+
+  @IsOptional()
+  @IsString()
+  taskType?: string;
+
+  @IsOptional()
+  @IsString()
+  executorAgentId?: string;
+
+  @IsOptional()
+  @IsString()
+  executorAgentName?: string;
+
+  @IsOptional()
+  @IsString()
+  taskTitle?: string;
 }
 
 export class SyncRequirementToGithubDto {

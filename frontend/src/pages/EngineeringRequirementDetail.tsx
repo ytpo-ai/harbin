@@ -2,7 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { ArrowLeftIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
-import { engineeringIntelligenceService, RequirementStatus } from '../services/engineeringIntelligenceService';
+import {
+  engineeringIntelligenceService,
+  RequirementStatus,
+  RequirementCategory,
+  RequirementComplexity,
+} from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
@@ -30,6 +35,19 @@ const STATUS_LABEL: Record<RequirementStatus, string> = {
   review: 'Review',
   done: 'Done',
   blocked: 'Blocked',
+};
+
+const CATEGORY_LABEL: Record<RequirementCategory, string> = {
+  fix: 'Bug 修复',
+  feature: '新功能',
+  optimize: '优化',
+};
+
+const COMPLEXITY_LABEL: Record<RequirementComplexity, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  very_high: '超高',
 };
 
 const EngineeringRequirementDetail: React.FC = () => {
@@ -191,11 +209,15 @@ const EngineeringRequirementDetail: React.FC = () => {
               className="mb-2 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700"
             >
               <ArrowLeftIcon className="h-4 w-4" />
-              返回 Agent 列表
+              返回需求列表
             </Link>
-            <p className="text-xs text-gray-500">需求详情</p>
+            <p className="text-xs text-gray-400 font-mono">{requirementId}</p>
             <h1 className="text-lg font-semibold text-gray-900">{detail?.title || requirementId}</h1>
-            <p className="mt-1 text-sm text-gray-600">状态：{detail ? STATUS_LABEL[detail.status] : '-'}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-3 text-sm text-gray-600">
+              <span>状态：{detail ? STATUS_LABEL[detail.status] : '-'}</span>
+              {detail?.category ? <span>分类：{CATEGORY_LABEL[detail.category]}</span> : null}
+              {detail?.complexity ? <span>复杂度：{COMPLEXITY_LABEL[detail.complexity]}</span> : null}
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => refetch()} className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm"><ArrowPathIcon className="h-4 w-4" />刷新</button>
@@ -285,9 +307,26 @@ const EngineeringRequirementDetail: React.FC = () => {
             ) : null}
           </div>
 
+          {detail?.linkedPlanIds && detail.linkedPlanIds.length > 0 ? (
+            <div>
+              <p className="text-sm font-semibold text-gray-900">关联计划</p>
+              <div className="mt-2 space-y-1">
+                {detail.linkedPlanIds.map((planId) => (
+                  <Link
+                    key={planId}
+                    to={`/orchestration/plans/${planId}`}
+                    className="block text-xs text-primary-700 hover:underline font-mono truncate"
+                  >
+                    {planId}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div>
             <p className="text-sm font-semibold text-gray-900">状态轨迹</p>
-            <div className="mt-2 space-y-2 max-h-[280px] overflow-y-auto">
+            <div className="mt-2 space-y-2 max-h-[360px] overflow-y-auto">
               {statusHistory.length === 0 ? (
                 <p className="text-xs text-gray-400">暂无状态更新</p>
               ) : (
@@ -296,6 +335,18 @@ const EngineeringRequirementDetail: React.FC = () => {
                     <p className="text-xs text-gray-800">{STATUS_LABEL[item.fromStatus]} → {STATUS_LABEL[item.toStatus]}</p>
                     <p className="mt-1 text-[11px] text-gray-500">{item.changedByName || item.changedById || 'unknown'} · {new Date(item.changedAt).toLocaleString()}</p>
                     {item.note ? <p className="mt-1 text-xs text-gray-600">{item.note}</p> : null}
+                    {item.taskType || item.executorAgentName || item.planId ? (
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {item.taskType ? <span className="inline-block text-[10px] bg-blue-100 text-blue-700 rounded px-1.5 py-0.5">{item.taskType}</span> : null}
+                        {item.executorAgentName ? <span className="inline-block text-[10px] bg-green-100 text-green-700 rounded px-1.5 py-0.5">{item.executorAgentName}</span> : null}
+                        {item.planId ? (
+                          <Link to={`/orchestration/plans/${item.planId}`} className="inline-block text-[10px] bg-purple-100 text-purple-700 rounded px-1.5 py-0.5 hover:underline">
+                            计划
+                          </Link>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {item.taskTitle ? <p className="mt-1 text-[11px] text-gray-500 italic">{item.taskTitle}</p> : null}
                   </div>
                 ))
               )}

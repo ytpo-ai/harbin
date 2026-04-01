@@ -5,6 +5,8 @@ export type EiRequirementDocument = EiRequirement & Document;
 
 export type EiRequirementStatus = 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
 export type EiRequirementPriority = 'low' | 'medium' | 'high' | 'critical';
+export type EiRequirementCategory = 'fix' | 'feature' | 'optimize';
+export type EiRequirementComplexity = 'low' | 'medium' | 'high' | 'very_high';
 export type EiActorType = 'human' | 'agent' | 'system';
 
 export type EiRequirementComment = {
@@ -34,6 +36,16 @@ export type EiRequirementStatusEvent = {
   changedByName?: string;
   changedByType: EiActorType;
   note?: string;
+  /** 编排上下文：任务类型（如 development.plan / development.exec / development.review） */
+  taskType?: string;
+  /** 编排上下文：执行该任务的 Agent ID */
+  executorAgentId?: string;
+  /** 编排上下文：执行该任务的 Agent 名称 */
+  executorAgentName?: string;
+  /** 编排上下文：关联的计划 ID */
+  planId?: string;
+  /** 编排上下文：任务标题 */
+  taskTitle?: string;
   changedAt: Date;
 };
 
@@ -65,8 +77,17 @@ export class EiRequirement {
   @Prop({ required: true, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' })
   priority: EiRequirementPriority;
 
+  @Prop({ enum: ['fix', 'feature', 'optimize'] })
+  category?: EiRequirementCategory;
+
+  @Prop({ enum: ['low', 'medium', 'high', 'very_high'], default: 'medium' })
+  complexity?: EiRequirementComplexity;
+
   @Prop({ type: [String], default: [] })
   labels: string[];
+
+  @Prop({ type: [String], default: [] })
+  linkedPlanIds: string[];
 
   @Prop()
   currentAssigneeAgentId?: string;
@@ -112,3 +133,4 @@ EiRequirementSchema.index({ status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ currentAssigneeAgentId: 1, status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ localProjectId: 1, status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ title: 'text', description: 'text' });
+EiRequirementSchema.index({ linkedPlanIds: 1 });

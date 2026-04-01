@@ -151,6 +151,13 @@ export class RequirementToolHandler {
       changedByName?: string;
       changedByType?: 'human' | 'agent' | 'system';
       note?: string;
+      toAgentId?: string;
+      toAgentName?: string;
+      planId?: string;
+      taskType?: string;
+      executorAgentId?: string;
+      executorAgentName?: string;
+      taskTitle?: string;
     },
     agentId?: string,
     executionContext?: ToolExecutionContext,
@@ -162,18 +169,30 @@ export class RequirementToolHandler {
     if (!params?.status) {
       throw new Error('requirement_update_status requires status');
     }
+
+    // 自动从 collaborationContext 补充 planId（如果工具参数未显式传入）
+    const planId = String(params?.planId || executionContext?.collaborationContext?.planId || '').trim() || undefined;
+
     const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/status`, {
       status: params.status,
       changedById: String(params?.changedById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
       changedByName: String(params?.changedByName || '').trim() || undefined,
       changedByType: params?.changedByType || 'agent',
       note: String(params?.note || '').trim() || undefined,
+      toAgentId: String(params?.toAgentId || '').trim() || undefined,
+      toAgentName: String(params?.toAgentName || '').trim() || undefined,
+      planId,
+      taskType: String(params?.taskType || '').trim() || undefined,
+      executorAgentId: String(params?.executorAgentId || '').trim() || undefined,
+      executorAgentName: String(params?.executorAgentName || '').trim() || undefined,
+      taskTitle: String(params?.taskTitle || '').trim() || undefined,
     });
     return {
       action: 'requirement_update_status',
       initiatorAgentId: agentId,
       requirementId,
       status: params.status,
+      planId,
       requirement: result,
       updatedAt: new Date().toISOString(),
     };

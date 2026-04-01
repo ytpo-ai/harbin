@@ -162,6 +162,9 @@ export interface RequirementAssignment {
   assignedAt: string;
 }
 
+export type RequirementCategory = 'fix' | 'feature' | 'optimize';
+export type RequirementComplexity = 'low' | 'medium' | 'high' | 'very_high';
+
 export interface RequirementStatusEvent {
   eventId: string;
   fromStatus: RequirementStatus;
@@ -170,6 +173,11 @@ export interface RequirementStatusEvent {
   changedByName?: string;
   changedByType: RequirementActorType;
   note?: string;
+  taskType?: string;
+  executorAgentId?: string;
+  executorAgentName?: string;
+  planId?: string;
+  taskTitle?: string;
   changedAt: string;
 }
 
@@ -190,7 +198,10 @@ export interface RequirementItem {
   description: string;
   status: RequirementStatus;
   priority: RequirementPriority;
+  category?: RequirementCategory;
+  complexity?: RequirementComplexity;
   labels: string[];
+  linkedPlanIds?: string[];
   currentAssigneeAgentId?: string;
   currentAssigneeAgentName?: string;
   createdById?: string;
@@ -322,6 +333,8 @@ export const engineeringIntelligenceService = {
     title: string;
     description?: string;
     priority?: RequirementPriority;
+    category?: RequirementCategory;
+    complexity?: RequirementComplexity;
     labels?: string[];
     createdById?: string;
     createdByName?: string;
