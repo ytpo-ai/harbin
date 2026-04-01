@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ArrowLeftIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { engineeringIntelligenceService, RequirementStatus } from '../services/engineeringIntelligenceService';
 import { authService } from '../services/authService';
 import { useToast } from '../hooks/useToast';
@@ -184,14 +184,20 @@ const EngineeringRequirementDetail: React.FC = () => {
   return (
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
+            <Link
+              to="/ei/requirements"
+              className="mb-2 inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-700"
+            >
+              <ArrowLeftIcon className="h-4 w-4" />
+              返回 Agent 列表
+            </Link>
             <p className="text-xs text-gray-500">需求详情</p>
             <h1 className="text-lg font-semibold text-gray-900">{detail?.title || requirementId}</h1>
             <p className="mt-1 text-sm text-gray-600">状态：{detail ? STATUS_LABEL[detail.status] : '-'}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Link to="/ei/requirements" className="px-3 py-2 border border-gray-300 rounded text-sm">返回列表</Link>
+          <div className="flex flex-wrap items-center gap-2">
             <button onClick={() => refetch()} className="inline-flex items-center gap-1 px-3 py-2 border border-gray-300 rounded text-sm"><ArrowPathIcon className="h-4 w-4" />刷新</button>
             <button
               onClick={() => {
