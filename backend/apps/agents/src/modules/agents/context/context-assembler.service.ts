@@ -5,6 +5,7 @@ import { ToolsetContextBuilder } from './toolset-context.builder';
 import { DomainContextBuilder } from './domain-context.builder';
 import { CollaborationContextBuilder } from './collaboration-context.builder';
 import { TaskContextBuilder } from './task-context.builder';
+import { DeductionContextBuilder } from './deduction-context.builder';
 import { MemoryContextBuilder } from './memory-context.builder';
 
 @Injectable()
@@ -15,6 +16,7 @@ export class ContextAssemblerService {
     private readonly domainBuilder: DomainContextBuilder,
     private readonly collaborationBuilder: CollaborationContextBuilder,
     private readonly taskBuilder: TaskContextBuilder,
+    private readonly deductionBuilder: DeductionContextBuilder,
     private readonly memoryBuilder: MemoryContextBuilder,
   ) {}
 
@@ -25,6 +27,7 @@ export class ContextAssemblerService {
       this.domainBuilder,
       this.collaborationBuilder,
       this.taskBuilder,
+      this.deductionBuilder,
       this.memoryBuilder,
     ];
   }

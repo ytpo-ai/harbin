@@ -13,7 +13,8 @@ export type MemoKind =
   | 'custom'
   | 'evaluation'
   | 'achievement'
-  | 'criticism';
+  | 'criticism'
+  | 'deduction';
 
 @Schema({ timestamps: true, collection: 'agent_memos' })
 export class AgentMemo {
@@ -36,7 +37,7 @@ export class AgentMemo {
   version: number;
 
   @Prop({
-    enum: ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation', 'achievement', 'criticism'],
+    enum: ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation', 'achievement', 'criticism', 'deduction'],
     default: 'topic',
     index: true,
   })

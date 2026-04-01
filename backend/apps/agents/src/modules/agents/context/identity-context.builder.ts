@@ -72,42 +72,9 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
       }
     }
 
-    if (!input.identityMemos.length) {
-      return messages;
-    }
-
-    const identityContent = input.identityMemos
-      .map((memo) => {
-        const content = String(memo.content || '');
-        const topic = memo.payload?.topic ? String(memo.payload.topic) : '';
-        return `## ${memo.title}${topic ? ` (${topic})` : ''}\n\n${content}`;
-      })
-      .join('\n\n---\n\n');
-
-    const identitySnapshot = input.identityMemos
-      .map((memo) => ({
-        title: String(memo.title || '').trim(),
-        topic: memo.payload?.topic ? String(memo.payload.topic).trim() : '',
-        contentHash: this.contextFingerprintService.hashFingerprint(String(memo.content || '')),
-      }))
-      .sort((a, b) => `${a.title}:${a.topic}`.localeCompare(`${b.title}:${b.topic}`));
-
-    const identityMessage = await this.contextFingerprintService.resolveSystemContextBlockContent({
-      scope: input.contextScope,
-      blockType: 'identity',
-      fullContent: `Identity Context: \n\n${identityContent}`,
-      snapshot: { items: identitySnapshot },
-      buildDelta: (previous, current) =>
-        this.contextFingerprintService.buildIdentityMemoDelta(
-          Array.isArray((previous as any)?.items) ? (previous as any).items : [],
-          Array.isArray((current as any)?.items) ? (current as any).items : [],
-        ),
-      deltaPrefix: '【Identity Context Delta】',
-    });
-
-    if (identityMessage) {
-      messages.push({ role: 'system', content: identityMessage, timestamp: new Date() });
-    }
+    // Identity memo 注入暂停 — identity memo 内容（Agent Profile、技能矩阵等）
+    // 与 system prompt / guideline / toolset context 存在重复，暂停注入以节省 token。
+    // 保留 identity base 部分（guideline + systemPrompt + promptTemplate）。
     return messages;
   }
 

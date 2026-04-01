@@ -7,6 +7,7 @@ import { ToolsetContextBuilder } from './toolset-context.builder';
 import { DomainContextBuilder } from './domain-context.builder';
 import { CollaborationContextBuilder } from './collaboration-context.builder';
 import { TaskContextBuilder } from './task-context.builder';
+import { DeductionContextBuilder } from './deduction-context.builder';
 import { MemoryContextBuilder } from './memory-context.builder';
 import { ContextFingerprintService } from './context-fingerprint.service';
 import { ContextStrategyService } from './context-strategy.service';
@@ -24,6 +25,7 @@ import { ContextPromptService } from './context-prompt.service';
     DomainContextBuilder,
     CollaborationContextBuilder,
     TaskContextBuilder,
+    DeductionContextBuilder,
     MemoryContextBuilder,
   ],
   exports: [ContextAssemblerService, ContextFingerprintService, ContextStrategyService],

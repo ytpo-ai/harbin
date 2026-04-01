@@ -6,6 +6,7 @@ import { MemoDomainEvent, MemoDomainEventName, MemoEventBusService } from './mem
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
 import { EvaluationAggregationService } from './evaluation-aggregation.service';
+import { DeductionAggregationService } from './deduction-aggregation.service';
 
 @Injectable()
 export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
@@ -18,6 +19,7 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
     private readonly memoEventBus: MemoEventBusService,
     private readonly identityAggregationService: IdentityAggregationService,
     private readonly evaluationAggregationService: EvaluationAggregationService,
+    private readonly deductionAggregationService: DeductionAggregationService,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
   ) {}
 
@@ -45,6 +47,7 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
           await Promise.all([
             this.identityAggregationService.aggregateIdentity(runtimeAgentId),
             this.evaluationAggregationService.aggregateEvaluation(runtimeAgentId),
+            this.deductionAggregationService.aggregateDeductions(runtimeAgentId),
           ]);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
@@ -91,7 +94,10 @@ export class MemoAggregationService implements OnModuleInit, OnModuleDestroy {
       case 'task.completed':
       case 'orchestration.task_completed':
         try {
-          await this.evaluationAggregationService.aggregateEvaluation(event.agentId);
+          await Promise.all([
+            this.evaluationAggregationService.aggregateEvaluation(event.agentId),
+            this.deductionAggregationService.aggregateDeductions(event.agentId),
+          ]);
         } catch (err) {
           const message = err instanceof Error ? err.message : 'Unknown error';
           this.logger.error(`Failed to aggregate for agent ${event.agentId}: ${message}`);

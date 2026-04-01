@@ -936,7 +936,7 @@ export class MemoService {
   }
 
   private buildUpsertFilter(agentId: string, memoKind: MemoKind, slug: string): Record<string, any> {
-    if (memoKind === 'identity' || memoKind === 'todo' || this.isAppendOnlyMemoKind(memoKind)) {
+    if (memoKind === 'identity' || memoKind === 'todo' || memoKind === 'deduction' || this.isAppendOnlyMemoKind(memoKind)) {
       return { agentId, memoKind };
     }
     return { agentId, slug };
@@ -1232,6 +1232,7 @@ export class MemoService {
       'evaluation',
       'achievement',
       'criticism',
+      'deduction',
     ];
     if (standardMemoKinds.includes(resolvedKind)) {
       return { memoKind: resolvedKind, memoType: 'standard' };
@@ -1256,6 +1257,7 @@ export class MemoService {
       'evaluation',
       'achievement',
       'criticism',
+      'deduction',
     ];
     if (standardMemoKinds.includes(resolvedKind) && memoType !== 'standard') {
       throw new BadRequestException(`${phase}: memoKind=${resolvedKind} requires memoType=standard`);
@@ -1269,6 +1271,7 @@ export class MemoService {
     if (kind === 'draft') return 'draft-buffer';
     if (kind === 'achievement') return 'achievement-log';
     if (kind === 'criticism') return 'criticism-log';
+    if (kind === 'deduction') return 'deduction-history';
     if (kind === 'custom') {
       const customBase = this.normalizeTopic(topic || title || 'custom');
       return `custom-${customBase}`;
@@ -1363,7 +1366,7 @@ export class MemoService {
   }
 
   private uniqueMemoKinds(kinds: MemoKind[]): MemoKind[] {
-    const allowed: MemoKind[] = ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation', 'achievement', 'criticism'];
+    const allowed: MemoKind[] = ['identity', 'todo', 'topic', 'history', 'draft', 'custom', 'evaluation', 'achievement', 'criticism', 'deduction'];
     const normalized = Array.from(new Set((kinds || []).map((item) => String(item || '').trim() as MemoKind).filter(Boolean)));
     return normalized.filter((item) => allowed.includes(item));
   }

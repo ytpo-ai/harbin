@@ -5,7 +5,7 @@ import { AgentContext, EnabledAgentSkillContext } from '../agent.types';
 
 export type ScenarioType = 'orchestration' | 'meeting' | 'inner-message' | 'chat';
 
-export type ContextLayer = 'identity' | 'toolset' | 'domain' | 'collaboration' | 'task' | 'memory';
+export type ContextLayer = 'identity' | 'toolset' | 'domain' | 'collaboration' | 'task' | 'deduction' | 'memory';
 
 export type MessageScope = 'run' | 'session';
 

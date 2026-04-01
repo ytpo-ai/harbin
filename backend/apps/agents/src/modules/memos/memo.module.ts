@@ -8,6 +8,7 @@ import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { OrchestrationTask, OrchestrationTaskSchema } from '../../../../../src/shared/schemas/orchestration-task.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { AgentPart, AgentPartSchema } from '../../schemas/agent-part.schema';
+import { AgentRunScore, AgentRunScoreSchema } from '../../schemas/agent-run-score.schema';
 import { MemoAggregationService } from './memo-aggregation.service';
 import { MemoController } from './memo.controller';
 import { MemoDocSyncService } from './memo-doc-sync.service';
@@ -15,6 +16,7 @@ import { MemoEventBusService } from './memo-event-bus.service';
 import { MemoService } from './memo.service';
 import { IdentityAggregationService } from './identity-aggregation.service';
 import { EvaluationAggregationService } from './evaluation-aggregation.service';
+import { DeductionAggregationService } from './deduction-aggregation.service';
 import { MemoTaskTodoService } from './memo-task-todo.service';
 import { MemoTaskHistoryService } from './memo-task-history.service';
 import { MemoAggregationCommandConsumerService } from './memo-aggregation-command-consumer.service';
@@ -32,6 +34,7 @@ import { MemoWriteCommandConsumerService } from './memo-write-command-consumer.s
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
       { name: AgentRun.name, schema: AgentRunSchema },
       { name: AgentPart.name, schema: AgentPartSchema },
+      { name: AgentRunScore.name, schema: AgentRunScoreSchema },
     ]),
   ],
   controllers: [MemoController],
@@ -42,12 +45,13 @@ import { MemoWriteCommandConsumerService } from './memo-write-command-consumer.s
     MemoEventBusService,
     IdentityAggregationService,
     EvaluationAggregationService,
+    DeductionAggregationService,
     MemoTaskTodoService,
     MemoTaskHistoryService,
     MemoAggregationCommandConsumerService,
     MemoWriteQueueService,
     MemoWriteCommandConsumerService,
   ],
-  exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService, MemoWriteQueueService],
+  exports: [MemoService, MemoEventBusService, IdentityAggregationService, EvaluationAggregationService, DeductionAggregationService, MemoWriteQueueService],
 })
 export class MemoModule {}
