@@ -547,6 +547,7 @@ export class OrchestrationStepDispatcherService {
       planId,
       prompt,
       plannerSessionId,
+      state.currentStep,
       Array.isArray(preActions)
         ? preActions
           .map((action) => String(action?.tool || '').trim())
@@ -690,7 +691,7 @@ export class OrchestrationStepDispatcherService {
     });
     let decision: PostExecutionDecision;
     try {
-      decision = await this.plannerService.executePostTask(planId, postPrompt, plannerSessionId, {
+      decision = await this.plannerService.executePostTask(planId, postPrompt, plannerSessionId, state.currentStep, {
         totalGenerated: state.totalGenerated,
         outlineStepCount,
       });

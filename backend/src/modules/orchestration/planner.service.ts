@@ -276,6 +276,7 @@ export class PlannerService {
     planId: string,
     taskContext: string,
     sessionId: string,
+    step?: number,
     preactivatedToolIds?: string[],
   ): Promise<PreExecutionDecision> {
     const plan = await this.planModel.findById(planId).exec();
@@ -287,8 +288,9 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
+    const stepTag = Number.isFinite(step) && Number(step) > 0 ? ` 任务#${Number(step)}` : '';
     const task: AgentExecutionTask = {
-      title: `[Incremental Planning] ${plan.title} pre-execution`,
+      title: `[Incremental Planning] ${plan.title}${stepTag} pre-execution`,
       description: taskContext,
       type: 'planning',
       priority: 'high',
@@ -406,6 +408,7 @@ export class PlannerService {
     planId: string,
     executionResult: string,
     sessionId: string,
+    step?: number,
     progressHint?: { totalGenerated?: number; outlineStepCount?: number },
   ): Promise<PostExecutionDecision> {
     const plan = await this.planModel.findById(planId).exec();
@@ -417,8 +420,9 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
+    const stepTag = Number.isFinite(step) && Number(step) > 0 ? ` 任务#${Number(step)}` : '';
     const task: AgentExecutionTask = {
-      title: `[Incremental Planning] ${plan.title} post-execution`,
+      title: `[Incremental Planning] ${plan.title}${stepTag} post-execution`,
       description: executionResult,
       type: 'planning',
       priority: 'high',
