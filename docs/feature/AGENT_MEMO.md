@@ -23,7 +23,8 @@ type MemoKind =
   | 'custom'
   | 'evaluation'
   | 'achievement'
-  | 'criticism';
+  | 'criticism'
+  | 'deduction';
 type MemoType = 'knowledge' | 'standard';
 ```
 
@@ -58,9 +59,10 @@ type MemoType = 'knowledge' | 'standard';
 | **标准** | `achievement` | standard | 成绩备忘录（记录做得很好的事情） |
 | **标准** | `criticism` | standard | 批评备忘录（记录做得不好的事情） |
 | **标准** | `custom` | standard | 自定义 |
+| **标准** | `deduction` | standard | 执行扣分记录（Agent 运行时扣分历史聚合） |
 | **主题** | `topic` | knowledge | 主题知识积累（按主题归类的运行时事件聚合） |
 
-> 注：`memoKind = topic` 时系统强制 `memoType = 'knowledge'`；`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation`, `achievement`, `criticism` 时系统自动设置 `memoType = 'standard'`。
+> 注：`memoKind = topic` 时系统强制 `memoType = 'knowledge'`；`memoKind` 为 `identity`, `todo`, `history`, `draft`, `custom`, `evaluation`, `achievement`, `criticism`, `deduction` 时系统自动设置 `memoType = 'standard'`。
 
 #### Achievement / Criticism 写入规则
 
@@ -90,6 +92,39 @@ type MemoType = 'knowledge' | 'standard';
 - **内容模板**：
   - 工具使用统计（使用次数、成功率）
   - SLA 响应指标（完成率、平均响应时间）
+
+#### Deduction（执行扣分记录）
+
+- **用途**：记录 Agent 执行任务时的扣分历史，用于在执行上下文中注入错误反馈，帮助 Agent 避免重复犯同类错误
+- **数据源**：`agent_run_scores` 集合（由 `TaskExecutionScorer` 在 tool-calling 循环中实时记录）
+- **更新触发**：`task.completed`、`orchestration.task_completed`、定时全量聚合
+- **数据策略**：分层管理
+  - 近 10 次有扣分的 Run 明细 → 每次聚合覆盖写入 `content`
+  - 近 2 天扣分按规则汇总 → 每次聚合覆盖写入 `content`
+  - 历史总结（totalRuns/avgScore/ruleFrequency）→ 增量累加在 `payload.historySummary`
+  - 近期扣分明细快照（ruleId/toolId/detail）→ 存储在 `payload.historySummary.recentDeductions`
+- **聚合后缓存**：写入 Redis `memo:{agentId}:deduction`，供 `DeductionContextBuilder` 直接读取
+- **Upsert 策略**：每个 Agent 仅一份 deduction memo（`{ agentId, memoKind: 'deduction' }`）
+- **上下文注入**：
+  - 通过 `DeductionContextBuilder` 在 agent 执行时注入 system message
+  - 注入内容包含：高频错误规则 + 改进建议 + 近期具体错误案例
+  - **Phase-aware 机制**：根据当前 `roleInPlan` 判定执行阶段类别（multi_step/single_step/none），在 initialize 等多步工具调用阶段抑制 D2/D9 规则提示，避免与多轮工具交互需求形成矛盾信号导致反馈恶性循环
+- **扣分规则（12 项，v1.0）**：
+
+| 规则 | 扣分 | 说明 |
+|------|------|------|
+| D1 | -5 | 工具参数预检失败 |
+| D2 | -8 | 多 tool_call 批量输出（每个被丢弃的调用各扣一次） |
+| D3 | -10 | 连续两轮调用相同工具 |
+| D4 | -8 | 工具执行失败（非参数类） |
+| D5 | -5 | 工具执行失败（参数类） |
+| D6 | -10 | 调用未授权工具 |
+| D7 | -3 | tool_call JSON 解析失败 |
+| D8 | -5 | 文本意图未执行 |
+| D9 | -5 | Planner 纯文本重试触发 |
+| D10 | -3 | 空/无意义响应 |
+| D11 | -15 | 达到最大轮次上限 |
+| D12 | -2 | LLM 调用超时/网络错误 |
 
 #### TODO
 
@@ -177,13 +212,14 @@ type MemoType = 'knowledge' | 'standard';
 
 - `agent.updated` - Agent 基础信息变更
 - `agent.skill_changed` - 技能绑定变更
-- `task.completed` / `orchestration.task_completed` - 任务完成
-- 定时全量聚合（默认每天）
+- `task.completed` / `orchestration.task_completed` - 任务完成（触发 Evaluation + Deduction 聚合）
+- 定时全量聚合（默认每天，同时触发 Identity + Evaluation + Deduction）
 
 #### 聚合结果
 
 - Identity：`$AGENT_DATA_ROOT/memos/<agentId>/identity/identity-and-responsibilities.md`（未配置时回退 `docs/memos/...`）
 - Evaluation：`$AGENT_DATA_ROOT/memos/<agentId>/evaluation/evaluation-<period>.md`（未配置时回退 `docs/memos/...`）
+- Deduction：存储在 MongoDB + Redis 缓存 `memo:{agentId}:deduction`（不落盘为文件）
 - Topic：按 `agent + topic` 归并到 `topic-*.md`
 
 > 当前状态：`topic` 自动聚合已暂停，不再新增 topic 聚合文档。
@@ -209,6 +245,7 @@ type MemoType = 'knowledge' | 'standard';
 | `AGENT_IDENTITY_EVALUATION_DEVELOPMENT_PLAN.md` | Identity/Evaluation开发计划 |
 | `MEMO_SCHEDULE_PLAN_UNIFICATION_AND_ASYNC_TRIGGER_PLAN.md` | memo 调度数据化与异步触发统一改造计划 |
 | `MEMO_ASYNC_WRITE_QUEUE_PLAN.md` | memo 写入全链路异步化（Redis Queue）方案 |
+| `AGENT_DEDUCTION_MEMO_CONTEXT_INJECTION_PLAN.md` | Deduction 扣分记录 Memo + 上下文注入计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -261,6 +298,7 @@ type MemoType = 'knowledge' | 'standard';
 | `modules/memos/memo-aggregation.service.ts` | 聚合编排服务，管理事件触发与全量聚合入口 |
 | `modules/memos/identity-aggregation.service.ts` | Identity 简历聚合，从 Agent/Skill/Task 表聚合 |
 | `modules/memos/evaluation-aggregation.service.ts` | Evaluation 工作评估聚合，从 AgentRun/AgentPart 表聚合 |
+| `modules/memos/deduction-aggregation.service.ts` | Deduction 扣分记录聚合，从 AgentRunScore 表聚合，分层数据策略（近期覆盖 + 历史增量） |
 
 ### 调度承接（backend/src/）
 

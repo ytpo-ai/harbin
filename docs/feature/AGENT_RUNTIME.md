@@ -196,7 +196,49 @@
 - 角色要求：`system/admin/owner`
 - `purge-legacy` 仅 `system` 角色可执行，且必须携带 `confirm=DELETE_LEGACY_RUNTIME_DATA`
 
-### 1.7 Session 与上下文协同
+### 1.7 执行扣分系统与上下文注入
+
+#### 1.7.1 扣分评分机制
+
+- Agent 每次 tool-calling 循环由 `TaskExecutionScorer`（纯内存逻辑类）实时记录扣分。
+- 满分 100，只减不加，最低 0 分。12 条扣分规则（D1-D12），规则版本 v1.0。
+- 循环结束后 `AgentRunScoreService.saveScore()` 持久化到 `agent_run_scores` 集合，并冗余更新 `agent_runs.score`。
+- 扣分不影响 run 的 success/failure 判定（仅质量指标）。
+
+#### 1.7.2 扣分 Memo 聚合
+
+- `DeductionAggregationService` 从 `agent_run_scores` 聚合数据，生成 `memoKind='deduction'` 的 memo 文档。
+- 分层数据策略：
+  - 近 10 次有扣分 Run 明细 + 近 2 天按规则汇总 → 每次覆盖写入 content
+  - 历史总结（totalRuns/avgScore/ruleFrequency）→ 增量累加在 `payload.historySummary`
+  - 近期扣分明细快照（ruleId/toolId/detail，最多 20 条）→ `payload.historySummary.recentDeductions`
+- 聚合后主动刷新 Redis 缓存 `memo:{agentId}:deduction`。
+- 触发时机：`task.completed` / `orchestration.task_completed` 事件 + 定时全量聚合。
+
+#### 1.7.3 扣分上下文注入（DeductionContextBuilder）
+
+- 在 `ContextAssemblerService` 的 layer 顺序中排在 `task` 之后、`memory` 之前。
+- 数据源：从 Redis 缓存 `memo:{agentId}:deduction` 读取（接受有限实时性），不直接查 MongoDB。
+- 注入内容分为三部分：
+  1. **高频错误与改进建议**：历史触发次数 Top 5 的规则 + 正面引导的行为建议
+  2. **近期具体错误案例**：从 `recentDeductions` 中提取有 detail 的案例（最多 8 条）
+  3. **阶段感知行为指引**：根据当前阶段类别差异化表述
+
+#### 1.7.4 Phase-Aware 机制（反馈环路治理）
+
+- 根据 `input.context.collaborationContext.roleInPlan` 判定当前阶段类别：
+  - `multi_step`（如 `planner_initialize`）：需多轮工具调用的阶段
+  - `single_step`（如 `planner` / `planner_pre_execution` / `planner_post_execution`）：单步工具调用阶段
+  - `none`：非 planner 场景
+- `multi_step` 阶段抑制 D2（多 tool_call）和 D9（Planner 纯文本重试）的提示注入，避免与多轮工具交互需求形成矛盾信号。
+- 背景：历史 D2/D9 累积扣分被无差别注入后，LLM 在 initialize 阶段过度谨慎，先输出确认性文字而非直接执行 tool_call，反而触发更多 D9 扣分，形成恶性反馈循环。Phase-aware 机制打破此循环。
+
+#### 1.7.5 Identity Memo 注入状态
+
+- `IdentityContextBuilder` 中 identity memo 内容注入已暂停（保留 identity base: guideline + systemPrompt + promptTemplate）。
+- 原因：identity memo 内容（Agent Profile、技能矩阵等）与 system prompt / toolset context 存在重复，暂停以节省 token。
+
+### 1.8 Session 与上下文协同
 
 - 会话模型支持 `meeting/task` 两类，并可按 `meetingId` 或 `taskId` 复用会话。
 - system context 仍由 ContextAssembler 动态组装；`run.metadata.initialSystemMessages` 继续保留初始 system 快照。
@@ -256,6 +298,8 @@
 | `PROMPT_RESOLVE_REDIS_GUARD_PLAN.md` | Prompt 发布写 Redis 与执行阶段 Redis 门禁回退计划 |
 | `AGENT_LIFECYCLE_HOOK_STANDARDIZATION_PLAN.md` | Agent Lifecycle Hook 标准化设计计划 |
 | `AGENT_PROMPT_OPTIONAL_MIN_LENGTH_INJECTION_PLAN.md` | Agent Prompt 可选化与最小注入长度优化计划 |
+| `AGENT_RUN_SCORING_SYSTEM_PLAN.md` | Agent Run 扣分评分系统设计计划 |
+| `AGENT_DEDUCTION_MEMO_CONTEXT_INJECTION_PLAN.md` | 扣分记录 Memo + 上下文注入计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -304,6 +348,9 @@
 | `hooks/index.ts` | hooks 模块统一导出 |
 | `runtime-action-log-sync.service.ts` | Runtime 状态钩子同步写入 Agent Action Logs |
 | `runtime-memo-snapshot-queue.service.ts` | Session memoSnapshot 异步写入队列消费服务 |
+| `task-execution-scorer.ts` | 扣分评分引擎（纯内存逻辑类，12 条规则，满分 100 扣分制） |
+| `agent-run-score.service.ts` | 扣分数据 CRUD + 聚合查询服务 |
+| `agent-run-score.controller.ts` | 扣分 API（getByRunId / listByAgent / agentStats） |
 | `contracts/runtime-event.contract.ts` | 运行时事件契约（zod） |
 | `contracts/runtime-run.contract.ts` | run 与工具事件输入契约 |
 | `contracts/runtime-control.contract.ts` | 控制面与运维接口入参契约 |
@@ -318,6 +365,24 @@
 | `agent-event-outbox.schema.ts` | 事件外发 outbox 模型 |
 | `agent-runtime-maintenance-audit.schema.ts` | 运行维护审计模型 |
 | `agent-session.schema.ts` | 会话模型（含 `memoSnapshot`） |
+| `agent-run-score.schema.ts` | 扣分评分模型（AgentRunScore + AgentRunScoreDeduction） |
+
+### 上下文构建 (backend/apps/agents/src/modules/agents/context/)
+
+| 文件 | 功能 |
+|------|------|
+| `context-assembler.service.ts` | 上下文装配器，按 layer 顺序串联所有 builder |
+| `context-block-builder.interface.ts` | Context Builder 接口与 ContextLayer 类型定义 |
+| `identity-context.builder.ts` | Identity 层注入（guideline + systemPrompt + promptTemplate；identity memo 内容注入已暂停） |
+| `toolset-context.builder.ts` | Toolset 层注入（工具列表与技能） |
+| `domain-context.builder.ts` | Domain 层注入 |
+| `collaboration-context.builder.ts` | Collaboration 层注入（orchestration / meeting 上下文） |
+| `task-context.builder.ts` | Task 层注入 |
+| `deduction-context.builder.ts` | Deduction 层注入（从 Redis 读取扣分 memo，phase-aware 差异化注入） |
+| `memory-context.builder.ts` | Memory 层注入（历史运行摘要 + memo 动态召回） |
+| `context-fingerprint.service.ts` | 上下文指纹去重（增量/全量智能切换） |
+| `context-strategy.service.ts` | 技能激活策略匹配 |
+| `context.module.ts` | Context 模块注册 |
 
 ### 集成接入
 
