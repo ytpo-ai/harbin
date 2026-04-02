@@ -12,6 +12,8 @@ interface ExecutionTimelineProps {
 
 export interface TimelineRound {
   round: number;
+  /** 原始 stepIndex（0-indexed），用于匹配评分扣分数据中的 round 字段 */
+  stepIndex?: number;
   messages: RunMessageRecord[];
 }
 
@@ -41,7 +43,7 @@ export const buildTimelineRounds = (messages: RunMessageRecord[]): TimelineRound
     Array.from(map.keys())
       .sort((a, b) => a - b)
       .forEach((key, index) => {
-        rounds.push({ round: index + 1, messages: map.get(key) || [] });
+        rounds.push({ round: index + 1, stepIndex: key, messages: map.get(key) || [] });
       });
     return rounds;
   }
@@ -69,7 +71,11 @@ export const ExecutionTimeline: React.FC<ExecutionTimelineProps> = ({ messages, 
   return (
     <div className="space-y-3">
       {rounds.map((roundItem) => {
-        const roundDeductions = deductions.filter((item) => item.round === roundItem.round);
+        const roundDeductions = deductions.filter((item) =>
+          typeof roundItem.stepIndex === 'number'
+            ? item.round === roundItem.stepIndex
+            : item.round === roundItem.round,
+        );
         const hasError = roundItem.messages.some((message) => message.parts.some((part) => !!part.error || part.status === 'error'));
 
         return (

@@ -30,10 +30,24 @@ export const DecisionTracebackDrawer: React.FC<DecisionTracebackDrawerProps> = (
   const roundRefs = React.useRef<Record<number, HTMLDivElement | null>>({});
 
   const timelineRounds = React.useMemo(() => buildTimelineRounds(messages), [messages]);
+
+  // 构建 stepIndex(0-indexed) → display round(1-indexed) 的映射，
+  // 用于将扣分数据中 0-indexed 的 round 正确关联到 1-indexed 的展示 round。
+  const stepIndexToRound = React.useMemo(() => {
+    const map = new Map<number, number>();
+    for (const item of timelineRounds) {
+      if (typeof item.stepIndex === 'number') {
+        map.set(item.stepIndex, item.round);
+      }
+    }
+    return map;
+  }, [timelineRounds]);
+
   const rounds = React.useMemo(() => {
     const roundSet = new Set<number>(timelineRounds.map((item) => item.round));
     (scoreData?.deductions || []).forEach((item) => {
-      if (item.round > 0) roundSet.add(item.round);
+      const displayRound = stepIndexToRound.get(item.round) ?? item.round;
+      if (displayRound > 0) roundSet.add(displayRound);
     });
     const sortedRounds = Array.from(roundSet).sort((a, b) => a - b);
     if (sortedRounds.length === 0) {
@@ -41,12 +55,15 @@ export const DecisionTracebackDrawer: React.FC<DecisionTracebackDrawerProps> = (
     }
 
     return sortedRounds.map((round) => {
-      const hasDeduction = (scoreData?.deductions || []).some((item) => item.round === round);
       const timelineRound = timelineRounds.find((item) => item.round === round);
+      const matchStepIndex = timelineRound?.stepIndex;
+      const hasDeduction = (scoreData?.deductions || []).some((item) =>
+        typeof matchStepIndex === 'number' ? item.round === matchStepIndex : item.round === round,
+      );
       const hasError = (timelineRound?.messages || []).some((message) => message.parts.some((part) => !!part.error || part.status === 'error'));
       return { round, hasDeduction, hasError };
     });
-  }, [scoreData, timelineRounds]);
+  }, [scoreData, timelineRounds, stepIndexToRound]);
 
   if (!open) return null;
 
