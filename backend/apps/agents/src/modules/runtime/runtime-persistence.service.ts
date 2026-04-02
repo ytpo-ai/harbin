@@ -773,7 +773,7 @@ export class RuntimePersistenceService {
     const messages = messageIds.length
       ? await this.messageModel
           .find({ id: { $in: messageIds } })
-          .sort({ createdAt: 1, sequence: 1 })
+          .sort({ sequence: 1, createdAt: 1 })
           .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
           .exec()
       : [];
@@ -785,7 +785,7 @@ export class RuntimePersistenceService {
             id: { $nin: messageIds },
             role: { $in: ['system', 'user'] },
           })
-          .sort({ createdAt: 1, sequence: 1 })
+          .sort({ sequence: 1, createdAt: 1 })
           .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
           .exec()
       : [];
@@ -798,10 +798,11 @@ export class RuntimePersistenceService {
       mergedMessageMap.set(message.id, message);
     }
     const mergedMessages = Array.from(mergedMessageMap.values()).sort((a, b) => {
+      const seqDelta = (a.sequence ?? 0) - (b.sequence ?? 0);
+      if (seqDelta !== 0) return seqDelta;
       const at = (a.updatedAt || a.createdAt || new Date(0)).getTime();
       const bt = (b.updatedAt || b.createdAt || new Date(0)).getTime();
-      if (at !== bt) return at - bt;
-      return (a.sequence ?? 0) - (b.sequence ?? 0);
+      return at - bt;
     });
 
     const projectedMessages: SessionMessageView[] = mergedMessages.map((message) => ({
@@ -833,10 +834,11 @@ export class RuntimePersistenceService {
     }));
 
     projectedMessages.sort((a, b) => {
+      const seqDelta = (a.sequence ?? 0) - (b.sequence ?? 0);
+      if (seqDelta !== 0) return seqDelta;
       const at = (a.timestamp || new Date(0)).getTime();
       const bt = (b.timestamp || new Date(0)).getTime();
-      if (at !== bt) return at - bt;
-      return (a.sequence ?? 0) - (b.sequence ?? 0);
+      return at - bt;
     });
 
     const partMessageIds = mergedMessages.map((message) => message.id);
@@ -844,7 +846,7 @@ export class RuntimePersistenceService {
     const parts = partMessageIds.length
       ? await this.partModel
           .find({ messageId: { $in: partMessageIds } })
-          .sort({ createdAt: 1, sequence: 1 })
+          .sort({ sequence: 1, createdAt: 1 })
           .lean<Array<AgentPart & { createdAt?: Date; updatedAt?: Date }>>()
           .exec()
       : [];
@@ -888,7 +890,7 @@ export class RuntimePersistenceService {
     }
     const messages = await this.messageModel
       .find({ id: { $in: messageIds } })
-      .sort({ createdAt: 1, sequence: 1 })
+      .sort({ sequence: 1, createdAt: 1 })
       .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
       .exec();
     return messages.map((message) => ({
@@ -912,13 +914,13 @@ export class RuntimePersistenceService {
   }
 
   async listMessageParts(messageId: string): Promise<AgentPart[]> {
-    return this.partModel.find({ messageId }).sort({ createdAt: 1, sequence: 1 }).exec();
+    return this.partModel.find({ messageId }).sort({ sequence: 1, createdAt: 1 }).exec();
   }
 
   async listRunMessagesWithParts(runId: string): Promise<Array<SessionMessageView & { parts: AgentPart[] }>> {
     const messages = await this.messageModel
       .find({ runId })
-      .sort({ createdAt: 1, sequence: 1 })
+      .sort({ sequence: 1, createdAt: 1 })
       .lean<Array<AgentMessage & { createdAt?: Date; updatedAt?: Date }>>()
       .exec();
     if (!messages.length) {
@@ -927,7 +929,7 @@ export class RuntimePersistenceService {
     const messageIds = messages.map((message) => message.id);
     const parts = await this.partModel
       .find({ messageId: { $in: messageIds } })
-      .sort({ createdAt: 1, sequence: 1 })
+      .sort({ sequence: 1, createdAt: 1 })
       .lean<AgentPart[]>()
       .exec();
 

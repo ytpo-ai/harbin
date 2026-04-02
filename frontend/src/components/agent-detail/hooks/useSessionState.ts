@@ -57,14 +57,15 @@ export const useSessionState = (agentId: string) => {
     };
 
     const compareMessageOrder = (a: AgentRuntimeSessionMessage, b: AgentRuntimeSessionMessage): number => {
+      const sequenceDelta = (a.sequence ?? 0) - (b.sequence ?? 0);
+      if (sequenceDelta !== 0) return sequenceDelta;
+
       const at = toTimestamp(a);
       const bt = toTimestamp(b);
       if (Number.isFinite(at) && Number.isFinite(bt) && at !== bt) return at - bt;
       if (Number.isFinite(at) && !Number.isFinite(bt)) return -1;
       if (!Number.isFinite(at) && Number.isFinite(bt)) return 1;
 
-      const sequenceDelta = (a.sequence ?? 0) - (b.sequence ?? 0);
-      if (sequenceDelta !== 0) return sequenceDelta;
       return (a.stepIndex ?? 0) - (b.stepIndex ?? 0);
     };
 

@@ -1092,7 +1092,7 @@ export class AgentExecutorService {
           sessionId: runtimeContext.sessionId,
           taskId: task.id,
           role: 'assistant',
-          sequence: initialSystemMessageCount + input.round + 2,
+          sequence: this.computeAssistantSequence(initialSystemMessageCount, input.round),
           content: input.response,
           status: input.finish === 'error' ? 'error' : 'completed',
           parentMessageId: runtimeContext.userMessageId,
@@ -2216,6 +2216,15 @@ export class AgentExecutorService {
       cacheHit: false,
     });
     return messages;
+  }
+
+  /**
+   * assistant 消息的 sequence：落在同一轮 system intermediate 消息之前。
+   * 例: base=9, round=0 → 199; round=1 → 299; round=2 → 399
+   * 对应的 system intermediate 为 210, 310, 410...
+   */
+  private computeAssistantSequence(base: number, round: number): number {
+    return base + (round + 2) * 100 - 1;
   }
 
   private computeIntermediateSystemSequence(base: number, round: number, offset: number): number {
