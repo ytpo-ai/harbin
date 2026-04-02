@@ -33,7 +33,6 @@ const PlanListTable: React.FC<Props> = ({
               <th className="px-4 py-3 text-left font-medium">计划</th>
               <th className="px-4 py-3 text-left font-medium">状态</th>
               <th className="px-4 py-3 text-left font-medium">模式</th>
-              <th className="px-4 py-3 text-left font-medium">进度</th>
               <th className="px-4 py-3 text-left font-medium">更新时间</th>
               <th className="px-4 py-3 text-left font-medium">操作</th>
             </tr>
@@ -41,16 +40,16 @@ const PlanListTable: React.FC<Props> = ({
           <tbody className="divide-y divide-slate-100">
             {plansLoading ? (
               <tr>
-                <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-400">
-                  加载中...
-                </td>
-              </tr>
-            ) : plans.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">
-                  暂无计划，点击右上角“创建计划”开始。
-                </td>
-              </tr>
+                  <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-400">
+                    加载中...
+                  </td>
+                </tr>
+              ) : plans.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">
+                    暂无计划，点击右上角“创建计划”开始。
+                  </td>
+                </tr>
             ) : (
               plans.map((plan) => (
                 <tr key={plan._id} className="hover:bg-slate-50/60">
@@ -64,7 +63,6 @@ const PlanListTable: React.FC<Props> = ({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-700">{plan.strategy?.mode || '-'}</td>
-                  <td className="px-4 py-3 text-slate-700">{plan.stats.completedTasks}/{plan.stats.totalTasks}</td>
                   <td className="px-4 py-3 text-slate-700">{formatDateTime(plan.updatedAt)}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
