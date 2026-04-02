@@ -233,7 +233,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
                   }}
                   className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-100"
                 >
-                  <DocumentDuplicateIcon className="h-4 w-4 shrink-0" /> 复制任务MD
+                  <DocumentDuplicateIcon className="h-4 w-4 shrink-0" /> 复制计划
                 </button>
               </div>
             )}
