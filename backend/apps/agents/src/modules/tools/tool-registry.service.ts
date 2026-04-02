@@ -634,9 +634,16 @@ export class ToolRegistryService {
         type: 'object',
         properties: Object.entries(raw).reduce(
           (acc, [key, value]) => {
+            const normalizedKey = String(key || '').trim();
+            if (!normalizedKey) return acc;
+            // 简写格式：{ paramName: 'string' } → { paramName: { type: 'string' } }
+            if (typeof value === 'string') {
+              acc[normalizedKey] = { type: value.trim().toLowerCase() || 'string' };
+              return acc;
+            }
             if (!value || typeof value !== 'object') return acc;
             const descriptor = value as any;
-            acc[key] = {
+            acc[normalizedKey] = {
               type: descriptor.type || (Array.isArray(descriptor.enum) ? 'string' : 'string'),
               description: descriptor.description,
               enum: descriptor.enum,

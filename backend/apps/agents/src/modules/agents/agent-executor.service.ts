@@ -958,22 +958,6 @@ export class AgentExecutorService {
     const scorer = new TaskExecutionScorer();
     const schemaInjectedToolIds = new Set<string>();
 
-    const preactivatedToolIds = this.extractPreactivatedToolIds(executionContext);
-    for (const toolId of preactivatedToolIds) {
-      const inputContract = await this.toolService.getToolInputContract(toolId);
-      if (inputContract?.schema && hasEffectiveSchema(inputContract.schema)) {
-        const schemaHint = buildToolSchemaHint(toolId, inputContract.schema);
-        if (schemaHint) {
-          messages.push({
-            role: 'system',
-            content: schemaHint,
-            timestamp: new Date(),
-          });
-          schemaInjectedToolIds.add(toolId);
-        }
-      }
-    }
-
     const persistIntermediateSystemMessage = async (
       round: number,
       offset: number,
@@ -1002,6 +986,27 @@ export class AgentExecutorService {
         );
       }
     };
+
+    const preactivatedToolIds = this.extractPreactivatedToolIds(executionContext);
+    let preactivationOffset = 0;
+    for (const toolId of preactivatedToolIds) {
+      const inputContract = await this.toolService.getToolInputContract(toolId);
+      if (inputContract?.schema && hasEffectiveSchema(inputContract.schema)) {
+        const schemaHint = buildToolSchemaHint(toolId, inputContract.schema);
+        if (schemaHint) {
+          messages.push({
+            role: 'system',
+            content: schemaHint,
+            timestamp: new Date(),
+          });
+          schemaInjectedToolIds.add(toolId);
+          await persistIntermediateSystemMessage(-1, preactivationOffset++, schemaHint, {
+            source: 'preactivation.tool-schema-injected',
+            toolId,
+          });
+        }
+      }
+    }
 
     const persistStepMessage = async (input: {
       round: number;
