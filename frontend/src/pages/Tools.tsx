@@ -222,7 +222,7 @@ const Tools: React.FC = () => {
     'agentToolPermissionSets',
     agentService.getToolPermissionSets,
   );
-  const { data: agents } = useQuery('agents', agentService.getAgents);
+  const { data: agents } = useQuery('agents', () => agentService.getAgents());
 
   useEffect(() => {
     if (activeTab === 'tools') {

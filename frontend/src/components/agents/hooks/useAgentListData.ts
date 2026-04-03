@@ -7,10 +7,14 @@ import { modelService } from '../../../services/modelService';
 import { toolService } from '../../../services/toolService';
 import type { AgentToolItem } from '../types';
 
-export const useAgentListData = () => {
+export const useAgentListData = (projectIdFilter?: string) => {
   const queryClient = useQueryClient();
 
-  const { data: agents, isLoading } = useQuery('agents', agentService.getAgents);
+  const agentFilters = projectIdFilter !== undefined ? { projectId: projectIdFilter } : undefined;
+  const { data: agents, isLoading } = useQuery(
+    ['agents', projectIdFilter],
+    () => agentService.getAgents(agentFilters),
+  );
   const { data: availableModels } = useQuery('models', modelService.getAvailableModels);
   const { data: availableTools } = useQuery('tools', toolService.getTools);
   const { data: toolPermissionSets } = useQuery('agentToolPermissionSets', agentService.getToolPermissionSets);

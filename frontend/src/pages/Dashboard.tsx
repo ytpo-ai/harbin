@@ -7,7 +7,7 @@ import {
 } from '@heroicons/react/24/outline';
 
 const Dashboard: React.FC = () => {
-  const { data: agents } = useQuery('agents', agentService.getAgents);
+  const { data: agents } = useQuery('agents', () => agentService.getAgents());
   const totalAgents = agents?.length ?? 0;
   const activeAgents = agents?.filter(a => a.isActive).length ?? 0;
 

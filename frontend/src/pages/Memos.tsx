@@ -34,7 +34,7 @@ const Memos: React.FC = () => {
   const [testMessages, setTestMessages] = useState<TestMessage[]>([]);
   const [selectedMemo, setSelectedMemo] = useState<AgentMemo | null>(null);
 
-  const { data: agents = [] } = useQuery('agents', agentService.getAgents);
+  const { data: agents = [] } = useQuery('agents', () => agentService.getAgents());
 
   const { data: memoPaged, isLoading } = useQuery(
     ['memos', agentId, memoType, memoKind, search],

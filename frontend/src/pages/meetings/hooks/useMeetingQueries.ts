@@ -16,7 +16,7 @@ export const useMeetingQueries = ({ effectiveMeetingId, selectedMeeting }: Param
     refetchOnMount: 'always',
   });
   const { data: stats } = useQuery('meeting-stats', meetingService.getMeetingStats);
-  const { data: agents } = useQuery('agents', agentService.getAgents);
+  const { data: agents } = useQuery('agents', () => agentService.getAgents());
   const { data: employees } = useQuery('employees', () => employeeService.getEmployees());
 
   const currentEmployee = useMemo(() => {

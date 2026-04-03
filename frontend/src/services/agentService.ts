@@ -316,8 +316,8 @@ export const agentService = {
   },
 
   // 获取所有agent
-  async getAgents(): Promise<Agent[]> {
-    const response = await api.get('/agents');
+  async getAgents(filters?: { projectId?: string }): Promise<Agent[]> {
+    const response = await api.get('/agents', { params: filters });
     return agentService.normalizeAgentList(response.data);
   },
 

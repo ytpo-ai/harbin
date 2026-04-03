@@ -21,6 +21,7 @@ type Params = {
   activePlanDrawerTab: PlanDrawerTab;
   runStatusFilter: RunStatusFilter;
   runTriggerFilter: RunTriggerFilter;
+  projectIdFilter?: string;
 };
 
 export const useOrchestrationQueries = ({
@@ -34,10 +35,12 @@ export const useOrchestrationQueries = ({
   activePlanDrawerTab,
   runStatusFilter,
   runTriggerFilter,
+  projectIdFilter,
 }: Params) => {
+  const planFilters = projectIdFilter !== undefined ? { projectId: projectIdFilter } : undefined;
   const { data: plans = [], isLoading: plansLoading } = useQuery<OrchestrationPlan[]>(
-    'orchestration-plans',
-    () => orchestrationService.getPlans(),
+    ['orchestration-plans', projectIdFilter],
+    () => orchestrationService.getPlans(planFilters),
     { refetchInterval: 3000 },
   );
 

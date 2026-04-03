@@ -132,7 +132,7 @@ const Skills: React.FC = () => {
   const operationMenuRef = useRef<HTMLDivElement | null>(null);
   const operationMenuButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  const { data: agents = [] } = useQuery('agents', agentService.getAgents);
+  const { data: agents = [] } = useQuery('agents', () => agentService.getAgents());
   const { data: allSkillAgents = {} } = useQuery('all-skill-agents', () => skillService.getAllSkillAgents());
   const { data: skillsPagedRaw, isLoading: skillsLoading, isError: skillsError, error: skillsErrorDetail } = useQuery(
     ['skills-paged', statusFilter, categoryFilter, debouncedSearchKeyword, currentPage, pageSize],

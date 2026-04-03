@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ArrowPathIcon, PlusIcon } from '@heroicons/react/24/outline';
-import { useQueryClient } from 'react-query';
+import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   DebugRuntimeTaskTypeOverride,
@@ -28,11 +28,13 @@ import { useOrchestrationMutations } from './hooks/useOrchestrationMutations';
 import { useOrchestrationQueries } from './hooks/useOrchestrationQueries';
 import { useTaskEditing } from './hooks/useTaskEditing';
 import { extractErrorMessage } from './utils';
+import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 
 const Orchestration: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
+  const [projectIdFilter, setProjectIdFilter] = useState<string | undefined>(undefined);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
@@ -104,7 +106,14 @@ const Orchestration: React.FC = () => {
     activePlanDrawerTab,
     runStatusFilter,
     runTriggerFilter,
+    projectIdFilter,
   });
+
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'orchestration-incubation-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
+  );
 
   const mutations = useOrchestrationMutations({
     navigate,
@@ -325,8 +334,22 @@ const Orchestration: React.FC = () => {
             <p className="mt-1 text-sm text-slate-600">默认展示 Plan 列表，支持弹窗创建与抽屉查看详情。</p>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              value={projectIdFilter ?? '__all__'}
+              onChange={(e) => {
+                const v = e.target.value;
+                setProjectIdFilter(v === '__all__' ? undefined : v);
+              }}
+              className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"
+            >
+              <option value="__all__">全部项目</option>
+              <option value="">全局（无项目）</option>
+              {incubationProjects.map((p) => (
+                <option key={p._id} value={p._id}>{p.name}</option>
+              ))}
+            </select>
             <button
-              onClick={() => queryClient.invalidateQueries('orchestration-plans')}
+              onClick={() => queryClient.invalidateQueries(['orchestration-plans', projectIdFilter])}
               className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
               <ArrowPathIcon className="h-4 w-4" /> 刷新
@@ -380,6 +403,7 @@ const Orchestration: React.FC = () => {
             mode,
             runMode,
             autoGenerate,
+            projectId: projectIdFilter || undefined,
           });
         }}
       />

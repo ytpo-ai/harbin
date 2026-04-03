@@ -7,12 +7,18 @@ interface AgentListHeaderProps {
   tierFilter: TierFilter;
   onTierFilterChange: (value: TierFilter) => void;
   onOpenCreate: () => void;
+  projectIdFilter?: string;
+  onProjectIdFilterChange?: (value: string | undefined) => void;
+  incubationProjects?: Array<{ _id: string; name: string }>;
 }
 
 export const AgentListHeader: React.FC<AgentListHeaderProps> = ({
   tierFilter,
   onTierFilterChange,
   onOpenCreate,
+  projectIdFilter,
+  onProjectIdFilterChange,
+  incubationProjects,
 }) => {
   return (
     <div className="flex justify-between items-center">
@@ -21,6 +27,22 @@ export const AgentListHeader: React.FC<AgentListHeaderProps> = ({
         <p className="mt-1 text-sm text-gray-500">管理和配置AI Agent</p>
       </div>
       <div className="flex items-center gap-3">
+        {onProjectIdFilterChange && incubationProjects && (
+          <select
+            value={projectIdFilter ?? '__all__'}
+            onChange={(e) => {
+              const v = e.target.value;
+              onProjectIdFilterChange(v === '__all__' ? undefined : v);
+            }}
+            className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+          >
+            <option value="__all__">全部项目</option>
+            <option value="">全局（无项目）</option>
+            {incubationProjects.map((p) => (
+              <option key={p._id} value={p._id}>{p.name}</option>
+            ))}
+          </select>
+        )}
         <div className="flex items-center gap-2">
           <label htmlFor="agent-tier-filter" className="text-sm text-gray-600">筛选</label>
           <select

@@ -4,6 +4,7 @@ import { useQuery } from 'react-query';
 import { PromptTemplateRefPicker } from '../PromptTemplateRefPicker';
 import type { PromptTemplateRefValue } from '../PromptTemplateRefPicker';
 import { apiKeyService } from '../../services/apiKeyService';
+import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 import type { AgentTier } from '../../services/agentService';
 import { useAgentFormSync } from './hooks/useAgentFormSync';
 import { useAgentToolFilter } from './hooks/useAgentToolFilter';
@@ -42,6 +43,7 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     apiKeyId: string;
     selectedTools: string[];
     configText: string;
+    projectId: string;
   }>({
     name: '',
     roleId: '',
@@ -54,9 +56,15 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     apiKeyId: '',
     selectedTools: [] as string[],
     configText: '{\n  "execution": {\n    "provider": "opencode"\n  }\n}',
+    projectId: '',
   });
 
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'create-agent-incubation-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
+  );
   const selectedModel = availableModels.find((m) => m.id === formData.modelId);
   const filteredApiKeys = (apiKeys || []).filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
@@ -143,6 +151,7 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
       },
       learningAbility: 80,
       config: configParsed.config || {},
+      projectId: formData.projectId || undefined,
     } as any);
   };
 
@@ -161,6 +170,20 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               placeholder="例如: 智能助手"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">所属项目</label>
+            <select
+              value={formData.projectId}
+              onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="">全局（不关联项目）</option>
+              {incubationProjects.map((p) => (
+                <option key={p._id} value={p._id}>{p.name}</option>
+              ))}
+            </select>
           </div>
 
           <div>

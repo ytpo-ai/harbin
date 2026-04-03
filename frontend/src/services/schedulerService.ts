@@ -84,6 +84,7 @@ export interface CreateSchedulePayload {
     title?: string;
   };
   enabled?: boolean;
+  projectId?: string;
 }
 
 export type UpdateSchedulePayload = Partial<CreateSchedulePayload>;
@@ -107,8 +108,8 @@ export const schedulerService = {
     return response.data;
   },
 
-  async getSchedules(): Promise<OrchestrationSchedule[]> {
-    const response = await api.get('/schedules');
+  async getSchedules(filters?: { projectId?: string }): Promise<OrchestrationSchedule[]> {
+    const response = await api.get('/schedules', { params: filters });
     return response.data;
   },
 

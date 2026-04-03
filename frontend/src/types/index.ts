@@ -62,6 +62,7 @@ export interface Agent {
   salary?: number;
   performanceScore?: number;
   apiKeyId?: string; // 关联的API密钥ID
+  projectId?: string; // 所属孵化项目ID，为空表示全局 Agent
   createdAt: Date;
   updatedAt: Date;
 }

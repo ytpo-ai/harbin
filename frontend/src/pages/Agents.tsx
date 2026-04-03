@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { PlusIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 import { meetingService } from '../services/meetingService';
+import { incubationProjectService, IncubationProject } from '../services/incubationProjectService';
 import type { Agent } from '../types';
 import {
   AgentCard,
@@ -19,6 +21,8 @@ import {
 
 const Agents: React.FC = () => {
   const navigate = useNavigate();
+  const [projectIdFilter, setProjectIdFilter] = useState<string | undefined>(undefined);
+
   const {
     agents,
     isLoading,
@@ -31,7 +35,13 @@ const Agents: React.FC = () => {
     toggleAgentMutation,
     updateAgentMutation,
     createAgentMutation,
-  } = useAgentListData();
+  } = useAgentListData(projectIdFilter);
+
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'agents-incubation-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
+  );
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -134,6 +144,9 @@ const Agents: React.FC = () => {
         tierFilter={tierFilter}
         onTierFilterChange={setTierFilter}
         onOpenCreate={() => setIsCreateModalOpen(true)}
+        projectIdFilter={projectIdFilter}
+        onProjectIdFilterChange={setProjectIdFilter}
+        incubationProjects={incubationProjects}
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">

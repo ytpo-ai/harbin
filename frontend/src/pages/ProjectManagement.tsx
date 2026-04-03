@@ -1,22 +1,49 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   ArrowPathIcon,
   FolderPlusIcon,
   LinkIcon,
+  PencilIcon,
+  TrashIcon,
+  RocketLaunchIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { rdConversationService, RdProject } from '../services/rdConversationService';
 import { apiKeyService, ApiKey } from '../services/apiKeyService';
 import { agentService } from '../services/agentService';
+import {
+  incubationProjectService,
+  IncubationProject,
+  IncubationProjectStatus,
+  CreateIncubationProjectDto,
+  UpdateIncubationProjectDto,
+} from '../services/incubationProjectService';
 import { Agent } from '../types';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/Toast';
 
 const rdManagementService = rdConversationService;
 const LOCAL_PAGE_SIZE = 10;
+const INCUBATION_PAGE_SIZE = 10;
 
+type PageTab = 'local' | 'incubation';
 type DrawerTab = 'binding-overview' | 'opencode-binding' | 'github-binding';
+
+const INCUBATION_STATUS_LABEL: Record<IncubationProjectStatus, string> = {
+  active: '进行中',
+  paused: '已暂停',
+  completed: '已完成',
+  archived: '已归档',
+};
+
+const INCUBATION_STATUS_COLOR: Record<IncubationProjectStatus, string> = {
+  active: 'bg-green-100 text-green-700',
+  paused: 'bg-yellow-100 text-yellow-700',
+  completed: 'bg-blue-100 text-blue-700',
+  archived: 'bg-gray-100 text-gray-600',
+};
 
 function extractProjectId(value: string | Partial<RdProject> | undefined): string {
   if (!value) return '';
@@ -62,6 +89,12 @@ function extractRequestErrorMessage(error: any): string {
 }
 
 const ProjectManagement: React.FC = () => {
+  const navigate = useNavigate();
+
+  // ---- Page-level Tab ----
+  const [pageTab, setPageTab] = useState<PageTab>('local');
+
+  // ---- Local project state ----
   const [localSearch, setLocalSearch] = useState('');
   const [localPage, setLocalPage] = useState(1);
   const [selectedLocalProjectId, setSelectedLocalProjectId] = useState('');
@@ -83,6 +116,23 @@ const ProjectManagement: React.FC = () => {
   const [githubBranch, setGithubBranch] = useState('main');
   const [githubApiKeyId, setGithubApiKeyId] = useState('');
   const [githubUrlError, setGithubUrlError] = useState('');
+
+  // ---- Incubation project state ----
+  const [incubationSearch, setIncubationSearch] = useState('');
+  const [incubationPage, setIncubationPage] = useState(1);
+  const [incubationStatusFilter, setIncubationStatusFilter] = useState<IncubationProjectStatus | ''>('');
+  const [isIncubationCreateModalOpen, setIsIncubationCreateModalOpen] = useState(false);
+  const [isIncubationEditModalOpen, setIsIncubationEditModalOpen] = useState(false);
+  const [editingIncubationProject, setEditingIncubationProject] = useState<IncubationProject | null>(null);
+  const [incubationForm, setIncubationForm] = useState<{
+    name: string;
+    description: string;
+    goal: string;
+    startDate: string;
+    endDate: string;
+    status: IncubationProjectStatus;
+  }>({ name: '', description: '', goal: '', startDate: '', endDate: '', status: 'active' });
+
   const { toast, showToast, clearToast } = useToast(4000);
 
   const {
@@ -152,6 +202,125 @@ const ProjectManagement: React.FC = () => {
     [allApiKeys],
   );
 
+  // ---- Incubation project queries & mutations ----
+  const {
+    data: incubationProjects = [],
+    isLoading: incubationProjectsLoading,
+    error: incubationProjectsError,
+    refetch: refetchIncubationProjects,
+  } = useQuery<IncubationProject[]>(
+    ['pm-incubation-projects', incubationStatusFilter],
+    () => incubationProjectService.list(incubationStatusFilter ? { status: incubationStatusFilter } : undefined),
+    { retry: false, enabled: pageTab === 'incubation' },
+  );
+
+  const filteredIncubationProjects = useMemo(() => {
+    const keyword = incubationSearch.trim().toLowerCase();
+    if (!keyword) return incubationProjects;
+    return incubationProjects.filter((p) =>
+      String(p.name || '').toLowerCase().includes(keyword) ||
+      String(p.goal || '').toLowerCase().includes(keyword) ||
+      String(p.description || '').toLowerCase().includes(keyword),
+    );
+  }, [incubationProjects, incubationSearch]);
+
+  const totalIncubationPages = Math.max(1, Math.ceil(filteredIncubationProjects.length / INCUBATION_PAGE_SIZE));
+
+  useEffect(() => {
+    if (incubationPage > totalIncubationPages) {
+      setIncubationPage(totalIncubationPages);
+    }
+  }, [incubationPage, totalIncubationPages]);
+
+  const pagedIncubationProjects = useMemo(() => {
+    const start = (incubationPage - 1) * INCUBATION_PAGE_SIZE;
+    return filteredIncubationProjects.slice(start, start + INCUBATION_PAGE_SIZE);
+  }, [filteredIncubationProjects, incubationPage]);
+
+  const createIncubationMutation = useMutation(
+    (data: CreateIncubationProjectDto) => incubationProjectService.create(data),
+    {
+      onSuccess: () => {
+        resetIncubationForm();
+        setIsIncubationCreateModalOpen(false);
+        showToast('success', '孵化项目创建成功');
+        refetchIncubationProjects();
+      },
+      onError: (error) => showToast('error', extractRequestErrorMessage(error)),
+    },
+  );
+
+  const updateIncubationMutation = useMutation(
+    ({ id, data }: { id: string; data: UpdateIncubationProjectDto }) => incubationProjectService.update(id, data),
+    {
+      onSuccess: () => {
+        resetIncubationForm();
+        setIsIncubationEditModalOpen(false);
+        setEditingIncubationProject(null);
+        showToast('success', '孵化项目更新成功');
+        refetchIncubationProjects();
+      },
+      onError: (error) => showToast('error', extractRequestErrorMessage(error)),
+    },
+  );
+
+  const deleteIncubationMutation = useMutation(
+    (id: string) => incubationProjectService.delete(id),
+    {
+      onSuccess: () => {
+        showToast('success', '孵化项目已删除');
+        refetchIncubationProjects();
+      },
+      onError: (error) => showToast('error', extractRequestErrorMessage(error)),
+    },
+  );
+
+  function resetIncubationForm() {
+    setIncubationForm({ name: '', description: '', goal: '', startDate: '', endDate: '', status: 'active' });
+  }
+
+  function openIncubationEditModal(project: IncubationProject) {
+    setEditingIncubationProject(project);
+    setIncubationForm({
+      name: project.name,
+      description: project.description || '',
+      goal: project.goal || '',
+      startDate: project.startDate ? project.startDate.slice(0, 10) : '',
+      endDate: project.endDate ? project.endDate.slice(0, 10) : '',
+      status: project.status,
+    });
+    setIsIncubationEditModalOpen(true);
+  }
+
+  function handleIncubationCreate() {
+    const payload: CreateIncubationProjectDto = { name: incubationForm.name.trim() };
+    if (incubationForm.description.trim()) payload.description = incubationForm.description.trim();
+    if (incubationForm.goal.trim()) payload.goal = incubationForm.goal.trim();
+    if (incubationForm.startDate) payload.startDate = incubationForm.startDate;
+    if (incubationForm.endDate) payload.endDate = incubationForm.endDate;
+    createIncubationMutation.mutate(payload);
+  }
+
+  function handleIncubationUpdate() {
+    if (!editingIncubationProject) return;
+    const payload: UpdateIncubationProjectDto = {};
+    if (incubationForm.name.trim() !== editingIncubationProject.name) payload.name = incubationForm.name.trim();
+    if (incubationForm.description.trim() !== (editingIncubationProject.description || '')) payload.description = incubationForm.description.trim();
+    if (incubationForm.goal.trim() !== (editingIncubationProject.goal || '')) payload.goal = incubationForm.goal.trim();
+    if (incubationForm.status !== editingIncubationProject.status) payload.status = incubationForm.status;
+    const origStart = editingIncubationProject.startDate ? editingIncubationProject.startDate.slice(0, 10) : '';
+    const origEnd = editingIncubationProject.endDate ? editingIncubationProject.endDate.slice(0, 10) : '';
+    if (incubationForm.startDate !== origStart) payload.startDate = incubationForm.startDate || undefined;
+    if (incubationForm.endDate !== origEnd) payload.endDate = incubationForm.endDate || undefined;
+    updateIncubationMutation.mutate({ id: editingIncubationProject._id, data: payload });
+  }
+
+  function formatDate(dateStr?: string) {
+    if (!dateStr) return '-';
+    return dateStr.slice(0, 10);
+  }
+
+  // ---- Local project effects ----
   useEffect(() => {
     if (!selectedLocalProjectId && localProjects.length > 0) {
       setSelectedLocalProjectId(localProjects[0]._id);
@@ -386,10 +555,25 @@ const ProjectManagement: React.FC = () => {
     <div className="space-y-4">
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         <h1 className="text-lg font-semibold text-gray-900">项目管理</h1>
-        <p className="mt-1 text-sm text-gray-600">列表优先管理本地项目，并在详情抽屉中完成 OpenCode/GitHub 绑定。</p>
+        <p className="mt-1 text-sm text-gray-600">管理本地项目与孵化项目，在对应模块页面中可按项目维度筛选资源。</p>
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => setPageTab('local')}
+            className={`px-4 py-1.5 text-sm rounded ${pageTab === 'local' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            本地项目
+          </button>
+          <button
+            onClick={() => setPageTab('incubation')}
+            className={`px-4 py-1.5 text-sm rounded ${pageTab === 'incubation' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            孵化项目
+          </button>
+        </div>
       </div>
 
-      <section className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+      {/* ========== 本地项目 Tab ========== */}
+      {pageTab === 'local' && <section className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
             value={localSearch}
@@ -471,8 +655,279 @@ const ProjectManagement: React.FC = () => {
             </button>
           </div>
         </div>
-      </section>
+      </section>}
 
+      {/* ========== 孵化项目 Tab ========== */}
+      {pageTab === 'incubation' && (
+        <section className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={incubationSearch}
+              onChange={(e) => { setIncubationSearch(e.target.value); setIncubationPage(1); }}
+              placeholder="搜索孵化项目（名称/目标/描述）"
+              className="w-full md:w-[360px] border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+            <select
+              value={incubationStatusFilter}
+              onChange={(e) => { setIncubationStatusFilter(e.target.value as IncubationProjectStatus | ''); setIncubationPage(1); }}
+              className="border border-gray-300 rounded px-2 py-2 text-sm"
+            >
+              <option value="">全部状态</option>
+              <option value="active">进行中</option>
+              <option value="paused">已暂停</option>
+              <option value="completed">已完成</option>
+              <option value="archived">已归档</option>
+            </select>
+            <button
+              onClick={() => refetchIncubationProjects()}
+              className="inline-flex items-center gap-1 border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+            >
+              <ArrowPathIcon className="h-4 w-4" />刷新
+            </button>
+            <button
+              onClick={() => { resetIncubationForm(); setIsIncubationCreateModalOpen(true); }}
+              className="inline-flex items-center gap-1 rounded px-3 py-2 text-sm bg-primary-600 text-white ml-auto"
+            >
+              <RocketLaunchIcon className="h-4 w-4" />新建孵化项目
+            </button>
+          </div>
+
+          <div className="text-xs text-gray-500">共 {filteredIncubationProjects.length} 个孵化项目</div>
+
+          <div className="border border-gray-200 rounded max-h-[600px] overflow-y-auto">
+            {incubationProjectsLoading ? (
+              <p className="text-sm text-gray-500 p-4">加载中...</p>
+            ) : incubationProjectsError ? (
+              <p className="text-sm text-red-600 p-4">孵化项目加载失败，请刷新重试。</p>
+            ) : filteredIncubationProjects.length === 0 ? (
+              <p className="text-sm text-gray-400 p-4">暂无孵化项目，请先新建。</p>
+            ) : (
+              pagedIncubationProjects.map((project) => (
+                <div key={project._id} className="px-4 py-3 border-b border-gray-100">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                        <span className={`shrink-0 inline-block px-1.5 py-0.5 text-[11px] rounded ${INCUBATION_STATUS_COLOR[project.status]}`}>
+                          {INCUBATION_STATUS_LABEL[project.status]}
+                        </span>
+                      </div>
+                      {project.goal && <p className="text-xs text-gray-600 mt-1 line-clamp-1">{project.goal}</p>}
+                      {project.description && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{project.description}</p>}
+                      <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
+                        <span>创建: {formatDate(project.createdAt)}</span>
+                        {project.startDate && <span>开始: {formatDate(project.startDate)}</span>}
+                        {project.endDate && <span>截止: {formatDate(project.endDate)}</span>}
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1.5">
+                      <button
+                        onClick={() => navigate(`/ei/incubation/${project._id}`)}
+                        className="inline-flex items-center gap-1 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50"
+                      >
+                        查看详情
+                      </button>
+                      <button
+                        onClick={() => openIncubationEditModal(project)}
+                        className="text-gray-400 hover:text-gray-600 p-1"
+                        title="编辑"
+                      >
+                        <PencilIcon className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (!window.confirm(`确认删除孵化项目「${project.name}」？`)) return;
+                          deleteIncubationMutation.mutate(project._id);
+                        }}
+                        className="text-gray-400 hover:text-red-600 p-1"
+                        title="删除"
+                      >
+                        <TrashIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          {filteredIncubationProjects.length > INCUBATION_PAGE_SIZE && (
+            <div className="flex items-center justify-between text-xs text-gray-600">
+              <span>第 {incubationPage} / {totalIncubationPages} 页</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIncubationPage((prev) => Math.max(1, prev - 1))}
+                  disabled={incubationPage <= 1}
+                  className="border border-gray-300 rounded px-2 py-1 disabled:text-gray-400"
+                >
+                  上一页
+                </button>
+                <button
+                  onClick={() => setIncubationPage((prev) => Math.min(totalIncubationPages, prev + 1))}
+                  disabled={incubationPage >= totalIncubationPages}
+                  className="border border-gray-300 rounded px-2 py-1 disabled:text-gray-400"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ========== 孵化项目创建弹窗 ========== */}
+      {isIncubationCreateModalOpen && (
+        <div className="fixed inset-0 z-[90]">
+          <button className="absolute inset-0 bg-black/40" onClick={() => setIsIncubationCreateModalOpen(false)} aria-label="关闭弹窗" />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-gray-200 shadow-2xl p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900">新建孵化项目</p>
+              <button onClick={() => setIsIncubationCreateModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              <input
+                value={incubationForm.name}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="项目名称（必填）"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <textarea
+                value={incubationForm.description}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="项目描述（可选）"
+                rows={2}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none"
+              />
+              <input
+                value={incubationForm.goal}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, goal: e.target.value }))}
+                placeholder="项目目标（可选）"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500">开始时间</label>
+                  <input
+                    type="date"
+                    value={incubationForm.startDate}
+                    onChange={(e) => setIncubationForm((prev) => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">截止时间</label>
+                  <input
+                    type="date"
+                    value={incubationForm.endDate}
+                    onChange={(e) => setIncubationForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setIsIncubationCreateModalOpen(false)}
+                className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleIncubationCreate}
+                disabled={!incubationForm.name.trim() || createIncubationMutation.isLoading}
+                className="rounded px-3 py-2 text-sm bg-primary-600 text-white disabled:bg-gray-300"
+              >
+                {createIncubationMutation.isLoading ? '创建中...' : '确认创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== 孵化项目编辑弹窗 ========== */}
+      {isIncubationEditModalOpen && editingIncubationProject && (
+        <div className="fixed inset-0 z-[90]">
+          <button className="absolute inset-0 bg-black/40" onClick={() => { setIsIncubationEditModalOpen(false); setEditingIncubationProject(null); }} aria-label="关闭弹窗" />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-gray-200 shadow-2xl p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900">编辑孵化项目</p>
+              <button onClick={() => { setIsIncubationEditModalOpen(false); setEditingIncubationProject(null); }} className="text-gray-500 hover:text-gray-700">
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              <input
+                value={incubationForm.name}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, name: e.target.value }))}
+                placeholder="项目名称（必填）"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <textarea
+                value={incubationForm.description}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="项目描述（可选）"
+                rows={2}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none"
+              />
+              <input
+                value={incubationForm.goal}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, goal: e.target.value }))}
+                placeholder="项目目标（可选）"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <select
+                value={incubationForm.status}
+                onChange={(e) => setIncubationForm((prev) => ({ ...prev, status: e.target.value as IncubationProjectStatus }))}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              >
+                <option value="active">进行中</option>
+                <option value="paused">已暂停</option>
+                <option value="completed">已完成</option>
+                <option value="archived">已归档</option>
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500">开始时间</label>
+                  <input
+                    type="date"
+                    value={incubationForm.startDate}
+                    onChange={(e) => setIncubationForm((prev) => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500">截止时间</label>
+                  <input
+                    type="date"
+                    value={incubationForm.endDate}
+                    onChange={(e) => setIncubationForm((prev) => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => { setIsIncubationEditModalOpen(false); setEditingIncubationProject(null); }}
+                className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleIncubationUpdate}
+                disabled={!incubationForm.name.trim() || updateIncubationMutation.isLoading}
+                className="rounded px-3 py-2 text-sm bg-primary-600 text-white disabled:bg-gray-300"
+              >
+                {updateIncubationMutation.isLoading ? '保存中...' : '保存修改'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== 本地项目创建弹窗 ========== */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-[90]">
           <button className="absolute inset-0 bg-black/40" onClick={() => setIsCreateModalOpen(false)} aria-label="关闭弹窗" />

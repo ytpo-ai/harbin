@@ -175,6 +175,7 @@ export interface CreatePlanFromPromptDto {
   runMode?: PlanRunMode;
   autoRun?: boolean;
   autoGenerate?: boolean;
+  projectId?: string;
 }
 
 export interface RunPlanAcceptedResponse {
@@ -265,8 +266,8 @@ export const orchestrationService = {
     return normalizePlan(response.data);
   },
 
-  async getPlans(): Promise<OrchestrationPlan[]> {
-    const response = await api.get('/orchestration/plans');
+  async getPlans(filters?: { projectId?: string }): Promise<OrchestrationPlan[]> {
+    const response = await api.get('/orchestration/plans', { params: filters });
     return Array.isArray(response.data) ? response.data.map((plan: OrchestrationPlan) => normalizePlan(plan)) : [];
   },
 

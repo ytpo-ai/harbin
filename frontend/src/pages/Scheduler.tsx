@@ -20,6 +20,7 @@ import {
   ScheduleType,
 } from '../services/schedulerService';
 import { agentService } from '../services/agentService';
+import { incubationProjectService, IncubationProject } from '../services/incubationProjectService';
 import { Agent } from '../types';
 
 type IntervalUnit = 'minute' | 'hour';
@@ -84,6 +85,7 @@ const formatDispatchStatus = (status?: string) => {
 
 const Scheduler: React.FC = () => {
   const queryClient = useQueryClient();
+  const [projectIdFilter, setProjectIdFilter] = useState<string | undefined>(undefined);
   const [selectedScheduleId, setSelectedScheduleId] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -114,10 +116,17 @@ const Scheduler: React.FC = () => {
     agentService.getAssignableAgents(),
   );
 
+  const scheduleFilters = projectIdFilter !== undefined ? { projectId: projectIdFilter } : undefined;
   const { data: schedules = [], isLoading: schedulesLoading } = useQuery<OrchestrationSchedule[]>(
-    'orchestration-schedules',
-    () => schedulerService.getSchedules(),
+    ['orchestration-schedules', projectIdFilter],
+    () => schedulerService.getSchedules(scheduleFilters),
     { refetchInterval: 5000 },
+  );
+
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'scheduler-incubation-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
   );
 
   const { data: scheduleDetail, isFetching: detailLoading } = useQuery(
@@ -344,8 +353,22 @@ const Scheduler: React.FC = () => {
             <p className="mt-1 text-sm text-slate-600">创建定时触发器，按计划向指定 Agent 发送内部消息，由 Agent 自主执行。</p>
           </div>
           <div className="flex items-center gap-2">
+            <select
+              value={projectIdFilter ?? '__all__'}
+              onChange={(e) => {
+                const v = e.target.value;
+                setProjectIdFilter(v === '__all__' ? undefined : v);
+              }}
+              className="rounded-md border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"
+            >
+              <option value="__all__">全部项目</option>
+              <option value="">全局（无项目）</option>
+              {incubationProjects.map((p) => (
+                <option key={p._id} value={p._id}>{p.name}</option>
+              ))}
+            </select>
             <button
-              onClick={() => queryClient.invalidateQueries('orchestration-schedules')}
+              onClick={() => queryClient.invalidateQueries(['orchestration-schedules', projectIdFilter])}
               className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
               <ArrowPathIcon className="h-4 w-4" /> 刷新
