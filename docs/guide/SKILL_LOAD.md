@@ -239,7 +239,7 @@ const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(`
 - 同步入口：`POST /skills/docs/sync`
 - 扫描目录：默认 `{workspaceRoot}/docs/skill`，可通过 `SKILL_DOCS_DIR` 覆盖
 - 同步策略：按 `slug` upsert 到 `agent_skills`（insert / update / skip）
-- Skill 正文来自文档主体 Markdown，metadata/tags/planningRules 等来自 frontmatter
+- Skill 正文来自文档主体 Markdown，metadata/tags 等来自 frontmatter
 
 ---
 

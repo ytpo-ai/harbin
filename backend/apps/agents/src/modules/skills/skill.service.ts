@@ -10,7 +10,6 @@ import {
   SkillDocument,
   SkillSourceType,
   SkillStatus,
-  PlanningRule,
 } from '../../schemas/agent-skill.schema';
 import { LoadedSkillDoc, SkillDocLoaderService } from './skill-doc-loader.service';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
@@ -32,7 +31,6 @@ interface CreateSkillInput {
   metadata?: Record<string, any>;
   content?: string;
   contentType?: string;
-  planningRules?: PlanningRule[];
   promptTemplateRef?: {
     scene?: string;
     role?: string;
@@ -838,7 +836,6 @@ export class SkillService {
       discoveredBy: doc.discoveredBy?.trim() || 'SkillDocSync',
       metadata: doc.metadata || {},
       metadataUpdatedAt: now,
-      planningRules: doc.planningRules || [],
       content: doc.content,
       contentType: doc.contentType || 'text/markdown',
       contentHash: doc.contentHash,
@@ -880,12 +877,6 @@ export class SkillService {
 
     const existedMetadata = (existed as any).metadata || {};
     const nextMetadata = next.metadata || {};
-    if (JSON.stringify(existedMetadata) !== JSON.stringify(nextMetadata)) {
-      return true;
-    }
-
-    const existedPlanningRules = (existed as any).planningRules || [];
-    const nextPlanningRules = next.planningRules || [];
-    return JSON.stringify(existedPlanningRules) !== JSON.stringify(nextPlanningRules);
+    return JSON.stringify(existedMetadata) !== JSON.stringify(nextMetadata);
   }
 }

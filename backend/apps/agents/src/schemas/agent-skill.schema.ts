@@ -6,22 +6,6 @@ export type SkillDocument = Skill & Document;
 export type SkillSourceType = 'manual' | 'github' | 'web' | 'internal';
 export type SkillStatus = 'active' | 'experimental' | 'deprecated' | 'disabled';
 
-export type PlanningRuleType =
-  | 'task_count'
-  | 'forbidden_task_pattern'
-  | 'required_task_pattern'
-  | 'dependency_rule'
-  | 'description_quality';
-
-export interface PlanningRule {
-  /** Rule type for classification and validation dispatch */
-  type: PlanningRuleType;
-  /** Human-readable description, also injected into the planner prompt as a constraint */
-  rule: string;
-  /** Optional regex or JSON Schema for machine validation of planner output */
-  validate?: string;
-}
-
 @Schema({ timestamps: true, collection: 'agent_skills' })
 export class Skill {
   @Prop()
@@ -95,9 +79,6 @@ export class Skill {
 
   @Prop()
   metadataUpdatedAt?: Date;
-
-  @Prop({ type: [Object], default: [] })
-  planningRules?: PlanningRule[];
 
   @Prop({
     type: {

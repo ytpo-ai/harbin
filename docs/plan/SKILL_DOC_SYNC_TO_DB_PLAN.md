@@ -8,7 +8,7 @@
 
 ## 执行步骤
 
-1. 设计同步输入规范：定义 `docs/skill/*.md` 的 frontmatter 到 Skill Schema 字段映射（name/slug/description/category/tags/status/version/provider/sourceType/confidenceScore/planningRules/metadata）。
+1. 设计同步输入规范：定义 `docs/skill/*.md` 的 frontmatter 到 Skill Schema 字段映射（name/slug/description/category/tags/status/version/provider/sourceType/confidenceScore/metadata）。
 2. 实现文档加载服务：新增 `SkillDocLoaderService`，负责扫描目录、解析 frontmatter + markdown 正文、生成入库 payload，并对 `content` 计算 hash/size。
 3. 实现同步逻辑：按 `slug` upsert 到 `agent_skills`，区分 inserted/updated/skipped，默认不删除 DB 中“仅存在于 DB”的历史记录。
 4. 替换接口能力：将 `/skills/docs/rebuild` 替换为 `/skills/docs/sync`，返回同步统计结果；前端按钮改为“同步文档到 DB”。

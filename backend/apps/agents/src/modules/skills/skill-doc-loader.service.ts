@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { promises as fs } from 'fs';
 import { existsSync } from 'fs';
 import * as path from 'path';
-import { PlanningRule, SkillSourceType, SkillStatus } from '../../schemas/agent-skill.schema';
+import { SkillSourceType, SkillStatus } from '../../schemas/agent-skill.schema';
 
 export interface LoadedSkillDoc {
   filePath: string;
@@ -20,7 +20,6 @@ export interface LoadedSkillDoc {
   confidenceScore?: number;
   discoveredBy?: string;
   metadata?: Record<string, any>;
-  planningRules?: PlanningRule[];
   content?: string;
   contentType: string;
   contentHash?: string;
@@ -272,7 +271,6 @@ export class SkillDocLoaderService {
     const tags = this.normalizeStringArray(frontmatter.tags)
       || this.normalizeStringArray(metadata.tags)
       || undefined;
-    const planningRules = this.normalizePlanningRules(frontmatter.planningRules);
 
     return {
       filePath,
@@ -289,7 +287,6 @@ export class SkillDocLoaderService {
       confidenceScore: this.normalizeOptionalNumber(frontmatter.confidenceScore),
       discoveredBy: this.normalizeOptionalString(frontmatter.discoveredBy),
       metadata,
-      planningRules,
       content: content || undefined,
       contentType: this.normalizeOptionalString(frontmatter.contentType) || 'text/markdown',
       contentHash,
@@ -331,23 +328,5 @@ export class SkillDocLoaderService {
       return undefined;
     }
     return value;
-  }
-
-  private normalizePlanningRules(value: unknown): PlanningRule[] | undefined {
-    if (!Array.isArray(value)) return undefined;
-    const normalized: PlanningRule[] = [];
-    for (const item of value) {
-      if (!item || typeof item !== 'object') continue;
-      const type = this.normalizeOptionalString((item as any).type);
-      const rule = this.normalizeOptionalString((item as any).rule);
-      const validate = this.normalizeOptionalString((item as any).validate);
-      if (!type || !rule) continue;
-      normalized.push({
-        type: type as PlanningRule['type'],
-        rule,
-        ...(validate ? { validate } : {}),
-      });
-    }
-    return normalized.length ? normalized : undefined;
   }
 }
