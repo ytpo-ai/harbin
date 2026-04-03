@@ -211,7 +211,7 @@ const ProjectManagement: React.FC = () => {
   } = useQuery<IncubationProject[]>(
     ['pm-incubation-projects', incubationStatusFilter],
     () => incubationProjectService.list(incubationStatusFilter ? { status: incubationStatusFilter } : undefined),
-    { retry: false, enabled: pageTab === 'incubation' },
+    { retry: false, enabled: pageTab === 'incubation' || isDrawerOpen },
   );
 
   const filteredIncubationProjects = useMemo(() => {
@@ -517,6 +517,22 @@ const ProjectManagement: React.FC = () => {
     {
       onSuccess: async () => {
         showToast('success', 'GitHub 解绑成功');
+        await refetchLocalProjects();
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
+      },
+    },
+  );
+
+  const bindIncubationMutation = useMutation(
+    ({ incubationProjectId }: { incubationProjectId?: string }) => {
+      if (!selectedLocalProjectId) return Promise.resolve(null);
+      return rdManagementService.bindIncubationProject(selectedLocalProjectId, incubationProjectId);
+    },
+    {
+      onSuccess: async () => {
+        showToast('success', '孵化项目绑定已更新');
         await refetchLocalProjects();
       },
       onError: (error) => {
@@ -1071,6 +1087,32 @@ const ProjectManagement: React.FC = () => {
                           </button>
                         </div>
                       </div>
+                    )}
+                  </div>
+
+                  <div className="border border-gray-200 rounded p-3">
+                    <p className="text-xs font-semibold text-gray-700">孵化项目（单绑定）</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        value={selectedLocalProject?.incubationProjectId || ''}
+                        onChange={(e) => {
+                          const nextVal = e.target.value;
+                          bindIncubationMutation.mutate({ incubationProjectId: nextVal || undefined });
+                        }}
+                        disabled={bindIncubationMutation.isLoading}
+                        className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs"
+                      >
+                        <option value="">全局（不关联孵化项目）</option>
+                        {incubationProjects.map((p) => (
+                          <option key={p._id} value={p._id}>{p.name}</option>
+                        ))}
+                      </select>
+                      {bindIncubationMutation.isLoading && <span className="text-[11px] text-gray-400">保存中...</span>}
+                    </div>
+                    {selectedLocalProject?.incubationProjectId && (
+                      <p className="mt-1.5 text-[11px] text-gray-500">
+                        当前绑定: {incubationProjects.find((p) => p._id === selectedLocalProject.incubationProjectId)?.name || selectedLocalProject.incubationProjectId}
+                      </p>
                     )}
                   </div>
                 </div>

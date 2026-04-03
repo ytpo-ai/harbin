@@ -60,6 +60,7 @@ export interface RdProject {
   bindingLocalProjectId?: string;
   opencodeBindingIds?: Array<string | Partial<RdProject>>;
   githubBindingId?: string | Partial<RdProject>;
+  incubationProjectId?: string;
   opencodeConfig?: Record<string, any>;
   repositoryUrl?: string;
   githubOwner?: string;
@@ -298,6 +299,15 @@ class RdConversationService {
     const response = await axios.post(
       `${API_URL}/ei/projects/${localProjectId}/unbind/github`,
       {},
+      this.getAuthHeaders(),
+    );
+    return response.data;
+  }
+
+  async bindIncubationProject(localProjectId: string, incubationProjectId?: string): Promise<RdProject> {
+    const response = await axios.patch(
+      `${API_URL}/ei/projects/${localProjectId}/incubation-binding`,
+      { incubationProjectId: incubationProjectId || undefined },
       this.getAuthHeaders(),
     );
     return response.data;

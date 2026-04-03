@@ -473,3 +473,9 @@ export class UnbindOpencodeProjectDto {
   @IsMongoId()
   opencodeBindingId: string;
 }
+
+export class BindIncubationProjectDto {
+  @IsOptional()
+  @IsMongoId()
+  incubationProjectId?: string;
+}

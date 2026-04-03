@@ -21,6 +21,7 @@ import {
   UnbindOpencodeProjectDto,
   UpdateRdProjectDto,
   UpdateRdTaskDto,
+  BindIncubationProjectDto,
 } from '../dto';
 import { ApiKeyService } from '../../../../src/modules/api-keys/api-key.service';
 
@@ -659,6 +660,28 @@ export class EiManagementService {
       .exec();
 
     return updatedLocal;
+  }
+
+  async bindIncubationProject(localProjectId: string, dto: BindIncubationProjectDto): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(localProjectId);
+    const incubationProjectId = dto.incubationProjectId?.trim() || undefined;
+
+    const update: Record<string, any> = {};
+    if (incubationProjectId) {
+      update.$set = { incubationProjectId: new Types.ObjectId(incubationProjectId) };
+    } else {
+      update.$unset = { incubationProjectId: '' };
+    }
+
+    const updated = await this.rdProjectModel
+      .findOneAndUpdate({ _id: localProject._id }, update, { new: true })
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updated;
   }
 
   async deleteProject(projectId: string): Promise<boolean> {

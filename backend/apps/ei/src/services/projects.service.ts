@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   BindGithubProjectDto,
+  BindIncubationProjectDto,
   BindOpencodeProjectDto,
   CreateLocalRdProjectDto,
   CreateRdProjectDto,
@@ -55,6 +56,10 @@ export class EiProjectsService {
 
   unbindGithubProject(localProjectId: string) {
     return this.core.unbindGithubProject(localProjectId);
+  }
+
+  bindIncubationProject(localProjectId: string, payload: BindIncubationProjectDto) {
+    return this.core.bindIncubationProject(localProjectId, payload);
   }
 
   importOpencodeProject(payload: ImportOpencodeProjectDto) {

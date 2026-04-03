@@ -67,6 +67,9 @@ export class RdProject {
   @Prop({ type: Types.ObjectId, ref: 'RdProject' })
   githubBindingId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'IncubationProject' })
+  incubationProjectId?: Types.ObjectId;
+
   @Prop({ type: Object })
   opencodeConfig: Record<string, any>;
 

@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, Put, Query, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Put, Query, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from '../../../../src/modules/auth/auth.service';
 import {
   BindGithubProjectDto,
+  BindIncubationProjectDto,
   BindOpencodeProjectDto,
   CreateLocalRdProjectDto,
   CreateRdProjectDto,
@@ -107,6 +108,16 @@ export class EiProjectsController {
   async unbindGithubProject(@Param('id') localProjectId: string, @Headers('authorization') authHeader: string) {
     await this.getUserFromAuthHeader(authHeader);
     return this.projectsService.unbindGithubProject(localProjectId);
+  }
+
+  @Patch(':id/incubation-binding')
+  async bindIncubationProject(
+    @Param('id') localProjectId: string,
+    @Body() dto: BindIncubationProjectDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.projectsService.bindIncubationProject(localProjectId, dto);
   }
 
   @Post(':id/opencode/sync-current')
