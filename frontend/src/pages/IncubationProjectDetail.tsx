@@ -9,6 +9,7 @@ import {
   DocumentTextIcon,
   CalendarIcon,
   ChatBubbleLeftRightIcon,
+  ClockIcon,
 } from '@heroicons/react/24/outline';
 import {
   incubationProjectService,
@@ -17,7 +18,28 @@ import {
   IncubationProjectStatus,
 } from '../services/incubationProjectService';
 
-type DetailTab = 'agents' | 'requirements';
+type DetailTab = 'agents' | 'plans' | 'schedules' | 'requirements';
+
+const PLAN_STATUS_LABEL: Record<string, string> = {
+  draft: '草稿',
+  drafting: '生成中',
+  planned: '已规划',
+  production: '执行中',
+};
+
+const PLAN_STATUS_COLOR: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-600',
+  drafting: 'bg-yellow-100 text-yellow-700',
+  planned: 'bg-blue-100 text-blue-700',
+  production: 'bg-green-100 text-green-700',
+};
+
+const SCHEDULE_STATUS_COLOR: Record<string, string> = {
+  idle: 'bg-gray-100 text-gray-600',
+  running: 'bg-green-100 text-green-700',
+  paused: 'bg-yellow-100 text-yellow-700',
+  error: 'bg-red-100 text-red-600',
+};
 
 const STATUS_LABEL: Record<IncubationProjectStatus, string> = {
   active: '进行中',
@@ -73,6 +95,28 @@ const IncubationProjectDetail: React.FC = () => {
     ['incubation-project-agents', id],
     () => incubationProjectService.getProjectAgents(id!),
     { enabled: Boolean(id) && activeTab === 'agents', retry: false },
+  );
+
+  // ---- Plans ----
+  const {
+    data: plans = [],
+    isLoading: plansLoading,
+    refetch: refetchPlans,
+  } = useQuery<any[]>(
+    ['incubation-project-plans', id],
+    () => incubationProjectService.getProjectPlans(id!),
+    { enabled: Boolean(id) && activeTab === 'plans', retry: false },
+  );
+
+  // ---- Schedules ----
+  const {
+    data: schedules = [],
+    isLoading: schedulesLoading,
+    refetch: refetchSchedules,
+  } = useQuery<any[]>(
+    ['incubation-project-schedules', id],
+    () => incubationProjectService.getProjectSchedules(id!),
+    { enabled: Boolean(id) && activeTab === 'schedules', retry: false },
   );
 
   // ---- Requirements ----
@@ -144,18 +188,20 @@ const IncubationProjectDetail: React.FC = () => {
       {/* Tab bar + content */}
       <div className="bg-white border border-gray-200 rounded-lg">
         <div className="px-4 pt-3 pb-0 border-b border-gray-200 flex gap-2">
-          <button
-            onClick={() => setActiveTab('agents')}
-            className={`px-3 py-1.5 text-xs rounded-t ${activeTab === 'agents' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            Agent ({agents.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('requirements')}
-            className={`px-3 py-1.5 text-xs rounded-t ${activeTab === 'requirements' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            需求 ({requirements.length})
-          </button>
+          {([
+            { key: 'agents' as const, label: 'Agent', count: agents.length },
+            { key: 'plans' as const, label: '计划', count: plans.length },
+            { key: 'schedules' as const, label: '调度', count: schedules.length },
+            { key: 'requirements' as const, label: '需求', count: requirements.length },
+          ]).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`px-3 py-1.5 text-xs rounded-t ${activeTab === tab.key ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+            >
+              {tab.label} ({tab.count})
+            </button>
+          ))}
         </div>
 
         <div className="p-4">
@@ -163,17 +209,20 @@ const IncubationProjectDetail: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <p className="text-xs text-gray-500">项目专属 Agent</p>
-                <button
-                  onClick={() => refetchAgents()}
-                  className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
-                >
-                  <ArrowPathIcon className="h-3.5 w-3.5" />刷新
-                </button>
+                <div className="flex items-center gap-2">
+                  <Link to="/agents" className="text-xs text-primary-600 hover:underline">前往 Agent 管理</Link>
+                  <button
+                    onClick={() => refetchAgents()}
+                    className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                  >
+                    <ArrowPathIcon className="h-3.5 w-3.5" />刷新
+                  </button>
+                </div>
               </div>
               {agentsLoading ? (
                 <p className="text-sm text-gray-500">加载中...</p>
               ) : agents.length === 0 ? (
-                <p className="text-sm text-gray-400">暂无项目 Agent，请在 Agent 管理页创建并关联此项目。</p>
+                <p className="text-sm text-gray-400">暂无项目 Agent，请在 <Link to="/agents" className="text-primary-600 hover:underline">Agent 管理页</Link> 创建并关联此项目。</p>
               ) : (
                 <div className="space-y-2">
                   {agents.map((agent: any) => (
@@ -203,6 +252,127 @@ const IncubationProjectDetail: React.FC = () => {
             </div>
           )}
 
+          {activeTab === 'plans' && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">项目关联编排计划</p>
+                <div className="flex items-center gap-2">
+                  <Link to="/orchestration" className="text-xs text-primary-600 hover:underline">前往计划编排</Link>
+                  <button
+                    onClick={() => refetchPlans()}
+                    className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                  >
+                    <ArrowPathIcon className="h-3.5 w-3.5" />刷新
+                  </button>
+                </div>
+              </div>
+              {plansLoading ? (
+                <p className="text-sm text-gray-500">加载中...</p>
+              ) : plans.length === 0 ? (
+                <p className="text-sm text-gray-400">暂无项目计划，请在 <Link to="/orchestration" className="text-primary-600 hover:underline">计划编排页</Link> 创建并关联此项目。</p>
+              ) : (
+                <div className="space-y-2">
+                  {plans.map((plan: any) => {
+                    const planId = plan._id || plan.id;
+                    const status = plan.status || 'draft';
+                    const totalTasks = plan.stats?.totalTasks ?? plan.taskIds?.length ?? 0;
+                    const completedTasks = plan.stats?.completedTasks ?? 0;
+                    return (
+                      <div key={planId} className="border border-gray-200 rounded p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-gray-900">{plan.title || '未命名计划'}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${PLAN_STATUS_COLOR[status] || 'bg-gray-100 text-gray-600'}`}>
+                              {PLAN_STATUS_LABEL[status] || status}
+                            </span>
+                          </div>
+                          <Link
+                            to={`/orchestration`}
+                            className="text-xs text-primary-600 hover:underline"
+                          >
+                            前往编排
+                          </Link>
+                        </div>
+                        {plan.sourcePrompt && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{plan.sourcePrompt}</p>}
+                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
+                          <span>任务: {completedTasks}/{totalTasks}</span>
+                          {plan.domainType && <span>类型: {plan.domainType}</span>}
+                          {plan.createdAt && <span>创建: {formatDate(plan.createdAt)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'schedules' && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">项目关联定时调度</p>
+                <div className="flex items-center gap-2">
+                  <Link to="/scheduler" className="text-xs text-primary-600 hover:underline">前往定时服务</Link>
+                  <button
+                    onClick={() => refetchSchedules()}
+                    className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                  >
+                    <ArrowPathIcon className="h-3.5 w-3.5" />刷新
+                  </button>
+                </div>
+              </div>
+              {schedulesLoading ? (
+                <p className="text-sm text-gray-500">加载中...</p>
+              ) : schedules.length === 0 ? (
+                <p className="text-sm text-gray-400">暂无项目调度，请在 <Link to="/scheduler" className="text-primary-600 hover:underline">定时服务页</Link> 创建并关联此项目。</p>
+              ) : (
+                <div className="space-y-2">
+                  {schedules.map((schedule: any) => {
+                    const scheduleId = schedule._id || schedule.id;
+                    const status = schedule.status || 'idle';
+                    const scheduleRule = schedule.schedule;
+                    let ruleText = '-';
+                    if (scheduleRule?.type === 'interval' && scheduleRule.intervalMs) {
+                      const hours = scheduleRule.intervalMs / (60 * 60 * 1000);
+                      const minutes = scheduleRule.intervalMs / (60 * 1000);
+                      ruleText = hours >= 1 && hours === Math.floor(hours) ? `每 ${hours} 小时` : `每 ${Math.round(minutes)} 分钟`;
+                    } else if (scheduleRule?.expression) {
+                      ruleText = scheduleRule.expression;
+                    }
+                    return (
+                      <div key={scheduleId} className="border border-gray-200 rounded p-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <ClockIcon className="h-3.5 w-3.5 text-gray-400" />
+                            <p className="text-sm font-medium text-gray-900">{schedule.name || '未命名调度'}</p>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${SCHEDULE_STATUS_COLOR[status] || 'bg-gray-100 text-gray-600'}`}>
+                              {status}
+                            </span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${schedule.enabled ? 'bg-green-50 text-green-600' : 'bg-gray-50 text-gray-500'}`}>
+                              {schedule.enabled ? '已启用' : '未启用'}
+                            </span>
+                          </div>
+                          <Link
+                            to={`/scheduler`}
+                            className="text-xs text-primary-600 hover:underline"
+                          >
+                            前往管理
+                          </Link>
+                        </div>
+                        {schedule.description && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{schedule.description}</p>}
+                        <div className="flex items-center gap-3 mt-1.5 text-[11px] text-gray-400">
+                          <span>规则: {ruleText}</span>
+                          {schedule.target?.executorName && <span>执行者: {schedule.target.executorName}</span>}
+                          {schedule.nextRunAt && <span>下次: {formatDate(schedule.nextRunAt)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === 'requirements' && (
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -217,7 +387,7 @@ const IncubationProjectDetail: React.FC = () => {
               {requirementsLoading ? (
                 <p className="text-sm text-gray-500">加载中...</p>
               ) : requirements.length === 0 ? (
-                <p className="text-sm text-gray-400">暂无项目需求，请在需求管理页创建并关联此项目。</p>
+                <p className="text-sm text-gray-400">暂无项目需求。</p>
               ) : (
                 <div className="space-y-2">
                   {requirements.map((req: any) => {
