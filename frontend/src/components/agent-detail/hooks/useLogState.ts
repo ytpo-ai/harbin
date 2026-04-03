@@ -92,30 +92,25 @@ export const useLogState = (agentId: string) => {
   const loadRunScore = async (runId: string) => {
     if (!runId) return;
 
-    let shouldFetch = false;
-    setRunScores((prev) => {
-      const cached = prev[runId];
-      if (cached?.loading) {
-        const loadingForMs = Date.now() - Number(cached.loadingStartedAt || 0);
-        if (loadingForMs < 15000) {
-          return prev;
-        }
+    const cached = runScores[runId];
+    if (cached?.loading) {
+      const loadingForMs = Date.now() - Number(cached.loadingStartedAt || 0);
+      if (loadingForMs < 15000) {
+        return;
       }
-      if (cached && !cached.error && cached.data !== undefined) {
-        return prev;
-      }
-      shouldFetch = true;
-      return {
-        ...prev,
-        [runId]: {
-          loading: true,
-          data: null,
-          loadingStartedAt: Date.now(),
-        },
-      };
-    });
+    }
+    if (cached && !cached.error && cached.data !== undefined) {
+      return;
+    }
 
-    if (!shouldFetch) return;
+    setRunScores((prev) => ({
+      ...prev,
+      [runId]: {
+        loading: true,
+        data: null,
+        loadingStartedAt: Date.now(),
+      },
+    }));
 
     try {
       const data = await agentService.getRunScore(runId);

@@ -204,6 +204,8 @@ export interface RequirementItem {
   linkedPlanIds?: string[];
   currentAssigneeAgentId?: string;
   currentAssigneeAgentName?: string;
+  canAssignAgent?: boolean;
+  assignAgentDisabledReason?: string;
   createdById?: string;
   createdByName?: string;
   createdByType: RequirementActorType;

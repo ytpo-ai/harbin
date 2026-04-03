@@ -78,6 +78,9 @@ export class AgentRun {
   @Prop()
   error?: string;
 
+  @Prop({ type: Number })
+  score?: number;
+
   @Prop({ type: Object })
   metadata?: Record<string, unknown>;
 }

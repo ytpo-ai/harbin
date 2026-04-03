@@ -1,6 +1,6 @@
 {
   "source": "models.dev",
-  "updatedAt": "2026-03-31T18:39:22.221Z",
+  "updatedAt": "2026-04-03T09:01:03.927Z",
   "records": [
     {
       "provider": "moark",
@@ -1798,6 +1798,16 @@
     },
     {
       "provider": "zai-coding-plan",
+      "model": "glm-5v-turbo",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zai-coding-plan",
       "model": "glm-5-turbo",
       "cost": {
         "input": 0,
@@ -2085,16 +2095,6 @@
     {
       "provider": "anthropic",
       "model": "claude-sonnet-4-5",
-      "cost": {
-        "input": 3,
-        "output": 15,
-        "cache_read": 0.3,
-        "cache_write": 3.75
-      }
-    },
-    {
-      "provider": "anthropic",
-      "model": "claude-3-7-sonnet-latest",
       "cost": {
         "input": 3,
         "output": 15,
@@ -3667,6 +3667,16 @@
     },
     {
       "provider": "zai",
+      "model": "glm-5v-turbo",
+      "cost": {
+        "input": 1.2,
+        "output": 4,
+        "cache_read": 0.24,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zai",
       "model": "glm-5-turbo",
       "cost": {
         "input": 1.2,
@@ -4099,6 +4109,14 @@
         "input": 0.22,
         "output": 1.8,
         "cache_read": 0.022
+      }
+    },
+    {
+      "provider": "poe",
+      "model": "openai/gpt-5.3-codex-spark",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -4675,6 +4693,14 @@
       }
     },
     {
+      "provider": "poe",
+      "model": "fireworks-ai/kimi-k2.5-fw",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
       "provider": "v0",
       "model": "v0-1.5-lg",
       "cost": {
@@ -5216,6 +5242,16 @@
       "cost": {
         "input": 2,
         "output": 5
+      }
+    },
+    {
+      "provider": "zhipuai",
+      "model": "glm-5v-turbo",
+      "cost": {
+        "input": 5,
+        "output": 22,
+        "cache_read": 1.2,
+        "cache_write": 0
       }
     },
     {
@@ -7415,6 +7451,14 @@
       "cost": {
         "input": 0.22,
         "output": 0.88
+      }
+    },
+    {
+      "provider": "google-vertex",
+      "model": "moonshotai/kimi-k2-thinking-maas",
+      "cost": {
+        "input": 0.6,
+        "output": 2.5
       }
     },
     {
@@ -10400,6 +10444,14 @@
       "cost": {
         "input": 0.219,
         "output": 1.202
+      }
+    },
+    {
+      "provider": "cortecs",
+      "model": "glm-5",
+      "cost": {
+        "input": 1.08,
+        "output": 3.44
       }
     },
     {
@@ -14672,6 +14724,16 @@
     },
     {
       "provider": "openrouter",
+      "model": "z-ai/glm-5-turbo",
+      "cost": {
+        "input": 1.2,
+        "output": 4,
+        "cache_read": 0.24,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "openrouter",
       "model": "z-ai/glm-4.5",
       "cost": {
         "input": 0.6,
@@ -15219,6 +15281,14 @@
       "cost": {
         "input": 1.2,
         "output": 6
+      }
+    },
+    {
+      "provider": "openrouter",
+      "model": "qwen/qwen3.6-plus:free",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {
@@ -32131,6 +32201,16 @@
     },
     {
       "provider": "zhipuai-coding-plan",
+      "model": "glm-5v-turbo",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "zhipuai-coding-plan",
       "model": "glm-5.1",
       "cost": {
         "input": 0,
@@ -32447,11 +32527,29 @@
     },
     {
       "provider": "opencode-go",
+      "model": "mimo-v2-pro",
+      "cost": {
+        "input": 1,
+        "output": 3,
+        "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "opencode-go",
       "model": "glm-5",
       "cost": {
         "input": 1,
         "output": 3.2,
         "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "opencode-go",
+      "model": "mimo-v2-omni",
+      "cost": {
+        "input": 0.4,
+        "output": 2,
+        "cache_read": 0.08
       }
     },
     {

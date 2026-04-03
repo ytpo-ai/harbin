@@ -185,6 +185,19 @@ const EngineeringRequirementDetail: React.FC = () => {
 
   const comments = useMemo(() => (detail?.comments || []).slice().reverse(), [detail?.comments]);
   const statusHistory = useMemo(() => (detail?.statusHistory || []).slice().reverse(), [detail?.statusHistory]);
+  const canAssignAgent = useMemo(() => {
+    if (!detail) {
+      return false;
+    }
+    if (typeof detail.canAssignAgent === 'boolean') {
+      return detail.canAssignAgent;
+    }
+    const hasLinkedPlan = (detail.linkedPlanIds || []).length > 0;
+    const hasAssignedAgent = Boolean(String(detail.currentAssigneeAgentId || '').trim());
+    return !(hasLinkedPlan && hasAssignedAgent);
+  }, [detail]);
+  const assignAgentDisabledReason = detail?.assignAgentDisabledReason || '已绑定计划且已分配负责人，不可重复分配';
+  const assignAgentButtonDisabled = assignMutation.isLoading || !canAssignAgent;
 
   const openStatusModal = () => {
     setTargetStatus(detail?.status || 'todo');
@@ -282,8 +295,15 @@ const EngineeringRequirementDetail: React.FC = () => {
             <p className="mt-1 text-xs text-gray-600">当前负责人：{detail?.currentAssigneeAgentName || detail?.currentAssigneeAgentId || '-'}</p>
             <div className="mt-2 flex gap-2">
               <button
-                onClick={() => assignMutation.mutate()}
-                className="px-3 py-2 border border-gray-300 rounded text-sm"
+                onClick={() => {
+                  if (assignAgentButtonDisabled) {
+                    return;
+                  }
+                  assignMutation.mutate();
+                }}
+                disabled={assignAgentButtonDisabled}
+                title={detail && !canAssignAgent ? assignAgentDisabledReason : undefined}
+                className="px-3 py-2 border border-gray-300 rounded text-sm disabled:cursor-not-allowed disabled:border-gray-200 disabled:text-gray-400"
               >
                 分发给 Agent
               </button>
@@ -300,6 +320,7 @@ const EngineeringRequirementDetail: React.FC = () => {
                 修改状态
               </button>
             </div>
+            {detail && !canAssignAgent ? <p className="mt-2 text-xs text-amber-700">{assignAgentDisabledReason}</p> : null}
             {detail?.githubLink?.issueUrl ? (
               <a href={detail.githubLink.issueUrl} target="_blank" rel="noreferrer" className="mt-2 block text-xs text-primary-700 hover:underline">
                 GitHub #{detail.githubLink.issueNumber}

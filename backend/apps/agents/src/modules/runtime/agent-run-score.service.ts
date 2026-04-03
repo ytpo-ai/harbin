@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentRunScore, AgentRunScoreDocument } from '@agent/schemas/agent-run-score.schema';
+import { AgentRun, AgentRunDocument } from '@agent/schemas/agent-run.schema';
 import { TaskExecutionScoreSummary } from './task-execution-scorer';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class AgentRunScoreService {
   constructor(
     @InjectModel(AgentRunScore.name)
     private readonly scoreModel: Model<AgentRunScoreDocument>,
+    @InjectModel(AgentRun.name)
+    private readonly runModel: Model<AgentRunDocument>,
   ) {}
 
   async saveScore(input: {
@@ -45,6 +48,11 @@ export class AgentRunScoreService {
           },
           { upsert: true },
         )
+        .exec();
+
+      // 冗余写入 AgentRun.score，方便列表查询
+      await this.runModel
+        .updateOne({ id: input.runId }, { $set: { score: input.summary.score } })
         .exec();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'unknown');

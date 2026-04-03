@@ -4,6 +4,7 @@ import {
   AgentRuntimeSessionMessage,
   AgentRuntimeSessionPart,
 } from '../../services/agentService';
+import type { AgentBusinessRole } from '../../services/agentService';
 import { AgentActionLogItem } from '../../services/agentActionLogService';
 import { ACTION_SEMANTIC_MAP, LOG_STATUS_META, LogStatus } from './constants';
 
@@ -17,6 +18,30 @@ export const getActionSemantic = (action: string): { label: string; color: strin
     return { label: '对话执行', color: 'text-blue-600 bg-blue-50 ring-blue-200/60', icon: 'C' };
   }
   return { label: action, color: 'text-gray-600 bg-gray-50 ring-gray-200/60', icon: '.' };
+};
+
+const ROLE_CODE_ZH_FALLBACK: Record<string, string> = {
+  'fullstack-engineer': '全栈工程师',
+};
+
+const getRoleCodeFromRoleId = (roleId: string): string => {
+  if (!roleId) return '';
+  return roleId.startsWith('role-') ? roleId.slice('role-'.length) : roleId;
+};
+
+export const resolveAgentRoleDisplayName = (roleId?: string, roleMap?: Map<string, AgentBusinessRole>): string => {
+  const normalizedRoleId = String(roleId || '').trim();
+  if (!normalizedRoleId) return '-';
+
+  const roleCode = getRoleCodeFromRoleId(normalizedRoleId);
+  const matchedRole = roleMap?.get(normalizedRoleId) || roleMap?.get(roleCode);
+
+  if (matchedRole?.name?.trim()) return matchedRole.name.trim();
+  if (ROLE_CODE_ZH_FALLBACK[roleCode]) return ROLE_CODE_ZH_FALLBACK[roleCode];
+  if (matchedRole?.code?.trim()) return matchedRole.code.trim();
+  if (roleCode) return roleCode;
+
+  return normalizedRoleId;
 };
 
 export const getActionDescription = (item: AgentActionLogItem): string => {

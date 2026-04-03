@@ -77,10 +77,10 @@ export class EiRequirement {
   @Prop({ required: true, enum: ['low', 'medium', 'high', 'critical'], default: 'medium' })
   priority: EiRequirementPriority;
 
-  @Prop({ enum: ['fix', 'feature', 'optimize'] })
+  @Prop({ enum: ['fix', 'feature', 'optimize'], default: 'optimize' })
   category?: EiRequirementCategory;
 
-  @Prop({ enum: ['low', 'medium', 'high', 'very_high'], default: 'medium' })
+  @Prop({ enum: ['low', 'medium', 'high', 'very_high'], default: 'low' })
   complexity?: EiRequirementComplexity;
 
   @Prop({ type: [String], default: [] })

@@ -20,6 +20,9 @@ import {
 import { RdProject, RdProjectDocument } from '../../../../src/shared/schemas/ei-project.schema';
 import { EiGithubClientService } from './ei-github-client.service';
 
+const REQ_AGENT_ASSIGN_FORBIDDEN_CODE = 'REQ_AGENT_ASSIGN_FORBIDDEN';
+const REQ_AGENT_ASSIGN_FORBIDDEN_REASON = '已绑定计划且已分配负责人，不可重复分配';
+
 @Injectable()
 export class EiRequirementsService {
   private readonly requirementTransitions: Record<EiRequirementStatus, EiRequirementStatus[]> = {
@@ -63,6 +66,27 @@ export class EiRequirementsService {
 
   private toBoardColumn(status: EiRequirementStatus): EiRequirementStatus {
     return status;
+  }
+
+  private getAssignAgentState(requirement: Pick<EiRequirement, 'linkedPlanIds' | 'currentAssigneeAgentId'>) {
+    const linkedPlanIds = Array.isArray(requirement.linkedPlanIds) ? requirement.linkedPlanIds : [];
+    const hasLinkedPlan = linkedPlanIds.length > 0;
+    const hasAssignedAgent = Boolean(String(requirement.currentAssigneeAgentId || '').trim());
+    const canAssignAgent = !(hasLinkedPlan && hasAssignedAgent);
+
+    return {
+      canAssignAgent,
+      assignAgentDisabledReason: canAssignAgent ? undefined : REQ_AGENT_ASSIGN_FORBIDDEN_REASON,
+    };
+  }
+
+  private withAssignAgentState<T extends Pick<EiRequirement, 'linkedPlanIds' | 'currentAssigneeAgentId'>>(
+    requirement: T,
+  ): T & { canAssignAgent: boolean; assignAgentDisabledReason?: string } {
+    return {
+      ...requirement,
+      ...this.getAssignAgentState(requirement),
+    };
   }
 
   private async resolveRequirementGithubTarget(
@@ -167,8 +191,8 @@ export class EiRequirementsService {
         description,
         status: 'todo',
         priority: payload.priority || 'medium',
-        category: payload.category || undefined,
-        complexity: payload.complexity || 'medium',
+        category: payload.category || 'optimize',
+        complexity: payload.complexity || 'low',
         labels,
         linkedPlanIds: [],
         createdById: payload.createdById ? String(payload.createdById).trim() : undefined,
@@ -212,7 +236,13 @@ export class EiRequirementsService {
       filters.$or = [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }];
     }
 
-    return this.requirementModel.find(filters).sort({ updatedAt: -1 }).limit(limit).lean().exec();
+    return this.requirementModel
+      .find(filters)
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean()
+      .exec()
+      .then((requirements) => requirements.map((requirement) => this.withAssignAgentState(requirement as EiRequirement)));
   }
 
   getRequirementBoard() {
@@ -233,7 +263,9 @@ export class EiRequirementsService {
 
         for (const item of requirements as Array<Record<string, any>>) {
           const status = this.toBoardColumn((item.status || 'todo') as EiRequirementStatus);
-          columns[status].push(item);
+          columns[status].push(
+            this.withAssignAgentState(item as EiRequirement) as unknown as Record<string, unknown>,
+          );
         }
 
         return {
@@ -289,6 +321,13 @@ export class EiRequirementsService {
     const requirement = await this.requirementModel.findOne({ requirementId: normalizedId }).exec();
     if (!requirement) {
       throw new NotFoundException('Requirement not found');
+    }
+
+    const assignAgentState = this.getAssignAgentState(requirement);
+    if (!assignAgentState.canAssignAgent) {
+      throw new BadRequestException(
+        `${REQ_AGENT_ASSIGN_FORBIDDEN_CODE}: ${assignAgentState.assignAgentDisabledReason || REQ_AGENT_ASSIGN_FORBIDDEN_REASON}`,
+      );
     }
 
     const assignment: EiRequirementAssignment = {
@@ -470,6 +509,6 @@ export class EiRequirementsService {
     if (!requirement) {
       throw new NotFoundException('Requirement not found');
     }
-    return requirement;
+    return this.withAssignAgentState(requirement as EiRequirement);
   }
 }

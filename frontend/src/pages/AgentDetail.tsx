@@ -8,7 +8,7 @@ const AgentDetail: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'session' | 'log' | 'memo'>('session');
   const [pendingSessionId, setPendingSessionId] = useState('');
 
-  const { data: agent, isLoading: isAgentLoading, goBackToList } = useAgentDetail(agentId);
+  const { data: agent, isLoading: isAgentLoading, roleDisplayName, goBackToList } = useAgentDetail(agentId);
 
   const handleViewSessionFromLog = (sessionId: string) => {
     setPendingSessionId(sessionId);
@@ -52,7 +52,7 @@ const AgentDetail: React.FC = () => {
             <p className="mt-1.5 text-sm text-slate-500">{agent?.description || '查看 Agent 详细信息与运营数据'}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">{agent?.roleId || '-'}</span>
+            <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">{roleDisplayName}</span>
             <span className="rounded-full bg-slate-100/80 px-3.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200/60">{agent?.model?.name || '-'}</span>
             <span
               className={`rounded-full px-3.5 py-1.5 text-xs font-medium ring-1 ${
