@@ -102,14 +102,16 @@ export class AgentController {
   }
 
   @Get()
-  async getAllAgents() {
-    const agents = await this.agentService.getAllAgents();
+  async getAllAgents(@Query('projectId') projectId?: string) {
+    const filters = projectId !== undefined ? { projectId } : undefined;
+    const agents = await this.agentService.getAllAgents(filters);
     return agents.map((agent) => this.normalizeAgent(agent));
   }
 
   @Get('active')
-  async getActiveAgents() {
-    const agents = await this.agentService.getActiveAgents();
+  async getActiveAgents(@Query('projectId') projectId?: string) {
+    const filters = projectId !== undefined ? { projectId } : undefined;
+    const agents = await this.agentService.getActiveAgents(filters);
     return agents.map((agent) => this.normalizeAgent(agent));
   }
 

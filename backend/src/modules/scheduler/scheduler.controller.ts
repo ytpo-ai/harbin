@@ -85,9 +85,11 @@ export class SchedulerController {
     @Headers('authorization') authHeader: string,
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
+    @Query('projectId') projectId?: string,
   ) {
     await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
-    return this.schedulerService.listSchedules();
+    const filters = projectId !== undefined ? { projectId } : undefined;
+    return this.schedulerService.listSchedules(filters);
   }
 
   @Get(':id')

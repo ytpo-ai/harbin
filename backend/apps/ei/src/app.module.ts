@@ -21,6 +21,11 @@ import { IncubationProject, IncubationProjectSchema } from './schemas/incubation
 import { RdTask, RdTaskSchema } from '../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectSchema } from '../../../src/shared/schemas/ei-project.schema';
 import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.schema';
+import { OrchestrationPlan, OrchestrationPlanSchema } from '../../../src/shared/schemas/orchestration-plan.schema';
+import { OrchestrationRun, OrchestrationRunSchema } from '../../../src/shared/schemas/orchestration-run.schema';
+import { OrchestrationTask, OrchestrationTaskSchema } from '../../../src/shared/schemas/orchestration-task.schema';
+import { Schedule, ScheduleSchema } from '../../../src/shared/schemas/schedule.schema';
+import { Meeting, MeetingSchema } from '../../../src/shared/schemas/meeting.schema';
 import { AuthModule } from '../../../src/modules/auth/auth.module';
 import { AgentClientModule } from '../../../src/modules/agents-client/agent-client.module';
 import { ApiKeysModule } from '../../../src/modules/api-keys/api-keys.module';
@@ -47,6 +52,7 @@ import { DocsHeatService } from './services/docs-heat.service';
 import { EiAppConfigService } from './services/ei-app-config.service';
 import { EiGithubClientService } from './services/ei-github-client.service';
 import { IncubationProjectsService } from './services/incubation-projects.service';
+import { IncubationProjectAggregationService } from './services/incubation-project-aggregation.service';
 
 @Module({
   imports: [
@@ -83,6 +89,11 @@ import { IncubationProjectsService } from './services/incubation-projects.servic
       { name: RdProject.name, schema: RdProjectSchema },
       { name: Employee.name, schema: EmployeeSchema },
       { name: IncubationProject.name, schema: IncubationProjectSchema },
+      { name: OrchestrationPlan.name, schema: OrchestrationPlanSchema },
+      { name: OrchestrationRun.name, schema: OrchestrationRunSchema },
+      { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
+      { name: Schedule.name, schema: ScheduleSchema },
+      { name: Meeting.name, schema: MeetingSchema },
     ]),
   ],
   controllers: [
@@ -111,6 +122,7 @@ import { IncubationProjectsService } from './services/incubation-projects.servic
     EiAppConfigService,
     EiGithubClientService,
     IncubationProjectsService,
+    IncubationProjectAggregationService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

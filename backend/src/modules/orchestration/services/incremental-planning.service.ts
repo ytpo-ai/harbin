@@ -441,6 +441,8 @@ export class IncrementalPlanningService {
     const runTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(
       ((await this.planModel.findById(planId).select({ metadata: 1 }).lean().exec() as { metadata?: Record<string, unknown> } | null)?.metadata),
     );
+    const planForProjectId = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
+    const runProjectId = String((planForProjectId as any)?.projectId || '').trim() || undefined;
     const run = await new this.runModel({
       planId,
       triggerType: 'autorun',
@@ -458,6 +460,7 @@ export class IncrementalPlanningService {
         isRedesign,
         taskContext: runTaskContext,
       },
+      ...(runProjectId ? { projectId: runProjectId } : {}),
     }).save();
 
     const runId = String((run as any).id || (run as any)._id);
@@ -816,6 +819,8 @@ export class IncrementalPlanningService {
       .exec();
     const dependencyTaskIds = completedPredecessors.map((t) => String(t._id));
 
+    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
+    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
     const task = await new this.taskModel({
       planId,
       ...(requirementId ? { requirementId } : {}),
@@ -840,6 +845,7 @@ export class IncrementalPlanningService {
           },
         },
       ],
+      ...(planProjectId ? { projectId: planProjectId } : {}),
     }).save();
 
     await this.planModel

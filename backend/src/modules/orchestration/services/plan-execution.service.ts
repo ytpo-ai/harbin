@@ -169,6 +169,7 @@ export class PlanExecutionService {
       metadata: {
         taskContext,
       },
+      ...(plan.projectId ? { projectId: plan.projectId } : {}),
     }).save();
 
     const runId = this.getEntityId(run as any);

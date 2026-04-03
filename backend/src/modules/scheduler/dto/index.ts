@@ -95,6 +95,10 @@ export class CreateScheduleDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string; // 所属孵化项目ID
 }
 
 export class UpdateScheduleDto {
@@ -131,6 +135,10 @@ export class UpdateScheduleDto {
   @IsOptional()
   @IsBoolean()
   enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string; // 所属孵化项目ID
 }
 
 export class ScheduleHistoryQueryDto {

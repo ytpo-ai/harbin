@@ -56,8 +56,8 @@ export class OrchestrationService {
     return this.planEventStreamService.streamPlanEvents(planId);
   }
 
-  async listPlans(): Promise<OrchestrationPlan[]> {
-    return this.planManagementService.listPlans();
+  async listPlans(filters?: { projectId?: string }): Promise<OrchestrationPlan[]> {
+    return this.planManagementService.listPlans(filters);
   }
 
   async replanPlan(planId: string, dto: ReplanPlanDto): Promise<any> {

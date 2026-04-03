@@ -99,6 +99,7 @@ export class TaskManagementService {
           },
         },
       ],
+      ...(plan.projectId ? { projectId: plan.projectId } : {}),
     }).save();
 
     const nextTaskIds = tasks.map((item) => this.getEntityId(item as any));
@@ -337,6 +338,7 @@ export class TaskManagementService {
           },
         },
       ],
+      ...(plan.projectId ? { projectId: plan.projectId } : {}),
     }).save();
 
     const tasks = await this.listTasksByPlan(planId);

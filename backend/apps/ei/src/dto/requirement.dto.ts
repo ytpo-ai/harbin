@@ -42,6 +42,10 @@ export class CreateRequirementDto {
   @IsOptional()
   @IsString()
   localProjectId?: string;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string; // 所属孵化项目ID
 }
 
 export class ListRequirementsDto {
@@ -64,6 +68,10 @@ export class ListRequirementsDto {
   @IsOptional()
   @IsString()
   localProjectId?: string;
+
+  @IsOptional()
+  @IsString()
+  projectId?: string; // 按孵化项目过滤
 }
 
 export class AddRequirementCommentDto {

@@ -136,9 +136,11 @@ export class OrchestrationController {
     @Headers('authorization') authHeader: string,
     @Headers('x-user-context') internalContext?: string,
     @Headers('x-user-signature') internalSignature?: string,
+    @Query('projectId') projectId?: string,
   ) {
     const user = await this.getUserFromAuthHeader(authHeader, internalContext, internalSignature);
-    return this.orchestrationService.listPlans();
+    const filters = projectId !== undefined ? { projectId } : undefined;
+    return this.orchestrationService.listPlans(filters);
   }
 
   @Get('plans/:id')

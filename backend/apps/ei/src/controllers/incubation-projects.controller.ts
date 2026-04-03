@@ -6,11 +6,13 @@ import {
   QueryIncubationProjectDto,
 } from '../dto';
 import { IncubationProjectsService } from '../services/incubation-projects.service';
+import { IncubationProjectAggregationService } from '../services/incubation-project-aggregation.service';
 
 @Controller('ei/incubation-projects')
 export class IncubationProjectsController {
   constructor(
     private readonly incubationProjectsService: IncubationProjectsService,
+    private readonly aggregationService: IncubationProjectAggregationService,
     private readonly authService: AuthService,
   ) {}
 
@@ -73,5 +75,61 @@ export class IncubationProjectsController {
   ) {
     await this.getUserFromAuthHeader(authHeader);
     return this.incubationProjectsService.delete(id);
+  }
+
+  // ---- 聚合查询接口 ----
+
+  @Get(':id/agents')
+  async getProjectAgents(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectAgents(id);
+  }
+
+  @Get(':id/plans')
+  async getProjectPlans(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectPlans(id);
+  }
+
+  @Get(':id/requirements')
+  async getProjectRequirements(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectRequirements(id);
+  }
+
+  @Get(':id/schedules')
+  async getProjectSchedules(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectSchedules(id);
+  }
+
+  @Get(':id/meetings')
+  async getProjectMeetings(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectMeetings(id);
+  }
+
+  @Get(':id/stats')
+  async getProjectStats(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectStats(id);
   }
 }

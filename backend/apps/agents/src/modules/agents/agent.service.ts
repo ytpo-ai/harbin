@@ -130,12 +130,20 @@ export class AgentService {
     return this.agentModel.findOne({ name }).exec();
   }
 
-  async getAllAgents(): Promise<Agent[]> {
-    return this.agentModel.find().exec();
+  async getAllAgents(filters?: { projectId?: string }): Promise<Agent[]> {
+    const query: Record<string, any> = {};
+    if (filters?.projectId !== undefined) {
+      query.projectId = filters.projectId || { $in: [null, '', undefined] };
+    }
+    return this.agentModel.find(query).exec();
   }
 
-  async getActiveAgents(): Promise<Agent[]> {
-    return this.agentModel.find({ isActive: true }).exec();
+  async getActiveAgents(filters?: { projectId?: string }): Promise<Agent[]> {
+    const query: Record<string, any> = { isActive: true };
+    if (filters?.projectId !== undefined) {
+      query.projectId = filters.projectId || { $in: [null, '', undefined] };
+    }
+    return this.agentModel.find(query).exec();
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {

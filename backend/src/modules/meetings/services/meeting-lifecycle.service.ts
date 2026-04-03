@@ -125,6 +125,7 @@ export class MeetingLifecycleService {
       (p) => !(p.id === effectiveHostId && p.type === effectiveHostType),
     );
 
+    const meetingProjectId = String(dto.projectId || '').trim() || undefined;
     const meeting = new this.meetingModel({
       id: uuidv4(),
       title: dto.title,
@@ -133,6 +134,7 @@ export class MeetingLifecycleService {
       status: MeetingStatus.PENDING,
       hostId: effectiveHostId,
       hostType: effectiveHostType,
+      ...(meetingProjectId ? { projectId: meetingProjectId } : {}),
       participants: [
         {
           participantId: effectiveHostId,
@@ -452,10 +454,13 @@ export class MeetingLifecycleService {
   }
 
 
-  async getAllMeetings(filters?: { type?: MeetingType; status?: MeetingStatus }): Promise<Meeting[]> {
+  async getAllMeetings(filters?: { type?: MeetingType; status?: MeetingStatus; projectId?: string }): Promise<Meeting[]> {
     const query: any = {};
     if (filters?.type) query.type = filters.type;
     if (filters?.status) query.status = filters.status;
+    if (filters?.projectId !== undefined) {
+      query.projectId = filters.projectId || { $in: [null, '', undefined] };
+    }
     return this.meetingModel.find(query).sort({ createdAt: -1 }).exec();
   }
 

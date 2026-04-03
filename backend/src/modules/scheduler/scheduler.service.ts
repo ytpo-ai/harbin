@@ -153,6 +153,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     this.assertScheduleTarget(dto.target?.executorId);
 
     const now = new Date();
+    const projectId = String(dto.projectId || '').trim() || undefined;
     const schedule = await new this.scheduleModel({
       name: dto.name.trim(),
       description: dto.description?.trim(),
@@ -176,6 +177,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
         failedRuns: 0,
         skippedRuns: 0,
       },
+      ...(projectId ? { projectId } : {}),
       createdBy,
     }).save();
 
@@ -186,8 +188,12 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     return schedule;
   }
 
-  async listSchedules(): Promise<Schedule[]> {
-    return this.scheduleModel.find({}).sort({ createdAt: -1 }).exec();
+  async listSchedules(filters?: { projectId?: string }): Promise<Schedule[]> {
+    const query: Record<string, any> = {};
+    if (filters?.projectId !== undefined) {
+      query.projectId = filters.projectId || { $in: [null, '', undefined] };
+    }
+    return this.scheduleModel.find(query).sort({ createdAt: -1 }).exec();
   }
 
   async getScheduleById(scheduleId: string): Promise<Schedule> {
@@ -243,6 +249,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
                   status: dto.enabled ? 'idle' : 'paused',
                 }
               : {}),
+            ...(dto.projectId !== undefined ? { projectId: dto.projectId.trim() || undefined } : {}),
             nextRunAt: this.computeNextRunAt(nextScheduleConfig),
           },
         },

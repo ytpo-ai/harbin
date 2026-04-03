@@ -138,7 +138,7 @@ export class MeetingService implements OnModuleInit {
     return this.agentStateService.getMeetingAgentStates(meetingId);
   }
 
-  getAllMeetings(filters?: { type?: MeetingType; status?: MeetingStatus }) {
+  getAllMeetings(filters?: { type?: MeetingType; status?: MeetingStatus; projectId?: string }) {
     return this.lifecycleService.getAllMeetings(filters);
   }
 

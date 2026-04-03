@@ -199,6 +199,7 @@ export class EiRequirementsService {
         createdByName: payload.createdByName ? String(payload.createdByName).trim() : undefined,
         createdByType: payload.createdByType || 'human',
         localProjectId: payload.localProjectId ? String(payload.localProjectId).trim() : undefined,
+        projectId: payload.projectId ? String(payload.projectId).trim() : undefined,
         comments: [],
         assignments: [],
         statusHistory: [
@@ -231,6 +232,10 @@ export class EiRequirementsService {
     }
     if (query.localProjectId) {
       filters.localProjectId = String(query.localProjectId).trim();
+    }
+    if (query.projectId !== undefined) {
+      const trimmedProjectId = String(query.projectId || '').trim();
+      filters.projectId = trimmedProjectId || { $in: [null, '', undefined] };
     }
     if (search) {
       filters.$or = [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }];

@@ -28,8 +28,9 @@ export class MeetingController {
   async getAllMeetings(
     @Query('type') type?: MeetingType,
     @Query('status') status?: MeetingStatus,
+    @Query('projectId') projectId?: string,
   ) {
-    const meetings = await this.meetingService.getAllMeetings({ type, status });
+    const meetings = await this.meetingService.getAllMeetings({ type, status, projectId });
     return {
       success: true,
       data: meetings,

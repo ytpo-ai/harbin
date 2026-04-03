@@ -50,6 +50,7 @@ export interface CreateMeetingDto {
   agenda?: string;
   scheduledStartTime?: Date;
   settings?: Meeting['settings'];
+  projectId?: string; // 所属孵化项目ID
 }
 
 export interface MeetingMessageDto {

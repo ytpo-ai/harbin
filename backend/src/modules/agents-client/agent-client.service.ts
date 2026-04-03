@@ -198,16 +198,22 @@ export class AgentClientService {
     }
   }
 
-  async getAllAgents(): Promise<Agent[]> {
+  async getAllAgents(filters?: { projectId?: string }): Promise<Agent[]> {
     const response = await axios.get<Agent[]>(`${this.baseUrl}/api/agents`, {
+      params: {
+        ...(filters?.projectId !== undefined ? { projectId: filters.projectId } : {}),
+      },
       headers: this.buildSignedHeaders(),
       timeout: this.timeout,
     });
     return response.data;
   }
 
-  async getActiveAgents(): Promise<Agent[]> {
+  async getActiveAgents(filters?: { projectId?: string }): Promise<Agent[]> {
     const response = await axios.get<Agent[]>(`${this.baseUrl}/api/agents/active`, {
+      params: {
+        ...(filters?.projectId !== undefined ? { projectId: filters.projectId } : {}),
+      },
       headers: this.buildSignedHeaders(),
       timeout: this.timeout,
     });

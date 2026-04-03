@@ -61,6 +61,7 @@ export class PlanManagementService {
 
     const domainType = this.normalizeDomainType(dto.domainType);
     const requirementId = String(dto.requirementId || '').trim() || undefined;
+    const projectId = String(dto.projectId || '').trim() || undefined;
     const plan = await new this.orchestrationPlanModel({
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,
@@ -99,6 +100,7 @@ export class PlanManagementService {
         ...(dto.plannerAgentId ? { requestedPlannerAgentId: dto.plannerAgentId } : {}),
         ...(requirementId ? { requirementId } : {}),
       },
+      ...(projectId ? { projectId } : {}),
       createdBy,
     }).save();
 
@@ -134,8 +136,12 @@ export class PlanManagementService {
     return this.getPlanById(planId);
   }
 
-  async listPlans(): Promise<OrchestrationPlan[]> {
-    const plans = await this.orchestrationPlanModel.find({}).sort({ createdAt: -1 }).exec();
+  async listPlans(filters?: { projectId?: string }): Promise<OrchestrationPlan[]> {
+    const query: Record<string, any> = {};
+    if (filters?.projectId !== undefined) {
+      query.projectId = filters.projectId || { $in: [null, '', undefined] };
+    }
+    const plans = await this.orchestrationPlanModel.find(query).sort({ createdAt: -1 }).exec();
     return plans.map((plan) => {
       const normalizedStatus = this.planStatsService.normalizePlanStatus(plan.status, plan.taskIds?.length);
       if (normalizedStatus === plan.status) {
