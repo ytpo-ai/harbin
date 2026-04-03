@@ -107,6 +107,9 @@ export class EiRequirement {
   @Prop()
   localProjectId?: string;
 
+  @Prop({ index: true })
+  projectId?: string; // 统一项目ID，逐步替代 localProjectId
+
   @Prop({ type: [Object], default: [] })
   comments: EiRequirementComment[];
 
@@ -132,5 +135,6 @@ EiRequirementSchema.index({ requirementId: 1 }, { unique: true });
 EiRequirementSchema.index({ status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ currentAssigneeAgentId: 1, status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ localProjectId: 1, status: 1, updatedAt: -1 });
+EiRequirementSchema.index({ projectId: 1, status: 1, updatedAt: -1 });
 EiRequirementSchema.index({ title: 'text', description: 'text' });
 EiRequirementSchema.index({ linkedPlanIds: 1 });

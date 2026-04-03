@@ -183,6 +183,9 @@ export class Meeting {
 
   @Prop({ default: 0 })
   messageCount: number;
+
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID
 }
 
 export const MeetingSchema = SchemaFactory.createForClass(Meeting);
@@ -193,3 +196,4 @@ MeetingSchema.index({ type: 1 });
 MeetingSchema.index({ hostId: 1 });
 MeetingSchema.index({ 'participants.participantId': 1 });
 MeetingSchema.index({ createdAt: -1 });
+MeetingSchema.index({ projectId: 1, createdAt: -1 });

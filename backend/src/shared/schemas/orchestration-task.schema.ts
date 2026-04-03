@@ -30,6 +30,9 @@ export class OrchestrationTask {
   @Prop()
   planId?: string;
 
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID，创建时从 Plan 继承
+
   @Prop({ type: String, required: false })
   requirementId?: string;
 
@@ -128,3 +131,4 @@ export const OrchestrationTaskSchema = SchemaFactory.createForClass(Orchestratio
 OrchestrationTaskSchema.index({ planId: 1, order: 1 });
 OrchestrationTaskSchema.index({ requirementId: 1, status: 1, updatedAt: -1 });
 OrchestrationTaskSchema.index({ status: 1 });
+OrchestrationTaskSchema.index({ projectId: 1, status: 1 });

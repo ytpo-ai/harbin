@@ -121,6 +121,9 @@ export class OrchestrationPlan {
   }))
   generationConfig?: OrchestrationGenerationConfig;
 
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID，为空表示非项目计划
+
   @Prop(raw({
     currentStep: { type: Number, default: 0 },
     totalGenerated: { type: Number, default: 0 },
@@ -143,3 +146,4 @@ export const OrchestrationPlanSchema = SchemaFactory.createForClass(Orchestratio
 
 OrchestrationPlanSchema.index({ createdAt: -1 });
 OrchestrationPlanSchema.index({ status: 1 });
+OrchestrationPlanSchema.index({ projectId: 1, createdAt: -1 });

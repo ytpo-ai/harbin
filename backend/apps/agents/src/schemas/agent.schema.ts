@@ -114,9 +114,13 @@ export class Agent {
 
   @Prop()
   apiKeyId?: string; // 关联的API密钥ID
+
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID，为空表示全局 Agent
 }
 
 export const AgentSchema = SchemaFactory.createForClass(Agent);
 
 // Create index on apiKeyId for efficient queries
 AgentSchema.index({ apiKeyId: 1 });
+AgentSchema.index({ projectId: 1, isActive: 1 });

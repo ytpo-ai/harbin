@@ -62,6 +62,9 @@ export class Schedule {
   @Prop()
   planId?: string;
 
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID
+
   @Prop({ default: true })
   enabled: boolean;
 
@@ -129,3 +132,4 @@ export const ScheduleSchema = SchemaFactory.createForClass(Schedule);
 ScheduleSchema.index({ enabled: 1, updatedAt: -1 });
 ScheduleSchema.index({ nextRunAt: 1 });
 ScheduleSchema.index({ 'target.executorId': 1, enabled: 1 });
+ScheduleSchema.index({ projectId: 1, enabled: 1 });

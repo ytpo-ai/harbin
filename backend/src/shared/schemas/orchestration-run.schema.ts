@@ -14,6 +14,9 @@ export class OrchestrationRun {
   @Prop({ required: true })
   planId: string;
 
+  @Prop({ index: true })
+  projectId?: string; // 所属项目ID，创建时从 Plan 继承
+
   @Prop({ enum: ['manual', 'schedule', 'autorun'], required: true })
   triggerType: OrchestrationRunTriggerType;
 
@@ -60,3 +63,4 @@ export const OrchestrationRunSchema = SchemaFactory.createForClass(Orchestration
 OrchestrationRunSchema.index({ planId: 1, startedAt: -1 });
 OrchestrationRunSchema.index({ scheduleId: 1, startedAt: -1 });
 OrchestrationRunSchema.index({ status: 1 });
+OrchestrationRunSchema.index({ projectId: 1, startedAt: -1 });
