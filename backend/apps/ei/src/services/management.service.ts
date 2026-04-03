@@ -391,7 +391,8 @@ export class EiManagementService {
       })
       .exec();
 
-    const payload = {
+    const incubationProjectId = createDto.incubationProjectId?.trim() || undefined;
+    const payload: Record<string, any> = {
       name: String(createDto.name || '').trim() || basename(localPath) || 'local-project',
       description: createDto.description?.trim() || '',
       sourceType: RdProjectSourceType.LOCAL,
@@ -401,6 +402,7 @@ export class EiManagementService {
         ...(existing?.metadata || {}),
         ...(createDto.metadata || {}),
       },
+      ...(incubationProjectId ? { incubationProjectId: new Types.ObjectId(incubationProjectId) } : {}),
     };
 
     if (existing) {

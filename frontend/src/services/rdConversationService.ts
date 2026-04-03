@@ -116,6 +116,7 @@ export interface CreateLocalRdProjectDto {
   name: string;
   localPath: string;
   description?: string;
+  incubationProjectId?: string;
   metadata?: Record<string, any>;
 }
 

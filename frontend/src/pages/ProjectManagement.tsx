@@ -103,6 +103,7 @@ const ProjectManagement: React.FC = () => {
   const [localName, setLocalName] = useState('');
   const [localPath, setLocalPath] = useState('');
   const [localDescription, setLocalDescription] = useState('');
+  const [localIncubationProjectId, setLocalIncubationProjectId] = useState('');
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>('binding-overview');
@@ -211,7 +212,7 @@ const ProjectManagement: React.FC = () => {
   } = useQuery<IncubationProject[]>(
     ['pm-incubation-projects', incubationStatusFilter],
     () => incubationProjectService.list(incubationStatusFilter ? { status: incubationStatusFilter } : undefined),
-    { retry: false, enabled: pageTab === 'incubation' || isDrawerOpen },
+    { retry: false, enabled: pageTab === 'incubation' || isDrawerOpen || isCreateModalOpen },
   );
 
   const filteredIncubationProjects = useMemo(() => {
@@ -403,6 +404,7 @@ const ProjectManagement: React.FC = () => {
         name: localName.trim(),
         localPath: localPath.trim(),
         description: localDescription.trim() || undefined,
+        incubationProjectId: localIncubationProjectId || undefined,
       }),
     {
       onSuccess: async (created) => {
@@ -410,6 +412,7 @@ const ProjectManagement: React.FC = () => {
         setLocalName('');
         setLocalPath('');
         setLocalDescription('');
+        setLocalIncubationProjectId('');
         setSelectedLocalProjectId(created._id);
         setIsCreateModalOpen(false);
         showToast('success', '本地项目创建成功');
@@ -973,6 +976,16 @@ const ProjectManagement: React.FC = () => {
                 placeholder="描述（可选）"
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               />
+              <select
+                value={localIncubationProjectId}
+                onChange={(e) => setLocalIncubationProjectId(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              >
+                <option value="">全局（不关联孵化项目）</option>
+                {incubationProjects.map((p) => (
+                  <option key={p._id} value={p._id}>{p.name}</option>
+                ))}
+              </select>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button

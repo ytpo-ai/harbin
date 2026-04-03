@@ -399,6 +399,10 @@ export class CreateLocalRdProjectDto {
   description?: string;
 
   @IsOptional()
+  @IsMongoId()
+  incubationProjectId?: string;
+
+  @IsOptional()
   @IsObject()
   metadata?: Record<string, any>;
 }
