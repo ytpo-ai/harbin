@@ -2,6 +2,7 @@ import { IsOptional, IsString, Matches } from 'class-validator';
 export * from './statistics.dto';
 export * from './requirement.dto';
 export * from './management.dto';
+export * from './incubation-project.dto';
 export * from './docs-heat.dto';
 
 export class CreateEngineeringRepositoryDto {

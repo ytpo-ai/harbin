@@ -36,9 +36,6 @@ export class RdProject {
   @Prop({ type: Types.ObjectId, ref: 'Employee' })
   manager: Types.ObjectId;
 
-  @Prop()
-  managerAgentId?: string; // 项目负责人 Agent ID（leadership 级别）
-
   // OpenCode 集成配置
   @Prop()
   opencodeProjectPath: string;

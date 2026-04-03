@@ -17,6 +17,7 @@ import {
 import { EiRequirement, EiRequirementSchema } from './schemas/ei-requirement.schema';
 import { EiDocCommitFact, EiDocCommitFactSchema } from './schemas/ei-doc-commit-fact.schema';
 import { EiAppConfig, EiAppConfigSchema } from './schemas/ei-app-config.schema';
+import { IncubationProject, IncubationProjectSchema } from './schemas/incubation-project.schema';
 import { RdTask, RdTaskSchema } from '../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectSchema } from '../../../src/shared/schemas/ei-project.schema';
 import { Employee, EmployeeSchema } from '../../../src/shared/schemas/employee.schema';
@@ -32,6 +33,7 @@ import { EiProjectsController } from './controllers/projects.controller';
 import { EiOpencodeController } from './controllers/opencode.controller';
 import { DocsHeatController } from './controllers/docs-heat.controller';
 import { EiConfigController } from './controllers/config.controller';
+import { IncubationProjectsController } from './controllers/incubation-projects.controller';
 import { EiRepositoriesService } from './services/repositories.service';
 import { EiOpencodeSyncService } from './services/opencode-sync.service';
 import { EiStatisticsService } from './services/statistics.service';
@@ -44,6 +46,7 @@ import { EiOpencodeService } from './services/opencode.service';
 import { DocsHeatService } from './services/docs-heat.service';
 import { EiAppConfigService } from './services/ei-app-config.service';
 import { EiGithubClientService } from './services/ei-github-client.service';
+import { IncubationProjectsService } from './services/incubation-projects.service';
 
 @Module({
   imports: [
@@ -79,6 +82,7 @@ import { EiGithubClientService } from './services/ei-github-client.service';
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },
       { name: Employee.name, schema: EmployeeSchema },
+      { name: IncubationProject.name, schema: IncubationProjectSchema },
     ]),
   ],
   controllers: [
@@ -91,6 +95,7 @@ import { EiGithubClientService } from './services/ei-github-client.service';
     EiOpencodeController,
     DocsHeatController,
     EiConfigController,
+    IncubationProjectsController,
   ],
   providers: [
     EiRepositoriesService,
@@ -105,6 +110,7 @@ import { EiGithubClientService } from './services/ei-github-client.service';
     DocsHeatService,
     EiAppConfigService,
     EiGithubClientService,
+    IncubationProjectsService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}
