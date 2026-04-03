@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
+  buildChannelEventFromMessageCenter,
+  CHANNEL_EVENTS_STREAM,
   MESSAGE_CENTER_EVENT_CONSUMER_GROUP,
   MESSAGE_CENTER_EVENT_STREAM_KEY,
   MessageCenterEventEnvelope,
@@ -11,6 +13,7 @@ import { MessageCenterService } from './message-center.service';
 
 const MESSAGE_CENTER_EVENT_FIELD = 'event';
 const MESSAGE_CENTER_EVENT_DLQ_STREAM_KEY = 'streams:message-center:events:dlq';
+const CHANNEL_FORWARD_EVENT_TYPES = new Set<string>(['orchestration.task.completed']);
 
 @Injectable()
 export class MessageCenterEventConsumerService implements OnModuleInit, OnModuleDestroy {
@@ -99,10 +102,35 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
 
     try {
       await this.persistAsSystemMessage(validated.event);
+      await this.forwardToChannelIfNeeded(validated.event);
       await this.ack(streamMessageId);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'persist_failed');
       await this.moveToDlq(streamMessageId, eventRaw, reason);
+    }
+  }
+
+  private async forwardToChannelIfNeeded(event: MessageCenterEventEnvelope): Promise<void> {
+    if (!CHANNEL_FORWARD_EVENT_TYPES.has(event.eventType)) {
+      return;
+    }
+
+    const channelEvent = buildChannelEventFromMessageCenter(event);
+    try {
+      await this.redisService.xadd(
+        CHANNEL_EVENTS_STREAM,
+        {
+          event: JSON.stringify(channelEvent),
+        },
+        {
+          maxLen: 10000,
+        },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(
+        `Forward message-center event to channel stream failed (non-blocking): eventId=${event.eventId} eventType=${event.eventType} reason=${reason}`,
+      );
     }
   }
 

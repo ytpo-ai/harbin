@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "outDir": "../../dist",
+    "rootDir": "../../",
+    "declaration": false
+  },
+  "include": ["./src/**/*.ts", "../../src/config/**/*.ts", "../../libs/**/*.ts", "../../src/shared/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "./src/**/*.spec.ts", "../../src/config/**/*.spec.ts", "../../libs/**/*.spec.ts", "**/*.spec.ts"]
+}

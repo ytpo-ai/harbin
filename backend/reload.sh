@@ -55,7 +55,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-BACKEND_PORTS=(3001 3002 3003 3004 3100)
+BACKEND_PORTS=(3001 3002 3003 3004 3006 3100)
 
 if [ -n "$TARGET_PORT" ]; then
     if ! [[ "$TARGET_PORT" =~ ^[0-9]+$ ]]; then
@@ -73,13 +73,13 @@ if [ -n "$TARGET_PORT" ]; then
 
     if [ "$is_supported" -ne 1 ]; then
         echo "错误: 不支持的后端端口 $TARGET_PORT"
-        echo "支持端口: 3001, 3002, 3003, 3004, 3100"
+        echo "支持端口: 3001, 3002, 3003, 3004, 3006, 3100"
         exit 1
     fi
 
     lsof -ti :"$TARGET_PORT" 2>/dev/null | xargs -r kill
 else
-    (lsof -ti :3001; lsof -ti :3002; lsof -ti :3003; lsof -ti :3100; lsof -ti :3004; lsof -ti :3201) 2>/dev/null | sort -u | xargs -r kill
+    (lsof -ti :3001; lsof -ti :3002; lsof -ti :3003; lsof -ti :3100; lsof -ti :3004; lsof -ti :3006; lsof -ti :3201) 2>/dev/null | sort -u | xargs -r kill
 fi
 
 sleep 2
@@ -93,4 +93,4 @@ else
 fi
 
 sleep 2
-lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 -i :3004 -i :3201 | grep LISTEN
+lsof -nP -i :3001 -i :3002 -i :3003 -i :3100 -i :3004 -i :3006 -i :3201 | grep LISTEN

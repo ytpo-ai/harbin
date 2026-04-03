@@ -43,6 +43,7 @@ import { OrchestrationContextService } from './services/orchestration-context.se
 import { OrchestrationExecutionEngineService } from './services/orchestration-execution-engine.service';
 import { OrchestrationStepDispatcherService } from './services/orchestration-step-dispatcher.service';
 import { OrchestrationEventListenerService } from './services/orchestration-event-listener.service';
+import { OrchestrationMessageCenterEventService } from './services/orchestration-message-center-event.service';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { OrchestrationEventListenerService } from './services/orchestration-even
     PlanEventStreamService,
     OrchestrationContextService,
     OrchestrationExecutionEngineService,
+    OrchestrationMessageCenterEventService,
     TaskOutputValidationService,
     ExecutorSelectionService,
     SceneOptimizationService,

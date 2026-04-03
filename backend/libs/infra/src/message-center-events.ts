@@ -4,8 +4,9 @@ export const MESSAGE_CENTER_EVENT_STREAM_KEY = 'streams:message-center:events';
 export const MESSAGE_CENTER_EVENT_CONSUMER_GROUP = 'message-center-group';
 export const MESSAGE_CENTER_EVENT_SOURCE_EI = 'engineering-intelligence';
 export const MESSAGE_CENTER_EVENT_SOURCE_MEETING = 'meeting-service';
+export const MESSAGE_CENTER_EVENT_SOURCE_ORCHESTRATION = 'orchestration-service';
 
-export type MessageCenterEventType = 'meeting.session.ended' | 'engineering.tool.completed';
+export type MessageCenterEventType = 'meeting.session.ended' | 'engineering.tool.completed' | 'orchestration.task.completed';
 export type MessageCenterMessageType = 'engineering_statistics' | 'orchestration' | 'system_alert';
 export type MessageCenterMessagePriority = 'low' | 'normal' | 'high';
 
@@ -100,7 +101,11 @@ export function validateMessageCenterEventEnvelope(payload: unknown): {
     return { ok: false, error: `unsupported event version: ${version}` };
   }
 
-  if (eventType !== 'meeting.session.ended' && eventType !== 'engineering.tool.completed') {
+  if (
+    eventType !== 'meeting.session.ended' &&
+    eventType !== 'engineering.tool.completed' &&
+    eventType !== 'orchestration.task.completed'
+  ) {
     return { ok: false, error: `unsupported event type: ${eventType}` };
   }
 

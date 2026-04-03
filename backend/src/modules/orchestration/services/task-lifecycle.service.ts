@@ -40,6 +40,7 @@ import { PlanEventStreamService } from './plan-event-stream.service';
 import { TaskManagementService } from './task-management.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { OrchestrationExecutionEngineService } from './orchestration-execution-engine.service';
+import { OrchestrationMessageCenterEventService } from './orchestration-message-center-event.service';
 
 @Injectable()
 export class TaskLifecycleService {
@@ -62,6 +63,7 @@ export class TaskLifecycleService {
     private readonly taskManagementService: TaskManagementService,
     private readonly contextService: OrchestrationContextService,
     private readonly executionEngineService: OrchestrationExecutionEngineService,
+    private readonly orchestrationMessageCenterEventService: OrchestrationMessageCenterEventService,
   ) {}
 
   async reassignTask(taskId: string, dto: ReassignTaskDto): Promise<OrchestrationTask> {
@@ -282,6 +284,16 @@ export class TaskLifecycleService {
       taskTitle: updated.title,
       completedBy: 'human',
     });
+
+    if (planId) {
+      await this.orchestrationMessageCenterEventService.publishTaskCompletedEvent({
+        planId,
+        taskId,
+        taskTitle: updated.title,
+        status: 'completed',
+        summary: String(dto.summary || '').trim() || String(dto.output || '').trim(),
+      });
+    }
 
     return updated;
   }

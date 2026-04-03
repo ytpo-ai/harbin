@@ -22,6 +22,7 @@ import {
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanStatsService } from './plan-stats.service';
+import { OrchestrationMessageCenterEventService } from './orchestration-message-center-event.service';
 
 @Injectable()
 export class OrchestrationExecutionEngineService {
@@ -50,6 +51,7 @@ export class OrchestrationExecutionEngineService {
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
     private readonly planStatsService: PlanStatsService,
+    private readonly orchestrationMessageCenterEventService: OrchestrationMessageCenterEventService,
   ) {}
 
   async executeTaskNode(
@@ -147,6 +149,13 @@ export class OrchestrationExecutionEngineService {
     if (assignment.executorType !== 'agent' || !assignment.executorId) {
       await this.markTaskFailed(taskId, 'No agent assigned for execution');
       await this.planStatsService.updatePlanSessionTask(planId, taskId, {
+        status: 'failed',
+        error: 'No agent assigned for execution',
+      });
+      await this.orchestrationMessageCenterEventService.publishTaskCompletedEvent({
+        planId,
+        taskId,
+        taskTitle: task.title,
         status: 'failed',
         error: 'No agent assigned for execution',
       });
@@ -272,6 +281,13 @@ export class OrchestrationExecutionEngineService {
         agentSessionId: execution.sessionId || requestedSessionId,
         agentRunId: execution.runId,
       });
+      await this.orchestrationMessageCenterEventService.publishTaskCompletedEvent({
+        planId,
+        taskId,
+        taskTitle: task.title,
+        status: 'completed',
+        summary: output.slice(0, 300),
+      });
 
       this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.status.changed', {
         planId,
@@ -297,6 +313,13 @@ export class OrchestrationExecutionEngineService {
       const message = error instanceof Error ? error.message : 'Unknown execution error';
       await this.markTaskFailed(taskId, message);
       await this.planStatsService.updatePlanSessionTask(planId, taskId, {
+        status: 'failed',
+        error: message,
+      });
+      await this.orchestrationMessageCenterEventService.publishTaskCompletedEvent({
+        planId,
+        taskId,
+        taskTitle: task.title,
         status: 'failed',
         error: message,
       });
