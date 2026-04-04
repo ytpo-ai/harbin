@@ -5,6 +5,7 @@ import { InfraModule } from '@libs/infra';
 import databaseConfig from '../../../src/config/database.config';
 import { HealthController } from './health.controller';
 import { ChannelModule } from './modules/channel/channel.module';
+import { InboundModule } from './modules/inbound/inbound.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ChannelModule } from './modules/channel/channel.module';
       inject: [ConfigService],
     }),
     ChannelModule,
+    InboundModule,
   ],
   controllers: [HealthController],
 })

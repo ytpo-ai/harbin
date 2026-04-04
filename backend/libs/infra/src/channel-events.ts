@@ -3,6 +3,8 @@ import { MessageCenterEventEnvelope } from './message-center-events';
 export const CHANNEL_EVENTS_STREAM = 'streams:channel:events';
 export const CHANNEL_CONSUMER_GROUP = 'channel-group';
 export const CHANNEL_EVENTS_DLQ_STREAM = 'streams:channel:events:dlq';
+export const CHANNEL_INBOUND_QUEUE_KEY = 'channel:inbound:queue';
+export const CHANNEL_OUTBOUND_FEISHU_CHANNEL = 'channel:outbound:feishu';
 
 export interface ChannelEventEnvelope {
   eventId: string;
@@ -21,6 +23,21 @@ export interface ChannelEventEnvelope {
     priority: 'low' | 'normal' | 'high';
     extra?: Record<string, unknown>;
   };
+}
+
+export interface ChannelOutboundFeishuEnvelope {
+  channelSource: 'feishu';
+  chatId: string;
+  replyToMessageId?: string;
+  text: string;
+  channelSessionId?: string;
+  employeeId?: string;
+  agentId?: string;
+  runId?: string;
+  sessionId?: string;
+  traceId?: string;
+  eventType?: string;
+  sentAt: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

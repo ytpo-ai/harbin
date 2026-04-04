@@ -16,6 +16,46 @@ export class FeishuAppProvider implements ChannelProvider {
 
   constructor(private readonly cardBuilder: FeishuCardBuilder) {}
 
+  async replyText(chatId: string, text: string, replyToMessageId?: string): Promise<void> {
+    const normalizedChatId = String(chatId || '').trim();
+    const normalizedText = String(text || '').trim();
+    if (!normalizedChatId || !normalizedText) {
+      return;
+    }
+
+    const runtimeConfig = this.resolveRuntimeConfig();
+    if (!runtimeConfig) {
+      throw new Error('feishu runtime config not available');
+    }
+
+    const client = this.getOrCreateClient(runtimeConfig);
+    const replyMessageId = String(replyToMessageId || '').trim();
+    const body = {
+      content: JSON.stringify({ text: normalizedText }),
+      msg_type: 'text',
+    };
+
+    if (replyMessageId && client?.im?.message?.reply) {
+      await client.im.message.reply({
+        path: {
+          message_id: replyMessageId,
+        },
+        data: body,
+      });
+      return;
+    }
+
+    await client.im.message.create({
+      params: {
+        receive_id_type: 'chat_id',
+      },
+      data: {
+        receive_id: normalizedChatId,
+        ...body,
+      },
+    });
+  }
+
   async send(target: ChannelTarget, message: ChannelMessage): Promise<DeliveryResult> {
     const config = this.resolveConfig(target.providerConfig, target.targetType);
     if (!config) {
@@ -37,7 +77,7 @@ export class FeishuAppProvider implements ChannelProvider {
         data: {
           receive_id: config.receiveId,
           msg_type: 'interactive',
-          content: JSON.stringify({ card }),
+          content: JSON.stringify(card),
         },
       });
 
@@ -136,5 +176,22 @@ export class FeishuAppProvider implements ChannelProvider {
     });
     this.clientCache.set(cacheKey, client);
     return client;
+  }
+
+  private resolveRuntimeConfig(): FeishuAppProviderConfig | null {
+    const appId = String(process.env.FEISHU_APP_ID || '').trim();
+    const appSecret = String(process.env.FEISHU_APP_SECRET || '').trim();
+    const encryptKey = String(process.env.FEISHU_APP_ENCRYPT_KEY || '').trim() || undefined;
+    if (!appId || !appSecret) {
+      return null;
+    }
+
+    return {
+      appId,
+      appSecret,
+      encryptKey,
+      receiveId: 'runtime_chat',
+      receiveIdType: 'chat_id',
+    };
   }
 }

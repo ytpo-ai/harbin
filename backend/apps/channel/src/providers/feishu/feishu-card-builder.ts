@@ -31,6 +31,8 @@ export class FeishuCardBuilder {
     const isSuccess = status === 'completed' || status === 'success';
     const summary = String(payload.summary || message.content || '').trim();
     const actionUrl = String(payload.actionUrl || '').trim();
+    const planId = String(payload.planId || '').trim();
+    const taskId = String(payload.taskId || '').trim();
 
     return this.wrapCard({
       title: message.title,
@@ -38,6 +40,35 @@ export class FeishuCardBuilder {
       elements: [
         this.markdownLine(`**状态**：${isSuccess ? '成功' : '失败'}`),
         this.markdownLine(`**结果摘要**：${summary || '无摘要'}`),
+        ...(!isSuccess && taskId
+          ? [
+              this.buildInteractiveButtons([
+                {
+                  label: '重试',
+                  action: 'retry_task',
+                  value: {
+                    action: 'retry_task',
+                    taskId,
+                    planId,
+                  },
+                },
+              ]),
+            ]
+          : []),
+        ...(isSuccess && planId
+          ? [
+              this.buildInteractiveButtons([
+                {
+                  label: '创建后续计划',
+                  action: 'create_followup',
+                  value: {
+                    action: 'create_followup',
+                    planId,
+                  },
+                },
+              ]),
+            ]
+          : []),
         ...this.buildActionButton(actionUrl),
       ],
     });
@@ -52,6 +83,7 @@ export class FeishuCardBuilder {
     const agentName = String(payload.agentName || payload.agentId || '未知Agent').trim();
     const taskTitle = String(payload.taskTitle || payload.action || '未命名任务').trim();
     const actionUrl = String(payload.actionUrl || '').trim();
+    const taskId = String(payload.taskId || '').trim();
 
     return this.wrapCard({
       title: message.title,
@@ -60,6 +92,20 @@ export class FeishuCardBuilder {
         this.markdownLine(`**Agent**：${agentName}`),
         this.markdownLine(`**任务**：${taskTitle}`),
         this.markdownLine(`**状态**：${statusLabel}  |  **耗时**：${durationText}`),
+        ...(status === 'running' && taskId
+          ? [
+              this.buildInteractiveButtons([
+                {
+                  label: '取消执行',
+                  action: 'cancel_task',
+                  value: {
+                    action: 'cancel_task',
+                    taskId,
+                  },
+                },
+              ]),
+            ]
+          : []),
         ...this.buildActionButton(actionUrl),
       ],
     });
@@ -95,6 +141,7 @@ export class FeishuCardBuilder {
     const payload = (message.payload || {}) as Record<string, unknown>;
     const reason = String(payload.reason || message.content || '').trim();
     const scheduleName = String(payload.scheduleName || '').trim();
+    const alertId = String(payload.alertId || '').trim();
 
     return this.wrapCard({
       title: message.title,
@@ -103,6 +150,25 @@ export class FeishuCardBuilder {
         this.markdownLine(`**来源**：调度系统`),
         this.markdownLine(`**任务**：${scheduleName || '未知任务'}`),
         this.markdownLine(`**原因**：${reason || '未知'}`),
+        this.buildInteractiveButtons([
+          {
+            label: '确认告警',
+            action: 'ack_alert',
+            value: {
+              action: 'ack_alert',
+              alertId,
+            },
+          },
+          {
+            label: '静默1小时',
+            action: 'mute_alert',
+            value: {
+              action: 'mute_alert',
+              alertId,
+              duration: 3600,
+            },
+          },
+        ]),
       ],
     });
   }
@@ -210,5 +276,25 @@ export class FeishuCardBuilder {
         ],
       },
     ];
+  }
+
+  private buildInteractiveButtons(
+    buttons: Array<{ label: string; action: string; value: Record<string, unknown> }>,
+  ): Record<string, unknown> {
+    return {
+      tag: 'action',
+      actions: buttons.map((button) => ({
+        tag: 'button',
+        text: {
+          tag: 'plain_text',
+          content: button.label,
+        },
+        type: 'default',
+        value: {
+          action: button.action,
+          ...button.value,
+        },
+      })),
+    };
   }
 }

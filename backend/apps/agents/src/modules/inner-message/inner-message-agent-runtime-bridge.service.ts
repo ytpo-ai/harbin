@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { CollaborationContextFactory } from '@libs/contracts';
+import { CHANNEL_OUTBOUND_FEISHU_CHANNEL, RedisService } from '@libs/infra';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { InnerMessage } from '@agents/schemas/inner-message.schema';
 import { InnerMessageService } from './inner-message.service';
@@ -15,6 +16,7 @@ export class InnerMessageAgentRuntimeBridgeService {
   constructor(
     private readonly agentService: AgentService,
     private readonly innerMessageService: InnerMessageService,
+    private readonly redisService: RedisService,
     @InjectModel(Agent.name)
     private readonly agentModel: Model<AgentDocument>,
   ) {}
@@ -107,6 +109,15 @@ export class InnerMessageAgentRuntimeBridgeService {
         sessionId: result.sessionId,
         responsePreview: String(result.response || '').slice(0, 500),
       });
+
+      await this.publishChannelOutboundMessage({
+        payload,
+        responseText: String(result.response || '').trim(),
+        receiverAgentId,
+        runId: String(result.runId || '').trim() || undefined,
+        sessionId: String(result.sessionId || '').trim() || undefined,
+        eventType,
+      });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Agent runtime bridge failed for message ${messageId}: ${reason}`);
@@ -179,5 +190,41 @@ export class InnerMessageAgentRuntimeBridgeService {
     ]
       .filter(Boolean)
       .join('\n');
+  }
+
+  private async publishChannelOutboundMessage(input: {
+    payload: Record<string, unknown>;
+    responseText: string;
+    receiverAgentId: string;
+    runId?: string;
+    sessionId?: string;
+    eventType: string;
+  }): Promise<void> {
+    const channelSource = String(input.payload.channelSource || '').trim().toLowerCase();
+    if (channelSource !== 'feishu') {
+      return;
+    }
+
+    const chatId = String(input.payload.channelChatId || '').trim();
+    if (!chatId) {
+      return;
+    }
+
+    const outboundPayload = {
+      channelSource: 'feishu' as const,
+      chatId,
+      replyToMessageId: String(input.payload.channelMessageId || '').trim() || undefined,
+      text: input.responseText || '任务已处理完成。',
+      channelSessionId: String(input.payload.channelSessionId || '').trim() || undefined,
+      employeeId: String(input.payload.employeeId || '').trim() || undefined,
+      agentId: input.receiverAgentId,
+      runId: input.runId,
+      sessionId: input.sessionId,
+      traceId: String(input.payload.traceId || '').trim() || undefined,
+      eventType: input.eventType,
+      sentAt: new Date().toISOString(),
+    };
+
+    await this.redisService.publish(CHANNEL_OUTBOUND_FEISHU_CHANNEL, outboundPayload);
   }
 }
