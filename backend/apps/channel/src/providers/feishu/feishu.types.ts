@@ -3,6 +3,14 @@ export interface FeishuProviderConfig {
   webhookSecret?: string;
 }
 
+export interface FeishuAppProviderConfig {
+  appId: string;
+  appSecret: string;
+  encryptKey?: string;
+  receiveId: string;
+  receiveIdType?: 'chat_id' | 'open_id';
+}
+
 export interface FeishuWebhookResponse {
   code?: number;
   msg?: string;

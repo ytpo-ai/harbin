@@ -15,6 +15,7 @@ export class FeishuWebhookProvider implements ChannelProvider {
   private readonly logger = new Logger(FeishuWebhookProvider.name);
   private readonly timeoutMs = 5000;
   private readonly retryTimes = 2;
+  private readonly retryBaseDelayMs = 500;
 
   constructor(private readonly cardBuilder: FeishuCardBuilder) {}
 
@@ -60,6 +61,7 @@ export class FeishuWebhookProvider implements ChannelProvider {
         if (!this.shouldRetry(undefined, response.status, reason, attempt, maxAttempts)) {
           break;
         }
+        await this.sleep(this.retryBaseDelayMs * attempt);
       } catch (error) {
         const reason = this.classifyError(error);
         lastError = reason;
@@ -70,6 +72,7 @@ export class FeishuWebhookProvider implements ChannelProvider {
         if (!this.shouldRetry(error, statusCode, reason, attempt, maxAttempts)) {
           break;
         }
+        await this.sleep(this.retryBaseDelayMs * attempt);
       }
     }
 
@@ -97,7 +100,8 @@ export class FeishuWebhookProvider implements ChannelProvider {
       if (parsed.protocol !== 'https:') {
         return false;
       }
-      if (parsed.hostname !== 'open.feishu.cn') {
+      const allowedHosts = new Set(['open.feishu.cn', 'open.larksuite.com']);
+      if (!allowedHosts.has(parsed.hostname)) {
         return false;
       }
       return parsed.pathname.includes('/open-apis/bot/v2/hook/');
@@ -124,7 +128,7 @@ export class FeishuWebhookProvider implements ChannelProvider {
     if (message.contentType === 'card') {
       payload = {
         msg_type: 'interactive',
-        card: this.cardBuilder.buildTaskResultCard(message),
+        card: this.cardBuilder.buildCard(message),
       };
     } else {
       payload = {
@@ -147,7 +151,11 @@ export class FeishuWebhookProvider implements ChannelProvider {
 
   private buildSign(timestamp: string, secret: string): string {
     const stringToSign = `${timestamp}\n${secret}`;
-    return createHmac('sha256', stringToSign).digest('base64');
+    return createHmac('sha256', stringToSign).update('').digest('base64');
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private classifyError(error: unknown): string {

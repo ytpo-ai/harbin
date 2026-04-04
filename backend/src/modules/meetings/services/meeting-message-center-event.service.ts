@@ -78,6 +78,67 @@ export class MeetingMessageCenterEventService {
     );
   }
 
+  async publishMeetingSummaryGeneratedMessage(meeting: MeetingDocument): Promise<void> {
+    const meetingId = String(meeting?.id || '').trim();
+    if (!meetingId) {
+      return;
+    }
+
+    const receivers = this.resolveReceiverIds(meeting);
+    if (!receivers.length) {
+      return;
+    }
+
+    const generatedAt = meeting.summary?.generatedAt
+      ? new Date(meeting.summary.generatedAt).toISOString()
+      : new Date().toISOString();
+    const summaryContent = String(meeting.summary?.content || '').trim();
+    const actionItems = Array.isArray(meeting.summary?.actionItems) ? meeting.summary.actionItems : [];
+    const decisions = Array.isArray(meeting.summary?.decisions) ? meeting.summary.decisions : [];
+
+    for (const receiverId of receivers) {
+      try {
+        const event = buildMessageCenterEvent({
+          eventType: 'meeting.summary.generated',
+          source: MESSAGE_CENTER_EVENT_SOURCE_MEETING,
+          traceId: randomUUID(),
+          occurredAt: generatedAt,
+          data: {
+            receiverId,
+            messageType: 'system_alert',
+            title: '会议纪要已生成',
+            content: summaryContent || `会议《${meeting.title || meetingId}》已生成纪要。`,
+            actionUrl: `/meetings/${encodeURIComponent(meetingId)}`,
+            bizKey: `meeting:${meetingId}:summary:${receiverId}`,
+            priority: 'normal',
+            extra: {
+              meetingId,
+              generatedAt,
+              summary: summaryContent,
+              actionItems,
+              decisions,
+            },
+          },
+        });
+
+        await this.redisService.xadd(
+          MESSAGE_CENTER_EVENT_STREAM_KEY,
+          {
+            event: JSON.stringify(event),
+          },
+          {
+            maxLen: 10000,
+          },
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error || 'unknown');
+        this.logger.warn(
+          `Failed to publish meeting-summary-generated event (non-blocking): meetingId=${meetingId} receiverId=${receiverId} reason=${reason}`,
+        );
+      }
+    }
+  }
+
   private resolveReceiverIds(meeting: MeetingDocument): string[] {
     const receiverIds = new Set<string>();
 

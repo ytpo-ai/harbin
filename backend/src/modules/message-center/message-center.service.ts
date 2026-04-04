@@ -24,6 +24,11 @@ export interface CreateSystemMessageInput {
   dedupKey?: string;
 }
 
+export interface CreateSystemMessageResult {
+  message: SystemMessageDocument;
+  created: boolean;
+}
+
 @Injectable()
 export class MessageCenterService {
   private readonly logger = new Logger(MessageCenterService.name);
@@ -119,7 +124,7 @@ export class MessageCenterService {
     };
   }
 
-  async createSystemMessage(input: CreateSystemMessageInput) {
+  async createSystemMessage(input: CreateSystemMessageInput): Promise<CreateSystemMessageResult> {
     if (!input.receiverId?.trim()) {
       throw new BadRequestException('receiverId is required');
     }
@@ -172,7 +177,10 @@ export class MessageCenterService {
       this.logger.log(
         `Ignored duplicate system message write: receiverId=${input.receiverId} type=${input.type} eventId=${normalizedEventId || 'n/a'} dedupKey=${normalizedDedupKey || 'n/a'}`,
       );
-      return existing;
+      return {
+        message: existing,
+        created: false,
+      };
     }
 
     const unreadCount = await this.getUnreadCount(input.receiverId);
@@ -193,6 +201,9 @@ export class MessageCenterService {
         // ignore websocket publish errors
       });
 
-    return created;
+    return {
+      message: created,
+      created: true,
+    };
   }
 }

@@ -1,42 +1,18 @@
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, IsUrl, ValidateNested } from 'class-validator';
-
-export class FeishuConfigDto {
-  @IsString()
-  @IsNotEmpty()
-  @IsUrl({ protocols: ['https'], require_protocol: true })
-  webhookUrl: string;
-
-  @IsString()
-  @IsOptional()
-  webhookSecret?: string;
-}
-
-export class UpdateFeishuConfigDto {
-  @IsString()
-  @IsOptional()
-  @IsUrl({ protocols: ['https'], require_protocol: true })
-  webhookUrl?: string;
-
-  @IsString()
-  @IsOptional()
-  webhookSecret?: string;
-}
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsNotEmpty, IsObject, IsOptional, IsString } from 'class-validator';
 
 export class CreateChannelConfigDto {
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @IsIn(['feishu'])
-  providerType: 'feishu';
+  @IsIn(['feishu', 'feishu-app'])
+  providerType: 'feishu' | 'feishu-app';
 
   @IsIn(['group', 'user'])
   targetType: 'group' | 'user';
 
-  @ValidateNested()
-  @Type(() => FeishuConfigDto)
-  providerConfig: FeishuConfigDto;
+  @IsObject()
+  providerConfig: Record<string, unknown>;
 
   @IsArray()
   @ArrayMaxSize(50)
@@ -61,10 +37,9 @@ export class UpdateChannelConfigDto {
   @IsOptional()
   targetType?: 'group' | 'user';
 
-  @ValidateNested()
-  @Type(() => UpdateFeishuConfigDto)
+  @IsObject()
   @IsOptional()
-  providerConfig?: UpdateFeishuConfigDto;
+  providerConfig?: Record<string, unknown>;
 
   @IsArray()
   @ArrayMaxSize(50)

@@ -8,21 +8,31 @@ export class ChannelConfig {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ required: true, enum: ['feishu'] })
-  providerType: 'feishu';
+  @Prop({ required: true, enum: ['feishu', 'feishu-app'] })
+  providerType: 'feishu' | 'feishu-app';
 
   @Prop({ required: true, enum: ['group', 'user'] })
   targetType: 'group' | 'user';
 
   @Prop(
     raw({
-      webhookUrlEncrypted: { type: String, required: true },
+      webhookUrlEncrypted: { type: String },
       webhookSecretEncrypted: { type: String },
+      appIdEncrypted: { type: String },
+      appSecretEncrypted: { type: String },
+      encryptKeyEncrypted: { type: String },
+      receiveId: { type: String },
+      receiveIdType: { type: String, enum: ['chat_id', 'open_id'] },
     }),
   )
   providerConfig: {
-    webhookUrlEncrypted: string;
+    webhookUrlEncrypted?: string;
     webhookSecretEncrypted?: string;
+    appIdEncrypted?: string;
+    appSecretEncrypted?: string;
+    encryptKeyEncrypted?: string;
+    receiveId?: string;
+    receiveIdType?: 'chat_id' | 'open_id';
   };
 
   @Prop({ type: [String], default: [] })

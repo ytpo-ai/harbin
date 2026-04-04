@@ -2,7 +2,6 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ChannelTarget } from '../../contracts/channel-target.types';
-import { DeliveryResult } from '../../contracts/delivery-result.types';
 import { EncryptionUtil } from '../../../../../src/shared/utils/encryption.util';
 import { ChannelConfig, ChannelConfigDocument } from './schemas/channel-config.schema';
 import { ChannelDeliveryLog, ChannelDeliveryLogDocument } from './schemas/channel-delivery-log.schema';
@@ -22,7 +21,12 @@ export class ChannelConfigService {
 
   async createConfig(dto: CreateChannelConfigDto) {
     const provider = this.providerRegistry.getProvider(dto.providerType);
-    const providerConfig = this.normalizeProviderConfig(dto.providerConfig, undefined);
+    const providerConfig = this.normalizeProviderConfig(
+      dto.providerType,
+      dto.targetType,
+      dto.providerConfig,
+      undefined,
+    );
     const isValid = await provider.validateConfig(providerConfig);
     if (!isValid) {
       throw new BadRequestException('invalid provider config');
@@ -32,7 +36,7 @@ export class ChannelConfigService {
       name: String(dto.name || '').trim(),
       providerType: dto.providerType,
       targetType: dto.targetType,
-      providerConfig: this.encryptProviderConfig(providerConfig),
+      providerConfig: this.encryptProviderConfig(dto.providerType, providerConfig),
       eventFilters: this.normalizeEventFilters(dto.eventFilters),
       isActive: dto.isActive !== false,
       createdBy: String(dto.createdBy || '').trim() || undefined,
@@ -52,7 +56,13 @@ export class ChannelConfigService {
       throw new NotFoundException('channel config not found');
     }
 
-    const nextProviderConfig = this.normalizeProviderConfig(dto.providerConfig || {}, current.providerConfig);
+    const nextTargetType = dto.targetType || current.targetType;
+    const nextProviderConfig = this.normalizeProviderConfig(
+      current.providerType,
+      nextTargetType,
+      dto.providerConfig || {},
+      current.providerConfig,
+    );
     const provider = this.providerRegistry.getProvider(current.providerType);
     const isValid = await provider.validateConfig(nextProviderConfig);
     if (!isValid) {
@@ -66,7 +76,7 @@ export class ChannelConfigService {
           $set: {
             ...(dto.name !== undefined ? { name: String(dto.name || '').trim() } : {}),
             ...(dto.targetType !== undefined ? { targetType: dto.targetType } : {}),
-            providerConfig: this.encryptProviderConfig(nextProviderConfig),
+            providerConfig: this.encryptProviderConfig(current.providerType, nextProviderConfig),
             ...(dto.eventFilters !== undefined ? { eventFilters: this.normalizeEventFilters(dto.eventFilters) } : {}),
             ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
           },
@@ -143,14 +153,29 @@ export class ChannelConfigService {
       return [];
     }
 
-    const configs = await this.channelConfigModel
-      .find({
-        isActive: true,
-        eventFilters: eventTypeValue,
-      })
-      .exec();
+    const configs = await this.channelConfigModel.find({ isActive: true }).exec();
+    const matched = configs.filter((item) => this.matchEventFilter(item.eventFilters, eventTypeValue));
 
-    return configs.map((item) => this.resolveTarget(item));
+    return matched.map((item) => this.resolveTarget(item));
+  }
+
+  private matchEventFilter(filters: string[], eventType: string): boolean {
+    for (const filter of filters || []) {
+      const normalizedFilter = String(filter || '').trim();
+      if (!normalizedFilter) {
+        continue;
+      }
+      if (normalizedFilter === eventType) {
+        return true;
+      }
+      if (normalizedFilter.endsWith('*')) {
+        const prefix = normalizedFilter.slice(0, -1);
+        if (prefix && eventType.startsWith(prefix)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   async createDeliveryLog(input: {
@@ -191,20 +216,37 @@ export class ChannelConfigService {
 
   private toResponse(config: ChannelConfigDocument) {
     const providerConfig = this.decryptProviderConfig(config.providerConfig);
-    return {
+    const common = {
       id: config._id.toString(),
       name: config.name,
       providerType: config.providerType,
       targetType: config.targetType,
-      providerConfig: {
-        webhookUrlMasked: this.maskWebhookUrl(String(providerConfig.webhookUrl || '')),
-        hasWebhookSecret: Boolean(providerConfig.webhookSecret),
-      },
       eventFilters: config.eventFilters,
       isActive: config.isActive,
       createdBy: config.createdBy,
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
+    };
+
+    if (config.providerType === 'feishu-app') {
+      return {
+        ...common,
+        providerConfig: {
+          appIdMasked: this.maskSensitiveText(String(providerConfig.appId || ''), 3, 3),
+          hasAppSecret: Boolean(providerConfig.appSecret),
+          hasEncryptKey: Boolean(providerConfig.encryptKey),
+          receiveId: String(providerConfig.receiveId || ''),
+          receiveIdType: String(providerConfig.receiveIdType || ''),
+        },
+      };
+    }
+
+    return {
+      ...common,
+      providerConfig: {
+        webhookUrlMasked: this.maskWebhookUrl(String(providerConfig.webhookUrl || '')),
+        hasWebhookSecret: Boolean(providerConfig.webhookSecret),
+      },
     };
   }
 
@@ -220,48 +262,88 @@ export class ChannelConfigService {
   }
 
   private normalizeProviderConfig(
-    value: { webhookUrl?: string; webhookSecret?: string },
-    currentEncrypted?: { webhookUrlEncrypted?: string; webhookSecretEncrypted?: string },
-  ): { webhookUrl: string; webhookSecret?: string } {
+    providerType: 'feishu' | 'feishu-app',
+    targetType: 'group' | 'user',
+    value: Record<string, unknown>,
+    currentEncrypted?: Record<string, unknown>,
+  ): Record<string, unknown> {
     const current = currentEncrypted
-      ? this.decryptProviderConfig({
-          webhookUrlEncrypted: String(currentEncrypted.webhookUrlEncrypted || ''),
-          webhookSecretEncrypted: String(currentEncrypted.webhookSecretEncrypted || ''),
-        })
-      : { webhookUrl: '', webhookSecret: undefined };
+      ? this.decryptProviderConfig(currentEncrypted)
+      : {};
+
+    if (providerType === 'feishu-app') {
+      const appId = String(value.appId ?? current.appId ?? '').trim();
+      const appSecret = String(value.appSecret ?? current.appSecret ?? '').trim();
+      const encryptKey = String(value.encryptKey ?? current.encryptKey ?? '').trim() || undefined;
+      const receiveId = String(value.receiveId ?? current.receiveId ?? '').trim();
+      const receiveIdTypeRaw = String(value.receiveIdType ?? current.receiveIdType ?? '').trim();
+      const receiveIdType =
+        receiveIdTypeRaw === 'chat_id' || receiveIdTypeRaw === 'open_id'
+          ? receiveIdTypeRaw
+          : targetType === 'user'
+            ? 'open_id'
+            : 'chat_id';
+
+      if (!appId || !appSecret || !receiveId) {
+        throw new BadRequestException('providerConfig.appId/appSecret/receiveId are required for feishu-app');
+      }
+
+      return {
+        appId,
+        appSecret,
+        encryptKey,
+        receiveId,
+        receiveIdType,
+      };
+    }
 
     const webhookUrl = String(value.webhookUrl ?? current.webhookUrl ?? '').trim();
     const webhookSecret = String(value.webhookSecret ?? current.webhookSecret ?? '').trim() || undefined;
-
     if (!webhookUrl) {
       throw new BadRequestException('providerConfig.webhookUrl is required');
     }
-
     return {
       webhookUrl,
       webhookSecret,
     };
   }
 
-  private encryptProviderConfig(input: { webhookUrl: string; webhookSecret?: string }): {
-    webhookUrlEncrypted: string;
-    webhookSecretEncrypted?: string;
-  } {
+  private encryptProviderConfig(providerType: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (providerType === 'feishu-app') {
+      return {
+        appIdEncrypted: EncryptionUtil.encrypt(String(input.appId || '')),
+        appSecretEncrypted: EncryptionUtil.encrypt(String(input.appSecret || '')),
+        encryptKeyEncrypted: input.encryptKey ? EncryptionUtil.encrypt(String(input.encryptKey || '')) : undefined,
+        receiveId: String(input.receiveId || ''),
+        receiveIdType: String(input.receiveIdType || 'chat_id'),
+      };
+    }
+
     return {
-      webhookUrlEncrypted: EncryptionUtil.encrypt(input.webhookUrl),
-      webhookSecretEncrypted: input.webhookSecret ? EncryptionUtil.encrypt(input.webhookSecret) : undefined,
+      webhookUrlEncrypted: EncryptionUtil.encrypt(String(input.webhookUrl || '')),
+      webhookSecretEncrypted: input.webhookSecret ? EncryptionUtil.encrypt(String(input.webhookSecret || '')) : undefined,
     };
   }
 
-  private decryptProviderConfig(input: {
-    webhookUrlEncrypted: string;
-    webhookSecretEncrypted?: string;
-  }): { webhookUrl: string; webhookSecret?: string } {
-    const webhookUrl = EncryptionUtil.decrypt(String(input.webhookUrlEncrypted || ''));
-    const webhookSecretRaw = String(input.webhookSecretEncrypted || '').trim();
+  private decryptProviderConfig(input: Record<string, unknown>): Record<string, unknown> {
+    const appIdEncrypted = String(input.appIdEncrypted || '').trim();
+    const appSecretEncrypted = String(input.appSecretEncrypted || '').trim();
+    if (appIdEncrypted && appSecretEncrypted) {
+      const encryptKeyRaw = String(input.encryptKeyEncrypted || '').trim();
+      return {
+        appId: EncryptionUtil.decrypt(appIdEncrypted),
+        appSecret: EncryptionUtil.decrypt(appSecretEncrypted),
+        encryptKey: encryptKeyRaw ? EncryptionUtil.decrypt(encryptKeyRaw) : undefined,
+        receiveId: String(input.receiveId || '').trim(),
+        receiveIdType: String(input.receiveIdType || '').trim() || undefined,
+      };
+    }
+
+    const webhookUrlEncrypted = String(input.webhookUrlEncrypted || '').trim();
+    const webhookSecretEncrypted = String(input.webhookSecretEncrypted || '').trim();
     return {
-      webhookUrl,
-      webhookSecret: webhookSecretRaw ? EncryptionUtil.decrypt(webhookSecretRaw) : undefined,
+      webhookUrl: webhookUrlEncrypted ? EncryptionUtil.decrypt(webhookUrlEncrypted) : '',
+      webhookSecret: webhookSecretEncrypted ? EncryptionUtil.decrypt(webhookSecretEncrypted) : undefined,
     };
   }
 
@@ -278,5 +360,16 @@ export class ChannelConfigService {
     } catch {
       return '***';
     }
+  }
+
+  private maskSensitiveText(value: string, prefixSize: number, suffixSize: number): string {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return '';
+    }
+    if (normalized.length <= prefixSize + suffixSize) {
+      return `${normalized.slice(0, 1)}***`;
+    }
+    return `${normalized.slice(0, prefixSize)}***${normalized.slice(-suffixSize)}`;
   }
 }

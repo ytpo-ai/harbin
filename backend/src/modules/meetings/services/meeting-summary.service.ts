@@ -7,6 +7,7 @@ import { MEETING_ENDED_EVENT_TYPE } from '../meeting-inner-message.constants';
 import { SaveMeetingSummaryDto } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingLifecycleService } from './meeting-lifecycle.service';
+import { MeetingMessageCenterEventService } from './meeting-message-center-event.service';
 
 @Injectable()
 export class MeetingSummaryService {
@@ -18,6 +19,7 @@ export class MeetingSummaryService {
     private readonly agentClientService: AgentClientService,
     private readonly eventService: MeetingEventService,
     private readonly lifecycleService: MeetingLifecycleService,
+    private readonly meetingMessageCenterEventService: MeetingMessageCenterEventService,
   ) {}
 
   async publishMeetingEndedSummaryEvent(meeting: MeetingDocument): Promise<void> {
@@ -79,6 +81,7 @@ export class MeetingSummaryService {
     };
 
     await meeting.save();
+    await this.meetingMessageCenterEventService.publishMeetingSummaryGeneratedMessage(meeting);
 
     this.eventService.emitEvent(meetingId, {
       type: 'summary_generated',

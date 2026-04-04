@@ -1,14 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ChannelProvider } from '../../contracts/channel-provider.interface';
+import { FeishuAppProvider } from '../../providers/feishu/feishu-app.provider';
 import { FeishuWebhookProvider } from '../../providers/feishu/feishu-webhook.provider';
 
 @Injectable()
 export class ChannelProviderRegistry {
   private readonly providerMap: Map<string, ChannelProvider>;
 
-  constructor(feishuWebhookProvider: FeishuWebhookProvider) {
+  constructor(
+    feishuWebhookProvider: FeishuWebhookProvider,
+    feishuAppProvider: FeishuAppProvider,
+  ) {
     this.providerMap = new Map<string, ChannelProvider>([
       [feishuWebhookProvider.providerType, feishuWebhookProvider],
+      [feishuAppProvider.providerType, feishuAppProvider],
     ]);
   }
 

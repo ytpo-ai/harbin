@@ -11,6 +11,12 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { Model } from 'mongoose';
 import { CronJob } from 'cron';
 import axios from 'axios';
+import {
+  buildMessageCenterEvent,
+  MESSAGE_CENTER_EVENT_SOURCE_SCHEDULER,
+  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  RedisService,
+} from '@libs/infra';
 import { Schedule, ScheduleDocument } from '../../shared/schemas/schedule.schema';
 import { CreateScheduleDto, UpdateScheduleDto } from './dto';
 import { AgentClientService } from '../agents-client/agent-client.service';
@@ -43,6 +49,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly scheduleModel: Model<ScheduleDocument>,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly agentClientService: AgentClientService,
+    private readonly redisService: RedisService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -691,6 +698,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
             )
             .exec();
 
+          await this.publishScheduleReportGeneratedEvent({
+            scheduleId: input.scheduleId,
+            scheduleName: input.scheduleName,
+            messageId: input.messageId,
+            executionTime: completedAt,
+            processingResult: message.payload?.processingResult,
+          });
+
           this.stopLifecycleMonitor(monitorKey);
           return;
         }
@@ -837,6 +852,14 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
               },
             )
             .exec();
+
+          await this.publishScheduleReportGeneratedEvent({
+            scheduleId,
+            scheduleName,
+            messageId,
+            executionTime: new Date(),
+            processingResult: message?.payload?.processingResult,
+          });
           continue;
         }
 
@@ -1014,6 +1037,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     this.logger.error(`Schedule moved to dead letter: ${JSON.stringify(payload)}`);
 
     if (!this.schedulerAlertWebhookUrl) {
+      await this.publishSchedulerAlertEvent(scheduleId, scheduleName, reason);
       return;
     }
 
@@ -1023,6 +1047,94 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
       });
     } catch (error) {
       this.logger.warn(`Failed to send scheduler dead-letter webhook: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    await this.publishSchedulerAlertEvent(scheduleId, scheduleName, reason);
+  }
+
+  private async publishSchedulerAlertEvent(scheduleId: string, scheduleName: string, reason: string): Promise<void> {
+    const occurredAt = new Date().toISOString();
+    const event = buildMessageCenterEvent({
+      eventType: 'system.alert.scheduler',
+      source: MESSAGE_CENTER_EVENT_SOURCE_SCHEDULER,
+      occurredAt,
+      data: {
+        messageType: 'system_alert',
+        title: '调度告警',
+        content: `调度任务「${scheduleName}」执行失败：${reason}`,
+        bizKey: `scheduler:${scheduleId}:dead_letter:${occurredAt}`,
+        priority: 'high',
+        extra: {
+          scheduleId,
+          scheduleName,
+          reason,
+          occurredAt,
+        },
+      },
+    });
+
+    try {
+      await this.redisService.xadd(
+        MESSAGE_CENTER_EVENT_STREAM_KEY,
+        {
+          event: JSON.stringify(event),
+        },
+        {
+          maxLen: 10000,
+        },
+      );
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(`Publish scheduler alert message-center event failed: scheduleId=${scheduleId} reason=${detail}`);
+    }
+  }
+
+  private async publishScheduleReportGeneratedEvent(input: {
+    scheduleId: string;
+    scheduleName: string;
+    messageId: string;
+    executionTime: Date;
+    processingResult?: unknown;
+  }): Promise<void> {
+    const preview = String((input.processingResult as Record<string, unknown> | undefined)?.responsePreview || '').trim();
+    const outputSummary = preview || '定时任务已完成';
+    const occurredAt = input.executionTime.toISOString();
+
+    const event = buildMessageCenterEvent({
+      eventType: 'scheduler.report.generated',
+      source: MESSAGE_CENTER_EVENT_SOURCE_SCHEDULER,
+      occurredAt,
+      data: {
+        messageType: 'orchestration',
+        title: `${input.scheduleName} 执行完成`,
+        content: outputSummary.slice(0, 500),
+        actionUrl: `/scheduler/${encodeURIComponent(input.scheduleId)}`,
+        bizKey: `scheduler:${input.scheduleId}:report:${input.messageId}`,
+        priority: 'normal',
+        extra: {
+          scheduleId: input.scheduleId,
+          scheduleName: input.scheduleName,
+          executionTime: occurredAt,
+          outputSummary: outputSummary.slice(0, 1000),
+        },
+      },
+    });
+
+    try {
+      await this.redisService.xadd(
+        MESSAGE_CENTER_EVENT_STREAM_KEY,
+        {
+          event: JSON.stringify(event),
+        },
+        {
+          maxLen: 10000,
+        },
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(
+        `Publish scheduler report message-center event failed: scheduleId=${input.scheduleId} messageId=${input.messageId} reason=${reason}`,
+      );
     }
   }
 

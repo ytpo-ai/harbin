@@ -64,6 +64,7 @@
     "@composio/core": "^0.5.5",
     "@google-ai/generativelanguage": "^2.0.0",
     "@google/generative-ai": "^0.24.1",
+    "@larksuiteoapi/node-sdk": "^1.53.0",
     "@nestjs/common": "^10.0.0",
     "@nestjs/config": "^4.0.3",
     "@nestjs/core": "^10.0.0",

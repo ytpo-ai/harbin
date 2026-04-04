@@ -5,13 +5,22 @@ export const MESSAGE_CENTER_EVENT_CONSUMER_GROUP = 'message-center-group';
 export const MESSAGE_CENTER_EVENT_SOURCE_EI = 'engineering-intelligence';
 export const MESSAGE_CENTER_EVENT_SOURCE_MEETING = 'meeting-service';
 export const MESSAGE_CENTER_EVENT_SOURCE_ORCHESTRATION = 'orchestration-service';
+export const MESSAGE_CENTER_EVENT_SOURCE_SCHEDULER = 'scheduler-service';
+export const MESSAGE_CENTER_EVENT_SOURCE_AGENTS = 'agents-service';
 
-export type MessageCenterEventType = 'meeting.session.ended' | 'engineering.tool.completed' | 'orchestration.task.completed';
+export type MessageCenterEventType =
+  | 'meeting.session.ended'
+  | 'meeting.summary.generated'
+  | 'engineering.tool.completed'
+  | 'orchestration.task.completed'
+  | 'agent.action.completed'
+  | 'system.alert.scheduler'
+  | 'scheduler.report.generated';
 export type MessageCenterMessageType = 'engineering_statistics' | 'orchestration' | 'system_alert';
 export type MessageCenterMessagePriority = 'low' | 'normal' | 'high';
 
 export interface MessageCenterEventData {
-  receiverId: string;
+  receiverId?: string;
   messageType: MessageCenterMessageType;
   title: string;
   content: string;
@@ -103,8 +112,12 @@ export function validateMessageCenterEventEnvelope(payload: unknown): {
 
   if (
     eventType !== 'meeting.session.ended' &&
+    eventType !== 'meeting.summary.generated' &&
     eventType !== 'engineering.tool.completed' &&
-    eventType !== 'orchestration.task.completed'
+    eventType !== 'orchestration.task.completed' &&
+    eventType !== 'agent.action.completed' &&
+    eventType !== 'system.alert.scheduler' &&
+    eventType !== 'scheduler.report.generated'
   ) {
     return { ok: false, error: `unsupported event type: ${eventType}` };
   }
@@ -122,8 +135,8 @@ export function validateMessageCenterEventEnvelope(payload: unknown): {
   const priority = normalizePriority(dataRaw.priority);
   const extra = isRecord(dataRaw.extra) ? dataRaw.extra : {};
 
-  if (!receiverId || !messageType || !title || !content || !bizKey) {
-    return { ok: false, error: 'data.receiverId/messageType/title/content/bizKey are required' };
+  if (!messageType || !title || !content || !bizKey) {
+    return { ok: false, error: 'data.messageType/title/content/bizKey are required' };
   }
 
   if (messageType !== 'engineering_statistics' && messageType !== 'orchestration' && messageType !== 'system_alert') {
@@ -140,7 +153,7 @@ export function validateMessageCenterEventEnvelope(payload: unknown): {
       source,
       traceId,
       data: {
-        receiverId,
+        receiverId: receiverId || undefined,
         messageType,
         title,
         content,
