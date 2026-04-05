@@ -7,6 +7,7 @@ export enum MeetingType {
   DAILY = 'daily',
   DEPARTMENT = 'department',
   AD_HOC = 'ad_hoc',
+  ONE_ON_ONE = 'one_on_one',
   PROJECT = 'project',
   EMERGENCY = 'emergency',
 }
@@ -57,6 +58,7 @@ export interface MeetingMessage {
     proxyForEmployeeId?: string;
     pendingResponsePaused?: boolean;
     pendingResponsePausedAt?: string;
+    source?: 'feishu' | 'web' | 'system' | string;
   };
 }
 

@@ -23,6 +23,12 @@ export class ChannelSession {
   @Prop()
   agentSessionId?: string;
 
+  @Prop()
+  activeMeetingId?: string;
+
+  @Prop()
+  activeMeetingType?: string;
+
   @Prop({ default: Date.now })
   lastMessageAt: Date;
 
@@ -31,12 +37,6 @@ export class ChannelSession {
 
   @Prop({ default: true })
   isActive: boolean;
-
-  @Prop()
-  createdAt?: Date;
-
-  @Prop()
-  updatedAt?: Date;
 }
 
 export const ChannelSessionSchema = SchemaFactory.createForClass(ChannelSession);

@@ -7,11 +7,14 @@ export const MEETING_TYPES = [
   { id: MeetingType.DAILY, name: '日常讨论', color: 'bg-green-100 text-green-800', icon: '💬' },
   { id: MeetingType.DEPARTMENT, name: '部门会议', color: 'bg-yellow-100 text-yellow-800', icon: '🏢' },
   { id: MeetingType.AD_HOC, name: '临时会议', color: 'bg-gray-100 text-gray-800', icon: '⚡' },
+  { id: MeetingType.ONE_ON_ONE, name: '一对一对话', color: 'bg-slate-100 text-slate-800', icon: '💬' },
   { id: MeetingType.PROJECT, name: '项目会议', color: 'bg-indigo-100 text-indigo-800', icon: '📊' },
   { id: MeetingType.EMERGENCY, name: '紧急会议', color: 'bg-red-100 text-red-800', icon: '🚨' },
 ];
 
-export const CREATE_MODAL_MEETING_TYPES = MEETING_TYPES.filter((type) => type.id !== MeetingType.DEPARTMENT);
+export const CREATE_MODAL_MEETING_TYPES = MEETING_TYPES.filter(
+  (type) => type.id !== MeetingType.DEPARTMENT && type.id !== MeetingType.ONE_ON_ONE,
+);
 
 export const MEETING_PHRASE_SUGGESTIONS: PhraseSuggestion[] = [
   { key: 'model_list', label: '查询模型列表 (ZH)', command: '[当前有哪些模型]' },

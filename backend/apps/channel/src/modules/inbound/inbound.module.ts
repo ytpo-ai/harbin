@@ -5,6 +5,8 @@ import { FeishuModule } from '../../providers/feishu/feishu.module';
 import { ChannelAuthBridgeService } from './channel-auth-bridge.service';
 import { ChannelInboundService } from './channel-inbound.service';
 import { ChannelInboundWorkerService } from './channel-inbound-worker.service';
+import { ChannelMeetingAutoService } from './channel-meeting-auto.service';
+import { ChannelMeetingRelayService } from './channel-meeting-relay.service';
 import { ChannelOutboundWorkerService } from './channel-outbound-worker.service';
 import { CommandParserService } from './command-parser.service';
 import { ChannelSessionService } from './channel-session.service';
@@ -28,6 +30,8 @@ import { ChannelUserMapping, ChannelUserMappingSchema } from './schemas/channel-
     ChannelAuthBridgeService,
     ChannelInboundService,
     ChannelInboundWorkerService,
+    ChannelMeetingAutoService,
+    ChannelMeetingRelayService,
     ChannelOutboundWorkerService,
     CommandParserService,
     ChannelSessionService,

@@ -3,6 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ChannelSession, ChannelSessionDocument } from './schemas/channel-session.schema';
 
+export interface SessionFilter {
+  providerType: 'feishu-app';
+  externalChatId: string;
+  externalUserId: string;
+}
+
 @Injectable()
 export class ChannelSessionService {
   private readonly timeoutMinutes = Math.max(1, Number(process.env.CHANNEL_SESSION_TIMEOUT_MINUTES || 30));
@@ -81,22 +87,125 @@ export class ChannelSessionService {
       .exec();
   }
 
-  async reset(input: { providerType: 'feishu-app'; externalChatId: string; externalUserId: string }): Promise<void> {
-    const providerType = String(input.providerType || '').trim() as 'feishu-app';
-    const externalChatId = String(input.externalChatId || '').trim();
-    const externalUserId = String(input.externalUserId || '').trim();
+  async setActiveMeeting(filter: SessionFilter, meetingId: string, meetingType: string, employeeId?: string): Promise<void> {
+    const normalizedMeetingId = String(meetingId || '').trim();
+    const normalizedMeetingType = String(meetingType || '').trim();
+    if (!normalizedMeetingId || !normalizedMeetingType) {
+      return;
+    }
+
+    const normalizedEmployeeId = String(employeeId || '').trim();
+    const update: Record<string, unknown> = {
+      $set: {
+        activeMeetingId: normalizedMeetingId,
+        activeMeetingType: normalizedMeetingType,
+        lastMessageAt: new Date(),
+        isActive: true,
+      },
+    };
+
+    const options: { upsert?: boolean; setDefaultsOnInsert?: boolean } = {};
+    if (normalizedEmployeeId) {
+      (update as Record<string, unknown>).$setOnInsert = {
+        employeeId: normalizedEmployeeId,
+        agentId: 'meeting',
+        messageCount: 0,
+      };
+      options.upsert = true;
+      options.setDefaultsOnInsert = true;
+    }
+
+    await this.sessionModel.updateOne(this.normalizeFilter(filter), update, options).exec();
+  }
+
+  async clearActiveMeeting(filter: SessionFilter): Promise<void> {
+    await this.sessionModel
+      .updateOne(this.normalizeFilter(filter), {
+        $set: {
+          activeMeetingId: undefined,
+          activeMeetingType: undefined,
+          lastMessageAt: new Date(),
+        },
+      })
+      .exec();
+  }
+
+  async clearActiveMeetingByMeetingId(meetingId: string): Promise<void> {
+    const normalizedMeetingId = String(meetingId || '').trim();
+    if (!normalizedMeetingId) {
+      return;
+    }
 
     await this.sessionModel
+      .updateMany(
+        { activeMeetingId: normalizedMeetingId },
+        {
+          $set: {
+            activeMeetingId: undefined,
+            activeMeetingType: undefined,
+            lastMessageAt: new Date(),
+          },
+        },
+      )
+      .exec();
+  }
+
+  async getActiveMeeting(filter: SessionFilter): Promise<{ meetingId: string; meetingType: string } | undefined> {
+    const session = await this.sessionModel.findOne(this.normalizeFilter(filter)).select({ activeMeetingId: 1, activeMeetingType: 1 }).exec();
+    const meetingId = String(session?.activeMeetingId || '').trim();
+    const meetingType = String(session?.activeMeetingType || '').trim();
+    if (!meetingId || !meetingType) {
+      return undefined;
+    }
+
+    return {
+      meetingId,
+      meetingType,
+    };
+  }
+
+  async listSessionsWithActiveMeeting(): Promise<Array<{ meetingId: string; employeeId: string; chatId: string }>> {
+    const sessions = await this.sessionModel
+      .find({
+        activeMeetingId: { $exists: true, $ne: '' },
+      })
+      .select({ activeMeetingId: 1, employeeId: 1, externalChatId: 1 })
+      .lean()
+      .exec();
+
+    return sessions
+      .map((session) => ({
+        meetingId: String(session.activeMeetingId || '').trim(),
+        employeeId: String(session.employeeId || '').trim(),
+        chatId: String(session.externalChatId || '').trim(),
+      }))
+      .filter((session) => Boolean(session.meetingId && session.employeeId && session.chatId));
+  }
+
+  async reset(input: SessionFilter): Promise<boolean> {
+    const result = await this.sessionModel
       .updateOne(
-        { providerType, externalChatId, externalUserId },
+        this.normalizeFilter(input),
         {
           $set: {
             agentSessionId: undefined,
+            activeMeetingId: undefined,
+            activeMeetingType: undefined,
             messageCount: 0,
             lastMessageAt: new Date(),
           },
         },
       )
       .exec();
+
+    return Number(result.matchedCount || 0) > 0;
+  }
+
+  private normalizeFilter(filter: SessionFilter): SessionFilter {
+    return {
+      providerType: String(filter.providerType || '').trim() as 'feishu-app',
+      externalChatId: String(filter.externalChatId || '').trim(),
+      externalUserId: String(filter.externalUserId || '').trim(),
+    };
   }
 }

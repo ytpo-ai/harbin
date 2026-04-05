@@ -159,6 +159,9 @@ export const useMeetingMutations = ({
         senderType: 'employee',
         content,
         type: 'opinion',
+        metadata: {
+          source: 'web',
+        },
       }),
     {
       onSuccess: (message) => {

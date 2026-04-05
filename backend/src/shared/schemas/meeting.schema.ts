@@ -10,6 +10,7 @@ export enum MeetingType {
   DAILY = 'daily',             // 日常讨论
   DEPARTMENT = 'department',   // 部门会议
   AD_HOC = 'ad_hoc',           // 临时会议
+  ONE_ON_ONE = 'one_on_one',   // 一对一对话
   PROJECT = 'project',         // 项目会议
   EMERGENCY = 'emergency',     // 紧急会议
 }
@@ -104,6 +105,7 @@ export class MeetingMessage {
     pendingResponsePaused?: boolean; // 是否暂停等待回复
     /** @deprecated Pause metadata is retained for backward compatibility. */
     pendingResponsePausedAt?: string; // 暂停时间
+    source?: 'feishu' | 'web' | 'system' | string;
   };
 }
 

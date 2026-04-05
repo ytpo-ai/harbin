@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios, { AxiosInstance } from 'axios';
 import { CHANNEL_INBOUND_QUEUE_KEY, RedisService } from '@libs/infra';
 import { ChannelAuthBridgeService } from './channel-auth-bridge.service';
+import { ChannelMeetingAutoService } from './channel-meeting-auto.service';
+import { ChannelMeetingRelayService } from './channel-meeting-relay.service';
 import { CommandParserService } from './command-parser.service';
-import { ChannelSessionService } from './channel-session.service';
+import { ChannelSessionService, SessionFilter } from './channel-session.service';
 import { ChannelUserMappingService, ResolvedChannelEmployee } from './channel-user-mapping.service';
 import { FeishuAppProvider } from '../../providers/feishu/feishu-app.provider';
 import { FeishuCardActionEnvelope, FeishuInboundMessage } from './inbound.types';
@@ -12,8 +14,17 @@ import { FeishuCardActionEnvelope, FeishuInboundMessage } from './inbound.types'
 export class ChannelInboundService {
   private readonly logger = new Logger(ChannelInboundService.name);
   private readonly inboundQueueKey = CHANNEL_INBOUND_QUEUE_KEY;
+  private readonly inboundDedupTtlSeconds = Math.max(60, Number(process.env.CHANNEL_INBOUND_DEDUP_TTL_SECONDS || 600));
   private readonly gatewayBaseUrl = process.env.GATEWAY_SERVICE_URL || 'http://127.0.0.1:3100';
   private readonly executeTimeoutMs = Math.max(5000, Number(process.env.CHANNEL_AGENT_EXECUTE_TIMEOUT_MS || 120000));
+  private readonly feishuBindTokenPrefix = 'channel:feishu-bind:';
+  private readonly allowEmailBindFallback = String(process.env.FEISHU_BIND_EMAIL_FALLBACK || 'false').toLowerCase() === 'true';
+  private readonly emailBindFallbackAdminRoles = new Set(
+    String(process.env.FEISHU_BIND_EMAIL_FALLBACK_ADMIN_ROLES || 'founder,co_founder,ceo,cto')
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean),
+  );
   private readonly httpClient: AxiosInstance;
 
   constructor(
@@ -21,6 +32,8 @@ export class ChannelInboundService {
     private readonly commandParser: CommandParserService,
     private readonly mappingService: ChannelUserMappingService,
     private readonly sessionService: ChannelSessionService,
+    private readonly meetingAutoService: ChannelMeetingAutoService,
+    private readonly meetingRelayService: ChannelMeetingRelayService,
     private readonly authBridgeService: ChannelAuthBridgeService,
     private readonly feishuAppProvider: FeishuAppProvider,
   ) {
@@ -31,63 +44,132 @@ export class ChannelInboundService {
     });
   }
 
-  async enqueueInbound(event: FeishuInboundMessage): Promise<void> {
+  async enqueueInbound(event: FeishuInboundMessage): Promise<boolean> {
+    const messageId = String(event.messageId || '').trim();
+    if (!messageId) {
+      return false;
+    }
+
+    const dedupKey = `channel:inbound:dedup:${messageId}`;
+    const acquired = await this.redisService.setnx(dedupKey, event.receivedAt || new Date().toISOString(), this.inboundDedupTtlSeconds);
+    if (!acquired) {
+      return false;
+    }
+
     await this.redisService.lpush(this.inboundQueueKey, JSON.stringify(event));
+    return true;
   }
 
   async handleInboundEvent(event: FeishuInboundMessage): Promise<void> {
-    const parsed = this.commandParser.parse(event.messageText);
-    let resolved = await this.mappingService.resolveEmployee(event.providerType, event.externalUserId);
+    try {
+      const parsed = this.commandParser.parse(event.messageText);
+      let resolved = await this.mappingService.resolveEmployee(event.providerType, event.externalUserId);
 
-    if (!resolved) {
-      if (parsed.type === 'bind') {
-        const email = String(parsed.args.email || '').trim();
-        if (!email) {
-          await this.feishuAppProvider.replyText(
-            event.externalChatId,
-            '绑定失败：请使用 `/bind <你的邮箱>` 进行绑定。',
-            event.messageId,
-          );
+      if (!resolved) {
+        if (parsed.type === 'bind') {
+          const token = String(parsed.args.token || '').trim();
+          const email = String(parsed.args.email || '').trim();
+
+          if (token) {
+            const employeeId = await this.redisService.getdel(`${this.feishuBindTokenPrefix}${token}`);
+            if (!employeeId) {
+              await this.feishuAppProvider.replyText(
+                event.externalChatId,
+                '绑定失败：token 无效或已过期，请在系统中重新生成。',
+                event.messageId,
+              );
+              return;
+            }
+
+            try {
+              await this.mappingService.bindUser({
+                providerType: event.providerType,
+                externalUserId: event.externalUserId,
+                employeeId,
+                displayName: event.displayName,
+              });
+              resolved = await this.mappingService.resolveEmployee(event.providerType, event.externalUserId);
+              const maskedEmail = String(resolved?.email || '').trim();
+              const bindTarget = maskedEmail || employeeId;
+              await this.feishuAppProvider.replyText(
+                event.externalChatId,
+                `绑定成功：${bindTarget}，你现在可以直接对话或使用 /help 查看指令。`,
+                event.messageId,
+              );
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : 'unknown_error';
+              await this.feishuAppProvider.replyText(
+                event.externalChatId,
+                `绑定失败：${reason}`,
+                event.messageId,
+              );
+            }
+            return;
+          }
+
+          if (!this.allowEmailBindFallback) {
+            await this.feishuAppProvider.replyText(
+              event.externalChatId,
+              '绑定失败：请先在系统中点击「绑定飞书」生成 token，再发送 `/bind token:<token>`。',
+              event.messageId,
+            );
+            return;
+          }
+
+          if (!email) {
+            await this.feishuAppProvider.replyText(
+              event.externalChatId,
+              '绑定失败：请使用 `/bind token:<token>`，管理员可使用 `/bind <你的邮箱>`。',
+              event.messageId,
+            );
+            return;
+          }
+
+          try {
+            await this.mappingService.bindByEmail({
+              providerType: event.providerType,
+              externalUserId: event.externalUserId,
+              email,
+              displayName: event.displayName,
+              allowedRoles: this.emailBindFallbackAdminRoles,
+            });
+            resolved = await this.mappingService.resolveEmployee(event.providerType, event.externalUserId);
+            await this.feishuAppProvider.replyText(
+              event.externalChatId,
+              `绑定成功：${email}，你现在可以直接对话或使用 /help 查看指令。`,
+              event.messageId,
+            );
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : 'unknown_error';
+            await this.feishuAppProvider.replyText(
+              event.externalChatId,
+              `绑定失败：${reason}`,
+              event.messageId,
+            );
+          }
           return;
         }
 
-        try {
-          await this.mappingService.bindByEmail({
-            providerType: event.providerType,
-            externalUserId: event.externalUserId,
-            email,
-            displayName: event.displayName,
-          });
-          resolved = await this.mappingService.resolveEmployee(event.providerType, event.externalUserId);
-          await this.feishuAppProvider.replyText(
-            event.externalChatId,
-            `绑定成功：${email}，你现在可以直接对话或使用 /help 查看指令。`,
-            event.messageId,
-          );
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : 'unknown_error';
-          await this.feishuAppProvider.replyText(
-            event.externalChatId,
-            `绑定失败：${reason}`,
-            event.messageId,
-          );
-        }
+        await this.feishuAppProvider.replyText(
+          event.externalChatId,
+          '你还没有完成账号绑定，请先在系统中生成 token 并发送 `/bind token:<token>` 完成绑定。',
+          event.messageId,
+        );
         return;
       }
 
-      await this.feishuAppProvider.replyText(
-        event.externalChatId,
-        '你还没有完成账号绑定，请先发送 `/bind <公司邮箱>` 完成身份绑定。',
-        event.messageId,
-      );
-      return;
+      await this.routeCommand({
+        event,
+        parsed,
+        resolved,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown_error';
+      this.logger.warn(`handleInboundEvent failed: messageId=${event.messageId} reason=${reason}`);
+      await this.feishuAppProvider
+        .replyText(event.externalChatId, '系统暂时无法处理该请求，请稍后重试。', event.messageId)
+        .catch(() => undefined);
     }
-
-    await this.routeCommand({
-      event,
-      parsed,
-      resolved,
-    });
   }
 
   async handleCardAction(action: FeishuCardActionEnvelope): Promise<string> {
@@ -142,10 +224,10 @@ export class ChannelInboundService {
           return `执行任务 ${taskId} 已发送取消请求。`;
         }
         case 'ack_alert':
-          return '告警已确认。';
+          return '当前版本暂不支持「确认告警」回写，请在系统内处理。';
         case 'mute_alert': {
           const duration = Number(action.actionValue.duration || 3600);
-          return `告警已静默 ${duration} 秒。`;
+          return `当前版本暂不支持静默告警（请求 ${duration} 秒），请在系统内处理。`;
         }
         case 'create_followup': {
           const planId = String(action.actionValue.planId || '').trim();
@@ -175,42 +257,79 @@ export class ChannelInboundService {
     resolved: ResolvedChannelEmployee;
   }): Promise<void> {
     const { event, parsed, resolved } = input;
+    const sessionFilter: SessionFilter = {
+      providerType: event.providerType,
+      externalChatId: event.externalChatId,
+      externalUserId: event.externalUserId,
+    };
 
     if (parsed.type === 'help') {
       await this.feishuAppProvider.replyText(
         event.externalChatId,
         [
           '可用指令：',
-          '/plan <需求描述> - 创建计划',
-          '/status <planId> - 查询计划状态',
-          '/cancel <runId|planId> - 取消运行',
-          '/agent <agentId> <消息> - 指定 Agent 对话',
-          '/new - 重置当前会话上下文',
-          '/bind <邮箱> - 绑定账号',
+          '',
+          '计划：',
+          '  /plan new <需求描述>     - 创建计划',
+          '  /plan status <planId>   - 查询计划状态',
+          '  /plan cancel <id>       - 取消运行',
+          '',
+          '对话：',
+          '  /agent chat <agentId> <消息> - 指定 Agent 对话',
+          '  直接输入文字               - 与默认 Agent 对话',
+          '',
+          '会话：',
+          '  /session reset           - 重置会话（结束当前对话）',
+          '',
+          '会议：',
+          '  /meeting list            - 查看进行中的会议',
+          '  /meeting create <标题>    - 创建多人会议',
+          '  /meeting join <meetingId> - 加入会议',
+          '  /meeting leave           - 离开当前会议',
+          '  /meeting end             - 结束当前会议',
+          '',
+          '其他：',
+          '  /bind token:<token>      - 绑定账号',
+          '  /help                    - 显示此帮助',
+          '',
+          '所有对话自动保存，可在系统前端查看历史。',
         ].join('\n'),
         event.messageId,
       );
       return;
     }
 
-    if (parsed.type === 'new') {
-      await this.sessionService.reset({
-        providerType: event.providerType,
-        externalChatId: event.externalChatId,
-        externalUserId: event.externalUserId,
-      });
-      await this.feishuAppProvider.replyText(event.externalChatId, '会话上下文已重置。', event.messageId);
+    if (parsed.type === 'unknown_command') {
+      await this.feishuAppProvider.replyText(event.externalChatId, '未知指令，输入 /help 查看可用命令。', event.messageId);
       return;
     }
 
-    if (parsed.type === 'plan') {
+    if (parsed.type === 'session_reset') {
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      if (activeMeeting?.meetingType === 'one_on_one') {
+        await this.meetingAutoService.endOneOnOneMeeting({
+          meetingId: activeMeeting.meetingId,
+          employeeId: resolved.employeeId,
+          sessionFilter,
+        });
+      } else if (activeMeeting?.meetingId) {
+        await this.meetingRelayService.stopRelay(activeMeeting.meetingId, resolved.employeeId);
+        await this.sessionService.clearActiveMeeting(sessionFilter);
+      }
+
+      await this.sessionService.reset(sessionFilter);
+      await this.feishuAppProvider.replyText(event.externalChatId, '会话已重置。', event.messageId);
+      return;
+    }
+
+    if (parsed.type === 'plan_new') {
       const prompt = String(parsed.args.prompt || '').trim();
       if (!prompt) {
-        await this.feishuAppProvider.replyText(event.externalChatId, '请提供计划描述，例如：`/plan 实现日报自动汇总`', event.messageId);
+        await this.feishuAppProvider.replyText(event.externalChatId, '请提供计划描述，例如：`/plan new 实现日报自动汇总`', event.messageId);
         return;
       }
 
-      const response = await this.callApiAsUser(resolved.employeeId, {
+      const response = (await this.callApiAsUser(resolved.employeeId, {
         method: 'post',
         url: '/api/orchestration/plans/from-prompt',
         data: {
@@ -219,7 +338,7 @@ export class ChannelInboundService {
           autoGenerate: true,
           autoRun: true,
         },
-      });
+      })) as Record<string, unknown>;
 
       const planId = String(response?.id || response?.planId || '').trim();
       await this.feishuAppProvider.replyText(
@@ -230,17 +349,17 @@ export class ChannelInboundService {
       return;
     }
 
-    if (parsed.type === 'status') {
+    if (parsed.type === 'plan_status') {
       const planId = String(parsed.args.planId || '').trim();
       if (!planId) {
-        await this.feishuAppProvider.replyText(event.externalChatId, '请提供 planId，例如：`/status <planId>`', event.messageId);
+        await this.feishuAppProvider.replyText(event.externalChatId, '请提供 planId，例如：`/plan status <planId>`', event.messageId);
         return;
       }
 
-      const plan = await this.callApiAsUser(resolved.employeeId, {
+      const plan = (await this.callApiAsUser(resolved.employeeId, {
         method: 'get',
         url: `/api/orchestration/plans/${planId}`,
-      });
+      })) as Record<string, unknown>;
       const status = String(plan?.status || plan?.generationState || 'unknown').trim();
       const title = String(plan?.title || plan?.sourcePrompt || '').trim() || '未命名计划';
       await this.feishuAppProvider.replyText(
@@ -251,10 +370,10 @@ export class ChannelInboundService {
       return;
     }
 
-    if (parsed.type === 'cancel') {
+    if (parsed.type === 'plan_cancel') {
       const id = String(parsed.args.id || '').trim();
       if (!id) {
-        await this.feishuAppProvider.replyText(event.externalChatId, '请提供 runId 或 planId，例如：`/cancel <id>`', event.messageId);
+        await this.feishuAppProvider.replyText(event.externalChatId, '请提供 runId 或 planId，例如：`/plan cancel <id>`', event.messageId);
         return;
       }
 
@@ -276,66 +395,238 @@ export class ChannelInboundService {
       return;
     }
 
-    if (parsed.type === 'agent' || parsed.type === 'chat') {
-      const explicitAgentId = parsed.type === 'agent' ? String(parsed.args.agentId || '').trim() : '';
-      const prompt =
-        parsed.type === 'agent'
-          ? String(parsed.args.prompt || '').trim()
-          : String(parsed.args.prompt || parsed.rawText || '').trim();
-
-      if (!prompt) {
-        await this.feishuAppProvider.replyText(event.externalChatId, '消息为空，请输入你要发送的内容。', event.messageId);
-        return;
-      }
-
-      const targetAgentId = explicitAgentId || String(resolved.exclusiveAssistantAgentId || '').trim();
-      if (!targetAgentId) {
-        await this.feishuAppProvider.replyText(event.externalChatId, '未找到可用的专属助理 Agent，请联系管理员。', event.messageId);
-        return;
-      }
-
-      const session = await this.sessionService.getOrCreate({
-        providerType: event.providerType,
-        externalChatId: event.externalChatId,
-        externalUserId: event.externalUserId,
-        employeeId: resolved.employeeId,
-        agentId: targetAgentId,
+    if (parsed.type === 'meeting_list') {
+      const response = await this.callApiAsUser(resolved.employeeId, {
+        method: 'get',
+        url: '/api/meetings',
+        params: { status: 'active' },
       });
+      const meetings = Array.isArray(response) ? response : [];
+      const visibleMeetings = meetings.filter((item) => String((item as Record<string, unknown>).type || '') !== 'one_on_one');
 
-      const directResult = await this.callApiAsUser(resolved.employeeId, {
+      if (visibleMeetings.length === 0) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '当前没有进行中的会议。', event.messageId);
+        return;
+      }
+
+      const lines = visibleMeetings.map((item, index) => {
+        const meeting = item as Record<string, unknown>;
+        const id = String(meeting.id || '').trim();
+        const title = String(meeting.title || id || `会议-${index + 1}`).trim();
+        const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
+        return `${index + 1}. ${title}\n   ID: ${id}\n   参与人数: ${participants.length}`;
+      });
+      await this.feishuAppProvider.replyText(event.externalChatId, ['进行中的会议：', ...lines].join('\n'), event.messageId);
+      return;
+    }
+
+    if (parsed.type === 'meeting_create') {
+      const title = String(parsed.args.title || '').trim();
+      if (!title) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '请提供会议标题，例如：`/meeting create 研发评审会`', event.messageId);
+        return;
+      }
+
+      const created = (await this.callApiAsUser(resolved.employeeId, {
         method: 'post',
-        url: '/api/inner-messages/direct',
+        url: '/api/meetings',
         data: {
-          senderAgentId: 'system',
-          receiverAgentId: targetAgentId,
-          eventType: parsed.type === 'agent' ? 'channel.user.agent.command' : 'channel.user.message',
-          title: '飞书用户消息',
-          content: prompt,
-          source: 'channel:feishu',
-          payload: {
-            channelSource: 'feishu',
-            channelChatId: event.externalChatId,
-            channelMessageId: event.messageId,
-            channelUserId: event.externalUserId,
-            employeeId: resolved.employeeId,
-            channelSessionId: session._id.toString(),
-            sessionId: session.agentSessionId,
-            traceId: `${event.externalChatId}:${event.messageId}`,
-          },
+          title,
+          type: 'ad_hoc',
+          hostId: resolved.employeeId,
+          hostType: 'employee',
         },
-      });
-
-      const directData = (directResult?.data || directResult) as Record<string, unknown>;
-      const messageId = String(directData?.messageId || '').trim();
+      })) as Record<string, unknown>;
+      const meetingId = String(created.id || '').trim();
       await this.feishuAppProvider.replyText(
         event.externalChatId,
-        messageId ? `已收到，正在处理中（${messageId}）。` : '已收到，正在处理中。',
+        `会议已创建：${title}（${meetingId}），使用 /meeting join ${meetingId} 加入。`,
         event.messageId,
       );
       return;
     }
 
-    await this.feishuAppProvider.replyText(event.externalChatId, '无法识别该指令，请使用 /help 查看可用命令。', event.messageId);
+    if (parsed.type === 'meeting_join') {
+      const meetingId = String(parsed.args.meetingId || '').trim();
+      if (!meetingId) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '请提供 meetingId，例如：`/meeting join <meetingId>`', event.messageId);
+        return;
+      }
+
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      if (activeMeeting?.meetingType === 'one_on_one') {
+        await this.meetingRelayService.stopRelay(activeMeeting.meetingId, resolved.employeeId);
+      }
+
+      await this.callApiAsUser(resolved.employeeId, {
+        method: 'post',
+        url: `/api/meetings/${meetingId}/join`,
+        data: {
+          id: resolved.employeeId,
+          type: 'employee',
+          name: resolved.employeeId,
+          isHuman: true,
+        },
+      });
+
+      await this.sessionService.setActiveMeeting(sessionFilter, meetingId, 'ad_hoc', resolved.employeeId);
+      await this.meetingRelayService.startRelay({
+        meetingId,
+        chatId: event.externalChatId,
+        employeeId: resolved.employeeId,
+      });
+
+      const meeting = (await this.callApiAsUser(resolved.employeeId, {
+        method: 'get',
+        url: `/api/meetings/${meetingId}`,
+      })) as Record<string, unknown>;
+      const title = String(meeting.title || meetingId).trim();
+      await this.feishuAppProvider.replyText(
+        event.externalChatId,
+        `已加入会议「${title}」，当前进入会议模式——直接输入文字即为发言，/meeting leave 退出会议。`,
+        event.messageId,
+      );
+      return;
+    }
+
+    if (parsed.type === 'meeting_leave') {
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      if (!activeMeeting) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '你当前不在任何会议中。', event.messageId);
+        return;
+      }
+
+      await this.callApiAsUser(resolved.employeeId, {
+        method: 'post',
+        url: `/api/meetings/${activeMeeting.meetingId}/leave`,
+        data: {
+          id: resolved.employeeId,
+          type: 'employee',
+          name: resolved.employeeId,
+          isHuman: true,
+        },
+      }).catch(() => undefined);
+
+      await this.meetingRelayService.stopRelay(activeMeeting.meetingId, resolved.employeeId);
+      await this.sessionService.clearActiveMeeting(sessionFilter);
+      await this.feishuAppProvider.replyText(event.externalChatId, '已离开会议，恢复正常对话模式。', event.messageId);
+      return;
+    }
+
+    if (parsed.type === 'meeting_end') {
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      if (!activeMeeting) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '你当前不在任何会议中。', event.messageId);
+        return;
+      }
+
+      await this.callApiAsUser(resolved.employeeId, {
+        method: 'post',
+        url: `/api/meetings/${activeMeeting.meetingId}/end`,
+      });
+      await this.meetingRelayService.stopRelay(activeMeeting.meetingId, resolved.employeeId);
+      await this.sessionService.clearActiveMeeting(sessionFilter);
+      await this.feishuAppProvider.replyText(event.externalChatId, '会议已结束。', event.messageId);
+      return;
+    }
+
+    if (parsed.type === 'agent_chat') {
+      const agentId = String(parsed.args.agentId || '').trim();
+      const prompt = String(parsed.args.prompt || '').trim();
+      if (!agentId || !prompt) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '请使用 `/agent chat <agentId> <消息>`。', event.messageId);
+        return;
+      }
+
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      let meetingId = '';
+      if (activeMeeting?.meetingType === 'one_on_one') {
+        const currentAgentId = await this.getCurrentMeetingAgentId(activeMeeting.meetingId, resolved.employeeId);
+        if (currentAgentId && currentAgentId !== agentId) {
+          meetingId = await this.meetingAutoService.switchAgent({
+            employeeId: resolved.employeeId,
+            newAgentId: agentId,
+            currentMeetingId: activeMeeting.meetingId,
+            sessionFilter,
+            chatId: event.externalChatId,
+          });
+        } else {
+          meetingId = activeMeeting.meetingId;
+        }
+      } else {
+        meetingId = await this.meetingAutoService.resolveOrCreateOneOnOneMeeting({
+          employeeId: resolved.employeeId,
+          agentId,
+          sessionFilter,
+          chatId: event.externalChatId,
+        });
+      }
+
+      await this.sendMeetingMessage(meetingId, resolved.employeeId, prompt);
+      return;
+    }
+
+    if (parsed.type === 'chat') {
+      const prompt = String(parsed.args.prompt || parsed.rawText || '').trim();
+      if (!prompt) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '消息为空，请输入你要发送的内容。', event.messageId);
+        return;
+      }
+
+      const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+      if (activeMeeting) {
+        await this.sendMeetingMessage(activeMeeting.meetingId, resolved.employeeId, prompt);
+        return;
+      }
+
+      const defaultAgentId = String(resolved.exclusiveAssistantAgentId || '').trim();
+      if (!defaultAgentId) {
+        await this.feishuAppProvider.replyText(event.externalChatId, '未绑定默认 Agent，请使用 /agent chat <agentId> 指定。', event.messageId);
+        return;
+      }
+
+      const meetingId = await this.meetingAutoService.resolveOrCreateOneOnOneMeeting({
+        employeeId: resolved.employeeId,
+        agentId: defaultAgentId,
+        sessionFilter,
+        chatId: event.externalChatId,
+      });
+
+      await this.sendMeetingMessage(meetingId, resolved.employeeId, prompt);
+      return;
+    }
+
+    await this.feishuAppProvider.replyText(event.externalChatId, '未知指令，输入 /help 查看可用命令。', event.messageId);
+  }
+
+  private async sendMeetingMessage(meetingId: string, employeeId: string, content: string): Promise<void> {
+    await this.callApiAsUser(employeeId, {
+      method: 'post',
+      url: `/api/meetings/${meetingId}/messages`,
+      data: {
+        senderId: employeeId,
+        senderType: 'employee',
+        content,
+        type: 'opinion',
+        metadata: {
+          source: 'feishu',
+        },
+      },
+    });
+  }
+
+  private async getCurrentMeetingAgentId(meetingId: string, employeeId: string): Promise<string | undefined> {
+    const meeting = (await this.callApiAsUser(employeeId, {
+      method: 'get',
+      url: `/api/meetings/${meetingId}`,
+    })) as Record<string, unknown>;
+    const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
+    const target = participants.find((item) => {
+      const participant = item as Record<string, unknown>;
+      return String(participant.participantType || '').trim() === 'agent';
+    }) as Record<string, unknown> | undefined;
+    const agentId = String(target?.participantId || '').trim();
+    return agentId || undefined;
   }
 
   private async cancelRunById(employeeId: string, runId: string): Promise<void> {
@@ -349,10 +640,10 @@ export class ChannelInboundService {
   }
 
   private async resolveLatestRunId(employeeId: string, planId: string): Promise<string | undefined> {
-    const response = await this.callApiAsUser(employeeId, {
+    const response = (await this.callApiAsUser(employeeId, {
       method: 'get',
       url: `/api/orchestration/plans/${planId}/runs/latest`,
-    });
+    })) as Record<string, unknown>;
     const runId = String(response?.id || response?.runId || '').trim();
     return runId || undefined;
   }
@@ -365,7 +656,7 @@ export class ChannelInboundService {
       data?: Record<string, unknown>;
       params?: Record<string, string | number | boolean | undefined>;
     },
-  ): Promise<Record<string, unknown>> {
+  ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
     const headers = await this.authBridgeService.buildSignedHeaders(employeeId, {
       'content-type': 'application/json',
     });
@@ -383,8 +674,17 @@ export class ChannelInboundService {
     }
 
     const payload = response.data;
-    if (payload && typeof payload === 'object' && 'data' in payload && payload.data && typeof payload.data === 'object') {
-      return payload.data as Record<string, unknown>;
+    if (payload && typeof payload === 'object' && 'data' in payload) {
+      const data = (payload as { data?: unknown }).data;
+      if (Array.isArray(data)) {
+        return data.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
+      }
+      if (data && typeof data === 'object') {
+        return data as Record<string, unknown>;
+      }
+    }
+    if (Array.isArray(payload)) {
+      return payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
     }
     if (payload && typeof payload === 'object') {
       return payload as Record<string, unknown>;
