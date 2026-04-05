@@ -17,6 +17,8 @@ echo "Node.js版本: $NODE_VERSION"
 ENV=${1:-development}
 echo "启动环境: $ENV"
 
+FRONTEND_DEPLOY_DIR="/var/www/html"
+
 pick_backend_env_file() {
     local backend_dir="$SCRIPT_DIR/backend"
     local env_candidate="$backend_dir/.env.$ENV"
@@ -140,6 +142,39 @@ parse_port_from_url() {
     fi
 
     return 1
+}
+
+deploy_frontend_build() {
+    local source_dir=$1
+    local target_dir=$2
+
+    if [ ! -d "$source_dir" ]; then
+        echo "错误: 前端构建目录不存在: $source_dir"
+        return 1
+    fi
+
+    if [ "$target_dir" = "/" ]; then
+        echo "错误: 禁止部署到根目录"
+        return 1
+    fi
+
+    mkdir -p "$target_dir"
+
+    if [ ! -w "$target_dir" ]; then
+        echo "错误: 目录无写权限: $target_dir"
+        echo "请确认当前用户具备写入权限后重试"
+        return 1
+    fi
+
+    shopt -s dotglob nullglob
+    local target_files=("$target_dir"/*)
+    if [ ${#target_files[@]} -gt 0 ]; then
+        rm -rf "${target_files[@]}"
+    fi
+    shopt -u dotglob nullglob
+
+    cp -R "$source_dir"/. "$target_dir"/
+    echo "前端静态资源已部署到: $target_dir"
 }
 
 BACKEND_ENV_FILE=$(pick_backend_env_file)
@@ -292,14 +327,25 @@ echo "启动服务..."
 
 echo "========================================"
 echo "1/2 启动后端服务..."
-bash "$SCRIPT_DIR/backend/start.sh" development
+bash "$SCRIPT_DIR/backend/start.sh" "$ENV"
 
 echo "========================================"
-echo "2/2 启动前端服务 (端口 $FRONTEND_PORT)..."
-cd "$SCRIPT_DIR/frontend"
-nohup pnpm run dev > "$LOG_DIR/frontend-app.log" 2>&1 &
-wait_for_service "$FRONTEND_PORT" "frontend"
+if [ "$ENV" = "test" ]; then
+    echo "2/2 构建并部署前端到 $FRONTEND_DEPLOY_DIR ..."
+    cd "$SCRIPT_DIR/frontend"
+    pnpm run build
+    deploy_frontend_build "$SCRIPT_DIR/frontend/dist" "$FRONTEND_DEPLOY_DIR"
+else
+    echo "2/2 启动前端服务 (端口 $FRONTEND_PORT)..."
+    cd "$SCRIPT_DIR/frontend"
+    nohup pnpm run dev > "$LOG_DIR/frontend-app.log" 2>&1 &
+    wait_for_service "$FRONTEND_PORT" "frontend"
+fi
 
 cd "$SCRIPT_DIR"
 echo "========================================"
-echo "所有服务已启动!"
+if [ "$ENV" = "test" ]; then
+    echo "后端服务已启动，前端已构建并部署完成!"
+else
+    echo "所有服务已启动!"
+fi

@@ -63,6 +63,9 @@ redis-server
 # 方式一：使用启动脚本（推荐）
 ./start.sh development
 
+# test 环境（前端会 build 后部署到 /var/www/html/）
+./start.sh test
+
 # 停止前后端服务
 ./stop.sh development
 
@@ -159,6 +162,9 @@ API 已按微服务拆分，详细接口请查看：
 
 # 一键重启前后端服务
 ./reload.sh development
+
+# test 环境重启（前端会 build 后部署到 /var/www/html/）
+./reload.sh test
 
 # 手动启动所有后端服务
 cd backend
