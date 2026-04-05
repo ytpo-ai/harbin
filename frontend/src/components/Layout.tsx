@@ -83,6 +83,8 @@ const groupedNavigation = [
   },
 ];
 
+const ASSISTANT_BINDING_SKIP_KEY = 'assistant_binding_skip_user_id';
+
 const Layout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -91,6 +93,7 @@ const Layout: React.FC = () => {
   const [checkingAssistant, setCheckingAssistant] = useState(false);
   const [creatingAssistant, setCreatingAssistant] = useState(false);
   const [assistantError, setAssistantError] = useState('');
+  const [assistantBindingSkipped, setAssistantBindingSkipped] = useState(false);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isMessageDrawerOpen, setIsMessageDrawerOpen] = useState(false);
@@ -111,6 +114,12 @@ const Layout: React.FC = () => {
     const loadCurrentUserAndEmployee = async () => {
       const user = await authService.getCurrentUser();
       setCurrentUser(user);
+
+      if (user?.id) {
+        setAssistantBindingSkipped(sessionStorage.getItem(ASSISTANT_BINDING_SKIP_KEY) === user.id);
+      } else {
+        setAssistantBindingSkipped(false);
+      }
 
       if (!user?.id) {
         setCurrentEmployee(null);
@@ -284,7 +293,8 @@ const Layout: React.FC = () => {
     !!currentUser &&
     currentEmployee?.type === EmployeeType.HUMAN &&
     !currentEmployee?.exclusiveAssistantAgentId &&
-    !currentEmployee?.aiProxyAgentId;
+    !currentEmployee?.aiProxyAgentId &&
+    !assistantBindingSkipped;
 
   const handleCreateAssistant = async () => {
     if (!currentUser?.id || creatingAssistant) {
@@ -297,6 +307,8 @@ const Layout: React.FC = () => {
     try {
       const employee = await employeeService.createAndBindExclusiveAssistant(currentUser.id);
       setCurrentEmployee(employee);
+      setAssistantBindingSkipped(false);
+      sessionStorage.removeItem(ASSISTANT_BINDING_SKIP_KEY);
     } catch (error: any) {
       const backendMessage = error?.response?.data?.message;
       setAssistantError(
@@ -310,9 +322,20 @@ const Layout: React.FC = () => {
   };
 
   const handleLogout = () => {
+    sessionStorage.removeItem(ASSISTANT_BINDING_SKIP_KEY);
     authService.logout();
     setCurrentUser(null);
     navigate('/login');
+  };
+
+  const handleSkipAssistantBinding = () => {
+    if (!currentUser?.id) {
+      return;
+    }
+
+    setAssistantError('');
+    setAssistantBindingSkipped(true);
+    sessionStorage.setItem(ASSISTANT_BINDING_SKIP_KEY, currentUser.id);
   };
 
   const copyText = async (text: string): Promise<boolean> => {
@@ -862,9 +885,9 @@ const Layout: React.FC = () => {
       {requiresAssistantBinding && (
         <div className="fixed inset-0 z-[70] bg-black/50 flex items-center justify-center p-4">
           <div className="w-full max-w-lg rounded-xl bg-white shadow-2xl border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900">创建专属助理后才能继续</h2>
+            <h2 className="text-xl font-semibold text-gray-900">建议先创建专属助理</h2>
             <p className="mt-2 text-sm text-gray-600">
-              检测到您尚未绑定专属助理。根据系统规则，人类员工和高管必须先创建并绑定专属助理，才可发起或参与会议。
+              检测到您尚未绑定专属助理。您可以现在创建并绑定，或先跳过，后续再到人力资源页面完成绑定。
             </p>
 
             {assistantError && (
@@ -874,6 +897,12 @@ const Layout: React.FC = () => {
             )}
 
             <div className="mt-6 flex items-center justify-end gap-3">
+              <button
+                onClick={handleSkipAssistantBinding}
+                className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                跳过
+              </button>
               <button
                 onClick={handleLogout}
                 className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
