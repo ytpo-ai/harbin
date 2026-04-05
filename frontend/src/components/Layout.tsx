@@ -101,6 +101,11 @@ const Layout: React.FC = () => {
   const [feishuBindCommand, setFeishuBindCommand] = useState('');
   const [feishuBindExpiresIn, setFeishuBindExpiresIn] = useState(0);
   const [isFeishuBindDialogOpen, setIsFeishuBindDialogOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [changePasswordForm, setChangePasswordForm] = useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
+  const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+  const [changePasswordError, setChangePasswordError] = useState('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState(false);
 
   useEffect(() => {
     const loadCurrentUserAndEmployee = async () => {
@@ -363,6 +368,49 @@ const Layout: React.FC = () => {
     }
   };
 
+  const openChangePasswordDialog = () => {
+    setChangePasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+    setChangePasswordError('');
+    setChangePasswordSuccess(false);
+    setIsChangePasswordOpen(true);
+    setIsUserMenuOpen(false);
+  };
+
+  const handleChangePassword = async () => {
+    const { oldPassword, newPassword, confirmPassword } = changePasswordForm;
+
+    if (!oldPassword) {
+      setChangePasswordError('请输入原密码');
+      return;
+    }
+    if (!newPassword) {
+      setChangePasswordError('请输入新密码');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setChangePasswordError('新密码至少需要 6 位');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setChangePasswordError('两次输入的新密码不一致');
+      return;
+    }
+
+    setChangePasswordError('');
+    setChangePasswordLoading(true);
+
+    try {
+      await authService.changePassword(oldPassword, newPassword);
+      setChangePasswordSuccess(true);
+    } catch (error: any) {
+      const backendMessage = error?.response?.data?.message;
+      const message = Array.isArray(backendMessage) ? backendMessage[0] : backendMessage;
+      setChangePasswordError(typeof message === 'string' && message ? message : '修改密码失败，请稍后重试');
+    } finally {
+      setChangePasswordLoading(false);
+    }
+  };
+
   const isItemActive = (href: string) =>
     href === '/'
       ? location.pathname === '/'
@@ -587,6 +635,13 @@ const Layout: React.FC = () => {
                     </button>
                     <button
                       type="button"
+                      onClick={openChangePasswordDialog}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded"
+                    >
+                      修改密码
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleGenerateFeishuBindToken}
                       disabled={generatingFeishuBindToken}
                       className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded disabled:opacity-50"
@@ -713,6 +768,93 @@ const Layout: React.FC = () => {
                 复制命令
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 z-[66] bg-black/30 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl p-5">
+            <h3 className="text-base font-semibold text-gray-900">修改密码</h3>
+
+            {changePasswordSuccess ? (
+              <div className="mt-4">
+                <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+                  密码修改成功
+                </div>
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePasswordOpen(false)}
+                    className="px-3 py-1.5 text-sm rounded-md bg-primary-600 text-white hover:bg-primary-700"
+                  >
+                    关闭
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-4">
+                {changePasswordError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                    {changePasswordError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">原密码</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.oldPassword}
+                    onChange={(e) => setChangePasswordForm((prev) => ({ ...prev, oldPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="请输入原密码"
+                    autoComplete="current-password"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">新密码</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.newPassword}
+                    onChange={(e) => setChangePasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="至少 6 位"
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">确认新密码</label>
+                  <input
+                    type="password"
+                    value={changePasswordForm.confirmPassword}
+                    onChange={(e) => setChangePasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
+                    placeholder="再次输入新密码"
+                    autoComplete="new-password"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsChangePasswordOpen(false)}
+                    className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleChangePassword}
+                    disabled={changePasswordLoading}
+                    className="px-3 py-1.5 text-sm rounded-md bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-50"
+                  >
+                    {changePasswordLoading ? '提交中...' : '确认修改'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
