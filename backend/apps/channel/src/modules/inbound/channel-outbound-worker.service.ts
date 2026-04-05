@@ -58,6 +58,14 @@ export class ChannelOutboundWorkerService implements OnModuleInit, OnModuleDestr
     if (normalized.length <= 500) {
       return normalized;
     }
-    return `${normalized.slice(0, 500)}\n\n（内容较长，已截断展示）`;
+
+    const hardLimit = 500;
+    const softStart = 360;
+    const chunk = normalized.slice(0, hardLimit);
+    const newlineCut = chunk.lastIndexOf('\n');
+    const sentenceCut = Math.max(chunk.lastIndexOf('。'), chunk.lastIndexOf('. '));
+    const cutAt = Math.max(newlineCut, sentenceCut);
+    const safeCut = cutAt >= softStart ? cutAt + 1 : hardLimit;
+    return `${normalized.slice(0, safeCut).trim()}\n\n（内容较长，已截断展示）`;
   }
 }

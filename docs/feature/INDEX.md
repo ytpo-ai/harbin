@@ -50,6 +50,7 @@
 | `engineering-intelligence/code_self_awareness` | 自我感知 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
 | `engineering-intelligence/code_self_evolution` | 自动进化 | `docs/feature/ENGINEERING_INTELLIGENCE.md` |
 | `engineering-intelligence/docs_heat` | 文档热度统计 | `docs/feature/ENGINEERING_INTELLIGENCE.md` §1.11 |
+| `engineering-intelligence/project_incubation` | 孵化项目管理与 projectId 归属 | `docs/feature/PROJECT_ INCUBATION.md` |
 
 ### 5. HR 模块 (hr)
 
@@ -98,6 +99,7 @@
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
+| `docs/feature/PROJECT_ INCUBATION.md` | engineering-intelligence/project_incubation |
 | `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |
 | `docs/feature/SYSTEM_UI_MANAGEMENT.md` | system/ui_management |
 | `docs/feature/USAGE_BILLING.md` | system/usage_billing |

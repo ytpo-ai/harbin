@@ -50,7 +50,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         if (!this.contextStrategyService.shouldActivateSkillContent(skill, input.task, input.context, activationContext)) {
           continue;
         }
-        let rawContent = input.shared.skillContents.get(skill.id);
+        const rawContent = input.shared.skillContents.get(skill.id);
         if (!rawContent) continue;
 
         // Skill 激活门控（Tag-Based Activation）已精确控制各阶段加载哪些 skill，

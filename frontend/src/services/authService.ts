@@ -24,6 +24,12 @@ export interface CurrentUser {
   role: string;
 }
 
+export interface FeishuBindTokenResponse {
+  token: string;
+  expiresIn: number;
+  command: string;
+}
+
 class AuthService {
   private tokenKey = 'auth_token';
   private userKey = 'current_user';
@@ -84,6 +90,11 @@ class AuthService {
       { oldPassword, newPassword },
       { headers: { Authorization: `Bearer ${token}` } }
     );
+  }
+
+  async generateFeishuBindToken(): Promise<FeishuBindTokenResponse> {
+    const response = await api.post('/auth/me/feishu-bind-token');
+    return response.data;
   }
 
   getToken(): string | null {

@@ -42,11 +42,20 @@ export class ChannelAggregatorService implements OnModuleDestroy {
     return Math.ceil(this.windowMs / 1000);
   }
 
-  async onModuleDestroy(): Promise<void> {
-    for (const bucket of this.bucketMap.values()) {
-      clearTimeout(bucket.timer);
-    }
+  async flushAll(
+    onFlush: (target: ChannelTarget, eventType: string, events: ChannelEventEnvelope[]) => Promise<void>,
+  ): Promise<void> {
+    const entries = Array.from(this.bucketMap.entries());
     this.bucketMap.clear();
+
+    for (const [, bucket] of entries) {
+      clearTimeout(bucket.timer);
+      await onFlush(bucket.target, bucket.eventType, bucket.events);
+    }
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    await this.flushAll(async () => undefined);
   }
 
   private async flushBucket(

@@ -68,7 +68,7 @@ export class FeishuEventListenerService implements OnModuleInit {
     const messageId = String(event?.message?.message_id || '').trim();
     const chatType = String(event?.message?.chat_type || 'p2p').trim() as 'p2p' | 'group';
     const content = this.parseMessageContent(String(event?.message?.content || '').trim());
-    const messageText = String(content?.text || '').trim();
+    const messageText = this.sanitizeIncomingText(String(content?.text || '').trim());
     const mentions = this.extractMentionIds(event?.message?.mentions);
 
     if (!externalUserId || !externalChatId || !messageId || !messageText) {
@@ -94,7 +94,10 @@ export class FeishuEventListenerService implements OnModuleInit {
       receivedAt: new Date().toISOString(),
     };
 
-    await this.channelInboundService.enqueueInbound(inbound);
+    const queued = await this.channelInboundService.enqueueInbound(inbound);
+    if (!queued) {
+      this.logger.debug(`Ignored duplicated inbound message: messageId=${messageId}`);
+    }
   }
 
   private async handleCardAction(raw: unknown): Promise<void> {
@@ -172,5 +175,18 @@ export class FeishuEventListenerService implements OnModuleInit {
     }
 
     return {};
+  }
+
+  private sanitizeIncomingText(text: string): string {
+    const raw = String(text || '').trim();
+    if (!raw) {
+      return '';
+    }
+
+    return raw
+      .replace(/<at\b[^>]*>.*?<\/at>/gi, ' ')
+      .replace(/@_user_\d+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }

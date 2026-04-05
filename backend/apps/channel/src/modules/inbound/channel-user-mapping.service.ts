@@ -16,6 +16,8 @@ export interface ResolvedChannelEmployee {
 
 @Injectable()
 export class ChannelUserMappingService {
+  private readonly lastActiveUpdateIntervalMs = 5 * 60 * 1000;
+
   constructor(
     @InjectModel(ChannelUserMapping.name)
     private readonly mappingModel: Model<ChannelUserMappingDocument>,
@@ -54,16 +56,19 @@ export class ChannelUserMappingService {
       return null;
     }
 
-    await this.mappingModel
-      .updateOne(
-        { _id: mapping._id },
-        {
-          $set: {
-            lastActiveAt: new Date(),
+    const lastActiveAt = mapping.lastActiveAt instanceof Date ? mapping.lastActiveAt.getTime() : 0;
+    if (Date.now() - lastActiveAt >= this.lastActiveUpdateIntervalMs) {
+      await this.mappingModel
+        .updateOne(
+          { _id: mapping._id },
+          {
+            $set: {
+              lastActiveAt: new Date(),
+            },
           },
-        },
-      )
-      .exec();
+        )
+        .exec();
+    }
 
     return {
       employeeId: employee.id,
@@ -127,11 +132,14 @@ export class ChannelUserMappingService {
     externalUserId: string;
     email: string;
     displayName?: string;
+    allowedRoles?: Set<string>;
   }) {
     const email = String(input.email || '').trim().toLowerCase();
     if (!email) {
       throw new BadRequestException('email is required');
     }
+
+    const allowedRoles = input.allowedRoles;
 
     const escapedEmail = email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const employee = await this.employeeModel
@@ -139,11 +147,18 @@ export class ChannelUserMappingService {
         email: { $regex: `^${escapedEmail}$`, $options: 'i' },
         type: EmployeeType.HUMAN,
       })
-      .select({ id: 1 })
+      .select({ id: 1, role: 1 })
       .exec();
 
     if (!employee) {
       throw new NotFoundException('employee not found by email');
+    }
+
+    if (allowedRoles && allowedRoles.size > 0) {
+      const normalizedRole = String(employee.role || '').trim().toLowerCase();
+      if (!allowedRoles.has(normalizedRole)) {
+        throw new BadRequestException('该绑定方式仅限管理员，请先在系统中获取 token 绑定');
+      }
     }
 
     return this.bindUser({
@@ -184,8 +199,6 @@ export class ChannelUserMappingService {
       boundAt: doc.boundAt,
       lastActiveAt: doc.lastActiveAt,
       isActive: doc.isActive,
-      createdAt: doc.createdAt,
-      updatedAt: doc.updatedAt,
     };
   }
 }

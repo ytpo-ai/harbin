@@ -1,6 +1,6 @@
 {
   "source": "models.dev",
-  "updatedAt": "2026-04-03T09:01:03.927Z",
+  "updatedAt": "2026-04-05T14:26:13.615Z",
   "records": [
     {
       "provider": "moark",
@@ -5616,6 +5616,14 @@
     },
     {
       "provider": "nvidia",
+      "model": "google/gemma-4-31b-it",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "nvidia",
       "model": "google/gemma-2-2b-it",
       "cost": {
         "input": 0,
@@ -6432,26 +6440,10 @@
     },
     {
       "provider": "togetherai",
-      "model": "zai-org/glm-4.7",
-      "cost": {
-        "input": 0.45,
-        "output": 2
-      }
-    },
-    {
-      "provider": "togetherai",
       "model": "zai-org/glm-5",
       "cost": {
         "input": 1,
         "output": 3.2
-      }
-    },
-    {
-      "provider": "togetherai",
-      "model": "zai-org/glm-4.6",
-      "cost": {
-        "input": 0.6,
-        "output": 2.2
       }
     },
     {
@@ -6529,26 +6521,10 @@
     },
     {
       "provider": "togetherai",
-      "model": "qwen/qwen3-next-80b-a3b-instruct",
-      "cost": {
-        "input": 0.15,
-        "output": 1.5
-      }
-    },
-    {
-      "provider": "togetherai",
       "model": "qwen/qwen3-coder-480b-a35b-instruct-fp8",
       "cost": {
         "input": 2,
         "output": 2
-      }
-    },
-    {
-      "provider": "togetherai",
-      "model": "moonshotai/kimi-k2-instruct",
-      "cost": {
-        "input": 1,
-        "output": 3
       }
     },
     {
@@ -7447,6 +7423,15 @@
     },
     {
       "provider": "google-vertex",
+      "model": "deepseek-ai/deepseek-v3.2-maas",
+      "cost": {
+        "input": 0.56,
+        "output": 1.68,
+        "cache_read": 0.056
+      }
+    },
+    {
+      "provider": "google-vertex",
       "model": "qwen/qwen3-235b-a22b-instruct-2507-maas",
       "cost": {
         "input": 0.22,
@@ -8095,6 +8080,16 @@
     },
     {
       "provider": "alibaba-cn",
+      "model": "qwen3.6-plus",
+      "cost": {
+        "input": 0.276,
+        "output": 1.651,
+        "cache_read": 0.028,
+        "cache_write": 0.344
+      }
+    },
+    {
+      "provider": "alibaba-cn",
       "model": "qwen2-5-72b-instruct",
       "cost": {
         "input": 0.574,
@@ -8643,10 +8638,12 @@
     },
     {
       "provider": "alibaba-cn",
-      "model": "minimax/minimax-m2.5",
+      "model": "minimax/minimax-m2.7",
       "cost": {
-        "input": 0.301,
-        "output": 1.205
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": 0.06,
+        "cache_write": 0.375
       }
     },
     {
@@ -15253,14 +15250,6 @@
     },
     {
       "provider": "openrouter",
-      "model": "qwen/qwen3.6-plus-preview:free",
-      "cost": {
-        "input": 0,
-        "output": 0
-      }
-    },
-    {
-      "provider": "openrouter",
       "model": "qwen/qwen3-coder:exacto",
       "cost": {
         "input": 0.38,
@@ -15320,7 +15309,8 @@
       "model": "xiaomi/mimo-v2-pro",
       "cost": {
         "input": 1,
-        "output": 3
+        "output": 3,
+        "cache_read": 0.2
       }
     },
     {
@@ -15328,7 +15318,8 @@
       "model": "xiaomi/mimo-v2-omni",
       "cost": {
         "input": 0.4,
-        "output": 2
+        "output": 2,
+        "cache_read": 0.08
       }
     },
     {
@@ -15951,6 +15942,15 @@
     },
     {
       "provider": "zenmux",
+      "model": "z-ai/glm-5v-turbo",
+      "cost": {
+        "input": 0.726,
+        "output": 3.1946,
+        "cache_read": 0.1743
+      }
+    },
+    {
+      "provider": "zenmux",
       "model": "z-ai/glm-5-turbo",
       "cost": {
         "input": 0.88,
@@ -16189,6 +16189,16 @@
     },
     {
       "provider": "zenmux",
+      "model": "qwen/qwen3.6-plus",
+      "cost": {
+        "input": 0.5,
+        "output": 3,
+        "cache_read": 0.05,
+        "cache_write": 0.625
+      }
+    },
+    {
+      "provider": "zenmux",
       "model": "qwen/qwen3.5-plus",
       "cost": {
         "input": 0.8,
@@ -16297,6 +16307,15 @@
     },
     {
       "provider": "zenmux",
+      "model": "kuaishou/kat-coder-pro-v2",
+      "cost": {
+        "input": 0.3,
+        "output": 1.2,
+        "cache_read": 0.06
+      }
+    },
+    {
+      "provider": "zenmux",
       "model": "moonshotai/kimi-k2-thinking",
       "cost": {
         "input": 0.6,
@@ -16362,6 +16381,32 @@
       "cost": {
         "input": 3,
         "output": 15
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-sgp",
+      "model": "mimo-v2-tts",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-sgp",
+      "model": "mimo-v2-omni",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-sgp",
+      "model": "mimo-v2-pro",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
       }
     },
     {
@@ -16680,11 +16725,29 @@
     },
     {
       "provider": "vivgrid",
+      "model": "gpt-5.4-mini",
+      "cost": {
+        "input": 0.75,
+        "output": 4.5,
+        "cache_read": 0.075
+      }
+    },
+    {
+      "provider": "vivgrid",
       "model": "gemini-3.1-pro-preview",
       "cost": {
         "input": 2,
         "output": 12,
         "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "vivgrid",
+      "model": "gpt-5.3-codex",
+      "cost": {
+        "input": 1.75,
+        "output": 14,
+        "cache_read": 0.175
       }
     },
     {
@@ -16712,6 +16775,15 @@
         "input": 2.5,
         "output": 15,
         "cache_read": 0.25
+      }
+    },
+    {
+      "provider": "vivgrid",
+      "model": "gpt-5.4-nano",
+      "cost": {
+        "input": 0.2,
+        "output": 1.25,
+        "cache_read": 0.02
       }
     },
     {
@@ -17599,6 +17671,16 @@
         "output": 2.4,
         "cache_read": 0.06,
         "cache_write": 0.375
+      }
+    },
+    {
+      "provider": "alibaba-coding-plan-cn",
+      "model": "qwen3.6-plus",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
       }
     },
     {
@@ -19761,6 +19843,15 @@
     },
     {
       "provider": "vercel",
+      "model": "zai/glm-5v-turbo",
+      "cost": {
+        "input": 1.2,
+        "output": 4,
+        "cache_read": 0.24
+      }
+    },
+    {
+      "provider": "vercel",
       "model": "zai/glm-5-turbo",
       "cost": {
         "input": 1.2,
@@ -20043,6 +20134,14 @@
     },
     {
       "provider": "vercel",
+      "model": "google/gemma-4-26b-a4b-it",
+      "cost": {
+        "input": 0.13,
+        "output": 0.39999999999999997
+      }
+    },
+    {
+      "provider": "vercel",
       "model": "google/gemini-2.5-flash-lite-preview-09-2025",
       "cost": {
         "input": 0.1,
@@ -20066,6 +20165,14 @@
         "input": 2,
         "output": 12,
         "cache_read": 0.2
+      }
+    },
+    {
+      "provider": "vercel",
+      "model": "google/gemma-4-31b-it",
+      "cost": {
+        "input": 0.14,
+        "output": 0.39999999999999997
       }
     },
     {
@@ -20313,6 +20420,14 @@
     },
     {
       "provider": "vercel",
+      "model": "arcee-ai/trinity-large-thinking",
+      "cost": {
+        "input": 0.25,
+        "output": 0.8999999999999999
+      }
+    },
+    {
+      "provider": "vercel",
       "model": "arcee-ai/trinity-mini",
       "cost": {
         "input": 0.05,
@@ -20496,6 +20611,16 @@
       "cost": {
         "input": 1,
         "output": 3
+      }
+    },
+    {
+      "provider": "vercel",
+      "model": "alibaba/qwen3.6-plus",
+      "cost": {
+        "input": 0.5,
+        "output": 3,
+        "cache_read": 0.09999999999999999,
+        "cache_write": 0.625
       }
     },
     {
@@ -23939,6 +24064,32 @@
       }
     },
     {
+      "provider": "xiaomi-token-plan-ams",
+      "model": "mimo-v2-tts",
+      "cost": {
+        "input": 0,
+        "output": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-ams",
+      "model": "mimo-v2-omni",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-ams",
+      "model": "mimo-v2-pro",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
+      }
+    },
+    {
       "provider": "aihubmix",
       "model": "gpt-5.2-codex",
       "cost": {
@@ -24703,6 +24854,16 @@
         "input": 0.6,
         "output": 2.5,
         "cache_read": 0.15
+      }
+    },
+    {
+      "provider": "alibaba",
+      "model": "qwen3.6-plus",
+      "cost": {
+        "input": 0.276,
+        "output": 1.651,
+        "cache_read": 0.028,
+        "cache_write": 0.344
       }
     },
     {
@@ -32083,6 +32244,16 @@
     },
     {
       "provider": "alibaba-coding-plan",
+      "model": "qwen3.6-plus",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0,
+        "cache_write": 0
+      }
+    },
+    {
+      "provider": "alibaba-coding-plan",
       "model": "qwen3.5-plus",
       "cost": {
         "input": 0,
@@ -32385,6 +32556,32 @@
         "input": 0.6,
         "output": 2.5,
         "cache_read": 0.15
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-cn",
+      "model": "mimo-v2-pro",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-cn",
+      "model": "mimo-v2-omni",
+      "cost": {
+        "input": 0,
+        "output": 0,
+        "cache_read": 0
+      }
+    },
+    {
+      "provider": "xiaomi-token-plan-cn",
+      "model": "mimo-v2-tts",
+      "cost": {
+        "input": 0,
+        "output": 0
       }
     },
     {

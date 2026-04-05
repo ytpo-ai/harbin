@@ -43,3 +43,4 @@ export const ChannelDeliveryLogSchema = SchemaFactory.createForClass(ChannelDeli
 
 ChannelDeliveryLogSchema.index({ eventId: 1, configId: 1, attempt: -1 });
 ChannelDeliveryLogSchema.index({ createdAt: -1 });
+ChannelDeliveryLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });

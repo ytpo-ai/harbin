@@ -34,8 +34,11 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     void this.consumeLoop();
   }
 
-  onModuleDestroy(): void {
+  async onModuleDestroy(): Promise<void> {
     this.running = false;
+    await this.channelAggregatorService.flushAll(async (target, _eventType, events) => {
+      await this.flushAggregatedEvents(target, events);
+    });
   }
 
   private async consumeLoop(): Promise<void> {

@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Headers, UnauthorizedException } from '@nestjs/common';
-import { AuthService, LoginDto, AuthResponse } from './auth.service';
+import { AuthService, LoginDto, AuthResponse, FeishuBindTokenResponse } from './auth.service';
 
 @Controller('auth')
 export class AuthController {
@@ -98,5 +98,24 @@ export class AuthController {
     }
 
     return employee;
+  }
+
+  /**
+   * 生成飞书绑定一次性 Token
+   */
+  @Post('me/feishu-bind-token')
+  async generateFeishuBindToken(@Headers('authorization') authHeader: string): Promise<FeishuBindTokenResponse> {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('无效的Token');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const employee = await this.authService.getEmployeeFromToken(token);
+
+    if (!employee) {
+      throw new UnauthorizedException('Token已过期或无效');
+    }
+
+    return this.authService.generateFeishuBindToken(employee.id);
   }
 }

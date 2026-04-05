@@ -25,12 +25,6 @@ export class ChannelUserMapping {
 
   @Prop({ default: true })
   isActive: boolean;
-
-  @Prop()
-  createdAt?: Date;
-
-  @Prop()
-  updatedAt?: Date;
 }
 
 export const ChannelUserMappingSchema = SchemaFactory.createForClass(ChannelUserMapping);

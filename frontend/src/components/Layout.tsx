@@ -97,6 +97,10 @@ const Layout: React.FC = () => {
   const [unreadMessages, setUnreadMessages] = useState<MessageCenterItem[]>([]);
   const [loadingUnreadMessages, setLoadingUnreadMessages] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [generatingFeishuBindToken, setGeneratingFeishuBindToken] = useState(false);
+  const [feishuBindCommand, setFeishuBindCommand] = useState('');
+  const [feishuBindExpiresIn, setFeishuBindExpiresIn] = useState(0);
+  const [isFeishuBindDialogOpen, setIsFeishuBindDialogOpen] = useState(false);
 
   useEffect(() => {
     const loadCurrentUserAndEmployee = async () => {
@@ -304,6 +308,59 @@ const Layout: React.FC = () => {
     authService.logout();
     setCurrentUser(null);
     navigate('/login');
+  };
+
+  const copyText = async (text: string): Promise<boolean> => {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCopyToken = async () => {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    if (!token) {
+      window.alert('当前无可复制 Token');
+      return;
+    }
+
+    const copied = await copyText(token);
+    window.alert(copied ? 'Token 已复制' : '复制失败，请手动复制');
+  };
+
+  const handleGenerateFeishuBindToken = async () => {
+    if (generatingFeishuBindToken) {
+      return;
+    }
+
+    setGeneratingFeishuBindToken(true);
+    try {
+      const result = await authService.generateFeishuBindToken();
+      setFeishuBindCommand(result.command || `/bind token:${result.token}`);
+      setFeishuBindExpiresIn(Math.max(0, Number(result.expiresIn || 0)));
+      setIsFeishuBindDialogOpen(true);
+      setIsUserMenuOpen(false);
+    } catch (error: any) {
+      const backendMessage = error?.response?.data?.message;
+      const message = Array.isArray(backendMessage) ? backendMessage[0] : backendMessage;
+      window.alert(typeof message === 'string' && message ? message : '生成绑定 token 失败，请稍后重试');
+    } finally {
+      setGeneratingFeishuBindToken(false);
+    }
   };
 
   const isItemActive = (href: string) =>
@@ -523,6 +580,21 @@ const Layout: React.FC = () => {
                     <div className="px-3 py-2 text-xs text-gray-500 border-b border-gray-100">{currentUser.email}</div>
                     <button
                       type="button"
+                      onClick={handleCopyToken}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded"
+                    >
+                      复制 Token
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleGenerateFeishuBindToken}
+                      disabled={generatingFeishuBindToken}
+                      className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded disabled:opacity-50"
+                    >
+                      {generatingFeishuBindToken ? '生成中...' : '绑定飞书'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleLogout}
                       className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 rounded"
                     >
@@ -603,6 +675,43 @@ const Layout: React.FC = () => {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isFeishuBindDialogOpen && (
+        <div className="fixed inset-0 z-[66] bg-black/30 flex items-center justify-center p-4">
+          <div className="w-full max-w-xl rounded-lg border border-gray-200 bg-white shadow-xl p-5">
+            <h3 className="text-base font-semibold text-gray-900">绑定飞书</h3>
+            <p className="mt-2 text-sm text-gray-600">请在飞书中 @Bot 并发送以下内容完成绑定。</p>
+            <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-3 py-2">
+              <p className="text-xs text-gray-500">可复制命令</p>
+              <p className="mt-1 break-all font-mono text-sm text-gray-900">{feishuBindCommand}</p>
+              <p className="mt-2 text-xs text-gray-500">
+                {feishuBindExpiresIn > 0
+                  ? `该命令约 ${Math.ceil(feishuBindExpiresIn / 60)} 分钟内有效，且仅可使用一次。`
+                  : '该命令为一次性令牌，请尽快使用。'}
+              </p>
+            </div>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFeishuBindDialogOpen(false)}
+                className="px-3 py-1.5 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                关闭
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const copied = await copyText(feishuBindCommand);
+                  window.alert(copied ? '绑定命令已复制' : '复制失败，请手动复制');
+                }}
+                className="px-3 py-1.5 text-sm rounded-md bg-primary-600 text-white hover:bg-primary-700"
+              >
+                复制命令
+              </button>
             </div>
           </div>
         </div>

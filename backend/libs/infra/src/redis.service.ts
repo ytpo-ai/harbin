@@ -138,6 +138,23 @@ export class RedisService implements OnModuleDestroy {
     }
   }
 
+  async setnx(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    if (!this.ready) return false;
+    const ttl = Math.max(1, Number(ttlSeconds || 1));
+    const startedAt = Date.now();
+    try {
+      const result = await (this.publisher as any).set(key, value, 'EX', String(ttl), 'NX');
+      this.logSlowRedisOp('setnx', key, startedAt, {
+        ttlSeconds: ttl,
+        acquired: result === 'OK',
+      });
+      return result === 'OK';
+    } catch (error) {
+      this.logRedisOpError('setnx', key, startedAt, error);
+      throw error;
+    }
+  }
+
   async get(key: string): Promise<string | null> {
     if (!this.ready) return null;
     const startedAt = Date.now();
@@ -150,6 +167,38 @@ export class RedisService implements OnModuleDestroy {
       return value;
     } catch (error) {
       this.logRedisOpError('get', key, startedAt, error);
+      throw error;
+    }
+  }
+
+  async getdel(key: string): Promise<string | null> {
+    if (!this.ready) return null;
+    const startedAt = Date.now();
+    try {
+      const value = await (this.publisher as any).call('GETDEL', key);
+      const normalizedValue = typeof value === 'string' ? value : null;
+      this.logSlowRedisOp('getdel', key, startedAt, {
+        hit: Boolean(normalizedValue),
+        valueBytes: normalizedValue ? Buffer.byteLength(normalizedValue, 'utf8') : 0,
+      });
+      return normalizedValue;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || 'unknown');
+      if (message.toLowerCase().includes('unknown command')) {
+        const value = await this.publisher.eval(
+          'local v = redis.call("GET", KEYS[1]); if v then redis.call("DEL", KEYS[1]); end; return v;',
+          1,
+          key,
+        );
+        const normalizedValue = typeof value === 'string' ? value : null;
+        this.logSlowRedisOp('getdel', key, startedAt, {
+          hit: Boolean(normalizedValue),
+          fallback: 'lua',
+          valueBytes: normalizedValue ? Buffer.byteLength(normalizedValue, 'utf8') : 0,
+        });
+        return normalizedValue;
+      }
+      this.logRedisOpError('getdel', key, startedAt, error);
       throw error;
     }
   }

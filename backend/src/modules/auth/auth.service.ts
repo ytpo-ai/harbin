@@ -1,9 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument, EmployeeType, EmployeeStatus } from '../../shared/schemas/employee.schema';
 import { InvitationService } from '../invitations/invitation.service';
 import * as crypto from 'crypto';
+import { RedisService } from '@libs/infra';
 import {
   hashPassword as hashPasswordValue,
   verifyPassword as verifyPasswordValue,
@@ -50,15 +51,25 @@ export interface AuthResponse {
   token: string;
 }
 
+export interface FeishuBindTokenResponse {
+  token: string;
+  expiresIn: number;
+  command: string;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly jwtSecret = process.env.JWT_SECRET || 'your-secret-key';
   private readonly jwtExpiresIn = process.env.JWT_EXPIRES_IN || '7d';
+  private readonly feishuBindTokenTtlSeconds = Math.max(60, Number(process.env.FEISHU_BIND_TOKEN_TTL_SECONDS || 300));
+  private readonly feishuBindTokenRateLimitWindowSeconds = Math.max(30, Number(process.env.FEISHU_BIND_TOKEN_RATE_LIMIT_WINDOW_SECONDS || 60));
+  private readonly feishuBindTokenRateLimitMax = Math.max(1, Number(process.env.FEISHU_BIND_TOKEN_RATE_LIMIT_MAX || 3));
 
   constructor(
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
     private readonly invitationService: InvitationService,
+    private readonly redisService: RedisService,
   ) {}
 
   /**
@@ -210,6 +221,43 @@ export class AuthService {
     await employee.save();
 
     this.logger.log(`Password reset for employee ${employee.id}`);
+  }
+
+  async generateFeishuBindToken(employeeId: string): Promise<FeishuBindTokenResponse> {
+    const normalizedEmployeeId = String(employeeId || '').trim();
+    if (!normalizedEmployeeId) {
+      throw new BadRequestException('employeeId is required');
+    }
+
+    const employee = await this.employeeModel
+      .findOne({
+        id: normalizedEmployeeId,
+        type: EmployeeType.HUMAN,
+      })
+      .select({ id: 1 })
+      .exec();
+    if (!employee) {
+      throw new NotFoundException('员工不存在');
+    }
+
+    const rateLimitKey = `channel:feishu-bind:limit:${normalizedEmployeeId}`;
+    const currentCount = await this.redisService.incr(rateLimitKey);
+    if (currentCount === 1) {
+      await this.redisService.expire(rateLimitKey, this.feishuBindTokenRateLimitWindowSeconds);
+    }
+    if (currentCount > this.feishuBindTokenRateLimitMax) {
+      throw new HttpException('请求过于频繁，请稍后重试', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const token = crypto.randomBytes(16).toString('hex');
+    const redisKey = `channel:feishu-bind:${token}`;
+    await this.redisService.set(redisKey, normalizedEmployeeId, this.feishuBindTokenTtlSeconds);
+
+    return {
+      token,
+      expiresIn: this.feishuBindTokenTtlSeconds,
+      command: `/bind token:${token}`,
+    };
   }
 
   // ===== 私有方法 =====
