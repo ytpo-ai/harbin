@@ -1,5 +1,9 @@
 # 人类专属助理会议能力开发总结
 
+> 状态：**已弃用（Deprecated）**。
+> 弃用原因：会议链路已切换为 employee 直接发言，专属助理代理发言与绑定前置规则不再适用于当前会议实现。
+> 替代文档：`docs/plan/MEETING_REMOVE_EMPLOYEE_PROXY_PLAN.md`、`docs/feature/MEETING_CHAT.md`
+>
 > 状态：已并入统一主总结 `docs/development/MEETING_CAPABILITY_MASTER_PLAN.md`，本文件保留历史细节。
 
 ## 背景

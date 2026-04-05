@@ -36,7 +36,9 @@ export interface ParticipantContextProfile {
   name: string;
   role: ParticipantRole;
   isPresent: boolean;
+  /** @deprecated Legacy compatibility field, no longer populated in new flow. */
   isExclusiveAssistant?: boolean;
+  /** @deprecated Legacy compatibility field, no longer populated in new flow. */
   assistantForEmployeeId?: string;
 }
 

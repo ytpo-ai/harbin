@@ -159,6 +159,8 @@ export class MeetingMessageCenterEventService {
         continue;
       }
 
+      // Legacy compatibility: historical assistant participants may still carry
+      // assistantForEmployeeId, so we keep mapping notifications to that employee.
       const mappedEmployeeId = String(participant.assistantForEmployeeId || '').trim();
       if (mappedEmployeeId) {
         receiverIds.add(mappedEmployeeId);
