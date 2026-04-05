@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
-import { ChannelAuthBridgeService } from './channel-auth-bridge.service';
+import { ChannelApiClientService } from './channel-api-client.service';
 import { ChannelMeetingRelayService } from './channel-meeting-relay.service';
 import { ChannelSessionService, SessionFilter } from './channel-session.service';
 
@@ -18,21 +17,11 @@ interface MeetingRecord {
 
 @Injectable()
 export class ChannelMeetingAutoService {
-  private readonly gatewayBaseUrl = process.env.GATEWAY_SERVICE_URL || 'http://127.0.0.1:3100';
-  private readonly executeTimeoutMs = Math.max(5000, Number(process.env.CHANNEL_AGENT_EXECUTE_TIMEOUT_MS || 120000));
-  private readonly httpClient: AxiosInstance;
-
   constructor(
-    private readonly authBridgeService: ChannelAuthBridgeService,
+    private readonly apiClient: ChannelApiClientService,
     private readonly relayService: ChannelMeetingRelayService,
     private readonly sessionService: ChannelSessionService,
-  ) {
-    this.httpClient = axios.create({
-      baseURL: this.gatewayBaseUrl,
-      timeout: this.executeTimeoutMs,
-      validateStatus: () => true,
-    });
-  }
+  ) {}
 
   async resolveOrCreateOneOnOneMeeting(input: {
     employeeId: string;
@@ -46,7 +35,10 @@ export class ChannelMeetingAutoService {
       throw new Error('resolve_one_on_one_invalid_input');
     }
 
-    let meetingId = await this.findActiveOneOnOneMeeting(employeeId, agentId);
+    let meetingId = await this.findReusableOneOnOneMeetingFromSession(input.sessionFilter, employeeId, agentId);
+    if (!meetingId) {
+      meetingId = await this.findActiveOneOnOneMeeting(employeeId, agentId);
+    }
     if (!meetingId) {
       meetingId = await this.createOneOnOneMeeting(employeeId, agentId);
     }
@@ -106,17 +98,16 @@ export class ChannelMeetingAutoService {
   private async findActiveOneOnOneMeeting(employeeId: string, agentId: string): Promise<string | undefined> {
     const response = await this.callApiAsUser(employeeId, {
       method: 'get',
-      url: '/api/meetings',
+      url: `/api/meetings/by-participant/${employeeId}`,
       params: {
-        status: 'active',
-        type: 'one_on_one',
+        type: 'employee',
       },
     });
     const meetings = Array.isArray(response) ? response : [];
 
     const matched = meetings.find((item) => {
       const meeting = item as MeetingRecord;
-      if (String(meeting.type || '').trim() !== 'one_on_one') {
+      if (String(meeting.type || '').trim() !== 'one_on_one' || String(meeting.status || '').trim() !== 'active') {
         return false;
       }
       const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
@@ -150,14 +141,14 @@ export class ChannelMeetingAutoService {
   }
 
   private async ensureMeetingReady(meetingId: string, employeeId: string): Promise<void> {
-    const meeting = (await this.callApiAsUser(employeeId, {
+    let meeting = (await this.callApiAsUser(employeeId, {
       method: 'get',
       url: `/api/meetings/${meetingId}`,
     })) as MeetingRecord;
 
     const status = String(meeting.status || '').trim();
     if (status === 'pending') {
-      await this.callApiAsUser(employeeId, {
+      meeting = (await this.callApiAsUser(employeeId, {
         method: 'post',
         url: `/api/meetings/${meetingId}/start`,
         data: {
@@ -166,19 +157,15 @@ export class ChannelMeetingAutoService {
           name: employeeId,
           isHuman: true,
         },
-      });
+      })) as MeetingRecord;
     } else if (status === 'paused') {
-      await this.callApiAsUser(employeeId, {
+      meeting = (await this.callApiAsUser(employeeId, {
         method: 'post',
         url: `/api/meetings/${meetingId}/resume`,
-      });
+      })) as MeetingRecord;
     }
 
-    const latestMeeting = (await this.callApiAsUser(employeeId, {
-      method: 'get',
-      url: `/api/meetings/${meetingId}`,
-    })) as MeetingRecord;
-    const participants = Array.isArray(latestMeeting.participants) ? latestMeeting.participants : [];
+    const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
     const employeeInMeeting = participants.some(
       (participant) =>
         String(participant.participantType || '').trim() === 'employee' &&
@@ -200,6 +187,42 @@ export class ChannelMeetingAutoService {
     }
   }
 
+  private async findReusableOneOnOneMeetingFromSession(
+    sessionFilter: SessionFilter,
+    employeeId: string,
+    agentId: string,
+  ): Promise<string | undefined> {
+    const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
+    if (!activeMeeting || activeMeeting.meetingType !== 'one_on_one') {
+      return undefined;
+    }
+
+    const meetingId = String(activeMeeting.meetingId || '').trim();
+    if (!meetingId) {
+      return undefined;
+    }
+
+    try {
+      const meeting = (await this.callApiAsUser(employeeId, {
+        method: 'get',
+        url: `/api/meetings/${meetingId}`,
+      })) as MeetingRecord;
+      if (String(meeting.status || '').trim() !== 'active' || String(meeting.type || '').trim() !== 'one_on_one') {
+        return undefined;
+      }
+
+      const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
+      const normalized = participants.map((participant) => `${participant.participantType}:${participant.participantId}`);
+      const unique = Array.from(new Set(normalized));
+      if (unique.length === 2 && unique.includes(`employee:${employeeId}`) && unique.includes(`agent:${agentId}`)) {
+        return meetingId;
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private async callApiAsUser(
     employeeId: string,
     request: {
@@ -209,39 +232,6 @@ export class ChannelMeetingAutoService {
       params?: Record<string, string | number | boolean | undefined>;
     },
   ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
-    const headers = await this.authBridgeService.buildSignedHeaders(employeeId, {
-      'content-type': 'application/json',
-    });
-
-    const response = await this.httpClient.request({
-      method: request.method,
-      url: request.url,
-      data: request.data,
-      params: request.params,
-      headers,
-    });
-
-    if (response.status >= 400) {
-      throw new Error(`api_request_failed:${response.status}`);
-    }
-
-    const payload = response.data;
-    if (payload && typeof payload === 'object' && 'data' in payload) {
-      const data = (payload as { data?: unknown }).data;
-      if (Array.isArray(data)) {
-        return data.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
-      }
-      if (data && typeof data === 'object') {
-        return data as Record<string, unknown>;
-      }
-    }
-    if (Array.isArray(payload)) {
-      return payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
-    }
-    if (payload && typeof payload === 'object') {
-      return payload as Record<string, unknown>;
-    }
-
-    return {};
+    return this.apiClient.callApiAsUser(employeeId, request);
   }
 }

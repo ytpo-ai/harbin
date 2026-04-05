@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { RedisService } from '@libs/infra';
 import { FeishuAppProvider } from '../../providers/feishu/feishu-app.provider';
+import { ChannelApiClientService } from './channel-api-client.service';
 import { ChannelSessionService } from './channel-session.service';
 
 interface RelayMessage {
@@ -33,13 +34,16 @@ interface RelayContext {
 export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChannelMeetingRelayService.name);
   private readonly activeRelays = new Map<string, RelayContext>();
+  private readonly senderNameCache = new Map<string, { value: string; expiresAt: number }>();
   private readonly flushDelayMs = 1500;
   private readonly forceFlushMs = 3000;
   private readonly bufferSizeLimit = 10;
+  private readonly senderNameCacheTtlMs = 5 * 60 * 1000;
 
   constructor(
     private readonly redisService: RedisService,
     private readonly feishuAppProvider: FeishuAppProvider,
+    private readonly apiClient: ChannelApiClientService,
     private readonly sessionService: ChannelSessionService,
   ) {}
 
@@ -120,7 +124,7 @@ export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy
     }
 
     if (event.type === 'message') {
-      const line = this.formatRelayLine(context.employeeId, event.data as RelayMessage | undefined);
+      const line = await this.formatRelayLine(context.employeeId, event.data as RelayMessage | undefined);
       if (!line) {
         return;
       }
@@ -138,7 +142,7 @@ export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy
     }
   }
 
-  private formatRelayLine(employeeId: string, message?: RelayMessage): string {
+  private async formatRelayLine(employeeId: string, message?: RelayMessage): Promise<string> {
     if (!message) {
       return '';
     }
@@ -147,6 +151,7 @@ export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy
     const senderType = String(message.senderType || '').trim();
     const content = String(message.content || '').trim();
     const source = String(message.metadata?.source || '').trim();
+    const explicitSenderName = String(message.metadata?.senderName || message.metadata?.displayName || '').trim();
     if (!content) {
       return '';
     }
@@ -164,11 +169,19 @@ export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy
     }
 
     if (senderType === 'agent') {
-      return `[Agent-${senderId || 'unknown'}] ${content}`;
+      const senderName =
+        explicitSenderName ||
+        (await this.resolveSenderName('agent', senderId, employeeId)) ||
+        `Agent-${this.toShortId(senderId || 'unknown')}`;
+      return `[${senderName}] ${content}`;
     }
 
     if (senderType === 'employee') {
-      return `[员工-${senderId || 'unknown'}] ${content}`;
+      const senderName =
+        explicitSenderName ||
+        (await this.resolveSenderName('employee', senderId, employeeId)) ||
+        `员工-${this.toShortId(senderId || 'unknown')}`;
+      return `[${senderName}] ${content}`;
     }
 
     return content;
@@ -228,5 +241,51 @@ export class ChannelMeetingRelayService implements OnModuleInit, OnModuleDestroy
 
   private getRelayKey(meetingId: string, employeeId: string): string {
     return `${meetingId}:${employeeId}`;
+  }
+
+  private async resolveSenderName(
+    senderType: 'agent' | 'employee',
+    senderId: string,
+    employeeId: string,
+  ): Promise<string | undefined> {
+    const normalizedId = String(senderId || '').trim();
+    if (!normalizedId) {
+      return undefined;
+    }
+
+    const cacheKey = `${senderType}:${normalizedId}`;
+    const cached = this.senderNameCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    try {
+      const profile = (await this.apiClient.callApiAsUser(employeeId, {
+        method: 'get',
+        url: senderType === 'agent' ? `/api/agents/${normalizedId}` : `/api/employees/${normalizedId}`,
+      })) as Record<string, unknown>;
+      const name = String(profile.name || profile.displayName || profile.email || profile.id || '').trim();
+      if (!name) {
+        return undefined;
+      }
+      this.senderNameCache.set(cacheKey, {
+        value: name,
+        expiresAt: Date.now() + this.senderNameCacheTtlMs,
+      });
+      return name;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private toShortId(value: string): string {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return 'unknown';
+    }
+    if (normalized.length <= 8) {
+      return normalized;
+    }
+    return normalized.slice(0, 8);
   }
 }

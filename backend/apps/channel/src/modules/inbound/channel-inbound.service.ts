@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import axios, { AxiosInstance } from 'axios';
 import { CHANNEL_INBOUND_QUEUE_KEY, RedisService } from '@libs/infra';
-import { ChannelAuthBridgeService } from './channel-auth-bridge.service';
+import { ChannelApiClientService } from './channel-api-client.service';
 import { ChannelMeetingAutoService } from './channel-meeting-auto.service';
 import { ChannelMeetingRelayService } from './channel-meeting-relay.service';
 import { CommandParserService } from './command-parser.service';
@@ -15,8 +14,6 @@ export class ChannelInboundService {
   private readonly logger = new Logger(ChannelInboundService.name);
   private readonly inboundQueueKey = CHANNEL_INBOUND_QUEUE_KEY;
   private readonly inboundDedupTtlSeconds = Math.max(60, Number(process.env.CHANNEL_INBOUND_DEDUP_TTL_SECONDS || 600));
-  private readonly gatewayBaseUrl = process.env.GATEWAY_SERVICE_URL || 'http://127.0.0.1:3100';
-  private readonly executeTimeoutMs = Math.max(5000, Number(process.env.CHANNEL_AGENT_EXECUTE_TIMEOUT_MS || 120000));
   private readonly feishuBindTokenPrefix = 'channel:feishu-bind:';
   private readonly allowEmailBindFallback = String(process.env.FEISHU_BIND_EMAIL_FALLBACK || 'false').toLowerCase() === 'true';
   private readonly emailBindFallbackAdminRoles = new Set(
@@ -25,24 +22,16 @@ export class ChannelInboundService {
       .map((item) => item.trim().toLowerCase())
       .filter(Boolean),
   );
-  private readonly httpClient: AxiosInstance;
-
   constructor(
     private readonly redisService: RedisService,
     private readonly commandParser: CommandParserService,
     private readonly mappingService: ChannelUserMappingService,
     private readonly sessionService: ChannelSessionService,
+    private readonly apiClient: ChannelApiClientService,
     private readonly meetingAutoService: ChannelMeetingAutoService,
     private readonly meetingRelayService: ChannelMeetingRelayService,
-    private readonly authBridgeService: ChannelAuthBridgeService,
     private readonly feishuAppProvider: FeishuAppProvider,
-  ) {
-    this.httpClient = axios.create({
-      baseURL: this.gatewayBaseUrl,
-      timeout: this.executeTimeoutMs,
-      validateStatus: () => true,
-    });
-  }
+  ) {}
 
   async enqueueInbound(event: FeishuInboundMessage): Promise<boolean> {
     const messageId = String(event.messageId || '').trim();
@@ -398,11 +387,24 @@ export class ChannelInboundService {
     if (parsed.type === 'meeting_list') {
       const response = await this.callApiAsUser(resolved.employeeId, {
         method: 'get',
-        url: '/api/meetings',
-        params: { status: 'active' },
+        url: `/api/meetings/by-participant/${resolved.employeeId}`,
+        params: { type: 'employee' },
       });
       const meetings = Array.isArray(response) ? response : [];
-      const visibleMeetings = meetings.filter((item) => String((item as Record<string, unknown>).type || '') !== 'one_on_one');
+      const visibleMeetings = meetings.filter((item) => {
+        const meeting = item as Record<string, unknown>;
+        const meetingType = String(meeting.type || '').trim();
+        const status = String(meeting.status || '').trim();
+        if (meetingType === 'one_on_one' || status !== 'active') {
+          return false;
+        }
+
+        const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
+        return participants.some((participant) => {
+          const row = participant as Record<string, unknown>;
+          return String(row.participantType || '').trim() === 'employee' && String(row.participantId || '').trim() === resolved.employeeId;
+        });
+      });
 
       if (visibleMeetings.length === 0) {
         await this.feishuAppProvider.replyText(event.externalChatId, '当前没有进行中的会议。', event.messageId);
@@ -541,7 +543,7 @@ export class ChannelInboundService {
       const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
       let meetingId = '';
       if (activeMeeting?.meetingType === 'one_on_one') {
-        const currentAgentId = await this.getCurrentMeetingAgentId(activeMeeting.meetingId, resolved.employeeId);
+        const currentAgentId = await this.getOneOnOneMeetingAgentId(activeMeeting.meetingId, resolved.employeeId);
         if (currentAgentId && currentAgentId !== agentId) {
           meetingId = await this.meetingAutoService.switchAgent({
             employeeId: resolved.employeeId,
@@ -615,7 +617,8 @@ export class ChannelInboundService {
     });
   }
 
-  private async getCurrentMeetingAgentId(meetingId: string, employeeId: string): Promise<string | undefined> {
+  private async getOneOnOneMeetingAgentId(meetingId: string, employeeId: string): Promise<string | undefined> {
+    // This helper is only used for one_on_one sessions.
     const meeting = (await this.callApiAsUser(employeeId, {
       method: 'get',
       url: `/api/meetings/${meetingId}`,
@@ -657,39 +660,6 @@ export class ChannelInboundService {
       params?: Record<string, string | number | boolean | undefined>;
     },
   ): Promise<Record<string, unknown> | Array<Record<string, unknown>>> {
-    const headers = await this.authBridgeService.buildSignedHeaders(employeeId, {
-      'content-type': 'application/json',
-    });
-
-    const response = await this.httpClient.request({
-      method: request.method,
-      url: request.url,
-      data: request.data,
-      params: request.params,
-      headers,
-    });
-
-    if (response.status >= 400) {
-      throw new Error(`api_request_failed:${response.status}`);
-    }
-
-    const payload = response.data;
-    if (payload && typeof payload === 'object' && 'data' in payload) {
-      const data = (payload as { data?: unknown }).data;
-      if (Array.isArray(data)) {
-        return data.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
-      }
-      if (data && typeof data === 'object') {
-        return data as Record<string, unknown>;
-      }
-    }
-    if (Array.isArray(payload)) {
-      return payload.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'));
-    }
-    if (payload && typeof payload === 'object') {
-      return payload as Record<string, unknown>;
-    }
-
-    return {};
+    return this.apiClient.callApiAsUser(employeeId, request);
   }
 }

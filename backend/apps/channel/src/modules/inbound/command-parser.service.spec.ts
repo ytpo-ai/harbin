@@ -9,6 +9,17 @@ describe('CommandParserService', () => {
     expect(parsed.args.prompt).toBe('hello world');
   });
 
+  it('parses empty input as chat with empty prompt', () => {
+    const parsed = service.parse('');
+    expect(parsed.type).toBe('chat');
+    expect(parsed.args.prompt).toBe('');
+  });
+
+  it('parses slash-only input as unknown command', () => {
+    const parsed = service.parse('/');
+    expect(parsed.type).toBe('unknown_command');
+  });
+
   it('parses /plan new command', () => {
     const parsed = service.parse('/plan new 实现日报自动汇总');
     expect(parsed.type).toBe('plan_new');
@@ -32,6 +43,19 @@ describe('CommandParserService', () => {
     expect(parsed.type).toBe('agent_chat');
     expect(parsed.args.agentId).toBe('agent-1');
     expect(parsed.args.prompt).toBe('hi there');
+  });
+
+  it('parses /agent chat without prompt', () => {
+    const parsed = service.parse('/agent chat agent-1');
+    expect(parsed.type).toBe('agent_chat');
+    expect(parsed.args.agentId).toBe('agent-1');
+    expect(parsed.args.prompt).toBe('');
+  });
+
+  it('parses /plan new without prompt', () => {
+    const parsed = service.parse('/plan new');
+    expect(parsed.type).toBe('plan_new');
+    expect(parsed.args.prompt).toBe('');
   });
 
   it('parses /session reset command', () => {
@@ -61,6 +85,12 @@ describe('CommandParserService', () => {
     expect(parsed.type).toBe('bind');
     expect(parsed.args.token).toBe('abc123');
     expect(parsed.args.email).toBeUndefined();
+  });
+
+  it('parses bind token command containing dots', () => {
+    const parsed = service.parse('/bind token:abc.def-123_xyz');
+    expect(parsed.type).toBe('bind');
+    expect(parsed.args.token).toBe('abc.def-123_xyz');
   });
 
   it('parses bind token command with trailing words', () => {

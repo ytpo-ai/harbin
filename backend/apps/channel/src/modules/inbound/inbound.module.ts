@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { FeishuModule } from '../../providers/feishu/feishu.module';
 import { ChannelAuthBridgeService } from './channel-auth-bridge.service';
+import { ChannelApiClientService } from './channel-api-client.service';
 import { ChannelInboundService } from './channel-inbound.service';
 import { ChannelInboundWorkerService } from './channel-inbound-worker.service';
 import { ChannelMeetingAutoService } from './channel-meeting-auto.service';
@@ -28,6 +29,7 @@ import { ChannelUserMapping, ChannelUserMappingSchema } from './schemas/channel-
   controllers: [ChannelUserMappingController],
   providers: [
     ChannelAuthBridgeService,
+    ChannelApiClientService,
     ChannelInboundService,
     ChannelInboundWorkerService,
     ChannelMeetingAutoService,
@@ -38,6 +40,6 @@ import { ChannelUserMapping, ChannelUserMappingSchema } from './schemas/channel-
     ChannelUserMappingService,
     FeishuEventListenerService,
   ],
-  exports: [ChannelAuthBridgeService, ChannelInboundService, ChannelSessionService, ChannelUserMappingService],
+  exports: [ChannelAuthBridgeService, ChannelApiClientService, ChannelInboundService, ChannelSessionService, ChannelUserMappingService],
 })
 export class InboundModule {}

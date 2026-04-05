@@ -48,7 +48,7 @@ export class CommandParserService {
     }
 
     if (command === '/bind') {
-      const tokenMatch = commandTail.match(/^token:([A-Za-z0-9_-]+)(?:\s+.*)?$/i);
+      const tokenMatch = commandTail.match(/^token:([A-Za-z0-9_.-]+)(?:\s+.*)?$/i);
       return {
         type: 'bind',
         args: tokenMatch

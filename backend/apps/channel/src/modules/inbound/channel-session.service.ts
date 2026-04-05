@@ -12,6 +12,7 @@ export interface SessionFilter {
 @Injectable()
 export class ChannelSessionService {
   private readonly timeoutMinutes = Math.max(1, Number(process.env.CHANNEL_SESSION_TIMEOUT_MINUTES || 30));
+  private readonly meetingSessionAgentPlaceholder = 'meeting';
 
   constructor(
     @InjectModel(ChannelSession.name)
@@ -108,7 +109,8 @@ export class ChannelSessionService {
     if (normalizedEmployeeId) {
       (update as Record<string, unknown>).$setOnInsert = {
         employeeId: normalizedEmployeeId,
-        agentId: 'meeting',
+        // Placeholder value for meeting-mode sessions created without an explicit target agent.
+        agentId: this.meetingSessionAgentPlaceholder,
         messageCount: 0,
       };
       options.upsert = true;
