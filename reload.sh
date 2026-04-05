@@ -82,6 +82,7 @@ wait_for_service() {
 deploy_frontend_build() {
     local source_dir=$1
     local target_dir=$2
+    local use_sudo=0
 
     if [ ! -d "$source_dir" ]; then
         echo "错误: 前端构建目录不存在: $source_dir"
@@ -93,22 +94,45 @@ deploy_frontend_build() {
         return 1
     fi
 
-    mkdir -p "$target_dir"
+    if ! mkdir -p "$target_dir" 2>/dev/null; then
+        if command -v sudo > /dev/null 2>&1; then
+            echo "提示: 目录创建需要权限，尝试使用 sudo 创建 $target_dir"
+            sudo mkdir -p "$target_dir"
+            use_sudo=1
+        else
+            echo "错误: 无法创建目录且系统未安装 sudo: $target_dir"
+            return 1
+        fi
+    fi
 
     if [ ! -w "$target_dir" ]; then
-        echo "错误: 目录无写权限: $target_dir"
-        echo "请确认当前用户具备写入权限后重试"
-        return 1
+        if command -v sudo > /dev/null 2>&1; then
+            echo "提示: 目录无写权限，尝试使用 sudo 部署到 $target_dir"
+            use_sudo=1
+        else
+            echo "错误: 目录无写权限且系统未安装 sudo: $target_dir"
+            echo "请确认当前用户具备写入权限后重试"
+            return 1
+        fi
     fi
 
     shopt -s dotglob nullglob
     local target_files=("$target_dir"/*)
     if [ ${#target_files[@]} -gt 0 ]; then
-        rm -rf "${target_files[@]}"
+        if [ "$use_sudo" -eq 1 ]; then
+            sudo rm -rf "${target_files[@]}"
+        else
+            rm -rf "${target_files[@]}"
+        fi
     fi
     shopt -u dotglob nullglob
 
-    cp -R "$source_dir"/. "$target_dir"/
+    if [ "$use_sudo" -eq 1 ]; then
+        sudo cp -R "$source_dir"/. "$target_dir"/
+    else
+        cp -R "$source_dir"/. "$target_dir"/
+    fi
+
     echo "前端静态资源已部署到: $target_dir"
 }
 
