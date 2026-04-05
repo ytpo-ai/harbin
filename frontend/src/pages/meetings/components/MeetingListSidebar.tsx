@@ -6,8 +6,6 @@ const MeetingListSidebar: React.FC<MeetingListSidebarProps> = ({
   meetings,
   stats,
   selectedMeetingId,
-  hasExclusiveAssistant,
-  currentEmployee,
   onCreateClick,
   onSelectMeeting,
   getMeetingTypeInfo,
@@ -21,7 +19,6 @@ const MeetingListSidebar: React.FC<MeetingListSidebarProps> = ({
           <h1 className="text-xl font-semibold text-gray-900">会议室</h1>
           <button
             onClick={onCreateClick}
-            disabled={!hasExclusiveAssistant}
             className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700"
           >
             <PlusIcon className="h-4 w-4 mr-1" />
@@ -43,12 +40,6 @@ const MeetingListSidebar: React.FC<MeetingListSidebarProps> = ({
               <div className="text-lg font-semibold text-blue-600">{stats.totalMessages}</div>
               <div className="text-xs text-gray-500">总消息</div>
             </div>
-          </div>
-        )}
-
-        {currentEmployee && !hasExclusiveAssistant && (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            您还未绑定专属助理，当前账号不可发起或参与会议。
           </div>
         )}
       </div>

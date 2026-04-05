@@ -6,7 +6,6 @@ import { MessageListProps } from '../types';
 const MessageList: React.FC<MessageListProps> = ({
   meeting,
   currentUser,
-  currentEmployee,
   repliedMessageIds,
   getParticipantDisplayName,
   onPauseMessageResponse,
@@ -35,19 +34,20 @@ const MessageList: React.FC<MessageListProps> = ({
           const senderId = message.senderId || legacyMessage.agentId || 'unknown';
           const senderName = getParticipantDisplayName(senderId, message.senderType === 'agent' ? 'agent' : 'employee');
           const isSystem = message.senderType === 'system';
-          const isCurrentUsersAssistantMessage =
-            message.senderType === 'agent' && senderId === (currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
-          const isUser = message.senderType === 'employee' || isCurrentUsersAssistantMessage;
-          const isCurrentUsersProxyMessage =
-            message.senderType === 'agent' && message.metadata?.proxyForEmployeeId === currentUser?.id;
+          const isCurrentUsersEmployeeMessage = message.senderType === 'employee' && senderId === currentUser?.id;
+          const isCurrentUsersLegacyProxyMessage =
+            message.senderType === 'agent' &&
+            message.metadata?.isAIProxy &&
+            message.metadata?.proxyForEmployeeId === currentUser?.id;
+          const isUser = isCurrentUsersEmployeeMessage || isCurrentUsersLegacyProxyMessage;
           const isPausedPendingResponse = Boolean(message.metadata?.pendingResponsePaused);
           const canPausePendingResponse =
-            isCurrentUsersProxyMessage &&
+            isUser &&
             meeting.status === MeetingStatus.ACTIVE &&
             !isPausedPendingResponse &&
             !repliedMessageIds.has(message.id);
           const canRevokePausedMessage =
-            isCurrentUsersProxyMessage &&
+            isUser &&
             meeting.status === MeetingStatus.ACTIVE &&
             isPausedPendingResponse &&
             !repliedMessageIds.has(message.id);

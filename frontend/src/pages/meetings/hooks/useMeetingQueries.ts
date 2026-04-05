@@ -37,17 +37,6 @@ export const useMeetingQueries = ({ effectiveMeetingId, selectedMeeting }: Param
     );
   }, [currentUser?.email, currentUser?.id, employees]);
 
-  const hasExclusiveAssistant = Boolean(currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId);
-  const currentExclusiveAssistantName = useMemo(() => {
-    const assistantAgentId = currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId;
-    if (!assistantAgentId) {
-      return '';
-    }
-
-    const assistant = (agents || []).find((agent) => agent.id === assistantAgentId);
-    return assistant?.name || '专属助理';
-  }, [agents, currentEmployee?.aiProxyAgentId, currentEmployee?.exclusiveAssistantAgentId]);
-
   const { data: targetMeeting } = useQuery(['meeting', effectiveMeetingId], () => meetingService.getMeeting(effectiveMeetingId as string), {
     enabled: Boolean(effectiveMeetingId),
     staleTime: 0,
@@ -135,8 +124,6 @@ export const useMeetingQueries = ({ effectiveMeetingId, selectedMeeting }: Param
     agents: agents || [],
     employees: (employees || []) as Employee[],
     currentEmployee,
-    hasExclusiveAssistant,
-    currentExclusiveAssistantName,
     targetMeeting,
     meetingAgentStates: meetingAgentStates || [],
     participantDisplayMap,

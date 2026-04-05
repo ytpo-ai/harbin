@@ -54,9 +54,15 @@ export class MeetingParticipant {
   @Prop()
   leftAt?: Date;
 
+  /**
+   * @deprecated Only kept for legacy meeting participant compatibility.
+   */
   @Prop({ default: false })
   isExclusiveAssistant?: boolean;
 
+  /**
+   * @deprecated Only kept for legacy meeting participant compatibility.
+   */
   @Prop()
   assistantForEmployeeId?: string;
 }
@@ -90,9 +96,13 @@ export class MeetingMessage {
     relatedMessageId?: string;     // 回复的消息ID
     sentiment?: 'positive' | 'neutral' | 'negative';
     confidence?: number;           // AI置信度
+    /** @deprecated Only kept for legacy proxied message compatibility. */
     isAIProxy?: boolean;          // 是否AI代理发送的消息（人类员工的代理）
+    /** @deprecated Only kept for legacy proxied message compatibility. */
     proxyForEmployeeId?: string;   // 如果是AI代理，代理哪个员工
+    /** @deprecated Pause metadata is retained for backward compatibility. */
     pendingResponsePaused?: boolean; // 是否暂停等待回复
+    /** @deprecated Pause metadata is retained for backward compatibility. */
     pendingResponsePausedAt?: string; // 暂停时间
   };
 }

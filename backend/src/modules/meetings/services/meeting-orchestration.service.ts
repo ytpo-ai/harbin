@@ -6,7 +6,7 @@ import { CollaborationContextFactory } from '@libs/contracts';
 import { Meeting, MeetingDocument, MeetingMessage, MeetingStatus } from '../../../shared/schemas/meeting.schema';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { Agent, ChatMessage } from '../../../shared/types';
-import { MeetingParticipantRecord, ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
+import { ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingAgentStateService } from './meeting-agent-state.service';
 import { MeetingLifecycleService } from './meeting-lifecycle.service';
@@ -154,7 +154,7 @@ export class MeetingOrchestrationService {
 
     const presentAgentParticipants = meeting.participants.filter(
       (p) => p.isPresent && p.participantType === 'agent',
-    ) as MeetingParticipantRecord[];
+    );
 
     if (presentAgentParticipants.length === 0) {
       return [];
@@ -166,20 +166,6 @@ export class MeetingOrchestrationService {
     for (const agentId of uniqueAgentIds) {
       const agent = await this.agentClientService.getAgent(agentId);
       const aliases = this.buildMentionAliases(agentId, agent?.name);
-
-      const assistantParticipant = presentAgentParticipants.find(
-        (participant) => participant.participantId === agentId && participant.isExclusiveAssistant,
-      );
-
-      if (assistantParticipant?.assistantForEmployeeId) {
-        const ownerName = await this.participantService.resolveParticipantDisplayName(
-          assistantParticipant.assistantForEmployeeId,
-          'employee',
-        );
-        const assistantAlias = `${ownerName}的专属助理`.toLowerCase();
-        aliases.add(assistantAlias);
-        aliases.add(assistantAlias.replace(/\s+/g, ''));
-      }
 
       for (const token of tokens) {
         if (aliases.has(token)) {
@@ -448,30 +434,18 @@ export class MeetingOrchestrationService {
 
     if (presentAgents.length === 0) return;
 
-    const exclusiveAssistantParticipants = presentAgents.filter(
-      (participant) => Boolean((participant as MeetingParticipantRecord).isExclusiveAssistant),
-    );
-    const regularAgentParticipants = presentAgents.filter(
-      (participant) =>
-        !(participant as MeetingParticipantRecord).isExclusiveAssistant &&
-        participant.participantId !== triggerMessage.senderId,
-    );
+    let responderCandidates = presentAgents.filter((participant) => participant.participantId !== triggerMessage.senderId);
 
     const isMemoRecord = this.isMemoRecordIntent(triggerMessage.content || '');
     const routeToModelManagementAgent = this.isModelManagementIntent(triggerMessage.content || '') && !isMemoRecord;
     if (routeToModelManagementAgent) {
-      const modelAgentId = await this.pickModelManagementResponder(regularAgentParticipants);
+      const modelAgentId = await this.pickModelManagementResponder(responderCandidates);
       if (modelAgentId) {
-        presentAgents = regularAgentParticipants.filter((participant) => participant.participantId === modelAgentId);
-      } else {
-        presentAgents = regularAgentParticipants;
+        responderCandidates = responderCandidates.filter((participant) => participant.participantId === modelAgentId);
       }
-    } else {
-      presentAgents = regularAgentParticipants;
     }
 
     const mentionTokens = this.extractMentionTokens(triggerMessage.content || '');
-    const mentionSet = new Set<string>();
     if (mentionTokens.length > 0) {
       const mentionedAgentIds = await this.resolveMentionedAgentIds(meeting, triggerMessage.content || '');
 
@@ -480,36 +454,15 @@ export class MeetingOrchestrationService {
         return;
       }
 
-      mentionedAgentIds.forEach((id) => mentionSet.add(id));
-
-      presentAgents = presentAgents.filter((p) => mentionedAgentIds.includes(p.participantId));
+      responderCandidates = responderCandidates.filter((p) => mentionedAgentIds.includes(p.participantId));
     }
 
-    const proxyForEmployeeId =
-      typeof triggerMessage.metadata?.proxyForEmployeeId === 'string'
-        ? triggerMessage.metadata.proxyForEmployeeId
-        : undefined;
-    const triggerOwnerEmployeeId =
-      triggerMessage.senderType === 'employee' ? triggerMessage.senderId : proxyForEmployeeId;
-
-    let exclusiveAssistantResponders: MeetingDocument['participants'] = [];
-    if (mentionSet.size > 0 && triggerOwnerEmployeeId) {
-      exclusiveAssistantResponders = exclusiveAssistantParticipants.filter((participant) => {
-        const ownerEmployeeId = (participant as MeetingParticipantRecord).assistantForEmployeeId;
-        if (!ownerEmployeeId || ownerEmployeeId !== triggerOwnerEmployeeId) {
-          return false;
-        }
-
-        return mentionSet.has(participant.participantId);
-      });
-    }
-
-    if (this.isOperationLogIntent(triggerMessage.content || '') && exclusiveAssistantResponders.length > 0) {
-      const exclusiveAssistant = exclusiveAssistantResponders[0];
+    if (this.isOperationLogIntent(triggerMessage.content || '') && responderCandidates.length > 0) {
+      const queryResponder = responderCandidates[0];
       const handled = await this.respondWithOperationLogSummary(
         meetingId,
         meeting.title,
-        exclusiveAssistant.participantId,
+        queryResponder.participantId,
         triggerMessage,
       );
       if (handled) {
@@ -518,10 +471,7 @@ export class MeetingOrchestrationService {
     }
 
     if (this.isAgentListIntent(triggerMessage.content || '')) {
-      const queryResponderId =
-        exclusiveAssistantResponders[0]?.participantId ||
-        presentAgents[0]?.participantId ||
-        regularAgentParticipants[0]?.participantId;
+      const queryResponderId = responderCandidates[0]?.participantId;
       if (queryResponderId) {
         const handled = await this.respondWithAgentListSummary(meetingId, meeting.title, queryResponderId, triggerMessage);
         if (handled) {
@@ -530,19 +480,12 @@ export class MeetingOrchestrationService {
       }
     }
 
-    const finalResponders = Array.from(
-      new Map(
-        [...presentAgents, ...exclusiveAssistantResponders].map((participant) => [participant.participantId, participant] as const),
-      ).values(),
-    );
+    const finalResponders = responderCandidates;
     if (finalResponders.length === 0) {
-      if (mentionSet.size > 0 && exclusiveAssistantParticipants.length > 0) {
-        await this.messageService.addSystemMessage(meetingId, '仅可 @ 自己的专属助理，或 @ 其他在场 Agent。');
-      }
       return;
     }
 
-    // 每次人类发言后，常规Agent按原策略响应；专属助理仅在主人明确 @ 时响应。
+    // 每次人类发言后，在场 Agent 按原策略响应。
     const responders = [...finalResponders].sort(() => 0.5 - Math.random());
     const responderTasks = responders.map((participant) => ({
       participant,

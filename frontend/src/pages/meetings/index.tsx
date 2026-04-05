@@ -66,9 +66,6 @@ const Meetings: React.FC = () => {
     meetingsLoading,
     stats,
     agents,
-    currentEmployee,
-    hasExclusiveAssistant,
-    currentExclusiveAssistantName,
     targetMeeting,
     meetingAgentStates,
     participantDisplayMap,
@@ -86,17 +83,7 @@ const Meetings: React.FC = () => {
     const unique = new Map<string, MentionCandidate>();
     (selectedMeeting.participants || []).forEach((participant) => {
       const key = `${participant.participantType}:${participant.participantId}`;
-      let name = participantDisplayMap.get(key) || participant.participantId;
-      if (participant.isExclusiveAssistant) {
-        const assistantName = participantDisplayMap.get(`agent:${participant.participantId}`);
-        if (assistantName) {
-          name = assistantName;
-        } else if (participant.assistantForEmployeeId) {
-          const ownerName =
-            participantDisplayMap.get(`employee:${participant.assistantForEmployeeId}`) || participant.assistantForEmployeeId;
-          name = `${ownerName}的专属助理`;
-        }
-      }
+      const name = participantDisplayMap.get(key) || participant.participantId;
       unique.set(key, {
         id: participant.participantId,
         type: participant.participantType,
@@ -224,8 +211,6 @@ const Meetings: React.FC = () => {
           meetings={meetings}
           stats={stats}
           selectedMeetingId={selectedMeeting?.id}
-          hasExclusiveAssistant={hasExclusiveAssistant}
-          currentEmployee={currentEmployee}
           onCreateClick={() => setIsCreateModalOpen(true)}
           onSelectMeeting={(meeting) => {
             setPinnedMeetingId(meeting.id);
@@ -297,7 +282,6 @@ const Meetings: React.FC = () => {
                 <MessageList
                   meeting={selectedMeeting}
                   currentUser={currentUser}
-                  currentEmployee={currentEmployee}
                   repliedMessageIds={repliedMessageIds}
                   getParticipantDisplayName={participantNameResolver}
                   onPauseMessageResponse={(messageId) => {
@@ -332,8 +316,7 @@ const Meetings: React.FC = () => {
                     setNewMessage={setNewMessage}
                     isComposing={isComposing}
                     setIsComposing={setIsComposing}
-                    hasExclusiveAssistant={hasExclusiveAssistant}
-                    currentEmployee={currentEmployee}
+                    currentUserId={currentUser?.id}
                     mentionHook={mentionHook}
                     phraseHook={phraseHook}
                     historyHook={historyHook}
@@ -402,8 +385,6 @@ const Meetings: React.FC = () => {
         <CreateMeetingModal
           agents={agents.filter((agent) => agent.isActive) || []}
           currentUser={currentUser}
-          hasExclusiveAssistant={hasExclusiveAssistant}
-          exclusiveAssistantName={currentExclusiveAssistantName}
           onClose={() => setIsCreateModalOpen(false)}
           onCreate={mutations.createMeeting}
           isLoading={mutations.isCreatingMeeting}

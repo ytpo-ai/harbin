@@ -8,8 +8,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   setNewMessage,
   isComposing,
   setIsComposing,
-  hasExclusiveAssistant,
-  currentEmployee,
+  currentUserId,
   mentionHook,
   phraseHook,
   historyHook,
@@ -17,22 +16,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
   isSendingMessage,
   onSendMessage,
 }) => {
-  const assistantAgentId = currentEmployee?.exclusiveAssistantAgentId || currentEmployee?.aiProxyAgentId;
-  const isAssistantInMeeting = Boolean(
-    assistantAgentId &&
+  const canSpeak = Boolean(
+    currentUserId &&
       (meeting.participants || []).some(
-        (participant) => participant.participantType === 'agent' && participant.participantId === assistantAgentId,
+        (participant) =>
+          participant.participantType === 'employee' && participant.participantId === currentUserId && participant.isPresent,
       ),
   );
-  const canSendAsAssistant = hasExclusiveAssistant && isAssistantInMeeting;
 
-  if (!canSendAsAssistant) {
+  if (!canSpeak) {
     return (
       <div className="bg-white border-t border-gray-200 px-6 py-4 text-center">
-        {!hasExclusiveAssistant && <p className="mb-2 text-sm text-amber-700">未绑定专属助理，无法发言。</p>}
-        {hasExclusiveAssistant && !isAssistantInMeeting && (
-          <p className="text-sm text-amber-700">你的专属助理不在当前会议中，暂不可发言。</p>
-        )}
+        <p className="text-sm text-amber-700">你当前不在会议中，暂不可发言。</p>
       </div>
     );
   }
@@ -45,7 +40,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   return (
     <div className="bg-white border-t border-gray-200 px-6 py-4">
       <div className="relative">
-        <p className="mb-2 text-xs text-gray-500">你发送的消息将以专属助理身份发言。</p>
         <div className="flex gap-2">
           <textarea
             ref={inputRef}
@@ -176,7 +170,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             }}
             placeholder="输入消息（输入 @ 点名；输入 [ 或 【 选择短语命令）..."
             rows={2}
-            disabled={!hasExclusiveAssistant}
+            disabled={!canSpeak}
             className="flex-1 resize-none border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
           <button
@@ -187,7 +181,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 phraseHook.resetPhrase();
               }
             }}
-            disabled={isSendingMessage || !newMessage.trim() || !hasExclusiveAssistant}
+            disabled={isSendingMessage || !newMessage.trim() || !canSpeak}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PaperAirplaneIcon className="h-5 w-5" />

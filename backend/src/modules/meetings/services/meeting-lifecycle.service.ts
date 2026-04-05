@@ -8,7 +8,6 @@ import { MessagesService } from '../../messages/messages.service';
 import { CreateMeetingDto, MeetingSpeakingMode, MeetingEvent, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingAgentStateService } from './meeting-agent-state.service';
-import { MeetingParticipantHelperService } from './meeting-participant-helper.service';
 
 @Injectable()
 export class MeetingLifecycleService {
@@ -24,7 +23,6 @@ export class MeetingLifecycleService {
     private readonly messagesService: MessagesService,
     private readonly eventService: MeetingEventService,
     private readonly agentStateService: MeetingAgentStateService,
-    private readonly participantHelperService: MeetingParticipantHelperService,
   ) {}
 
   setOnAddSystemMessageHook(hook: (meetingId: string, content: string) => Promise<void>): void {
@@ -92,15 +90,7 @@ export class MeetingLifecycleService {
   }
 
   async createMeeting(dto: CreateMeetingDto): Promise<Meeting> {
-    let effectiveHostId = dto.hostId;
-    let effectiveHostType: 'employee' | 'agent' = dto.hostType;
     const participants = [...(dto.participantIds || [])];
-
-    if (dto.hostType === 'employee') {
-      const assistantAgentId = await this.participantHelperService.getRequiredExclusiveAssistantAgentId(dto.hostId);
-      effectiveHostId = assistantAgentId;
-      effectiveHostType = 'agent';
-    }
 
     const dedupedParticipants = Array.from(
       new Map(
@@ -108,21 +98,9 @@ export class MeetingLifecycleService {
       ).values(),
     );
 
-    const uniqueHumanParticipantIds = Array.from(
-      new Set(
-        dedupedParticipants
-          .filter((p) => p.type === 'employee')
-          .map((p) => p.id),
-      ),
-    );
-
-    for (const employeeId of uniqueHumanParticipantIds) {
-      await this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
-    }
-    
     // 过滤掉主持人自己
     const filteredParticipants = dedupedParticipants.filter(
-      (p) => !(p.id === effectiveHostId && p.type === effectiveHostType),
+      (p) => !(p.id === dto.hostId && p.type === dto.hostType),
     );
 
     const meetingProjectId = String(dto.projectId || '').trim() || undefined;
@@ -132,13 +110,13 @@ export class MeetingLifecycleService {
       description: dto.description,
       type: dto.type,
       status: MeetingStatus.PENDING,
-      hostId: effectiveHostId,
-      hostType: effectiveHostType,
+      hostId: dto.hostId,
+      hostType: dto.hostType,
       ...(meetingProjectId ? { projectId: meetingProjectId } : {}),
       participants: [
         {
-          participantId: effectiveHostId,
-          participantType: effectiveHostType,
+          participantId: dto.hostId,
+          participantType: dto.hostType,
           role: ParticipantRole.HOST,
           isPresent: false,
           hasSpoken: false,
@@ -169,22 +147,6 @@ export class MeetingLifecycleService {
       messageCount: 0,
     });
 
-    const employeeIdsRequiringAssistant = new Set<string>();
-    if (dto.hostType === 'employee') {
-      employeeIdsRequiringAssistant.add(dto.hostId);
-    }
-
-    for (const participant of filteredParticipants) {
-      if (participant.type === 'employee') {
-        employeeIdsRequiringAssistant.add(participant.id);
-      }
-    }
-
-    for (const employeeId of employeeIdsRequiringAssistant) {
-      const assistantAgentId = await this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
-      this.participantHelperService.upsertExclusiveAssistantParticipant(meeting, employeeId, assistantAgentId, false);
-    }
-
     const saved = await meeting.save();
     this.logger.log(`Created ${dto.type} meeting: ${saved.title} (${saved.id})`);
     
@@ -205,10 +167,6 @@ export class MeetingLifecycleService {
 
     if (meeting.status === MeetingStatus.ENDED || meeting.status === MeetingStatus.ARCHIVED) {
       throw new ConflictException('Meeting has already ended');
-    }
-
-    if (meeting.hostType === 'employee') {
-      await this.participantHelperService.getRequiredExclusiveAssistantAgentId(meeting.hostId);
     }
 
     meeting.status = MeetingStatus.ACTIVE;

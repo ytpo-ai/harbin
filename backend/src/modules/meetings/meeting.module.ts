@@ -13,7 +13,6 @@ import { MeetingParticipantService } from './services/meeting-participant.servic
 import { MeetingMessageService } from './services/meeting-message.service';
 import { MeetingOrchestrationService } from './services/meeting-orchestration.service';
 import { MeetingSummaryService } from './services/meeting-summary.service';
-import { MeetingParticipantHelperService } from './services/meeting-participant-helper.service';
 import { MeetingMessageCenterEventService } from './services/meeting-message-center-event.service';
 
 @Module({
@@ -33,7 +32,6 @@ import { MeetingMessageCenterEventService } from './services/meeting-message-cen
     MeetingMessageService,
     MeetingOrchestrationService,
     MeetingSummaryService,
-    MeetingParticipantHelperService,
     MeetingMessageCenterEventService,
   ],
   exports: [MeetingService],

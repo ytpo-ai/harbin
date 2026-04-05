@@ -5,7 +5,7 @@
 ### 1.1 目标
 
 - 支持员工和 Agent 同时参与会议，实现实时语音/文字协作
-- 人类员工可由专属助理（Agent）代理发言，实现 AI 辅助会议参与
+- 人类员工直接以 employee 身份发言，消息链路不再经过专属助理代理改写
 - Agent 能够自主理解会议上下文并参与讨论，提供智能辅助
 - 支持会议全生命周期管理（创建、加入、发言、离开、结束、归档）
 
@@ -69,8 +69,8 @@ enum ParticipantRole {
 | `messageCount` | number | 发言次数 |
 | `joinedAt` | Date | 加入时间 |
 | `leftAt` | Date | 离开时间 |
-| `isExclusiveAssistant` | boolean | 是否为专属助理 |
-| `assistantForEmployeeId` | string | 所属员工ID |
+| `isExclusiveAssistant` | boolean | 历史兼容字段（新数据不再写入） |
+| `assistantForEmployeeId` | string | 历史兼容字段（新数据不再写入） |
 
 #### MeetingMessage
 
@@ -82,7 +82,7 @@ enum ParticipantRole {
 | `content` | string | 消息内容 |
 | `type` | string | 消息类型（opinion/question/agreement/disagreement/suggestion/conclusion/introduction/action_item） |
 | `timestamp` | Date | 时间戳 |
-| `metadata` | Object | 扩展字段（@提及、回复、情感分析、AI代理标识等） |
+| `metadata` | Object | 扩展字段（@提及、回复、情感分析等；代理相关字段仅保留历史兼容） |
 
 ### 1.3 核心逻辑
 
@@ -96,11 +96,11 @@ enum ParticipantRole {
 | ENDED | 归档(Archive)、删除(Delete) |
 | ARCHIVED | 删除(Delete) |
 
-#### 1.3.2 专属助理机制
+#### 1.3.2 员工直接发言机制
 
-- 人类员工必须绑定专属助理（exclusiveAssistantAgentId 或 aiProxyAgentId）才能创建/加入会议
-- 员工发言时，由专属助理代理发送消息（`isAIProxy: true`）
-- 专属助理仅在员工明确 @ 时响应
+- 员工创建/加入/发言均使用 employee 身份，不再依赖专属助理绑定状态
+- 新消息存储为 `senderType = 'employee'`、`senderId = employeeId`
+- 历史代理消息（`metadata.isAIProxy/proxyForEmployeeId`）仅用于前端兼容识别
 
 #### 1.3.3 Agent 响应机制
 
@@ -108,12 +108,12 @@ enum ParticipantRole {
 - 通过 Redis 维护 Agent 状态（thinking/idle），避免重复响应
 - 响应去重：15秒内相同触发消息不重复生成响应
 - 支持 @ 提及特定 Agent
-- 专属助理仅响应其主人的 @ 提及
+- 所有在场 Agent 统一走响应编排，不再区分专属助理特殊规则
 
 #### 1.3.4 意图路由
 
 - **模型查询意图**：检测到"最新模型"/"模型列表"时，路由至模型管理 Agent
-- **操作日志意图**：检测到"操作日志"相关查询时，专属助理执行日志检索
+- **操作日志意图**：检测到"操作日志"相关查询时，由命中的在场 Agent 执行日志检索
 - **Agent 列表意图**：检测到"有哪些 Agent/Agent 列表"时，优先走 `agents_mcp_list` 轻量查询通道（chat query），避免创建任务执行生命周期
 - **冲突裁剪规则**：当消息命中“记录/追加备忘录”类显式动作时，屏蔽模型查询意图提示，优先执行当前用户动作
 - **识别策略收敛**：意图识别改为“方括号显式短语命中优先”（`[短语]` / `【短语】`），删除弱信号宽匹配分支，降低误触发
@@ -137,7 +137,7 @@ enum ParticipantRole {
 #### 1.3.6 消息发送交互保护
 
 - 输入框在 IME 组合输入期间（如拼音）按 Enter 不触发发送，避免误发送。
-- 人类消息（由专属助理代理）在未收到 Agent 回复前支持“暂停回复”。
+- 人类消息（employee 直接发送）在未收到 Agent 回复前支持“暂停回复”。
 - 处于“已暂停回复”的消息支持撤回；撤回后消息会从会议消息流移除。
 - 若消息已产生回复（`metadata.relatedMessageId` 命中），则不可再暂停或撤回。
 
@@ -205,6 +205,7 @@ enum ParticipantRole {
 | `MEETING_CONTEXT_OPTIMIZE_PLAN.md` | 会议上下文去噪与 Prompt Registry 能力建设计划 |
 | `MEETING_ASSISTANT_SUMMARY_EVENT_PLAN.md` | 会议总结改为会议助手事件驱动生成计划 |
 | `MEETINGS_PAGE_SPLIT_REFACTOR_PLAN.md` | Meetings 页面拆分重构计划 |
+| `MEETING_REMOVE_EMPLOYEE_PROXY_PLAN.md` | 会议移除 Employee 代理发言机制计划 |
 
 ### 开发总结 (docs/development/)
 

@@ -8,7 +8,6 @@ import { MeetingMessageDto } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingAgentStateService } from './meeting-agent-state.service';
 import { MeetingLifecycleService } from './meeting-lifecycle.service';
-import { MeetingParticipantService } from './meeting-participant.service';
 
 @Injectable()
 export class MeetingMessageService {
@@ -20,7 +19,6 @@ export class MeetingMessageService {
     private readonly eventService: MeetingEventService,
     private readonly agentStateService: MeetingAgentStateService,
     private readonly lifecycleService: MeetingLifecycleService,
-    private readonly participantService: MeetingParticipantService,
   ) {}
 
   setOnHumanMessageSentHook(hook: (meetingId: string, message: MeetingMessage) => Promise<void>): void {
@@ -44,29 +42,19 @@ export class MeetingMessageService {
       throw new ConflictException('Meeting is not active');
     }
 
-    const isHumanProxyMessage = dto.senderType === 'employee';
-    let effectiveSenderId = dto.senderId;
-    let effectiveSenderType: 'employee' | 'agent' | 'system' = dto.senderType;
-
-    if (isHumanProxyMessage) {
-      const assistantAgentId = await this.participantService.getRequiredExclusiveAssistantAgentId(dto.senderId);
-      effectiveSenderId = assistantAgentId;
-      effectiveSenderType = 'agent';
-    }
-
-    const isSystemMessage = effectiveSenderType === 'system';
+    const isSystemMessage = dto.senderType === 'system';
 
     // Check if sender is host
     const isHost =
       !isSystemMessage &&
-      meeting.hostId === effectiveSenderId &&
-      (meeting.hostType as 'employee' | 'agent') === effectiveSenderType;
+      meeting.hostId === dto.senderId &&
+      (meeting.hostType as 'employee' | 'agent') === dto.senderType;
 
     // Find participant in the meeting
     const participant = isSystemMessage
       ? undefined
       : meeting.participants.find(
-          p => p.participantId === effectiveSenderId && p.participantType === effectiveSenderType,
+          p => p.participantId === dto.senderId && p.participantType === dto.senderType,
         );
 
     if (participant && !participant.isPresent) {
@@ -80,19 +68,12 @@ export class MeetingMessageService {
 
     const message: MeetingMessage = {
       id: uuidv4(),
-      senderId: effectiveSenderId,
-      senderType: effectiveSenderType,
+      senderId: dto.senderId,
+      senderType: dto.senderType,
       content: dto.content,
       type: dto.type || 'opinion',
       timestamp: new Date(),
-      metadata: {
-        ...(dto.metadata || {}),
-        ...(isHumanProxyMessage ? {
-          isAIProxy: true,
-          proxyForEmployeeId: dto.senderId,
-          pendingResponsePaused: false,
-        } : {}),
-      },
+      metadata: dto.metadata || {},
     };
 
     meeting.messages.push(message);
@@ -129,7 +110,7 @@ export class MeetingMessageService {
     });
 
     // 触发Agent响应（仅在人类发言后触发，避免Agent之间无限互相触发）
-    if (isHumanProxyMessage) {
+    if (dto.senderType === 'employee') {
       await this.triggerAgentResponses(meetingId, message);
     }
 
@@ -216,8 +197,7 @@ export class MeetingMessageService {
 
 
   private assertMessageController(message: MeetingDocument['messages'][number], employeeId: string): void {
-    const controllerId = (message.metadata || {}).proxyForEmployeeId;
-    if (!controllerId || controllerId !== employeeId) {
+    if (message.senderType !== 'employee' || message.senderId !== employeeId) {
       throw new ConflictException('Only the original sender can control this message');
     }
   }

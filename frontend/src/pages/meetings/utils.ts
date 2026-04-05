@@ -119,21 +119,9 @@ export const getParticipantDisplayName = (
 ) => {
   const resolvedParticipant =
     participant || selectedMeeting?.participants?.find((item) => item.participantId === participantId && item.participantType === participantType);
-
-  if (resolvedParticipant?.isExclusiveAssistant) {
-    const assistantName = participantDisplayMap.get(`agent:${participantId}`);
-    if (assistantName) {
-      return assistantName;
-    }
-
-    if (resolvedParticipant.assistantForEmployeeId) {
-      const ownerName =
-        participantDisplayMap.get(`employee:${resolvedParticipant.assistantForEmployeeId}`) ||
-        resolvedParticipant.assistantForEmployeeId;
-      return `${ownerName}的专属助理`;
-    }
+  if (!resolvedParticipant) {
+    return participantDisplayMap.get(`${participantType}:${participantId}`) || participantId;
   }
-
   return participantDisplayMap.get(`${participantType}:${participantId}`) || participantId;
 };
 

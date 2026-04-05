@@ -22,7 +22,7 @@ export const useMessageHistory = ({ selectedMeeting, currentUserId }: Params) =>
         }
 
         const metadata = message.metadata;
-        return message.senderType === 'agent' && metadata?.proxyForEmployeeId === currentUserId;
+        return message.senderType === 'agent' && metadata?.isAIProxy && metadata?.proxyForEmployeeId === currentUserId;
       })
       .map((message) => message.content?.trim() || '')
       .filter((content) => Boolean(content));

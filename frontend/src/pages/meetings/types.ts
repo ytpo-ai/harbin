@@ -1,6 +1,5 @@
 import React from 'react';
 import { Agent } from '../../types';
-import { Employee } from '../../services/employeeService';
 import { CreateMeetingDto, Meeting, MeetingMessage, MeetingSpeakingMode, MeetingStatus, MeetingType } from '../../services/meetingService';
 
 export interface MeetingRealtimeEvent {
@@ -86,8 +85,6 @@ export interface MeetingListSidebarProps {
     totalMessages: number;
   };
   selectedMeetingId?: string;
-  hasExclusiveAssistant: boolean;
-  currentEmployee: Employee | null;
   onCreateClick: () => void;
   onSelectMeeting: (meeting: Meeting) => void;
   getMeetingTypeInfo: (type: MeetingType) => MeetingTypeInfo;
@@ -126,7 +123,6 @@ export interface ParticipantAvatarRowProps {
 export interface MessageListProps {
   meeting: Meeting;
   currentUser: any;
-  currentEmployee: Employee | null;
   repliedMessageIds: Set<string>;
   getParticipantDisplayName: (participantId: string, participantType: 'employee' | 'agent') => string;
   onPauseMessageResponse: (messageId: string) => void;
@@ -180,8 +176,7 @@ export interface ChatInputProps {
   setNewMessage: React.Dispatch<React.SetStateAction<string>>;
   isComposing: boolean;
   setIsComposing: React.Dispatch<React.SetStateAction<boolean>>;
-  hasExclusiveAssistant: boolean;
-  currentEmployee: Employee | null;
+  currentUserId?: string;
   mentionHook: MentionAutocompleteHook;
   phraseHook: PhraseAutocompleteHook;
   historyHook: MessageHistoryHook;
@@ -218,8 +213,6 @@ export interface OperationsSidebarProps {
 export interface CreateMeetingModalProps {
   agents: Agent[];
   currentUser: any;
-  hasExclusiveAssistant: boolean;
-  exclusiveAssistantName: string;
   onClose: () => void;
   onCreate: (data: CreateMeetingDto) => void;
   isLoading: boolean;

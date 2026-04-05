@@ -5,10 +5,9 @@ import { AgentClientService } from '../../agents-client/agent-client.service';
 import { EmployeeService } from '../../employees/employee.service';
 import { Agent } from '../../../shared/types';
 import { Meeting, MeetingDocument, MeetingStatus, ParticipantRole } from '../../../shared/schemas/meeting.schema';
-import { MeetingParticipantRecord, ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
+import { ParticipantContextProfile, ParticipantIdentity } from '../meeting.types';
 import { MeetingEventService } from './meeting-event.service';
 import { MeetingLifecycleService } from './meeting-lifecycle.service';
-import { MeetingParticipantHelperService } from './meeting-participant-helper.service';
 
 @Injectable()
 export class MeetingParticipantService {
@@ -23,7 +22,6 @@ export class MeetingParticipantService {
     private readonly employeeService: EmployeeService,
     private readonly eventService: MeetingEventService,
     private readonly lifecycleService: MeetingLifecycleService,
-    private readonly participantHelperService: MeetingParticipantHelperService,
   ) {}
 
   setOnAddSystemMessageHook(hook: (meetingId: string, content: string) => Promise<void>): void {
@@ -44,23 +42,8 @@ export class MeetingParticipantService {
     await this.onAgentJoinedActiveHook(meetingId, participant);
   }
 
-  async getRequiredExclusiveAssistantAgentId(employeeId: string): Promise<string> {
-    return this.participantHelperService.getRequiredExclusiveAssistantAgentId(employeeId);
-  }
-
-
-  upsertExclusiveAssistantParticipant(
-    meeting: MeetingDocument,
-    ownerEmployeeId: string,
-    assistantAgentId: string,
-    isPresent: boolean,
-  ): void {
-    this.participantHelperService.upsertExclusiveAssistantParticipant(meeting, ownerEmployeeId, assistantAgentId, isPresent);
-  }
-
-
   async buildParticipantContextProfiles(meeting: Meeting): Promise<ParticipantContextProfile[]> {
-    const participants = (meeting.participants || []) as MeetingParticipantRecord[];
+    const participants = meeting.participants || [];
 
     const employeeIds = Array.from(
       new Set(
@@ -76,19 +59,11 @@ export class MeetingParticipantService {
           .map((p) => p.participantId),
       ),
     );
-    const assistantOwnerIds = Array.from(
-      new Set(
-        participants
-          .map((p) => (p as MeetingParticipantRecord).assistantForEmployeeId)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    );
-
     const employeeLookup = new Map<string, string>();
     const agentLookup = new Map<string, string>();
 
     await Promise.all(
-      Array.from(new Set([...employeeIds, ...assistantOwnerIds])).map(async (employeeId) => {
+      employeeIds.map(async (employeeId) => {
         try {
           const employee = await this.employeeService.getEmployee(employeeId);
           const displayName = employee?.name || employee?.email || employeeId;
@@ -121,26 +96,17 @@ export class MeetingParticipantService {
         continue;
       }
 
-      const record = participant as MeetingParticipantRecord;
       const baseName =
         participant.participantType === 'employee'
           ? employeeLookup.get(participant.participantId) || '参会员工'
           : agentLookup.get(participant.participantId) || '参会Agent';
 
-      let displayName = baseName;
-      if (record.isExclusiveAssistant && record.assistantForEmployeeId) {
-        const ownerName = employeeLookup.get(record.assistantForEmployeeId) || record.assistantForEmployeeId;
-        displayName = `${ownerName}的专属助理(${baseName})`;
-      }
-
       uniqueProfiles.set(key, {
         id: participant.participantId,
         type: participant.participantType,
-        name: displayName,
+        name: baseName,
         role: participant.role,
         isPresent: Boolean(participant.isPresent),
-        isExclusiveAssistant: Boolean(record.isExclusiveAssistant),
-        assistantForEmployeeId: record.assistantForEmployeeId,
       });
     }
 
@@ -188,7 +154,6 @@ export class MeetingParticipantService {
   async resolveParticipantDisplayName(
     participantId: string,
     participantType: 'employee' | 'agent',
-    meeting?: MeetingDocument,
   ): Promise<string> {
     if (participantType === 'employee') {
       try {
@@ -201,19 +166,7 @@ export class MeetingParticipantService {
 
     try {
       const agent = await this.agentClientService.getAgent(participantId);
-      const agentName = agent?.name || '参会Agent';
-
-      const participant = meeting?.participants.find(
-        (p) => p.participantId === participantId && p.participantType === 'agent',
-      ) as MeetingParticipantRecord | undefined;
-
-      if (participant?.isExclusiveAssistant && participant.assistantForEmployeeId) {
-        const owner = await this.employeeService.getEmployee(participant.assistantForEmployeeId);
-        const ownerName = owner?.name || owner?.email || '绑定员工';
-        return `${ownerName}的专属助理(${agentName})`;
-      }
-
-      return agentName;
+      return agent?.name || '参会Agent';
     } catch {
       return '参会Agent';
     }
@@ -319,11 +272,6 @@ export class MeetingParticipantService {
       throw new ConflictException('Meeting has already ended');
     }
 
-    let participantAssistantId: string | null = null;
-    if (participant.type === 'employee') {
-      participantAssistantId = await this.getRequiredExclusiveAssistantAgentId(participant.id);
-    }
-
     let existingParticipant = meeting.participants.find(
       p => p.participantId === participant.id && p.participantType === participant.type
     );
@@ -347,10 +295,6 @@ export class MeetingParticipantService {
     meeting.invitedParticipants = meeting.invitedParticipants.filter(
       ip => !(ip.participantId === participant.id && ip.participantType === participant.type)
     );
-
-    if (participant.type === 'employee' && participantAssistantId) {
-      this.upsertExclusiveAssistantParticipant(meeting, participant.id, participantAssistantId, true);
-    }
 
     await meeting.save();
     await this.addSystemMessage(meetingId, `${participant.name} 加入了会议。`);
@@ -421,10 +365,6 @@ export class MeetingParticipantService {
       throw new ConflictException('Already a participant');
     }
 
-    if (participant.type === 'employee') {
-      await this.getRequiredExclusiveAssistantAgentId(participant.id);
-    }
-
     // Add agent directly to participants (for AI agents)
     if (participant.type === 'agent') {
       meeting.participants.push({
@@ -491,11 +431,6 @@ export class MeetingParticipantService {
     const isAgent = participant.type === 'agent';
     const isPresent = isAgent && meeting.status === MeetingStatus.ACTIVE;
 
-    let participantAssistantId: string | null = null;
-    if (!isAgent) {
-      participantAssistantId = await this.getRequiredExclusiveAssistantAgentId(participant.id);
-    }
-
     meeting.participants.push({
       participantId: participant.id,
       participantType: participant.type,
@@ -510,12 +445,8 @@ export class MeetingParticipantService {
       (p) => !(p.participantId === participant.id && p.participantType === participant.type),
     );
 
-    if (!isAgent && participantAssistantId) {
-      this.upsertExclusiveAssistantParticipant(meeting, participant.id, participantAssistantId, false);
-    }
-
     await meeting.save();
-    const addedParticipantName = await this.resolveParticipantDisplayName(participant.id, participant.type, meeting);
+    const addedParticipantName = await this.resolveParticipantDisplayName(participant.id, participant.type);
     await this.addSystemMessage(meetingId, `${addedParticipantName} 被添加为参会人。`);
     await this.appendParticipantContextSystemMessage(meeting, 'updated');
     await this.maybeRenameExpandedOneToOneMeeting(meeting, participant);
@@ -548,7 +479,7 @@ export class MeetingParticipantService {
       (p) => p.participantId === participantId && p.participantType === participantType,
     );
     const removedParticipantName = participantToRemove
-      ? await this.resolveParticipantDisplayName(participantId, participantType, meeting)
+      ? await this.resolveParticipantDisplayName(participantId, participantType)
       : participantType === 'agent'
         ? '参会Agent'
         : '参会成员';
@@ -557,12 +488,6 @@ export class MeetingParticipantService {
     meeting.participants = meeting.participants.filter(
       (p) => !(p.participantId === participantId && p.participantType === participantType),
     );
-
-    if (participantType === 'employee') {
-      meeting.participants = meeting.participants.filter(
-        (p) => !((p as MeetingParticipantRecord).isExclusiveAssistant && (p as MeetingParticipantRecord).assistantForEmployeeId === participantId),
-      );
-    }
 
     meeting.invitedParticipants = (meeting.invitedParticipants || []).filter(
       (p) => !(p.participantId === participantId && p.participantType === participantType),

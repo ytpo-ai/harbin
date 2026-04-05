@@ -7,8 +7,6 @@ import { CreateMeetingModalProps } from '../types';
 const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
   agents,
   currentUser,
-  hasExclusiveAssistant,
-  exclusiveAssistantName,
   onClose,
   onCreate,
   isLoading,
@@ -39,9 +37,6 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!hasExclusiveAssistant) {
-      return;
-    }
     if (formData.title && formData.hostId) {
       onCreate({
         ...formData,
@@ -63,12 +58,6 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!hasExclusiveAssistant && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                当前账号未绑定专属助理，暂不可发起会议。
-              </div>
-            )}
-
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 会议标题 <span className="text-red-500">*</span>
@@ -127,8 +116,8 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
             </div>
 
             <div className="rounded-md border border-primary-200 bg-primary-50 px-3 py-2">
-              <p className="text-sm font-medium text-primary-900">主持人将自动设置为你的专属助理</p>
-              <p className="mt-1 text-xs text-primary-700">当前主持人：{exclusiveAssistantName || '专属助理'}</p>
+              <p className="text-sm font-medium text-primary-900">主持人将设置为你本人（员工身份）</p>
+              <p className="mt-1 text-xs text-primary-700">当前主持人：{currentUser?.name || currentUser?.email || '当前账号'}</p>
             </div>
 
             <div>
@@ -205,7 +194,7 @@ const CreateMeetingModal: React.FC<CreateMeetingModalProps> = ({
               </button>
               <button
                 type="submit"
-                disabled={isLoading || !formData.title || !currentUser?.id || !hasExclusiveAssistant}
+                disabled={isLoading || !formData.title || !currentUser?.id}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
               >
                 {isLoading ? '创建中...' : '创建会议'}
