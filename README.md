@@ -63,6 +63,9 @@ redis-server
 # 方式一：使用启动脚本（推荐）
 ./start.sh development
 
+# 停止前后端服务
+./stop.sh development
+
 # 重启前后端服务
 ./reload.sh development
 
@@ -150,6 +153,9 @@ API 已按微服务拆分，详细接口请查看：
 ```bash
 # 开发环境启动（使用脚本，推荐）
 ./start.sh development
+
+# 停止前后端服务
+./stop.sh development
 
 # 一键重启前后端服务
 ./reload.sh development
