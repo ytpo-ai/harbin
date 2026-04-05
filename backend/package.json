@@ -30,6 +30,7 @@
     "start:channel": "nest start channel --watch",
     "dev:all": "npm run start:gateway -- --watch",
     "seed:manual": "ts-node -r tsconfig-paths/register scripts/seed/seed-runner.ts",
+    "seed:initial-admin": "ts-node -r tsconfig-paths/register scripts/seed/initial-admin-user-seed.ts",
     "seed:system-schedules": "npm run seed:manual -- --only=system-schedules",
     "seed:docs-heat": "npm run seed:manual -- --only=docs-heat",
     "seed:meeting-monitor": "npm run seed:manual -- --only=meeting-monitor",

@@ -177,6 +177,10 @@ npm run build
 
 # 运行测试
 npm run test
+
+# 创建初始管理员账号（如首次启动）
+cd backend
+pnpm run seed:initial-admin -- --email=admin@example.com --name="System Admin" --password="StrongPass123"
 ```
 
 ### 环境变量配置
