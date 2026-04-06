@@ -36,6 +36,7 @@
 - `dry-run` 场景下：
   - `mcp-profiles`、`builtin-tools` 会走脚本层 dry-run。
   - 依赖 Nest 写入的任务输出 skip 日志，不执行写操作。
+  - `hr-agent-role-master` 输出 skip 日志（该任务依赖 Mongo 读写上下文）。
 
 ## NPM 命令入口
 

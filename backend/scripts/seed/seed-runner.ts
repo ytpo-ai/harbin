@@ -76,12 +76,11 @@ async function run(): Promise<void> {
     console.log('[seed] --force enabled');
   }
 
-  const needsAgentsApp = selectedSeeds.some((seed) =>
-    ['model-management-agent', 'default-model-registry'].includes(seed),
-  );
-  const needsLegacyApp = selectedSeeds.some((seed) =>
-    ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed),
-  );
+  const needsAgentsApp =
+    !dryRun &&
+    selectedSeeds.some((seed) => ['model-management-agent', 'default-model-registry'].includes(seed));
+  const needsLegacyApp =
+    !dryRun && selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed));
 
   const {
     AgentsAppModule,
@@ -200,11 +199,15 @@ async function run(): Promise<void> {
       }
 
       if (seed === 'hr-agent-role-master') {
-        const { seedHrAgentRoleMasterBinding } = localRequire('./hr-agent-role-master-seed');
-        const result = await seedHrAgentRoleMasterBinding(mode, { dryRun });
-        console.log(
-          `[seed] hr-agent-role-master: role=${result.targetRoleCode}(${result.targetRoleId}), matched=${result.matchedAgents}, updated=${result.updatedAgents.length}, dryRun=${result.dryRun}`,
-        );
+        if (dryRun) {
+          console.log('[seed] hr-agent-role-master: dry-run skip (requires Mongo read/write)');
+        } else {
+          const { seedHrAgentRoleMasterBinding } = localRequire('./hr-agent-role-master-seed');
+          const result = await seedHrAgentRoleMasterBinding(mode, { dryRun });
+          console.log(
+            `[seed] hr-agent-role-master: role=${result.targetRoleCode}(${result.targetRoleId}), matched=${result.matchedAgents}, updated=${result.updatedAgents.length}, dryRun=${result.dryRun}`,
+          );
+        }
       }
 
       console.log(`[seed] done ${seed}`);
