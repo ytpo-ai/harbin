@@ -82,7 +82,8 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
       this.logger.warn(
         `[message-center] validation failed messageId=${envelope.messageId} error=${validated.error}`,
       );
-      await context.nack(validated.error || 'contract_validation_failed');
+      // 校验失败是永久性错误，不重试，直接进 DLQ
+      await context.nack(validated.error || 'contract_validation_failed', { noRetry: true });
       return;
     }
 

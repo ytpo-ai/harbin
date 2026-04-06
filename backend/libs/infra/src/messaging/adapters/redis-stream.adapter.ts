@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { createServiceLogger } from '@libs/common';
 import type { RedisService } from '../../redis.service';
 import type { MessageEnvelope } from '../message-envelope';
-import type { MessageHandler, PublishResult, SubscribeOptions, Subscription } from '../message-bus.port';
+import type { MessageHandler, NackOptions, PublishResult, SubscribeOptions, Subscription } from '../message-bus.port';
 import type { MessageAdapter } from '../message-adapter.port';
 import type { TopicConfig } from '../topic-registry';
 import { TopicRegistry } from '../topic-registry';
@@ -158,6 +158,7 @@ export class RedisStreamAdapter implements MessageAdapter {
     const retryCount = envelope.headers?.retryCount ?? 0;
     let nackCalled = false;
     let nackReason: string | undefined;
+    let nackNoRetry = false;
 
     try {
       await handler({
@@ -165,9 +166,10 @@ export class RedisStreamAdapter implements MessageAdapter {
         ack: async () => {
           await this.redis.xack(streamKey, group, [entryId]);
         },
-        nack: async (reason?: string) => {
+        nack: async (reason?: string, options?: NackOptions) => {
           nackCalled = true;
           nackReason = reason;
+          nackNoRetry = options?.noRetry === true;
         },
       });
 
@@ -185,13 +187,13 @@ export class RedisStreamAdapter implements MessageAdapter {
         fields,
         envelope,
         retryCount,
-        maxRetries,
+        nackNoRetry ? 0 : maxRetries,
         dlqKey,
         nackReason,
         config,
       );
     } catch (error) {
-      // handler 抛异常 → 等同 nack
+      // handler 抛异常 → 等同可重试 nack
       const msg = error instanceof Error ? error.message : String(error);
       await this.handleNack(
         streamKey,

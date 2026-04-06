@@ -45,7 +45,8 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     const shouldUpdateOutboxStatus = options?.updateOutboxStatus !== false;
     try {
       // [MESSAGE_BUS] 通过 messageBus 发布到 runtime.events topic（fire-and-forget / pub/sub）
-      if (this.useBusForEvents) {
+      // 当 options.channel 指定了自定义 channel 时，回退到直接 RedisService（replay 场景）
+      if (this.useBusForEvents && !options?.channel) {
         const result = await this.messageBus.publish('runtime.events', {
           payload: event,
           partitionKey: event.agentId,
@@ -54,7 +55,6 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
           throw new Error('MessageBus publish not accepted');
         }
       } else {
-        // 回退：直接使用 RedisService
         const channel = options?.channel || this.getChannel(event);
         if (!this.redisService.isReady()) {
           throw new Error('Redis pub/sub is not ready');

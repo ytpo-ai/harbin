@@ -8,6 +8,7 @@ export type {
   PublishResult,
   MessageContext,
   MessageHandler,
+  NackOptions,
   SubscribeOptions,
   Subscription,
 } from './message-bus.port';

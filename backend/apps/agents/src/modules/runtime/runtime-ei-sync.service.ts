@@ -24,10 +24,10 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   private readonly envId = String(process.env.RUNTIME_SYNC_ENV_ID || process.env.NODE_ENV || 'local').trim();
   private readonly nodeId = String(process.env.RUNTIME_SYNC_NODE_ID || 'agents-node').trim();
 
-  /** 双写开关：Redis Stream 链路（新） */
+  /** 双写开关：Redis Stream 链路（新），默认启用 */
   private readonly streamEnabled = process.env.RUNTIME_EI_SYNC_STREAM_ENABLED !== 'false';
-  /** 双写开关：HTTP 推送链路（旧） — 灰度期保留，观测稳定后设为 false */
-  private readonly httpEnabled = process.env.RUNTIME_EI_SYNC_HTTP_ENABLED !== 'false';
+  /** 双写开关：HTTP 推送链路（旧），默认关闭，需显式 =true 开启用于灰度对比或回退 */
+  private readonly httpEnabled = process.env.RUNTIME_EI_SYNC_HTTP_ENABLED === 'true';
 
   constructor(
     @InjectModel(AgentRun.name) private readonly runModel: Model<AgentRunDocument>,

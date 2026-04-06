@@ -66,15 +66,22 @@ export class EiRuntimeSyncConsumerService implements OnModuleInit, OnModuleDestr
       : undefined;
 
     try {
-      const result = await this.opencodeSyncService.syncOpenCodeRun(payload);
+      const result = await this.opencodeSyncService.syncOpenCodeRun(payload) as {
+        success: boolean;
+        duplicate?: boolean;
+        syncBatchId?: string;
+        runId?: string;
+        eventCount?: number;
+        status?: string;
+      };
 
       if (result.duplicate) {
         this.logger.debug(
-          `[ei_sync_consumer] duplicate — messageId=${envelope.messageId} runId=${runId} syncBatchId=${result.syncBatchId}`,
+          `[ei_sync_consumer] duplicate — messageId=${envelope.messageId} runId=${runId} syncBatchId=${result.syncBatchId || 'n/a'}`,
         );
       } else {
         this.logger.log(
-          `[ei_sync_consumer] synced — messageId=${envelope.messageId} runId=${runId} syncBatchId=${result.syncBatchId} eventCount=${result.eventCount}`,
+          `[ei_sync_consumer] synced — messageId=${envelope.messageId} runId=${runId} syncBatchId=${result.syncBatchId || 'n/a'} eventCount=${result.eventCount ?? 0}`,
         );
       }
 

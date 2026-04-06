@@ -18,12 +18,17 @@ export interface PublishResult {
 
 // ── Subscribe ────────────────────────────────────────────────────────────────
 
+export interface NackOptions {
+  /** true = 跳过重试，直接进 DLQ（用于永久性错误，如校验失败） */
+  noRetry?: boolean;
+}
+
 export interface MessageContext<T = unknown> {
   envelope: MessageEnvelope<T>;
   /** 确认消费成功（reliable 模式有效） */
   ack(): Promise<void>;
   /** 拒绝消费，触发重试或进入 DLQ（reliable 模式有效） */
-  nack(reason?: string): Promise<void>;
+  nack(reason?: string, options?: NackOptions): Promise<void>;
 }
 
 export interface MessageHandler<T = unknown> {
