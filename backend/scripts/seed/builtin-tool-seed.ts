@@ -3,9 +3,6 @@ import {
   BUILTIN_TOOLS,
   IMPLEMENTED_TOOL_IDS,
 } from '../../apps/agents/src/modules/tools/builtin-tool-catalog';
-import {
-  VIRTUAL_TOOL_IDS,
-} from '../../apps/agents/src/modules/tools/builtin-tool-definitions';
 import { bootstrapEnv, getMongoUri } from '../shared/env-loader';
 
 type SeedMode = 'sync' | 'append';
@@ -27,6 +24,7 @@ const TOOL_IDS_TO_PURGE_ON_SYNC = [
   'builtin.data-analysis.internal.content-analysis.extract',
   'builtin.web-retrieval.internal.web-fetch.fetch',
   'builtin.web-retrieval.internal.web-search.exa',
+  'builtin.sys-mg.internal.content.extract',
   'builtin.sys-mg.internal.agent-master.create-agent',
   'builtin.sys-mg.internal.agent-master.list-agents',
   'builtin.sys-mg.internal.agent.create',
@@ -86,6 +84,13 @@ const TOOL_IDS_TO_PURGE_ON_SYNC = [
   'builtin.engineering.commit.list',
   'builtin.engineering.docs.read',
   'builtin.engineering.repo.read',
+  'builtin.engineering.internal.commit.list',
+  'builtin.engineering.internal.docs.read',
+  'builtin.engineering.internal.docs.write',
+  'builtin.engineering.internal.repo.read',
+  'builtin.engineering.internal.repo.write',
+  'builtin.engineering.mcp.docs-heat.run',
+  'builtin.engineering.mcp.statistics.run',
   'builtin.engineering.docs-heat.run',
   'builtin.engineering.statistics.run',
   'code-docs-mcp',
@@ -510,17 +515,13 @@ export async function seedBuiltinTools(
   try {
     if (mode === 'sync') {
       if (dryRun) {
-        const virtualCount = await ToolModel.countDocuments({
-          id: { $in: VIRTUAL_TOOL_IDS },
-        }).exec();
         const deprecatedCount = await ToolModel.countDocuments({
           id: { $in: TOOL_IDS_TO_PURGE_ON_SYNC },
         }).exec();
         console.log(
-          `[seed:builtin-tools] dry-run stale tools: virtual=${virtualCount}, deprecated=${deprecatedCount}`,
+          `[seed:builtin-tools] dry-run stale tools: deprecated=${deprecatedCount}`,
         );
       } else {
-        await ToolModel.deleteMany({ id: { $in: VIRTUAL_TOOL_IDS } }).exec();
         await ToolModel.deleteMany({ id: { $in: TOOL_IDS_TO_PURGE_ON_SYNC } }).exec();
       }
     }

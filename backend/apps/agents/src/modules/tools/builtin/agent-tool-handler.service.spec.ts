@@ -1,4 +1,4 @@
-import { AgentMasterToolHandler } from './agent-master-tool-handler.service';
+import { AgentMasterToolHandler } from './agent-tool-handler.service';
 
 describe('AgentMasterToolHandler', () => {
   it('requires name on createAgentByMcp', async () => {

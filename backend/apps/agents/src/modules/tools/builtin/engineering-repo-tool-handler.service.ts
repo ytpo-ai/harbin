@@ -3,8 +3,8 @@ import { access, appendFile, mkdir, readdir, rm, stat, writeFile } from 'fs/prom
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { codeDocsReader } from '../local-repo-docs-reader.util';
-import { codeUpdatesReader } from '../local-repo-updates-reader.util';
+import { codeDocsReader } from './engineering-docs-reader.util';
+import { codeUpdatesReader } from './engineering-commit-reader.util';
 import { TOOL_ID__ENGINEERING_DOCS_WRITE, TOOL_ID__ENGINEERING_REPO_WRITER } from '../builtin-tool-definitions';
 
 const execFileAsync = promisify(execFile);

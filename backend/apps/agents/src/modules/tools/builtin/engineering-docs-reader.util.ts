@@ -21,24 +21,24 @@ export interface CodeDocsReaderResult {
 
 function getAllMarkdownFiles(dir: string, baseDir: string): string[] {
   const results: string[] = [];
-  
+
   if (!fs.existsSync(dir)) {
     return results;
   }
-  
+
   const entries = fs.readdirSync(dir, { withFileTypes: true });
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     const relativePath = path.relative(baseDir, fullPath);
-    
+
     if (entry.isDirectory()) {
       results.push(...getAllMarkdownFiles(fullPath, baseDir));
     } else if (entry.isFile() && (entry.name.endsWith('.md') || entry.name === 'README')) {
       results.push(relativePath);
     }
   }
-  
+
   return results;
 }
 
@@ -135,9 +135,9 @@ export const codeDocsReader = {
         focusMatchedCount: 0,
       };
     }
-    
+
     const allFiles = getAllMarkdownFiles(docsDir, docsDir);
-    
+
     if (allFiles.length === 0) {
       return {
         files: [],

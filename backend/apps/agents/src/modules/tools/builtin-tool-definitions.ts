@@ -1,19 +1,19 @@
+export const TOOL_ID__CONTENT_EXTRACT = 'builtin.data-gathering.internal.content.extract';
 export const TOOL_ID__WEB_FETCH = 'builtin.data-gathering.internal.web.fetch';
 export const TOOL_ID__WEB_SEARCH_EXA = 'builtin.data-gathering.internal.web.search-exa';
-export const TOOL_ID__ENGINEERING_COMMIT_READ = 'builtin.engineering.internal.commit.list';
-export const TOOL_ID__ENGINEERING_DOCS_READ = 'builtin.engineering.internal.docs.read';
-export const TOOL_ID__ENGINEERING_DOCS_WRITE = 'builtin.engineering.internal.docs.write';
-export const TOOL_ID__ENGINEERING_REPO_READ = 'builtin.engineering.internal.repo.read';
-export const TOOL_ID__ENGINEERING_REPO_WRITER = 'builtin.engineering.internal.repo.write';
-export const TOOL_ID__ENGINEERING_DOCS_HEAT_RUN = 'builtin.engineering.mcp.docs-heat.run';
+export const TOOL_ID__ENGINEERING_DOCS_WRITE = 'builtin.engineering.internal.fs.docs.write';
+export const TOOL_ID__ENGINEERING_DOCS_READ = 'builtin.engineering.internal.fs.docs_read';
+export const TOOL_ID__ENGINEERING_REPO_READ = 'builtin.engineering.internal.fs.repo_read';
+export const TOOL_ID__ENGINEERING_REPO_WRITER = 'builtin.engineering.internal.fs.repo_write';
+export const TOOL_ID__ENGINEERING_COMMIT_READ = 'builtin.engineering.internal.git.commit_list';
 export const TOOL_ID__REQUIREMENT_CREATE = 'builtin.engineering.mcp.requirement.create';
 export const TOOL_ID__REQUIREMENT_GET = 'builtin.engineering.mcp.requirement.get';
 export const TOOL_ID__REQUIREMENT_LIST = 'builtin.engineering.mcp.requirement.list';
 export const TOOL_ID__REQUIREMENT_SYNC_GITHUB = 'builtin.engineering.mcp.requirement.sync-github';
 export const TOOL_ID__REQUIREMENT_UPDATE = 'builtin.engineering.mcp.requirement.update';
 export const TOOL_ID__REQUIREMENT_UPDATE_STATUS = 'builtin.engineering.mcp.requirement.update-status';
-export const TOOL_ID__ENGINEERING_STATISTICS_RUN = 'builtin.engineering.mcp.statistics.run';
-export const TOOL_ID__CONTENT_EXTRACT = 'builtin.sys-mg.internal.content.extract';
+export const TOOL_ID__ENGINEERING_STATISTICS_DOCS_HEAT_RUN = 'builtin.engineering.mcp.statistics.docs-heat-run';
+export const TOOL_ID__ENGINEERING_STATISTICS_FILES_RUN = 'builtin.engineering.mcp.statistics.files-run';
 export const TOOL_ID__AGENT_MEMORY_APPEND_MEMO = 'builtin.sys-mg.mcp.agent-memory.create';
 export const TOOL_ID__AGENT_MEMORY_SEARCH_MEMO = 'builtin.sys-mg.mcp.agent-memory.list';
 export const TOOL_ID__AGENT_MODEL_ADD = 'builtin.sys-mg.mcp.agent-model.create';
@@ -49,13 +49,3 @@ export const TOOL_ID__GET_TOOL_SCHEMA = 'builtin.sys-mg.mcp.tool-schema.get';
 export const TOOL_ID__GMAIL_SEND_EMAIL = 'composio.communication.mcp.gmail.send-email';
 export const TOOL_ID__SLACK_SEND_MESSAGE = 'composio.communication.mcp.slack.send-message';
 export const TOOL_ID__WEB_SEARCH_SERP = 'composio.web-retrieval.mcp.web-search.serp';
-
-export const VIRTUAL_TOOL_IDS = [
-  'web_search',
-  'code_execution',
-  'file_read',
-  'file_write',
-  'data_analysis',
-  'video_editing',
-  'api_call',
-];

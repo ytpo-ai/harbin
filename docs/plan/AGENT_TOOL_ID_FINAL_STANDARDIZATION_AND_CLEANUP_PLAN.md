@@ -36,7 +36,7 @@
 ### 4) 过期集合清理与替代
 
 - 删除 `DEPRECATED_TOOL_IDS` 常量与所有引用。
-- 在注册与 seed 逻辑内引入显式清理列表 `TOOL_IDS_TO_PURGE_ON_SYNC`，用于 sync 模式清理旧数据。
+- 在 seed 脚本内维护显式清理列表 `TOOL_IDS_TO_PURGE_ON_SYNC`，用于 sync 模式清理旧数据。
 - 清理列表包含 legacy agent-admin id 及历史过期工具 id。
 
 ### 5) 上线前数据清理与验证
@@ -94,5 +94,6 @@
 
 ### 数据清理策略
 
-- `tool-registry.service.ts` 与 `backend/scripts/seed/builtin-tool-seed.ts` 保留并扩展 `TOOL_IDS_TO_PURGE_ON_SYNC`，用于清理历史旧 ID 与中间过渡 ID。
+- `backend/scripts/seed/builtin-tool-seed.ts` 保留并扩展 `TOOL_IDS_TO_PURGE_ON_SYNC`，用于清理历史旧 ID 与中间过渡 ID。
 - 本轮不做映射兼容层，按“新 ID 直切 + 存量数据后续清空/清理”的策略执行。
+- 在确认线上/历史库虚拟占位工具已清空后，移除 `VIRTUAL_TOOL_IDS` 常量及其 sync 删除逻辑，统一由 `TOOL_IDS_TO_PURGE_ON_SYNC` 负责清理入口。

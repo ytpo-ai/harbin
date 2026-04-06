@@ -22,8 +22,7 @@
 - 数据源（只 import，不复制）：
   - `BUILTIN_TOOLS`
   - `IMPLEMENTED_TOOL_IDS`
-  - `VIRTUAL_TOOL_IDS`
-  - `DEPRECATED_TOOL_IDS`
+  - 工具 ID 清理列表（脚本内 `TOOL_IDS_TO_PURGE_ON_SYNC`）
 - 直连集合：
   - `agent_tools`
   - `agent_toolkits`

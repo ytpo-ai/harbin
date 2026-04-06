@@ -74,7 +74,7 @@ backend/scripts/
 
 **数据源引用（保持 import 不复制）：**
 - `BUILTIN_TOOLS` — 从 `apps/agents/src/modules/tools/builtin-tool-catalog.ts` import
-- `VIRTUAL_TOOL_IDS` / `DEPRECATED_TOOL_IDS` — 从 `apps/agents/src/modules/tools/builtin-tool-definitions.ts` import
+- `TOOL_IDS_TO_PURGE_ON_SYNC`（脚本内定义清理列表）
 - `IMPLEMENTED_TOOL_IDS` — 从 `builtin-tool-catalog.ts` import
 
 **脚本架构（与 mcp-profile-seed.ts 一致）：**

@@ -1,4 +1,4 @@
-import { RdIntelligenceToolHandler } from './rd-intelligence-tool-handler.service';
+import { RdIntelligenceToolHandler } from './engineering-statistics-tool-handler.service';
 
 describe('RdIntelligenceToolHandler', () => {
   it('runs engineering statistics with defaults', async () => {

@@ -34,37 +34,37 @@ function execGit(command: string, cwd: string): { output: string; error?: string
 
 function getRecentCommits(hours: number, limit: number, cwd: string): { commits: CodeUpdatesReaderCommit[]; error?: string } {
   const since = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
-  
+
   const format = '%H%n%h%n%an%n%ad%n%s%n%b%n---END---';
   const gitLogResult = execGit(
     `git log --since="${since}" --format="${format}" -n ${limit}`,
-    cwd
+    cwd,
   );
-  
+
   if (gitLogResult.error) {
     return { commits: [], error: `GIT_ERROR: ${gitLogResult.error}. Make sure this is a git repository.` };
   }
-  
+
   if (!gitLogResult.output.trim()) {
     return { commits: [] };
   }
-  
+
   const commits: CodeUpdatesReaderCommit[] = [];
-  const commitBlocks = gitLogResult.output.split('---END---').filter(block => block.trim());
-  
+  const commitBlocks = gitLogResult.output.split('---END---').filter((block) => block.trim());
+
   for (const block of commitBlocks) {
     const lines = block.trim().split('\n');
     if (lines.length < 5) continue;
-    
+
     const [hash, shortHash, author, date, subject, ...bodyLines] = lines;
     const body = bodyLines.join('\n').trim();
-    
+
     const filesOutput = execGit(`git diff --name-only ${hash}~1..${hash}`, cwd);
     const files = filesOutput.output
       .split('\n')
-      .map(f => f.trim())
-      .filter(f => f);
-    
+      .map((f) => f.trim())
+      .filter((f) => f);
+
     commits.push({
       hash,
       shortHash,
@@ -75,7 +75,7 @@ function getRecentCommits(hours: number, limit: number, cwd: string): { commits:
       files: files.slice(0, 20),
     });
   }
-  
+
   return { commits };
 }
 
@@ -106,9 +106,9 @@ export const codeUpdatesReader = {
         workspaceRoot: cwd,
       };
     }
-    
+
     const result = getRecentCommits(hours, limit, cwd);
-    
+
     if (result.error) {
       return {
         commits: [],
@@ -117,7 +117,7 @@ export const codeUpdatesReader = {
         workspaceRoot: cwd,
       };
     }
-    
+
     return {
       commits: result.commits,
       totalCommits: result.commits.length,

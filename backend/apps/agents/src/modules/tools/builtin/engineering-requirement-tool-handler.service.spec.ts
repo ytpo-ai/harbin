@@ -1,4 +1,4 @@
-import { RequirementToolHandler } from './requirement-tool-handler.service';
+import { RequirementToolHandler } from './engineering-requirement-tool-handler.service';
 
 describe('RequirementToolHandler', () => {
   it('returns board payload when view=board', async () => {

@@ -12,10 +12,10 @@ import {
   TOOL_ID__EMPLYEE_LOGS,
   TOOL_ID__CONTENT_EXTRACT,
   TOOL_ID__ENGINEERING_COMMIT_READ,
-  TOOL_ID__ENGINEERING_DOCS_HEAT_RUN,
+  TOOL_ID__ENGINEERING_STATISTICS_DOCS_HEAT_RUN,
   TOOL_ID__ENGINEERING_DOCS_READ,
   TOOL_ID__ENGINEERING_REPO_READ,
-  TOOL_ID__ENGINEERING_STATISTICS_RUN,
+  TOOL_ID__ENGINEERING_STATISTICS_FILES_RUN,
   TOOL_ID__GMAIL_SEND_EMAIL,
   TOOL_ID__GET_TOOL_SCHEMA,
   TOOL_ID__MEETING_GET_DETAIL,
@@ -130,9 +130,9 @@ export class ToolExecutionDispatcherService {
         return this.agentRoleToolHandler.updateAgentRoleByMcp(parameters);
       case TOOL_ID__AGENT_ROLE_DELETE:
         return this.agentRoleToolHandler.deleteAgentRoleByMcp(parameters);
-      case TOOL_ID__ENGINEERING_STATISTICS_RUN:
+      case TOOL_ID__ENGINEERING_STATISTICS_FILES_RUN:
         return this.rdIntelligenceToolHandler.runEngineeringStatistics(parameters);
-      case TOOL_ID__ENGINEERING_DOCS_HEAT_RUN:
+      case TOOL_ID__ENGINEERING_STATISTICS_DOCS_HEAT_RUN:
         return this.rdIntelligenceToolHandler.runDocsHeat(parameters);
       case TOOL_ID__AGENT_MODEL_LIST:
         return this.modelToolHandler.listSystemModels(parameters);

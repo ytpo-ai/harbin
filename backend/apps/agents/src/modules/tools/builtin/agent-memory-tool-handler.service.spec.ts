@@ -1,4 +1,4 @@
-import { MemoToolHandler } from './memo-tool-handler.service';
+import { MemoToolHandler } from './agent-memory-tool-handler.service';
 
 describe('MemoToolHandler', () => {
   it('requires agentId for search', async () => {

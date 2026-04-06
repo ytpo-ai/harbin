@@ -353,10 +353,9 @@ const agentCandidates = agents.map(agent => {
 
 **总计 34 个内置工具**。
 
-**工具常量定义** (`builtin-tool-definitions.ts:1-48`):
-- `AGENT_LIST_TOOL_ID` / `LEGACY_AGENT_LIST_TOOL_ID` / `AGENT_CREATE_TOOL_ID` / `RD_DOCS_WRITE_TOOL_ID`
-- `VIRTUAL_TOOL_IDS`: 7 个虚拟工具类型
-- `DEPRECATED_TOOL_IDS`: 28 个已废弃工具 ID
+**工具常量定义** (`builtin-tool-definitions.ts`):
+- 所有内置工具 ID 统一为 `TOOL_ID__*` 常量（按 id 字符串值排序）
+- 历史/过期工具清理统一在 seed 脚本的 `TOOL_IDS_TO_PURGE_ON_SYNC`
 
 ---
 

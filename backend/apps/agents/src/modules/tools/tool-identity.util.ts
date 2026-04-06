@@ -61,23 +61,6 @@ export function parseToolIdentity(toolId: string): ParsedToolIdentity {
     };
   }
 
-  if (parts[0] === 'gh') {
-    const provider = 'builtin';
-    const executionChannel = 'mcp';
-    const namespace = 'sys-mg';
-    const toolkit = 'rd-related';
-    const action = parts.slice(1).join('.') || 'execute';
-    return {
-      provider,
-      executionChannel,
-      namespace,
-      toolkit,
-      toolkitId: `${provider}.${namespace}.${executionChannel}.${toolkit}`,
-      resource: toolkit,
-      action,
-    };
-  }
-
   const provider = parts[0] === 'composio' ? 'composio' : 'builtin';
   const executionChannel = parts[0] === 'internal' ? 'internal' : parts[1] || 'internal';
   const namespace = parts[2] || parts[1] || parts[0] || 'other';
@@ -116,7 +99,6 @@ export function inferResourceAndAction(toolId: string): { resource: string; acti
 }
 
 export function getToolkitDisplayName(toolkit: string): string {
-  if (toolkit === 'rd-related') return 'RD Toolkit';
   return toolkit
     .split('-')
     .filter(Boolean)
