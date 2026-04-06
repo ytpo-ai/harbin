@@ -30,6 +30,18 @@ export class AgentRole {
   @Prop({ type: [String], default: [] })
   tools: string[];
 
+  @Prop({ type: [String], default: [] })
+  permissions: string[];
+
+  @Prop({ type: [String], default: [] })
+  permissionsManual: string[];
+
+  @Prop({ type: [String], default: [] })
+  permissionsDerived: string[];
+
+  @Prop({ default: false })
+  exposed: boolean;
+
   @Prop({ default: '', trim: true })
   promptTemplate?: string;
 

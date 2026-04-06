@@ -2,12 +2,10 @@ import { Injectable, NotFoundException, Logger, BadRequestException } from '@nes
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, isValidObjectId } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
-import { AgentProfile, AgentProfileDocument } from '@agent/schemas/agent-profile.schema';
 import { Skill, SkillDocument } from '../../schemas/agent-skill.schema';
 import { ModelService } from '../models/model.service';
 import { Task, AIModel } from '../../../../../src/shared/types';
 import { MemoEventBusService } from '../memos/memo-event-bus.service';
-import { AgentMcpProfileService } from './agent-mcp-profile.service';
 import { AgentRoleService } from './agent-role.service';
 import { AgentExecutorService } from './agent-executor.service';
 import { AGENT_PROMPTS, AgentPromptTemplate } from '../prompt-registry/agent-prompt-catalog';
@@ -35,11 +33,9 @@ export class AgentService {
 
   constructor(
     @InjectModel(Agent.name) private agentModel: Model<AgentDocument>,
-    @InjectModel(AgentProfile.name) private agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(Skill.name) private skillModel: Model<SkillDocument>,
     private readonly modelService: ModelService,
     private readonly memoEventBus: MemoEventBusService,
-    private readonly agentMcpProfileService: AgentMcpProfileService,
     private readonly agentRoleService: AgentRoleService,
     private readonly agentExecutorService: AgentExecutorService,
   ) {}
@@ -296,23 +292,9 @@ export class AgentService {
   // ---- migration ----
 
   async migrateAllToolIdsToCanonical(): Promise<{
-    profilesScanned: number;
-    profilesUpdated: number;
     agentsScanned: number;
     agentsUpdated: number;
   }> {
-    const profiles = await this.agentProfileModel.find().select({ _id: 1, tools: 1 }).lean().exec();
-    let profilesUpdated = 0;
-    for (const profile of profiles as any[]) {
-      const originalTools = Array.isArray(profile.tools) ? profile.tools : [];
-      const normalized = normalizeToolIds(originalTools);
-      if (JSON.stringify(originalTools) === JSON.stringify(normalized)) {
-        continue;
-      }
-      await this.agentProfileModel.updateOne({ _id: profile._id }, { $set: { tools: normalized } }).exec();
-      profilesUpdated += 1;
-    }
-
     const agents = await this.agentModel.find().select({ _id: 1, tools: 1 }).lean().exec();
     let agentsUpdated = 0;
     for (const agent of agents as any[]) {
@@ -326,8 +308,6 @@ export class AgentService {
     }
 
     return {
-      profilesScanned: profiles.length,
-      profilesUpdated,
       agentsScanned: agents.length,
       agentsUpdated,
     };
@@ -436,7 +416,7 @@ export class AgentService {
   }
 
   async getAgentsMcpMap() {
-    return this.agentMcpProfileService.getAgentsMcpMap();
+    return this.agentRoleService.getAgentsMcpMap();
   }
 
   async getMcpAgents(options?: { includeHidden?: boolean }) {
@@ -463,18 +443,18 @@ export class AgentService {
     return this.agentRoleService.upsertToolPermissionSet(roleCode, updates);
   }
 
-  // ---- facade: delegate to AgentMcpProfileService ----
+  // ---- facade: delegate to AgentRoleService (MCP profile compat) ----
 
-  async getMcpProfiles(): Promise<AgentProfile[]> {
-    return this.agentMcpProfileService.getMcpProfiles();
+  async getMcpProfiles() {
+    return this.agentRoleService.getMcpProfiles();
   }
 
-  async getMcpProfile(roleCode: string): Promise<AgentProfile | null> {
-    return this.agentMcpProfileService.getMcpProfile(roleCode);
+  async getMcpProfile(roleCode: string) {
+    return this.agentRoleService.getMcpProfile(roleCode);
   }
 
-  async upsertMcpProfile(roleCode: string, updates: Partial<import('./agent.types').AgentMcpMapProfile>): Promise<AgentProfile> {
-    return this.agentMcpProfileService.upsertMcpProfile(roleCode, updates);
+  async upsertMcpProfile(roleCode: string, updates: Partial<import('./agent.types').AgentMcpMapProfile>) {
+    return this.agentRoleService.upsertMcpProfile(roleCode, updates);
   }
 
   // ---- private helpers ----

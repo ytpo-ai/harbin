@@ -5,7 +5,6 @@ import { Tool, ToolSchema } from '../../schemas/tool.schema';
 import { Toolkit, ToolkitSchema } from '../../schemas/toolkit.schema';
 import { ToolExecution, ToolExecutionSchema } from '../../schemas/tool-execution.schema';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
-import { AgentProfile, AgentProfileSchema } from '@agent/schemas/agent-profile.schema';
 import { Employee, EmployeeSchema } from '../../../../../src/shared/schemas/employee.schema';
 import { OperationLog, OperationLogSchema } from '../../../../../src/shared/schemas/operation-log.schema';
 import { ApiKey, ApiKeySchema } from '../../../../../src/shared/schemas/api-key.schema';
@@ -67,7 +66,6 @@ import { ToolExecutionDispatcherService } from './tool-execution-dispatcher.serv
       { name: Toolkit.name, schema: ToolkitSchema },
       { name: ToolExecution.name, schema: ToolExecutionSchema },
       { name: Agent.name, schema: AgentSchema },
-      { name: AgentProfile.name, schema: AgentProfileSchema },
       { name: Employee.name, schema: EmployeeSchema },
       { name: OperationLog.name, schema: OperationLogSchema },
       { name: ApiKey.name, schema: ApiKeySchema },

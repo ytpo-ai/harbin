@@ -121,6 +121,10 @@ export interface Skill {
 	updatedAt?: Date;
 }
 
+/**
+ * @deprecated Legacy AgentRole interface. Use AgentBusinessRole from agent.types.ts instead.
+ * The authoritative AgentRole schema is defined in apps/agents/src/schemas/agent-role.schema.ts.
+ */
 export interface AgentRole {
 	id: string;
 	title: string;

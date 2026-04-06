@@ -2,7 +2,6 @@ import { NestFactory } from '@nestjs/core';
 import { createRequire } from 'module';
 
 type SeedName =
-  | 'mcp-profiles'
   | 'model-management-agent'
   | 'builtin-tools'
   | 'default-model-registry'
@@ -15,7 +14,6 @@ type SeedName =
 type SeedMode = 'sync' | 'append';
 
 const ALL_SEEDS: SeedName[] = [
-  'mcp-profiles',
   'model-management-agent',
   'builtin-tools',
   'default-model-registry',
@@ -125,12 +123,6 @@ async function run(): Promise<void> {
   try {
     for (const seed of selectedSeeds) {
       console.log(`[seed] start ${seed}`);
-
-      if (seed === 'mcp-profiles') {
-        const { seedMcpProfiles } = localRequire('./mcp-profile-seed');
-        const result = await seedMcpProfiles(mode, { dryRun });
-        console.log(`[seed] mcp-profiles: mode=${result.mode}, seeded=${result.seeded}, dryRun=${dryRun}`);
-      }
 
       if (seed === 'model-management-agent') {
         if (dryRun) {

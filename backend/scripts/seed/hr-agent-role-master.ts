@@ -3,15 +3,6 @@ import { bootstrapEnv, getMongoUri } from '../shared/env-loader';
 
 type SeedMode = 'sync' | 'append';
 
-type AgentProfileRow = {
-  roleCode?: string;
-  tools?: string[];
-  permissions?: string[];
-  permissionsManual?: string[];
-  permissionsDerived?: string[];
-  capabilities?: string[];
-};
-
 type AgentRow = {
   id?: string;
   _id?: unknown;
@@ -24,6 +15,10 @@ type AgentRow = {
 type AgentRoleRow = {
   id?: string;
   code?: string;
+  tools?: string[];
+  permissions?: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
 };
 
 const HR_ROLE_CODE = 'human-resources-manager';
@@ -37,18 +32,6 @@ const ROLE_MASTER_TOOL_IDS = [
 ];
 
 const ROLE_MASTER_PERMISSION_IDS = ['agent_role_registry_read', 'agent_role_registry_write'];
-
-const agentProfileSchema = new Schema(
-  {
-    roleCode: String,
-    tools: [String],
-    permissions: [String],
-    permissionsManual: [String],
-    permissionsDerived: [String],
-    capabilities: [String],
-  },
-  { collection: 'agent_profiles', strict: false },
-);
 
 const agentSchema = new Schema(
   {
@@ -65,11 +48,14 @@ const agentRoleSchema = new Schema(
   {
     id: String,
     code: String,
+    tools: [String],
+    permissions: [String],
+    permissionsManual: [String],
+    permissionsDerived: [String],
   },
   { collection: 'agent_roles', strict: false },
 );
 
-const AgentProfileModel = mongoose.model<AgentProfileRow>('HrRoleMasterSeedAgentProfile', agentProfileSchema);
 const AgentModel = mongoose.model<AgentRow>('HrRoleMasterSeedAgent', agentSchema);
 const AgentRoleModel = mongoose.model<AgentRoleRow>('HrRoleMasterSeedAgentRole', agentRoleSchema);
 
@@ -121,29 +107,25 @@ export async function seedHrAgentRoleMasterBinding(
       throw new Error(`Role code not found: ${HR_ROLE_CODE}`);
     }
 
+    // Update the role record directly (merged from agent_profiles)
     if (!dryRun) {
-      const profile = await AgentProfileModel.findOne({ roleCode: HR_ROLE_CODE }).lean().exec();
-      const existingTools = normalizeStrings(profile?.tools || []);
-      const existingManualPermissions = normalizeStrings(profile?.permissionsManual || profile?.permissions || profile?.capabilities || []);
-      const existingDerivedPermissions = normalizeStrings(profile?.permissionsDerived || []);
+      const existingTools = normalizeStrings(role?.tools || []);
+      const existingManualPermissions = normalizeStrings(role?.permissionsManual || role?.permissions || []);
+      const existingDerivedPermissions = normalizeStrings(role?.permissionsDerived || []);
 
       const nextTools = normalizeStrings([...existingTools, ...ROLE_MASTER_TOOL_IDS]);
-
       const nextPermissionsManual = normalizeStrings([...existingManualPermissions, ...ROLE_MASTER_PERMISSION_IDS]);
       const nextPermissions = normalizeStrings([...nextPermissionsManual, ...existingDerivedPermissions]);
 
-      await AgentProfileModel.updateOne(
-        { roleCode: HR_ROLE_CODE },
+      await AgentRoleModel.updateOne(
+        { code: HR_ROLE_CODE },
         {
           $set: {
-            roleCode: HR_ROLE_CODE,
             tools: nextTools,
             permissionsManual: nextPermissionsManual,
             permissions: nextPermissions,
-            capabilities: nextPermissions,
           },
         },
-        { upsert: true },
       ).exec();
     }
 

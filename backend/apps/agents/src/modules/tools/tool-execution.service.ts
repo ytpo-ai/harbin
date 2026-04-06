@@ -5,7 +5,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { Tool, ToolDocument } from '../../schemas/tool.schema';
 import { ToolExecution, ToolExecutionDocument } from '../../schemas/tool-execution.schema';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
-import { AgentProfile, AgentProfileDocument } from '@agent/schemas/agent-profile.schema';
 import { AgentRole, AgentRoleDocument } from '../../schemas/agent-role.schema';
 import { getTierByAgentRoleCode, normalizeAgentRoleTier } from '../../../../../src/shared/role-tier';
 import { ToolExecutionContext } from './tool-execution-context.type';
@@ -30,7 +29,6 @@ export class ToolExecutionService {
     @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
     @InjectModel(ToolExecution.name) private readonly executionModel: Model<ToolExecutionDocument>,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
-    @InjectModel(AgentProfile.name) private readonly agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(AgentRole.name) private readonly agentRoleModel: Model<AgentRoleDocument>,
     private readonly toolGovernanceService: ToolGovernanceService,
     private readonly dispatcher: ToolExecutionDispatcherService,
@@ -252,33 +250,19 @@ export class ToolExecutionService {
     try {
       const role = await this.agentRoleModel
         .findOne({ id: normalizedRoleId })
-        .select({ code: 1, capabilities: 1 })
+        .select({ code: 1, capabilities: 1, permissions: 1, permissionsManual: 1, permissionsDerived: 1 })
         .lean()
         .exec();
       result.roleCode = String((role as any)?.code || '').trim() || undefined;
-      result.permissions = normalizeStringArray((role as any)?.capabilities || []);
+      result.permissions = normalizeStringArray([
+        ...((role as any)?.capabilities || []),
+        ...((role as any)?.permissions || []),
+        ...((role as any)?.permissionsManual || []),
+        ...((role as any)?.permissionsDerived || []),
+      ]);
     } catch {
       result.roleCode = undefined;
       result.permissions = [];
-    }
-
-    if (result.roleCode) {
-      try {
-        const profile = await this.agentProfileModel
-          .findOne({ roleCode: result.roleCode })
-          .select({ permissions: 1, permissionsManual: 1, permissionsDerived: 1, capabilities: 1 })
-          .lean()
-          .exec();
-        const profilePermissions = normalizeStringArray([
-          ...((profile as any)?.permissions || []),
-          ...((profile as any)?.permissionsManual || []),
-          ...((profile as any)?.permissionsDerived || []),
-          ...((profile as any)?.capabilities || []),
-        ]);
-        result.permissions = Array.from(new Set([...result.permissions, ...profilePermissions]));
-      } catch {
-        // ignore profile lookup errors
-      }
     }
 
     this.rolePermissionCache.set(normalizedRoleId, {

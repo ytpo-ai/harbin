@@ -87,12 +87,4 @@ export const hrService = {
     return response.data;
   },
 
-  async syncRolesFromAgentTypes(backfillAgents = true): Promise<{
-    seedCount: number;
-    roles: { created: number; updated: number; createdRoleIds: string[]; updatedRoleIds: string[] };
-    agents: { scanned: number; backfilled: number; alreadyBound: number; missingMapping: string[]; missingRoleForCode: string[] };
-  }> {
-    const response = await api.post('/roles/sync-from-agent-types', { backfillAgents });
-    return response.data;
-  },
 };

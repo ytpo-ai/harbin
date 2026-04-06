@@ -28,11 +28,11 @@ const toolSchema = new Schema(
   { collection: 'agent_tools', strict: false },
 );
 
-const agentProfileSchema = new Schema(
+const agentRoleSchema = new Schema(
   {
     tools: [String],
   },
-  { collection: 'agent_profiles', strict: false },
+  { collection: 'agent_roles', strict: false },
 );
 
 const agentSchema = new Schema(
@@ -43,7 +43,7 @@ const agentSchema = new Schema(
 );
 
 const ToolModel = mongoose.model('RequirementToolCleanupTool', toolSchema);
-const AgentProfileModel = mongoose.model<ToolBindingRow>('RequirementToolCleanupAgentProfile', agentProfileSchema);
+const AgentRoleModel = mongoose.model<ToolBindingRow>('RequirementToolCleanupAgentRole', agentRoleSchema);
 const AgentModel = mongoose.model<ToolBindingRow>('RequirementToolCleanupAgent', agentSchema);
 
 function normalizeToolList(values: string[] | undefined): string[] {
@@ -86,7 +86,7 @@ function remapTools(input: string[] | undefined): { nextTools: string[]; changed
 
 async function cleanupBindings(
   model: mongoose.Model<ToolBindingRow>,
-  label: 'agent_profiles' | 'agents',
+  label: 'agent_roles' | 'agents',
   dryRun: boolean,
 ): Promise<{ scanned: number; updated: number }> {
   const rows = await model
@@ -128,11 +128,11 @@ async function run(): Promise<void> {
       deletedTools = Number(result.deletedCount || 0);
     }
 
-    const profileResult = await cleanupBindings(AgentProfileModel, 'agent_profiles', dryRun);
+    const roleResult = await cleanupBindings(AgentRoleModel, 'agent_roles', dryRun);
     const agentResult = await cleanupBindings(AgentModel, 'agents', dryRun);
 
     console.log(
-      `[cleanup:requirement-tools] done removedTools=${dryRun ? removableToolCount : deletedTools} profileUpdated=${profileResult.updated} agentUpdated=${agentResult.updated} dryRun=${dryRun}`,
+      `[cleanup:requirement-tools] done removedTools=${dryRun ? removableToolCount : deletedTools} roleUpdated=${roleResult.updated} agentUpdated=${agentResult.updated} dryRun=${dryRun}`,
     );
   } finally {
     await mongoose.disconnect();

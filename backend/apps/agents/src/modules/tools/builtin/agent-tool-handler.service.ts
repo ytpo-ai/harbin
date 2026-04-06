@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
-import { AgentProfile, AgentProfileDocument } from '@agent/schemas/agent-profile.schema';
 import { AgentRole, AgentRoleDocument } from '../../../schemas/agent-role.schema';
 import { ApiKey, ApiKeyDocument } from '../../../../../../src/shared/schemas/api-key.schema';
 import { Skill, SkillDocument } from '../../../schemas/agent-skill.schema';
@@ -28,7 +27,6 @@ export class AgentMasterToolHandler {
   constructor(
     @InjectModel(Tool.name) private readonly toolModel: Model<ToolDocument>,
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
-    @InjectModel(AgentProfile.name) private readonly agentProfileModel: Model<AgentProfileDocument>,
     @InjectModel(AgentRole.name) private readonly agentRoleModel: Model<AgentRoleDocument>,
     @InjectModel(ApiKey.name) private readonly apiKeyModel: Model<ApiKeyDocument>,
     @InjectModel(Skill.name) private readonly skillModel: Model<SkillDocument>,
@@ -210,10 +208,22 @@ export class AgentMasterToolHandler {
     const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
     const roleMap = await this.getRoleMapByIds(roleIds);
     const roleCodes = Array.from(new Set(Array.from(roleMap.values()).map((role) => role.code).filter(Boolean)));
-    const profiles = await this.agentProfileModel.find({ roleCode: { $in: roleCodes } }).exec();
-    const profileMap = new Map<string, AgentProfile>();
-    for (const profile of profiles) {
-      profileMap.set(profile.roleCode, profile);
+    const rolesByCode = await this.agentRoleModel.find({ code: { $in: roleCodes } }).lean().exec();
+    const profileMap = new Map<string, any>();
+    for (const role of rolesByCode as any[]) {
+      const code = String(role.code || '').trim();
+      if (code) {
+        profileMap.set(code, {
+          role: code,
+          tools: role.tools || [],
+          permissions: role.permissions || [],
+          permissionsManual: role.permissionsManual || [],
+          permissionsDerived: role.permissionsDerived || [],
+          capabilities: role.capabilities || [],
+          exposed: role.exposed === true,
+          description: role.description || '',
+        });
+      }
     }
 
     const toolIds = Array.from(
@@ -411,15 +421,20 @@ export class AgentMasterToolHandler {
 
     const rows = await this.agentRoleModel
       .find({ id: { $in: uniqueRoleIds } })
-      .select({ id: 1, code: 1, name: 1, capabilities: 1 })
+      .select({ id: 1, code: 1, name: 1, capabilities: 1, permissions: 1, permissionsManual: 1, permissionsDerived: 1 })
       .lean()
-      .exec() as Array<{ id: string; code: string; name?: string; capabilities?: string[] }>;
+      .exec() as Array<{ id: string; code: string; name?: string; capabilities?: string[]; permissions?: string[]; permissionsManual?: string[]; permissionsDerived?: string[] }>;
 
     for (const role of rows) {
       const roleId = String(role.id || '').trim();
       const code = String(role.code || '').trim();
       const name = String(role.name || role.code || '').trim();
-      const permissions = normalizeStringArray(role.capabilities || []);
+      const permissions = normalizeStringArray([
+        ...(role.capabilities || []),
+        ...(role.permissions || []),
+        ...(role.permissionsManual || []),
+        ...(role.permissionsDerived || []),
+      ]);
       if (roleId && code) {
         map.set(roleId, { name, code, permissions });
       }
@@ -432,4 +447,5 @@ export class AgentMasterToolHandler {
     }
 
     return map;
-  }}
+  }
+}

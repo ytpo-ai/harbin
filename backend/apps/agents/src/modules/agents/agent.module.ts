@@ -1,7 +1,6 @@
 import { Module, OnModuleInit } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
-import { AgentProfile, AgentProfileSchema } from '@agent/schemas/agent-profile.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
 import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { AgentRole, AgentRoleSchema } from '../../schemas/agent-role.schema';
@@ -17,7 +16,6 @@ import { AgentExecutorRuntimeService } from './agent-executor-runtime.service';
 import { AgentAfterStepEvaluationHook } from './hooks/agent-after-step-evaluation.hook';
 import { AgentBeforeStepOptimizationHook } from './hooks/agent-before-step-optimization.hook';
 import { AgentOpenCodePolicyService } from './agent-opencode-policy.service';
-import { AgentMcpProfileService } from './agent-mcp-profile.service';
 import { AgentRoleService } from './agent-role.service';
 import { AgentExecutorService } from './agent-executor.service';
 import { PromptRegistryModule as PromptRegistryCoreModule } from '../prompt-registry/prompt-registry.module';
@@ -34,7 +32,6 @@ import { ContextModule } from './context/context.module';
   imports: [
     MongooseModule.forFeature([
       { name: Agent.name, schema: AgentSchema },
-      { name: AgentProfile.name, schema: AgentProfileSchema },
       { name: AgentRun.name, schema: AgentRunSchema },
       { name: Skill.name, schema: SkillSchema },
       { name: AgentRole.name, schema: AgentRoleSchema },
@@ -56,7 +53,6 @@ import { ContextModule } from './context/context.module';
     AgentBeforeStepOptimizationHook,
     AgentAfterStepEvaluationHook,
     AgentOpenCodePolicyService,
-    AgentMcpProfileService,
     AgentRoleService,
     AgentExecutorEngineRouter,
     NativeAgentExecutorEngine,

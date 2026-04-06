@@ -68,6 +68,10 @@ export interface AgentBusinessRole {
   status: 'active' | 'inactive';
   capabilities?: string[];
   tools?: string[];
+  permissions?: string[];
+  permissionsManual?: string[];
+  permissionsDerived?: string[];
+  exposed?: boolean;
   promptTemplate?: string;
 }
 
