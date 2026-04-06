@@ -50,7 +50,7 @@ describe('ToolExecutionDispatcherService', () => {
     agentMasterToolHandler.getAgentsMcpList.mockResolvedValue({ total: 1, agents: [] });
 
     const result = await service.executeToolImplementation(
-      { id: 'builtin.sys-mg.internal.agent-master.list-agents' } as any,
+      { id: 'builtin.sys-mg.mcp.agent.list' } as any,
       { limit: 10 },
       'agent-1',
     );
@@ -63,8 +63,8 @@ describe('ToolExecutionDispatcherService', () => {
     const { service, requirementToolHandler } = createService();
 
     await expect(
-      service.executeToolImplementation({ id: 'builtin.sys-mg.mcp.requirement.board' } as any, {}, 'agent-1'),
-    ).rejects.toThrow('Tool implementation not found: builtin.sys-mg.mcp.requirement.board');
+      service.executeToolImplementation({ id: 'builtin.engineering.mcp.requirement.board' } as any, {}, 'agent-1'),
+    ).rejects.toThrow('Tool implementation not found: builtin.engineering.mcp.requirement.board');
 
     expect(requirementToolHandler.listRequirements).not.toHaveBeenCalled();
   });
@@ -74,7 +74,7 @@ describe('ToolExecutionDispatcherService', () => {
     requirementToolHandler.mutateRequirement.mockResolvedValue({ action: 'requirement_comment' });
 
     const result = await service.executeToolImplementation(
-      { id: 'builtin.sys-mg.mcp.requirement.update' } as any,
+      { id: 'builtin.engineering.mcp.requirement.update' } as any,
       { action: 'comment', requirementId: 'req-1', content: 'ok' },
       'agent-1',
     );
@@ -91,16 +91,16 @@ describe('ToolExecutionDispatcherService', () => {
     const { service } = createService();
 
     await expect(
-      service.executeToolImplementation({ id: 'builtin.sys-mg.mcp.requirement.assign' } as any, {}, 'agent-1'),
-    ).rejects.toThrow('Tool implementation not found: builtin.sys-mg.mcp.requirement.assign');
+      service.executeToolImplementation({ id: 'builtin.engineering.mcp.requirement.assign' } as any, {}, 'agent-1'),
+    ).rejects.toThrow('Tool implementation not found: builtin.engineering.mcp.requirement.assign');
   });
 
   it('does not dispatch removed requirement comment tool', async () => {
     const { service } = createService();
 
     await expect(
-      service.executeToolImplementation({ id: 'builtin.sys-mg.mcp.requirement.comment' } as any, {}, 'agent-1'),
-    ).rejects.toThrow('Tool implementation not found: builtin.sys-mg.mcp.requirement.comment');
+      service.executeToolImplementation({ id: 'builtin.engineering.mcp.requirement.comment' } as any, {}, 'agent-1'),
+    ).rejects.toThrow('Tool implementation not found: builtin.engineering.mcp.requirement.comment');
   });
 
   it('dispatches orchestration plan initialize tool', async () => {
@@ -108,7 +108,7 @@ describe('ToolExecutionDispatcherService', () => {
     orchestrationToolHandler.planInitialize.mockResolvedValue({ action: 'plan_initialize', mode: 'outline' });
 
     const result = await service.executeToolImplementation(
-      { id: 'builtin.sys-mg.mcp.orchestration.plan-initialize' } as any,
+      { id: 'builtin.sys-mg.mcp.orchestration.initialize' } as any,
       { planId: 'p1', mode: 'outline', data: [] },
       'agent-1',
     );
@@ -128,7 +128,7 @@ describe('ToolExecutionDispatcherService', () => {
     });
 
     const result = await service.executeToolImplementation(
-      { id: 'builtin.sys-mg.internal.tool-meta.get-tool-schema' } as any,
+      { id: 'builtin.sys-mg.mcp.tool-schema.get' } as any,
       { toolId: 'builtin.sys-mg.mcp.orchestration.submit-task' },
       'agent-1',
       { assignedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task'] } as any,
@@ -146,10 +146,10 @@ describe('ToolExecutionDispatcherService', () => {
     const { service } = createService();
     await expect(
       service.executeToolImplementation(
-        { id: 'builtin.sys-mg.internal.tool-meta.get-tool-schema' } as any,
+        { id: 'builtin.sys-mg.mcp.tool-schema.get' } as any,
         { toolId: 'builtin.sys-mg.mcp.orchestration.submit-task' },
         'agent-1',
-        { assignedToolIds: ['builtin.sys-mg.mcp.requirement.list'] } as any,
+        { assignedToolIds: ['builtin.engineering.mcp.requirement.list'] } as any,
       ),
     ).rejects.toThrow('tool schema access denied');
   });

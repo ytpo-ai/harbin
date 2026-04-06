@@ -2,7 +2,58 @@ import { Injectable } from '@nestjs/common';
 import { Tool } from '../../schemas/tool.schema';
 import { ToolExecutionContext } from './tool-execution-context.type';
 import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler } from './builtin';
-import { AGENT_CREATE_TOOL_ID, AGENT_LIST_TOOL_ID, AGENT_ROLE_CREATE_TOOL_ID, AGENT_ROLE_DELETE_TOOL_ID, AGENT_ROLE_LIST_TOOL_ID, AGENT_ROLE_UPDATE_TOOL_ID, GET_TOOL_SCHEMA_TOOL_ID, LEGACY_AGENT_LIST_TOOL_ID, PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID, PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID, PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID, RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from './builtin-tool-definitions';
+import {
+  TOOL_ID__AGENT_CREATE,
+  TOOL_ID__AGENT_LIST,
+  TOOL_ID__AGENT_ROLE_CREATE,
+  TOOL_ID__AGENT_ROLE_DELETE,
+  TOOL_ID__AGENT_ROLE_LIST,
+  TOOL_ID__AGENT_ROLE_UPDATE,
+  TOOL_ID__EMPLYEE_LOGS,
+  TOOL_ID__CONTENT_EXTRACT,
+  TOOL_ID__ENGINEERING_COMMIT_READ,
+  TOOL_ID__ENGINEERING_DOCS_HEAT_RUN,
+  TOOL_ID__ENGINEERING_DOCS_READ,
+  TOOL_ID__ENGINEERING_REPO_READ,
+  TOOL_ID__ENGINEERING_STATISTICS_RUN,
+  TOOL_ID__GMAIL_SEND_EMAIL,
+  TOOL_ID__GET_TOOL_SCHEMA,
+  TOOL_ID__MEETING_GET_DETAIL,
+  TOOL_ID__MEETING_LIST,
+  TOOL_ID__MEETING_SAVE_SUMMARY,
+  TOOL_ID__MEETING_SEND_MESSAGE,
+  TOOL_ID__MEETING_UPDATE_STATUS,
+  TOOL_ID__AGENT_MEMORY_APPEND_MEMO,
+  TOOL_ID__AGENT_MEMORY_SEARCH_MEMO,
+  TOOL_ID__AGENT_MODEL_ADD,
+  TOOL_ID__AGENT_MODEL_LIST,
+  TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  TOOL_ID__ORCHESTRATION_GET_PLAN,
+  TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  TOOL_ID__ORCHESTRATION_INIT_PLAN,
+  TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT,
+  TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE,
+  TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES,
+  TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE,
+  TOOL_ID__ENGINEERING_DOCS_WRITE,
+  TOOL_ID__ENGINEERING_REPO_WRITER,
+  TOOL_ID__REQUIREMENT_CREATE,
+  TOOL_ID__REQUIREMENT_GET,
+  TOOL_ID__REQUIREMENT_LIST,
+  TOOL_ID__REQUIREMENT_SYNC_GITHUB,
+  TOOL_ID__REQUIREMENT_UPDATE,
+  TOOL_ID__REQUIREMENT_UPDATE_STATUS,
+  TOOL_ID__SEND_INTERNAL_MESSAGE,
+  TOOL_ID__AGENT_SKILL_CREATE,
+  TOOL_ID__AGENT_SKILL_LIST,
+  TOOL_ID__SLACK_SEND_MESSAGE,
+  TOOL_ID__WEB_FETCH,
+  TOOL_ID__WEB_SEARCH_EXA,
+  TOOL_ID__WEB_SEARCH_SERP,
+} from './builtin-tool-definitions';
 import { IMPLEMENTED_TOOL_IDS } from './builtin-tool-catalog';
 import { ToolRegistryService } from './tool-registry.service';
 
@@ -53,63 +104,61 @@ export class ToolExecutionDispatcherService {
     }
 
     switch (tool.id) {
-      case 'builtin.web-retrieval.internal.web-search.exa':
+      case TOOL_ID__WEB_SEARCH_EXA:
         return this.webToolsService.performWebSearchExa(parameters);
-      case 'composio.web-retrieval.mcp.web-search.serp':
+      case TOOL_ID__WEB_SEARCH_SERP:
         return this.webToolsService.performWebSearchSerp(parameters, agentId);
-      case 'builtin.web-retrieval.internal.web-fetch.fetch':
+      case TOOL_ID__WEB_FETCH:
         return this.webToolsService.performWebFetch(parameters);
-      case 'builtin.data-analysis.internal.content-analysis.extract':
+      case TOOL_ID__CONTENT_EXTRACT:
         return this.webToolsService.performContentExtract(parameters);
-      case 'composio.communication.mcp.slack.send-message':
+      case TOOL_ID__SLACK_SEND_MESSAGE:
         return this.communicationToolHandler.sendSlackMessage(parameters, agentId);
-      case 'composio.communication.mcp.gmail.send-email':
+      case TOOL_ID__GMAIL_SEND_EMAIL:
         return this.communicationToolHandler.sendGmail(parameters, agentId);
-      case 'builtin.sys-mg.mcp.inner-message.send-internal-message':
+      case TOOL_ID__SEND_INTERNAL_MESSAGE:
         return this.communicationToolHandler.sendInternalMessage(parameters, agentId);
-      case AGENT_LIST_TOOL_ID:
-      case LEGACY_AGENT_LIST_TOOL_ID:
+      case TOOL_ID__AGENT_LIST:
         return this.agentMasterToolHandler.getAgentsMcpList(parameters);
-      case AGENT_CREATE_TOOL_ID:
+      case TOOL_ID__AGENT_CREATE:
         return this.agentMasterToolHandler.createAgentByMcp(parameters);
-      case AGENT_ROLE_LIST_TOOL_ID:
+      case TOOL_ID__AGENT_ROLE_LIST:
         return this.agentRoleToolHandler.listAgentRolesByMcp(parameters);
-      case AGENT_ROLE_CREATE_TOOL_ID:
+      case TOOL_ID__AGENT_ROLE_CREATE:
         return this.agentRoleToolHandler.createAgentRoleByMcp(parameters);
-      case AGENT_ROLE_UPDATE_TOOL_ID:
+      case TOOL_ID__AGENT_ROLE_UPDATE:
         return this.agentRoleToolHandler.updateAgentRoleByMcp(parameters);
-      case AGENT_ROLE_DELETE_TOOL_ID:
+      case TOOL_ID__AGENT_ROLE_DELETE:
         return this.agentRoleToolHandler.deleteAgentRoleByMcp(parameters);
-      case 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run':
+      case TOOL_ID__ENGINEERING_STATISTICS_RUN:
         return this.rdIntelligenceToolHandler.runEngineeringStatistics(parameters);
-      case 'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run':
+      case TOOL_ID__ENGINEERING_DOCS_HEAT_RUN:
         return this.rdIntelligenceToolHandler.runDocsHeat(parameters);
-      case 'builtin.sys-mg.mcp.model-admin.list-models':
+      case TOOL_ID__AGENT_MODEL_LIST:
         return this.modelToolHandler.listSystemModels(parameters);
-      case 'builtin.sys-mg.mcp.model-admin.add-model':
+      case TOOL_ID__AGENT_MODEL_ADD:
         return this.modelToolHandler.addModelToSystem(parameters);
-      case 'builtin.sys-mg.mcp.audit.list-human-operation-log':
+      case TOOL_ID__EMPLYEE_LOGS:
         return this.auditToolHandler.listHumanOperationLogs(parameters, agentId);
-      case 'builtin.sys-mg.internal.memory.search-memo':
+      case TOOL_ID__AGENT_MEMORY_SEARCH_MEMO:
         return this.memoToolHandler.searchMemoMemory(parameters, agentId);
-      case 'builtin.sys-mg.internal.memory.append-memo':
+      case TOOL_ID__AGENT_MEMORY_APPEND_MEMO:
         return this.memoToolHandler.appendMemoMemory(parameters, agentId, executionContext);
-      case GET_TOOL_SCHEMA_TOOL_ID:
+      case TOOL_ID__GET_TOOL_SCHEMA:
         return this.getToolSchema(parameters, executionContext);
-      case 'builtin.sys-mg.mcp.skill-master.list-skills':
+      case TOOL_ID__AGENT_SKILL_LIST:
         return this.skillToolHandler.listSkillsByTitle(parameters);
-      case 'builtin.sys-mg.mcp.skill-master.create-skill':
+      case TOOL_ID__AGENT_SKILL_CREATE:
         return this.skillToolHandler.createSkillByMcp(parameters);
-      case 'builtin.sys-mg.mcp.meeting.list-meetings':
+      case TOOL_ID__MEETING_LIST:
         return this.meetingToolHandler.listMeetings(parameters);
-      case 'builtin.sys-mg.mcp.meeting.get-detail':
+      case TOOL_ID__MEETING_GET_DETAIL:
         return this.meetingToolHandler.getMeetingDetail(parameters);
-      case 'builtin.sys-mg.mcp.meeting.send-message':
+      case TOOL_ID__MEETING_SEND_MESSAGE:
         return this.meetingToolHandler.sendMeetingMessage(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.meeting.update-status':
+      case TOOL_ID__MEETING_UPDATE_STATUS:
         return this.meetingToolHandler.updateMeetingStatus(parameters);
-      case 'builtin.sys-mg.mcp.meeting.generate-summary':
-      case 'builtin.sys-mg.mcp.meeting.save-summary':
+      case TOOL_ID__MEETING_SAVE_SUMMARY:
         return this.meetingToolHandler.saveMeetingSummary(parameters, agentId);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
@@ -117,15 +166,15 @@ export class ToolExecutionDispatcherService {
   }
   private dispatchRepoToolImplementation(toolId: string, parameters: any): Promise<any> | undefined {
     switch (toolId) {
-      case 'builtin.sys-mg.internal.rd-related.repo-read':
+      case TOOL_ID__ENGINEERING_REPO_READ:
         return this.repoToolHandler.executeRepoRead(parameters);
-      case RD_REPO_WRITER_TOOL_ID:
+      case TOOL_ID__ENGINEERING_REPO_WRITER:
         return this.repoToolHandler.executeRepoWriter(parameters);
-      case 'builtin.sys-mg.internal.rd-related.docs-read':
+      case TOOL_ID__ENGINEERING_DOCS_READ:
         return this.repoToolHandler.getCodeDocsReader(parameters);
-      case RD_DOCS_WRITE_TOOL_ID:
+      case TOOL_ID__ENGINEERING_DOCS_WRITE:
         return this.repoToolHandler.executeDocsWrite(parameters);
-      case 'builtin.sys-mg.internal.rd-related.updates-read':
+      case TOOL_ID__ENGINEERING_COMMIT_READ:
         return this.repoToolHandler.getCodeUpdatesReader(parameters);
       default:
         return undefined;
@@ -136,11 +185,11 @@ export class ToolExecutionDispatcherService {
     parameters: any,
   ): Promise<any> | undefined {
     switch (toolId) {
-      case PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID:
+      case TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES:
         return this.promptRegistryToolHandler.listPromptTemplates(parameters);
-      case PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID:
+      case TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE:
         return this.promptRegistryToolHandler.getPromptTemplate(parameters);
-      case PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID:
+      case TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE:
         return this.promptRegistryToolHandler.savePromptTemplate(parameters);
       default:
         return undefined;
@@ -153,21 +202,21 @@ export class ToolExecutionDispatcherService {
     executionContext?: ToolExecutionContext,
   ): Promise<any> | undefined {
     switch (toolId) {
-      case 'builtin.sys-mg.mcp.orchestration.create-plan':
+      case TOOL_ID__ORCHESTRATION_CREATE_PLAN:
         return this.orchestrationToolHandler.createOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.update-plan':
+      case TOOL_ID__ORCHESTRATION_UPDATE_PLAN:
         return this.orchestrationToolHandler.updateOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.run-plan':
+      case TOOL_ID__ORCHESTRATION_RUN_PLAN:
         return this.orchestrationToolHandler.runOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.get-plan':
+      case TOOL_ID__ORCHESTRATION_GET_PLAN:
         return this.orchestrationToolHandler.getOrchestrationPlan(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.list-plans':
+      case TOOL_ID__ORCHESTRATION_LIST_PLANS:
         return this.orchestrationToolHandler.listOrchestrationPlans(agentId, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.plan-initialize':
+      case TOOL_ID__ORCHESTRATION_INIT_PLAN:
         return this.orchestrationToolHandler.planInitialize(parameters, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.submit-task':
+      case TOOL_ID__ORCHESTRATION_SUBMIT_TASK:
         return this.orchestrationToolHandler.submitOrchestrationTask(parameters, executionContext);
-      case 'builtin.sys-mg.mcp.orchestration.report-task-run-result':
+      case TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT:
         return this.orchestrationToolHandler.reportOrchestrationTaskRunResult(parameters, executionContext);
       default:
         return undefined;
@@ -180,17 +229,17 @@ export class ToolExecutionDispatcherService {
     executionContext?: ToolExecutionContext,
   ): Promise<any> | undefined {
     switch (toolId) {
-      case 'builtin.sys-mg.mcp.requirement.list':
+      case TOOL_ID__REQUIREMENT_LIST:
         return this.requirementToolHandler.listRequirements(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.get':
+      case TOOL_ID__REQUIREMENT_GET:
         return this.requirementToolHandler.getRequirement(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.create':
+      case TOOL_ID__REQUIREMENT_CREATE:
         return this.requirementToolHandler.createRequirement(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.update-status':
+      case TOOL_ID__REQUIREMENT_UPDATE_STATUS:
         return this.requirementToolHandler.updateRequirementStatus(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.update':
+      case TOOL_ID__REQUIREMENT_UPDATE:
         return this.requirementToolHandler.mutateRequirement(parameters, agentId, executionContext);
-      case 'builtin.sys-mg.mcp.requirement.sync-github':
+      case TOOL_ID__REQUIREMENT_SYNC_GITHUB:
         return this.requirementToolHandler.syncRequirementGithub(parameters, agentId);
       default:
         return undefined;

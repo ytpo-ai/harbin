@@ -1,5 +1,3 @@
-import { DEPRECATED_TOOL_IDS, VIRTUAL_TOOL_IDS } from './builtin-tool-definitions';
-
 export interface ParsedToolIdentity {
   provider: string;
   executionChannel: string;
@@ -167,13 +165,16 @@ export function isSystemManagementTool(toolId: string): boolean {
     return false;
   }
   return (
+    normalized.startsWith('builtin.engineering.mcp.') ||
     normalized.startsWith('builtin.sys-mg.mcp.orchestration.') ||
-    normalized.startsWith('builtin.sys-mg.mcp.model-admin.') ||
-    normalized.startsWith('builtin.sys-mg.mcp.skill-master.') ||
+    normalized.startsWith('builtin.sys-mg.mcp.agent-model.') ||
+    normalized.startsWith('builtin.sys-mg.mcp.agent-skill.') ||
     normalized.startsWith('builtin.sys-mg.mcp.prompt-registry.') ||
     normalized.startsWith('builtin.sys-mg.mcp.audit.') ||
-    normalized.startsWith('builtin.sys-mg.internal.agent-master.') ||
-    normalized.startsWith('builtin.sys-mg.internal.agent-role-master.')
+    normalized.startsWith('builtin.sys-mg.mcp.agent.') ||
+    normalized.startsWith('builtin.sys-mg.mcp.agent-role.') ||
+    normalized.startsWith('builtin.sys-mg.mcp.agent-memory.') ||
+    normalized.startsWith('builtin.sys-mg.mcp.tool-schema.')
   );
 }
 

@@ -5,7 +5,7 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { codeDocsReader } from '../local-repo-docs-reader.util';
 import { codeUpdatesReader } from '../local-repo-updates-reader.util';
-import { RD_DOCS_WRITE_TOOL_ID, RD_REPO_WRITER_TOOL_ID } from '../builtin-tool-definitions';
+import { TOOL_ID__ENGINEERING_DOCS_WRITE, TOOL_ID__ENGINEERING_REPO_WRITER } from '../builtin-tool-definitions';
 
 const execFileAsync = promisify(execFile);
 
@@ -177,7 +177,7 @@ export class RepoToolHandler {
 
     return {
       success: true,
-      toolId: RD_DOCS_WRITE_TOOL_ID,
+      toolId: TOOL_ID__ENGINEERING_DOCS_WRITE,
       workspaceRoot,
       filePath: normalizedRelPath,
       mode: requestedMode,
@@ -259,7 +259,7 @@ export class RepoToolHandler {
 
     return {
       success: true,
-      toolId: RD_REPO_WRITER_TOOL_ID,
+      toolId: TOOL_ID__ENGINEERING_REPO_WRITER,
       action: 'git-clone',
       repoUrl,
       branch,

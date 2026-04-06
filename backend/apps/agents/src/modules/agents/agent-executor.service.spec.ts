@@ -478,7 +478,7 @@ describe('AgentExecutorService tool input repair helpers', () => {
 
   it('builds concise tool input repair instruction', () => {
     const content = buildToolInputRepairInstruction(
-      'builtin.sys-mg.mcp.inner-message.send-internal-message',
+      'builtin.sys-mg.mcp.inner-message.create',
       {
         type: 'object',
         required: ['receiverAgentId', 'title', 'content'],

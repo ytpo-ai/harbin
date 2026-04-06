@@ -43,7 +43,7 @@ export class MemoryContextBuilder implements ContextBlockBuilder {
         role: 'system',
         content:
           `以下是从备忘录中按需检索到的相关记忆（渐进加载摘要）:\n${relevantMemos}\n\n` +
-          '请优先参考这些记忆，并在必要时调用 builtin.sys-mg.internal.memory.search-memo 获取更完整上下文；若有新结论可调用 builtin.sys-mg.internal.memory.append-memo 追加沉淀。',
+          '请优先参考这些记忆，并在必要时调用 builtin.sys-mg.mcp.agent-memory.list 获取更完整上下文；若有新结论可调用 builtin.sys-mg.mcp.agent-memory.create 追加沉淀。',
         timestamp: new Date(),
       });
     }

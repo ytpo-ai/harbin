@@ -37,7 +37,7 @@ describe('ToolRegistryService', () => {
     const toolModel = {
       findOne: jest.fn().mockReturnValue({
         exec: jest.fn().mockResolvedValue({
-          id: 'builtin.sys-mg.mcp.requirement.update-status',
+          id: 'builtin.engineering.mcp.requirement.update-status',
           implementation: {
             parameters: {
               requirementId: 'string',
@@ -51,7 +51,7 @@ describe('ToolRegistryService', () => {
     };
 
     const service = new ToolRegistryService(toolModel as any, {} as any, {} as any);
-    const contract = await service.getToolInputContract('builtin.sys-mg.mcp.requirement.update-status');
+    const contract = await service.getToolInputContract('builtin.engineering.mcp.requirement.update-status');
 
     expect(contract).not.toBeNull();
     expect(contract!.schema).toEqual({

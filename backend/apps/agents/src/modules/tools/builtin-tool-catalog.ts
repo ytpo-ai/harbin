@@ -1,23 +1,59 @@
 import {
-  AGENT_CREATE_TOOL_ID,
-  AGENT_LIST_TOOL_ID,
-  AGENT_ROLE_CREATE_TOOL_ID,
-  AGENT_ROLE_DELETE_TOOL_ID,
-  AGENT_ROLE_LIST_TOOL_ID,
-  AGENT_ROLE_UPDATE_TOOL_ID,
-  GET_TOOL_SCHEMA_TOOL_ID,
-  LEGACY_AGENT_LIST_TOOL_ID,
-  PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
-  PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
-  PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
-  RD_DOCS_WRITE_TOOL_ID,
-  RD_REPO_WRITER_TOOL_ID,
-  SEND_INTERNAL_MESSAGE_TOOL_ID,
+  TOOL_ID__AGENT_CREATE,
+  TOOL_ID__AGENT_LIST,
+  TOOL_ID__AGENT_ROLE_CREATE,
+  TOOL_ID__AGENT_ROLE_DELETE,
+  TOOL_ID__AGENT_ROLE_LIST,
+  TOOL_ID__AGENT_ROLE_UPDATE,
+  TOOL_ID__EMPLYEE_LOGS,
+  TOOL_ID__CONTENT_EXTRACT,
+  TOOL_ID__ENGINEERING_COMMIT_READ,
+  TOOL_ID__ENGINEERING_DOCS_HEAT_RUN,
+  TOOL_ID__ENGINEERING_DOCS_READ,
+  TOOL_ID__ENGINEERING_REPO_READ,
+  TOOL_ID__ENGINEERING_STATISTICS_RUN,
+  TOOL_ID__GMAIL_SEND_EMAIL,
+  TOOL_ID__GET_TOOL_SCHEMA,
+  TOOL_ID__MEETING_GET_DETAIL,
+  TOOL_ID__MEETING_LIST,
+  TOOL_ID__MEETING_SAVE_SUMMARY,
+  TOOL_ID__MEETING_SEND_MESSAGE,
+  TOOL_ID__MEETING_UPDATE_STATUS,
+  TOOL_ID__AGENT_MEMORY_APPEND_MEMO,
+  TOOL_ID__AGENT_MEMORY_SEARCH_MEMO,
+  TOOL_ID__AGENT_MODEL_ADD,
+  TOOL_ID__AGENT_MODEL_LIST,
+  TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  TOOL_ID__ORCHESTRATION_GET_PLAN,
+  TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  TOOL_ID__ORCHESTRATION_INIT_PLAN,
+  TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT,
+  TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE,
+  TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES,
+  TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE,
+  TOOL_ID__ENGINEERING_DOCS_WRITE,
+  TOOL_ID__ENGINEERING_REPO_WRITER,
+  TOOL_ID__REQUIREMENT_CREATE,
+  TOOL_ID__REQUIREMENT_GET,
+  TOOL_ID__REQUIREMENT_LIST,
+  TOOL_ID__REQUIREMENT_SYNC_GITHUB,
+  TOOL_ID__REQUIREMENT_UPDATE,
+  TOOL_ID__REQUIREMENT_UPDATE_STATUS,
+  TOOL_ID__SEND_INTERNAL_MESSAGE,
+  TOOL_ID__AGENT_SKILL_CREATE,
+  TOOL_ID__AGENT_SKILL_LIST,
+  TOOL_ID__SLACK_SEND_MESSAGE,
+  TOOL_ID__WEB_FETCH,
+  TOOL_ID__WEB_SEARCH_EXA,
+  TOOL_ID__WEB_SEARCH_SERP,
 } from './builtin-tool-definitions';
 
 export const BUILTIN_TOOLS = [
       {
-        id: 'builtin.web-retrieval.internal.web-search.exa',
+        id: TOOL_ID__WEB_SEARCH_EXA,
         name: 'Web Search Exa',
         description: 'Search web information via Exa (auto + highlights compact)',
         type: 'web_search' as const,
@@ -30,7 +66,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'composio.web-retrieval.mcp.web-search.serp',
+        id: TOOL_ID__WEB_SEARCH_SERP,
         name: 'Web Search SERP',
         description: 'Search web information via Composio SERPAPI',
         type: 'web_search' as const,
@@ -50,7 +86,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.web-retrieval.internal.web-fetch.fetch',
+        id: TOOL_ID__WEB_FETCH,
         name: 'Web Fetch',
         description: 'Fetch webpage content by URL and return clean text',
         type: 'web_search' as const,
@@ -63,7 +99,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.data-analysis.internal.content-analysis.extract',
+        id: TOOL_ID__CONTENT_EXTRACT,
         name: 'Content Extract',
         description: 'Extract clean text, key bullets and numeric rows from raw html or text',
         type: 'data_analysis' as const,
@@ -76,7 +112,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'composio.communication.mcp.slack.send-message',
+        id: TOOL_ID__SLACK_SEND_MESSAGE,
         name: 'Slack',
         description: 'Send Slack messages via Composio',
         type: 'api_call' as const,
@@ -96,7 +132,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'composio.communication.mcp.gmail.send-email',
+        id: TOOL_ID__GMAIL_SEND_EMAIL,
         name: 'Gmail',
         description: 'Send or draft email via Composio',
         type: 'api_call' as const,
@@ -118,11 +154,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: SEND_INTERNAL_MESSAGE_TOOL_ID,
+        id: TOOL_ID__SEND_INTERNAL_MESSAGE,
         name: 'Send Internal Message',
         description: 'Send direct internal message to another agent',
-        prompt:
-          '当你需要通知其他 Agent 时，调用 builtin.sys-mg.mcp.inner-message.send-internal-message。默认使用短版开工通知（任务一句话+截止点），仅当用户明确要求时再补充验收细节。只有拿到返回中的 messageId，才可以对用户确认“已发送”。',
+        prompt: `当你需要通知其他 Agent 时，调用 ${TOOL_ID__SEND_INTERNAL_MESSAGE}。默认使用短版开工通知（任务一句话+截止点），仅当用户明确要求时再补充验收细节。只有拿到返回中的 messageId，才可以对用户确认“已发送”。`,
         type: 'api_call' as const,
         category: 'Communication',
         authFree: true,
@@ -147,7 +182,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: GET_TOOL_SCHEMA_TOOL_ID,
+        id: TOOL_ID__GET_TOOL_SCHEMA,
         name: 'Get Tool Schema',
         description:
           '查询指定工具的参数契约（inputSchema），返回 required 字段、属性类型和枚举约束。在调用不熟悉的工具前，先用此工具查询参数格式。',
@@ -166,18 +201,17 @@ export const BUILTIN_TOOLS = [
             properties: {
               toolId: {
                 type: 'string',
-                description: '要查询的工具 ID（如 builtin.sys-mg.mcp.orchestration.submit-task）',
+                description: `要查询的工具 ID（如 ${TOOL_ID__ORCHESTRATION_SUBMIT_TASK}）`,
               },
             },
           },
         },
       },
       {
-        id: 'builtin.sys-mg.internal.rd-related.repo-read',
+        id: TOOL_ID__ENGINEERING_REPO_READ,
         name: 'Repo Read',
         description: 'Execute read-only bash commands to read local repository files (git log, cat, ls, grep)',
-        prompt:
-          '你拥有 builtin.sys-mg.internal.rd-related.repo-read 工具，可执行只读 bash 命令（如 git log、cat、ls、grep 等）来读取本地仓库文件。当你需要了解代码或文档内容时，请优先使用 builtin.sys-mg.internal.rd-related.repo-read 直接读取。',
+        prompt: `你拥有 ${TOOL_ID__ENGINEERING_REPO_READ} 工具，可执行只读 bash 命令（如 git log、cat、ls、grep 等）来读取本地仓库文件。当你需要了解代码或文档内容时，请优先使用 ${TOOL_ID__ENGINEERING_REPO_READ} 直接读取。`,
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_read', name: 'Repository Read', level: 'basic' }],
@@ -190,11 +224,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: RD_REPO_WRITER_TOOL_ID,
+        id: TOOL_ID__ENGINEERING_REPO_WRITER,
         name: 'Repo Writer',
         description: 'Clone or refresh remote repository into data/repos sandbox directory',
-        prompt:
-          '当你需要导入外部仓库内容时，先调用 builtin.sys-mg.internal.rd-related.repo-writer，action 使用 git-clone，将仓库拉取到 data/repos/ 下，再用 repo-read 分析内容；若识别出可复用 Prompt，请继续调用 builtin.sys-mg.mcp.prompt-registry.save-template 落库。',
+        prompt: `当你需要导入外部仓库内容时，先调用 ${TOOL_ID__ENGINEERING_REPO_WRITER}，action 使用 git-clone，将仓库拉取到 data/repos/ 下，再用 repo-read 分析内容；若识别出可复用 Prompt，请继续调用 ${TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE} 落库。`,
         type: 'file_operation' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_write', name: 'Repository Write', level: 'intermediate' }],
@@ -215,11 +248,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.internal.rd-related.docs-read',
+        id: TOOL_ID__ENGINEERING_DOCS_READ,
         name: 'Code Docs Reader',
         description: 'Read raw documentation files from docs/ directory',
-        prompt:
-          '当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 builtin.sys-mg.internal.rd-related.repo-read 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 builtin.sys-mg.internal.rd-related.docs-read 读取文档。若 builtin.sys-mg.internal.rd-related.docs-read 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 builtin.sys-mg.internal.rd-related.repo-read 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。',
+        prompt: `当用户询问"当前系统实现了哪些核心功能/系统能力清单/docs里实现了什么"时，优先级如下：1) 优先使用 ${TOOL_ID__ENGINEERING_REPO_READ} 执行 "git log"、"ls docs/"、"cat docs/..."、"grep ..." 等命令自行读取；2) 其次调用 ${TOOL_ID__ENGINEERING_DOCS_READ} 读取文档。若 ${TOOL_ID__ENGINEERING_DOCS_READ} 返回 0 命中或 fallback 信号，必须自动重试（放宽 focus 或不传 focus），仍失败再切换 ${TOOL_ID__ENGINEERING_REPO_READ} 直接列目录并读取文档；不要向用户发起二选一确认。必须基于实际读取的内容回答，不得臆测。`,
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_docs_read', name: 'Repository Docs Read', level: 'basic' }],
@@ -233,11 +265,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: RD_DOCS_WRITE_TOOL_ID,
+        id: TOOL_ID__ENGINEERING_DOCS_WRITE,
         name: 'Code Docs Writer',
         description: 'Write markdown docs into docs/ directory with strict path and extension guard',
-        prompt:
-          '当你需要新增或更新研发文档时，调用 builtin.sys-mg.internal.rd-related.docs-write；仅写 docs/** 下的 .md 文件，优先使用 create/update/append 明确意图，避免覆盖不相关内容。',
+        prompt: `当你需要新增或更新研发文档时，调用 ${TOOL_ID__ENGINEERING_DOCS_WRITE}；仅写 docs/** 下的 .md 文件，优先使用 create/update/append 明确意图，避免覆盖不相关内容。`,
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_docs_write', name: 'Repository Docs Write', level: 'admin' }],
@@ -253,11 +284,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.internal.rd-related.updates-read',
+        id: TOOL_ID__ENGINEERING_COMMIT_READ,
         name: 'Code Updates Reader',
         description: 'Read raw git commit history from repository',
-        prompt:
-          '当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 builtin.sys-mg.internal.rd-related.repo-read 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 builtin.sys-mg.internal.rd-related.updates-read。必须基于实际提交内容回答，不得臆测。',
+        prompt: `当用户询问"最近24小时/最近一天系统主要更新"时，优先级如下：1) 优先使用 ${TOOL_ID__ENGINEERING_REPO_READ} 执行 "git log --since=..." 等命令自行读取提交记录；2) 其次调用 ${TOOL_ID__ENGINEERING_COMMIT_READ}。必须基于实际提交内容回答，不得臆测。`,
         type: 'data_analysis' as const,
         category: 'Engineering Intelligence',
         requiredPermissions: [{ id: 'repo_git_read', name: 'Repository Git Read', level: 'basic' }],
@@ -271,11 +301,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID,
+        id: TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE,
         name: 'Prompt Registry Save Template',
         description: 'Create or version prompt templates in prompt registry with optional auto-publish',
-        prompt:
-          '当你已经整理好 Prompt 模板内容时，调用 builtin.sys-mg.mcp.prompt-registry.save-template 保存模板；单条模式必填 scene/role/content，批量模式使用 templates 数组，并在需要时设置 autoPublish=true。',
+        prompt: `当你已经整理好 Prompt 模板内容时，调用 ${TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE} 保存模板；单条模式必填 scene/role/content，批量模式使用 templates 数组，并在需要时设置 autoPublish=true。`,
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'prompt_write', name: 'Prompt Registry Write', level: 'intermediate' }],
@@ -310,11 +339,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID,
+        id: TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES,
         name: 'Prompt Registry List Templates',
         description: 'List prompt templates by scene role category and status without returning content field',
-        prompt:
-          '当你需要浏览可用 Prompt 模板时，先调用 builtin.sys-mg.mcp.prompt-registry.list-templates；该工具仅返回摘要信息（不含 content），可先筛选 scene/role/category，再决定是否调用 get-template 查看全文。',
+        prompt: `当你需要浏览可用 Prompt 模板时，先调用 ${TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES}；该工具仅返回摘要信息（不含 content），可先筛选 scene/role/category，再决定是否调用 get 查看全文。`,
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'prompt_read', name: 'Prompt Registry Read', level: 'basic' }],
@@ -335,11 +363,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID,
+        id: TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE,
         name: 'Prompt Registry Get Template',
         description: 'Get a full prompt template by templateId or by scene and role',
-        prompt:
-          '当你已选定一个 Prompt 模板并需要完整内容时，调用 builtin.sys-mg.mcp.prompt-registry.get-template。优先使用 scene+role 获取当前生效版本；如已知 templateId，也可直接查询。',
+        prompt: `当你已选定一个 Prompt 模板并需要完整内容时，调用 ${TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE}。优先使用 scene+role 获取当前生效版本；如已知 templateId，也可直接查询。`,
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'prompt_read', name: 'Prompt Registry Read', level: 'basic' }],
@@ -358,7 +385,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.rd-intelligence.engineering-statistics-run',
+        id: TOOL_ID__ENGINEERING_STATISTICS_RUN,
         name: 'Engineering Statistics Run',
         description: 'Trigger engineering statistics snapshot and return summary',
         type: 'data_analysis' as const,
@@ -377,7 +404,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.rd-intelligence.docs-heat-run',
+        id: TOOL_ID__ENGINEERING_DOCS_HEAT_RUN,
         name: 'Docs Heat Run',
         description: 'Trigger docs heat refresh and return summary',
         type: 'data_analysis' as const,
@@ -393,11 +420,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_LIST_TOOL_ID,
+        id: TOOL_ID__AGENT_LIST,
         name: 'Agents MCP List',
         description: 'List current agents with role/capability summaries and runtime status from Redis cache',
-        prompt:
-          '当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 builtin.sys-mg.internal.agent-master.list-agents 工具获取实时名单，再基于工具结果回答。',
+        prompt: `当用户询问“系统里有哪些agents/当前有哪些agent/agent列表”时，请优先调用 ${TOOL_ID__AGENT_LIST} 工具获取实时名单，再基于工具结果回答。`,
         type: 'data_analysis' as const,
         category: 'System Intelligence',
         requiredPermissions: [{ id: 'agent_registry_read', name: 'Agent Registry Read', level: 'basic' }],
@@ -408,7 +434,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_CREATE_TOOL_ID,
+        id: TOOL_ID__AGENT_CREATE,
         name: 'Agents MCP Create Agent',
         description: 'Create a new agent via MCP with provider default api-key fallback',
         type: 'data_analysis' as const,
@@ -435,7 +461,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_ROLE_LIST_TOOL_ID,
+        id: TOOL_ID__AGENT_ROLE_LIST,
         name: 'Agent Role MCP List Roles',
         description: 'List agent roles with optional active/inactive status filter',
         type: 'data_analysis' as const,
@@ -451,7 +477,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_ROLE_CREATE_TOOL_ID,
+        id: TOOL_ID__AGENT_ROLE_CREATE,
         name: 'Agent Role MCP Create Role',
         description: 'Create an agent role and return normalized role payload',
         type: 'api_call' as const,
@@ -473,7 +499,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_ROLE_UPDATE_TOOL_ID,
+        id: TOOL_ID__AGENT_ROLE_UPDATE,
         name: 'Agent Role MCP Update Role',
         description: 'Update an existing agent role by id',
         type: 'api_call' as const,
@@ -496,7 +522,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: AGENT_ROLE_DELETE_TOOL_ID,
+        id: TOOL_ID__AGENT_ROLE_DELETE,
         name: 'Agent Role MCP Delete Role',
         description: 'Delete an agent role by id',
         type: 'api_call' as const,
@@ -511,11 +537,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.model-admin.list-models',
+        id: TOOL_ID__AGENT_MODEL_LIST,
         name: 'Model MCP List Models',
         description: 'List models currently available in system registry',
-        prompt:
-          '当用户询问“系统里有哪些模型/当前有哪些模型/模型列表”时，请优先调用 builtin.sys-mg.mcp.model-admin.list-models 获取实时模型清单，再回答。',
+        prompt: `当用户询问“系统里有哪些模型/当前有哪些模型/模型列表”时，请优先调用 ${TOOL_ID__AGENT_MODEL_LIST} 获取实时模型清单，再回答。`,
         type: 'data_analysis' as const,
         category: 'Model Management',
         requiredPermissions: [{ id: 'model_registry_read', name: 'Model Registry Read', level: 'basic' }],
@@ -529,7 +554,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.model-admin.add-model',
+        id: TOOL_ID__AGENT_MODEL_ADD,
         name: 'Model MCP Add Model',
         description: 'Add a model into system model registry with deduplication',
         type: 'data_analysis' as const,
@@ -550,10 +575,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.internal.memory.search-memo',
+        id: TOOL_ID__AGENT_MEMORY_SEARCH_MEMO,
         name: 'Memo MCP Search',
         description: 'Search agent memo memory with progressive loading summaries',
-        prompt: '在处理任务时，优先调用 builtin.sys-mg.internal.memory.search-memo 检索相关历史备忘录。',
+        prompt: `在处理任务时，优先调用 ${TOOL_ID__AGENT_MEMORY_SEARCH_MEMO} 检索相关历史备忘录。`,
         type: 'data_analysis' as const,
         category: 'Memory',
         authFree: true,
@@ -571,11 +596,10 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.internal.memory.append-memo',
+        id: TOOL_ID__AGENT_MEMORY_APPEND_MEMO,
         name: 'Memo MCP Append',
         description: 'Append or create memo entries for long-term memory',
-        prompt:
-          '当形成关键结论或后续动作时，调用 builtin.sys-mg.internal.memory.append-memo 追加到目标Agent备忘录。必须显式传 targetAgentId（或 agentId）写入目标对象；topic 必须 memoType=knowledge；achievement/criticism 必须 memoType=standard 且按追加模式写入，已有内容前先插入分割线“—”再追加新记录，禁止覆盖历史。',
+        prompt: `当形成关键结论或后续动作时，调用 ${TOOL_ID__AGENT_MEMORY_APPEND_MEMO} 追加到目标Agent备忘录。必须显式传 targetAgentId（或 agentId）写入目标对象；topic 必须 memoType=knowledge；achievement/criticism 必须 memoType=standard 且按追加模式写入，已有内容前先插入分割线“—”再追加新记录，禁止覆盖历史。`,
         type: 'data_analysis' as const,
         category: 'Memory',
         authFree: true,
@@ -598,7 +622,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.skill-master.list-skills',
+        id: TOOL_ID__AGENT_SKILL_LIST,
         name: 'Skill MCP List Skills',
         description: 'List system skills with optional title fuzzy search',
         type: 'data_analysis' as const,
@@ -618,7 +642,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.skill-master.create-skill',
+        id: TOOL_ID__AGENT_SKILL_CREATE,
         name: 'Skill MCP Create Skill',
         description: 'Create a new skill in system skill library',
         type: 'api_call' as const,
@@ -646,7 +670,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.audit.list-human-operation-log',
+        id: TOOL_ID__EMPLYEE_LOGS,
         name: 'Human Operation Log MCP List',
         description: 'List operation logs for the human bound to the requesting exclusive assistant',
         type: 'data_analysis' as const,
@@ -668,7 +692,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.create-plan',
+        id: TOOL_ID__ORCHESTRATION_CREATE_PLAN,
         name: 'Orchestration Create Plan',
         description: 'Create orchestration plan from prompt in meeting workflow',
         type: 'api_call' as const,
@@ -688,7 +712,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.update-plan',
+        id: TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
         name: 'Orchestration Update Plan',
         description: 'Update orchestration plan in meeting workflow',
         type: 'api_call' as const,
@@ -708,7 +732,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.run-plan',
+        id: TOOL_ID__ORCHESTRATION_RUN_PLAN,
         name: 'Orchestration Run Plan',
         description: 'Run an orchestration plan in meeting workflow',
         type: 'api_call' as const,
@@ -725,7 +749,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.get-plan',
+        id: TOOL_ID__ORCHESTRATION_GET_PLAN,
         name: 'Orchestration Get Plan',
         description: 'Get orchestration plan details',
         type: 'api_call' as const,
@@ -740,7 +764,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.list-plans',
+        id: TOOL_ID__ORCHESTRATION_LIST_PLANS,
         name: 'Orchestration List Plans',
         description: 'List orchestration plans',
         type: 'api_call' as const,
@@ -753,7 +777,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.plan-initialize',
+        id: TOOL_ID__ORCHESTRATION_INIT_PLAN,
         name: 'Orchestration Plan Initialize',
         description: 'Write structured initialize data to plan metadata',
         type: 'api_call' as const,
@@ -775,7 +799,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.submit-task',
+        id: TOOL_ID__ORCHESTRATION_SUBMIT_TASK,
         name: 'Orchestration Submit Task',
         description: 'Planner submits and creates next orchestration task',
         type: 'api_call' as const,
@@ -811,7 +835,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.orchestration.report-task-run-result',
+        id: TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT,
         name: 'Orchestration Report Task Run Result',
         description: 'Planner reports post-execution decision for current task',
         type: 'api_call' as const,
@@ -836,7 +860,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.list',
+        id: TOOL_ID__REQUIREMENT_LIST,
         name: 'Requirement List',
         description: 'List EI requirements with filters or board view',
         type: 'api_call' as const,
@@ -856,7 +880,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.get',
+        id: TOOL_ID__REQUIREMENT_GET,
         name: 'Requirement Get',
         description: 'Get EI requirement details',
         type: 'api_call' as const,
@@ -871,7 +895,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.create',
+        id: TOOL_ID__REQUIREMENT_CREATE,
         name: 'Requirement Create',
         description: 'Create EI requirement',
         type: 'api_call' as const,
@@ -893,7 +917,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.update-status',
+        id: TOOL_ID__REQUIREMENT_UPDATE_STATUS,
         name: 'Requirement Update Status',
         description: 'Update EI requirement status. Supports orchestration context fields (planId, taskType, executorAgentId, etc.) and assignee override (toAgentId/toAgentName). planId is auto-filled from collaboration context if not provided.',
         prompt:
@@ -922,7 +946,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.update',
+        id: TOOL_ID__REQUIREMENT_UPDATE,
         name: 'Requirement Update',
         description: 'Update requirement by action (assign/comment/update_status)',
         prompt:
@@ -954,7 +978,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.requirement.sync-github',
+        id: TOOL_ID__REQUIREMENT_SYNC_GITHUB,
         name: 'Requirement Sync Github',
         description: 'Sync EI requirement to GitHub issue',
         type: 'api_call' as const,
@@ -972,7 +996,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.meeting.list-meetings',
+        id: TOOL_ID__MEETING_LIST,
         name: 'Meeting MCP List',
         description: 'List current meetings (without message details)',
         type: 'data_analysis' as const,
@@ -988,7 +1012,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.meeting.get-detail',
+        id: TOOL_ID__MEETING_GET_DETAIL,
         name: 'Meeting MCP Get Detail',
         description: 'Get meeting detail with messages',
         type: 'api_call' as const,
@@ -1003,7 +1027,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.meeting.send-message',
+        id: TOOL_ID__MEETING_SEND_MESSAGE,
         name: 'Meeting MCP Send Message',
         description: 'Send a message to a specific meeting',
         type: 'api_call' as const,
@@ -1020,7 +1044,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.meeting.update-status',
+        id: TOOL_ID__MEETING_UPDATE_STATUS,
         name: 'Meeting MCP Update Status',
         description: 'Update meeting status (start/end/pause/resume)',
         type: 'api_call' as const,
@@ -1036,26 +1060,7 @@ export const BUILTIN_TOOLS = [
         },
       },
       {
-        id: 'builtin.sys-mg.mcp.meeting.generate-summary',
-        name: 'Meeting MCP Save Summary (Legacy Alias)',
-        description: 'Legacy alias for saving meeting summary content',
-        type: 'api_call' as const,
-        category: 'Meeting',
-        requiredPermissions: [{ id: 'meeting_write', name: 'Meeting Write', level: 'intermediate' }],
-        tokenCost: 5,
-        implementation: {
-          type: 'built_in' as const,
-          parameters: {
-            meetingId: 'string',
-            summary: 'string',
-            actionItems: 'string[]',
-            decisions: 'string[]',
-            overwrite: 'boolean',
-          },
-        },
-      },
-      {
-        id: 'builtin.sys-mg.mcp.meeting.save-summary',
+        id: TOOL_ID__MEETING_SAVE_SUMMARY,
         name: 'Meeting MCP Save Summary',
         description: 'Save generated meeting summary content',
         type: 'api_call' as const,
@@ -1077,7 +1082,6 @@ export const BUILTIN_TOOLS = [
 
 export const IMPLEMENTED_TOOL_IDS = [
   ...BUILTIN_TOOLS.map((tool) => tool.id),
-  LEGACY_AGENT_LIST_TOOL_ID,
 ];
 
 /**

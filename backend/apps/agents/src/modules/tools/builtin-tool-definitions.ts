@@ -1,17 +1,54 @@
-export const AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-master.list-agents';
-export const LEGACY_AGENT_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-admin.list-agents';
-export const AGENT_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-master.create-agent';
-export const AGENT_ROLE_LIST_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.list-roles';
-export const AGENT_ROLE_CREATE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.create-role';
-export const AGENT_ROLE_UPDATE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.update-role';
-export const AGENT_ROLE_DELETE_TOOL_ID = 'builtin.sys-mg.internal.agent-role-master.delete-role';
-export const RD_DOCS_WRITE_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-write';
-export const RD_REPO_WRITER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-writer';
-export const PROMPT_REGISTRY_SAVE_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.save-template';
-export const PROMPT_REGISTRY_LIST_TEMPLATES_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.list-templates';
-export const PROMPT_REGISTRY_GET_TEMPLATE_TOOL_ID = 'builtin.sys-mg.mcp.prompt-registry.get-template';
-export const GET_TOOL_SCHEMA_TOOL_ID = 'builtin.sys-mg.internal.tool-meta.get-tool-schema';
-export const SEND_INTERNAL_MESSAGE_TOOL_ID = 'builtin.sys-mg.mcp.inner-message.send-internal-message';
+export const TOOL_ID__WEB_FETCH = 'builtin.data-gathering.internal.web.fetch';
+export const TOOL_ID__WEB_SEARCH_EXA = 'builtin.data-gathering.internal.web.search-exa';
+export const TOOL_ID__ENGINEERING_COMMIT_READ = 'builtin.engineering.internal.commit.list';
+export const TOOL_ID__ENGINEERING_DOCS_READ = 'builtin.engineering.internal.docs.read';
+export const TOOL_ID__ENGINEERING_DOCS_WRITE = 'builtin.engineering.internal.docs.write';
+export const TOOL_ID__ENGINEERING_REPO_READ = 'builtin.engineering.internal.repo.read';
+export const TOOL_ID__ENGINEERING_REPO_WRITER = 'builtin.engineering.internal.repo.write';
+export const TOOL_ID__ENGINEERING_DOCS_HEAT_RUN = 'builtin.engineering.mcp.docs-heat.run';
+export const TOOL_ID__REQUIREMENT_CREATE = 'builtin.engineering.mcp.requirement.create';
+export const TOOL_ID__REQUIREMENT_GET = 'builtin.engineering.mcp.requirement.get';
+export const TOOL_ID__REQUIREMENT_LIST = 'builtin.engineering.mcp.requirement.list';
+export const TOOL_ID__REQUIREMENT_SYNC_GITHUB = 'builtin.engineering.mcp.requirement.sync-github';
+export const TOOL_ID__REQUIREMENT_UPDATE = 'builtin.engineering.mcp.requirement.update';
+export const TOOL_ID__REQUIREMENT_UPDATE_STATUS = 'builtin.engineering.mcp.requirement.update-status';
+export const TOOL_ID__ENGINEERING_STATISTICS_RUN = 'builtin.engineering.mcp.statistics.run';
+export const TOOL_ID__CONTENT_EXTRACT = 'builtin.sys-mg.internal.content.extract';
+export const TOOL_ID__AGENT_MEMORY_APPEND_MEMO = 'builtin.sys-mg.mcp.agent-memory.create';
+export const TOOL_ID__AGENT_MEMORY_SEARCH_MEMO = 'builtin.sys-mg.mcp.agent-memory.list';
+export const TOOL_ID__AGENT_MODEL_ADD = 'builtin.sys-mg.mcp.agent-model.create';
+export const TOOL_ID__AGENT_MODEL_LIST = 'builtin.sys-mg.mcp.agent-model.list';
+export const TOOL_ID__AGENT_ROLE_CREATE = 'builtin.sys-mg.mcp.agent-role.create';
+export const TOOL_ID__AGENT_ROLE_DELETE = 'builtin.sys-mg.mcp.agent-role.delete';
+export const TOOL_ID__AGENT_ROLE_LIST = 'builtin.sys-mg.mcp.agent-role.list';
+export const TOOL_ID__AGENT_ROLE_UPDATE = 'builtin.sys-mg.mcp.agent-role.update';
+export const TOOL_ID__AGENT_SKILL_CREATE = 'builtin.sys-mg.mcp.agent-skill.create';
+export const TOOL_ID__AGENT_SKILL_LIST = 'builtin.sys-mg.mcp.agent-skill.list';
+export const TOOL_ID__AGENT_CREATE = 'builtin.sys-mg.mcp.agent.create';
+export const TOOL_ID__AGENT_LIST = 'builtin.sys-mg.mcp.agent.list';
+export const TOOL_ID__EMPLYEE_LOGS = 'builtin.sys-mg.mcp.audit.list';
+export const TOOL_ID__SEND_INTERNAL_MESSAGE = 'builtin.sys-mg.mcp.inner-message.create';
+export const TOOL_ID__MEETING_SEND_MESSAGE = 'builtin.sys-mg.mcp.meeting.create-message';
+export const TOOL_ID__MEETING_GET_DETAIL = 'builtin.sys-mg.mcp.meeting.get';
+export const TOOL_ID__MEETING_LIST = 'builtin.sys-mg.mcp.meeting.list';
+export const TOOL_ID__MEETING_SAVE_SUMMARY = 'builtin.sys-mg.mcp.meeting.save-summary';
+export const TOOL_ID__MEETING_UPDATE_STATUS = 'builtin.sys-mg.mcp.meeting.update-status';
+export const TOOL_ID__ORCHESTRATION_CREATE_PLAN = 'builtin.sys-mg.mcp.orchestration.create';
+export const TOOL_ID__ORCHESTRATION_GET_PLAN = 'builtin.sys-mg.mcp.orchestration.get';
+export const TOOL_ID__ORCHESTRATION_INIT_PLAN = 'builtin.sys-mg.mcp.orchestration.initialize';
+export const TOOL_ID__ORCHESTRATION_LIST_PLANS = 'builtin.sys-mg.mcp.orchestration.list';
+export const TOOL_ID__ORCHESTRATION_RUN_PLAN = 'builtin.sys-mg.mcp.orchestration.run';
+export const TOOL_ID__ORCHESTRATION_SUBMIT_TASK = 'builtin.sys-mg.mcp.orchestration.submit-task';
+export const TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT =
+  'builtin.sys-mg.mcp.orchestration.submit-task-run-result';
+export const TOOL_ID__ORCHESTRATION_UPDATE_PLAN = 'builtin.sys-mg.mcp.orchestration.update';
+export const TOOL_ID__PROMPT_REGISTRY_GET_TEMPLATE = 'builtin.sys-mg.mcp.prompt-registry.get';
+export const TOOL_ID__PROMPT_REGISTRY_LIST_TEMPLATES = 'builtin.sys-mg.mcp.prompt-registry.list';
+export const TOOL_ID__PROMPT_REGISTRY_SAVE_TEMPLATE = 'builtin.sys-mg.mcp.prompt-registry.save';
+export const TOOL_ID__GET_TOOL_SCHEMA = 'builtin.sys-mg.mcp.tool-schema.get';
+export const TOOL_ID__GMAIL_SEND_EMAIL = 'composio.communication.mcp.gmail.send-email';
+export const TOOL_ID__SLACK_SEND_MESSAGE = 'composio.communication.mcp.slack.send-message';
+export const TOOL_ID__WEB_SEARCH_SERP = 'composio.web-retrieval.mcp.web-search.serp';
 
 export const VIRTUAL_TOOL_IDS = [
   'web_search',
@@ -21,43 +58,4 @@ export const VIRTUAL_TOOL_IDS = [
   'data_analysis',
   'video_editing',
   'api_call',
-];
-
-export const DEPRECATED_TOOL_IDS = [
-  'code-docs-mcp',
-  'code-docs-reader',
-  'code-updates-mcp',
-  'code-updates-reader',
-  'websearch',
-  'webfetch',
-  'content_extract',
-  'slack',
-  'gmail',
-  'repo-read',
-  'gh-repo-docs-reader-mcp',
-  'gh-repo-updates-mcp',
-  'local-repo-docs-reader',
-  'local-repo-updates-reader',
-  'agents_mcp_list',
-  'model_mcp_list_models',
-  'model_mcp_search_latest',
-  'model_mcp_add_model',
-  'memo_mcp_search',
-  'memo_mcp_append',
-  'human_operation_log_mcp_list',
-  'orchestration_create_plan',
-  'orchestration_update_plan',
-  'orchestration_run_plan',
-  'orchestration_get_plan',
-  'orchestration_list_plans',
-  'orchestration_reassign_task',
-  'orchestration_complete_human_task',
-  'orchestration_create_schedule',
-  'orchestration_update_schedule',
-  'orchestration_debug_task',
-  'builtin.sys-mg.mcp.orchestration.reassign-task',
-  'builtin.sys-mg.mcp.orchestration.complete-human-task',
-  'builtin.sys-mg.mcp.orchestration.create-schedule',
-  'builtin.sys-mg.mcp.orchestration.update-schedule',
-  'builtin.sys-mg.mcp.orchestration.debug-task',
 ];

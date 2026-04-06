@@ -30,10 +30,10 @@ const HR_ROLE_CODE = 'human-resources-manager';
 const DEFAULT_AGENT_NAME = 'hr agent';
 
 const ROLE_MASTER_TOOL_IDS = [
-  'builtin.sys-mg.internal.agent-role-master.list-roles',
-  'builtin.sys-mg.internal.agent-role-master.create-role',
-  'builtin.sys-mg.internal.agent-role-master.update-role',
-  'builtin.sys-mg.internal.agent-role-master.delete-role',
+  'builtin.sys-mg.mcp.agent-role.list',
+  'builtin.sys-mg.mcp.agent-role.create',
+  'builtin.sys-mg.mcp.agent-role.update',
+  'builtin.sys-mg.mcp.agent-role.delete',
 ];
 
 const ROLE_MASTER_PERMISSION_IDS = ['agent_role_registry_read', 'agent_role_registry_write'];

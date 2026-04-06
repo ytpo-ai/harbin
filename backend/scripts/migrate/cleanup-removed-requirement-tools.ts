@@ -7,17 +7,17 @@ type ToolBindingRow = {
 };
 
 const REMOVED_REQUIREMENT_TOOL_IDS = [
-  'builtin.sys-mg.mcp.requirement.board',
-  'builtin.sys-mg.mcp.requirement.assign',
-  'builtin.sys-mg.mcp.requirement.comment',
-  'builtin.sys-mg.mcp.requirement.mutate',
+  'builtin.engineering.mcp.requirement.board',
+  'builtin.engineering.mcp.requirement.assign',
+  'builtin.engineering.mcp.requirement.comment',
+  'builtin.engineering.mcp.requirement.mutate',
 ] as const;
 
 const TOOL_REPLACEMENTS: Record<string, string> = {
-  'builtin.sys-mg.mcp.requirement.board': 'builtin.sys-mg.mcp.requirement.list',
-  'builtin.sys-mg.mcp.requirement.assign': 'builtin.sys-mg.mcp.requirement.update',
-  'builtin.sys-mg.mcp.requirement.comment': 'builtin.sys-mg.mcp.requirement.update',
-  'builtin.sys-mg.mcp.requirement.mutate': 'builtin.sys-mg.mcp.requirement.update',
+  'builtin.engineering.mcp.requirement.board': 'builtin.engineering.mcp.requirement.list',
+  'builtin.engineering.mcp.requirement.assign': 'builtin.engineering.mcp.requirement.update',
+  'builtin.engineering.mcp.requirement.comment': 'builtin.engineering.mcp.requirement.update',
+  'builtin.engineering.mcp.requirement.mutate': 'builtin.engineering.mcp.requirement.update',
 };
 
 const toolSchema = new Schema(

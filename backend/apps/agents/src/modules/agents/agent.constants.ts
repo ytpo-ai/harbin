@@ -1,36 +1,58 @@
 import {
-  MODEL_ADD_TOOL_ID,
-  MODEL_LIST_TOOL_ID,
-} from './model-management-agent.constants';
-import {
-  GET_TOOL_SCHEMA_TOOL_ID,
-  SEND_INTERNAL_MESSAGE_TOOL_ID,
+  TOOL_ID__AGENT_MEMORY_APPEND_MEMO,
+  TOOL_ID__AGENT_MEMORY_SEARCH_MEMO,
+  TOOL_ID__AGENT_MODEL_ADD,
+  TOOL_ID__AGENT_MODEL_LIST,
+  TOOL_ID__AGENT_LIST,
+  TOOL_ID__CONTENT_EXTRACT,
+  TOOL_ID__EMPLYEE_LOGS,
+  TOOL_ID__ENGINEERING_COMMIT_READ,
+  TOOL_ID__ENGINEERING_DOCS_READ,
+  TOOL_ID__ENGINEERING_REPO_READ,
+  TOOL_ID__GET_TOOL_SCHEMA,
+  TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  TOOL_ID__ORCHESTRATION_GET_PLAN,
+  TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK,
+  TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT,
+  TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  TOOL_ID__REQUIREMENT_CREATE,
+  TOOL_ID__REQUIREMENT_GET,
+  TOOL_ID__REQUIREMENT_LIST,
+  TOOL_ID__REQUIREMENT_SYNC_GITHUB,
+  TOOL_ID__REQUIREMENT_UPDATE,
+  TOOL_ID__REQUIREMENT_UPDATE_STATUS,
+  TOOL_ID__SEND_INTERNAL_MESSAGE,
+  TOOL_ID__WEB_FETCH,
+  TOOL_ID__WEB_SEARCH_EXA,
 } from '@agent/modules/tools/builtin-tool-definitions';
 
-export const CODE_DOCS_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.docs-read';
-export const CODE_UPDATES_READER_TOOL_ID = 'builtin.sys-mg.internal.rd-related.updates-read';
-export const REPO_READ_TOOL_ID = 'builtin.sys-mg.internal.rd-related.repo-read';
-export const MEMO_MCP_SEARCH_TOOL_ID = 'builtin.sys-mg.internal.memory.search-memo';
-export const MEMO_MCP_APPEND_TOOL_ID = 'builtin.sys-mg.internal.memory.append-memo';
-export { GET_TOOL_SCHEMA_TOOL_ID, SEND_INTERNAL_MESSAGE_TOOL_ID };
+export const CODE_DOCS_READER_TOOL_ID = TOOL_ID__ENGINEERING_DOCS_READ;
+export const CODE_UPDATES_READER_TOOL_ID = TOOL_ID__ENGINEERING_COMMIT_READ;
+export const REPO_READ_TOOL_ID = TOOL_ID__ENGINEERING_REPO_READ;
+export const MEMO_MCP_SEARCH_TOOL_ID = TOOL_ID__AGENT_MEMORY_SEARCH_MEMO;
+export const MEMO_MCP_APPEND_TOOL_ID = TOOL_ID__AGENT_MEMORY_APPEND_MEMO;
+export const GET_TOOL_SCHEMA_TOOL_ID = TOOL_ID__GET_TOOL_SCHEMA;
+export const SEND_INTERNAL_MESSAGE_TOOL_ID = TOOL_ID__SEND_INTERNAL_MESSAGE;
 
 export const ORCHESTRATION_TOOL_IDS = {
-  createPlan: 'builtin.sys-mg.mcp.orchestration.create-plan',
-  updatePlan: 'builtin.sys-mg.mcp.orchestration.update-plan',
-  runPlan: 'builtin.sys-mg.mcp.orchestration.run-plan',
-  getPlan: 'builtin.sys-mg.mcp.orchestration.get-plan',
-  listPlans: 'builtin.sys-mg.mcp.orchestration.list-plans',
-  submitTask: 'builtin.sys-mg.mcp.orchestration.submit-task',
-  reportTaskRunResult: 'builtin.sys-mg.mcp.orchestration.report-task-run-result',
+  createPlan: TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  updatePlan: TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  runPlan: TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  getPlan: TOOL_ID__ORCHESTRATION_GET_PLAN,
+  listPlans: TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  submitTask: TOOL_ID__ORCHESTRATION_SUBMIT_TASK,
+  reportTaskRunResult: TOOL_ID__ORCHESTRATION_SUBMIT_TASK_RUN_RESULT,
 } as const;
 
 export const REQUIREMENT_TOOL_IDS = {
-  list: 'builtin.sys-mg.mcp.requirement.list',
-  get: 'builtin.sys-mg.mcp.requirement.get',
-  create: 'builtin.sys-mg.mcp.requirement.create',
-  updateStatus: 'builtin.sys-mg.mcp.requirement.update-status',
-  update: 'builtin.sys-mg.mcp.requirement.update',
-  syncGithub: 'builtin.sys-mg.mcp.requirement.sync-github',
+  list: TOOL_ID__REQUIREMENT_LIST,
+  get: TOOL_ID__REQUIREMENT_GET,
+  create: TOOL_ID__REQUIREMENT_CREATE,
+  updateStatus: TOOL_ID__REQUIREMENT_UPDATE_STATUS,
+  update: TOOL_ID__REQUIREMENT_UPDATE,
+  syncGithub: TOOL_ID__REQUIREMENT_SYNC_GITHUB,
 } as const;
 
 export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
@@ -41,14 +63,14 @@ export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
   'mcp.orchestration.listPlans': ORCHESTRATION_TOOL_IDS.listPlans,
   'mcp.orchestration.submitTask': ORCHESTRATION_TOOL_IDS.submitTask,
   'mcp.orchestration.reportTaskRunResult': ORCHESTRATION_TOOL_IDS.reportTaskRunResult,
-  'mcp.model.list': MODEL_LIST_TOOL_ID,
-  'mcp.model.add': MODEL_ADD_TOOL_ID,
-  'mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
-  'builtin.sys-mg.mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
-  'internal.agents.list': 'builtin.sys-mg.internal.agent-master.list-agents',
-  'internal.content.extract': 'builtin.data-analysis.internal.content-analysis.extract',
-  'internal.web.search': 'builtin.web-retrieval.internal.web-search.exa',
-  'internal.web.fetch': 'builtin.web-retrieval.internal.web-fetch.fetch',
+  'mcp.model.list': TOOL_ID__AGENT_MODEL_LIST,
+  'mcp.model.add': TOOL_ID__AGENT_MODEL_ADD,
+  'mcp.humanOperationLog.list': TOOL_ID__EMPLYEE_LOGS,
+  'builtin.sys-mg.mcp.humanOperationLog.list': TOOL_ID__EMPLYEE_LOGS,
+  'internal.agents.list': TOOL_ID__AGENT_LIST,
+  'internal.content.extract': TOOL_ID__CONTENT_EXTRACT,
+  'internal.web.search': TOOL_ID__WEB_SEARCH_EXA,
+  'internal.web.fetch': TOOL_ID__WEB_FETCH,
 };
 
 export const DEFAULT_MAX_TOOL_ROUNDS = 30;

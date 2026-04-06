@@ -4,6 +4,20 @@ import { Model } from 'mongoose';
 import { AgentProfile, AgentProfileDocument } from '@agents/schemas/agent-profile.schema';
 import { Agent } from '@agent/schemas/agent.schema';
 import { ToolService } from '../tools/tool.service';
+import {
+  TOOL_ID__AGENT_LIST,
+  TOOL_ID__AGENT_MODEL_ADD,
+  TOOL_ID__AGENT_MODEL_LIST,
+  TOOL_ID__CONTENT_EXTRACT,
+  TOOL_ID__EMPLYEE_LOGS,
+  TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  TOOL_ID__ORCHESTRATION_GET_PLAN,
+  TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  TOOL_ID__WEB_FETCH,
+  TOOL_ID__WEB_SEARCH_EXA,
+} from '../tools/builtin-tool-definitions';
 import type { AgentMcpMapProfile, AgentMcpProfile, AgentMcpToolSummary, AgentToolPermissionSet } from './agent.types';
 
 interface RoleLike {
@@ -26,19 +40,19 @@ const DEFAULT_MCP_PROFILE: AgentMcpMapProfile = {
 };
 
 const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
-  'mcp.orchestration.createPlan': 'builtin.sys-mg.mcp.orchestration.create-plan',
-  'mcp.orchestration.updatePlan': 'builtin.sys-mg.mcp.orchestration.update-plan',
-  'mcp.orchestration.runPlan': 'builtin.sys-mg.mcp.orchestration.run-plan',
-  'mcp.orchestration.getPlan': 'builtin.sys-mg.mcp.orchestration.get-plan',
-  'mcp.orchestration.listPlans': 'builtin.sys-mg.mcp.orchestration.list-plans',
-  'mcp.model.list': 'builtin.sys-mg.mcp.model-admin.list-models',
-  'mcp.model.add': 'builtin.sys-mg.mcp.model-admin.add-model',
-  'mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
-  'builtin.sys-mg.mcp.humanOperationLog.list': 'builtin.sys-mg.mcp.audit.list-human-operation-log',
-  'internal.agents.list': 'builtin.sys-mg.internal.agent-master.list-agents',
-  'internal.content.extract': 'builtin.data-analysis.internal.content-analysis.extract',
-  'internal.web.search': 'builtin.web-retrieval.internal.web-search.exa',
-  'internal.web.fetch': 'builtin.web-retrieval.internal.web-fetch.fetch',
+  'mcp.orchestration.createPlan': TOOL_ID__ORCHESTRATION_CREATE_PLAN,
+  'mcp.orchestration.updatePlan': TOOL_ID__ORCHESTRATION_UPDATE_PLAN,
+  'mcp.orchestration.runPlan': TOOL_ID__ORCHESTRATION_RUN_PLAN,
+  'mcp.orchestration.getPlan': TOOL_ID__ORCHESTRATION_GET_PLAN,
+  'mcp.orchestration.listPlans': TOOL_ID__ORCHESTRATION_LIST_PLANS,
+  'mcp.model.list': TOOL_ID__AGENT_MODEL_LIST,
+  'mcp.model.add': TOOL_ID__AGENT_MODEL_ADD,
+  'mcp.humanOperationLog.list': TOOL_ID__EMPLYEE_LOGS,
+  'builtin.sys-mg.mcp.humanOperationLog.list': TOOL_ID__EMPLYEE_LOGS,
+  'internal.agents.list': TOOL_ID__AGENT_LIST,
+  'internal.content.extract': TOOL_ID__CONTENT_EXTRACT,
+  'internal.web.search': TOOL_ID__WEB_SEARCH_EXA,
+  'internal.web.fetch': TOOL_ID__WEB_FETCH,
 };
 
 @Injectable()

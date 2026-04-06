@@ -88,12 +88,12 @@ describe('OrchestrationContextService buildPreTaskContext', () => {
       taskDescription: 'desc',
       taskContext: { requirementId: 'req-123' },
       preExecuteActions: [
-        { tool: 'builtin.sys-mg.mcp.requirement.update-status', params: { requirementId: 'req-123', status: 'in_progress' } },
+        { tool: 'builtin.engineering.mcp.requirement.update-status', params: { requirementId: 'req-123', status: 'in_progress' } },
       ],
     });
 
     expect(prompt).toContain('pre_execute');
-    expect(prompt).toContain('builtin.sys-mg.mcp.requirement.update-status');
+    expect(prompt).toContain('builtin.engineering.mcp.requirement.update-status');
     expect(prompt).toContain('allowExecute');
   });
 });

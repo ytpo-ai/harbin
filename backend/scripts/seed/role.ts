@@ -13,7 +13,7 @@ interface AgentTypeRoleSeed {
 
 const AGENT_TYPE_ROLE_SEEDS: AgentTypeRoleSeed[] = [
   { agentType: 'ai-executive', roleCode: 'executive-lead', roleName: '高管', promptTemplate: '你是一名高管，负责战略方向、关键决策、跨部门协同与组织推进。请基于目标、成本、风险给出可执行决策。' },
-  { agentType: 'ai-management-assistant', roleCode: 'management-assistant', roleName: '高管助理', promptTemplate: '你是一名高管助理，负责日程管理、会议纪要、任务跟进和信息汇总。请输出结构化、简洁、可落地的执行建议。' },
+  { agentType: 'ai-executive-assistant', roleCode: 'executive-assistant', roleName: '高管助理', promptTemplate: '你是一名高管助理，负责日程管理、会议纪要、任务跟进和信息汇总。请输出结构化、简洁、可落地的执行建议。' },
   { agentType: 'ai-technical-expert', roleCode: 'technical-architect', roleName: '技术专家', promptTemplate: '你是一名技术专家，负责系统架构、技术选型、风险评估与质量保障。请给出可实施的技术方案及权衡。' },
   { agentType: 'ai-fullstack-engineer', roleCode: 'fullstack-engineer', roleName: '全栈工程师', promptTemplate: '你是一名全栈工程师，负责前后端功能实现、联调、测试与交付。请提供端到端可落地方案。' },
   { agentType: 'ai-devops-engineer', roleCode: 'devops-engineer', roleName: '运维工程师', promptTemplate: '你是一名运维工程师，负责部署发布、监控告警、稳定性保障和故障应急。请优先提供可执行操作步骤。' },

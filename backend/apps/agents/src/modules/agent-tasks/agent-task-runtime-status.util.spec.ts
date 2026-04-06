@@ -21,7 +21,7 @@ describe('agent-task-runtime-status util', () => {
     const raw = JSON.stringify({
       agentId: 'agent-2',
       taskId: 'task-2',
-      toolId: 'builtin.sys-mg.mcp.requirement.list',
+      toolId: 'builtin.engineering.mcp.requirement.list',
       toolName: 'Requirement List',
       status: 'running',
       updatedAt: '2026-03-22T10:00:00.000Z',
@@ -31,7 +31,7 @@ describe('agent-task-runtime-status util', () => {
       expect.objectContaining({
         agentId: 'agent-2',
         taskId: 'task-2',
-        toolId: 'builtin.sys-mg.mcp.requirement.list',
+        toolId: 'builtin.engineering.mcp.requirement.list',
         status: 'running',
         source: 'agent_task_tool',
       }),

@@ -125,14 +125,14 @@ describe('AgentToolAuthService', () => {
       {
         id: 'agent-1',
         isActive: true,
-        tools: ['builtin.sys-mg.internal.agent-master.list-agents'],
+        tools: ['builtin.sys-mg.mcp.agent.list'],
         permissions: ['agent_registry_read'],
       },
       {
         _id: '699f40ad709a628508681e4d',
         name: 'CEO助理-小武',
         isActive: true,
-        tools: ['builtin.sys-mg.internal.agent-master.list-agents'],
+        tools: ['builtin.sys-mg.mcp.agent.list'],
         permissions: ['agent_registry_read'],
       },
     ];
@@ -153,12 +153,12 @@ describe('AgentToolAuthService', () => {
     const token = await service.issueToken({
       agentKeyId: credential.keyId,
       agentSecret: credential.agentSecret,
-      requestedScopes: ['tool:execute:builtin.sys-mg.internal.agent-master.list-agents'],
+      requestedScopes: ['tool:execute:builtin.sys-mg.mcp.agent.list'],
     });
 
     const claims = await service.verifyToken(token.accessToken);
     expect(claims.agentId).toBe('agent-1');
-    expect(claims.toolScopes).toContain('tool:execute:builtin.sys-mg.internal.agent-master.list-agents');
+    expect(claims.toolScopes).toContain('tool:execute:builtin.sys-mg.mcp.agent.list');
   });
 
   it('rejects revoked token', async () => {
@@ -209,7 +209,7 @@ describe('AgentToolAuthService', () => {
     const token = await service.issueToken({
       agentKeyId: credential.keyId,
       agentSecret: credential.agentSecret,
-      requestedScopes: ['tool:execute:builtin.sys-mg.internal.agent-master.list-agents'],
+      requestedScopes: ['tool:execute:builtin.sys-mg.mcp.agent.list'],
     });
 
     const claims = await service.verifyToken(token.accessToken);

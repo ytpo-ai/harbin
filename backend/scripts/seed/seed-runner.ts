@@ -329,7 +329,7 @@ async function seedModelManagementAgentRecord(
     capabilities: ['model_discovery', 'model_registry_management', 'internet_research'],
     systemPrompt: deps.MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
     isActive: true,
-    tools: ['builtin.web-retrieval.internal.web-search.exa', ...deps.MODEL_MANAGEMENT_AGENT_TOOLS],
+    tools: ['builtin.data-gathering.internal.web.search-exa', ...deps.MODEL_MANAGEMENT_AGENT_TOOLS],
     permissions: ['model_registry_read', 'model_registry_write'],
     personality: {
       workEthic: 90,

@@ -384,8 +384,8 @@ export class PlannerService {
       sessionContext: {
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
         preactivatedToolIds: [
-          'builtin.sys-mg.mcp.orchestration.plan-initialize',
-          'builtin.sys-mg.internal.agent-master.list-agents',
+          'builtin.sys-mg.mcp.orchestration.initialize',
+          'builtin.sys-mg.mcp.agent.list',
         ],
       },
     });
@@ -444,7 +444,7 @@ export class PlannerService {
       }),
       sessionContext: {
         sessionId,
-        preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.report-task-run-result'],
+        preactivatedToolIds: ['builtin.sys-mg.mcp.orchestration.submit-task-run-result'],
       },
     });
 

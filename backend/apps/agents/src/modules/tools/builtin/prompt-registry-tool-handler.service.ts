@@ -241,7 +241,7 @@ export class PromptRegistryToolHandler {
           summary: normalized.source?.repo
             ? `Import prompt from ${normalized.source.repo}${normalized.source.path ? `:${normalized.source.path}` : ''}`
             : 'Import prompt template via MCP tool',
-          operatorId: 'mcp.prompt-registry.save-template',
+          operatorId: 'mcp.prompt-registry.save',
         });
 
         if (draft.version <= 1) {
@@ -256,7 +256,7 @@ export class PromptRegistryToolHandler {
             role: normalized.role,
             version: draft.version,
             summary: `Auto publish imported draft v${draft.version}`,
-            operatorId: 'mcp.prompt-registry.save-template',
+            operatorId: 'mcp.prompt-registry.save',
           });
         }
 
