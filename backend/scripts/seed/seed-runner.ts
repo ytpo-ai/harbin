@@ -76,11 +76,10 @@ async function run(): Promise<void> {
     console.log('[seed] --force enabled');
   }
 
-  const needsAgentsApp =
-    !dryRun &&
-    selectedSeeds.some((seed) => ['model-management-agent', 'default-model-registry'].includes(seed));
-  const needsLegacyApp =
-    !dryRun && selectedSeeds.some((seed) => ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed));
+  const needsAgentsApp = selectedSeeds.some((seed) => ['model-management-agent', 'default-model-registry'].includes(seed));
+  const needsLegacyApp = selectedSeeds.some((seed) =>
+    ['meeting-monitor', 'system-schedules', 'docs-heat', 'agent-roles'].includes(seed),
+  );
 
   const {
     AgentsAppModule,
@@ -116,27 +115,58 @@ async function run(): Promise<void> {
     ? loadLegacySeedDependencies()
     : { AppModule: null, seedSystemSchedules: null, seedAgentRoles: null };
 
-  const agentsApp = needsAgentsApp ? await NestFactory.createApplicationContext(AgentsAppModule) : null;
-  const legacyApp = needsLegacyApp ? await NestFactory.createApplicationContext(AppModule) : null;
+  const runWithAgentsApp = async <T>(handler: (app: any) => Promise<T>): Promise<T> => {
+    if (!needsAgentsApp) {
+      throw new Error('Agents app context not initialized');
+    }
+    const app = await NestFactory.createApplicationContext(AgentsAppModule);
+    try {
+      return await handler(app);
+    } finally {
+      try {
+        await app.close();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[seed] agents app close warning: ${message}`);
+      }
+    }
+  };
 
-  try {
-    for (const seed of selectedSeeds) {
-      console.log(`[seed] start ${seed}`);
+  const runWithLegacyApp = async <T>(handler: (app: any) => Promise<T>): Promise<T> => {
+    if (!needsLegacyApp) {
+      throw new Error('Legacy app context not initialized');
+    }
+    const app = await NestFactory.createApplicationContext(AppModule);
+    try {
+      return await handler(app);
+    } finally {
+      try {
+        await app.close();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`[seed] legacy app close warning: ${message}`);
+      }
+    }
+  };
+
+  for (const seed of selectedSeeds) {
+    console.log(`[seed] start ${seed}`);
 
       if (seed === 'model-management-agent') {
         if (dryRun) {
           console.log('[seed] model-management-agent: dry-run skip (requires Nest context write)');
         } else {
-          if (!agentsApp) throw new Error('Agents app context not initialized');
-          await seedModelManagementAgentRecord(agentsApp, {
-            getModelToken,
-            Agent,
-            AVAILABLE_MODELS,
-            MODEL_MANAGEMENT_AGENT_NAME,
-            MODEL_MANAGEMENT_ROLE_ID,
-            MODEL_MANAGEMENT_AGENT_TOOLS,
-            MODEL_MANAGEMENT_AGENT_DESCRIPTION,
-            MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
+          await runWithAgentsApp(async (app) => {
+            await seedModelManagementAgentRecord(app, {
+              getModelToken,
+              Agent,
+              AVAILABLE_MODELS,
+              MODEL_MANAGEMENT_AGENT_NAME,
+              MODEL_MANAGEMENT_ROLE_ID,
+              MODEL_MANAGEMENT_AGENT_TOOLS,
+              MODEL_MANAGEMENT_AGENT_DESCRIPTION,
+              MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
+            });
           });
         }
       }
@@ -153,8 +183,9 @@ async function run(): Promise<void> {
         if (dryRun) {
           console.log('[seed] default-model-registry: dry-run skip (requires Nest context write)');
         } else {
-          if (!agentsApp) throw new Error('Agents app context not initialized');
-          await agentsApp.get(ModelManagementService).seedDefaultModels();
+          await runWithAgentsApp(async (app) => {
+            await app.get(ModelManagementService).seedDefaultModels();
+          });
         }
       }
 
@@ -162,8 +193,9 @@ async function run(): Promise<void> {
         if (dryRun) {
           console.log('[seed] meeting-monitor: dry-run skip (requires Nest context write)');
         } else {
-          if (!legacyApp) throw new Error('Legacy app context not initialized');
-          const result = await seedSystemSchedules(legacyApp, { only: ['meeting-monitor'] });
+          const result: any = await runWithLegacyApp((app) =>
+            seedSystemSchedules(app, { only: ['meeting-monitor'] }),
+          );
           console.log(`[seed] meeting-monitor: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
         }
       }
@@ -172,8 +204,7 @@ async function run(): Promise<void> {
         if (dryRun) {
           console.log('[seed] system-schedules: dry-run skip (requires Nest context write)');
         } else {
-          if (!legacyApp) throw new Error('Legacy app context not initialized');
-          const result = await seedSystemSchedules(legacyApp);
+          const result: any = await runWithLegacyApp((app) => seedSystemSchedules(app));
           console.log(`[seed] system-schedules: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
         }
       }
@@ -182,8 +213,7 @@ async function run(): Promise<void> {
         if (dryRun) {
           console.log('[seed] docs-heat: dry-run skip (requires Nest context write)');
         } else {
-          if (!legacyApp) throw new Error('Legacy app context not initialized');
-          const result = await seedSystemSchedules(legacyApp, { only: ['docs-heat'] });
+          const result: any = await runWithLegacyApp((app) => seedSystemSchedules(app, { only: ['docs-heat'] }));
           console.log(`[seed] docs-heat: total=${result.total}, enabled=${result.enabled}, seeded=${result.seeded.join(',')}`);
         }
       }
@@ -192,8 +222,7 @@ async function run(): Promise<void> {
         if (dryRun) {
           console.log('[seed] agent-roles: dry-run skip (requires Nest context write)');
         } else {
-          if (!legacyApp) throw new Error('Legacy app context not initialized');
-          const result = await seedAgentRoles(legacyApp);
+          const result: any = await runWithLegacyApp((app) => seedAgentRoles(app));
           console.log(`[seed] agent-roles: created=${result.created}, updated=${result.updated}, total=${result.seedCount}`);
         }
       }
@@ -210,15 +239,7 @@ async function run(): Promise<void> {
         }
       }
 
-      console.log(`[seed] done ${seed}`);
-    }
-  } finally {
-    if (agentsApp) {
-      await agentsApp.close();
-    }
-    if (legacyApp) {
-      await legacyApp.close();
-    }
+    console.log(`[seed] done ${seed}`);
   }
 }
 
