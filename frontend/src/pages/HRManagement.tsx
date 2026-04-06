@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { hrService, HRAgentRole } from '../services/hrService';
+import { agentService, AgentToolPermissionSet } from '../services/agentService';
+import { toolService } from '../services/toolService';
+import ToolPermissionSetEditor, { ToolPermissionSetEditorData } from '../components/agents/ToolPermissionSetEditor';
 import { 
   UserGroupIcon, 
   ChartBarIcon, 
@@ -13,54 +16,116 @@ const HRManagement: React.FC = () => {
   const queryClient = useQueryClient();
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
   const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
+  const [roleModalTab, setRoleModalTab] = useState<'basic' | 'toolPermission'>('basic');
+  const [toolPermissionData, setToolPermissionData] = useState<ToolPermissionSetEditorData>({
+    description: '',
+    permissions: [],
+    exposed: false,
+    tools: [],
+  });
+  const [initialToolPermissionData, setInitialToolPermissionData] = useState<ToolPermissionSetEditorData>({
+    description: '',
+    permissions: [],
+    exposed: false,
+    tools: [],
+  });
+  const [isToolPermissionDirty, setIsToolPermissionDirty] = useState(false);
   const [roleForm, setRoleForm] = useState({
     code: '',
     name: '',
     tier: 'operations' as 'leadership' | 'operations' | 'temporary',
     description: '',
-    capabilities: '',
-    tools: '',
     promptTemplate: '',
     status: 'active' as 'active' | 'inactive',
+  });
+  const [roleArraysSnapshot, setRoleArraysSnapshot] = useState<{ capabilities: string[]; tools: string[] }>({
+    capabilities: [],
+    tools: [],
   });
 
   const { data: teamHealth } = useQuery('team-health', hrService.calculateTeamHealth);
   const { data: lowPerformers } = useQuery('low-performers', hrService.identifyLowPerformers);
   const { data: hiringRecommendations } = useQuery('hiring-recommendations', hrService.recommendHiring);
   const { data: roles } = useQuery('hr-agent-roles', () => hrService.getRoles());
+  const { data: toolPermissionSets } = useQuery('agentToolPermissionSets', agentService.getToolPermissionSets);
+  const { data: availableTools } = useQuery(['tool-registry'], () => toolService.getToolRegistry(), {
+    enabled: isRoleModalOpen,
+  });
+
+  const permissionSetByRoleCode = useMemo(() => {
+    const map = new Map<string, AgentToolPermissionSet>();
+    (toolPermissionSets || []).forEach((permissionSet) => {
+      map.set(permissionSet.roleCode, permissionSet);
+    });
+    return map;
+  }, [toolPermissionSets]);
+
+  const buildPermissionData = (permissionSet?: AgentToolPermissionSet | null): ToolPermissionSetEditorData => {
+    if (!permissionSet) {
+      return {
+        description: '',
+        permissions: [],
+        exposed: false,
+        tools: [],
+      };
+    }
+
+    return {
+      description: permissionSet.description || '',
+      permissions: permissionSet.permissions || permissionSet.capabilities || [],
+      exposed: permissionSet.exposed === true,
+      tools: permissionSet.tools || [],
+    };
+  };
 
   const resetRoleForm = () => {
     setEditingRoleId(null);
+    setRoleModalTab('basic');
+    setIsToolPermissionDirty(false);
     setRoleForm({
       code: '',
       name: '',
       tier: 'operations',
       description: '',
-      capabilities: '',
-      tools: '',
       promptTemplate: '',
       status: 'active',
     });
+    setToolPermissionData({
+      description: '',
+      permissions: [],
+      exposed: false,
+      tools: [],
+    });
+    setInitialToolPermissionData({
+      description: '',
+      permissions: [],
+      exposed: false,
+      tools: [],
+    });
+    setRoleArraysSnapshot({ capabilities: [], tools: [] });
   };
 
-  const createRoleMutation = useMutation(hrService.createRole, {
-    onSuccess: () => {
-      queryClient.invalidateQueries('hr-agent-roles');
-      resetRoleForm();
-      setIsRoleModalOpen(false);
-    },
-  });
+  const isPermissionDataChanged = (nextData: ToolPermissionSetEditorData, baseData: ToolPermissionSetEditorData): boolean => {
+    const normalize = (data: ToolPermissionSetEditorData) => ({
+      description: data.description.trim(),
+      exposed: data.exposed,
+      permissions: [...data.permissions].map((item) => item.trim()).filter(Boolean).sort(),
+      tools: [...data.tools].map((item) => item.trim()).filter(Boolean).sort(),
+    });
+
+    return JSON.stringify(normalize(nextData)) !== JSON.stringify(normalize(baseData));
+  };
+
+  const createRoleMutation = useMutation(hrService.createRole);
 
   const updateRoleMutation = useMutation(
     ({ roleId, payload }: { roleId: string; payload: Parameters<typeof hrService.updateRole>[1] }) =>
       hrService.updateRole(roleId, payload),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries('hr-agent-roles');
-        resetRoleForm();
-        setIsRoleModalOpen(false);
-      },
-    },
+  );
+
+  const upsertPermissionSetMutation = useMutation(
+    ({ roleCode, updates }: { roleCode: string; updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'> }) =>
+      agentService.upsertToolPermissionSet(roleCode, updates),
   );
 
   const deleteRoleMutation = useMutation(hrService.deleteRole, {
@@ -72,36 +137,15 @@ const HRManagement: React.FC = () => {
     },
   });
 
-  const syncRolesMutation = useMutation(() => hrService.syncRolesFromAgentTypes(true), {
-    onSuccess: (result) => {
-      queryClient.invalidateQueries('hr-agent-roles');
-      queryClient.invalidateQueries('agents');
-      const summary = [
-        `角色创建: ${result.roles.created}`,
-        `角色更新: ${result.roles.updated}`,
-        `Agent扫描: ${result.agents.scanned}`,
-        `Agent回填: ${result.agents.backfilled}`,
-        `已绑定: ${result.agents.alreadyBound}`,
-      ].join('\n');
-      window.alert(`同步完成\n${summary}`);
-    },
-  });
-
-  const toStringList = (value: string): string[] =>
-    value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-  const handleRoleSubmit = (e: React.FormEvent) => {
+  const handleRoleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const payload = {
       code: roleForm.code.trim(),
       name: roleForm.name.trim(),
       tier: roleForm.tier,
       description: roleForm.description.trim(),
-      capabilities: toStringList(roleForm.capabilities),
-      tools: toStringList(roleForm.tools),
+      capabilities: roleArraysSnapshot.capabilities,
+      tools: roleArraysSnapshot.tools,
       promptTemplate: roleForm.promptTemplate.trim(),
       status: roleForm.status,
     };
@@ -111,25 +155,51 @@ const HRManagement: React.FC = () => {
       return;
     }
 
-    if (editingRoleId) {
-      updateRoleMutation.mutate({ roleId: editingRoleId, payload });
-      return;
+    try {
+      if (editingRoleId) {
+        await updateRoleMutation.mutateAsync({ roleId: editingRoleId, payload });
+      } else {
+        await createRoleMutation.mutateAsync(payload);
+      }
+
+      if (editingRoleId && isToolPermissionDirty) {
+        await upsertPermissionSetMutation.mutateAsync({
+          roleCode: payload.code,
+          updates: toolPermissionData,
+        });
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries('hr-agent-roles'),
+        queryClient.invalidateQueries('agentToolPermissionSets'),
+      ]);
+
+      resetRoleForm();
+      setIsRoleModalOpen(false);
+    } catch (error) {
+      window.alert(`保存失败：${error instanceof Error ? error.message : '未知错误'}`);
     }
-    createRoleMutation.mutate(payload);
   };
 
   const handleRoleEdit = (role: HRAgentRole) => {
     setEditingRoleId(role.id);
+    setRoleModalTab('basic');
+    setIsToolPermissionDirty(false);
     setRoleForm({
       code: role.code || '',
       name: role.name || '',
       tier: role.tier || 'operations',
       description: role.description || '',
-      capabilities: (role.capabilities || []).join(', '),
-      tools: (role.tools || []).join(', '),
       promptTemplate: role.promptTemplate || '',
       status: role.status || 'active',
     });
+    setRoleArraysSnapshot({
+      capabilities: role.capabilities || [],
+      tools: role.tools || [],
+    });
+    const permissionData = buildPermissionData(permissionSetByRoleCode.get(role.code || ''));
+    setToolPermissionData(permissionData);
+    setInitialToolPermissionData(permissionData);
     setIsRoleModalOpen(true);
   };
 
@@ -140,6 +210,7 @@ const HRManagement: React.FC = () => {
 
   const openCreateRoleModal = () => {
     resetRoleForm();
+    setRoleModalTab('basic');
     setIsRoleModalOpen(true);
   };
 
@@ -149,6 +220,15 @@ const HRManagement: React.FC = () => {
     }
     deleteRoleMutation.mutate(roleId);
   };
+
+  useEffect(() => {
+    if (!isRoleModalOpen || !editingRoleId || isToolPermissionDirty) {
+      return;
+    }
+    const permissionData = buildPermissionData(permissionSetByRoleCode.get(roleForm.code));
+    setToolPermissionData(permissionData);
+    setInitialToolPermissionData(permissionData);
+  }, [isRoleModalOpen, editingRoleId, isToolPermissionDirty, permissionSetByRoleCode, roleForm.code]);
 
   const HealthGradeBadge: React.FC<{ grade: string }> = ({ grade }) => {
     const colors = {
@@ -190,14 +270,6 @@ const HRManagement: React.FC = () => {
             <span className="text-sm text-gray-500">共 {roles?.length || 0} 个角色</span>
             <button
               type="button"
-              onClick={() => syncRolesMutation.mutate()}
-              disabled={syncRolesMutation.isLoading}
-              className="px-4 py-2 border border-primary-200 text-primary-700 rounded-md hover:bg-primary-50 disabled:opacity-50"
-            >
-              {syncRolesMutation.isLoading ? '同步中...' : '从系统角色模板初始化并关联 Agent'}
-            </button>
-            <button
-              type="button"
               onClick={openCreateRoleModal}
               className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
             >
@@ -216,41 +288,46 @@ const HRManagement: React.FC = () => {
                 <th className="px-4 py-3 text-left font-medium text-gray-600">状态</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Capabilities</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-600">Tools</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-600">Exposed</th>
                 <th className="px-4 py-3 text-right font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(roles || []).map((role) => (
-                <tr key={role.id}>
-                  <td className="px-4 py-3 text-gray-800 font-medium">{role.code}</td>
-                  <td className="px-4 py-3 text-gray-700">{role.name}</td>
-                  <td className="px-4 py-3 text-gray-700">{role.tier || 'operations'}</td>
-                  <td className="px-4 py-3 text-gray-700">{role.status}</td>
-                  <td className="px-4 py-3 text-gray-700">{(role.capabilities || []).length}</td>
-                  <td className="px-4 py-3 text-gray-700">{(role.tools || []).length}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleRoleEdit(role)}
-                        className="px-2.5 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
-                      >
-                        <PencilIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRoleDelete(role.id)}
-                        className="px-2.5 py-1.5 border border-red-200 rounded text-red-600 hover:bg-red-50"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {(roles || []).map((role) => {
+                const permissionSet = permissionSetByRoleCode.get(role.code || '');
+                return (
+                  <tr key={role.id}>
+                    <td className="px-4 py-3 text-gray-800 font-medium">{role.code}</td>
+                    <td className="px-4 py-3 text-gray-700">{role.name}</td>
+                    <td className="px-4 py-3 text-gray-700">{role.tier || 'operations'}</td>
+                    <td className="px-4 py-3 text-gray-700">{role.status}</td>
+                    <td className="px-4 py-3 text-gray-700">{(permissionSet?.permissions || role.capabilities || []).length}</td>
+                    <td className="px-4 py-3 text-gray-700">{(permissionSet?.tools || role.tools || []).length}</td>
+                    <td className="px-4 py-3 text-gray-700">{permissionSet ? (permissionSet.exposed ? '是' : '否') : '—'}</td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleRoleEdit(role)}
+                          className="px-2.5 py-1.5 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
+                        >
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRoleDelete(role.id)}
+                          className="px-2.5 py-1.5 border border-red-200 rounded text-red-600 hover:bg-red-50"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {(roles || []).length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
                     暂无角色，请先创建角色
                   </td>
                 </tr>
@@ -407,7 +484,7 @@ const HRManagement: React.FC = () => {
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{editingRoleId ? '编辑角色' : '创建角色'}</h3>
-                <p className="text-sm text-gray-500">配置角色基础信息、能力与工具清单</p>
+                <p className="text-sm text-gray-500">配置角色基础信息与工具权限集</p>
               </div>
               <button
                 type="button"
@@ -417,94 +494,132 @@ const HRManagement: React.FC = () => {
                 关闭
               </button>
             </div>
-            <form onSubmit={handleRoleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                <input
-                  type="text"
-                  value={roleForm.code}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, code: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                  placeholder="例如: model-management-specialist"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">名称</label>
-                <input
-                  type="text"
-                  value={roleForm.name}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, name: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                  placeholder="例如: 模型管理专员"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tier</label>
-                <select
-                  value={roleForm.tier}
-                  onChange={(e) =>
-                    setRoleForm((prev) => ({
-                      ...prev,
-                      tier: e.target.value as 'leadership' | 'operations' | 'temporary',
-                    }))
-                  }
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
+            <div className="px-6 pt-4 border-b border-gray-200">
+              <div className="inline-flex rounded-md border border-gray-200 bg-gray-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => setRoleModalTab('basic')}
+                  className={`px-4 py-1.5 text-sm rounded ${
+                    roleModalTab === 'basic' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+                  }`}
                 >
-                  <option value="leadership">leadership（高管层）</option>
-                  <option value="operations">operations（执行层）</option>
-                  <option value="temporary">temporary（临时工）</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-                <textarea
-                  value={roleForm.description}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, description: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                  rows={2}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Capabilities（逗号分隔）</label>
-                <input
-                  type="text"
-                  value={roleForm.capabilities}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, capabilities: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tools（逗号分隔）</label>
-                <input
-                  type="text"
-                  value={roleForm.tools}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, tools: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Prompt 模板</label>
-                <textarea
-                  value={roleForm.promptTemplate}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, promptTemplate: e.target.value }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
-                  rows={2}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
-                <select
-                  value={roleForm.status}
-                  onChange={(e) => setRoleForm((prev) => ({ ...prev, status: e.target.value as 'active' | 'inactive' }))}
-                  className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                  基础信息
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!editingRoleId) {
+                      return;
+                    }
+                    setRoleModalTab('toolPermission');
+                  }}
+                  disabled={!editingRoleId}
+                  className={`px-4 py-1.5 text-sm rounded ${
+                    roleModalTab === 'toolPermission'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : editingRoleId
+                        ? 'text-gray-600 hover:text-gray-800'
+                        : 'text-gray-400 cursor-not-allowed'
+                  }`}
                 >
-                  <option value="active">active</option>
-                  <option value="inactive">inactive</option>
-                </select>
+                  工具权限管理
+                </button>
               </div>
-              <div className="md:col-span-2 flex items-center justify-end gap-2">
+            </div>
+            <form onSubmit={handleRoleSubmit} className="p-6 space-y-4">
+              {roleModalTab === 'basic' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
+                    <input
+                      type="text"
+                      value={roleForm.code}
+                      onChange={(e) => setRoleForm((prev) => ({ ...prev, code: e.target.value }))}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="例如: model-management-specialist"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">名称</label>
+                    <input
+                      type="text"
+                      value={roleForm.name}
+                      onChange={(e) => setRoleForm((prev) => ({ ...prev, name: e.target.value }))}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                      placeholder="例如: 模型管理专员"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tier</label>
+                    <select
+                      value={roleForm.tier}
+                      onChange={(e) =>
+                        setRoleForm((prev) => ({
+                          ...prev,
+                          tier: e.target.value as 'leadership' | 'operations' | 'temporary',
+                        }))
+                      }
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                    >
+                      <option value="leadership">leadership（高管层）</option>
+                      <option value="operations">operations（执行层）</option>
+                      <option value="temporary">temporary（临时工）</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                    <select
+                      value={roleForm.status}
+                      onChange={(e) => setRoleForm((prev) => ({ ...prev, status: e.target.value as 'active' | 'inactive' }))}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                    >
+                      <option value="active">active</option>
+                      <option value="inactive">inactive</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                    <textarea
+                      value={roleForm.description}
+                      onChange={(e) => setRoleForm((prev) => ({ ...prev, description: e.target.value }))}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                      rows={2}
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Prompt 模板</label>
+                    <textarea
+                      value={roleForm.promptTemplate}
+                      onChange={(e) => setRoleForm((prev) => ({ ...prev, promptTemplate: e.target.value }))}
+                      className="block w-full border border-gray-300 rounded-md px-3 py-2"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {roleModalTab === 'toolPermission' && (
+                <div>
+                  {!editingRoleId ? (
+                    <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                      请先创建角色，再配置工具权限
+                    </div>
+                  ) : (
+                    <ToolPermissionSetEditor
+                      initialData={initialToolPermissionData}
+                      availableTools={availableTools || []}
+                      onChange={(data) => {
+                        setToolPermissionData(data);
+                        setIsToolPermissionDirty(isPermissionDataChanged(data, initialToolPermissionData));
+                      }}
+                    />
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 border-t border-gray-200 pt-4">
                 <button
                   type="button"
                   onClick={closeRoleModal}
@@ -514,10 +629,14 @@ const HRManagement: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={createRoleMutation.isLoading || updateRoleMutation.isLoading}
+                  disabled={createRoleMutation.isLoading || updateRoleMutation.isLoading || upsertPermissionSetMutation.isLoading}
                   className="px-4 py-2 bg-primary-600 text-white rounded-md disabled:opacity-50"
                 >
-                  {editingRoleId ? '保存角色' : '创建角色'}
+                  {createRoleMutation.isLoading || updateRoleMutation.isLoading || upsertPermissionSetMutation.isLoading
+                    ? '保存中...'
+                    : editingRoleId
+                      ? '保存角色'
+                      : '创建角色'}
                 </button>
               </div>
             </form>

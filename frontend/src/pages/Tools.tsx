@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { toolService } from '../services/toolService';
 import { agentService } from '../services/agentService';
 import type { AgentToolPermissionSet } from '../services/agentService';
+import ToolPermissionSetEditor, { ToolPermissionSetEditorData } from '../components/agents/ToolPermissionSetEditor';
+import { NAMESPACE_OPTIONS, getNamespaceLabel, getToolKey, normalizeNamespace } from '../components/agents/tool-utils';
 import { 
   WrenchScrewdriverIcon, 
   PlayIcon, 
@@ -16,38 +18,6 @@ import {
 } from '@heroicons/react/24/outline';
 import type { Tool } from '../types';
 
-const NAMESPACE_OPTIONS = [
-  { value: 'sys-mg', label: '系统管理' },
-  { value: 'communication', label: '通讯工具' },
-  { value: 'web-retrieval', label: 'WEB信息检索收集' },
-  { value: 'data-analysis', label: '数据分析' },
-  { value: 'other', label: '其他' },
-] as const;
-
-const NAMESPACE_ALIAS_MAP: Record<string, string> = {
-  'sys-mg': 'sys-mg',
-  '系统管理': 'sys-mg',
-  communication: 'communication',
-  '通讯工具': 'communication',
-  'web-retrieval': 'web-retrieval',
-  'web信息检索收集': 'web-retrieval',
-  'web信息检索搜集': 'web-retrieval',
-  'web information retrieval': 'web-retrieval',
-  'data-analysis': 'data-analysis',
-  '数据分析': 'data-analysis',
-  other: 'other',
-  '其他': 'other',
-};
-
-const NAMESPACE_LABEL_MAP = NAMESPACE_OPTIONS.reduce<Record<string, string>>((acc, item) => {
-  acc[item.value] = item.label;
-  return acc;
-}, {});
-
-const getToolKey = (tool?: Partial<Tool> | null): string => {
-  return String(tool?.toolId || tool?.id || '').trim();
-};
-
 const formatDateTime = (value?: Date | string) => {
   if (!value) return '暂无';
   const date = new Date(value);
@@ -60,17 +30,6 @@ const summarizeValue = (value: unknown, maxLength = 64) => {
   const raw = typeof value === 'string' ? value : JSON.stringify(value);
   if (!raw) return '—';
   return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
-};
-
-const normalizeNamespace = (namespace?: string) => {
-  const raw = String(namespace || '').trim();
-  if (!raw) return '';
-  return NAMESPACE_ALIAS_MAP[raw] || NAMESPACE_ALIAS_MAP[raw.toLowerCase()] || raw;
-};
-
-const getNamespaceLabel = (namespace?: string) => {
-  const normalized = normalizeNamespace(namespace);
-  return NAMESPACE_LABEL_MAP[normalized] || normalized || '—';
 };
 
 const getToolkitValue = (tool?: Partial<Tool> | null) => {
@@ -91,10 +50,6 @@ const getToolkitValue = (tool?: Partial<Tool> | null) => {
 const getToolkitLabel = (toolkit?: string) => {
   if (toolkit === 'rd-related') return 'RD Toolkit';
   return toolkit || '—';
-};
-
-const getToolProvider = (tool?: Partial<Tool> | null) => {
-  return String(tool?.provider || '').trim();
 };
 
 const resolveToolPrompt = (tool?: Partial<Tool> | null): string => {
@@ -1249,54 +1204,26 @@ const EditToolPermissionSetModal: React.FC<{
   onSave: (updates: Pick<AgentToolPermissionSet, 'tools' | 'permissions' | 'exposed' | 'description'>) => void;
   isSaving: boolean;
 }> = ({ permissionSet, availableTools, onClose, onSave, isSaving }) => {
-  const [description, setDescription] = useState(permissionSet.description || '');
-  const [tools, setTools] = useState<string[]>(permissionSet.tools || []);
-  const [permissionsText, setPermissionsText] = useState((permissionSet.permissions || permissionSet.capabilities || []).join(', '));
-  const [exposed, setExposed] = useState(permissionSet.exposed === true);
-  const [providerFilter, setProviderFilter] = useState('');
-  const [namespaceFilter, setNamespaceFilter] = useState('');
+  const editorInitialData = useMemo(
+    () => ({
+      description: permissionSet.description || '',
+      tools: permissionSet.tools || [],
+      permissions: permissionSet.permissions || permissionSet.capabilities || [],
+      exposed: permissionSet.exposed === true,
+    }),
+    [permissionSet],
+  );
 
-  const toggleTool = (toolId: string, checked: boolean) => {
-    setTools((prev) => (checked ? [...prev, toolId] : prev.filter((id) => id !== toolId)));
-  };
+  const [editorData, setEditorData] = useState<ToolPermissionSetEditorData>({
+    description: permissionSet.description || '',
+    tools: permissionSet.tools || [],
+    permissions: permissionSet.permissions || permissionSet.capabilities || [],
+    exposed: permissionSet.exposed === true,
+  });
 
-  const permissions = permissionsText
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  const providerOptions = useMemo(() => {
-    return Array.from(
-      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => getToolProvider(tool)).filter(Boolean)),
-    ).sort();
-  }, [availableTools]);
-
-  const namespaceOptions = useMemo(() => {
-    return Array.from(
-      new Set(availableTools.filter((tool) => tool.enabled !== false).map((tool) => normalizeNamespace(tool.namespace)).filter(Boolean)),
-    ).sort();
-  }, [availableTools]);
-
-  const groupedTools = useMemo(() => {
-    const filtered = availableTools
-      .filter((tool) => tool.enabled !== false)
-      .filter((tool) => !providerFilter || getToolProvider(tool) === providerFilter)
-      .filter((tool) => !namespaceFilter || normalizeNamespace(tool.namespace) === namespaceFilter);
-
-    const grouped = new Map<string, typeof filtered>();
-    for (const tool of filtered) {
-      const namespace = normalizeNamespace(tool.namespace) || 'other';
-      if (!grouped.has(namespace)) grouped.set(namespace, []);
-      grouped.get(namespace)!.push(tool);
-    }
-
-    return Array.from(grouped.entries())
-      .map(([namespace, items]) => ({
-        namespace,
-        items: items.sort((a, b) => getToolKey(a).localeCompare(getToolKey(b))),
-      }))
-      .sort((a, b) => a.namespace.localeCompare(b.namespace));
-  }, [availableTools, providerFilter, namespaceFilter]);
+  useEffect(() => {
+    setEditorData(editorInitialData);
+  }, [editorInitialData]);
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -1307,94 +1234,11 @@ const EditToolPermissionSetModal: React.FC<{
           <span className="ml-2 text-xs text-gray-400">({permissionSet.roleCode})</span>
         </p>
 
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Permissions（逗号分隔）</label>
-            <input
-              type="text"
-              value={permissionsText}
-              onChange={(e) => setPermissionsText(e.target.value)}
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-            />
-          </div>
-
-          <div className="flex items-center">
-            <input
-              id="permission-set-exposed"
-              type="checkbox"
-              checked={exposed}
-              onChange={(e) => setExposed(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-            />
-            <label htmlFor="permission-set-exposed" className="ml-2 text-sm text-gray-700">
-              Exposed（在 MCP 可见列表中展示）
-            </label>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Tools</label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
-              <select
-                value={providerFilter}
-                onChange={(e) => setProviderFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-              >
-                <option value="">全部 Provider</option>
-                {providerOptions.map((provider) => (
-                  <option key={provider} value={provider}>{provider}</option>
-                ))}
-              </select>
-              <select
-                value={namespaceFilter}
-                onChange={(e) => setNamespaceFilter(e.target.value)}
-                className="border border-gray-300 rounded-md px-2 py-1.5 text-xs"
-              >
-                <option value="">全部 Namespace</option>
-                {namespaceOptions.map((namespace) => (
-                  <option key={namespace} value={namespace}>{getNamespaceLabel(namespace)}</option>
-                ))}
-              </select>
-            </div>
-            <div className="max-h-64 overflow-y-auto border border-gray-200 rounded-md p-3 space-y-2">
-              {groupedTools.map((group) => (
-                <div key={group.namespace} className="space-y-1">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{getNamespaceLabel(group.namespace)}</p>
-                  {group.items.map((tool) => {
-                    const toolId = getToolKey(tool);
-                    const checked = tools.includes(toolId);
-                    return (
-                      <label key={toolId} className="flex items-center justify-between text-sm text-gray-700 pl-1">
-                        <span>
-                          {tool.name}
-                          <span className="ml-2 text-xs text-gray-400">{toolId}</span>
-                        </span>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => toggleTool(toolId, e.target.checked)}
-                          className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
-                        />
-                      </label>
-                    );
-                  })}
-                </div>
-              ))}
-              {groupedTools.length === 0 && (
-                <p className="text-xs text-gray-500">当前筛选条件下暂无可配置工具</p>
-              )}
-            </div>
-          </div>
-        </div>
+        <ToolPermissionSetEditor
+          initialData={editorInitialData}
+          availableTools={availableTools}
+          onChange={setEditorData}
+        />
 
         <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
           <button
@@ -1404,14 +1248,7 @@ const EditToolPermissionSetModal: React.FC<{
             取消
           </button>
           <button
-            onClick={() =>
-              onSave({
-                tools,
-                permissions,
-                exposed,
-                description: description.trim(),
-              })
-            }
+            onClick={() => onSave(editorData)}
             disabled={isSaving}
             className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
           >
