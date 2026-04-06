@@ -272,6 +272,18 @@ async function seedModelManagementAgentRecord(
   },
 ): Promise<void> {
   const agentModel = app.get(deps.getModelToken(deps.Agent.name));
+  const defaultPromptTemplateRef = {
+    scene: 'working-guideline',
+    role: 'agent-runtime-baseline',
+  };
+
+  const hasValidPromptTemplateRef = (value: unknown): value is { scene: string; role: string } => {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const source = value as { scene?: unknown; role?: unknown };
+    return typeof source.scene === 'string' && source.scene.trim().length > 0 && typeof source.role === 'string' && source.role.trim().length > 0;
+  };
 
   const pickDefaultModel = () => {
     const preferredIds = ['gpt-4o-mini', 'gpt-4o', 'claude-sonnet-4-6', 'gemini-1.5-flash'];
@@ -284,6 +296,13 @@ async function seedModelManagementAgentRecord(
 
   const existing = await agentModel.findOne({ name: deps.MODEL_MANAGEMENT_AGENT_NAME }).exec();
   if (existing) {
+    const promptTemplateRef = hasValidPromptTemplateRef((existing as any).promptTemplateRef)
+      ? {
+          scene: (existing as any).promptTemplateRef.scene.trim(),
+          role: (existing as any).promptTemplateRef.role.trim(),
+        }
+      : defaultPromptTemplateRef;
+
     await agentModel
       .updateOne(
         { _id: existing._id },
@@ -299,6 +318,7 @@ async function seedModelManagementAgentRecord(
             roleId: deps.MODEL_MANAGEMENT_ROLE_ID,
             description: deps.MODEL_MANAGEMENT_AGENT_DESCRIPTION,
             systemPrompt: deps.MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
+            promptTemplateRef,
           },
         },
       )
@@ -323,6 +343,7 @@ async function seedModelManagementAgentRecord(
     },
     capabilities: ['model_discovery', 'model_registry_management', 'internet_research'],
     systemPrompt: deps.MODEL_MANAGEMENT_AGENT_SYSTEM_PROMPT,
+    promptTemplateRef: defaultPromptTemplateRef,
     isActive: true,
     tools: ['builtin.data-gathering.internal.web.search-exa', ...deps.MODEL_MANAGEMENT_AGENT_TOOLS],
     permissions: ['model_registry_read', 'model_registry_write'],
