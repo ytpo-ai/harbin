@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -14,7 +15,8 @@ import axios from 'axios';
 import {
   buildMessageCenterEvent,
   MESSAGE_CENTER_EVENT_SOURCE_SCHEDULER,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
   RedisService,
 } from '@libs/infra';
 import { Schedule, ScheduleDocument } from '../../shared/schemas/schedule.schema';
@@ -50,6 +52,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly agentClientService: AgentClientService,
     private readonly redisService: RedisService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -1074,15 +1077,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      await this.redisService.xadd(
-        MESSAGE_CENTER_EVENT_STREAM_KEY,
-        {
-          event: JSON.stringify(event),
-        },
-        {
-          maxLen: 10000,
-        },
-      );
+      await this.messageBus.publish('message-center.events', { payload: event });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(`Publish scheduler alert message-center event failed: scheduleId=${scheduleId} reason=${detail}`);
@@ -1121,15 +1116,7 @@ export class SchedulerService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      await this.redisService.xadd(
-        MESSAGE_CENTER_EVENT_STREAM_KEY,
-        {
-          event: JSON.stringify(event),
-        },
-        {
-          maxLen: 10000,
-        },
-      );
+      await this.messageBus.publish('message-center.events', { payload: event });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(

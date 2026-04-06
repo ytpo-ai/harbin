@@ -1,11 +1,12 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
-  CHANNEL_CONSUMER_GROUP,
-  CHANNEL_EVENTS_DLQ_STREAM,
-  CHANNEL_EVENTS_STREAM,
   ChannelEventEnvelope,
   RedisService,
   validateChannelEventEnvelope,
+  MESSAGE_BUS,
+  type MessageBus,
+  type MessageContext,
+  type Subscription,
 } from '@libs/infra';
 import { hostname } from 'os';
 import { ChannelMessage } from '../../contracts/channel-message.types';
@@ -14,110 +15,70 @@ import { ChannelAggregatorService } from './channel-aggregator.service';
 import { ChannelConfigService } from './channel-config.service';
 import { ChannelProviderRegistry } from './channel-provider.registry';
 
-const CHANNEL_EVENT_FIELD = 'event';
-
 @Injectable()
 export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ChannelDispatcherService.name);
   private readonly consumerName = `${hostname()}-${process.pid}`;
-  private running = false;
+  private subscription?: Subscription;
 
   constructor(
     private readonly redisService: RedisService,
     private readonly channelConfigService: ChannelConfigService,
     private readonly providerRegistry: ChannelProviderRegistry,
     private readonly channelAggregatorService: ChannelAggregatorService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
-  onModuleInit(): void {
-    this.running = true;
-    void this.consumeLoop();
+  async onModuleInit(): Promise<void> {
+    // [MESSAGE_BUS] 通过消息总线订阅 channel.events topic
+    this.subscription = await this.messageBus.subscribe(
+      'channel.events',
+      (context: MessageContext<unknown>) => this.handleMessage(context),
+      {
+        group: 'channel-group',
+        consumer: this.consumerName,
+        batchSize: 20,
+        blockMs: 2000,
+      },
+    );
+    this.logger.log('Channel dispatcher started via MessageBus');
   }
 
   async onModuleDestroy(): Promise<void> {
-    this.running = false;
+    if (this.subscription) {
+      await this.subscription.unsubscribe();
+      this.subscription = undefined;
+    }
     await this.channelAggregatorService.flushAll(async (target, _eventType, events) => {
       await this.flushAggregatedEvents(target, events);
     });
   }
 
-  private async consumeLoop(): Promise<void> {
-    let groupReady = false;
+  // ── [MESSAGE_BUS] 消息处理入口 ─────────────────────────────────────────
 
-    while (this.running) {
-      try {
-        if (!this.redisService.isReady()) {
-          groupReady = false;
-          await this.sleep(1000);
-          continue;
-        }
+  private async handleMessage(context: MessageContext<unknown>): Promise<void> {
+    const { envelope } = context;
+    const rawPayload = envelope.payload;
 
-        if (!groupReady) {
-          await this.redisService.xgroupCreate(CHANNEL_EVENTS_STREAM, CHANNEL_CONSUMER_GROUP, '0', true);
-          groupReady = true;
-        }
-
-        const batches = await this.redisService.xreadgroup(
-          CHANNEL_EVENTS_STREAM,
-          CHANNEL_CONSUMER_GROUP,
-          this.consumerName,
-          {
-            count: 20,
-            blockMs: 2000,
-            streamId: '>',
-          },
-        );
-
-        if (!batches.length) {
-          continue;
-        }
-
-        for (const batch of batches) {
-          for (const message of batch.messages) {
-            await this.consumeOneMessage(message.id, message.fields || {});
-          }
-        }
-      } catch (error) {
-        groupReady = false;
-        const reason = error instanceof Error ? error.message : String(error || 'unknown');
-        this.logger.warn(`Channel dispatcher consume loop error: ${reason}`);
-        await this.sleep(1000);
-      }
-    }
-  }
-
-  private async consumeOneMessage(streamMessageId: string, fields: Record<string, string>): Promise<void> {
-    const raw = String(fields[CHANNEL_EVENT_FIELD] || '').trim();
-    if (!raw) {
-      await this.ack(streamMessageId);
-      return;
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'invalid_json';
-      await this.moveToDlq(streamMessageId, raw, reason);
-      return;
-    }
-
-    const validated = validateChannelEventEnvelope(parsed);
+    const validated = validateChannelEventEnvelope(rawPayload);
     if (!validated.ok || !validated.event) {
-      await this.moveToDlq(streamMessageId, raw, validated.error || 'contract_validation_failed');
+      this.logger.warn(
+        `[channel-dispatcher] validation failed messageId=${envelope.messageId} error=${validated.error}`,
+      );
+      await context.nack(validated.error || 'contract_validation_failed');
       return;
     }
 
     try {
       const allFailed = await this.dispatchOneEvent(validated.event);
       if (allFailed) {
-        await this.moveToDlq(streamMessageId, raw, 'all_deliveries_failed');
+        await context.nack('all_deliveries_failed');
         return;
       }
-      await this.ack(streamMessageId);
+      await context.ack();
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'dispatch_failed');
-      await this.moveToDlq(streamMessageId, raw, reason);
+      await context.nack(reason);
     }
   }
 
@@ -286,28 +247,4 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     return 'task_result';
   }
 
-  private async moveToDlq(streamMessageId: string, eventRaw: string, reason: string): Promise<void> {
-    await this.redisService.xadd(
-      CHANNEL_EVENTS_DLQ_STREAM,
-      {
-        streamMessageId,
-        reason,
-        event: eventRaw,
-        failedAt: new Date().toISOString(),
-      },
-      {
-        maxLen: 20000,
-      },
-    );
-    await this.ack(streamMessageId);
-    this.logger.error(`Moved channel event to DLQ: streamMessageId=${streamMessageId} reason=${reason}`);
-  }
-
-  private async ack(streamMessageId: string): Promise<void> {
-    await this.redisService.xack(CHANNEL_EVENTS_STREAM, CHANNEL_CONSUMER_GROUP, [streamMessageId]);
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
 }

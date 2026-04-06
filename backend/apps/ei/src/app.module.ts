@@ -53,6 +53,7 @@ import { EiAppConfigService } from './services/ei-app-config.service';
 import { EiGithubClientService } from './services/ei-github-client.service';
 import { IncubationProjectsService } from './services/incubation-projects.service';
 import { IncubationProjectAggregationService } from './services/incubation-project-aggregation.service';
+import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consumer.service';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { IncubationProjectAggregationService } from './services/incubation-proje
     EiGithubClientService,
     IncubationProjectsService,
     IncubationProjectAggregationService,
+    EiRuntimeSyncConsumerService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

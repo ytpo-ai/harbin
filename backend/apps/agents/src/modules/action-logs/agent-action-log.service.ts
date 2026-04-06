@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   buildMessageCenterEvent,
   MESSAGE_CENTER_EVENT_SOURCE_AGENTS,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
   RedisService,
 } from '@libs/infra';
 import {
@@ -93,6 +94,7 @@ export class AgentActionLogService {
     @InjectModel(OrchestrationPlan.name)
     private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
     private readonly redisService: RedisService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   async record(input: AgentActionLogInput): Promise<void> {
@@ -188,15 +190,7 @@ export class AgentActionLogService {
     });
 
     try {
-      await this.redisService.xadd(
-        MESSAGE_CENTER_EVENT_STREAM_KEY,
-        {
-          event: JSON.stringify(event),
-        },
-        {
-          maxLen: 10000,
-        },
-      );
+      await this.messageBus.publish('message-center.events', { payload: event });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(`Publish agent action message-center event failed: planId=${contextPlanId} reason=${reason}`);

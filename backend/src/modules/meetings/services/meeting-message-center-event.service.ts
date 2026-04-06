@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import {
   buildMessageCenterEvent,
   MESSAGE_CENTER_EVENT_SOURCE_MEETING,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
   RedisService,
 } from '@libs/infra';
 import { MeetingDocument } from '../../../shared/schemas/meeting.schema';
@@ -12,7 +13,10 @@ import { MeetingDocument } from '../../../shared/schemas/meeting.schema';
 export class MeetingMessageCenterEventService {
   private readonly logger = new Logger(MeetingMessageCenterEventService.name);
 
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly redisService: RedisService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
+  ) {}
 
   async publishMeetingEndedMessage(meeting: MeetingDocument): Promise<void> {
     const meetingId = String(meeting?.id || '').trim();
@@ -53,17 +57,9 @@ export class MeetingMessageCenterEventService {
           },
         });
 
-        const streamId = await this.redisService.xadd(
-          MESSAGE_CENTER_EVENT_STREAM_KEY,
-          {
-            event: JSON.stringify(event),
-          },
-          {
-            maxLen: 10000,
-          },
-        );
-        if (streamId) {
-          streamIds.push(streamId);
+        const result = await this.messageBus.publish('message-center.events', { payload: event });
+        if (result.sequenceId) {
+          streamIds.push(result.sequenceId);
         }
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error || 'unknown');
@@ -121,15 +117,7 @@ export class MeetingMessageCenterEventService {
           },
         });
 
-        await this.redisService.xadd(
-          MESSAGE_CENTER_EVENT_STREAM_KEY,
-          {
-            event: JSON.stringify(event),
-          },
-          {
-            maxLen: 10000,
-          },
-        );
+        await this.messageBus.publish('message-center.events', { payload: event });
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error || 'unknown');
         this.logger.warn(

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { randomUUID } from 'crypto';
 import { Dirent, existsSync } from 'fs';
@@ -15,7 +15,8 @@ import {
 import {
   buildMessageCenterEvent,
   MESSAGE_CENTER_EVENT_SOURCE_EI,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
   RedisService,
 } from '@libs/infra';
 
@@ -46,6 +47,7 @@ export class EiStatisticsService {
     @InjectModel(EiProjectStatisticsSnapshot.name)
     private readonly statisticsSnapshotModel: Model<EiProjectStatisticsSnapshotDocument>,
     private readonly redisService: RedisService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   private resolveWorkspaceRoot(): string {
@@ -348,18 +350,10 @@ export class EiStatisticsService {
       },
     });
 
-    const streamId = await this.redisService.xadd(
-      MESSAGE_CENTER_EVENT_STREAM_KEY,
-      {
-        event: JSON.stringify(event),
-      },
-      {
-        maxLen: 10000,
-      },
-    );
+    const result = await this.messageBus.publish('message-center.events', { payload: event });
 
     this.logger.log(
-      `Published message-center event for engineering tool completion: eventId=${event.eventId} streamId=${streamId || 'n/a'} receiverId=${receiverId} snapshotId=${input.snapshotId} status=${input.status}`,
+      `Published message-center event for engineering tool completion: eventId=${event.eventId} streamId=${result.sequenceId || 'n/a'} receiverId=${receiverId} snapshotId=${input.snapshotId} status=${input.status}`,
     );
   }
 

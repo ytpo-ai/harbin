@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { RedisService } from '@libs/infra';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { RedisService, MESSAGE_BUS, type MessageBus } from '@libs/infra';
 import { RuntimeEvent } from './contracts/runtime-event.contract';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 import { RuntimeActionLogIngestionService } from './runtime-action-log.service';
@@ -18,10 +18,14 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
     lastFlushAt: 0,
   };
 
+  /** 是否通过 MessageBus 发布 runtime.events（渐进切换开关） */
+  private readonly useBusForEvents = process.env.MESSAGE_BUS_ENABLED !== 'false';
+
   constructor(
     private readonly redisService: RedisService,
     private readonly persistence: RuntimePersistenceService,
     private readonly runtimeActionLogIngestionService: RuntimeActionLogIngestionService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   onModuleInit(): void {
@@ -38,13 +42,26 @@ export class HookDispatcherService implements OnModuleInit, OnModuleDestroy {
   }
 
   async dispatch(event: RuntimeEvent, options?: { channel?: string; updateOutboxStatus?: boolean; replay?: boolean }): Promise<void> {
-    const channel = options?.channel || this.getChannel(event);
     const shouldUpdateOutboxStatus = options?.updateOutboxStatus !== false;
     try {
-      if (!this.redisService.isReady()) {
-        throw new Error('Redis pub/sub is not ready');
+      // [MESSAGE_BUS] 通过 messageBus 发布到 runtime.events topic（fire-and-forget / pub/sub）
+      if (this.useBusForEvents) {
+        const result = await this.messageBus.publish('runtime.events', {
+          payload: event,
+          partitionKey: event.agentId,
+        });
+        if (!result.accepted) {
+          throw new Error('MessageBus publish not accepted');
+        }
+      } else {
+        // 回退：直接使用 RedisService
+        const channel = options?.channel || this.getChannel(event);
+        if (!this.redisService.isReady()) {
+          throw new Error('Redis pub/sub is not ready');
+        }
+        await this.redisService.publish(channel, event);
       }
-      await this.redisService.publish(channel, event);
+
       if (!options?.replay) {
         await this.runtimeActionLogIngestionService.syncRuntimeEvent(event);
       }

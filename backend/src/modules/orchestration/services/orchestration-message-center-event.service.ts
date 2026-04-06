@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import {
   buildMessageCenterEvent,
   MESSAGE_CENTER_EVENT_SOURCE_ORCHESTRATION,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
   RedisService,
 } from '@libs/infra';
 import { Model } from 'mongoose';
@@ -20,6 +21,7 @@ export class OrchestrationMessageCenterEventService {
     private readonly redisService: RedisService,
     @InjectModel(OrchestrationPlan.name)
     private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   async publishTaskCompletedEvent(input: {
@@ -81,15 +83,7 @@ export class OrchestrationMessageCenterEventService {
     });
 
     try {
-      await this.redisService.xadd(
-        MESSAGE_CENTER_EVENT_STREAM_KEY,
-        {
-          event: JSON.stringify(event),
-        },
-        {
-          maxLen: 10000,
-        },
-      );
+      await this.messageBus.publish('message-center.events', { payload: event });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(

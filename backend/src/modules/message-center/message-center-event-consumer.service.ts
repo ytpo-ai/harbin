@@ -1,9 +1,10 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import {
   buildChannelEventFromMessageCenter,
-  CHANNEL_EVENTS_STREAM,
-  MESSAGE_CENTER_EVENT_CONSUMER_GROUP,
-  MESSAGE_CENTER_EVENT_STREAM_KEY,
+  MESSAGE_BUS,
+  type MessageBus,
+  type MessageContext,
+  type Subscription,
   MessageCenterEventEnvelope,
   RedisService,
   validateMessageCenterEventEnvelope,
@@ -11,8 +12,6 @@ import {
 import { hostname } from 'os';
 import { MessageCenterService } from './message-center.service';
 
-const MESSAGE_CENTER_EVENT_FIELD = 'event';
-const MESSAGE_CENTER_EVENT_DLQ_STREAM_KEY = 'streams:message-center:events:dlq';
 const CHANNEL_FORWARD_EVENT_TYPES_REDIS_KEY =
   String(process.env.CHANNEL_FORWARD_EVENT_TYPES_REDIS_KEY || '').trim()
   || 'config:message-center:channel-forward-event-types';
@@ -35,87 +34,55 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
   );
   private forwardEventTypes = new Set<string>();
   private lastForwardTypeReloadAt = 0;
-  private running = false;
+  private subscription?: Subscription;
 
   constructor(
     private readonly redisService: RedisService,
     private readonly messageCenterService: MessageCenterService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.forwardEventTypes = this.parseForwardEventTypes(String(process.env.CHANNEL_FORWARD_EVENT_TYPES || ''));
-    this.running = true;
-    void this.consumeLoop();
+
+    // [MESSAGE_BUS] 通过消息总线订阅 message-center.events topic
+    this.subscription = await this.messageBus.subscribe(
+      'message-center.events',
+      (context: MessageContext<unknown>) => this.handleMessage(context),
+      {
+        group: 'message-center-group',
+        consumer: this.consumerName,
+        batchSize: 20,
+        blockMs: 2000,
+      },
+    );
+    this.logger.log('Message-center event consumer started via MessageBus');
   }
 
-  onModuleDestroy(): void {
-    this.running = false;
-  }
-
-  private async consumeLoop(): Promise<void> {
-    while (this.running) {
-      try {
-        if (!this.redisService.isReady()) {
-          await this.sleep(1000);
-          continue;
-        }
-
-        await this.reloadForwardEventTypesIfNeeded();
-
-        await this.redisService.xgroupCreate(
-          MESSAGE_CENTER_EVENT_STREAM_KEY,
-          MESSAGE_CENTER_EVENT_CONSUMER_GROUP,
-          '0',
-          true,
-        );
-
-        const readResult = await this.redisService.xreadgroup(
-          MESSAGE_CENTER_EVENT_STREAM_KEY,
-          MESSAGE_CENTER_EVENT_CONSUMER_GROUP,
-          this.consumerName,
-          {
-            count: 20,
-            blockMs: 2000,
-            streamId: '>',
-          },
-        );
-
-        if (!readResult.length) {
-          continue;
-        }
-
-        for (const streamBatch of readResult) {
-          for (const message of streamBatch.messages) {
-            await this.consumeOneMessage(message.id, message.fields || {});
-          }
-        }
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error || 'unknown');
-        this.logger.warn(`Message-center event consume loop error: ${reason}`);
-        await this.sleep(1000);
-      }
+  async onModuleDestroy(): Promise<void> {
+    if (this.subscription) {
+      await this.subscription.unsubscribe();
+      this.subscription = undefined;
     }
   }
 
-  private async consumeOneMessage(streamMessageId: string, fields: Record<string, string>): Promise<void> {
-    const eventRaw = String(fields[MESSAGE_CENTER_EVENT_FIELD] || '').trim();
-    if (!eventRaw) {
-      await this.ack(streamMessageId);
-      return;
-    }
+  // ── [MESSAGE_BUS] 消息处理入口 ─────────────────────────────────────────
 
-    let parsedEvent: unknown;
-    try {
-      parsedEvent = JSON.parse(eventRaw);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error || 'invalid_json');
-      await this.moveToDlq(streamMessageId, eventRaw, reason);
-      return;
-    }
+  private async handleMessage(context: MessageContext<unknown>): Promise<void> {
+    const { envelope } = context;
+    await this.reloadForwardEventTypesIfNeeded();
 
-    const validated = validateMessageCenterEventEnvelope(parsedEvent);
+    // payload 可能是两种格式：
+    // 1) 新格式（通过 messageBus.publish）：payload 就是 MessageCenterEventEnvelope
+    // 2) 旧格式兼容：直接从 stream fields.event 解析出的 JSON
+    const rawPayload = envelope.payload;
+
+    const validated = validateMessageCenterEventEnvelope(rawPayload);
     if (!validated.ok || !validated.event) {
-      await this.moveToDlq(streamMessageId, eventRaw, validated.error || 'contract_validation_failed');
+      this.logger.warn(
+        `[message-center] validation failed messageId=${envelope.messageId} error=${validated.error}`,
+      );
+      await context.nack(validated.error || 'contract_validation_failed');
       return;
     }
 
@@ -125,7 +92,7 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
       created = persisted.created;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'persist_failed');
-      await this.moveToDlq(streamMessageId, eventRaw, reason);
+      await context.nack(reason);
       return;
     }
 
@@ -140,8 +107,10 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
       }
     }
 
-    await this.ack(streamMessageId);
+    await context.ack();
   }
+
+  // ── Forward to channel.events ──────────────────────────────────────────
 
   private async forwardToChannelIfNeeded(event: MessageCenterEventEnvelope): Promise<void> {
     if (!this.forwardEventTypes.has(event.eventType)) {
@@ -150,15 +119,10 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
 
     const channelEvent = buildChannelEventFromMessageCenter(event);
     try {
-      await this.redisService.xadd(
-        CHANNEL_EVENTS_STREAM,
-        {
-          event: JSON.stringify(channelEvent),
-        },
-        {
-          maxLen: 10000,
-        },
-      );
+      // [MESSAGE_BUS] 通过消息总线发布到 channel.events topic
+      await this.messageBus.publish('channel.events', {
+        payload: channelEvent,
+      });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error || 'unknown');
       this.logger.warn(
@@ -237,34 +201,4 @@ export class MessageCenterEventConsumerService implements OnModuleInit, OnModule
     return true;
   }
 
-  private async moveToDlq(streamMessageId: string, eventRaw: string, reason: string): Promise<void> {
-    await this.redisService.xadd(
-      MESSAGE_CENTER_EVENT_DLQ_STREAM_KEY,
-      {
-        streamMessageId,
-        reason,
-        event: eventRaw,
-        failedAt: new Date().toISOString(),
-      },
-      {
-        maxLen: 20000,
-      },
-    );
-    await this.ack(streamMessageId);
-    this.logger.error(
-      `Moved message-center event to DLQ: streamMessageId=${streamMessageId} reason=${reason}`,
-    );
-  }
-
-  private async ack(streamMessageId: string): Promise<void> {
-    await this.redisService.xack(
-      MESSAGE_CENTER_EVENT_STREAM_KEY,
-      MESSAGE_CENTER_EVENT_CONSUMER_GROUP,
-      [streamMessageId],
-    );
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
 }

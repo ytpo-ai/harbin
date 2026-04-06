@@ -1,9 +1,10 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
 import { encodeUserContext, signEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
+import { MESSAGE_BUS, type MessageBus } from '@libs/infra';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
 
@@ -23,9 +24,15 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   private readonly envId = String(process.env.RUNTIME_SYNC_ENV_ID || process.env.NODE_ENV || 'local').trim();
   private readonly nodeId = String(process.env.RUNTIME_SYNC_NODE_ID || 'agents-node').trim();
 
+  /** 双写开关：Redis Stream 链路（新） */
+  private readonly streamEnabled = process.env.RUNTIME_EI_SYNC_STREAM_ENABLED !== 'false';
+  /** 双写开关：HTTP 推送链路（旧） — 灰度期保留，观测稳定后设为 false */
+  private readonly httpEnabled = process.env.RUNTIME_EI_SYNC_HTTP_ENABLED !== 'false';
+
   constructor(
     @InjectModel(AgentRun.name) private readonly runModel: Model<AgentRunDocument>,
     private readonly persistence: RuntimePersistenceService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {
     if (!this.contextSecret) {
       throw new Error('INTERNAL_CONTEXT_SECRET is required');
@@ -33,10 +40,15 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.logger.log(`EI sync target resolved to ${this.eiSyncUrl}`);
-    this.timer = setInterval(() => {
-      void this.flushPendingRuns();
-    }, this.pollIntervalMs);
+    const mode = this.httpEnabled ? (this.streamEnabled ? 'dual-write' : 'http-only') : (this.streamEnabled ? 'stream-only' : 'disabled');
+    this.logger.log(`EI sync mode=${mode} httpEnabled=${this.httpEnabled} streamEnabled=${this.streamEnabled} eiSyncUrl=${this.eiSyncUrl}`);
+
+    // [MESSAGE_BUS] 仅在 HTTP 链路启用时启动轮询定时器
+    if (this.httpEnabled) {
+      this.timer = setInterval(() => {
+        void this.flushPendingRuns();
+      }, this.pollIntervalMs);
+    }
   }
 
   onModuleDestroy(): void {
@@ -66,16 +78,14 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const payload = await this.buildRunSyncPayload(run);
-      const response = await axios.post(
-        this.eiSyncUrl,
-        payload,
-        {
-          headers: this.buildSignedHeaders(),
-          timeout: this.timeoutMs,
-        },
-      );
 
-      const duplicate = Boolean(response?.data?.duplicate);
+      // [MESSAGE_BUS] 双写阶段：Stream + HTTP 同时发送，任一成功即视为成功
+      const results = await this.dualWriteSync(runId, payload);
+
+      if (!results.anySuccess) {
+        throw new Error(results.lastError || 'all_channels_failed');
+      }
+
       await this.runModel.updateOne(
         { id: runId },
         {
@@ -86,9 +96,10 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
             'sync.nextRetryAt': undefined,
             'executionData.sync': {
               ...(run.executionData?.sync as Record<string, unknown> || {}),
-              lastResult: duplicate ? 'duplicate' : 'synced',
+              lastResult: results.duplicate ? 'duplicate' : 'synced',
               replay: Boolean(options?.replay),
               syncedAt: new Date().toISOString(),
+              channel: results.channel,
             },
           },
         },
@@ -121,6 +132,57 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(`EI sync failed runId=${runId} retry=${retryCount} deadLettered=${deadLettered}: ${message}`);
       return { success: false, reason: message };
     }
+  }
+
+  // ── [MESSAGE_BUS] 双写分发 ─────────────────────────────────────────────
+
+  private async dualWriteSync(
+    runId: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ anySuccess: boolean; duplicate?: boolean; channel: string; lastError?: string }> {
+    let streamOk = false;
+    let httpOk = false;
+    let duplicate = false;
+    let lastError: string | undefined;
+    const channels: string[] = [];
+
+    // 1) Redis Stream 链路
+    if (this.streamEnabled) {
+      try {
+        const result = await this.messageBus.publish('runtime.ei-sync', {
+          payload,
+          headers: { source: 'agents-runtime', partitionKey: runId },
+        });
+        streamOk = result.accepted;
+        if (streamOk) channels.push('stream');
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`[ei_sync_stream_failed] runId=${runId} error=${lastError}`);
+      }
+    }
+
+    // 2) HTTP 链路（旧）
+    if (this.httpEnabled) {
+      try {
+        const response = await axios.post(this.eiSyncUrl, payload, {
+          headers: this.buildSignedHeaders(),
+          timeout: this.timeoutMs,
+        });
+        httpOk = true;
+        duplicate = Boolean(response?.data?.duplicate);
+        channels.push('http');
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`[ei_sync_http_failed] runId=${runId} error=${lastError}`);
+      }
+    }
+
+    return {
+      anySuccess: streamOk || httpOk,
+      duplicate,
+      channel: channels.join('+') || 'none',
+      lastError: (streamOk || httpOk) ? undefined : lastError,
+    };
   }
 
   async flushPendingRuns(): Promise<void> {
