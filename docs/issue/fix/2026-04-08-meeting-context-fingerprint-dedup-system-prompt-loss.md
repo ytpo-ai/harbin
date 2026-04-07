@@ -32,7 +32,13 @@
 
 ## 修复动作
 
+### 修复 1：Fingerprint 去重跳过
+
 在 `resolveSystemContextBlockContent()` 增加 `skipDedup` 选项，当没有 session 缓存保底时跳过 fingerprint 去重。
+
+### 修复 2：系统消息延迟持久化
+
+`buildMessages()` 在 session 创建之前执行，此时没有 `sessionId`，系统消息无法持久化到 DB（导致前端不可见）。在 `prepareExecution` 末尾（`startRuntimeExecution` 之后），检测到 `buildMessages` 阶段无 `sessionId` 但 `runtimeContext.sessionId` 已可用时，补写系统消息到 session 的 `initialSystemMessages` + `agent_messages` 表。
 
 ### 修改文件
 
@@ -40,7 +46,7 @@
 |------|------|
 | `context-fingerprint.service.ts` | 增加 `skipDedup` 参数，命中时返回 `fullContent` 而非 `null` |
 | `context-block-builder.interface.ts` | `ContextBuildInput` 增加 `skipDedup` 字段 |
-| `agent-executor.service.ts` | `buildMessages()` 中根据 `sessionId` 有无设置 `skipDedup = !sessionId` |
+| `agent-executor.service.ts` | 1) `buildMessages()` 中 `skipDedup = !sessionId`；2) `prepareExecution` 末尾补写系统消息 |
 | `identity-context.builder.ts` | 透传 `input.skipDedup` |
 | `toolset-context.builder.ts` | 透传 `input.skipDedup` |
 | `domain-context.builder.ts` | 透传 `input.skipDedup` |
@@ -60,6 +66,8 @@
 
 ## 影响范围
 
-- 修复 meeting 场景（包括飞书 bot 1v1 聊天）的系统提示丢失
+- 修复 meeting 场景（包括飞书 bot 1v1 聊天）的两个问题：
+  1. 第 2 条消息起系统提示被 fingerprint 去重跳过（`skipDedup` 修复）
+  2. 系统消息不持久化到 DB 导致前端不可见（延迟持久化修复）
 - `skipDedup` 默认 `false`，对 orchestration/plan 等已有 session 缓存的场景无影响
 - Meeting 场景下每次消息会完整注入系统提示（不做去重），增加少量 token 消耗，但保证系统提示完整性

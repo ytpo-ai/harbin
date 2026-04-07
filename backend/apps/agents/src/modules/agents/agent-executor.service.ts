@@ -783,6 +783,54 @@ export class AgentExecutorService {
       routeSource: routeDecision.source,
     });
 
+    // buildMessages 阶段没有 sessionId（如 meeting 场景），系统消息未持久化。
+    // 此时 runtimeContext.sessionId 已可用（session 在 startRuntimeExecution 中创建），补写系统消息到 DB。
+    const buildPhaseSessionId = String(
+      ((input.context?.sessionContext || {}) as Record<string, unknown>).sessionId || '',
+    ).trim();
+    if (!buildPhaseSessionId && runtimeContext.sessionId) {
+      const runtimeAgentIdForPersist = input.agent.id || (input.agent as any)._id?.toString?.() || '';
+      const systemMessages = messages
+        .filter((msg) => msg.role === 'system')
+        .map((msg) => {
+          const content = String(msg.content || '').trim();
+          if (!content) return null;
+          const metadata =
+            msg.metadata && typeof msg.metadata === 'object'
+              ? ({ ...(msg.metadata as Record<string, unknown>) } as Record<string, unknown>)
+              : undefined;
+          return { id: `msg-${uuidv4()}`, content, ...(metadata ? { metadata } : {}) };
+        })
+        .filter(
+          (msg): msg is { id: string; content: string; metadata?: Record<string, unknown> } => Boolean(msg),
+        );
+
+      const persisted = await this.runtimePersistence.setSessionInitialSystemMessages(
+        runtimeContext.sessionId,
+        systemMessages,
+      );
+      if (persisted && systemMessages.length > 0) {
+        const syntheticRunId = `system-init-${runtimeContext.sessionId}`;
+        for (let i = 0; i < systemMessages.length; i++) {
+          await this.runtimePersistence.createMessage({
+            id: systemMessages[i].id,
+            runId: syntheticRunId,
+            agentId: runtimeAgentIdForPersist,
+            sessionId: runtimeContext.sessionId,
+            taskId: input.task.id,
+            role: 'system',
+            sequence: i + 1,
+            content: systemMessages[i].content,
+            status: 'completed',
+            metadata: {
+              ...(systemMessages[i].metadata || {}),
+              source: 'session.initialSystemMessages.deferred',
+            },
+          });
+        }
+      }
+    }
+
     return {
       enabledSkills,
       messages,
