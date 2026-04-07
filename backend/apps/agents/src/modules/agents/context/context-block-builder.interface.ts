@@ -46,6 +46,10 @@ export interface ContextBuildInput {
     collaborationContext?: AgentSession['collaborationContext'];
     runSummaries?: AgentSession['runSummaries'];
   };
+  /** 跳过 fingerprint 去重，始终注入完整系统消息。
+   *  当没有 session 缓存保底时（如 meeting 场景无 sessionId）应设为 true，
+   *  避免 fingerprint 命中后返回 null 导致系统提示丢失。 */
+  skipDedup?: boolean;
 }
 
 export interface ContextBlockBuilder {

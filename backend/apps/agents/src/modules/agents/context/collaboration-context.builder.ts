@@ -68,6 +68,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           participantCount,
           agendaId: String(meeting.agendaId || '').trim(),
         },
+        skipDedup: input.skipDedup,
       });
       if (!resolvedContent) {
         return [];
@@ -103,6 +104,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           upstreamOutputHash: this.contextFingerprintService.hashFingerprint(JSON.stringify(upstreamOutputs)),
           responseDirective: String(orchestration.responseDirective || '').trim() || undefined,
         },
+        skipDedup: input.skipDedup,
       });
       if (!resolvedContent) {
         return [];
@@ -135,6 +137,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
           eventType: String(inner.eventType || '').trim() || undefined,
           runtimeTaskType: String(inner.runtimeTaskType || '').trim() || undefined,
         },
+        skipDedup: input.skipDedup,
       });
       if (!resolvedContent) {
         return [];
@@ -152,6 +155,7 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       snapshot: {
         chatHash: this.contextFingerprintService.hashFingerprint(JSON.stringify(chat)),
       },
+      skipDedup: input.skipDedup,
     });
     if (!resolvedContent) {
       return [];

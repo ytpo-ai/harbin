@@ -46,6 +46,9 @@ export class ContextFingerprintService {
     snapshot: unknown;
     buildDelta?: (previous: unknown, current: unknown) => string;
     deltaPrefix?: string;
+    /** 跳过去重判断，始终返回 fullContent（仅更新缓存）。
+     *  用于没有 session 缓存保底的场景（如 meeting），避免 fingerprint 命中后返回 null 导致系统提示丢失。 */
+    skipDedup?: boolean;
   }): Promise<string | null> {
     const fullContent = String(options.fullContent || '').trim();
     if (!fullContent) {
@@ -66,6 +69,10 @@ export class ContextFingerprintService {
       if (cached) {
         const parsed = JSON.parse(cached) as SystemContextFingerprintRecord;
         if (parsed?.fingerprint === fingerprint) {
+          // 没有 session 缓存保底时，即使 fingerprint 命中也必须返回完整内容，否则系统提示会丢失。
+          if (options.skipDedup) {
+            return fullContent;
+          }
           return null;
         }
 

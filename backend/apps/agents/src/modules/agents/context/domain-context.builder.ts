@@ -38,6 +38,7 @@ export class DomainContextBuilder implements ContextBlockBuilder {
         constraintCount: Array.isArray(domain.constraints) ? domain.constraints.length : 0,
         refCount: Array.isArray(domain.knowledgeRefs) ? domain.knowledgeRefs.length : 0,
       },
+      skipDedup: input.skipDedup,
     });
     if (!resolvedContent) {
       return [];

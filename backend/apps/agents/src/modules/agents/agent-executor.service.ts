@@ -2110,6 +2110,10 @@ export class AgentExecutorService {
     const sessionContext = (context.sessionContext || {}) as Record<string, any>;
     const scenarioType = this.resolveScenarioType(normalizedCollaborationContext, task);
 
+    // 没有 sessionId 时无 session 缓存保底，必须跳过 fingerprint 去重以确保系统提示完整注入。
+    // 典型场景：meeting（飞书 bot 1v1 聊天），session 在 startRuntimeExecution 中创建，晚于 buildMessages。
+    const skipDedup = !sessionId;
+
     const assembledContext = await this.contextAssembler.assemble({
       agent,
       task,
@@ -2131,6 +2135,7 @@ export class AgentExecutorService {
         collaborationContext: sessionContext.collaborationContext || normalizedCollaborationContext || context.collaborationContext,
         runSummaries: sessionContext.runSummaries,
       },
+      skipDedup,
     });
     let messages = assembledContext.messages;
 

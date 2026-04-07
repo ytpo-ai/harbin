@@ -46,6 +46,7 @@ export class IdentityContextBuilder implements ContextBlockBuilder {
       blockType: 'identity-base',
       fullContent: identityBaseFullContent,
       snapshot: identityBaseSnapshot,
+      skipDedup: input.skipDedup,
     });
     if (identityBaseContent) {
       messages.push({

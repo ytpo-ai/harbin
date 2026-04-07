@@ -59,6 +59,7 @@ export class TaskContextBuilder implements ContextBlockBuilder {
         snapshot: taskInfoSnapshot,
         buildDelta: (previous, current) => this.contextFingerprintService.buildTaskInfoDelta(previous as any, current as any),
         deltaPrefix: '任务信息增量更新：',
+        skipDedup: input.skipDedup,
       });
       if (taskInfoContent) {
         messages.push({ role: 'system', content: taskInfoContent, timestamp: new Date() });
@@ -79,6 +80,7 @@ export class TaskContextBuilder implements ContextBlockBuilder {
         templateSource: meetingExecutionPolicyTemplate.source,
         contentHash: this.contextFingerprintService.hashFingerprint(meetingExecutionPolicyTemplate.content),
       },
+      skipDedup: input.skipDedup,
     });
     if (meetingExecutionPolicy) {
       messages.push({

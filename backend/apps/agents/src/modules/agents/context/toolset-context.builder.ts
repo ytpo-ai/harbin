@@ -97,6 +97,7 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
             .filter((id) => id.length > 0)
             .sort(),
         },
+        skipDedup: input.skipDedup,
       });
 
       if (resolvedToolsetSpecContent) {
