@@ -137,6 +137,15 @@ export interface AgentRuntimeSession {
     agendaId?: string;
     latestSummary?: string;
   };
+  totalTokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  totalCost?: number;
   lastActiveAt?: string;
   createdAt?: string;
   updatedAt?: string;

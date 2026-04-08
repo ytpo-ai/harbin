@@ -252,6 +252,7 @@
 - Session 抽屉头部提供刷新图标按钮，可手动重载当前 Session 详情与列表数据。
 - Session 详情查询会补齐 run 级 `user/system` 消息：除 `session.messageIds` 外，额外按 `runId` 回查缺失的 `user/system` 记录。
 - Session 在 message 写入链路按增量维护 `totalTokens/totalCost`：session 列表与详情接口可直接返回会话总 token/cost 聚合数据。
+- Agent 详情页 Session Tab 已展示 `totalTokens/totalCost`：列表卡片显示总 tokens 与总费用，详情抽屉展示 token 分项与 6 位精度总费用。
 - Agent 详情页日志列表按 `runId` 精简为“每个任务一条最终摘要”；展开后改为「执行流程 / 原始信息 / 扣分记录」三 Tab，并在展开时懒加载 `GET /agents/runtime/runs/:runId/score` 扣分详情。
 - 历史描述“注入 `run.metadata.initialSystemMessages` 虚拟 system message 返回”（已弃用）：当前实现不再注入 `virtual-system-*` 消息。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。

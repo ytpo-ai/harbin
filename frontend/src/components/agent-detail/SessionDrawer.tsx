@@ -23,6 +23,23 @@ interface SessionDrawerProps {
   agentName?: string;
 }
 
+const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
+
+const formatTokenCount = (value: unknown): string => {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return INTEGER_FORMATTER.format(numeric);
+};
+
+const formatSessionTotalCost = (value: unknown): string => {
+  const numeric = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  }).format(numeric);
+};
+
 const RoleBadge: React.FC<{ message: AgentRuntimeSessionMessage }> = ({ message }) => {
   const roleMap: Record<AgentRuntimeSessionMessage['role'], string> = {
     system: '系统',
@@ -193,6 +210,46 @@ export const SessionDrawer: React.FC<SessionDrawerProps> = ({ state, agentName }
                     <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
                       <p className="text-xs font-medium uppercase tracking-wider text-slate-400">最近活跃</p>
                       <p className="mt-1.5 text-sm text-slate-600">{sessionDetail?.lastActiveAt ? new Date(sessionDetail.lastActiveAt).toLocaleString() : '-'}</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">Token 消耗</p>
+                      <div className="mt-2 space-y-1.5 text-xs text-slate-600">
+                        <div className="flex items-center justify-between">
+                          <span>Input</span>
+                          <span className="font-medium text-slate-700">{formatTokenCount(sessionDetail?.totalTokens?.input)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Output</span>
+                          <span className="font-medium text-slate-700">{formatTokenCount(sessionDetail?.totalTokens?.output)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Reasoning</span>
+                          <span className="font-medium text-slate-700">{formatTokenCount(sessionDetail?.totalTokens?.reasoning)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Cache Read</span>
+                          <span className="font-medium text-slate-700">{formatTokenCount(sessionDetail?.totalTokens?.cacheRead)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Cache Write</span>
+                          <span className="font-medium text-slate-700">{formatTokenCount(sessionDetail?.totalTokens?.cacheWrite)}</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
+                          <span className="font-semibold text-slate-700">Total</span>
+                          <span className="font-semibold text-slate-900">{formatTokenCount(sessionDetail?.totalTokens?.total)}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3">
+                      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">总费用</p>
+                      <div className="mt-4 rounded-lg bg-white px-3 py-4 text-center ring-1 ring-emerald-100">
+                        <p className="text-[11px] uppercase tracking-wider text-emerald-500">Session Cost</p>
+                        <p className="mt-2 text-2xl font-semibold tracking-tight text-emerald-700">
+                          {formatSessionTotalCost(sessionDetail?.totalCost)}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>

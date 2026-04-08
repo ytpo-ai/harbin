@@ -103,6 +103,8 @@ export const useSessionState = (agentId: string) => {
       `Status: ${session.status || '-'}`,
       `Type: ${session.sessionType || '-'}`,
       `Owner: ${session.ownerType || '-'} / ${session.ownerId || '-'}`,
+      `Total Tokens: ${typeof session.totalTokens?.total === 'number' ? session.totalTokens.total : 0}`,
+      `Total Cost: ${typeof session.totalCost === 'number' ? session.totalCost : 0}`,
       `Last Active: ${session.lastActiveAt ? new Date(session.lastActiveAt).toLocaleString() : '-'}`,
       `Created At: ${session.createdAt ? new Date(session.createdAt).toLocaleString() : '-'}`,
       '',

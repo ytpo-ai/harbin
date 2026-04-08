@@ -4,6 +4,18 @@ import { useSessionState } from './hooks/useSessionState';
 import { getSessionId } from './utils';
 import { SessionDrawer } from './SessionDrawer';
 
+const INTEGER_FORMATTER = new Intl.NumberFormat('en-US');
+
+const formatSessionTokens = (tokens: number): string => `${INTEGER_FORMATTER.format(tokens)} tokens`;
+
+const formatSessionCost = (cost: number): string =>
+  new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(cost);
+
 interface SessionTabProps {
   agentId: string;
   agentName?: string;
@@ -112,6 +124,10 @@ export const SessionTab: React.FC<SessionTabProps> = ({ agentId, agentName, exte
                 const sid = getSessionId(session);
                 const lastMessage = session.messages?.[session.messages.length - 1];
                 const isSelected = sid && sid === state.selectedSessionId;
+                const totalTokens = typeof session.totalTokens?.total === 'number' ? session.totalTokens.total : 0;
+                const totalCost = typeof session.totalCost === 'number' ? session.totalCost : 0;
+                const showTokens = totalTokens > 0;
+                const showCost = totalCost > 0;
                 return (
                   <button
                     key={sid || session._id || `${session.title}-${session.createdAt || 'na'}`}
@@ -133,19 +149,31 @@ export const SessionTab: React.FC<SessionTabProps> = ({ agentId, agentName, exte
                     </div>
                     <p className="mt-1.5 truncate font-mono text-xs text-slate-400">{sid}</p>
                     <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-500">{lastMessage?.content || '暂无消息内容'}</p>
-                    <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
-                      <span
-                        className={`font-medium ${
-                          session.status === 'active'
-                            ? 'text-emerald-600'
-                            : String(session.status) === 'completed'
-                              ? 'text-blue-600'
-                              : 'text-slate-500'
-                        }`}
-                      >
-                        {session.status}
-                      </span>
-                      <span>{session.lastActiveAt ? new Date(session.lastActiveAt).toLocaleString() : '-'}</span>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-[11px] text-slate-400">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <span
+                          className={`font-medium ${
+                            session.status === 'active'
+                              ? 'text-emerald-600'
+                              : String(session.status) === 'completed'
+                                ? 'text-blue-600'
+                                : 'text-slate-500'
+                          }`}
+                        >
+                          {session.status}
+                        </span>
+                        {showTokens ? (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                            {formatSessionTokens(totalTokens)}
+                          </span>
+                        ) : null}
+                        {showCost ? (
+                          <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-600">
+                            {formatSessionCost(totalCost)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="shrink-0">{session.lastActiveAt ? new Date(session.lastActiveAt).toLocaleString() : '-'}</span>
                     </div>
                   </button>
                 );

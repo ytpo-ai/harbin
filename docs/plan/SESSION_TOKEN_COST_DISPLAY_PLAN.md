@@ -4,7 +4,7 @@
 
 当前系统中 token cost 数据仅存储在 `agent_messages` 级别（每条 message 有 `tokens` 和 `cost` 字段），Session（`agent_sessions`）上没有汇总字段。在 session 列表和详情中无法直观看到该 session 的总消耗。
 
-**目标**：在 session 列表和 session 详情的 API 返回中展示 token cost 汇总信息。
+**目标**：在 session 列表和 session 详情中展示 token cost 汇总信息，覆盖后端 API 和前端 UI。
 
 ## 方案选择
 
@@ -138,20 +138,109 @@ db.agent_messages.aggregate([
 
 **风险控制**：回填使用 `$set`（覆盖式），回填完成后新增量通过 `$inc` 自然累加，不会重复计算。
 
-### Step 6：文档更新
+### Step 6：前端类型定义更新
 
-- 更新 `docs/feature/` 中相关功能文档
+**文件**：`frontend/src/services/agentService.ts` — `AgentRuntimeSession` 接口
+
+新增字段对齐后端返回：
+```typescript
+export interface AgentRuntimeSession {
+  // ...existing fields...
+  totalTokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  totalCost?: number;
+}
+```
+
+### Step 7：Session 列表 — 卡片展示 token cost
+
+**文件**：`frontend/src/components/agent-detail/SessionTab.tsx`
+
+**展示位置**：每个 session 卡片底部状态栏（与 `status`、`lastActiveAt` 同一行）。
+
+**展示内容**：
+- 总 tokens 数（`totalTokens.total`），使用 `Intl.NumberFormat` 格式化
+- 总 cost（`totalCost`），格式化为 `$X.XXXX`（4 位小数）
+- 当 `totalTokens` 或 `totalCost` 为 0 或不存在时不展示，避免噪音
+
+**样式**：复用项目已有的 badge 风格（pill badge, `text-[11px]`），与现有 status/time 信息对齐。
+- tokens badge: `bg-slate-100 text-slate-500`（与卡片信息层级一致，辅助信息色调）
+- cost badge: `bg-emerald-50 text-emerald-600`（复用 SessionDrawer 中 CostBadge 的色系）
+
+**示例效果**：
+```
+┌──────────────────────────────────────────┐
+│ Session Title                    [task]  │
+│ session-abc-123...                       │
+│ 最近一条消息内容预览...                    │
+│ active   12,340 tokens  $0.0185   14:30  │
+└──────────────────────────────────────────┘
+```
+
+### Step 8：Session 详情 — 基础信息区域展示 token cost
+
+**文件**：`frontend/src/components/agent-detail/SessionDrawer.tsx`
+
+**展示位置**：基础信息区域的 3 列 grid 下方，新增一行 2 列 grid 展示汇总数据。
+
+**展示内容**：
+- 左侧卡片：Token 消耗明细 — 展示 input/output/reasoning/cacheRead/cacheWrite/total
+- 右侧卡片：总费用 — 展示 `totalCost`，格式 `$X.XXXXXX`（6 位小数，与逐条 message 的 CostBadge 精度一致）
+
+**样式**：复用详情页已有的 `rounded-xl border border-slate-200/60 bg-slate-50/50 px-4 py-3` 信息卡片样式。
+
+**示例效果**：
+```
+┌─ Token 消耗 ──────────────┐  ┌─ 总费用 ──────────────┐
+│ Input     8,200            │  │                        │
+│ Output    3,450            │  │  $0.018520              │
+│ Reasoning   690            │  │                        │
+│ Cache Read  0              │  │                        │
+│ Cache Write 0              │  │                        │
+│ Total    12,340            │  │                        │
+└────────────────────────────┘  └────────────────────────┘
+```
+
+**边界处理**：
+- `totalTokens` 或 `totalCost` 不存在或全为 0 时，整行不渲染
+- 各子项为 0 时仍显示 `0`（与为 undefined 不展示区分）
+
+### Step 9：文档更新
+
+- 更新 `docs/feature/AGENT_RUNTIME.md` 中 session 相关描述
 - 记录 dailylog
+
+## 实现状态
+
+| 步骤 | 状态 | 备注 |
+|---|---|---|
+| Step 1: Schema 变更 | ✅ 已完成 | commit f754cdb |
+| Step 2: 增量更新 | ✅ 已完成 | commit f754cdb |
+| Step 3: 详情 API | ✅ 已完成 | 自然透传，无需额外改动 |
+| Step 4: 列表 API | ✅ 已完成 | 自然透传，无需额外改动 |
+| Step 5: 回填脚本 | ✅ 已完成 | commit f754cdb |
+| Step 6: 前端类型定义 | ✅ 已完成 | `agentService.ts` 已新增 `totalTokens/totalCost` |
+| Step 7: 列表 UI | ✅ 已完成 | `SessionTab.tsx` 卡片底部新增 tokens/cost badges |
+| Step 8: 详情 UI | ✅ 已完成 | `SessionDrawer.tsx` 新增 token 分项与总费用卡片 |
+| Step 9: 文档更新 | ✅ 已完成 | 已更新 `AGENT_RUNTIME.md` 与 dailylog |
 
 ## 关键影响点
 
 | 影响域 | 说明 |
 |---|---|
-| Schema | `agent-session.schema.ts` 新增 `totalTokens` + `totalCost` |
-| Service | `runtime-persistence.service.ts` — `createMessage` 新增 `$inc` 逻辑 |
-| API 返回 | session 列表/详情返回结构新增字段（向后兼容） |
-| 数据库 | 历史 session 需要回填 |
-| 前端 | 列表/详情页可直接使用新字段展示（本次不涉及前端改动） |
+| Schema | `agent-session.schema.ts` 新增 `totalTokens` + `totalCost`（已完成） |
+| Service | `runtime-persistence.service.ts` — `createMessage` 新增 `$inc` 逻辑（已完成） |
+| API 返回 | session 列表/详情返回结构新增字段（向后兼容，已完成） |
+| 数据库 | 历史 session 需要回填（脚本已完成） |
+| 前端类型 | `agentService.ts` — `AgentRuntimeSession` 接口新增字段 |
+| 前端列表 | `SessionTab.tsx` — session 卡片底部新增 tokens/cost badges |
+| 前端详情 | `SessionDrawer.tsx` — 基础信息区新增 token 消耗明细 + 总费用卡片 |
 
 ## 风险与缓解
 
@@ -160,3 +249,4 @@ db.agent_messages.aggregate([
 | 回填期间新 message 写入导致计数偏差 | 回填用 `$set` 覆盖，之后增量 `$inc` 自动累加；如需精确可在回填后跑一次校验 |
 | `$inc` 并发写入性能 | MongoDB 原子操作，单字段 `$inc` 性能极好 |
 | 历史 message 无 sessionId | 仅聚合有 sessionId 的 message，无 sessionId 的忽略 |
+| 前端向后兼容 | 新字段为 optional，未回填或无数据时 UI 不展示，不影响现有功能 |
