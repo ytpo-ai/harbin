@@ -20,7 +20,7 @@
 | `agent_parts` | `agent-part.schema.ts` | 消息分片/步骤层，承载 LLM 增量与工具调用状态（含 `step_start/step_finish`） |
 | `agent_events_outbox` | `agent-event-outbox.schema.ts` | Hook 外发 outbox（`pending/dispatched/failed`） |
 | `agent_runtime_maintenance_audits` | `agent-runtime-maintenance-audit.schema.ts` | 维护操作审计（requeue/purge） |
-| `agent_sessions` | `agent-session.schema.ts` | 会话聚合视图（`messageIds` 引用、runIds/planContext/meetingContext/memoSnapshot） |
+| `agent_sessions` | `agent-session.schema.ts` | 会话聚合视图（`messageIds` 引用、runIds/planContext/meetingContext/memoSnapshot、`totalTokens/totalCost`） |
 
 ### 1.3 生命周期与状态模型
 
@@ -251,6 +251,7 @@
 - Session 消息卡片默认隐藏 `runId/taskId/messageId` 等标识字段，新增“查看原始信息”面板按需展开，并支持一键复制原始 message JSON。
 - Session 抽屉头部提供刷新图标按钮，可手动重载当前 Session 详情与列表数据。
 - Session 详情查询会补齐 run 级 `user/system` 消息：除 `session.messageIds` 外，额外按 `runId` 回查缺失的 `user/system` 记录。
+- Session 在 message 写入链路按增量维护 `totalTokens/totalCost`：session 列表与详情接口可直接返回会话总 token/cost 聚合数据。
 - Agent 详情页日志列表按 `runId` 精简为“每个任务一条最终摘要”；展开后改为「执行流程 / 原始信息 / 扣分记录」三 Tab，并在展开时懒加载 `GET /agents/runtime/runs/:runId/score` 扣分详情。
 - 历史描述“注入 `run.metadata.initialSystemMessages` 虚拟 system message 返回”（已弃用）：当前实现不再注入 `virtual-system-*` 消息。
 - Agent 主执行链路（`modules/agents/agent.service.ts`）已接入 runtime 的 run 生命周期与工具状态事件。
@@ -302,6 +303,7 @@
 | `AGENT_PROMPT_OPTIONAL_MIN_LENGTH_INJECTION_PLAN.md` | Agent Prompt 可选化与最小注入长度优化计划 |
 | `AGENT_RUN_SCORING_SYSTEM_PLAN.md` | Agent Run 扣分评分系统设计计划 |
 | `AGENT_DEDUCTION_MEMO_CONTEXT_INJECTION_PLAN.md` | 扣分记录 Memo + 上下文注入计划 |
+| `SESSION_TOKEN_COST_DISPLAY_PLAN.md` | Session 级 token/cost 汇总展示与历史回填计划 |
 
 ### 开发总结 (docs/development/)
 
@@ -368,6 +370,12 @@
 | `agent-runtime-maintenance-audit.schema.ts` | 运行维护审计模型 |
 | `agent-session.schema.ts` | 会话模型（含 `memoSnapshot`） |
 | `agent-run-score.schema.ts` | 扣分评分模型（AgentRunScore + AgentRunScoreDeduction） |
+
+### 后端迁移脚本 (backend/scripts/migrate/)
+
+| 文件 | 功能 |
+|------|------|
+| `backfill-session-token-cost.ts` | 回填历史 session 的 `totalTokens/totalCost` 聚合字段（支持 `--dry-run`/`--reset-missing`） |
 
 ### 上下文构建 (backend/apps/agents/src/modules/agents/context/)
 

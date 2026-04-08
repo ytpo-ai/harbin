@@ -109,6 +109,45 @@ export class RuntimePersistenceService {
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
   }
 
+  private buildSessionUsageIncUpdate(input: {
+    tokens?: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cacheRead?: number;
+      cacheWrite?: number;
+      total?: number;
+    };
+    cost?: number;
+  }): Record<string, number> {
+    const inc: Record<string, number> = {};
+    const normalizedCost = this.normalizeTokenValue(input.cost);
+    if (normalizedCost !== undefined) {
+      inc.totalCost = normalizedCost;
+    }
+
+    if (!input.tokens) {
+      return inc;
+    }
+
+    const tokenFieldMap: Array<[keyof NonNullable<typeof input.tokens>, string]> = [
+      ['input', 'totalTokens.input'],
+      ['output', 'totalTokens.output'],
+      ['reasoning', 'totalTokens.reasoning'],
+      ['cacheRead', 'totalTokens.cacheRead'],
+      ['cacheWrite', 'totalTokens.cacheWrite'],
+      ['total', 'totalTokens.total'],
+    ];
+
+    for (const [tokenField, targetField] of tokenFieldMap) {
+      const normalizedValue = this.normalizeTokenValue(input.tokens[tokenField]);
+      if (normalizedValue !== undefined) {
+        inc[targetField] = normalizedValue;
+      }
+    }
+    return inc;
+  }
+
   async ensureSession(input: {
     sessionId?: string;
     sessionType?: 'meeting' | 'task' | 'plan' | 'chat';
@@ -546,6 +585,15 @@ export class RuntimePersistenceService {
     const saved = await message.save();
     if (input.sessionId) {
       await this.appendMessageIdToSession(input.sessionId, saved.id);
+      const inc = this.buildSessionUsageIncUpdate({
+        tokens: input.tokens,
+        cost: input.cost,
+      });
+      if (Object.keys(inc).length > 0) {
+        await this.sessionModel
+          .updateOne({ id: input.sessionId }, { $inc: inc })
+          .exec();
+      }
     }
     return saved;
   }

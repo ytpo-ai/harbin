@@ -123,6 +123,37 @@ export class AgentSession {
     completedAt?: Date;
   }[];
 
+  @Prop({
+    type: {
+      input: { type: Number, default: 0 },
+      output: { type: Number, default: 0 },
+      reasoning: { type: Number, default: 0 },
+      cacheRead: { type: Number, default: 0 },
+      cacheWrite: { type: Number, default: 0 },
+      total: { type: Number, default: 0 },
+    },
+    _id: false,
+    default: () => ({
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      total: 0,
+    }),
+  })
+  totalTokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+
+  @Prop({ type: Number, default: 0 })
+  totalCost?: number;
+
   @Prop({ type: Object })
   metadata?: Record<string, unknown>;
 
