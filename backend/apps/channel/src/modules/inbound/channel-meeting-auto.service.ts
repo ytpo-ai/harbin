@@ -121,11 +121,12 @@ export class ChannelMeetingAutoService {
   }
 
   private async createOneOnOneMeeting(employeeId: string, agentId: string): Promise<string> {
+    const agentName = await this.resolveAgentName(employeeId, agentId);
     const created = (await this.callApiAsUser(employeeId, {
       method: 'post',
       url: '/api/meetings',
       data: {
-        title: `与 ${agentId} 的对话`,
+        title: `与 ${agentName} 的1对1聊天`,
         type: 'one_on_one',
         hostId: employeeId,
         hostType: 'employee',
@@ -220,6 +221,19 @@ export class ChannelMeetingAutoService {
       return undefined;
     } catch {
       return undefined;
+    }
+  }
+
+  private async resolveAgentName(employeeId: string, agentId: string): Promise<string> {
+    try {
+      const agent = (await this.callApiAsUser(employeeId, {
+        method: 'get',
+        url: `/api/agents/${agentId}`,
+      })) as Record<string, unknown>;
+      const name = String(agent?.name || '').trim();
+      return name || agentId;
+    } catch {
+      return agentId;
     }
   }
 

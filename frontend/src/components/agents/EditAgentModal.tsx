@@ -560,14 +560,6 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
             </div>
 
             <div>
-              <PromptTemplateRefPicker
-                value={promptTemplateRef}
-                onChange={setPromptTemplateRef}
-                helperText="可选增强：模板内容会追加到 systemPrompt 之后注入 Identity Layer；解析失败时仅保留 systemPrompt。"
-              />
-            </div>
-
-            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Prompt</label>
               <textarea
                 value={systemPrompt}
@@ -575,6 +567,15 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
                 rows={6}
                 placeholder="定义Agent的行为和角色..."
+              />
+            </div>
+
+            <div>
+              <PromptTemplateRefPicker
+                value={promptTemplateRef}
+                onChange={setPromptTemplateRef}
+                onApplyTemplate={({ content }) => setSystemPrompt(content)}
+                helperText="仅用于填充 Prompt 文本，不会在 Agent 上保存模板绑定关系。"
               />
             </div>
 

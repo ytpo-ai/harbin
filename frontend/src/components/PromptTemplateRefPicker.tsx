@@ -26,6 +26,7 @@ type PromptTemplateRefPickerProps = {
   onChange: (value?: PromptTemplateRefValue) => void;
   label?: string;
   helperText?: string;
+  onApplyTemplate?: (input: { scene: string; role: string; content: string }) => void | Promise<void>;
 };
 
 export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = ({
@@ -33,12 +34,14 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
   onChange,
   label = 'Prompt 模板（可选）',
   helperText,
+  onApplyTemplate,
 }) => {
   const [selectedScene, setSelectedScene] = useState(value?.scene || '');
   const [selectedRole, setSelectedRole] = useState(value?.role || '');
   const [previewContent, setPreviewContent] = useState('');
   const [previewError, setPreviewError] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [applyLoading, setApplyLoading] = useState(false);
 
   const { data: filters, isLoading: filtersLoading } = useQuery(
     ['prompt-template-filters'],
@@ -102,31 +105,53 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
     onChange(undefined);
   };
 
+  const fetchTemplateContent = async (): Promise<string> => {
+    if (!selectedScene || !selectedRole) {
+      throw new Error('请先选择 scene 和 role');
+    }
+    const templates = await promptRegistryService.listTemplates({
+      scene: selectedScene,
+      role: selectedRole,
+      status: 'published',
+      limit: 1,
+    });
+    const templateId = String(templates?.[0]?._id || '').trim();
+    if (!templateId) {
+      throw new Error('未找到可预览的已发布模板');
+    }
+
+    const template = await promptRegistryService.getTemplateById(templateId);
+    const content = String(template?.content || '').trim();
+    if (!content) {
+      throw new Error('未找到可预览的已发布模板');
+    }
+    return content;
+  };
+
+  const handleApply = async () => {
+    if (!onApplyTemplate || !selectedScene || !selectedRole) {
+      return;
+    }
+    setApplyLoading(true);
+    setPreviewError('');
+    try {
+      const content = await fetchTemplateContent();
+      await onApplyTemplate({ scene: selectedScene, role: selectedRole, content });
+    } catch (error) {
+      setPreviewError(getErrorMessage(error));
+    } finally {
+      setApplyLoading(false);
+    }
+  };
+
   const handlePreview = async () => {
-    if (!selectedScene || !selectedRole) return;
+    if (!selectedScene || !selectedRole) {
+      return;
+    }
     setPreviewLoading(true);
     setPreviewError('');
     try {
-      const templates = await promptRegistryService.listTemplates({
-        scene: selectedScene,
-        role: selectedRole,
-        status: 'published',
-        limit: 1,
-      });
-      const templateId = String(templates?.[0]?._id || '').trim();
-      if (!templateId) {
-        setPreviewError('未找到可预览的已发布模板');
-        setPreviewContent('');
-        return;
-      }
-
-      const template = await promptRegistryService.getTemplateById(templateId);
-      const content = String(template?.content || '').trim();
-      if (!content) {
-        setPreviewError('未找到可预览的已发布模板');
-        setPreviewContent('');
-        return;
-      }
+      const content = await fetchTemplateContent();
       setPreviewContent(content);
     } catch (error) {
       setPreviewError(getErrorMessage(error));
@@ -139,12 +164,13 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
   return (
     <div className="rounded-md border border-gray-200 bg-gray-50 p-3">
       <p className="text-sm font-medium text-gray-700">{label}</p>
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
+      <div className="mt-2 space-y-2">
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
         <select
           value={selectedScene}
           onChange={(event) => handleSceneChange(event.target.value)}
           disabled={filtersLoading}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+          className="w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
         >
           <option value="">选择 scene...</option>
           {sceneOptions.map((scene) => (
@@ -157,7 +183,7 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
           value={selectedRole}
           onChange={(event) => handleRoleChange(event.target.value)}
           disabled={!selectedScene || filtersLoading}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
+          className="w-full min-w-0 rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100"
         >
           <option value="">选择 role...</option>
           {roleOptions.map((role) => (
@@ -166,6 +192,8 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
             </option>
           ))}
         </select>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
         <button
           type="button"
           onClick={handlePreview}
@@ -182,6 +210,17 @@ export const PromptTemplateRefPicker: React.FC<PromptTemplateRefPickerProps> = (
         >
           清除
         </button>
+        {onApplyTemplate && (
+          <button
+            type="button"
+            onClick={handleApply}
+            disabled={!selectedScene || !selectedRole || applyLoading}
+            className="rounded-md border border-primary-300 bg-primary-50 px-3 py-2 text-sm text-primary-700 hover:bg-primary-100 disabled:opacity-60"
+          >
+            {applyLoading ? '填入中...' : '填入 Prompt'}
+          </button>
+        )}
+        </div>
       </div>
 
       {filtersLoading && <p className="mt-2 text-xs text-gray-500">模板列表加载中...</p>}

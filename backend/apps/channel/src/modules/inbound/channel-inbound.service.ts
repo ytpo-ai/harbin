@@ -577,8 +577,13 @@ export class ChannelInboundService {
 
       const activeMeeting = await this.sessionService.getActiveMeeting(sessionFilter);
       if (activeMeeting) {
-        await this.sendMeetingMessage(activeMeeting.meetingId, resolved.employeeId, prompt);
-        return;
+        try {
+          await this.sendMeetingMessage(activeMeeting.meetingId, resolved.employeeId, prompt);
+          return;
+        } catch {
+          // Meeting may no longer exist or is no longer active; clear stale session and fall through to create a new one.
+          await this.sessionService.clearActiveMeeting(sessionFilter);
+        }
       }
 
       const defaultAgentId = String(resolved.exclusiveAssistantAgentId || '').trim();

@@ -345,7 +345,11 @@ export const agentService = {
 
   // 创建agent
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
-    const response = await api.post('/agents', agentData);
+    const payload: Record<string, unknown> = { ...agentData };
+    if (payload.promptTemplateRef == null) {
+      delete payload.promptTemplateRef;
+    }
+    const response = await api.post('/agents', payload);
     return response.data;
   },
 

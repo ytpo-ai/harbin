@@ -2,10 +2,11 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { verifyEmployeeToken } from '@libs/auth';
+import { decodeUserContext, verifyEmployeeToken, verifyEncodedContext } from '@libs/auth';
 import { GatewayUserContext } from '@libs/contracts';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument } from '../../../src/shared/schemas/employee.schema';
@@ -21,6 +22,9 @@ const PUBLIC_PATHS = new Set([
 
 @Injectable()
 export class GatewayAuthGuard implements CanActivate {
+  private readonly logger = new Logger(GatewayAuthGuard.name);
+  private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
+
   constructor(
     @InjectModel(Employee.name)
     private readonly employeeModel: Model<EmployeeDocument>,
@@ -34,6 +38,14 @@ export class GatewayAuthGuard implements CanActivate {
       return true;
     }
 
+    // 内部服务签名认证（x-user-context + x-user-signature）
+    const encodedContext = req.headers['x-user-context'] as string | undefined;
+    const contextSignature = req.headers['x-user-signature'] as string | undefined;
+    if (encodedContext && contextSignature) {
+      return this.authenticateByInternalSignature(req, encodedContext, contextSignature);
+    }
+
+    // 外部 JWT Bearer 认证
     const authHeader = req.headers.authorization as string | undefined;
     if (!authHeader?.startsWith('Bearer ')) {
       throw new UnauthorizedException('Missing Bearer token');
@@ -59,6 +71,29 @@ export class GatewayAuthGuard implements CanActivate {
       issuedAt: Date.now(),
       expiresAt: payload.exp,
     };
+
+    req.userContext = userContext;
+    return true;
+  }
+
+  private authenticateByInternalSignature(
+    req: any,
+    encodedContext: string,
+    signature: string,
+  ): boolean {
+    if (!verifyEncodedContext(encodedContext, signature, this.contextSecret)) {
+      this.logger.warn('Internal context signature verification failed');
+      throw new UnauthorizedException('Invalid internal context signature');
+    }
+
+    const userContext = decodeUserContext(encodedContext);
+    if (!userContext.employeeId) {
+      throw new UnauthorizedException('Internal context missing employeeId');
+    }
+
+    if (userContext.expiresAt && userContext.expiresAt < Date.now()) {
+      throw new UnauthorizedException('Internal context expired');
+    }
 
     req.userContext = userContext;
     return true;

@@ -56,6 +56,9 @@ export const REQUIREMENT_TOOL_IDS = {
 } as const;
 
 export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
+  websearch: TOOL_ID__WEB_SEARCH_EXA,
+  webfetch: TOOL_ID__WEB_FETCH,
+  content_extract: TOOL_ID__CONTENT_EXTRACT,
   'mcp.orchestration.createPlan': ORCHESTRATION_TOOL_IDS.createPlan,
   'mcp.orchestration.updatePlan': ORCHESTRATION_TOOL_IDS.updatePlan,
   'mcp.orchestration.runPlan': ORCHESTRATION_TOOL_IDS.runPlan,

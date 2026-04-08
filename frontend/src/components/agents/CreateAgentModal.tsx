@@ -136,7 +136,6 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
       tier: formData.tier,
       description: formData.description,
       systemPrompt: formData.systemPrompt,
-      promptTemplateRef: formData.promptTemplateRef,
       capabilities: formData.capabilities.split(',').map((cap) => cap.trim()).filter(Boolean),
       model: selectedModel,
       apiKeyId: formData.apiKeyId || undefined,
@@ -230,14 +229,6 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
           </div>
 
           <div>
-            <PromptTemplateRefPicker
-              value={formData.promptTemplateRef}
-              onChange={(next) => setFormData({ ...formData, promptTemplateRef: next })}
-              helperText="可选增强：模板内容会追加到 systemPrompt 之后注入 Identity Layer；解析失败时仅保留 systemPrompt。"
-            />
-          </div>
-
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">系统提示 (System Prompt)</label>
             <textarea
               value={formData.systemPrompt}
@@ -245,6 +236,20 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-sm"
               rows={4}
               placeholder="定义Agent的行为和角色，例如: 你是一位专业的软件工程师..."
+            />
+          </div>
+
+          <div>
+            <PromptTemplateRefPicker
+              value={formData.promptTemplateRef}
+              onChange={(next) => setFormData({ ...formData, promptTemplateRef: next })}
+              onApplyTemplate={({ content }) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  systemPrompt: content,
+                }));
+              }}
+              helperText="仅用于填充 Prompt 文本，不会在 Agent 上保存模板绑定关系。"
             />
           </div>
 

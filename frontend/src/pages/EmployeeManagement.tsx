@@ -552,10 +552,6 @@ const EmployeeRow: React.FC<{
       departmentId: employee.departmentId || '',
       title: employee.title || '',
       status: employee.status,
-      salary: employee.salary,
-      shares: employee.shares,
-      stockOptions: employee.stockOptions,
-      description: employee.description || '',
     });
     setShowEditModal(true);
   };
@@ -567,19 +563,19 @@ const EmployeeRow: React.FC<{
     const trimmedEmail = (formData.email || '').trim();
     const trimmedDepartmentId = (formData.departmentId || '').trim();
     const trimmedTitle = (formData.title || '').trim();
-    const trimmedDescription = (formData.description || '').trim();
     const canUpdateRole = !!formData.role && EMPLOYEE_ROLES.some((item) => item.id === formData.role);
 
-    onUpdate(employee.id, {
-      ...formData,
-      role: canUpdateRole ? formData.role : undefined,
-      tier: formData.tier,
+    const payload: UpdateEmployeeDto = {
       name: trimmedName || undefined,
       email: trimmedEmail || undefined,
+      role: canUpdateRole ? formData.role : undefined,
+      tier: formData.tier,
       departmentId: trimmedDepartmentId || undefined,
       title: trimmedTitle || undefined,
-      description: trimmedDescription || undefined,
-    });
+      status: formData.status,
+    };
+
+    onUpdate(employee.id, payload);
     setShowEditModal(false);
   };
 
@@ -644,18 +640,24 @@ const EmployeeRow: React.FC<{
       </div>
 
       {showEditModal && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl w-[520px] p-6">
-            <h3 className="text-lg font-semibold mb-4">编辑账号</h3>
-            <form onSubmit={handleEditSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="fixed inset-0 z-50 bg-gray-900/45 p-4 flex items-center justify-center">
+          <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl bg-white shadow-2xl">
+            <div className="border-b border-gray-100 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">编辑员工信息</h3>
+              <p className="mt-1 text-sm text-gray-500">更新基础资料与组织信息，保存后即时生效。</p>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-5 px-6 py-5">
+              <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                <h4 className="text-sm font-medium text-gray-800 mb-3">基础信息</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">姓名</label>
                   <input
                     type="text"
                     value={formData.name || ''}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                    placeholder="请输入员工姓名"
                   />
                 </div>
                 <div>
@@ -664,12 +666,16 @@ const EmployeeRow: React.FC<{
                     type="email"
                     value={formData.email || ''}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                    placeholder="name@company.com"
                   />
                 </div>
               </div>
+              </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg border border-gray-100 bg-gray-50/50 p-4">
+                <h4 className="text-sm font-medium text-gray-800 mb-3">组织信息</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">角色</label>
                   <select
@@ -678,7 +684,7 @@ const EmployeeRow: React.FC<{
                       const role = e.target.value as EmployeeRole;
                       setFormData({ ...formData, role, tier: resolveTierByRole(role) });
                     }}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   >
                     {!hasKnownRole && <option value="">保持原角色（{employee.role}）</option>}
                     {editRoleOptions.map((role) => (
@@ -699,7 +705,7 @@ const EmployeeRow: React.FC<{
                         : nextOptions[0]?.id;
                       setFormData({ ...formData, tier: nextTier, role: nextRole });
                     }}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   >
                     <option value="leadership">leadership（高管层）</option>
                     <option value="operations">operations（执行层）</option>
@@ -711,7 +717,7 @@ const EmployeeRow: React.FC<{
                   <select
                     value={formData.status || EmployeeStatus.ACTIVE}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as EmployeeStatus })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
                   >
                     <option value={EmployeeStatus.ACTIVE}>活跃</option>
                     <option value={EmployeeStatus.PROBATION}>试用期</option>
@@ -720,16 +726,14 @@ const EmployeeRow: React.FC<{
                     <option value={EmployeeStatus.TERMINATED}>已离职</option>
                   </select>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">部门</label>
                   <input
                     type="text"
                     value={formData.departmentId || ''}
                     onChange={(e) => setFormData({ ...formData, departmentId: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                    placeholder="请输入部门"
                   />
                 </div>
                 <div>
@@ -738,69 +742,32 @@ const EmployeeRow: React.FC<{
                     type="text"
                     value={formData.title || ''}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
+                    className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                    placeholder="请输入职位"
                   />
                 </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">薪资</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.salary ?? 0}
-                    onChange={(e) => setFormData({ ...formData, salary: Number(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">股份</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.shares ?? 0}
-                    onChange={(e) => setFormData({ ...formData, shares: Number(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">期权</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={formData.stockOptions ?? 0}
-                    onChange={(e) => setFormData({ ...formData, stockOptions: Number(e.target.value) || 0 })}
-                    className="w-full border border-gray-300 rounded-md px-3 py-2"
-                  />
-                </div>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">描述</label>
-                <textarea
-                  value={formData.description || ''}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2"
-                  rows={3}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="sticky bottom-0 -mx-6 border-t border-gray-100 bg-white/95 px-6 py-4 backdrop-blur">
+                <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+                  disabled={isUpdating}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   取消
                 </button>
                 <button
                   type="submit"
                   disabled={isUpdating}
-                  className="px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                  {isUpdating && <ArrowPathIcon className="h-4 w-4 animate-spin" />}
                   {isUpdating ? '保存中...' : '保存修改'}
                 </button>
+                </div>
               </div>
             </form>
           </div>

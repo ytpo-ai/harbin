@@ -67,8 +67,8 @@ export class Agent {
   systemPrompt?: string;
 
   @Prop(raw({
-    scene: { type: String, required: true, trim: true },
-    role: { type: String, required: true, trim: true },
+    scene: { type: String, trim: true },
+    role: { type: String, trim: true },
   }))
   promptTemplateRef?: {
     scene: string;

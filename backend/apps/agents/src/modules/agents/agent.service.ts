@@ -60,8 +60,11 @@ export class AgentService {
       agentName: agentData.name,
     });
 
+    const normalizedPromptTemplateRef = this.normalizePromptTemplateRef((agentData as any).promptTemplateRef);
+    const { promptTemplateRef: _ignoredPromptTemplateRef, ...agentDataWithoutPromptTemplateRef } = agentData as any;
+
     const normalizedData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'> = {
-      ...agentData,
+      ...agentDataWithoutPromptTemplateRef,
       roleId: agentData.roleId.trim(),
       tier,
       description: agentData.description?.trim() || `${agentData.name} Agent`,
@@ -76,7 +79,6 @@ export class AgentService {
       tools: agentData.tools || [],
       skills: this.normalizeSkillIds(agentData.skills || []),
       permissions: agentData.permissions || [],
-      promptTemplateRef: this.normalizePromptTemplateRef((agentData as any).promptTemplateRef),
       personality: agentData.personality || {
         workEthic: 80,
         creativity: 75,
@@ -86,6 +88,10 @@ export class AgentService {
       learningAbility: agentData.learningAbility ?? 80,
       isActive: agentData.isActive ?? true,
     };
+
+    if (normalizedPromptTemplateRef) {
+      normalizedData.promptTemplateRef = normalizedPromptTemplateRef;
+    }
 
     normalizedData.tools = await this.agentRoleService.ensureToolsWithinRolePermissionWhitelist(
       normalizedData.roleId,

@@ -555,24 +555,35 @@ export class EmployeeService implements OnModuleInit {
     const model = this.pickDefaultAssistantModel();
     const assistantRoleId = process.env.DEFAULT_EXCLUSIVE_ASSISTANT_ROLE_ID || 'role-human-exclusive-assistant';
 
-    const createdAssistant = await this.agentClientService.createAgent({
-      name: assistantName,
-      roleId: assistantRoleId,
-      description: `人类成员 ${ownerDisplayName} 的专属助理`,
-      model,
-      capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
-      systemPrompt: `你是 ${ownerDisplayName} 的专属助理。你在会议中默认保持被动，仅在该人类明确 @ 你时响应。请保持简洁、专业，并优先执行个人事务协调与行动跟进。`,
-      isActive: true,
-      tools: ['websearch', 'webfetch', 'content_extract'],
-      permissions: [],
-      personality: {
-        workEthic: 90,
-        creativity: 70,
-        leadership: 55,
-        teamwork: 92,
-      },
-      learningAbility: 85,
-    });
+    let createdAssistant: Agent;
+    try {
+      createdAssistant = await this.agentClientService.createAgent({
+        name: assistantName,
+        roleId: assistantRoleId,
+        description: `人类成员 ${ownerDisplayName} 的专属助理`,
+        model,
+        capabilities: ['personal_schedule_management', 'task_followup', 'communication_drafting'],
+        systemPrompt: `你是 ${ownerDisplayName} 的专属助理。你在会议中默认保持被动，仅在该人类明确 @ 你时响应。请保持简洁、专业，并优先执行个人事务协调与行动跟进。`,
+        isActive: true,
+        tools: [
+          'builtin.data-gathering.internal.web.search-exa',
+          'builtin.data-gathering.internal.web.fetch',
+          'builtin.data-gathering.internal.content.extract',
+        ],
+        permissions: [],
+        personality: {
+          workEthic: 90,
+          creativity: 70,
+          leadership: 55,
+          teamwork: 92,
+        },
+        learningAbility: 85,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.error(`Failed to auto-create exclusive assistant for employee ${employeeId}: ${message}`);
+      throw new ConflictException('Failed to create exclusive assistant agent');
+    }
 
     const newAssistantId = String(createdAssistant.id || '');
     if (!newAssistantId) {

@@ -37,7 +37,7 @@ export class ChannelApiClientService {
     });
 
     if (response.status >= 400) {
-      throw new Error(`api_request_failed:${response.status}`);
+      throw new Error(`api_request_failed:${response.status} ${request.method.toUpperCase()} ${request.url}`);
     }
 
     const payload = response.data;
