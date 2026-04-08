@@ -428,7 +428,11 @@ const ProjectManagement: React.FC = () => {
     () => {
       const execution = (rdAgents.find((agent) => agent.id === selectedAgentId)?.config as Record<string, any> | undefined)
         ?.execution as Record<string, any> | undefined;
+      const selectedLocalPath = typeof selectedLocalProject?.localPath === 'string'
+        ? selectedLocalProject.localPath.trim()
+        : '';
       return rdManagementService.syncAgentOpencodeProjects(selectedAgentId, {
+        projectPaths: selectedLocalPath ? [selectedLocalPath] : undefined,
         endpoint: typeof execution?.endpoint === 'string' ? execution.endpoint : undefined,
         endpointRef: typeof execution?.endpointRef === 'string' ? execution.endpointRef : undefined,
         auth_enable: execution?.auth_enable === true,

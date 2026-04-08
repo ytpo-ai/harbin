@@ -1158,6 +1158,20 @@ export class EiManagementService {
       return this.matchAgentProjectScope(path, finalScopes);
     });
 
+    // If user explicitly requests projectPaths, keep them as fallback candidates even
+    // when OpenCode /project does not return them (e.g. indexing lag or runtime mismatch).
+    if (requestedScopes.length > 0) {
+      requestedScopes.forEach((scopePath) => {
+        const alreadyCovered = candidates.some((item) => {
+          const path = this.getProjectPath(item);
+          return this.matchAgentProjectScope(path, [scopePath]);
+        });
+        if (!alreadyCovered) {
+          candidates.push({ worktree: scopePath });
+        }
+      });
+    }
+
     const stats = {
       totalCandidates: candidates.length,
       created: 0,
