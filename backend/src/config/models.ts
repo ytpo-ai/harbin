@@ -15,6 +15,14 @@ export const AVAILABLE_MODELS: AIModel[] = [
   { id: 'gpt-5', name: 'GPT-5', provider: 'openai', model: 'gpt-5', maxTokens: 32768, temperature: 0.7, topP: 1 },
   { id: 'gpt-5-mini', name: 'GPT-5 Mini', provider: 'openai', model: 'gpt-5-mini', maxTokens: 32768, temperature: 0.7, topP: 1 },
   { id: 'gpt-5-nano', name: 'GPT-5 Nano', provider: 'openai', model: 'gpt-5-nano', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  // --- Codex (code-focused) ---
+  { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex', provider: 'openai', model: 'gpt-5.3-codex', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'gpt-5.3-codex-spark', name: 'GPT-5.3 Codex Spark', provider: 'openai', model: 'gpt-5.3-codex-spark', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'gpt-5.2-codex', name: 'GPT-5.2 Codex', provider: 'openai', model: 'gpt-5.2-codex', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex', provider: 'openai', model: 'gpt-5.1-codex', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'gpt-5.1-codex-mini', name: 'GPT-5.1 Codex Mini', provider: 'openai', model: 'gpt-5.1-codex-mini', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'gpt-5-codex', name: 'GPT-5 Codex', provider: 'openai', model: 'gpt-5-codex', maxTokens: 32768, temperature: 0.7, topP: 1 },
+  { id: 'codex-mini-latest', name: 'Codex Mini', provider: 'openai', model: 'codex-mini-latest', maxTokens: 32768, temperature: 0.7, topP: 1 },
   // --- GPT-4.x ---
   { id: 'gpt-4.1', name: 'GPT-4.1', provider: 'openai', model: 'gpt-4.1', maxTokens: 32768, temperature: 0.7, topP: 1 },
   { id: 'gpt-4.1-mini', name: 'GPT-4.1 Mini', provider: 'openai', model: 'gpt-4.1-mini', maxTokens: 32768, temperature: 0.7, topP: 1 },
