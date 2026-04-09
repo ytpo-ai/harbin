@@ -9,7 +9,8 @@ export const normalizeProvider = (provider?: string): string => {
   if (value === 'claude' || value === 'anthropic') return 'anthropic';
   if (value === 'chatgpt' || value === 'openai') return 'openai';
   if (value === 'gemini' || value === 'google') return 'google';
-  if (value === 'azure-openai' || value === 'azure_openai' || value === 'microsoft') return 'microsoft';
+  if (value === 'kimi' || value === 'moonshot') return 'moonshotai';
+  if (value === 'zhipu') return 'zhipuai';
 
   return value;
 };

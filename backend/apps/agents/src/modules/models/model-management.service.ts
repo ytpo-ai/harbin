@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AVAILABLE_MODELS, MODEL_CATEGORIES, getRecommendedModels } from '../../../../../src/config/models';
 import { AIModel } from '../../../../../src/shared/types';
 import { ModelRegistry, ModelRegistryDocument } from '../../schemas/model-registry.schema';
+import { ModelPricingService } from './model-pricing.service';
 
 export interface ModelSettings {
   defaultTemperature: number;
@@ -54,11 +55,13 @@ export class ModelManagementService {
   constructor(
     @InjectModel(ModelRegistry.name)
     private readonly modelRegistryModel: Model<ModelRegistryDocument>,
+    private readonly modelPricingService: ModelPricingService,
   ) {}
 
-  async getAvailableModels(): Promise<AIModel[]> {
+  async getAvailableModels(): Promise<ModelPayload[]> {
     const docs = await this.modelRegistryModel.find().sort({ provider: 1, model: 1 }).lean().exec();
-    return docs.map((item) => this.toAIModel(item));
+    const models = docs.map((item) => this.toAIModel(item));
+    return this.enrichModelsWithPricing(models);
   }
 
   getModelCategories(): any {
@@ -69,14 +72,15 @@ export class ModelManagementService {
     return getRecommendedModels();
   }
 
-  async getModelsByProvider(provider: string): Promise<AIModel[]> {
+  async getModelsByProvider(provider: string): Promise<ModelPayload[]> {
     const normalizedProvider = this.normalizeProvider(provider);
     const docs = await this.modelRegistryModel
       .find({ provider: normalizedProvider })
       .sort({ model: 1 })
       .lean()
       .exec();
-    return docs.map((item) => this.toAIModel(item));
+    const models = docs.map((item) => this.toAIModel(item));
+    return this.enrichModelsWithPricing(models);
   }
 
   async createModel(modelData: Omit<ModelPayload, 'id'> & { id?: string }): Promise<ModelPayload> {
@@ -315,8 +319,9 @@ export class ModelManagementService {
 
   private normalizeProvider(provider: string): string {
     const value = String(provider || '').trim().toLowerCase();
-    if (value === 'kimi') return 'moonshot';
+    if (value === 'kimi' || value === 'moonshot') return 'moonshotai';
     if (value === 'claude') return 'anthropic';
+    if (value === 'zhipu') return 'zhipuai';
     return value;
   }
 
@@ -388,6 +393,23 @@ export class ModelManagementService {
   private isDuplicateKeyError(error: unknown): boolean {
     const err = error as { code?: number };
     return Number(err?.code) === 11000;
+  }
+
+  private async enrichModelsWithPricing(models: ModelPayload[]): Promise<ModelPayload[]> {
+    const enriched: ModelPayload[] = [];
+    for (const model of models) {
+      if (model.cost && (Number.isFinite(model.cost.input) || Number.isFinite(model.cost.output))) {
+        enriched.push(model);
+        continue;
+      }
+      const pricing = await this.modelPricingService.getPricing(model.provider, model.model);
+      if (pricing) {
+        enriched.push({ ...model, cost: pricing });
+      } else {
+        enriched.push(model);
+      }
+    }
+    return enriched;
   }
 
   private normalizeOptionalText(value?: string): string | undefined {

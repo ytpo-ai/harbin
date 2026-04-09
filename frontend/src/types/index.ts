@@ -4,7 +4,18 @@ export interface AIModel {
   description?: string;
   availability?: string;
   deprecated?: boolean;
-  provider: 'openai' | 'anthropic' | 'google' | 'local';
+  provider:
+    | 'openai'
+    | 'anthropic'
+    | 'google'
+    | 'local'
+    | 'deepseek'
+    | 'mistral'
+    | 'alibaba'
+    | 'moonshotai'
+    | 'xai'
+    | 'minimax'
+    | 'zhipuai';
   model: string;
   maxTokens: number;
   temperature?: number;

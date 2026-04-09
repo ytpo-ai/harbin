@@ -5,6 +5,7 @@ import { PromptTemplateRefPicker } from '../PromptTemplateRefPicker';
 import type { AgentTestResult } from '../../services/agentService';
 import { agentService } from '../../services/agentService';
 import { apiKeyService } from '../../services/apiKeyService';
+import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 import type { PromptTemplateRef } from '../../types';
 import { ModelTestPanel } from './ModelTestPanel';
 import { useAgentFormSync } from './hooks/useAgentFormSync';
@@ -30,14 +31,11 @@ const getProviderColor = (provider: string) => {
     google: '#4285f4',
     deepseek: '#4f46e5',
     mistral: '#ff7000',
-    meta: '#0668e1',
     alibaba: '#ff6a00',
-    moonshot: '#000000',
-    baichuan: '#1a73e8',
-    zhipu: '#3b82f6',
-    xunfei: '#0ea5e9',
+    moonshotai: '#6366f1',
+    xai: '#1d1d1f',
     minimax: '#f59e0b',
-    microsoft: '#00a4ef',
+    zhipuai: '#3b82f6',
   };
   return colors[provider] || '#6b7280';
 };
@@ -74,6 +72,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
   const [selectedApiKeyId, setSelectedApiKeyId] = useState(agent.apiKeyId || '');
   const [selectedTools, setSelectedTools] = useState<string[]>(agent.tools || []);
   const [name, setName] = useState(agent.name || '');
+  const [projectId, setProjectId] = useState(agent.projectId || '');
   const [roleId, setRoleId] = useState(agent.roleId || '');
   const [tier, setTier] = useState(initialAgentTier);
   const [description, setDescription] = useState(agent.description || '');
@@ -87,6 +86,11 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
   const [streamingResponse, setStreamingResponse] = useState('');
 
   const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'edit-agent-incubation-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
+  );
   const selectedModel = availableModels.find((m) => m.id === selectedModelId);
   const filteredApiKeys = (apiKeys || []).filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
@@ -121,6 +125,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
     selectedApiKeyId !== (agent.apiKeyId || '') ||
     !arraysEqual(selectedTools, agent.tools || []) ||
     name.trim() !== (agent.name || '').trim() ||
+    projectId !== (agent.projectId || '') ||
     roleId.trim() !== (agent.roleId || '').trim() ||
     tier !== initialAgentTier ||
     description.trim() !== (agent.description || '').trim() ||
@@ -191,6 +196,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
       tools: selectedAllowedTools,
       permissions: nextPermissions,
       name: name.trim(),
+      projectId: projectId || undefined,
       roleId: roleId.trim(),
       tier,
       description: description.trim(),
@@ -505,6 +511,20 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                 placeholder="例如: 智能助手"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">所属项目</label>
+              <select
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="">全局（不关联项目）</option>
+                {incubationProjects.map((p) => (
+                  <option key={p._id} value={p._id}>{p.name}</option>
+                ))}
+              </select>
             </div>
 
             <div>

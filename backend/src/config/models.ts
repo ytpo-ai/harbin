@@ -1,16 +1,9 @@
 import { AIModel } from '../shared/types';
 
 export const AVAILABLE_MODELS: AIModel[] = [
+  // ============================================================
   // OpenAI Models
-  {
-    id: 'gpt-4-turbo',
-    name: 'GPT-4 Turbo',
-    provider: 'openai',
-    model: 'gpt-4-turbo-preview',
-    maxTokens: 4096,
-    temperature: 0.7,
-    topP: 1
-  },
+  // ============================================================
   {
     id: 'gpt-4',
     name: 'GPT-4',
@@ -18,7 +11,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gpt-4',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'gpt-4o',
@@ -27,7 +20,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gpt-4o',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'gpt-4o-mini',
@@ -36,7 +29,34 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gpt-4o-mini',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
+  },
+  {
+    id: 'gpt-4.1',
+    name: 'GPT-4.1',
+    provider: 'openai',
+    model: 'gpt-4.1',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gpt-4.1-mini',
+    name: 'GPT-4.1 Mini',
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gpt-4.1-nano',
+    name: 'GPT-4.1 Nano',
+    provider: 'openai',
+    model: 'gpt-4.1-nano',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1,
   },
   {
     id: 'gpt-3.5-turbo',
@@ -45,7 +65,25 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gpt-3.5-turbo',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
+  },
+  {
+    id: 'gpt-5',
+    name: 'GPT-5',
+    provider: 'openai',
+    model: 'gpt-5',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gpt-5-mini',
+    name: 'GPT-5 Mini',
+    provider: 'openai',
+    model: 'gpt-5-mini',
+    maxTokens: 32768,
+    temperature: 0.7,
+    topP: 1,
   },
   {
     id: 'o1-preview',
@@ -54,7 +92,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'o1-preview',
     maxTokens: 32768,
     temperature: 1,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'o1-mini',
@@ -63,10 +101,39 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'o1-mini',
     maxTokens: 65536,
     temperature: 1,
-    topP: 1
+    topP: 1,
+  },
+  {
+    id: 'o3',
+    name: 'o3',
+    provider: 'openai',
+    model: 'o3',
+    maxTokens: 32768,
+    temperature: 1,
+    topP: 1,
+  },
+  {
+    id: 'o3-mini',
+    name: 'o3 Mini',
+    provider: 'openai',
+    model: 'o3-mini',
+    maxTokens: 65536,
+    temperature: 1,
+    topP: 1,
+  },
+  {
+    id: 'o4-mini',
+    name: 'o4 Mini',
+    provider: 'openai',
+    model: 'o4-mini',
+    maxTokens: 65536,
+    temperature: 1,
+    topP: 1,
   },
 
+  // ============================================================
   // Anthropic Models
+  // ============================================================
   {
     id: 'claude-opus-4-6',
     name: 'Claude Opus 4.6',
@@ -74,7 +141,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'claude-opus-4-6',
     maxTokens: 128000,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'claude-sonnet-4-6',
@@ -83,7 +150,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'claude-sonnet-4-6',
     maxTokens: 64000,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'claude-haiku-4-5',
@@ -92,7 +159,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'claude-haiku-4-5',
     maxTokens: 64000,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'claude-opus-4-5',
@@ -101,7 +168,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'claude-opus-4-5',
     maxTokens: 64000,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'claude-sonnet-4-5',
@@ -110,18 +177,38 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'claude-sonnet-4-5',
     maxTokens: 64000,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
 
+  // ============================================================
   // Google Models
+  // ============================================================
   {
-    id: 'gemini-pro',
-    name: 'Gemini Pro',
+    id: 'gemini-2.5-pro',
+    name: 'Gemini 2.5 Pro',
     provider: 'google',
-    model: 'gemini-pro',
+    model: 'gemini-2.5-pro',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
+  },
+  {
+    id: 'gemini-2.5-flash',
+    name: 'Gemini 2.5 Flash',
+    provider: 'google',
+    model: 'gemini-2.5-flash',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gemini-2.0-flash',
+    name: 'Gemini 2.0 Flash',
+    provider: 'google',
+    model: 'gemini-2.0-flash',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
   },
   {
     id: 'gemini-1.5-pro',
@@ -130,7 +217,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gemini-1.5-pro',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'gemini-1.5-flash',
@@ -139,19 +226,12 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'gemini-1.5-flash',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'gemini-ultra',
-    name: 'Gemini Ultra',
-    provider: 'google',
-    model: 'gemini-ultra',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
 
+  // ============================================================
   // DeepSeek Models
+  // ============================================================
   {
     id: 'deepseek-chat',
     name: 'DeepSeek Chat',
@@ -159,19 +239,21 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'deepseek-chat',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
-    id: 'deepseek-coder',
-    name: 'DeepSeek Coder',
+    id: 'deepseek-reasoner',
+    name: 'DeepSeek Reasoner',
     provider: 'deepseek',
-    model: 'deepseek-coder',
+    model: 'deepseek-reasoner',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
 
+  // ============================================================
   // Mistral Models
+  // ============================================================
   {
     id: 'mistral-large',
     name: 'Mistral Large',
@@ -179,7 +261,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'mistral-large-latest',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'mistral-medium',
@@ -188,7 +270,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'mistral-medium-latest',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'mistral-small',
@@ -197,7 +279,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'mistral-small-latest',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'mixtral-8x7b',
@@ -206,7 +288,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'open-mixtral-8x7b',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'mixtral-8x22b',
@@ -215,66 +297,12 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'open-mixtral-8x22b',
     maxTokens: 4096,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
 
-  // Meta Models
-  {
-    id: 'llama-2-70b',
-    name: 'Llama 2 70B',
-    provider: 'meta',
-    model: 'llama-2-70b-chat',
-    maxTokens: 4096,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'llama-3-8b',
-    name: 'Llama 3 8B',
-    provider: 'meta',
-    model: 'llama-3-8b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'llama-3-70b',
-    name: 'Llama 3 70B',
-    provider: 'meta',
-    model: 'llama-3-70b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'llama-3.1-8b',
-    name: 'Llama 3.1 8B',
-    provider: 'meta',
-    model: 'llama-3.1-8b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'llama-3.1-70b',
-    name: 'Llama 3.1 70B',
-    provider: 'meta',
-    model: 'llama-3.1-70b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'llama-3.1-405b',
-    name: 'Llama 3.1 405B',
-    provider: 'meta',
-    model: 'llama-3.1-405b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-
-  // Alibaba Models
+  // ============================================================
+  // Alibaba (Qwen) Models
+  // ============================================================
   {
     id: 'qwen-max',
     name: 'Qwen Max',
@@ -282,7 +310,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'qwen-max',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'qwen-plus',
@@ -291,7 +319,7 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'qwen-plus',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
     id: 'qwen-turbo',
@@ -300,244 +328,94 @@ export const AVAILABLE_MODELS: AIModel[] = [
     model: 'qwen-turbo',
     maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'qwen2-72b',
-    name: 'Qwen2 72B',
-    provider: 'alibaba',
-    model: 'qwen2-72b-instruct',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'qwen-coder',
-    name: 'Qwen Coder',
-    provider: 'alibaba',
-    model: 'qwen-coder',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
 
-  // Moonshot Models
-  {
-    id: 'moonshot-v1-8k',
-    name: 'Moonshot v1 8K',
-    provider: 'moonshot',
-    model: 'moonshot-v1-8k',
-    maxTokens: 8192,
-    temperature: 1,
-    topP: 0.95
-  },
-  {
-    id: 'moonshot-v1-32k',
-    name: 'Moonshot v1 32K',
-    provider: 'moonshot',
-    model: 'moonshot-v1-32k',
-    maxTokens: 32768,
-    temperature: 1,
-    topP: 0.95
-  },
-  {
-    id: 'moonshot-v1-128k',
-    name: 'Moonshot v1 128K',
-    provider: 'moonshot',
-    model: 'moonshot-v1-128k',
-    maxTokens: 128000,
-    temperature: 1,
-    topP: 0.95
-  },
-
-  // Baichuan Models
-  {
-    id: 'baichuan4',
-    name: 'Baichuan 4',
-    provider: 'baichuan',
-    model: 'Baichuan4',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'baichuan3-turbo',
-    name: 'Baichuan 3 Turbo',
-    provider: 'baichuan',
-    model: 'Baichuan3-Turbo',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'baichuan2-turbo',
-    name: 'Baichuan 2 Turbo',
-    provider: 'baichuan',
-    model: 'Baichuan2-Turbo',
-    maxTokens: 4096,
-    temperature: 0.7,
-    topP: 1
-  },
-
-  // Zhipu Models
-  {
-    id: 'glm-4',
-    name: 'GLM-4',
-    provider: 'zhipu',
-    model: 'glm-4',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'glm-4-plus',
-    name: 'GLM-4 Plus',
-    provider: 'zhipu',
-    model: 'glm-4-plus',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'glm-4-air',
-    name: 'GLM-4 Air',
-    provider: 'zhipu',
-    model: 'glm-4-air',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-
-  // Xunfei Models
-  {
-    id: 'spark-v4',
-    name: 'Spark v4',
-    provider: 'xunfei',
-    model: 'spark-v4',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'spark-v3.5',
-    name: 'Spark v3.5',
-    provider: 'xunfei',
-    model: 'spark-v3.5',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-
-  // MiniMax Models
-  {
-    id: 'abab6.5s',
-    name: 'abab 6.5s',
-    provider: 'minimax',
-    model: 'abab6.5s-chat',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-  {
-    id: 'abab6.5',
-    name: 'abab 6.5',
-    provider: 'minimax',
-    model: 'abab6.5-chat',
-    maxTokens: 8192,
-    temperature: 0.7,
-    topP: 1
-  },
-
-  // Moonshot (Kimi) Models
-  {
-    id: 'kimi-latest',
-    name: 'Kimi Latest',
-    provider: 'moonshot',
-    model: 'moonshot-v1-auto',
-    maxTokens: 8192,
-    temperature: 1,
-    topP: 0.95
-  },
-  {
-    id: 'kimi-k1',
-    name: 'Kimi K2',
-    provider: 'moonshot',
-    model: 'kimi-k2',
-    maxTokens: 8192,
-    temperature: 1,
-    topP: 0.95
-  },
+  // ============================================================
+  // Moonshot (Kimi) Models — provider = moonshotai
+  // ============================================================
   {
     id: 'kimi-k2-5',
     name: 'Kimi K2.5',
-    provider: 'moonshot',
+    provider: 'moonshotai',
     model: 'kimi-k2.5',
     maxTokens: 32768,
     temperature: 1,
-    topP: 0.95
+    topP: 0.95,
   },
 
-  // Microsoft Models
+  // ============================================================
+  // xAI (Grok) Models
+  // ============================================================
   {
-    id: 'phi-3-mini',
-    name: 'Phi-3 Mini',
-    provider: 'microsoft',
-    model: 'phi-3-mini-128k-instruct',
-    maxTokens: 128000,
+    id: 'grok-4',
+    name: 'Grok 4',
+    provider: 'xai',
+    model: 'grok-4',
+    maxTokens: 32768,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
   {
-    id: 'phi-3-medium',
-    name: 'Phi-3 Medium',
-    provider: 'microsoft',
-    model: 'phi-3-medium-128k-instruct',
-    maxTokens: 128000,
+    id: 'grok-3',
+    name: 'Grok 3',
+    provider: 'xai',
+    model: 'grok-3',
+    maxTokens: 32768,
     temperature: 0.7,
-    topP: 1
+    topP: 1,
   },
+
+  // ============================================================
+  // MiniMax Models
+  // ============================================================
   {
-    id: 'phi-3-small',
-    name: 'Phi-3 Small',
-    provider: 'microsoft',
-    model: 'phi-3-small-128k-instruct',
-    maxTokens: 128000,
+    id: 'minimax-m2-5',
+    name: 'MiniMax M2.5',
+    provider: 'minimax',
+    model: 'minimax-m2.5',
+    maxTokens: 8192,
     temperature: 0.7,
-    topP: 1
-  }
+    topP: 1,
+  },
+
+  // ============================================================
+  // Zhipu AI (GLM) Models — provider = zhipuai
+  // ============================================================
+  {
+    id: 'glm-4-5',
+    name: 'GLM-4.5',
+    provider: 'zhipuai',
+    model: 'glm-4.5',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
+  },
 ];
 
-export const MODEL_CATEGORIES = {
-  'openai': { name: 'OpenAI', color: '#10a37f' },
-  'anthropic': { name: 'Anthropic', color: '#d97757' },
-  'google': { name: 'Google', color: '#4285f4' },
-  'deepseek': { name: 'DeepSeek', color: '#4f46e5' },
-  'mistral': { name: 'Mistral AI', color: '#ff7000' },
-  'meta': { name: 'Meta AI', color: '#0668e1' },
-  'alibaba': { name: 'Alibaba', color: '#ff6a00' },
-  'moonshot': { name: 'Kimi (Moonshot)', color: '#000000' },
-  'baichuan': { name: 'Baichuan', color: '#1a73e8' },
-  'zhipu': { name: 'Zhipu AI', color: '#3b82f6' },
-  'xunfei': { name: 'Xunfei', color: '#0ea5e9' },
-  'minimax': { name: 'MiniMax', color: '#f59e0b' },
-  'microsoft': { name: 'Microsoft', color: '#00a4ef' }
+export const MODEL_CATEGORIES: Record<string, { name: string; color: string }> = {
+  openai: { name: 'OpenAI', color: '#10a37f' },
+  anthropic: { name: 'Anthropic', color: '#d97757' },
+  google: { name: 'Google', color: '#4285f4' },
+  deepseek: { name: 'DeepSeek', color: '#4f46e5' },
+  mistral: { name: 'Mistral AI', color: '#ff7000' },
+  alibaba: { name: 'Alibaba', color: '#ff6a00' },
+  moonshotai: { name: 'Kimi (Moonshot)', color: '#6366f1' },
+  xai: { name: 'xAI (Grok)', color: '#1d1d1f' },
+  minimax: { name: 'MiniMax', color: '#f59e0b' },
+  zhipuai: { name: 'Zhipu AI', color: '#3b82f6' },
 };
 
 export const getRecommendedModels = (): AIModel[] => {
-  return AVAILABLE_MODELS.filter(model => [
-    'gpt-4-turbo',
-    'claude-opus-4-6',
-    'gemini-1.5-pro',
-    'qwen-max',
-    'kimi-k2-5',
-    'deepseek-chat'
-  ].includes(model.id));
+  return AVAILABLE_MODELS.filter((model) =>
+    ['gpt-4o', 'claude-sonnet-4-6', 'gemini-2.5-pro', 'deepseek-chat', 'grok-4', 'qwen-max'].includes(model.id),
+  );
 };
 
 export const getModelById = (id: string): AIModel | undefined => {
-  return AVAILABLE_MODELS.find(model => model.id === id);
+  return AVAILABLE_MODELS.find((model) => model.id === id);
 };
 
 export const getModelsByProvider = (provider: string): AIModel[] => {
-  return AVAILABLE_MODELS.filter(model => model.provider === provider);
+  return AVAILABLE_MODELS.filter((model) => model.provider === provider);
 };

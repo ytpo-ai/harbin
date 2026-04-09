@@ -270,8 +270,9 @@ export class ModelPricingService implements OnModuleInit {
 
   private normalizeProvider(provider: string): string {
     const value = String(provider || '').trim().toLowerCase();
-    if (value === 'kimi') return 'moonshot';
+    if (value === 'kimi' || value === 'moonshot') return 'moonshotai';
     if (value === 'claude') return 'anthropic';
+    if (value === 'zhipu') return 'zhipuai';
     return value;
   }
 

@@ -11,14 +11,11 @@ export interface AIModel {
     | 'local'
     | 'deepseek'
     | 'mistral'
-    | 'meta'
     | 'alibaba'
-    | 'moonshot'
-    | 'baichuan'
-    | 'zhipu'
-    | 'xunfei'
+    | 'moonshotai'
+    | 'xai'
     | 'minimax'
-    | 'microsoft';
+    | 'zhipuai';
   model: string;
   maxTokens: number;
   temperature?: number;
