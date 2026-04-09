@@ -463,5 +463,28 @@ export class ModelManagementService {
     if (insertedCount > 0) {
       this.logger.log(`Seeded default models: ${insertedCount}`);
     }
+
+    // Remove stale models that are no longer in AVAILABLE_MODELS
+    const validKeys = new Set(
+      AVAILABLE_MODELS.map((m) => {
+        const p = this.normalizeProvider(m.provider);
+        const mod = String(m.model || '').trim().toLowerCase();
+        return `${p}:${mod}`;
+      }),
+    );
+
+    const allDocs = await this.modelRegistryModel.find().select({ id: 1, provider: 1, model: 1 }).lean().exec();
+    const staleIds: string[] = [];
+    for (const doc of allDocs) {
+      const key = `${String(doc.provider)}:${String(doc.model)}`;
+      if (!validKeys.has(key)) {
+        staleIds.push(String(doc.id));
+      }
+    }
+
+    if (staleIds.length > 0) {
+      const result = await this.modelRegistryModel.deleteMany({ id: { $in: staleIds } }).exec();
+      this.logger.log(`Removed stale models: ${result.deletedCount} (ids: ${staleIds.join(', ')})`);
+    }
   }
 }
