@@ -184,6 +184,33 @@ export const AVAILABLE_MODELS: AIModel[] = [
   // Google Models
   // ============================================================
   {
+    id: 'gemini-3.1-pro-preview',
+    name: 'Gemini 3.1 Pro',
+    provider: 'google',
+    model: 'gemini-3.1-pro-preview',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gemini-3-pro-preview',
+    name: 'Gemini 3 Pro',
+    provider: 'google',
+    model: 'gemini-3-pro-preview',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
+    id: 'gemini-3-flash-preview',
+    name: 'Gemini 3 Flash',
+    provider: 'google',
+    model: 'gemini-3-flash-preview',
+    maxTokens: 8192,
+    temperature: 0.7,
+    topP: 1,
+  },
+  {
     id: 'gemini-2.5-pro',
     name: 'Gemini 2.5 Pro',
     provider: 'google',
