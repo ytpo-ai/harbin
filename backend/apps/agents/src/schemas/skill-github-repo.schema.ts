@@ -41,8 +41,8 @@ export class SkillGithubRepo {
   @Prop({ enum: SKILL_GITHUB_REPO_STATUS, default: 'pending', index: true })
   status: SkillGithubRepoStatus;
 
-  @Prop({ index: true })
-  skillId?: string;
+  @Prop({ type: [String], default: [], index: true })
+  skillIds: string[];
 
   @Prop()
   createdAt?: Date;

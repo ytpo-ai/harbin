@@ -78,7 +78,9 @@ export const skillMarketService = {
     },
   ): () => void {
     const baseUrl = api.defaults.baseURL || '';
-    const url = `${baseUrl}/skills/market/index-tasks/${taskId}/events`;
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const tokenParam = token ? `?access_token=${encodeURIComponent(token)}` : '';
+    const url = `${baseUrl}/skills/market/index-tasks/${taskId}/events${tokenParam}`;
     const eventSource = new EventSource(url);
 
     const handleEvent = (event: MessageEvent) => {
@@ -129,6 +131,11 @@ export const skillMarketService = {
     };
   },
 
+  async addRepo(payload: { repoUrl: string; platformId?: string }): Promise<SkillGithubRepo> {
+    const response = await api.post('/skills/market/repos', payload);
+    return response.data;
+  },
+
   async listRepos(filters?: {
     platformId?: string;
     status?: 'pending' | 'imported' | 'skipped';
@@ -145,12 +152,15 @@ export const skillMarketService = {
     return response.data;
   },
 
-  async importRepo(repoId: string): Promise<{
+  async importRepo(repoId: string, options?: { force?: boolean }): Promise<{
     repo: SkillGithubRepo;
-    skill: { id: string; name: string };
-    created: boolean;
+    skills: Array<{ id: string; name: string; path: string }>;
+    created: number;
+    skipped: number;
+    localPath?: string;
   }> {
-    const response = await api.post(`/skills/market/repos/${repoId}/import`);
+    const params = options?.force ? '?force=true' : '';
+    const response = await api.post(`/skills/market/repos/${repoId}/import${params}`);
     return response.data;
   },
 

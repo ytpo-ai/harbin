@@ -1,12 +1,64 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
   skillMarketService,
   IndexTaskState,
   SkillMarketSearchResponse,
 } from '../services/skillMarketService';
 import { SkillGithubRepo } from '../types';
+
+const AddRepoModal: React.FC<{
+  open: boolean;
+  onClose: () => void;
+  onSubmit: (repoUrl: string) => void;
+  loading: boolean;
+}> = ({ open, onClose, onSubmit, loading }) => {
+  const [repoUrl, setRepoUrl] = useState('');
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+      <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-900">添加 GitHub 仓库</h3>
+          <button onClick={onClose} className="rounded p-1 text-gray-500 hover:bg-gray-100">
+            <XMarkIcon className="h-5 w-5" />
+          </button>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">GitHub 仓库 URL</label>
+          <input
+            value={repoUrl}
+            onChange={(e) => setRepoUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo"
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && repoUrl.trim()) onSubmit(repoUrl.trim());
+            }}
+          />
+          <p className="mt-1 text-xs text-gray-400">支持格式：https://github.com/owner/repo 或 owner/repo</p>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">取消</button>
+          <button
+            onClick={() => {
+              const val = repoUrl.trim();
+              if (!val) return;
+              const url = val.includes('github.com') ? val : `https://github.com/${val}`;
+              onSubmit(url);
+            }}
+            disabled={loading || !repoUrl.trim()}
+            className="rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700 disabled:opacity-60"
+          >
+            {loading ? '添加中...' : '确认添加'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const repoStatusLabel: Record<SkillGithubRepo['status'], string> = {
   pending: '待导入',
@@ -26,6 +78,8 @@ export const SkillGithubRepoPanel: React.FC = () => {
   const [indexPlatformId, setIndexPlatformId] = useState('');
   const [indexTask, setIndexTask] = useState<IndexTaskState | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+
+  const [isAddRepoModalOpen, setIsAddRepoModalOpen] = useState(false);
 
   const [repoFilterPlatformId, setRepoFilterPlatformId] = useState('');
   const [repoFilterStatus, setRepoFilterStatus] = useState('');
@@ -128,20 +182,40 @@ export const SkillGithubRepoPanel: React.FC = () => {
     }
   }, [indexPlatformId, activePlatforms, onIndexDone]);
 
+  const addRepoMutation = useMutation(
+    (repoUrl: string) => skillMarketService.addRepo({ repoUrl }),
+    {
+      onSuccess: (repo) => {
+        setIsAddRepoModalOpen(false);
+        alert(`已添加仓库：${repo.fullName}`);
+        queryClient.invalidateQueries('skill-market-repos');
+      },
+    },
+  );
+
   const skipRepoMutation = useMutation(skillMarketService.skipRepo, {
     onSuccess: () => {
       queryClient.invalidateQueries('skill-market-repos');
     },
   });
 
-  const importRepoMutation = useMutation(skillMarketService.importRepo, {
-    onSuccess: (result) => {
-      alert(result.created ? `导入成功：${result.skill.name}` : `已存在 Skill：${result.skill.name}`);
+  const importRepoMutation = useMutation(
+    ({ repoId, force }: { repoId: string; force?: boolean }) => skillMarketService.importRepo(repoId, { force }),
+    {
+      onSuccess: (result) => {
+      const total = result.skills.length;
+      const names = result.skills.map((s) => s.name).join(', ');
+      if (result.created > 0) {
+        alert(`导入完成：新增 ${result.created} 个 Skill${result.skipped > 0 ? `，跳过 ${result.skipped} 个已存在` : ''}\n${names}`);
+      } else {
+        alert(`所有 ${total} 个 Skill 已存在：${names}`);
+      }
       queryClient.invalidateQueries('skill-market-repos');
       queryClient.invalidateQueries('skills-paged');
       queryClient.invalidateQueries('skills-all');
     },
-  });
+  },
+  );
 
   const searchMarketMutation = useMutation(skillMarketService.searchMarket, {
     onSuccess: (result) => {
@@ -158,6 +232,8 @@ export const SkillGithubRepoPanel: React.FC = () => {
   const searchItems = searchResult?.items || [];
   const isIndexing = indexTask?.status === 'running';
   const progressPercent = indexTask && indexTask.total > 0 ? Math.round((indexTask.scanned / indexTask.total) * 100) : 0;
+
+  const canImport = (repo: SkillGithubRepo) => repo.status !== 'skipped';
 
   return (
     <div className="space-y-6">
@@ -257,6 +333,13 @@ export const SkillGithubRepoPanel: React.FC = () => {
             <h2 className="text-lg font-medium text-gray-900">GitHub 仓库索引</h2>
             <p className="text-xs text-gray-500">共 {repoTotal} 条记录</p>
           </div>
+          <button
+            onClick={() => setIsAddRepoModalOpen(true)}
+            className="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100"
+          >
+            <PlusIcon className="mr-2 h-4 w-4" />
+            添加仓库
+          </button>
         </div>
 
         <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-4">
@@ -306,13 +389,13 @@ export const SkillGithubRepoPanel: React.FC = () => {
                   <p className="mt-0.5 text-xs text-gray-500">{repo.description || '暂无描述'}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {repo.status !== 'imported' && (
+                  {canImport(repo) && (
                     <button
-                      onClick={() => importRepoMutation.mutate(repo.id)}
+                      onClick={() => importRepoMutation.mutate({ repoId: repo.id, force: repo.status === 'imported' })}
                       disabled={importRepoMutation.isLoading}
                       className="rounded-md border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100 disabled:opacity-60"
                     >
-                      导入 Skill
+                      {repo.status === 'imported' ? '重新导入' : '导入 Skill'}
                     </button>
                   )}
                   {repo.status !== 'skipped' && repo.status !== 'imported' && (
@@ -422,13 +505,13 @@ export const SkillGithubRepoPanel: React.FC = () => {
                     </div>
                     <p className="mt-0.5 text-xs text-gray-500">{repo.description || '暂无描述'}</p>
                   </div>
-                  {repo.status !== 'imported' && (
+                  {canImport(repo) && (
                     <button
-                      onClick={() => importRepoMutation.mutate(repo.id)}
+                      onClick={() => importRepoMutation.mutate({ repoId: repo.id, force: repo.status === 'imported' })}
                       disabled={importRepoMutation.isLoading}
                       className="rounded-md border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 hover:bg-green-100 disabled:opacity-60"
                     >
-                      一键导入
+                      {repo.status === 'imported' ? '重新导入' : '一键导入'}
                     </button>
                   )}
                 </div>
@@ -444,6 +527,13 @@ export const SkillGithubRepoPanel: React.FC = () => {
           </div>
         )}
       </section>
+
+      <AddRepoModal
+        open={isAddRepoModalOpen}
+        onClose={() => setIsAddRepoModalOpen(false)}
+        onSubmit={(repoUrl) => addRepoMutation.mutate(repoUrl)}
+        loading={addRepoMutation.isLoading}
+      />
     </div>
   );
 };

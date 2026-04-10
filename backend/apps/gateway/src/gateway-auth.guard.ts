@@ -45,13 +45,15 @@ export class GatewayAuthGuard implements CanActivate {
       return this.authenticateByInternalSignature(req, encodedContext, contextSignature);
     }
 
-    // 外部 JWT Bearer 认证
+    // 外部 JWT Bearer 认证（支持 header 或 query param，后者用于 SSE/EventSource）
     const authHeader = req.headers.authorization as string | undefined;
-    if (!authHeader?.startsWith('Bearer ')) {
+    const queryToken = String(req.query?.access_token || '').trim();
+    const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
+    if (!rawToken) {
       throw new UnauthorizedException('Missing Bearer token');
     }
 
-    const token = authHeader.slice(7);
+    const token = rawToken;
     const secret = process.env.JWT_SECRET || 'your-secret-key';
     const payload = verifyEmployeeToken(token, secret);
     if (!payload) {

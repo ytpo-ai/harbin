@@ -197,7 +197,7 @@ export interface SkillGithubRepo {
   owner: string;
   indexedAt: string;
   status: 'pending' | 'imported' | 'skipped';
-  skillId?: string;
+  skillIds?: string[];
   createdAt?: string;
   updatedAt?: string;
 }

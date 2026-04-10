@@ -10,6 +10,12 @@ import { Model } from 'mongoose';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { Subject, Observable } from 'rxjs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { resolve } from 'path';
+import { mkdir, readdir, readFile, stat, access } from 'fs/promises';
+
+const execFileAsync = promisify(execFile);
 import { map } from 'rxjs/operators';
 import {
   SkillMarketPlatform,
@@ -343,6 +349,41 @@ export class SkillMarketService {
     };
   }
 
+  async addRepoManually(repoUrl: string, platformId?: string): Promise<SkillGithubRepo> {
+    const url = String(repoUrl || '').trim();
+    const match = url.match(/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)/);
+    if (!match) {
+      throw new BadRequestException('无效的 GitHub 仓库 URL，格式应为 https://github.com/owner/repo');
+    }
+    const fullName = this.normalizeGithubFullName(match[1]);
+    if (!fullName) {
+      throw new BadRequestException('无法解析仓库名称');
+    }
+
+    const existed = await this.repoModel.findOne({ fullName }).exec();
+    if (existed) {
+      return existed as unknown as SkillGithubRepo;
+    }
+
+    const resolvedPlatformId = await this.resolveFallbackPlatformId(platformId).catch(() => 'manual');
+
+    const summary = await this.fetchGithubRepoSummary(fullName);
+    if (!summary) {
+      return this.repoModel.create({
+        id: uuidv4(),
+        platformId: resolvedPlatformId,
+        fullName,
+        url: `https://github.com/${fullName}`,
+        owner: fullName.split('/')[0],
+        indexedAt: new Date(),
+        status: 'pending',
+        skillIds: [],
+      }) as unknown as SkillGithubRepo;
+    }
+
+    return this.upsertGithubRepo(resolvedPlatformId, summary);
+  }
+
   async skipRepo(repoId: string): Promise<SkillGithubRepo> {
     const repo = await this.repoModel
       .findOneAndUpdate({ id: repoId }, { status: 'skipped' }, { new: true })
@@ -353,84 +394,123 @@ export class SkillMarketService {
     return repo;
   }
 
-  async importRepo(repoId: string): Promise<{ repo: SkillGithubRepo; skill: Skill; created: boolean }> {
+  async importRepo(repoId: string, options?: { force?: boolean }): Promise<{
+    repo: SkillGithubRepo;
+    skills: Array<{ id: string; name: string; path: string }>;
+    created: number;
+    skipped: number;
+    localPath: string;
+  }> {
     const repo = await this.repoModel.findOne({ id: repoId }).exec();
     if (!repo) {
       throw new NotFoundException(`Repo not found: ${repoId}`);
     }
 
-    if (repo.skillId) {
-      const existedSkill = await this.skillModel.findOne({ id: repo.skillId }).exec();
-      if (existedSkill) {
-        return {
-          repo: repo as unknown as SkillGithubRepo,
-          skill: existedSkill as unknown as Skill,
-          created: false,
-        };
+    if (!options?.force) {
+      const existingIds = [
+        ...((repo as any).skillIds || []),
+        ...((repo as any).skillId ? [(repo as any).skillId] : []),
+      ].filter((id: string) => typeof id === 'string' && id.trim());
+
+      if (existingIds.length > 0) {
+        const existedSkills = await this.skillModel.find({ id: { $in: existingIds } }).exec();
+        if (existedSkills.length > 0) {
+          return {
+            repo: repo as unknown as SkillGithubRepo,
+            skills: existedSkills.map((s) => ({ id: s.id, name: s.name, path: (s.metadata as any)?.skillPath || '' })),
+            created: 0,
+            skipped: existedSkills.length,
+            localPath: await this.getRepoLocalPath(repo.fullName),
+          };
+        }
       }
     }
 
-    const reused = await this.skillModel.findOne({ repoId: repo.id }).exec();
-    if (reused) {
-      const updatedRepo = await this.repoModel
-        .findOneAndUpdate(
-          { id: repo.id },
-          { status: 'imported', skillId: reused.id },
-          { new: true },
-        )
-        .exec();
-      if (!updatedRepo) {
-        throw new NotFoundException(`Repo not found: ${repoId}`);
-      }
-      return {
-        repo: updatedRepo as unknown as SkillGithubRepo,
-        skill: reused as unknown as Skill,
-        created: false,
-      };
+    const localPath = await this.cloneOrUpdateRepo(repo.fullName, repo.url);
+    const skillFiles = await this.scanLocalSkillMdFiles(localPath);
+
+    if (skillFiles.length === 0) {
+      throw new BadRequestException(`仓库 ${repo.fullName} 中未发现 SKILL.md 文件`);
     }
 
-    const skill = await this.skillModel.create({
-      id: uuidv4(),
-      name: this.deriveSkillName(repo.fullName),
-      slug: await this.ensureUniqueSlug(this.normalizeSlug(repo.fullName.replace('/', '-'))),
-      description: repo.description?.trim() || `Imported from ${repo.fullName}`,
-      category: 'general',
-      tags: this.uniqueStrings(repo.topics || []),
-      sourceType: 'github',
-      sourceUrl: repo.url,
-      repoId: repo.id,
-      provider: 'github',
-      version: '1.0.0',
-      status: 'experimental',
-      confidenceScore: 60,
-      usageCount: 0,
-      discoveredBy: 'SkillMarketService',
-      metadata: {
-        fullName: repo.fullName,
-        owner: repo.owner,
-        stars: Number(repo.stars || 0),
-        language: repo.language || '',
-      },
-      metadataUpdatedAt: new Date(),
-      lastVerifiedAt: new Date(),
-    });
+    const createdSkills: Array<{ id: string; name: string; path: string }> = [];
+    const skillIds: string[] = [...(repo.skillIds || [])];
+    let skipped = 0;
+
+    for (const skillPath of skillFiles) {
+      const existedByPath = await this.skillModel.findOne({
+        repoId: repo.id,
+        'metadata.skillPath': skillPath,
+      }).exec();
+      if (existedByPath) {
+        if (!skillIds.includes(existedByPath.id)) {
+          skillIds.push(existedByPath.id);
+        }
+        createdSkills.push({ id: existedByPath.id, name: existedByPath.name, path: skillPath });
+        skipped += 1;
+        continue;
+      }
+
+      let content = '';
+      try {
+        content = await readFile(resolve(localPath, skillPath), 'utf-8');
+      } catch (error) {
+        this.logger.warn(`Failed to read ${skillPath} from ${localPath}: ${(error as Error).message}`);
+        continue;
+      }
+
+      const skillName = this.deriveSkillNameFromPath(repo.fullName, skillPath);
+      const description = this.extractDescriptionFromContent(content) || repo.description?.trim() || `Skill from ${repo.fullName}`;
+
+      const skill = await this.skillModel.create({
+        id: uuidv4(),
+        name: skillName,
+        slug: await this.ensureUniqueSlug(this.normalizeSlug(skillName)),
+        description,
+        category: 'general',
+        tags: this.uniqueStrings(repo.topics || []),
+        sourceType: 'github',
+        sourceUrl: `${repo.url}/blob/main/${skillPath}`,
+        repoId: repo.id,
+        provider: 'github',
+        version: '1.0.0',
+        status: 'experimental',
+        confidenceScore: 60,
+        usageCount: 0,
+        discoveredBy: 'SkillMarketService',
+        content,
+        contentType: 'text/markdown',
+        contentSize: content.length,
+        contentUpdatedAt: new Date(),
+        metadata: {
+          fullName: repo.fullName,
+          owner: repo.owner,
+          stars: Number(repo.stars || 0),
+          language: repo.language || '',
+          skillPath,
+        },
+        metadataUpdatedAt: new Date(),
+        lastVerifiedAt: new Date(),
+      });
+
+      skillIds.push(skill.id);
+      createdSkills.push({ id: skill.id, name: skill.name, path: skillPath });
+    }
 
     const updatedRepo = await this.repoModel
       .findOneAndUpdate(
         { id: repo.id },
-        { status: 'imported', skillId: skill.id },
+        { status: 'imported', skillIds },
         { new: true },
       )
       .exec();
 
-    if (!updatedRepo) {
-      throw new NotFoundException(`Repo not found: ${repoId}`);
-    }
-
     return {
-      repo: updatedRepo as unknown as SkillGithubRepo,
-      skill: skill as unknown as Skill,
-      created: true,
+      repo: (updatedRepo || repo) as unknown as SkillGithubRepo,
+      skills: createdSkills,
+      created: createdSkills.length - skipped,
+      skipped,
+      localPath,
     };
   }
 
@@ -655,7 +735,7 @@ export class SkillMarketService {
       owner: summary.owner,
       indexedAt: new Date(),
       status: nextStatus,
-      skillId: existed?.skillId,
+      skillIds: existed?.skillIds?.length ? existed.skillIds : [],
     };
 
     if (existed) {
@@ -691,6 +771,173 @@ export class SkillMarketService {
       throw new BadRequestException('No skill market platform configured');
     }
     return fallback.id;
+  }
+
+  private async resolveWorkspaceRoot(): Promise<string> {
+    const envRoot = process.env.AGENT_WORKSPACE_ROOT;
+    if (envRoot) {
+      try {
+        await access(resolve(envRoot, 'README.md'));
+        return envRoot;
+      } catch { /* fallback */ }
+    }
+
+    const candidates = [
+      process.cwd(),
+      resolve(process.cwd(), '..'),
+      resolve(process.cwd(), '../..'),
+    ];
+
+    for (const candidate of candidates) {
+      try {
+        await Promise.all([
+          access(resolve(candidate, 'README.md')),
+          access(resolve(candidate, 'docs')),
+        ]);
+        return candidate;
+      } catch { /* next */ }
+    }
+
+    return process.cwd();
+  }
+
+  private async getReposRoot(): Promise<string> {
+    const workspaceRoot = await this.resolveWorkspaceRoot();
+    return resolve(workspaceRoot, 'data', 'repos');
+  }
+
+  private async getRepoLocalPath(fullName: string): Promise<string> {
+    const dirName = fullName.replace('/', '-');
+    const reposRoot = await this.getReposRoot();
+    return resolve(reposRoot, dirName);
+  }
+
+  private async cloneOrUpdateRepo(fullName: string, repoUrl: string): Promise<string> {
+    const reposRoot = await this.getReposRoot();
+    await mkdir(reposRoot, { recursive: true });
+
+    const localPath = await this.getRepoLocalPath(fullName);
+    const timeoutMs = Math.max(5_000, Number(process.env.REPO_WRITER_TIMEOUT_MS || 120_000));
+    const cloneUrl = repoUrl.endsWith('.git') ? repoUrl : `${repoUrl}.git`;
+
+    let localExists = false;
+    try {
+      await access(localPath);
+      localExists = true;
+    } catch {
+      localExists = false;
+    }
+
+    if (localExists) {
+      try {
+        await execFileAsync('git', ['-C', localPath, 'fetch', '--depth', '1', 'origin', 'HEAD'], {
+          timeout: timeoutMs,
+          maxBuffer: 5 * 1024 * 1024,
+        });
+        await execFileAsync('git', ['-C', localPath, 'reset', '--hard', 'FETCH_HEAD'], {
+          timeout: timeoutMs,
+          maxBuffer: 5 * 1024 * 1024,
+        });
+        this.logger.log(`[importRepo] Updated repo ${fullName} at ${localPath}`);
+      } catch (error) {
+        this.logger.warn(`[importRepo] Failed to update ${fullName}, re-cloning: ${(error as Error).message}`);
+        const { rm } = await import('fs/promises');
+        await rm(localPath, { recursive: true, force: true });
+        await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, localPath], {
+          timeout: timeoutMs,
+          maxBuffer: 5 * 1024 * 1024,
+        });
+      }
+    } else {
+      this.logger.log(`[importRepo] Cloning ${fullName} to ${localPath}`);
+      await execFileAsync('git', ['clone', '--depth', '1', cloneUrl, localPath], {
+        timeout: timeoutMs,
+        maxBuffer: 5 * 1024 * 1024,
+      });
+    }
+
+    return localPath;
+  }
+
+  private async scanLocalSkillMdFiles(localPath: string, subDir = ''): Promise<string[]> {
+    const results: string[] = [];
+    const currentDir = subDir ? resolve(localPath, subDir) : localPath;
+
+    let entries: import('fs').Dirent[];
+    try {
+      entries = await readdir(currentDir, { withFileTypes: true });
+    } catch {
+      return results;
+    }
+
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      const relativePath = subDir ? `${subDir}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        const nested = await this.scanLocalSkillMdFiles(localPath, relativePath);
+        results.push(...nested);
+      } else if (entry.isFile() && /^SKILL\.md$/i.test(entry.name)) {
+        results.push(relativePath);
+      }
+    }
+
+    return results;
+  }
+
+  private async discoverSkillMdFiles(fullName: string): Promise<Array<{ path: string; sha: string }>> {
+    try {
+      const { data } = await axios.get(`https://api.github.com/repos/${fullName}/git/trees/HEAD?recursive=1`, {
+        timeout: 20000,
+        headers: this.githubHeaders(),
+      });
+      const tree = Array.isArray(data?.tree) ? data.tree : [];
+      return tree
+        .filter((item: any) =>
+          item.type === 'blob' &&
+          typeof item.path === 'string' &&
+          /SKILL\.md$/i.test(item.path),
+        )
+        .map((item: any) => ({ path: String(item.path), sha: String(item.sha) }));
+    } catch (error) {
+      this.logger.warn(`Failed to fetch repo tree ${fullName}: ${(error as Error).message}`);
+      return [];
+    }
+  }
+
+  private async fetchFileContent(fullName: string, sha: string): Promise<string> {
+    const { data } = await axios.get(`https://api.github.com/repos/${fullName}/git/blobs/${sha}`, {
+      timeout: 15000,
+      headers: this.githubHeaders(),
+    });
+    if (data?.encoding === 'base64' && data?.content) {
+      return Buffer.from(String(data.content), 'base64').toString('utf-8');
+    }
+    return String(data?.content || '');
+  }
+
+  private deriveSkillNameFromPath(fullName: string, skillPath: string): string {
+    const parts = skillPath.split('/');
+    if (parts.length >= 2) {
+      const parentDir = parts[parts.length - 2];
+      if (parentDir && parentDir.toLowerCase() !== 'skills' && parentDir.toLowerCase() !== '.claude') {
+        return parentDir;
+      }
+    }
+    const repoName = fullName.split('/')[1] || fullName;
+    return parts.length > 1 ? `${repoName}-${parts.slice(0, -1).join('-')}` : repoName;
+  }
+
+  private extractDescriptionFromContent(content: string): string | undefined {
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      if (trimmed.length >= 10 && trimmed.length <= 500) {
+        return trimmed;
+      }
+    }
+    return undefined;
   }
 
   private deriveSkillName(fullName: string): string {

@@ -87,14 +87,21 @@ export class SkillMarketController {
     });
   }
 
+  @Post('repos')
+  async addRepo(
+    @Body() body: { repoUrl: string; platformId?: string },
+  ) {
+    return this.skillMarketService.addRepoManually(body.repoUrl, body.platformId);
+  }
+
   @Put('repos/:id/skip')
   async skipRepo(@Param('id') id: string) {
     return this.skillMarketService.skipRepo(id);
   }
 
   @Post('repos/:id/import')
-  async importRepo(@Param('id') id: string) {
-    return this.skillMarketService.importRepo(id);
+  async importRepo(@Param('id') id: string, @Query('force') force?: string) {
+    return this.skillMarketService.importRepo(id, { force: force === 'true' || force === '1' });
   }
 
   @Post('search')
