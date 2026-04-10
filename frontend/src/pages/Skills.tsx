@@ -12,6 +12,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { PromptTemplateRefPicker } from '../components/PromptTemplateRefPicker';
+import SkillMarketPanel from '../components/SkillMarketPanel';
 import { skillService, SkillPagedResponse } from '../services/skillService';
 import { agentService } from '../services/agentService';
 import { PromptTemplateRef, Skill } from '../types';
@@ -125,6 +126,7 @@ const Skills: React.FC = () => {
     return [10, 20, 50].includes(size) ? size : 10;
   });
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [pageTab, setPageTab] = useState<'library' | 'market'>('library');
   const [activeTab, setActiveTab] = useState<'detail' | 'binding'>('detail');
   const [isDiscoverDrawerOpen, setIsDiscoverDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -315,61 +317,80 @@ const Skills: React.FC = () => {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Skills 管理</h1>
-          <p className="mt-1 text-sm text-gray-500">管理技能库、Agent 绑定与文档同步</p>
+          <p className="mt-1 text-sm text-gray-500">管理技能库、Skill 市场、Agent 绑定与文档同步</p>
         </div>
-        <div className="relative flex items-center gap-2">
-          <button
-            onClick={() => setIsCreateModalOpen(true)}
-            className="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100"
-          >
-            <PlusIcon className="mr-2 h-4 w-4" />
-            新增 Skill
-          </button>
-          <button
-            ref={operationMenuButtonRef}
-            onClick={() => setOperationMenuOpen((prev) => !prev)}
-            className="inline-flex items-center rounded-md border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50"
-            aria-haspopup="menu"
-            aria-expanded={operationMenuOpen}
-            aria-label="Skill 检索和文档操作"
-          >
-            <EllipsisVerticalIcon className="h-5 w-5" />
-          </button>
-          {operationMenuOpen && (
-            <div
-              ref={operationMenuRef}
-              className="absolute right-0 top-11 z-20 min-w-[220px] rounded-md border border-gray-200 bg-white p-1 shadow-lg"
-              role="menu"
+        {pageTab === 'library' && (
+          <div className="relative flex items-center gap-2">
+            <button
+              onClick={() => setIsCreateModalOpen(true)}
+              className="inline-flex items-center rounded-md border border-green-300 bg-green-50 px-4 py-2 text-sm font-medium text-green-700 hover:bg-green-100"
             >
-              <button
-                onClick={() => {
-                  setOperationMenuOpen(false);
-                  setIsDiscoverDrawerOpen(true);
-                }}
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                role="menuitem"
+              <PlusIcon className="mr-2 h-4 w-4" />
+              新增 Skill
+            </button>
+            <button
+              ref={operationMenuButtonRef}
+              onClick={() => setOperationMenuOpen((prev) => !prev)}
+              className="inline-flex items-center rounded-md border border-gray-300 bg-white p-2 text-gray-600 hover:bg-gray-50"
+              aria-haspopup="menu"
+              aria-expanded={operationMenuOpen}
+              aria-label="Skill 检索和文档操作"
+            >
+              <EllipsisVerticalIcon className="h-5 w-5" />
+            </button>
+            {operationMenuOpen && (
+              <div
+                ref={operationMenuRef}
+                className="absolute right-0 top-11 z-20 min-w-[220px] rounded-md border border-gray-200 bg-white p-1 shadow-lg"
+                role="menu"
               >
-                <ArrowPathIcon className="mr-2 h-4 w-4" />
-                AgentSkillManager 检索
-              </button>
-              <button
-                onClick={() => {
-                  setOperationMenuOpen(false);
-                  syncDocsMutation.mutate();
-                }}
-                disabled={syncDocsMutation.isLoading}
-                className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-60"
-                role="menuitem"
-              >
-                <BookOpenIcon className="mr-2 h-4 w-4" />
-                {syncDocsMutation.isLoading ? '同步中...' : '同步文档到 DB'}
-              </button>
-            </div>
-          )}
-        </div>
+                <button
+                  onClick={() => {
+                    setOperationMenuOpen(false);
+                    setIsDiscoverDrawerOpen(true);
+                  }}
+                  className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                  role="menuitem"
+                >
+                  <ArrowPathIcon className="mr-2 h-4 w-4" />
+                  AgentSkillManager 检索
+                </button>
+                <button
+                  onClick={() => {
+                    setOperationMenuOpen(false);
+                    syncDocsMutation.mutate();
+                  }}
+                  disabled={syncDocsMutation.isLoading}
+                  className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-60"
+                  role="menuitem"
+                >
+                  <BookOpenIcon className="mr-2 h-4 w-4" />
+                  {syncDocsMutation.isLoading ? '同步中...' : '同步文档到 DB'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      <section id="skills-library-section" className="rounded-lg bg-white p-5 shadow">
+      <div className="inline-flex rounded-lg border border-gray-200 bg-white p-1">
+        <button
+          onClick={() => setPageTab('library')}
+          className={`rounded-md px-3 py-1.5 text-sm ${pageTab === 'library' ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+        >
+          技能库
+        </button>
+        <button
+          onClick={() => setPageTab('market')}
+          className={`rounded-md px-3 py-1.5 text-sm ${pageTab === 'market' ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+        >
+          Skill 市场
+        </button>
+      </div>
+
+      {pageTab === 'library' ? (
+        <>
+          <section id="skills-library-section" className="rounded-lg bg-white p-5 shadow">
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center">
             <WrenchScrewdriverIcon className="mr-2 h-5 w-5 text-primary-600" />
@@ -522,60 +543,64 @@ const Skills: React.FC = () => {
         )}
       </section>
 
-      <SkillDetailDrawer
-        open={!!activeSkillId}
-        skill={activeSkillDetail || null}
-        loading={activeSkillLoading}
-        agents={agents}
-        activeTab={activeTab}
-        onChangeTab={setActiveTab}
-        skillAgentsData={activeSkillId && allSkillAgents[activeSkillId] ? allSkillAgents[activeSkillId] : []}
-        saving={updateSkillMutation.isLoading}
-        bindingSaving={assignSkillMutation.isLoading}
-        onClose={() => setActiveSkillId(null)}
-        onSave={async (updates) => {
-          if (!activeSkillId) return;
-          await updateSkillMutation.mutateAsync({ id: activeSkillId, updates });
-        }}
-        onSaveBinding={async ({ skillId, selectedAgentIds, initialAgentIds }) => {
-          const selectedSet = new Set(selectedAgentIds);
-          const initialSet = new Set(initialAgentIds);
+          <SkillDetailDrawer
+            open={!!activeSkillId}
+            skill={activeSkillDetail || null}
+            loading={activeSkillLoading}
+            agents={agents}
+            activeTab={activeTab}
+            onChangeTab={setActiveTab}
+            skillAgentsData={activeSkillId && allSkillAgents[activeSkillId] ? allSkillAgents[activeSkillId] : []}
+            saving={updateSkillMutation.isLoading}
+            bindingSaving={assignSkillMutation.isLoading}
+            onClose={() => setActiveSkillId(null)}
+            onSave={async (updates) => {
+              if (!activeSkillId) return;
+              await updateSkillMutation.mutateAsync({ id: activeSkillId, updates });
+            }}
+            onSaveBinding={async ({ skillId, selectedAgentIds, initialAgentIds }) => {
+              const selectedSet = new Set(selectedAgentIds);
+              const initialSet = new Set(initialAgentIds);
 
-          const toBind = selectedAgentIds.filter((agentId) => !initialSet.has(agentId));
-          const toUnbind = initialAgentIds.filter((agentId) => !selectedSet.has(agentId));
+              const toBind = selectedAgentIds.filter((agentId) => !initialSet.has(agentId));
+              const toUnbind = initialAgentIds.filter((agentId) => !selectedSet.has(agentId));
 
-          if (toBind.length === 0 && toUnbind.length === 0) {
-            return { bound: 0, unbound: 0 };
-          }
+              if (toBind.length === 0 && toUnbind.length === 0) {
+                return { bound: 0, unbound: 0 };
+              }
 
-          await Promise.all([
-            ...toBind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId })),
-            ...toUnbind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId, enabled: false })),
-          ]);
+              await Promise.all([
+                ...toBind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId })),
+                ...toUnbind.map((agentId) => assignSkillMutation.mutateAsync({ agentId, skillId, enabled: false })),
+              ]);
 
-          queryClient.invalidateQueries('all-skill-agents');
+              queryClient.invalidateQueries('all-skill-agents');
 
-          return {
-            bound: toBind.length,
-            unbound: toUnbind.length,
-          };
-        }}
-      />
+              return {
+                bound: toBind.length,
+                unbound: toUnbind.length,
+              };
+            }}
+          />
 
-      <SkillDiscoveryDrawer
-        open={isDiscoverDrawerOpen}
-        onClose={() => setIsDiscoverDrawerOpen(false)}
-        onSubmit={(payload) => discoverMutation.mutate(payload)}
-        loading={discoverMutation.isLoading}
-      />
+          <SkillDiscoveryDrawer
+            open={isDiscoverDrawerOpen}
+            onClose={() => setIsDiscoverDrawerOpen(false)}
+            onSubmit={(payload) => discoverMutation.mutate(payload)}
+            loading={discoverMutation.isLoading}
+          />
 
-      <SkillFormModal
-        open={isCreateModalOpen}
-        mode="create"
-        onClose={() => setIsCreateModalOpen(false)}
-        onSubmit={(payload) => createSkillMutation.mutate(payload)}
-        loading={createSkillMutation.isLoading}
-      />
+          <SkillFormModal
+            open={isCreateModalOpen}
+            mode="create"
+            onClose={() => setIsCreateModalOpen(false)}
+            onSubmit={(payload) => createSkillMutation.mutate(payload)}
+            loading={createSkillMutation.isLoading}
+          />
+        </>
+      ) : (
+        <SkillMarketPanel />
+      )}
     </div>
   );
 };

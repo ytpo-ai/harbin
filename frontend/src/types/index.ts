@@ -152,6 +152,7 @@ export interface Skill {
   tags: string[];
   sourceType: 'manual' | 'github' | 'web' | 'internal';
   sourceUrl?: string;
+  repoId?: string;
   provider: string;
   version: string;
   status: 'active' | 'experimental' | 'deprecated' | 'disabled';
@@ -167,6 +168,36 @@ export interface Skill {
   contentSize?: number;
   contentUpdatedAt?: string;
   metadataUpdatedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SkillMarketPlatform {
+  id: string;
+  name: string;
+  url: string;
+  priority: number;
+  status: 'active' | 'disabled';
+  description?: string;
+  lastIndexedAt?: string;
+  repoCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SkillGithubRepo {
+  id: string;
+  platformId: string;
+  fullName: string;
+  url: string;
+  description?: string;
+  stars: number;
+  language?: string;
+  topics: string[];
+  owner: string;
+  indexedAt: string;
+  status: 'pending' | 'imported' | 'skipped';
+  skillId?: string;
   createdAt?: string;
   updatedAt?: string;
 }

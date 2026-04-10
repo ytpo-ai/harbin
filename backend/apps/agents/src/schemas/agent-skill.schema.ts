@@ -38,6 +38,9 @@ export class Skill {
   @Prop()
   sourceUrl?: string;
 
+  @Prop({ index: true })
+  repoId?: string;
+
   @Prop({ default: 'system' })
   provider: string;
 
