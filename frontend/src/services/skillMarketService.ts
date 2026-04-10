@@ -13,6 +13,22 @@ export interface SkillMarketSearchResponse extends SkillMarketRepoPagedResponse 
   remoteFetched: number;
 }
 
+export interface IndexTaskState {
+  taskId: string;
+  platformId: string;
+  platformName: string;
+  status: 'running' | 'done' | 'error';
+  total: number;
+  scanned: number;
+  indexed: number;
+  failed: number;
+  currentRepo?: string;
+  crawlError?: string;
+  message?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
 export const skillMarketService = {
   async listPlatforms(): Promise<SkillMarketPlatform[]> {
     const response = await api.get('/skills/market/platforms');
@@ -48,13 +64,69 @@ export const skillMarketService = {
     return response.data;
   },
 
-  async indexPlatform(platformId: string): Promise<{
-    scanned: number;
-    indexed: number;
-    failed: number;
-  }> {
+  async startIndexPlatform(platformId: string): Promise<{ taskId: string }> {
     const response = await api.post(`/skills/market/platforms/${platformId}/index`);
     return response.data;
+  },
+
+  subscribeIndexTask(
+    taskId: string,
+    callbacks: {
+      onProgress: (state: IndexTaskState) => void;
+      onDone: (state: IndexTaskState) => void;
+      onError: (error: string) => void;
+    },
+  ): () => void {
+    const baseUrl = api.defaults.baseURL || '';
+    const url = `${baseUrl}/skills/market/index-tasks/${taskId}/events`;
+    const eventSource = new EventSource(url);
+
+    const handleEvent = (event: MessageEvent) => {
+      try {
+        const state: IndexTaskState = JSON.parse(event.data);
+        callbacks.onProgress(state);
+      } catch {
+        // ignore parse errors
+      }
+    };
+
+    eventSource.addEventListener('progress', handleEvent);
+
+    eventSource.addEventListener('done', (event: MessageEvent) => {
+      try {
+        const state: IndexTaskState = JSON.parse(event.data);
+        callbacks.onDone(state);
+      } catch {
+        callbacks.onDone({ taskId, status: 'done', message: '索引完成' } as IndexTaskState);
+      }
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('error', (event: Event) => {
+      const messageEvent = event as MessageEvent;
+      if (messageEvent.data) {
+        try {
+          const state: IndexTaskState = JSON.parse(messageEvent.data);
+          callbacks.onError(state.message || '索引失败');
+        } catch {
+          callbacks.onError('索引任务异常');
+        }
+      } else {
+        // SSE connection error — check if task is terminal
+        if (eventSource.readyState === EventSource.CLOSED) {
+          callbacks.onError('SSE 连接已关闭');
+        }
+      }
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('heartbeat', () => {
+      // keep alive, no action needed
+    });
+
+    return () => {
+      eventSource.close();
+    };
   },
 
   async listRepos(filters?: {

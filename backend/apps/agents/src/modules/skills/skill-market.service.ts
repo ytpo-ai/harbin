@@ -2,12 +2,15 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  MessageEvent,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
+import { Subject, Observable } from 'rxjs';
+import { map } from 'rxjs/operators';
 import {
   SkillMarketPlatform,
   SkillMarketPlatformDocument,
@@ -60,9 +63,33 @@ interface GithubRepoSummary {
   owner: string;
 }
 
+export interface IndexTaskState {
+  taskId: string;
+  platformId: string;
+  platformName: string;
+  status: 'running' | 'done' | 'error';
+  total: number;
+  scanned: number;
+  indexed: number;
+  failed: number;
+  currentRepo?: string;
+  crawlError?: string;
+  message?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+interface IndexTaskEntry {
+  state: IndexTaskState;
+  subject: Subject<IndexTaskState>;
+}
+
+const INDEX_TASK_TTL_MS = 10 * 60 * 1000;
+
 @Injectable()
 export class SkillMarketService {
   private readonly logger = new Logger(SkillMarketService.name);
+  private readonly indexTasks = new Map<string, IndexTaskEntry>();
 
   constructor(
     @InjectModel(SkillMarketPlatform.name)
@@ -135,51 +162,136 @@ export class SkillMarketService {
     return this.platformModel.find({}).sort({ priority: 1, updatedAt: -1 }).exec();
   }
 
-  async indexPlatform(platformId: string): Promise<{
-    platform: SkillMarketPlatform;
-    scanned: number;
-    indexed: number;
-    failed: number;
-  }> {
+  async startIndexPlatform(platformId: string): Promise<{ taskId: string }> {
     const platform = await this.getPlatformOrThrow(platformId);
-    const fullNames = await this.extractRepoFullNamesFromPlatform(platform.url);
-    let indexed = 0;
-    let failed = 0;
 
-    for (const fullName of fullNames) {
+    const taskId = uuidv4();
+    const subject = new Subject<IndexTaskState>();
+    const state: IndexTaskState = {
+      taskId,
+      platformId: platform.id,
+      platformName: platform.name,
+      status: 'running',
+      total: 0,
+      scanned: 0,
+      indexed: 0,
+      failed: 0,
+      message: '正在爬取平台页面...',
+      startedAt: new Date().toISOString(),
+    };
+    this.indexTasks.set(taskId, { state, subject });
+
+    this.runIndexTask(taskId, platform).catch((err) => {
+      this.logger.error(`[indexTask] Unexpected error taskId=${taskId}: ${(err as Error).message}`);
+    });
+
+    return { taskId };
+  }
+
+  subscribeIndexTask(taskId: string): Observable<MessageEvent> {
+    const entry = this.indexTasks.get(taskId);
+    if (!entry) {
+      throw new NotFoundException(`Index task not found: ${taskId}`);
+    }
+    return new Observable<MessageEvent>((subscriber) => {
+      subscriber.next({
+        data: JSON.stringify(entry.state),
+        type: 'progress',
+        id: `${taskId}-snapshot`,
+      } as MessageEvent);
+
+      const sub = entry.subject
+        .pipe(map((s) => ({ data: JSON.stringify(s), type: s.status === 'done' || s.status === 'error' ? s.status : 'progress', id: `${taskId}-${s.scanned}` } as MessageEvent)))
+        .subscribe({
+          next: (event) => subscriber.next(event),
+          error: (err) => subscriber.error(err),
+          complete: () => subscriber.complete(),
+        });
+
+      const heartbeat = setInterval(() => {
+        subscriber.next({ data: '', type: 'heartbeat', id: `${taskId}-hb` } as MessageEvent);
+      }, 15000);
+
+      return () => {
+        clearInterval(heartbeat);
+        sub.unsubscribe();
+      };
+    });
+  }
+
+  getIndexTaskState(taskId: string): IndexTaskState | null {
+    return this.indexTasks.get(taskId)?.state || null;
+  }
+
+  private async runIndexTask(taskId: string, platform: SkillMarketPlatformDocument): Promise<void> {
+    const entry = this.indexTasks.get(taskId);
+    if (!entry) return;
+    const { state, subject } = entry;
+
+    let fullNames: string[] = [];
+    try {
+      fullNames = await this.extractRepoFullNamesFromPlatform(platform.url);
+    } catch (error) {
+      const status = (error as any)?.response?.status;
+      const message = (error as Error).message || 'Unknown crawl error';
+      state.crawlError = status ? `HTTP ${status}: ${message}` : message;
+      state.message = `平台爬取失败: ${state.crawlError}`;
+      this.logger.warn(`[indexTask] Crawl failed ${platform.url}: ${state.crawlError}`);
+    }
+
+    const maxBatch = Math.min(fullNames.length, 50);
+    state.total = maxBatch;
+    state.message = maxBatch > 0 ? `发现 ${fullNames.length} 个仓库，开始索引（上限 ${maxBatch}）...` : (state.crawlError ? state.message : '未从平台页面发现 GitHub 仓库链接');
+    subject.next({ ...state });
+
+    for (let i = 0; i < maxBatch; i++) {
+      const fullName = fullNames[i];
+      state.scanned = i + 1;
+      state.currentRepo = fullName;
+      state.message = `正在索引 ${fullName} (${i + 1}/${maxBatch})`;
+      subject.next({ ...state });
+
       try {
         const summary = await this.fetchGithubRepoSummary(fullName);
         if (!summary) {
-          failed += 1;
-          continue;
+          state.failed += 1;
+        } else {
+          await this.upsertGithubRepo(platform.id, summary);
+          state.indexed += 1;
         }
-        await this.upsertGithubRepo(platform.id, summary);
-        indexed += 1;
       } catch (error) {
-        failed += 1;
-        this.logger.warn(`Failed to index repo ${fullName}: ${(error as Error).message}`);
+        state.failed += 1;
+        this.logger.warn(`[indexTask] Failed ${fullName}: ${(error as Error).message}`);
+      }
+
+      if (i > 0 && i % 5 === 0) {
+        await this.delay(500);
       }
     }
 
-    const repoCount = await this.repoModel.countDocuments({ platformId }).exec();
-    const updatedPlatform = await this.platformModel
+    const repoCount = await this.repoModel.countDocuments({ platformId: platform.id }).exec();
+    await this.platformModel
       .findOneAndUpdate(
-        { id: platformId },
+        { id: platform.id },
         { lastIndexedAt: new Date(), repoCount },
         { new: true },
       )
       .exec();
 
-    if (!updatedPlatform) {
-      throw new NotFoundException(`Platform not found: ${platformId}`);
+    state.currentRepo = undefined;
+    state.finishedAt = new Date().toISOString();
+    if (state.crawlError && maxBatch === 0) {
+      state.status = 'error';
+      state.message = `索引失败: ${state.crawlError}`;
+    } else {
+      state.status = 'done';
+      state.message = `索引完成: 扫描 ${state.scanned}，成功 ${state.indexed}，失败 ${state.failed}${state.crawlError ? `（爬取异常: ${state.crawlError}）` : ''}`;
     }
 
-    return {
-      platform: updatedPlatform,
-      scanned: fullNames.length,
-      indexed,
-      failed,
-    };
+    subject.next({ ...state });
+    subject.complete();
+
+    setTimeout(() => this.indexTasks.delete(taskId), INDEX_TASK_TTL_MS);
   }
 
   async listRepos(filters?: RepoFilters): Promise<{
@@ -414,11 +526,14 @@ export class SkillMarketService {
 
   private async extractRepoFullNamesFromPlatform(platformUrl: string): Promise<string[]> {
     const { data } = await axios.get(platformUrl, {
-      timeout: 15000,
+      timeout: 20000,
       headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'HarbinSkillMarketIndexer/1.0',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+        'Cache-Control': 'no-cache',
       },
+      maxRedirects: 5,
       validateStatus: (status) => status >= 200 && status < 400,
     });
 
@@ -615,5 +730,9 @@ export class SkillMarketService {
 
   private escapeRegex(input: string): string {
     return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

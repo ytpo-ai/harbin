@@ -12,7 +12,8 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import { PromptTemplateRefPicker } from '../components/PromptTemplateRefPicker';
-import SkillMarketPanel from '../components/SkillMarketPanel';
+import { SkillMarketPlatformPanel } from '../components/SkillMarketPanel';
+import { SkillGithubRepoPanel } from '../components/SkillGithubRepoPanel';
 import { skillService, SkillPagedResponse } from '../services/skillService';
 import { agentService } from '../services/agentService';
 import { PromptTemplateRef, Skill } from '../types';
@@ -126,7 +127,7 @@ const Skills: React.FC = () => {
     return [10, 20, 50].includes(size) ? size : 10;
   });
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
-  const [pageTab, setPageTab] = useState<'library' | 'market'>('library');
+  const [pageTab, setPageTab] = useState<'library' | 'market' | 'ghrepos'>('library');
   const [activeTab, setActiveTab] = useState<'detail' | 'binding'>('detail');
   const [isDiscoverDrawerOpen, setIsDiscoverDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -386,6 +387,12 @@ const Skills: React.FC = () => {
         >
           Skill 市场
         </button>
+        <button
+          onClick={() => setPageTab('ghrepos')}
+          className={`rounded-md px-3 py-1.5 text-sm ${pageTab === 'ghrepos' ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
+        >
+          Skill GH 库
+        </button>
       </div>
 
       {pageTab === 'library' ? (
@@ -598,8 +605,10 @@ const Skills: React.FC = () => {
             loading={createSkillMutation.isLoading}
           />
         </>
+      ) : pageTab === 'market' ? (
+        <SkillMarketPlatformPanel />
       ) : (
-        <SkillMarketPanel />
+        <SkillGithubRepoPanel />
       )}
     </div>
   );

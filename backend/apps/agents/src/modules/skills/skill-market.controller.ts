@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, MessageEvent, Param, Post, Put, Query, Sse } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import { SkillMarketService } from './skill-market.service';
 import { SkillGithubRepoStatus } from '@agent/schemas/skill-github-repo.schema';
 import { SkillMarketPlatformStatus } from '@agent/schemas/skill-market-platform.schema';
@@ -46,8 +47,27 @@ export class SkillMarketController {
   }
 
   @Post('platforms/:id/index')
-  async indexPlatform(@Param('id') id: string) {
-    return this.skillMarketService.indexPlatform(id);
+  async startIndexPlatform(@Param('id') id: string) {
+    return this.skillMarketService.startIndexPlatform(id);
+  }
+
+  @Sse('index-tasks/:taskId/events')
+  @Header('Cache-Control', 'no-cache, no-transform')
+  @Header('Connection', 'keep-alive')
+  @Header('X-Accel-Buffering', 'no')
+  streamIndexTaskEvents(
+    @Param('taskId') taskId: string,
+  ): Observable<MessageEvent> {
+    return this.skillMarketService.subscribeIndexTask(taskId);
+  }
+
+  @Get('index-tasks/:taskId')
+  async getIndexTaskState(@Param('taskId') taskId: string) {
+    const state = this.skillMarketService.getIndexTaskState(taskId);
+    if (!state) {
+      return { found: false };
+    }
+    return state;
   }
 
   @Get('repos')

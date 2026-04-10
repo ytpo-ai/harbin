@@ -139,7 +139,16 @@ POST   /skills/market/repos/:id/import      导入为 Skill（Layer 2 → Layer 
 
 # 市场检索
 POST   /skills/market/search               关键词检索
+
+# 平台索引任务进度（SSE）
+GET    /skills/market/index-tasks/:taskId/events   订阅索引进度流
 ```
+
+索引执行建议升级为“任务化 + 实时事件流”模式：
+
+- `POST /skills/market/platforms/:id/index`：仅负责创建索引任务并立即返回 `taskId`
+- 后端异步执行实际索引逻辑，持续更新任务进度状态
+- 前端基于 SSE 订阅任务进度并实时展示（进行中 / 当前仓库 / 失败计数 / 完成态）
 
 ### Step 4 — 更新 SkillModule
 
@@ -179,6 +188,19 @@ POST   /skills/market/search               关键词检索
 - 展示结果：仓库卡片 + status 标记
 - 支持一键导入到 Layer 3
 
+### Step 8 — 平台索引改为 SSE 实时反馈
+
+后端：
+- 新增索引任务模型（`taskId`、`status`、`total`、`scanned`、`indexed`、`failed`、`currentRepo`、`message`、`startedAt`、`finishedAt`）
+- `POST /skills/market/platforms/:id/index` 改为“启动任务并返回 taskId”
+- 新增 SSE 接口：`GET /skills/market/index-tasks/:taskId/events`
+- 事件类型建议：`progress`、`log`、`done`、`error`
+
+前端：
+- 点击“立即索引”后进入进行中态（按钮禁用 + 文案切换）
+- 通过 SSE 实时展示进度条和当前仓库处理状态
+- 支持断线重连与异常提示，任务完成后自动刷新平台和仓库列表
+
 ---
 
 ## 影响范围
@@ -194,6 +216,7 @@ POST   /skills/market/search               关键词检索
 | `frontend/src/types/index.ts` | 新增两个类型 |
 | `frontend/src/services/skillMarketService.ts` | 新增 |
 | `frontend/src/pages/Skills.tsx` | 新增 Tab |
+| `frontend/src/components/SkillMarketPanel.tsx` | 增加 SSE 实时索引进度展示 |
 
 **不受影响**：
 - `skill.service.ts`（现有逻辑不变）
@@ -212,6 +235,7 @@ POST   /skills/market/search               关键词检索
 - [ ] Step 5：新增前端类型定义
 - [ ] Step 6：新增 skillMarketService
 - [ ] Step 7：Skills.tsx 新增 Skill 市场 Tab
+- [ ] Step 8：平台索引升级为任务化 + SSE 实时进度同步
 
 ---
 
@@ -223,3 +247,4 @@ POST   /skills/market/search               关键词检索
 - 导入时 Layer 3 `status` 默认为 `experimental`，不自动变为 `active`
 - 删除平台时同步清理关联的 Layer 2 仓库记录
 - 现有 `agent_skills` 中 `sourceType='github'` 的历史数据无需迁移，`repoId` 为可选字段
+- SSE 连接需考虑网关超时与代理缓冲；若为多实例部署，任务状态建议存储在 Redis 以保证跨实例可见
