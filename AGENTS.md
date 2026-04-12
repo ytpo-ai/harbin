@@ -94,12 +94,11 @@ feature → plan → requirement → development + fix
 
 ### 标准执行顺序（Plan）
 1. 给出计划（plan）
-2. 计划得到同意后，将计划更新到 `docs/plan/` 下的 Markdown 文档
-3. 将 plan 拆解为 requirement（需求粒度 = issue/ticket），每个 requirement 写入 `docs/requirement/`
-4. 按 requirement 粒度执行开发
-5. 开发完成后，按照 Git Commit 协议 提交代码（默认执行，无需询问）
-6. 提交后，询问用户是否需要落盘开发总结文档到 `docs/development/`
-7. 更新对应 feature 文档中的**需求追溯表**
+2. 计划得到同意后，将计划更新到 `docs/plan/` 下的 Markdown 文档，同步完成 requirement 拆解（在 plan 文档 §5 中标记，并创建对应的 `docs/requirement/` 文件）
+3. 按 requirement 粒度执行开发
+4. 开发完成后，按照 Git Commit 协议 提交代码（默认执行，无需询问）
+5. 提交后，询问用户是否需要落盘开发总结文档到 `docs/development/`
+6. 更新对应 feature 文档中的**需求追溯表**
 
 ### 标准执行顺序（Fix）
 1. 明确修复目标与影响范围，按需补充最小修复步骤（可不走完整 plan 审批）
