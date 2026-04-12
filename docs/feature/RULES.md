@@ -38,23 +38,51 @@ meeting/orchestration/session
 - 数据结构
 - 核心逻辑
 
-## 2. 相关文档
+## 2. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [plan 名称](../plan/xxx.md) | [REQ-001 简述](../requirement/xxx.md) | [开发记录](../development/xxx.md) | [fix](../issue/fix/xxx.md) |
+
+## 3. 相关文档
 - 规划文档 (docs/plan/)
+- 需求文档 (docs/requirement/)
 - 开发总结 (docs/development/)
 - 技术文档 (docs/technical/)
 - API文档 (docs/api/)
 
-## 3. 相关代码文件
+## 4. 相关代码文件
 - 后端代码
 - 前端代码
 ```
 
-### 2.3 文档依赖关系
+### 2.3 需求追溯表规范（新增）
+
+每个 feature 文档**必须**维护一张 **需求追溯表**，串联 plan → requirement → development → fix 的完整链路：
+
+```markdown
+## 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [PLAN 名称](../plan/<PLAN>.md) | [REQ-001 简述](../requirement/<REQ>.md) | [开发记录](../development/<DEV>.md) | [fix-1](../issue/fix/<FIX>.md) |
+| 同上 | [REQ-002 简述](../requirement/<REQ>.md) | [开发记录](../development/<DEV>.md) | — |
+```
+
+**维护规则**：
+- 新建 plan 时，在追溯表中添加 plan 行
+- plan 拆解 requirement 时，补充 requirement 列
+- development 完成时，补充 development 列
+- fix 产生时，追加 fix 列
+- 追溯表与 `docs/requirement/RULES.md` 中的关联约定互为双向索引
+
+### 2.4 文档依赖关系
 
 功能文档 **引用** 而非重复以下文档内容：
 | 文档类型 | 位置 | 说明 |
 |----------|------|------|
 | 规划文档 | `docs/plan/` | 需求背景、技术方案、里程碑 |
+| 需求文档 | `docs/requirement/` | 需求拆解、验收条件、状态跟踪 |
 | 开发总结 | `docs/development/` | 实现细节、踩坑记录 |
 | 技术文档 | `docs/technical/` | 底层设计、技术原理、数据模型设计(`docs/technical/db_schema/`) |
 | API文档 | `docs/api/` | 接口定义 |
@@ -110,10 +138,28 @@ docs/feature/INDEX.md 中列出了当前系统的主要功能模块
 
 ---
 
-## 5. 约束执行检查点
+## 5. 文档层级全景（feature → plan → requirement → development/fix）
+
+```
+feature (功能模块)           docs/feature/<MODULE>.md
+  └── plan (计划方案)        docs/plan/<MODULE>_<PLAN_NAME>_PLAN.md
+        └── requirement      docs/requirement/<MODULE>_REQ-<NNN>_<BRIEF>.md
+              ├── development docs/development/<MODULE>_REQ-<NNN>_DEVELOPMENT.md
+              └── fix         docs/issue/fix/YYYY-MM-DD-<brief>.md
+```
+
+- 各层文档模板见对应目录下的 `TEMPLATE.md`
+- requirement 管理规范见 `docs/requirement/RULES.md`
+- 各层之间通过**文件名约定 + 文档内链接 + feature 追溯表**三重关联
+
+---
+
+## 6. 约束执行检查点
 
 在 opencode 完成功能开发后，必须检查：
 
 - [ ] 功能文档是否已更新？
-- [ ] 是否引用了相关的规划/开发/技术/API文档？
+- [ ] 功能文档的**需求追溯表**是否已补充？
+- [ ] 是否引用了相关的规划/需求/开发/技术/API文档？
 - [ ] 代码文件清单是否与文档一致？
+- [ ] 新建 requirement 时，是否已在对应 plan 文档中关联？

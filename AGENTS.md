@@ -11,10 +11,16 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 ```
 
 ## 功能文档维护规范及协议
-具体规范及约束请阅读 `docs/features/RULES.md` 中的说明。
+具体规范及约束请阅读 `docs/feature/RULES.md` 中的说明。
+
+## 需求文档管理规范及协议
+具体规范及约束请阅读 `docs/requirement/RULES.md` 中的说明。
 
 ## 日常进度记录规范及协议
 具体规范及约束请阅读 `docs/dailylog/RULES.md` 中的说明。
+
+## Git 工作流规范
+具体规范及约束请阅读 `docs/guide/GIT_WORKFLOW.MD` 中的说明。
 
 ## API 接口测试与编排验证规范
 具体规范及约束请阅读 `docs/guide/TEST_GUIDELINE.MD` 中的说明。
@@ -52,11 +58,24 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 - 不适合放入的内容：临时调试记录、单次 fix 细节、频繁变动的业务逻辑快照
 - 如果发现已有文档内容过时，应在本次开发中**顺带更新**，保持缓存有效性
 
-**三类文档的关系**：
-- `docs/guide/`：偏向**项目现状探索总结**（代码结构、模块机制、链路概览——"现在是什么样的"），agent主动探索总结
-- `docs/technical/`：偏向**需求驱动的技术设计**（详细架构、完整数据模型、算法、时序图——"打算怎么做"），agent主动设计输出
-- `docs/feature/`：偏向**功能维度描述**（功能说明、使用方式、配置项——"功能是什么"）
-- 三者互补：guide 侧重"快速了解模块怎么跑的"，technical 侧重"深入理解技术实现细节"，feature 侧重"功能是什么"
+**文档体系全景**：
+
+| 目录 | 定位 | 内容侧重 |
+|---|---|---|
+| `docs/feature/` | **功能维度描述** | 功能说明、使用方式、配置项——"功能是什么" |
+| `docs/plan/` | **计划方案** | 需求背景、执行步骤、里程碑——"计划做什么" |
+| `docs/requirement/` | **需求管理** | issue/ticket 粒度的需求拆解、验收条件、状态跟踪——"具体要交付什么" |
+| `docs/development/` | **开发记录** | 实现摘要、代码改动点、踩坑记录——"实际做了什么" |
+| `docs/issue/fix/` | **修复记录** | 问题现象、根因分析、修复动作——"修了什么" |
+| `docs/guide/` | **项目现状探索总结** | 模块职责、核心链路、关键调用关系——"现在是什么样的" |
+| `docs/technical/` | **深度技术设计** | 详细架构、完整数据模型、算法、时序图——"打算怎么做" |
+
+**层级追溯关系**：
+```
+feature → plan → requirement → development + fix
+```
+- 每个 feature 文档中维护**需求追溯表**，串联完整链路
+- 详见 `docs/feature/RULES.md` §2.3 和 `docs/requirement/RULES.md`
 
 ### 开发前必须阅读功能文档
 
@@ -76,16 +95,19 @@ export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 ### 标准执行顺序（Plan）
 1. 给出计划（plan）
 2. 计划得到同意后，将计划更新到 `docs/plan/` 下的 Markdown 文档
-3. 完成 plan 文档更新后，再执行开发
-4. 开发完成后，先询问用户是否需要沉淀开发总结文档；用户同意后，按照 功能文档维护规范及协议 中的要求更新文档
-5. 最后询问用户是否需要提交代码；如果需要，按照 Git Commit 协议 进行提交
+3. 将 plan 拆解为 requirement（需求粒度 = issue/ticket），每个 requirement 写入 `docs/requirement/`
+4. 按 requirement 粒度执行开发
+5. 开发完成后，按照 Git Commit 协议 提交代码（默认执行，无需询问）
+6. 提交后，询问用户是否需要落盘开发总结文档到 `docs/development/`
+7. 更新对应 feature 文档中的**需求追溯表**
 
 ### 标准执行顺序（Fix）
 1. 明确修复目标与影响范围，按需补充最小修复步骤（可不走完整 plan 审批）
 2. 先询问用户是否需要落盘 fix 文档到 `docs/issue/fix/`
 3. 执行修复开发与验证
-4. 修复完成后，将修复结果同步写入 fix 文档（若用户同意落盘）
-5. 最后询问用户是否需要提交代码；如果需要，按照 Git Commit 协议 进行提交
+4. 修复完成后，按照 Git Commit 协议 提交代码（默认执行，无需询问）
+5. 提交后，将修复结果同步写入 fix 文档（若用户同意落盘）
+6. 如果 fix 关联某个 requirement，更新 requirement 文档的 fix 列表和 feature 追溯表
 
 ### Plan 输出要求
 - [ ] 先理解需求并拆解任务范围

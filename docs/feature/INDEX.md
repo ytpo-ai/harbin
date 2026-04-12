@@ -107,13 +107,17 @@
 ### 待完善的功能文档
 
 
-## 文档依赖关系示意
+## 文档层级与追溯关系
 
 ```
 功能文档 (feature/)
     │
-    ├── 引用 ──► 规划文档 (plan/)
-    ├── 引用 ──► 开发总结 (development/)
+    ├── 追溯 ──► 规划文档 (plan/)
+    │               └── 拆解 ──► 需求文档 (requirement/)
+    │                              ├── 执行 ──► 开发记录 (development/)
+    │                              └── 修复 ──► 修复记录 (issue/fix/)
     ├── 引用 ──► 技术文档 (technical/)
     └── 引用 ──► API文档 (api/)
 ```
+
+**追溯机制**：每个 feature 文档中维护 **需求追溯表**，串联 plan → requirement → development → fix 的完整链路。详见 `docs/feature/RULES.md` §2.3 和 `docs/requirement/RULES.md`。

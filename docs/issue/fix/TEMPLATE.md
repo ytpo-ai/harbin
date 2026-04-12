@@ -5,7 +5,10 @@
 - 标题：
 - 日期：YYYY-MM-DD
 - 负责人：
-- 关联需求/会话：
+- 关联 Requirement：<!-- [REQ-NNN](../../requirement/<MODULE>_REQ-<NNN>_<BRIEF>.md)，无则留空 -->
+- 所属 Feature：<!-- [<FEATURE>](../../feature/<MODULE>.md)，无则留空 -->
+- 需求管理 ID：<!-- 工程智能需求管理系统中的 ID，可选 -->
+- OpenCode Session：<!-- 执行修复的 session 标识，可选 -->
 - 是否落盘（用户确认）：是 / 否
 
 ## 2. 问题现象
