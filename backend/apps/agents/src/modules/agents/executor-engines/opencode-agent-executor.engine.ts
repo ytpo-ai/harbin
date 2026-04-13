@@ -60,17 +60,29 @@ export class OpencodeAgentExecutorEngine implements AgentExecutorEngine {
         },
       });
 
-    let response = (await executeOnce(resolveLatestUserContent(input.task, input.messages))).response;
+    let execResult = await executeOnce(resolveLatestUserContent(input.task, input.messages));
 
-    if (isMeetingLikeTask(input.task, input.context) && isMeaninglessAssistantResponse(response)) {
+    if (isMeetingLikeTask(input.task, input.context) && isMeaninglessAssistantResponse(execResult.response)) {
       this.logger.warn(`[task_empty_response_retry] taskId=${input.taskId} channel=opencode attempt=1`);
       await this.runtimeOrchestrator.assertRunnable(input.runtimeContext.runId);
       const retryPrompt =
         `${resolveLatestUserContent(input.task, input.messages)}\n\n` +
         `【系统补充】${AGENT_PROMPTS.emptyResponseRetryInstruction.buildDefaultContent()}`;
-      response = (await executeOnce(retryPrompt)).response;
+      execResult = await executeOnce(retryPrompt);
     }
 
-    return { response };
+    const opencodeTokens = execResult.tokens;
+    const usage = opencodeTokens
+      ? {
+          input: opencodeTokens.input ?? 0,
+          output: opencodeTokens.output ?? 0,
+          reasoning: opencodeTokens.reasoning ?? 0,
+          cacheRead: opencodeTokens.cache?.read ?? 0,
+          cacheWrite: opencodeTokens.cache?.write ?? 0,
+          total: (opencodeTokens.input ?? 0) + (opencodeTokens.output ?? 0) + (opencodeTokens.reasoning ?? 0) + (opencodeTokens.cache?.read ?? 0) + (opencodeTokens.cache?.write ?? 0),
+        }
+      : undefined;
+
+    return { response: execResult.response, usage, cost: execResult.cost };
   }
 }

@@ -82,31 +82,45 @@ export class OpencodeStreamingAgentExecutorEngine implements AgentExecutorEngine
         },
       });
 
-    const firstResult = await executeOnce(resolveLatestUserContent(input.task, input.messages));
-    if (!fullResponse && firstResult.response) {
-      fullResponse = firstResult.response;
+    let latestResult = await executeOnce(resolveLatestUserContent(input.task, input.messages));
+    if (!fullResponse && latestResult.response) {
+      fullResponse = latestResult.response;
       tokenChunks += 1;
-      onToken(firstResult.response);
+      onToken(latestResult.response);
     }
 
     if (isMeetingLikeTask(input.task, input.context) && isMeaninglessAssistantResponse(fullResponse)) {
       this.logger.warn(`[stream_task_empty_response_retry] taskId=${input.taskId} channel=opencode attempt=1`);
       await this.runtimeOrchestrator.assertRunnable(input.runtimeContext.runId);
       fullResponse = '';
-      const retryResult = await executeOnce(
+      latestResult = await executeOnce(
         `${resolveLatestUserContent(input.task, input.messages)}\n\n` +
           `【系统补充】${AGENT_PROMPTS.emptyResponseRetryInstruction.buildDefaultContent()}`,
       );
-      if (!fullResponse && retryResult.response) {
-        fullResponse = retryResult.response;
+      if (!fullResponse && latestResult.response) {
+        fullResponse = latestResult.response;
         tokenChunks += 1;
-        onToken(retryResult.response);
+        onToken(latestResult.response);
       }
     }
+
+    const opencodeTokens = latestResult.tokens;
+    const usage = opencodeTokens
+      ? {
+          input: opencodeTokens.input ?? 0,
+          output: opencodeTokens.output ?? 0,
+          reasoning: opencodeTokens.reasoning ?? 0,
+          cacheRead: opencodeTokens.cache?.read ?? 0,
+          cacheWrite: opencodeTokens.cache?.write ?? 0,
+          total: (opencodeTokens.input ?? 0) + (opencodeTokens.output ?? 0) + (opencodeTokens.reasoning ?? 0) + (opencodeTokens.cache?.read ?? 0) + (opencodeTokens.cache?.write ?? 0),
+        }
+      : undefined;
 
     return {
       response: fullResponse,
       tokenChunks,
+      usage,
+      cost: latestResult.cost,
     };
   }
 }

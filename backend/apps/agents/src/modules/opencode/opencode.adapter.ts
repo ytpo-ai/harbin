@@ -7,6 +7,7 @@ import {
   OpenCodeAdapterSessionInfo,
   OpenCodeCreateSessionInput,
   OpenCodePromptInput,
+  OpenCodeTokenUsage,
 } from './contracts/opencode.contract';
 
 @Injectable()
@@ -50,7 +51,7 @@ export class OpenCodeAdapter {
   async promptSession(
     input: OpenCodePromptInput,
     options?: { signal?: AbortSignal },
-  ): Promise<{ response: string; metadata: Record<string, unknown> }> {
+  ): Promise<{ response: string; metadata: Record<string, unknown>; tokens?: OpenCodeTokenUsage; cost?: number }> {
     const result = await this.request<any>('POST', `/session/${encodeURIComponent(input.sessionId)}/message`, {
       data: {
         parts: [{ type: 'text', text: input.prompt }],
@@ -61,9 +62,15 @@ export class OpenCodeAdapter {
       signal: options?.signal,
     });
 
+    const info = (result?.info || {}) as Record<string, unknown>;
+    const tokens = this.extractTokenUsage(info);
+    const cost = this.extractCost(info);
+
     return {
       response: this.extractResponseText(result),
-      metadata: (result?.info || {}) as Record<string, unknown>,
+      metadata: info,
+      tokens,
+      cost,
     };
   }
 
@@ -452,6 +459,34 @@ export class OpenCodeAdapter {
         stream.destroy();
       }
     }
+  }
+
+  private extractTokenUsage(info: Record<string, unknown>): OpenCodeTokenUsage | undefined {
+    const tokens = info.tokens;
+    if (!tokens || typeof tokens !== 'object' || Array.isArray(tokens)) {
+      return undefined;
+    }
+    const t = tokens as Record<string, unknown>;
+    const input = typeof t.input === 'number' && Number.isFinite(t.input) ? t.input : 0;
+    const output = typeof t.output === 'number' && Number.isFinite(t.output) ? t.output : 0;
+    const reasoning = typeof t.reasoning === 'number' && Number.isFinite(t.reasoning) ? t.reasoning : 0;
+    const cache = t.cache && typeof t.cache === 'object' && !Array.isArray(t.cache)
+      ? (t.cache as Record<string, unknown>)
+      : undefined;
+    const cacheRead = typeof cache?.read === 'number' && Number.isFinite(cache.read) ? cache.read : 0;
+    const cacheWrite = typeof cache?.write === 'number' && Number.isFinite(cache.write) ? cache.write : 0;
+    if (input === 0 && output === 0 && reasoning === 0 && cacheRead === 0 && cacheWrite === 0) {
+      return undefined;
+    }
+    return { input, output, reasoning, cache: { read: cacheRead, write: cacheWrite } };
+  }
+
+  private extractCost(info: Record<string, unknown>): number | undefined {
+    const cost = info.cost;
+    if (typeof cost === 'number' && Number.isFinite(cost) && cost > 0) {
+      return cost;
+    }
+    return undefined;
   }
 
   private resolveSessionId(payload: Record<string, unknown>): string | undefined {

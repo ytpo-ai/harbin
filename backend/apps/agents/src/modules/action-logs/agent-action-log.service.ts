@@ -116,7 +116,10 @@ export class AgentActionLogService {
         timestamp: new Date(),
       });
 
-      await this.publishAgentActionCompletedEventIfNeeded(input, normalizedStatus, normalizedDetails);
+      // Disabled: orchestration task completion notifications are already sent by
+      // OrchestrationMessageCenterEventService.publishTaskCompletedEvent (channel A).
+      // This secondary publish caused duplicate messages in Feishu/channel.
+      // await this.publishAgentActionCompletedEventIfNeeded(input, normalizedStatus, normalizedDetails);
     } catch (error) {
       if (this.isDuplicateKeyError(error)) {
         return;

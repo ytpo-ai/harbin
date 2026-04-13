@@ -50,8 +50,20 @@ export interface OpenCodeExecutionStartInput {
   runtime?: OpenCodeRuntimeOptions;
 }
 
+export interface OpenCodeTokenUsage {
+  input: number;
+  output: number;
+  reasoning: number;
+  cache: {
+    read: number;
+    write: number;
+  };
+}
+
 export interface OpenCodeExecutionStartResult {
   sessionId: string;
   response: string;
   metadata: Record<string, unknown>;
+  tokens?: OpenCodeTokenUsage;
+  cost?: number;
 }

@@ -7,6 +7,7 @@ import {
   OpenCodeExecutionStartInput,
   OpenCodeExecutionStartResult,
   OpenCodeRuntimeOptions,
+  OpenCodeTokenUsage,
 } from './contracts/opencode.contract';
 
 interface RuntimeMappedEvent {
@@ -40,6 +41,8 @@ export class OpenCodeExecutionService {
       sessionId,
       response: result.response,
       metadata: result.metadata,
+      tokens: result.tokens,
+      cost: result.cost,
     };
   }
 
@@ -124,7 +127,7 @@ export class OpenCodeExecutionService {
     this.activeAbortControllers.set(sessionId, abortController);
     this.logger.log(`[opencode_prompt] registered AbortController sessionId=${sessionId}`);
 
-    let prompt: { response: string; metadata: Record<string, unknown> };
+    let prompt: { response: string; metadata: Record<string, unknown>; tokens?: OpenCodeTokenUsage; cost?: number };
     const mapper = input.mapEvent || this.mapOpenCodeEventToRuntimeEvent.bind(this);
     const liveBridge = this.startLiveEventBridge({
       sessionId,
@@ -166,6 +169,8 @@ export class OpenCodeExecutionService {
       sessionId,
       response: prompt.response,
       metadata: prompt.metadata,
+      tokens: prompt.tokens,
+      cost: prompt.cost,
     };
 
     const realEvents = liveBridge.events;
@@ -194,11 +199,11 @@ export class OpenCodeExecutionService {
         ...result,
         response: eventReconstructedResponse,
       };
-      await this.persistOpenCodeStepMessages(input, realEvents, reconstructed.response);
+      await this.persistOpenCodeStepMessages(input, realEvents, reconstructed.response, result.tokens, result.cost);
       return reconstructed;
     }
 
-    await this.persistOpenCodeStepMessages(input, realEvents, result.response || eventReconstructedResponse);
+    await this.persistOpenCodeStepMessages(input, realEvents, result.response || eventReconstructedResponse, result.tokens, result.cost);
 
     return result;
   }
@@ -215,6 +220,8 @@ export class OpenCodeExecutionService {
     },
     events: OpenCodeAdapterEvent[],
     fallbackResponse: string,
+    opencodeTokens?: OpenCodeTokenUsage,
+    opencodeCost?: number,
   ): Promise<void> {
     if (!input.runtimeContext.sessionId) {
       return;
@@ -298,11 +305,38 @@ export class OpenCodeExecutionService {
       }
     }
 
+    // Normalize OpenCode token usage to harbin internal format.
+    // OpenCode returns cumulative tokens/cost for the entire message;
+    // attach them to the last step (the final assistant response).
+    // total includes cache tokens to align with OpenCode's accounting convention.
+    const normalizedTokens = opencodeTokens
+      ? {
+          input: opencodeTokens.input ?? 0,
+          output: opencodeTokens.output ?? 0,
+          reasoning: opencodeTokens.reasoning ?? 0,
+          cacheRead: opencodeTokens.cache?.read ?? 0,
+          cacheWrite: opencodeTokens.cache?.write ?? 0,
+          total:
+            (opencodeTokens.input ?? 0) +
+            (opencodeTokens.output ?? 0) +
+            (opencodeTokens.reasoning ?? 0) +
+            (opencodeTokens.cache?.read ?? 0) +
+            (opencodeTokens.cache?.write ?? 0),
+        }
+      : undefined;
+
     const sortedSteps = Array.from(steps.values()).sort((a, b) => a.stepIndex - b.stepIndex);
+    const lastStepIndex = sortedSteps.length > 0 ? sortedSteps[sortedSteps.length - 1].stepIndex : -1;
+
     for (const step of sortedSteps) {
       const content = step.textChunks.join('').trim() || fallbackResponse || '';
       const finish: 'stop' | 'tool-calls' | 'error' = step.hasError ? 'error' : step.sawTool ? 'tool-calls' : 'stop';
       const status: 'error' | 'completed' = step.hasError ? 'error' : 'completed';
+
+      // Attach tokens/cost to the last step to avoid double-counting in session aggregation.
+      const isLastStep = step.stepIndex === lastStepIndex;
+      const stepTokens = isLastStep ? normalizedTokens : undefined;
+      const stepCost = isLastStep ? opencodeCost : undefined;
 
       const stepParts = [
         {
@@ -329,6 +363,8 @@ export class OpenCodeExecutionService {
           metadata: {
             source: 'opencode',
             finish,
+            ...(isLastStep && stepTokens ? { tokens: stepTokens } : {}),
+            ...(isLastStep && stepCost !== undefined ? { cost: stepCost } : {}),
           },
           startedAt: step.endedAt,
           endedAt: step.endedAt,
@@ -350,6 +386,8 @@ export class OpenCodeExecutionService {
           providerID: input.model?.providerID,
           finish,
           stepIndex: step.stepIndex,
+          tokens: stepTokens,
+          cost: stepCost,
           metadata: {
             source: 'opencode.executeWithRuntimeBridge',
           },

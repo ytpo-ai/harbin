@@ -53,7 +53,7 @@ export class ModelService {
       ? Math.max(0, inputTokens - (cacheRead || 0) - (cacheWrite || 0))
       : inputTokens;
 
-    const totalTokens = adjustedInputTokens + outputTokens + (reasoningTokens || 0);
+    const totalTokens = adjustedInputTokens + outputTokens + (reasoningTokens || 0) + (cacheRead || 0) + (cacheWrite || 0);
 
     return {
       inputTokens: adjustedInputTokens,

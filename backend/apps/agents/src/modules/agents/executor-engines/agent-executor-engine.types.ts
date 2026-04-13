@@ -57,4 +57,13 @@ export interface AgentExecutorEngineInput {
 export interface AgentExecutorEngineResult {
   response: string;
   tokenChunks?: number;
+  usage?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  cost?: number;
 }
