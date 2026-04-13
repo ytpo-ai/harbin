@@ -79,16 +79,6 @@ export const skillService = {
     return response.data;
   },
 
-  async discoverSkills(payload: {
-    query: string;
-    maxResults?: number;
-    sourceType?: 'manual' | 'github' | 'web' | 'internal';
-    dryRun?: boolean;
-  }): Promise<{ query: string; totalFound: number; added: number; updated: number; skills: Skill[] }> {
-    const response = await api.post('/skills/manager/discover', payload);
-    return response.data;
-  },
-
   async syncDocs(): Promise<{ scanned: number; inserted: number; updated: number; skipped: number; failed: number }> {
     const response = await api.post('/skills/docs/sync');
     return response.data;

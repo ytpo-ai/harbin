@@ -1,7 +1,5 @@
-import { Body, Controller, Delete, Get, Header, MessageEvent, Param, Post, Put, Query, Sse } from '@nestjs/common';
-import { Observable } from 'rxjs';
+import { Body, Controller, Delete, Get, Param, Post, Put } from '@nestjs/common';
 import { SkillMarketService } from './skill-market.service';
-import { SkillGithubRepoStatus } from '@agent/schemas/skill-github-repo.schema';
 import { SkillMarketPlatformStatus } from '@agent/schemas/skill-market-platform.schema';
 
 @Controller('skills/market')
@@ -44,76 +42,5 @@ export class SkillMarketController {
   @Delete('platforms/:id')
   async deletePlatform(@Param('id') id: string) {
     return this.skillMarketService.deletePlatform(id);
-  }
-
-  @Post('platforms/:id/index')
-  async startIndexPlatform(@Param('id') id: string) {
-    return this.skillMarketService.startIndexPlatform(id);
-  }
-
-  @Sse('index-tasks/:taskId/events')
-  @Header('Cache-Control', 'no-cache, no-transform')
-  @Header('Connection', 'keep-alive')
-  @Header('X-Accel-Buffering', 'no')
-  streamIndexTaskEvents(
-    @Param('taskId') taskId: string,
-  ): Observable<MessageEvent> {
-    return this.skillMarketService.subscribeIndexTask(taskId);
-  }
-
-  @Get('index-tasks/:taskId')
-  async getIndexTaskState(@Param('taskId') taskId: string) {
-    const state = this.skillMarketService.getIndexTaskState(taskId);
-    if (!state) {
-      return { found: false };
-    }
-    return state;
-  }
-
-  @Get('repos')
-  async listRepos(
-    @Query('platformId') platformId?: string,
-    @Query('status') status?: SkillGithubRepoStatus,
-    @Query('search') search?: string,
-    @Query('page') page?: string,
-    @Query('pageSize') pageSize?: string,
-  ) {
-    return this.skillMarketService.listRepos({
-      platformId,
-      status,
-      search,
-      page: page ? Number(page) : undefined,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-    });
-  }
-
-  @Post('repos')
-  async addRepo(
-    @Body() body: { repoUrl: string; platformId?: string },
-  ) {
-    return this.skillMarketService.addRepoManually(body.repoUrl, body.platformId);
-  }
-
-  @Put('repos/:id/skip')
-  async skipRepo(@Param('id') id: string) {
-    return this.skillMarketService.skipRepo(id);
-  }
-
-  @Post('repos/:id/import')
-  async importRepo(@Param('id') id: string, @Query('force') force?: string) {
-    return this.skillMarketService.importRepo(id, { force: force === 'true' || force === '1' });
-  }
-
-  @Post('search')
-  async searchMarket(
-    @Body()
-    body: {
-      keyword: string;
-      platformId?: string;
-      page?: number;
-      pageSize?: number;
-    },
-  ) {
-    return this.skillMarketService.searchMarket(body);
   }
 }

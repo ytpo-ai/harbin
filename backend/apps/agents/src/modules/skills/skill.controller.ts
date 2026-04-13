@@ -103,13 +103,6 @@ export class SkillController {
     });
   }
 
-  @Post('manager/discover')
-  async discoverByAgentSkillManager(
-    @Body() body: { query: string; maxResults?: number; sourceType?: SkillSourceType; dryRun?: boolean },
-  ) {
-    return this.skillService.discoverSkillsFromInternet(body);
-  }
-
   @Post('docs/sync')
   async syncDocs() {
     return this.skillService.syncSkillDocsToDb();

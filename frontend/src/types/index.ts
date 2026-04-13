@@ -185,23 +185,6 @@ export interface SkillMarketPlatform {
   updatedAt?: string;
 }
 
-export interface SkillGithubRepo {
-  id: string;
-  platformId: string;
-  fullName: string;
-  url: string;
-  description?: string;
-  stars: number;
-  language?: string;
-  topics: string[];
-  owner: string;
-  indexedAt: string;
-  status: 'pending' | 'imported' | 'skipped';
-  skillIds?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-}
-
 export interface AgentMemo {
   id: string;
   agentId: string;

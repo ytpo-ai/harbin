@@ -204,24 +204,15 @@ Profile 字段说明：
 - `DELETE /skills/:id`：删除技能
 - `POST /skills/assign`：为 Agent 绑定/解绑技能（写入 `Agent.skills`）
 - `GET /skills/agents/:agentId`：查询 Agent 技能清单
-- `POST /skills/manager/discover`：联网检索并入库技能
 - `POST /skills/docs/sync`：同步技能文档到 DB（默认扫描 `docs/skill`，可通过 `SKILL_DOCS_DIR` 覆盖）
 - `GET /skills/:id/content`：按需读取技能正文（渐进式加载）
 
-Skill 市场（`/skills/market`）新增端点：
+Skill 市场平台管理（`/skills/market`）：
 
-- Layer 1 平台管理
-  - `GET /skills/market/platforms`：查询平台列表（按优先级）
-  - `POST /skills/market/platforms`：新增平台
-  - `PUT /skills/market/platforms/:id`：更新平台（名称/优先级/状态/描述）
-  - `DELETE /skills/market/platforms/:id`：删除平台并级联清理仓库索引
-  - `POST /skills/market/platforms/:id/index`：触发平台索引
-- Layer 2 仓库索引管理
-  - `GET /skills/market/repos`：查询仓库列表（支持 `platformId/status/search/page/pageSize`）
-  - `PUT /skills/market/repos/:id/skip`：标记仓库为 `skipped`
-  - `POST /skills/market/repos/:id/import`：导入仓库为 Skill（写入 `agent_skills`，默认 `experimental`）
-- 市场检索
-  - `POST /skills/market/search`：关键词检索（优先本地 Layer 2，不足时回退 GitHub 搜索并回写索引）
+- `GET /skills/market/platforms`：查询平台列表（按优先级）
+- `POST /skills/market/platforms`：新增平台
+- `PUT /skills/market/platforms/:id`：更新平台（名称/优先级/状态/描述）
+- `DELETE /skills/market/platforms/:id`：删除平台
 
 Skill 渐进式加载（DB + Redis）契约：
 

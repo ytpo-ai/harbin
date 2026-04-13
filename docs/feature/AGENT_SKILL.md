@@ -17,8 +17,7 @@
 |------|-------------|------|
 | `agent_skills` | `agent-skill.schema.ts` | 技能主表（name/slug/description/category/tags/status/source/provider/version/promptTemplateRef 等） |
 | `agents` | `agent.schema.ts` | Agent 主表中的 `skills: string[]` 维护已启用 skillId |
-| `skill_market_platforms` | `skill-market-platform.schema.ts` | Skill 聚合检索平台层（Layer 1） |
-| `skill_github_repos` | `skill-github-repo.schema.ts` | 平台索引出的 GitHub 仓库层（Layer 2） |
+| `skill_market_platforms` | `skill-market-platform.schema.ts` | Skill 市场平台信息（名称/URL/优先级/状态） |
 
 `agent_skills` 的状态语义：
 
@@ -52,11 +51,9 @@
 5. 缓存策略：
     - Redis 缓存索引元数据（高频、轻量）。
     - Redis 按 `contentHash` 缓存正文（按需、可失效）。
-6. Skill 市场三层架构（2026-04 新增）：
-   - Layer 1：`skill_market_platforms` 管理平台 URL、状态、优先级与索引时间。
-   - Layer 2：`skill_github_repos` 存储索引后的 GitHub 仓库，支持 `pending/imported/skipped` 生命周期。
-   - Layer 3：`agent_skills` 作为最终可绑定能力集合，新增可选 `repoId` 关联 Layer 2。
-   - 导入策略：从 Layer 2 导入到 Layer 3 时默认 `status=experimental`，不自动变 `active`。
+6. Skill 市场平台管理：
+   - `skill_market_platforms` 管理 Skill 市场平台信息（名称/URL/优先级/状态），提供标准 CRUD 操作。
+   - 不再内置 GitHub 仓库索引/检索/导入能力（2026-04 移除），GitHub 仓库的添加由用户自行操作。
 
 ---
 
@@ -94,10 +91,10 @@
 | 文件 | 功能 |
 |------|------|
 | `skill.module.ts` | Skills 模块装配 |
-| `skill.controller.ts` | Skill CRUD、绑定、检索、文档同步接口 |
-| `skill.service.ts` | 技能库、绑定、检索、文档入库同步核心逻辑 |
-| `skill-market.controller.ts` | Skill 市场平台/仓库/检索接口 |
-| `skill-market.service.ts` | Skill 市场三层架构核心逻辑 |
+| `skill.controller.ts` | Skill CRUD、绑定、文档同步接口 |
+| `skill.service.ts` | 技能库、绑定、文档入库同步核心逻辑 |
+| `skill-market.controller.ts` | Skill 市场平台 CRUD 接口 |
+| `skill-market.service.ts` | Skill 市场平台 CRUD 逻辑 |
 | `skill-doc-loader.service.ts` | 文档扫描与 frontmatter/content 解析能力 |
 | `../agents/agent.service.ts` | Agent 执行消息构建；Skill 摘要注入与按需 content 激活 |
 
@@ -106,18 +103,17 @@
 | 文件 | 功能 |
 |------|------|
 | `agent-skill.schema.ts` | Skill 主表结构与索引（含 `promptTemplateRef`） |
-| `skill-market-platform.schema.ts` | Skill 市场平台层 Schema |
-| `skill-github-repo.schema.ts` | Skill 市场仓库索引层 Schema |
+| `skill-market-platform.schema.ts` | Skill 市场平台 Schema |
 | `agent.schema.ts`（shared） | Agent 主表中的 `skills` 字段 |
 
 ### 前端 Skills 页面 (frontend/src/)
 
 | 文件 | 功能 |
 |------|------|
-| `pages/Skills.tsx` | Skills 列表筛选、折叠操作面板（检索/文档同步）、详情抽屉编辑、Agent 绑定 Tab |
+| `pages/Skills.tsx` | Skills 列表筛选、文档同步、详情抽屉编辑、Agent 绑定 Tab |
 | `services/skillService.ts` | Skills 相关 API 封装 |
-| `components/SkillMarketPanel.tsx` | Skill 市场三分区（平台管理/仓库索引/市场检索） |
-| `services/skillMarketService.ts` | Skill 市场 API 封装 |
+| `components/SkillMarketPanel.tsx` | Skill 市场平台 CRUD 管理面板 |
+| `services/skillMarketService.ts` | Skill 市场平台 API 封装 |
 
 前端交互约定（2026-03 更新）：
 

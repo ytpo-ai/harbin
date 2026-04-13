@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 import { createHash } from 'crypto';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
@@ -403,106 +402,6 @@ export class SkillService {
       }
     }
     return result;
-  }
-
-  async discoverSkillsFromInternet(payload: {
-    query: string;
-    maxResults?: number;
-    sourceType?: SkillSourceType;
-    dryRun?: boolean;
-  }): Promise<{
-    query: string;
-    totalFound: number;
-    added: number;
-    updated: number;
-    skills: Skill[];
-  }> {
-    const query = payload?.query?.trim();
-    if (!query) {
-      throw new BadRequestException('query is required');
-    }
-    const maxResults = Math.max(1, Math.min(Number(payload.maxResults || 8), 20));
-    const sourceType = payload.sourceType || 'github';
-    const dryRun = payload.dryRun === true;
-
-    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(`${query} agent skill`)}&sort=stars&order=desc&per_page=${maxResults}`;
-    const response = await axios.get(url, {
-      timeout: 12000,
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'AI-Agent-Team-AgentSkillManager',
-      },
-    });
-
-    const items = Array.isArray(response.data?.items) ? response.data.items : [];
-    const materialized: Skill[] = [];
-    let added = 0;
-    let updated = 0;
-
-    for (const item of items) {
-      const name = String(item?.name || '').trim();
-      if (!name) continue;
-      const provider = String(item?.owner?.login || 'github-community').trim();
-      const slug = this.normalizeSlug(name);
-      const candidate = {
-        name,
-        slug,
-        description: String(item?.description || `Discovered by AgentSkillManager from query: ${query}`),
-        category: 'community',
-        tags: this.uniqueStrings([query, 'agent', 'skill', ...(name.split(/[-_\s]+/g) || [])]),
-        sourceType,
-        sourceUrl: String(item?.html_url || ''),
-        provider,
-        version: '1.0.0',
-        status: 'experimental' as SkillStatus,
-        confidenceScore: this.normalizeScore(Math.min(95, 35 + Math.floor(Number(item?.stargazers_count || 0) / 200))),
-        discoveredBy: 'AgentSkillManager',
-        metadata: {
-          stars: Number(item?.stargazers_count || 0),
-          language: item?.language || 'unknown',
-          fullName: item?.full_name || '',
-          discoveredAt: new Date().toISOString(),
-        },
-      };
-
-      if (dryRun) {
-        materialized.push(candidate as unknown as Skill);
-        continue;
-      }
-
-      const existed = await this.skillModel
-        .findOne({ slug: candidate.slug, provider: candidate.provider, version: candidate.version })
-        .exec();
-
-      if (!existed) {
-        const created = await this.skillModel.create({ id: uuidv4(), ...candidate, lastVerifiedAt: new Date() });
-        materialized.push(created as unknown as Skill);
-        added += 1;
-        await this.cacheSkillIndex(created as unknown as Skill);
-        await this.cacheSkillDetail(created as unknown as Skill, false);
-      } else {
-        existed.description = candidate.description;
-        existed.tags = candidate.tags;
-        existed.category = candidate.category;
-        existed.sourceType = candidate.sourceType;
-        existed.sourceUrl = candidate.sourceUrl;
-        existed.confidenceScore = candidate.confidenceScore;
-        existed.metadata = candidate.metadata;
-        existed.lastVerifiedAt = new Date();
-        await existed.save();
-        materialized.push(existed as unknown as Skill);
-        updated += 1;
-        await this.cacheSkillIndex(existed as unknown as Skill);
-        await this.cacheSkillDetail(existed as unknown as Skill, false);
-      }
-    }
-    return {
-      query,
-      totalFound: items.length,
-      added,
-      updated,
-      skills: materialized,
-    };
   }
 
   async syncSkillDocsToDb(): Promise<SkillDocSyncResult> {

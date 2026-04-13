@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ArrowPathIcon,
   BookOpenIcon,
   EllipsisVerticalIcon,
   EyeIcon,
@@ -13,7 +12,6 @@ import {
 } from '@heroicons/react/24/outline';
 import { PromptTemplateRefPicker } from '../components/PromptTemplateRefPicker';
 import { SkillMarketPlatformPanel } from '../components/SkillMarketPanel';
-import { SkillGithubRepoPanel } from '../components/SkillGithubRepoPanel';
 import { skillService, SkillPagedResponse } from '../services/skillService';
 import { agentService } from '../services/agentService';
 import { PromptTemplateRef, Skill } from '../types';
@@ -127,9 +125,8 @@ const Skills: React.FC = () => {
     return [10, 20, 50].includes(size) ? size : 10;
   });
   const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
-  const [pageTab, setPageTab] = useState<'library' | 'market' | 'ghrepos'>('library');
+  const [pageTab, setPageTab] = useState<'library' | 'market'>('library');
   const [activeTab, setActiveTab] = useState<'detail' | 'binding'>('detail');
-  const [isDiscoverDrawerOpen, setIsDiscoverDrawerOpen] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [operationMenuOpen, setOperationMenuOpen] = useState(false);
   const operationMenuRef = useRef<HTMLDivElement | null>(null);
@@ -286,15 +283,6 @@ const Skills: React.FC = () => {
 
   const assignSkillMutation = useMutation(skillService.assignSkillToAgent);
 
-  const discoverMutation = useMutation(skillService.discoverSkills, {
-    onSuccess: (result) => {
-      queryClient.invalidateQueries('skills-paged');
-      queryClient.invalidateQueries('skills-all');
-      alert(`检索完成：found=${result.totalFound}, added=${result.added}, updated=${result.updated}`);
-      setIsDiscoverDrawerOpen(false);
-    },
-  });
-
   const syncDocsMutation = useMutation(skillService.syncDocs, {
     onSuccess: (result) => {
       alert(
@@ -348,17 +336,6 @@ const Skills: React.FC = () => {
                 <button
                   onClick={() => {
                     setOperationMenuOpen(false);
-                    setIsDiscoverDrawerOpen(true);
-                  }}
-                  className="flex w-full items-center rounded px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
-                  role="menuitem"
-                >
-                  <ArrowPathIcon className="mr-2 h-4 w-4" />
-                  AgentSkillManager 检索
-                </button>
-                <button
-                  onClick={() => {
-                    setOperationMenuOpen(false);
                     syncDocsMutation.mutate();
                   }}
                   disabled={syncDocsMutation.isLoading}
@@ -386,12 +363,6 @@ const Skills: React.FC = () => {
           className={`rounded-md px-3 py-1.5 text-sm ${pageTab === 'market' ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
         >
           Skill 市场
-        </button>
-        <button
-          onClick={() => setPageTab('ghrepos')}
-          className={`rounded-md px-3 py-1.5 text-sm ${pageTab === 'ghrepos' ? 'bg-primary-50 text-primary-700' : 'text-gray-600 hover:bg-gray-100'}`}
-        >
-          Skill GH 库
         </button>
       </div>
 
@@ -590,13 +561,6 @@ const Skills: React.FC = () => {
             }}
           />
 
-          <SkillDiscoveryDrawer
-            open={isDiscoverDrawerOpen}
-            onClose={() => setIsDiscoverDrawerOpen(false)}
-            onSubmit={(payload) => discoverMutation.mutate(payload)}
-            loading={discoverMutation.isLoading}
-          />
-
           <SkillFormModal
             open={isCreateModalOpen}
             mode="create"
@@ -605,10 +569,8 @@ const Skills: React.FC = () => {
             loading={createSkillMutation.isLoading}
           />
         </>
-      ) : pageTab === 'market' ? (
-        <SkillMarketPlatformPanel />
       ) : (
-        <SkillGithubRepoPanel />
+        <SkillMarketPlatformPanel />
       )}
     </div>
   );
@@ -948,84 +910,6 @@ const SkillDetailDrawer: React.FC<{
             </div>
           </div>
         )}
-      </div>
-    </div>
-  );
-};
-
-const SkillDiscoveryDrawer: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  onSubmit: (payload: { query: string; maxResults: number; sourceType: Skill['sourceType'] }) => void;
-  loading: boolean;
-}> = ({ open, onClose, onSubmit, loading }) => {
-  const [query, setQuery] = useState('code review');
-  const [maxResults, setMaxResults] = useState(5);
-  const [sourceType, setSourceType] = useState<Skill['sourceType']>('github');
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Skill 检索抽屉">
-      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="absolute right-0 top-0 h-full w-full max-w-md bg-white p-5 shadow-xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900">AgentSkillManager 检索</h3>
-          <button onClick={onClose} className="rounded p-1 text-gray-500 hover:bg-gray-100">
-            <XMarkIcon className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">检索关键词</label>
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              placeholder="例如: security audit"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">最大结果数</label>
-            <input
-              type="number"
-              min={1}
-              max={20}
-              value={maxResults}
-              onChange={(e) => setMaxResults(Number(e.target.value) || 5)}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">来源类型</label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value as Skill['sourceType'])}
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            >
-              {sourceOptions.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </select>
-          </div>
-          <button
-            onClick={() => onSubmit({ query: query.trim(), maxResults, sourceType })}
-            disabled={loading || !query.trim()}
-            className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
-          >
-            {loading ? '检索中...' : '检索并入库'}
-          </button>
-        </div>
       </div>
     </div>
   );

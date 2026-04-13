@@ -121,10 +121,8 @@ export const SkillMarketPlatformPanel: React.FC = () => {
   );
 
   const deletePlatformMutation = useMutation(skillMarketService.deletePlatform, {
-    onSuccess: (result) => {
-      alert(`已删除平台，清理仓库记录 ${result.deletedRepos} 条`);
+    onSuccess: () => {
       queryClient.invalidateQueries('skill-market-platforms');
-      queryClient.invalidateQueries('skill-market-repos');
     },
   });
 
