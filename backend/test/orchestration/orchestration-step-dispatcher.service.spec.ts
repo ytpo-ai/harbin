@@ -711,6 +711,72 @@ describe('OrchestrationStepDispatcherService', () => {
     );
   });
 
+  it('does not auto-advance to next task after api-triggered post phase', async () => {
+    const service = new OrchestrationStepDispatcherService(
+      {} as any,
+      {
+        findOne: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue({
+            _id: 'task-1',
+            status: 'completed',
+            title: 'do task',
+            result: { output: 'ok' },
+          }),
+        }),
+      } as any,
+      {
+        executePostTask: jest.fn().mockResolvedValue({
+          action: 'generate_next',
+          reason: 'continue planning',
+        }),
+      } as any,
+      {} as any,
+      {
+        emitPlanStreamEvent: jest.fn(),
+      } as any,
+      {
+        buildPostTaskContext: jest.fn().mockReturnValue('post-context'),
+      } as any,
+      { applyPostExecuteOptimizations: jest.fn().mockResolvedValue({ appliedRuleIds: [] }) } as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const updateStateSpy = jest.spyOn(service as any, 'updateGenerationStateIfExpected').mockResolvedValue(true);
+    const autoAdvanceSpy = jest.spyOn(service as any, 'autoAdvance').mockResolvedValue(undefined);
+
+    await (service as any).phasePostExecute(
+      'plan-1',
+      {
+        currentStep: 2,
+        totalGenerated: 2,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'post_execute',
+        currentTaskId: 'task-1',
+      },
+      'planner-session-1',
+      'general',
+      undefined,
+      'api',
+    );
+
+    expect(updateStateSpy).toHaveBeenCalledWith(
+      'plan-1',
+      expect.any(Object),
+      expect.objectContaining({
+        currentPhase: 'idle',
+        currentTaskId: undefined,
+        lastDecision: 'generate_next',
+      }),
+    );
+    expect(autoAdvanceSpy).not.toHaveBeenCalled();
+  });
+
   it('rejects retryCurrentTask when retry limits are exceeded', async () => {
     const service = new OrchestrationStepDispatcherService(
       {

@@ -70,6 +70,7 @@ export class OrchestrationStepDispatcherService {
       }
 
       const state = this.resolveGenerationState(plan.generationState);
+      const source: OrchestrationSource = options?.source || 'internal';
       const phase = state.currentPhase || 'idle';
       if (options?.targetPhase && options.targetPhase !== phase) {
         return { advanced: false, phase };
@@ -107,7 +108,7 @@ export class OrchestrationStepDispatcherService {
         }
 
         if (targetPhase === 'initialize') {
-          await this.phaseInitialize(normalizedPlanId, plan, claimedState, plannerSessionId);
+          await this.phaseInitialize(normalizedPlanId, plan, claimedState, plannerSessionId, source);
           return { advanced: true, phase: 'initialize' };
         }
 
@@ -116,6 +117,7 @@ export class OrchestrationStepDispatcherService {
           plan.sourcePrompt || '',
           claimedState,
           plannerSessionId,
+          source,
         );
         return { advanced: true, phase: 'generating' };
       }
@@ -123,7 +125,7 @@ export class OrchestrationStepDispatcherService {
       if (phase === 'initialize') {
         const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'initialize');
         const effectiveState = this.withPlannerSession(state, 'initialize', plannerSessionId);
-        await this.phaseInitialize(normalizedPlanId, plan, effectiveState, plannerSessionId);
+        await this.phaseInitialize(normalizedPlanId, plan, effectiveState, plannerSessionId, source);
         return { advanced: true, phase };
       }
 
@@ -135,17 +137,18 @@ export class OrchestrationStepDispatcherService {
           plan.sourcePrompt || '',
           effectiveState,
           plannerSessionId,
+          source,
         );
         return { advanced: true, phase: 'generating' };
       }
       if (phase === 'pre_execute') {
         const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'pre_execute');
         const effectiveState = this.withPlannerSession(state, 'pre_execute', plannerSessionId);
-        await this.phasePreExecute(normalizedPlanId, effectiveState, plannerSessionId);
+        await this.phasePreExecute(normalizedPlanId, effectiveState, plannerSessionId, source);
         return { advanced: true, phase };
       }
       if (phase === 'executing') {
-        await this.phaseExecute(normalizedPlanId, state);
+        await this.phaseExecute(normalizedPlanId, state, source);
         return { advanced: true, phase };
       }
       if (phase === 'post_execute') {
@@ -159,6 +162,7 @@ export class OrchestrationStepDispatcherService {
           plannerSessionId,
           String((plan as { domainType?: string } | null)?.domainType || 'general'),
           outlineStepCount,
+          source,
         );
         return { advanced: true, phase };
       }
@@ -247,6 +251,7 @@ export class OrchestrationStepDispatcherService {
     plan: OrchestrationPlanDocument,
     state: OrchestrationGenerationState,
     plannerSessionId: string,
+    source: OrchestrationSource,
   ): Promise<void> {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
     const existingTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
@@ -294,7 +299,7 @@ export class OrchestrationStepDispatcherService {
       if (!advanced) {
         return;
       }
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -314,7 +319,7 @@ export class OrchestrationStepDispatcherService {
       outline,
     });
 
-    await this.autoAdvance(planId);
+    await this.autoAdvance(planId, source);
   }
 
   private async phaseGenerate(
@@ -322,6 +327,7 @@ export class OrchestrationStepDispatcherService {
     sourcePrompt: string,
     state: OrchestrationGenerationState,
     plannerSessionId: string,
+    source: OrchestrationSource,
   ): Promise<void> {
     await this.planModel.updateOne({ _id: planId }, { $set: { status: 'drafting' } }).exec();
     this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
@@ -356,7 +362,7 @@ export class OrchestrationStepDispatcherService {
         ...nextFailures,
         currentPhase: 'idle',
       });
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -371,7 +377,7 @@ export class OrchestrationStepDispatcherService {
         ...nextFailures,
         currentPhase: 'idle',
       });
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -395,7 +401,7 @@ export class OrchestrationStepDispatcherService {
         ...nextFailures,
         currentPhase: 'idle',
       });
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -432,13 +438,14 @@ export class OrchestrationStepDispatcherService {
       },
     });
 
-    await this.autoAdvance(planId);
+    await this.autoAdvance(planId, source);
   }
 
   private async phasePreExecute(
     planId: string,
     state: OrchestrationGenerationState,
     plannerSessionId: string,
+    source: OrchestrationSource,
   ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
     const planSnapshot = await this.planModel
@@ -526,7 +533,7 @@ export class OrchestrationStepDispatcherService {
         phase: 'pre_execute',
         result: { allowExecute: true, riskFlags: [] },
       });
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -605,10 +612,14 @@ export class OrchestrationStepDispatcherService {
       result: { allowExecute: decision.allowExecute, riskFlags: decision.riskFlags },
     });
 
-    await this.autoAdvance(planId);
+    await this.autoAdvance(planId, source);
   }
 
-  private async phaseExecute(planId: string, state: OrchestrationGenerationState): Promise<void> {
+  private async phaseExecute(
+    planId: string,
+    state: OrchestrationGenerationState,
+    source: OrchestrationSource,
+  ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
     const planSnapshot = await this.planModel
       .findById(planId)
@@ -657,7 +668,7 @@ export class OrchestrationStepDispatcherService {
       result: executionResult,
     });
 
-    await this.autoAdvance(planId);
+    await this.autoAdvance(planId, source);
   }
 
   private async phasePostExecute(
@@ -666,6 +677,7 @@ export class OrchestrationStepDispatcherService {
     plannerSessionId: string,
     planDomainType: string = 'general',
     outlineStepCount?: number,
+    source: OrchestrationSource = 'internal',
   ): Promise<void> {
     const task = await this.getCurrentTaskOrThrow(planId, state.currentTaskId);
     await this.sceneOptimizationService.applyPostExecuteOptimizations({
@@ -769,7 +781,10 @@ export class OrchestrationStepDispatcherService {
     };
 
     await this.updateGenerationStateIfExpected(planId, state, nextState);
-    await this.autoAdvance(planId);
+    if (source === 'api') {
+      return;
+    }
+    await this.autoAdvance(planId, source);
   }
 
   private async ensurePlannerSession(
@@ -892,9 +907,9 @@ export class OrchestrationStepDispatcherService {
     return `Planner returned empty task definition: ${normalized.slice(0, 200)}`;
   }
 
-  private async autoAdvance(planId: string): Promise<void> {
+  private async autoAdvance(planId: string, source: OrchestrationSource = 'internal'): Promise<void> {
     setImmediate(() => {
-      this.advanceOnce(planId, { source: 'internal' }).catch((error) => {
+      this.advanceOnce(planId, { source }).catch((error) => {
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(`autoAdvance failed for plan ${planId}: ${message}`);
       });
