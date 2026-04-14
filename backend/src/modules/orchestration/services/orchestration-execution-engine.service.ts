@@ -41,7 +41,7 @@ export class OrchestrationExecutionEngineService {
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
 
   /** Per-plan projectBinding cache (planId -> binding | null). */
-  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } | null>();
+  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeProjectPath?: string } | null>();
 
   constructor(
     @InjectModel(OrchestrationPlan.name)
@@ -905,7 +905,7 @@ export class OrchestrationExecutionEngineService {
   private async resolveProjectBinding(
     projectId: string | undefined,
     planId?: string,
-  ): Promise<{ localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } | null> {
+  ): Promise<{ localPath?: string; opencodeProjectPath?: string } | null> {
     if (!projectId) {
       return null;
     }
@@ -916,10 +916,9 @@ export class OrchestrationExecutionEngineService {
     try {
       const project = await this.rdProjectModel
         .findOne({ _id: projectId })
-        .select({ localPath: 1, opencodeEndpointRef: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+        .select({ localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
         .lean<{
           localPath?: string;
-          opencodeEndpointRef?: string;
           opencodeProjectPath?: string;
           opencodeBindingIds?: any[];
           sourceType?: string;
@@ -931,33 +930,30 @@ export class OrchestrationExecutionEngineService {
         return null;
       }
 
-      let binding: { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } = {
+      let binding: { localPath?: string; opencodeProjectPath?: string } = {
         localPath: project.localPath || undefined,
-        opencodeEndpointRef: project.opencodeEndpointRef || undefined,
         opencodeProjectPath: project.opencodeProjectPath || undefined,
       };
 
-      // If this is a LOCAL project, try to resolve OpenCode binding from its linked opencode project
-      if (project.sourceType === 'local' && !binding.opencodeEndpointRef && Array.isArray(project.opencodeBindingIds) && project.opencodeBindingIds.length > 0) {
+      // If this is a LOCAL project, try to resolve opencodeProjectPath from its linked opencode project
+      if (project.sourceType === 'local' && !binding.opencodeProjectPath && Array.isArray(project.opencodeBindingIds) && project.opencodeBindingIds.length > 0) {
         const opencodeProject = await this.rdProjectModel
           .findOne({ _id: project.opencodeBindingIds[0] })
-          .select({ opencodeEndpointRef: 1, opencodeProjectPath: 1 })
-          .lean<{ opencodeEndpointRef?: string; opencodeProjectPath?: string }>()
+          .select({ opencodeProjectPath: 1 })
+          .lean<{ opencodeProjectPath?: string }>()
           .exec();
         if (opencodeProject) {
-          binding.opencodeEndpointRef = binding.opencodeEndpointRef || opencodeProject.opencodeEndpointRef || undefined;
           binding.opencodeProjectPath = binding.opencodeProjectPath || opencodeProject.opencodeProjectPath || undefined;
         }
       }
 
-      // Strip empty strings
-      if (!binding.localPath && !binding.opencodeEndpointRef && !binding.opencodeProjectPath) {
+      if (!binding.localPath && !binding.opencodeProjectPath) {
         this.projectBindingCache.set(cacheKey, null);
         return null;
       }
 
       this.logger.log(
-        `[resolveProjectBinding] projectId=${projectId} localPath=${binding.localPath || '-'} opencodeEndpoint=${binding.opencodeEndpointRef || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`,
+        `[resolveProjectBinding] projectId=${projectId} localPath=${binding.localPath || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`,
       );
       this.projectBindingCache.set(cacheKey, binding);
       return binding;

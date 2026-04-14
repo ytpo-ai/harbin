@@ -651,7 +651,7 @@ export class OrchestrationContextService {
       executorAgentId?: string;
       skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
       projectId?: string;
-      projectBinding?: { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string };
+      projectBinding?: { localPath?: string; opencodeProjectPath?: string };
     } = {},
   ): Record<string, unknown> {
     return CollaborationContextFactory.orchestration({

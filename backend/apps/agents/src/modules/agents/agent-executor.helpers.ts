@@ -153,9 +153,6 @@ export function resolveOpenCodeRuntimeOptions(
     };
   }
 
-  // Note: project binding endpoint is merged into runtime.endpoint by agent-task.worker
-  // so it naturally falls into the runtime_endpoint priority below.
-
   const runtimeEndpoint = String(runtime?.endpoint || '').trim();
   if (runtimeEndpoint) {
     return {

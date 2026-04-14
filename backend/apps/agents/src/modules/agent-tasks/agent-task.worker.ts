@@ -197,7 +197,6 @@ export class AgentTaskWorker implements OnModuleInit {
               ? (task.sessionContext.projectBinding as {
                   projectId?: string;
                   localPath?: string;
-                  opencodeEndpointRef?: string;
                   opencodeProjectPath?: string;
                 })
               : undefined,
@@ -207,9 +206,7 @@ export class AgentTaskWorker implements OnModuleInit {
             source: 'agent_task_session_context',
           },
           opencodeRuntime: {
-            endpoint: serve?.baseUrl
-              || (task.sessionContext?.projectBinding as any)?.opencodeEndpointRef
-              || undefined,
+            endpoint: serve?.baseUrl,
             authEnable: serve?.authEnable,
           },
           runtimeLifecycle: {

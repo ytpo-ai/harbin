@@ -4,7 +4,6 @@ import { CollaborationContext } from '@libs/contracts';
 export interface ProjectBinding {
   projectId?: string;
   localPath?: string;
-  opencodeEndpointRef?: string;
   opencodeProjectPath?: string;
 }
 

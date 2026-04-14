@@ -19,30 +19,18 @@
 
 ### 2.2 目标
 
-让 OpenCode 执行通道在编排任务执行时，能根据 plan 绑定项目的 OpenCode 信息动态覆盖 endpoint 和 projectDirectory。
+让 OpenCode 执行通道在编排任务执行时，能根据 plan 绑定项目的 `opencodeProjectPath` 动态覆盖 `projectDirectory`。
+
+> **关于 endpoint**：由于全局项目由全局 agent 执行、孵化项目由孵化项目 agent 执行，agent 自身 `config.execution.endpoint` 已天然匹配其服务的项目 OpenCode 实例，因此 **不需要** 从 projectBinding 动态覆盖 endpoint。
 
 ### 2.3 验收条件
 
-- [ ] `agent-task.worker.ts` 中 `opencodeRuntime` 的构建支持从 `projectBinding` 获取 `opencodeEndpointRef` 作为 endpoint 候选
-- [ ] `resolveOpenCodeRuntimeOptions()` 增加 `project_binding_endpoint` 优先级层：位于 agent config 之后、serve runtime 之前
 - [ ] OpenCode executor engine 中 `projectDirectory` / `directory` 支持从 `projectBinding.opencodeProjectPath` 获取，优先级：agent config > project binding > 无
 - [ ] 无 `projectBinding` 时行为完全不变（向后兼容）
-- [ ] 日志中记录 endpoint/directory 的实际来源（source tag），便于调试
 
 ## 3. 技术方案摘要
 
 ### endpoint 优先级（改造后）
-
-```
-agent.config.execution.endpoint          → agent_config_endpoint (最高)
-agent.config.execution.endpointRef       → agent_config_endpoint_ref
-projectBinding.opencodeEndpointRef       → project_binding_endpoint  ← 新增
-context.opencodeRuntime.endpoint         → runtime_endpoint (serve router)
-context.opencodeRuntime.endpointRef      → runtime_endpoint_ref
-OPENCODE_SERVER_URL                      → env_default (最低)
-```
-
-### projectDirectory 优先级（改造后）
 
 ```
 agent.config.execution.projectDirectory  → agent_config (最高)
@@ -50,15 +38,14 @@ projectBinding.opencodeProjectPath       → project_binding  ← 新增
 无                                        → 无
 ```
 
+> endpoint 优先级不变，agent config endpoint 仍然决定使用哪个 OpenCode 实例。
+
 ### 改动文件
 
 | 文件 | 改动 |
 |------|------|
-| `backend/apps/agents/src/modules/agents/agent-executor.helpers.ts` | `resolveOpenCodeRuntimeOptions` 增加 `projectBinding` 参数和对应优先级层 |
 | `backend/apps/agents/src/modules/agents/executor-engines/opencode-streaming-agent-executor.engine.ts` | `projectDirectory` 读取增加 `projectBinding.opencodeProjectPath` fallback |
 | `backend/apps/agents/src/modules/agents/executor-engines/opencode-agent-executor.engine.ts` | 同上 |
-| `backend/apps/agents/src/modules/agent-tasks/agent-task.worker.ts` | `opencodeRuntime` 构建时合并 `projectBinding.opencodeEndpointRef` |
-| `backend/apps/agents/src/modules/agents/agent-executor.service.ts` | `prepareExecution` / `resolveExecutionRoute` 传递 `projectBinding` |
 
 ### 影响范围
 

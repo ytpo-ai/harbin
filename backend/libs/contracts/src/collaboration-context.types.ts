@@ -32,7 +32,6 @@ export interface MeetingCollaborationContext extends CollaborationContextBase {
 
 export interface ProjectBinding {
   localPath?: string;
-  opencodeEndpointRef?: string;
   opencodeProjectPath?: string;
 }
 

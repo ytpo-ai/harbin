@@ -78,7 +78,6 @@ plan.projectId
        ├─→ requirement.create 自动注入 projectId  → REQ-002
        ├─→ sessionContext.projectId                → REQ-003
        ├─→ AgentContext.projectBinding             → REQ-003
-       ├─→ OpenCode endpoint 动态覆盖             → REQ-004
        ├─→ OpenCode directory 动态覆盖            → REQ-004
        ├─→ planTaskContext 自动注入 projectId      → REQ-005
        └─→ repo_read 使用正确的工作目录            → REQ-005
