@@ -30,6 +30,12 @@ export interface MeetingCollaborationContext extends CollaborationContextBase {
   initiatorId?: string;
 }
 
+export interface ProjectBinding {
+  localPath?: string;
+  opencodeEndpointRef?: string;
+  opencodeProjectPath?: string;
+}
+
 export interface OrchestrationCollaborationContext extends CollaborationContextBase {
   scenarioMode: 'orchestration';
   responseDirective: ResponseDirective;
@@ -58,6 +64,8 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
   format?: 'json';
   mode?: 'planning' | 'orchestration';
+  projectId?: string;
+  projectBinding?: ProjectBinding;
 }
 
 export interface InnerMessageCollaborationContext extends CollaborationContextBase {

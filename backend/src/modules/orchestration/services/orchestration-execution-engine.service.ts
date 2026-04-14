@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AgentClientService, AsyncAgentTaskSnapshot } from '../../agents-client/agent-client.service';
@@ -19,6 +19,7 @@ import {
   OrchestrationRun,
   OrchestrationRunDocument,
 } from '../../../shared/schemas/orchestration-run.schema';
+import { RdProject, RdProjectDocument } from '../../../shared/schemas/ei-project.schema';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
 import { PlanStatsService } from './plan-stats.service';
@@ -27,6 +28,7 @@ import { OrchestrationMessageCenterEventService } from './orchestration-message-
 @Injectable()
 export class OrchestrationExecutionEngineService {
   private static readonly RUN_CANCELLED_ERROR = '__RUN_CANCELLED_BY_USER__';
+  private readonly logger = new Logger(OrchestrationExecutionEngineService.name);
   private readonly asyncAgentTaskWaitTimeoutMs = Math.max(
     10000,
     Number(process.env.ORCHESTRATION_AGENT_TASK_WAIT_TIMEOUT_MS || 1800000),
@@ -38,6 +40,9 @@ export class OrchestrationExecutionEngineService {
   private readonly asyncAgentTaskSseEnabled =
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
 
+  /** Per-plan projectBinding cache (planId -> binding | null). */
+  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } | null>();
+
   constructor(
     @InjectModel(OrchestrationPlan.name)
     private readonly orchestrationPlanModel: Model<OrchestrationPlanDocument>,
@@ -47,6 +52,8 @@ export class OrchestrationExecutionEngineService {
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
     @InjectModel(OrchestrationRun.name)
     private readonly orchestrationRunModel: Model<OrchestrationRunDocument>,
+    @InjectModel(RdProject.name)
+    private readonly rdProjectModel: Model<RdProjectDocument>,
     private readonly agentClientService: AgentClientService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
@@ -71,10 +78,15 @@ export class OrchestrationExecutionEngineService {
     const retryHint = this.contextService.getRetryFailureHint(task);
     const stepOrder = typeof (task as any).order === 'number' ? Number((task as any).order) : undefined;
     const skillActivation = await this.loadPlanSkillActivation(planId);
+    const taskProjectId = String((task as any).projectId || '').trim() || undefined;
+    const planProjectId = taskProjectId || (await this.resolvePlanProjectId(planId));
+    const projectBinding = await this.resolveProjectBinding(planProjectId, planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(task, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
       ...(skillActivation ? { skillActivation } : {}),
+      ...(planProjectId ? { projectId: planProjectId } : {}),
+      ...(projectBinding ? { projectBinding } : {}),
     });
     const planTaskContext = await this.loadPlanTaskContext(planId);
     const executePrompt = await this.loadPlanStepExecutePrompt(planId, stepOrder);
@@ -220,6 +232,8 @@ export class OrchestrationExecutionEngineService {
           runtimeChannelHint,
           researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
           reviewValidationRequired: runtimeTaskType === 'development.review',
+          ...(planProjectId ? { projectId: planProjectId } : {}),
+          ...(projectBinding ? { projectBinding } : {}),
           preactivatedToolIds: this.resolvePreactivatedToolIds(task as any),
         },
       });
@@ -368,10 +382,15 @@ export class OrchestrationExecutionEngineService {
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
     const stepOrder = typeof (runTask as any).order === 'number' ? Number((runTask as any).order) : undefined;
     const skillActivation = await this.loadPlanSkillActivation(runTask.planId);
+    const runTaskProjectId = String((runTask as any).projectId || '').trim() || undefined;
+    const runPlanProjectId = runTaskProjectId || (await this.resolvePlanProjectId(runTask.planId));
+    const runProjectBinding = await this.resolveProjectBinding(runPlanProjectId, runTask.planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(runTask as any as OrchestrationTask, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
       ...(skillActivation ? { skillActivation } : {}),
+      ...(runPlanProjectId ? { projectId: runPlanProjectId } : {}),
+      ...(runProjectBinding ? { projectBinding: runProjectBinding } : {}),
     });
     const planTaskContext = await this.loadRunTaskContext(runId, runTask.planId);
     const executePrompt = await this.loadPlanStepExecutePrompt(runTask.planId, stepOrder);
@@ -474,6 +493,8 @@ export class OrchestrationExecutionEngineService {
           researchTaskKind: runtimeTaskType === 'research' ? 'generic_research' : null,
           reviewValidationRequired: runtimeTaskType === 'development.review',
           preactivatedToolIds: this.resolvePreactivatedToolIds(runTask as any),
+          ...(runPlanProjectId ? { projectId: runPlanProjectId } : {}),
+          ...(runProjectBinding ? { projectBinding: runProjectBinding } : {}),
         },
       });
 
@@ -874,6 +895,89 @@ export class OrchestrationExecutionEngineService {
       return false;
     }
     return error.message === OrchestrationExecutionEngineService.RUN_CANCELLED_ERROR;
+  }
+
+  /**
+   * Resolve project binding info from ei_projects by projectId.
+   * Results are cached per planId within this service instance to avoid
+   * repeated queries when executing multiple tasks in the same plan.
+   */
+  private async resolveProjectBinding(
+    projectId: string | undefined,
+    planId?: string,
+  ): Promise<{ localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } | null> {
+    if (!projectId) {
+      return null;
+    }
+    const cacheKey = planId || projectId;
+    if (this.projectBindingCache.has(cacheKey)) {
+      return this.projectBindingCache.get(cacheKey) ?? null;
+    }
+    try {
+      const project = await this.rdProjectModel
+        .findOne({ _id: projectId })
+        .select({ localPath: 1, opencodeEndpointRef: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+        .lean<{
+          localPath?: string;
+          opencodeEndpointRef?: string;
+          opencodeProjectPath?: string;
+          opencodeBindingIds?: any[];
+          sourceType?: string;
+        }>()
+        .exec();
+      if (!project) {
+        this.logger.warn(`[resolveProjectBinding] ei_project not found: projectId=${projectId}`);
+        this.projectBindingCache.set(cacheKey, null);
+        return null;
+      }
+
+      let binding: { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string } = {
+        localPath: project.localPath || undefined,
+        opencodeEndpointRef: project.opencodeEndpointRef || undefined,
+        opencodeProjectPath: project.opencodeProjectPath || undefined,
+      };
+
+      // If this is a LOCAL project, try to resolve OpenCode binding from its linked opencode project
+      if (project.sourceType === 'local' && !binding.opencodeEndpointRef && Array.isArray(project.opencodeBindingIds) && project.opencodeBindingIds.length > 0) {
+        const opencodeProject = await this.rdProjectModel
+          .findOne({ _id: project.opencodeBindingIds[0] })
+          .select({ opencodeEndpointRef: 1, opencodeProjectPath: 1 })
+          .lean<{ opencodeEndpointRef?: string; opencodeProjectPath?: string }>()
+          .exec();
+        if (opencodeProject) {
+          binding.opencodeEndpointRef = binding.opencodeEndpointRef || opencodeProject.opencodeEndpointRef || undefined;
+          binding.opencodeProjectPath = binding.opencodeProjectPath || opencodeProject.opencodeProjectPath || undefined;
+        }
+      }
+
+      // Strip empty strings
+      if (!binding.localPath && !binding.opencodeEndpointRef && !binding.opencodeProjectPath) {
+        this.projectBindingCache.set(cacheKey, null);
+        return null;
+      }
+
+      this.logger.log(
+        `[resolveProjectBinding] projectId=${projectId} localPath=${binding.localPath || '-'} opencodeEndpoint=${binding.opencodeEndpointRef || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`,
+      );
+      this.projectBindingCache.set(cacheKey, binding);
+      return binding;
+    } catch (err) {
+      this.logger.warn(`[resolveProjectBinding] failed to resolve projectId=${projectId}: ${(err as Error).message}`);
+      this.projectBindingCache.set(cacheKey, null);
+      return null;
+    }
+  }
+
+  /**
+   * Resolve projectId from a plan document (reads plan.projectId).
+   */
+  private async resolvePlanProjectId(planId: string): Promise<string | undefined> {
+    const plan = await this.orchestrationPlanModel
+      .findOne({ _id: planId })
+      .select({ projectId: 1 })
+      .lean<{ projectId?: string }>()
+      .exec();
+    return String(plan?.projectId || '').trim() || undefined;
   }
 
   private getEntityId(entity: Record<string, any>): string {

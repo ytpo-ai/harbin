@@ -18,4 +18,8 @@ export interface ToolExecutionContext {
     role?: string;
   };
   assignedToolIds?: string[];
+  /** Project ID from orchestration plan's ei_project binding. */
+  projectId?: string;
+  /** Local filesystem path of the bound project. */
+  localProjectPath?: string;
 }

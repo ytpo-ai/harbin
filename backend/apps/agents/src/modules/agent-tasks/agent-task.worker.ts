@@ -137,9 +137,12 @@ export class AgentTaskWorker implements OnModuleInit {
         throw new Error('TASK_TIMEOUT_EXCEEDED');
       }
 
+      const taskTitle = this.readString(task.sessionContext?.taskTitle)
+        || task.prompt.slice(0, 80).trim()
+        || `Agent Task ${task.id}`;
       const runtimeTask: RuntimeTask = {
         id: task.id,
-        title: `Agent Task ${task.id}`,
+        title: taskTitle,
         description: task.prompt,
         type: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
         priority: 'medium',
@@ -189,13 +192,24 @@ export class AgentTaskWorker implements OnModuleInit {
                 ? (task.sessionContext.collaborationContext as Record<string, unknown>)
                 : undefined,
           },
+          projectBinding:
+            task.sessionContext?.projectBinding && typeof task.sessionContext.projectBinding === 'object'
+              ? (task.sessionContext.projectBinding as {
+                  projectId?: string;
+                  localPath?: string;
+                  opencodeEndpointRef?: string;
+                  opencodeProjectPath?: string;
+                })
+              : undefined,
           runtimeRouting: {
             taskType: this.resolveRuntimeTaskType(task.prompt, task.sessionContext),
             preferredChannel: this.resolvePreferredExecutionChannel(task.sessionContext),
             source: 'agent_task_session_context',
           },
           opencodeRuntime: {
-            endpoint: serve?.baseUrl,
+            endpoint: serve?.baseUrl
+              || (task.sessionContext?.projectBinding as any)?.opencodeEndpointRef
+              || undefined,
             authEnable: serve?.authEnable,
           },
           runtimeLifecycle: {

@@ -112,11 +112,14 @@ export class RequirementToolHandler {
       title?: string;
       description?: string;
       priority?: 'low' | 'medium' | 'high' | 'critical';
+      category?: 'fix' | 'feature' | 'optimize';
+      complexity?: 'low' | 'medium' | 'high' | 'very_high';
       labels?: string[];
       createdById?: string;
       createdByName?: string;
       createdByType?: 'human' | 'agent' | 'system';
       localProjectId?: string;
+      projectId?: string;
     },
     agentId?: string,
     executionContext?: ToolExecutionContext,
@@ -129,11 +132,14 @@ export class RequirementToolHandler {
       title,
       description: String(params?.description || '').trim(),
       priority: params?.priority,
+      category: params?.category,
+      complexity: params?.complexity,
       labels: Array.isArray(params?.labels) ? params.labels : undefined,
       createdById: String(params?.createdById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
       createdByName: String(params?.createdByName || '').trim() || undefined,
       createdByType: params?.createdByType || 'agent',
       localProjectId: String(params?.localProjectId || '').trim() || undefined,
+      projectId: String(params?.projectId || executionContext?.projectId || (executionContext?.collaborationContext as any)?.projectId || '').trim() || undefined,
     });
     return {
       action: 'requirement_create',

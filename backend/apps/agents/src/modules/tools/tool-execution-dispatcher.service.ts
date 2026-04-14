@@ -83,7 +83,7 @@ export class ToolExecutionDispatcherService {
     agentId?: string,
     executionContext?: ToolExecutionContext,
   ): Promise<any> {
-    const repoDispatch = this.dispatchRepoToolImplementation(tool.id, parameters);
+    const repoDispatch = this.dispatchRepoToolImplementation(tool.id, parameters, executionContext);
     if (repoDispatch) {
       return repoDispatch;
     }
@@ -164,10 +164,10 @@ export class ToolExecutionDispatcherService {
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }
   }
-  private dispatchRepoToolImplementation(toolId: string, parameters: any): Promise<any> | undefined {
+  private dispatchRepoToolImplementation(toolId: string, parameters: any, executionContext?: ToolExecutionContext): Promise<any> | undefined {
     switch (toolId) {
       case TOOL_ID__ENGINEERING_REPO_READ:
-        return this.repoToolHandler.executeRepoRead(parameters);
+        return this.repoToolHandler.executeRepoRead(parameters, executionContext);
       case TOOL_ID__ENGINEERING_REPO_WRITER:
         return this.repoToolHandler.executeRepoWriter(parameters);
       case TOOL_ID__ENGINEERING_DOCS_READ:

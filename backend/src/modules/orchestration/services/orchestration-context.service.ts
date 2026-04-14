@@ -650,6 +650,8 @@ export class OrchestrationContextService {
       dependencyContext?: string;
       executorAgentId?: string;
       skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
+      projectId?: string;
+      projectBinding?: { localPath?: string; opencodeEndpointRef?: string; opencodeProjectPath?: string };
     } = {},
   ): Record<string, unknown> {
     return CollaborationContextFactory.orchestration({
@@ -661,6 +663,8 @@ export class OrchestrationContextService {
       dependencies: task.dependencyTaskIds || [],
       upstreamOutputs: options.dependencyContext || '',
       ...(options.skillActivation ? { skillActivation: options.skillActivation } : {}),
+      ...(options.projectId ? { projectId: options.projectId } : {}),
+      ...(options.projectBinding ? { projectBinding: options.projectBinding } : {}),
     });
   }
 

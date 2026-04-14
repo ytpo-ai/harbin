@@ -24,6 +24,8 @@ export class CollaborationContextFactory {
     domainType?: OrchestrationCollaborationContext['domainType'];
     phase?: OrchestrationCollaborationContext['phase'];
     taskType?: string;
+    projectId?: string;
+    projectBinding?: OrchestrationCollaborationContext['projectBinding'];
   }): OrchestrationCollaborationContext {
     const { responseDirective = 'json-only', ...rest } = params;
     return {

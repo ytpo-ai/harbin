@@ -5,6 +5,7 @@ import { AgentClientModule } from '../agents-client/agent-client.module';
 import { Employee, EmployeeSchema } from '../../shared/schemas/employee.schema';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { AgentRole, AgentRoleSchema } from '@agent/schemas/agent-role.schema';
+import { RdProject, RdProjectSchema } from '../../shared/schemas/ei-project.schema';
 import {
   OrchestrationPlan,
   OrchestrationPlanSchema,
@@ -61,6 +62,7 @@ import { OrchestrationMessageCenterEventService } from './services/orchestration
       { name: Skill.name, schema: SkillSchema },
       { name: OrchestrationRun.name, schema: OrchestrationRunSchema },
       { name: OrchestrationRunTask.name, schema: OrchestrationRunTaskSchema },
+      { name: RdProject.name, schema: RdProjectSchema },
     ]),
   ],
   controllers: [OrchestrationController],

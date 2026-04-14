@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { access, appendFile, mkdir, readdir, rm, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { execFile } from 'child_process';
@@ -6,11 +6,13 @@ import { promisify } from 'util';
 import { codeDocsReader } from './engineering-docs-reader.util';
 import { codeUpdatesReader } from './engineering-commit-reader.util';
 import { TOOL_ID__ENGINEERING_DOCS_WRITE, TOOL_ID__ENGINEERING_REPO_WRITER } from '../builtin-tool-definitions';
+import { ToolExecutionContext } from '../tool-execution-context.type';
 
 const execFileAsync = promisify(execFile);
 
 @Injectable()
 export class RepoToolHandler {
+  private readonly logger = new Logger(RepoToolHandler.name);
   async getCodeDocsReader(params: {
     focus?: string;
     maxFiles?: number;
@@ -271,10 +273,10 @@ export class RepoToolHandler {
     };
   }
 
-  async executeRepoRead(params: { command: string }): Promise<any> {
+  async executeRepoRead(params: { command: string }, executionContext?: ToolExecutionContext): Promise<any> {
     const allowedCommands = ['git log', 'git show', 'git diff', 'cat', 'ls', 'grep', 'head', 'tail', 'find'];
     const command = (params.command || '').trim();
-    const workspaceRoot = await this.resolveWorkspaceRoot();
+    const workspaceRoot = await this.resolveWorkspaceRoot(executionContext);
 
     if (!command) {
       return {
@@ -393,7 +395,22 @@ export class RepoToolHandler {
     return parts;
   }
 
-  private async resolveWorkspaceRoot(): Promise<string> {
+  private async resolveWorkspaceRoot(executionContext?: ToolExecutionContext): Promise<string> {
+    // Priority 1: Project binding from orchestration plan context
+    const contextLocalPath = String(
+      executionContext?.localProjectPath
+        || (executionContext?.collaborationContext as any)?.projectBinding?.localPath
+        || '',
+    ).trim();
+    if (contextLocalPath) {
+      if (await this.fileExists(contextLocalPath)) {
+        this.logger.log(`[resolveWorkspaceRoot] using project binding localPath: ${contextLocalPath}`);
+        return contextLocalPath;
+      }
+      this.logger.warn(`[resolveWorkspaceRoot] project binding localPath not accessible: ${contextLocalPath}, falling back`);
+    }
+
+    // Priority 2: AGENT_WORKSPACE_ROOT environment variable
     const envWorkspaceRoot = process.env.AGENT_WORKSPACE_ROOT;
     if (envWorkspaceRoot) {
       if (await this.fileExists(path.join(envWorkspaceRoot, 'README.md'))) {
@@ -401,6 +418,7 @@ export class RepoToolHandler {
       }
     }
 
+    // Priority 3: cwd probing
     const candidates = [
       process.cwd(),
       path.resolve(process.cwd(), '..'),

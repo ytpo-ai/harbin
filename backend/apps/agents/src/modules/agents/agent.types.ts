@@ -1,10 +1,18 @@
 import { ChatMessage, Task } from '../../../../../src/shared/types';
 import { CollaborationContext } from '@libs/contracts';
 
+export interface ProjectBinding {
+  projectId?: string;
+  localPath?: string;
+  opencodeEndpointRef?: string;
+  opencodeProjectPath?: string;
+}
+
 export interface AgentContext {
   task: Task;
   collaborationContext?: CollaborationContext | Record<string, unknown>;
   sessionContext?: Record<string, unknown>;
+  projectBinding?: ProjectBinding;
   opencodeRuntime?: {
     endpoint?: string;
     endpointRef?: string;

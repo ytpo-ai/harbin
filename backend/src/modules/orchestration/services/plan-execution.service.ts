@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { RunPlanDto } from '../dto';
@@ -19,6 +19,7 @@ import {
   OrchestrationTask,
   OrchestrationTaskDocument,
 } from '../../../shared/schemas/orchestration-task.schema';
+import { RdProject, RdProjectDocument } from '../../../shared/schemas/ei-project.schema';
 import { PlanStatsService } from './plan-stats.service';
 import { PlanEventStreamService } from './plan-event-stream.service';
 import { OrchestrationContextService } from './orchestration-context.service';
@@ -26,6 +27,7 @@ import { OrchestrationExecutionEngineService } from './orchestration-execution-e
 
 @Injectable()
 export class PlanExecutionService {
+  private readonly logger = new Logger(PlanExecutionService.name);
   private readonly runningPlans = new Set<string>();
 
   constructor(
@@ -37,6 +39,8 @@ export class PlanExecutionService {
     private readonly orchestrationRunTaskModel: Model<OrchestrationRunTaskDocument>,
     @InjectModel(OrchestrationTask.name)
     private readonly orchestrationTaskModel: Model<OrchestrationTaskDocument>,
+    @InjectModel(RdProject.name)
+    private readonly rdProjectModel: Model<RdProjectDocument>,
     private readonly planStatsService: PlanStatsService,
     private readonly planEventStreamService: PlanEventStreamService,
     private readonly contextService: OrchestrationContextService,
@@ -153,6 +157,26 @@ export class PlanExecutionService {
 
     const startedAt = new Date();
     const taskContext = this.contextService.resolvePlanTaskContextFromMetadata((plan.metadata || {}) as Record<string, unknown>);
+
+    // Auto-inject project context into taskContext if plan has a projectId
+    if (plan.projectId && !taskContext.projectId) {
+      taskContext.projectId = String(plan.projectId);
+      try {
+        const project = await this.rdProjectModel
+          .findOne({ _id: plan.projectId })
+          .select({ localPath: 1, name: 1 })
+          .lean<{ localPath?: string; name?: string }>()
+          .exec();
+        if (project?.localPath) {
+          taskContext.localProjectPath = project.localPath;
+        }
+        if (project?.name) {
+          taskContext.projectName = project.name;
+        }
+      } catch (err) {
+        this.logger.warn(`[executePlanRun] failed to resolve project for taskContext: ${(err as Error).message}`);
+      }
+    }
 
     const run = await new this.orchestrationRunModel({
       planId,
