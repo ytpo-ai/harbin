@@ -4,12 +4,18 @@ import {
   OrchestrationRun,
   PlanMode,
 } from '../../services/orchestrationService';
+import { PlanSettingsFormValues } from './PlanSettingsModal';
 import PlanSummaryCards from './PlanSummaryCards';
 import PlanDraftingBanner from './PlanDraftingBanner';
 import PlanTabBar from './PlanTabBar';
 import PlanDetailSettingsTab from './PlanDetailSettingsTab';
 import PlanHistoryTab from './PlanHistoryTab';
 import { PlanDetailTab } from './constants';
+
+type AgentOption = {
+  id: string;
+  name: string;
+};
 
 interface PlanDetailMainContentProps {
   planId?: string;
@@ -23,9 +29,14 @@ interface PlanDetailMainContentProps {
   modeDraft: PlanMode;
   promptDraft: string;
   promptHint: string;
-  setModeDraft: (mode: PlanMode) => void;
-  setPromptDraft: (value: string) => void;
   isPlanEditable: boolean;
+  settingsModalOpen: boolean;
+  settingsModalSaving: boolean;
+  settingsFormValues: PlanSettingsFormValues;
+  agents: AgentOption[];
+  onOpenSettings: () => void;
+  onCloseSettings: () => void;
+  onSaveSettings: (values: PlanSettingsFormValues) => void;
   taskHint: string;
   debugTaskId: string;
   streamTaskIds: string[];
@@ -64,9 +75,14 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   modeDraft,
   promptDraft,
   promptHint,
-  setModeDraft,
-  setPromptDraft,
   isPlanEditable,
+  settingsModalOpen,
+  settingsModalSaving,
+  settingsFormValues,
+  agents,
+  onOpenSettings,
+  onCloseSettings,
+  onSaveSettings,
   taskHint,
   debugTaskId,
   streamTaskIds,
@@ -105,7 +121,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
           <p className="font-medium">Production 状态已启用</p>
           <p className="mt-1 text-xs text-emerald-700">
-            当前计划编辑入口已锁定，点击顶部“解锁编辑”后方可修改任务与 Prompt。
+            当前计划编辑入口已锁定，点击顶部"解锁编辑"后方可修改任务与 Prompt。
           </p>
         </div>
       )}
@@ -119,12 +135,19 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
           promptHint={promptHint}
           plannerAgentId={planDetail.strategy?.plannerAgentId}
           plannerAgentName={planDetail.strategy?.plannerAgentId ? agentNameById?.[planDetail.strategy.plannerAgentId] : undefined}
-          setModeDraft={setModeDraft}
-          setPromptDraft={setPromptDraft}
+          runMode={planDetail.strategy?.runMode}
+          domainType={planDetail.domainType}
+          isPlanEditable={isPlanEditable}
+          settingsModalOpen={settingsModalOpen}
+          settingsModalSaving={settingsModalSaving}
+          settingsFormValues={settingsFormValues}
+          agents={agents}
+          onOpenSettings={onOpenSettings}
+          onCloseSettings={onCloseSettings}
+          onSaveSettings={onSaveSettings}
           tasks={planDetail.tasks || []}
           agentNameById={agentNameById}
           planStatus={planDetail.status}
-          isPlanEditable={isPlanEditable}
           taskHint={taskHint}
           debugTaskId={debugTaskId}
           streamTaskIds={streamTaskIds}

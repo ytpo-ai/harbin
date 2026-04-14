@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from 'react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
@@ -9,6 +9,7 @@ import {
   OrchestrationPlan,
 } from '../services/orchestrationService';
 import PlanDetailScaffold from '../components/orchestration/PlanDetailScaffold';
+import { PlanSettingsFormValues } from '../components/orchestration/PlanSettingsModal';
 import {
   STREAMING_PLAN_STATUS,
   FULLY_EDITABLE_PLAN_STATUS,
@@ -141,6 +142,7 @@ const PlanDetail: React.FC = () => {
   const {
     refreshPlanData,
     savePlanPromptMutation,
+    savePlanSettingsMutation,
     runPlanMutation,
     cancelRunMutation,
     publishPlanMutation,
@@ -151,6 +153,7 @@ const PlanDetail: React.FC = () => {
     replanPlanMutation,
     runPlan,
     savePlanPrompt,
+    savePlanSettings,
     replanPlan,
   } = usePlanMutations({
     planId,
@@ -234,6 +237,30 @@ const PlanDetail: React.FC = () => {
     setPromptHint: view.setPromptHint,
     runDebugTask,
   });
+
+  const settingsFormValues: PlanSettingsFormValues = useMemo(() => ({
+    title: planDetail?.title || '',
+    sourcePrompt: planDetail?.sourcePrompt || '',
+    mode: planDetail?.strategy?.mode || 'hybrid',
+    runMode: planDetail?.strategy?.runMode || 'multi',
+    domainType: planDetail?.domainType || 'general',
+    plannerAgentId: planDetail?.strategy?.plannerAgentId || '',
+  }), [planDetail?.title, planDetail?.sourcePrompt, planDetail?.strategy?.mode, planDetail?.strategy?.runMode, planDetail?.domainType, planDetail?.strategy?.plannerAgentId]);
+
+  const handleSaveSettings = useCallback((values: PlanSettingsFormValues) => {
+    if (!planId) return;
+    savePlanSettings(planId, {
+      title: values.title,
+      sourcePrompt: values.sourcePrompt,
+      mode: values.mode,
+      runMode: values.runMode,
+      domainType: values.domainType,
+      plannerAgentId: values.plannerAgentId || undefined,
+    });
+    view.setPromptDraft(values.sourcePrompt);
+    view.setModeDraft(values.mode);
+    view.setIsSettingsModalOpen(false);
+  }, [planId, savePlanSettings, view]);
 
   if (planLoading) {
     return (
@@ -343,9 +370,14 @@ const PlanDetail: React.FC = () => {
     modeDraft: view.modeDraft,
     promptDraft: view.promptDraft,
     promptHint: view.promptHint,
-    setModeDraft: view.setModeDraft,
-    setPromptDraft: view.setPromptDraft,
     isPlanEditable,
+    settingsModalOpen: view.isSettingsModalOpen,
+    settingsModalSaving: savePlanSettingsMutation.isLoading,
+    settingsFormValues,
+    agents: agents.map((a) => ({ id: a.id, name: a.name })),
+    onOpenSettings: () => view.setIsSettingsModalOpen(true),
+    onCloseSettings: () => view.setIsSettingsModalOpen(false),
+    onSaveSettings: handleSaveSettings,
     taskHint: view.taskHint,
     debugTaskId: view.debugTaskId,
     streamTaskIds: view.streamTaskIds,

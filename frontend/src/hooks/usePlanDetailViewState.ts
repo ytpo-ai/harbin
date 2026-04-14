@@ -31,6 +31,8 @@ export const usePlanDetailViewState = (planId?: string) => {
   const [streamConnected, setStreamConnected] = useState(false);
   const [streamTaskIds, setStreamTaskIds] = useState<string[]>([]);
 
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
   const [taskHint, setTaskHint] = useState('');
   const [isAddTaskModalOpen, setIsAddTaskModalOpen] = useState(false);
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -138,6 +140,8 @@ export const usePlanDetailViewState = (planId?: string) => {
     setRunDrawerOpen,
     selectedRunId,
     setSelectedRunId,
+    isSettingsModalOpen,
+    setIsSettingsModalOpen,
     streamHint,
     setStreamHint,
     streamConnected,

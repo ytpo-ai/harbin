@@ -1,7 +1,13 @@
 import React from 'react';
 import { OrchestrationTask, PlanMode } from '../../services/orchestrationService';
 import PlanPromptEditor from './PlanPromptEditor';
+import PlanSettingsModal, { PlanSettingsFormValues } from './PlanSettingsModal';
 import TaskList from './TaskList';
+
+type AgentOption = {
+  id: string;
+  name: string;
+};
 
 interface PlanDetailSettingsTabProps {
   modeDraft: PlanMode;
@@ -9,12 +15,19 @@ interface PlanDetailSettingsTabProps {
   promptHint: string;
   plannerAgentId?: string;
   plannerAgentName?: string;
-  setModeDraft: (value: PlanMode) => void;
-  setPromptDraft: (value: string) => void;
+  runMode?: string;
+  domainType?: string;
+  isPlanEditable: boolean;
+  settingsModalOpen: boolean;
+  settingsModalSaving: boolean;
+  settingsFormValues: PlanSettingsFormValues;
+  agents: AgentOption[];
+  onOpenSettings: () => void;
+  onCloseSettings: () => void;
+  onSaveSettings: (values: PlanSettingsFormValues) => void;
   tasks: OrchestrationTask[];
   agentNameById?: Record<string, string>;
   planStatus: string;
-  isPlanEditable: boolean;
   taskHint: string;
   debugTaskId: string;
   streamTaskIds: string[];
@@ -37,12 +50,19 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
   promptHint,
   plannerAgentId,
   plannerAgentName,
-  setModeDraft,
-  setPromptDraft,
+  runMode,
+  domainType,
+  isPlanEditable,
+  settingsModalOpen,
+  settingsModalSaving,
+  settingsFormValues,
+  agents,
+  onOpenSettings,
+  onCloseSettings,
+  onSaveSettings,
   tasks,
   agentNameById,
   planStatus,
-  isPlanEditable,
   taskHint,
   debugTaskId,
   streamTaskIds,
@@ -66,8 +86,18 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
         promptHint={promptHint}
         plannerAgentId={plannerAgentId}
         plannerAgentName={plannerAgentName}
-        setModeDraft={setModeDraft}
-        setPromptDraft={setPromptDraft}
+        runMode={runMode}
+        domainType={domainType}
+        isPlanEditable={isPlanEditable}
+        onOpenSettings={onOpenSettings}
+      />
+      <PlanSettingsModal
+        open={settingsModalOpen}
+        saving={settingsModalSaving}
+        agents={agents}
+        initialValues={settingsFormValues}
+        onClose={onCloseSettings}
+        onSave={onSaveSettings}
       />
       <TaskList
         tasks={tasks}

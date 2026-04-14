@@ -4,6 +4,7 @@ import {
   OrchestrationPlan,
   PlanMode,
   RunPlanAcceptedResponse,
+  UpdatePlanDto,
   orchestrationService,
 } from '../services/orchestrationService';
 import { useReplanMutation } from './useReplanMutation';
@@ -53,6 +54,23 @@ export const usePlanMutations = ({
   const savePlanPromptMutation = useMutation(
     ({ targetPlanId, sourcePrompt, mode }: { targetPlanId: string; sourcePrompt: string; mode: PlanMode }) =>
       orchestrationService.updatePlan(targetPlanId, { sourcePrompt, mode }),
+    {
+      onSuccess: async () => {
+        setPromptHint('计划设置已保存');
+        await Promise.all([
+          queryClient.invalidateQueries('orchestration-plans'),
+          queryClient.invalidateQueries(['orchestration-plan', planId]),
+        ]);
+      },
+      onError: () => {
+        setPromptHint('保存计划设置失败，请稍后重试');
+      },
+    },
+  );
+
+  const savePlanSettingsMutation = useMutation(
+    ({ targetPlanId, payload }: { targetPlanId: string; payload: UpdatePlanDto }) =>
+      orchestrationService.updatePlan(targetPlanId, payload),
     {
       onSuccess: async () => {
         setPromptHint('计划设置已保存');
@@ -198,6 +216,10 @@ export const usePlanMutations = ({
     savePlanPromptMutation.mutate({ targetPlanId, sourcePrompt, mode });
   };
 
+  const savePlanSettings = (targetPlanId: string, payload: UpdatePlanDto) => {
+    savePlanSettingsMutation.mutate({ targetPlanId, payload });
+  };
+
   const replanPlan = (targetPlanId: string, prompt: string, plannerAgentId?: string, autoGenerate?: boolean) => {
     replanPlanMutation.mutate({
       targetPlanId,
@@ -210,6 +232,7 @@ export const usePlanMutations = ({
   return {
     refreshPlanData,
     savePlanPromptMutation,
+    savePlanSettingsMutation,
     runPlanMutation,
     cancelRunMutation,
     publishPlanMutation,
@@ -220,6 +243,7 @@ export const usePlanMutations = ({
     replanPlanMutation,
     runPlan,
     savePlanPrompt,
+    savePlanSettings,
     replanPlan,
   };
 };
