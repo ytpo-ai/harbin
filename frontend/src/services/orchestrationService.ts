@@ -214,6 +214,7 @@ export interface UpdatePlanDto {
   plannerAgentId?: string;
   mode?: PlanMode;
   runMode?: PlanRunMode;
+  projectId?: string;
   metadata?: Record<string, unknown>;
 }
 

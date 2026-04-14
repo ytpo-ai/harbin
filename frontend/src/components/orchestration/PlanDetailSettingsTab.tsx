@@ -9,6 +9,11 @@ type AgentOption = {
   name: string;
 };
 
+type ProjectOption = {
+  _id: string;
+  name: string;
+};
+
 interface PlanDetailSettingsTabProps {
   modeDraft: PlanMode;
   promptDraft: string;
@@ -17,11 +22,13 @@ interface PlanDetailSettingsTabProps {
   plannerAgentName?: string;
   runMode?: string;
   domainType?: string;
+  projectName?: string;
   isPlanEditable: boolean;
   settingsModalOpen: boolean;
   settingsModalSaving: boolean;
   settingsFormValues: PlanSettingsFormValues;
   agents: AgentOption[];
+  projects: ProjectOption[];
   onOpenSettings: () => void;
   onCloseSettings: () => void;
   onSaveSettings: (values: PlanSettingsFormValues) => void;
@@ -52,11 +59,13 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
   plannerAgentName,
   runMode,
   domainType,
+  projectName,
   isPlanEditable,
   settingsModalOpen,
   settingsModalSaving,
   settingsFormValues,
   agents,
+  projects,
   onOpenSettings,
   onCloseSettings,
   onSaveSettings,
@@ -88,6 +97,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
         plannerAgentName={plannerAgentName}
         runMode={runMode}
         domainType={domainType}
+        projectName={projectName}
         isPlanEditable={isPlanEditable}
         onOpenSettings={onOpenSettings}
       />
@@ -95,6 +105,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
         open={settingsModalOpen}
         saving={settingsModalSaving}
         agents={agents}
+        projects={projects}
         initialValues={settingsFormValues}
         onClose={onCloseSettings}
         onSave={onSaveSettings}

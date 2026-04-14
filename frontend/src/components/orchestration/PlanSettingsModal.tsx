@@ -7,6 +7,11 @@ type AgentOption = {
   name: string;
 };
 
+type ProjectOption = {
+  _id: string;
+  name: string;
+};
+
 export interface PlanSettingsFormValues {
   title: string;
   sourcePrompt: string;
@@ -14,12 +19,14 @@ export interface PlanSettingsFormValues {
   runMode: PlanRunMode;
   domainType: PlanDomainType;
   plannerAgentId: string;
+  projectId: string;
 }
 
 interface PlanSettingsModalProps {
   open: boolean;
   saving: boolean;
   agents: AgentOption[];
+  projects: ProjectOption[];
   initialValues: PlanSettingsFormValues;
   onClose: () => void;
   onSave: (values: PlanSettingsFormValues) => void;
@@ -29,6 +36,7 @@ const PlanSettingsModal: React.FC<PlanSettingsModalProps> = ({
   open,
   saving,
   agents,
+  projects,
   initialValues,
   onClose,
   onSave,
@@ -140,6 +148,22 @@ const PlanSettingsModal: React.FC<PlanSettingsModalProps> = ({
                 <option value="general">通用（general）</option>
                 <option value="development">研发（development）</option>
                 <option value="research">调研（research）</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-700">所属项目</label>
+              <select
+                value={form.projectId}
+                onChange={(e) => update('projectId', e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-sm"
+              >
+                <option value="">全局（无项目）</option>
+                {projects.map((project) => (
+                  <option key={project._id} value={project._id}>
+                    {project.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

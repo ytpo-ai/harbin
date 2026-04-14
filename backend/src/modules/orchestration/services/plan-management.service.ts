@@ -227,6 +227,14 @@ export class PlanManagementService {
         unsetPayload['strategy.plannerAgentId'] = 1;
       }
     }
+    if (dto.projectId !== undefined) {
+      const trimmedProjectId = dto.projectId.trim();
+      if (trimmedProjectId) {
+        updatePayload.projectId = trimmedProjectId;
+      } else {
+        unsetPayload.projectId = 1;
+      }
+    }
     if (dto.metadata && typeof dto.metadata === 'object' && !Array.isArray(dto.metadata)) {
       updatePayload.metadata = {
         ...(plan.metadata || {}),

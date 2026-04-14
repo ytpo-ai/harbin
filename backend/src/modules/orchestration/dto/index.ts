@@ -147,6 +147,10 @@ export class UpdatePlanDto {
   @IsOptional()
   @IsEnum(['general', 'development', 'research'])
   domainType?: 'general' | 'development' | 'research';
+
+  @IsOptional()
+  @IsString()
+  projectId?: string;
 }
 
 export class ReassignTaskDto {

@@ -17,10 +17,16 @@ type AgentOption = {
   name: string;
 };
 
+type ProjectOption = {
+  _id: string;
+  name: string;
+};
+
 interface PlanDetailMainContentProps {
   planId?: string;
   planDetail: OrchestrationPlan;
   agentNameById?: Record<string, string>;
+  projectNameById?: Record<string, string>;
   latestRunSummary: OrchestrationRun | null;
   streamHint: string;
   streamConnected: boolean;
@@ -34,6 +40,7 @@ interface PlanDetailMainContentProps {
   settingsModalSaving: boolean;
   settingsFormValues: PlanSettingsFormValues;
   agents: AgentOption[];
+  projects: ProjectOption[];
   onOpenSettings: () => void;
   onCloseSettings: () => void;
   onSaveSettings: (values: PlanSettingsFormValues) => void;
@@ -67,6 +74,7 @@ interface PlanDetailMainContentProps {
 const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   planDetail,
   agentNameById,
+  projectNameById,
   latestRunSummary,
   streamHint,
   streamConnected,
@@ -80,6 +88,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   settingsModalSaving,
   settingsFormValues,
   agents,
+  projects,
   onOpenSettings,
   onCloseSettings,
   onSaveSettings,
@@ -137,11 +146,13 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
           plannerAgentName={planDetail.strategy?.plannerAgentId ? agentNameById?.[planDetail.strategy.plannerAgentId] : undefined}
           runMode={planDetail.strategy?.runMode}
           domainType={planDetail.domainType}
+          projectName={planDetail.projectId ? projectNameById?.[planDetail.projectId] : undefined}
           isPlanEditable={isPlanEditable}
           settingsModalOpen={settingsModalOpen}
           settingsModalSaving={settingsModalSaving}
           settingsFormValues={settingsFormValues}
           agents={agents}
+          projects={projects}
           onOpenSettings={onOpenSettings}
           onCloseSettings={onCloseSettings}
           onSaveSettings={onSaveSettings}

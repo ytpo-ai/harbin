@@ -27,6 +27,7 @@ interface PlanPromptEditorProps {
   plannerAgentName?: string;
   runMode?: string;
   domainType?: string;
+  projectName?: string;
   isPlanEditable: boolean;
   onOpenSettings: () => void;
 }
@@ -39,6 +40,7 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
   plannerAgentName,
   runMode,
   domainType,
+  projectName,
   isPlanEditable,
   onOpenSettings,
 }) => {
@@ -65,7 +67,7 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
           </button>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs md:grid-cols-5">
         <div>
           <span className="text-slate-500">Planner</span>
           <p className="font-medium text-slate-700 truncate" title={plannerAgentId || '默认'}>{plannerDisplay}</p>
@@ -81,6 +83,10 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
         <div>
           <span className="text-slate-500">领域类型</span>
           <p className="font-medium text-slate-700">{DOMAIN_TYPE_LABEL[domainType || ''] || domainType || '-'}</p>
+        </div>
+        <div>
+          <span className="text-slate-500">所属项目</span>
+          <p className="font-medium text-slate-700 truncate">{projectName || '全局'}</p>
         </div>
       </div>
       <div className="mt-2">

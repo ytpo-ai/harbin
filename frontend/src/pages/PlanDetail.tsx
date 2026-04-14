@@ -3,6 +3,7 @@ import { useQuery } from 'react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { agentService } from '../services/agentService';
+import { incubationProjectService, IncubationProject } from '../services/incubationProjectService';
 import {
   AgentSession,
   orchestrationService,
@@ -67,6 +68,15 @@ const PlanDetail: React.FC = () => {
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
     [agents],
+  );
+  const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
+    'plan-detail-projects',
+    () => incubationProjectService.list(),
+    { retry: false, staleTime: 60_000 },
+  );
+  const projectNameById = useMemo(
+    () => Object.fromEntries(incubationProjects.map((p) => [p._id, p.name])),
+    [incubationProjects],
   );
   const planTasks = planDetail?.tasks ?? [];
   const isPlanEditable = useMemo(
@@ -245,7 +255,8 @@ const PlanDetail: React.FC = () => {
     runMode: planDetail?.strategy?.runMode || 'multi',
     domainType: planDetail?.domainType || 'general',
     plannerAgentId: planDetail?.strategy?.plannerAgentId || '',
-  }), [planDetail?.title, planDetail?.sourcePrompt, planDetail?.strategy?.mode, planDetail?.strategy?.runMode, planDetail?.domainType, planDetail?.strategy?.plannerAgentId]);
+    projectId: planDetail?.projectId || '',
+  }), [planDetail?.title, planDetail?.sourcePrompt, planDetail?.strategy?.mode, planDetail?.strategy?.runMode, planDetail?.domainType, planDetail?.strategy?.plannerAgentId, planDetail?.projectId]);
 
   const handleSaveSettings = useCallback((values: PlanSettingsFormValues) => {
     if (!planId) return;
@@ -256,6 +267,7 @@ const PlanDetail: React.FC = () => {
       runMode: values.runMode,
       domainType: values.domainType,
       plannerAgentId: values.plannerAgentId || undefined,
+      projectId: values.projectId || '',
     });
     view.setPromptDraft(values.sourcePrompt);
     view.setModeDraft(values.mode);
@@ -362,6 +374,7 @@ const PlanDetail: React.FC = () => {
     planId,
     planDetail,
     agentNameById,
+    projectNameById,
     latestRunSummary,
     streamHint: view.streamHint,
     streamConnected: view.streamConnected,
@@ -375,6 +388,7 @@ const PlanDetail: React.FC = () => {
     settingsModalSaving: savePlanSettingsMutation.isLoading,
     settingsFormValues,
     agents: agents.map((a) => ({ id: a.id, name: a.name })),
+    projects: incubationProjects.map((p) => ({ _id: p._id, name: p.name })),
     onOpenSettings: () => view.setIsSettingsModalOpen(true),
     onCloseSettings: () => view.setIsSettingsModalOpen(false),
     onSaveSettings: handleSaveSettings,
