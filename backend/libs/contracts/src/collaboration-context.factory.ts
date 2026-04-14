@@ -12,7 +12,7 @@ export class CollaborationContextFactory {
     planId: string;
     roleInPlan: OrchestrationCollaborationContext['roleInPlan'];
     responseDirective?: OrchestrationCollaborationContext['responseDirective'];
-    skillActivation?: { mode: 'standard' | 'precise' };
+    skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
     agentTier?: OrchestrationCollaborationContext['agentTier'];
     collaborators?: OrchestrationCollaborationContext['collaborators'];
     delegationRules?: OrchestrationCollaborationContext['delegationRules'];

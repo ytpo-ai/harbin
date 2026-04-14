@@ -70,9 +70,11 @@ export class OrchestrationExecutionEngineService {
     const dependencyContext = await this.contextService.buildDependencyContext(planId, task.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(task);
     const stepOrder = typeof (task as any).order === 'number' ? Number((task as any).order) : undefined;
+    const skillActivation = await this.loadPlanSkillActivation(planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(task, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
+      ...(skillActivation ? { skillActivation } : {}),
     });
     const planTaskContext = await this.loadPlanTaskContext(planId);
     const executePrompt = await this.loadPlanStepExecutePrompt(planId, stepOrder);
@@ -208,6 +210,7 @@ export class OrchestrationExecutionEngineService {
           planId,
           runId: options?.orchestrationRunId,
           orchestrationTaskId: taskId,
+          taskTitle: task.title,
           sessionId: requestedSessionId,
           collaborationContext,
           runSummaries: Array.isArray(planSessionSnapshot?.runSummaries) ? planSessionSnapshot.runSummaries : [],
@@ -364,9 +367,11 @@ export class OrchestrationExecutionEngineService {
     const dependencyContext = await this.contextService.buildRunDependencyContext(runId, runTask.dependencyTaskIds || []);
     const retryHint = this.contextService.getRetryFailureHint(runTask as any as OrchestrationTask);
     const stepOrder = typeof (runTask as any).order === 'number' ? Number((runTask as any).order) : undefined;
+    const skillActivation = await this.loadPlanSkillActivation(runTask.planId);
     const collaborationContext = this.contextService.buildOrchestrationCollaborationContext(runTask as any as OrchestrationTask, {
       dependencyContext,
       executorAgentId: assignment.executorType === 'agent' ? assignment.executorId : undefined,
+      ...(skillActivation ? { skillActivation } : {}),
     });
     const planTaskContext = await this.loadRunTaskContext(runId, runTask.planId);
     const executePrompt = await this.loadPlanStepExecutePrompt(runTask.planId, stepOrder);
@@ -458,6 +463,7 @@ export class OrchestrationExecutionEngineService {
           runId,
           orchestrationRunTaskId: runTaskId,
           sourceTaskId: runTask.sourceTaskId,
+          taskTitle: runTask.title,
           sessionId: requestedSessionId,
           collaborationContext,
           runSummaries: Array.isArray(planSessionSnapshot?.runSummaries) ? planSessionSnapshot.runSummaries : [],
@@ -813,6 +819,21 @@ export class OrchestrationExecutionEngineService {
       return runTaskContext;
     }
     return this.loadPlanTaskContext(planId);
+  }
+
+  private async loadPlanSkillActivation(
+    planId: string,
+  ): Promise<{ mode: 'standard' | 'precise'; skillIds?: string[] } | undefined> {
+    const plan = await this.orchestrationPlanModel
+      .findOne({ _id: planId })
+      .select({ 'strategy.skillActivation': 1 })
+      .lean<{ strategy?: { skillActivation?: { mode: string; skillIds?: string[] } } }>()
+      .exec();
+    const sa = plan?.strategy?.skillActivation;
+    if (!sa || (sa.mode !== 'standard' && sa.mode !== 'precise')) {
+      return undefined;
+    }
+    return { mode: sa.mode as 'standard' | 'precise', skillIds: sa.skillIds };
   }
 
   private async loadPlanTaskContext(planId: string): Promise<Record<string, unknown>> {

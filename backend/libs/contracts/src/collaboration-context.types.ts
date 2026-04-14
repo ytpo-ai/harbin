@@ -55,7 +55,7 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   domainType?: 'general' | 'development' | 'research';
   phase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
   taskType?: string;
-  skillActivation?: { mode: 'standard' | 'precise' };
+  skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
   format?: 'json';
   mode?: 'planning' | 'orchestration';
 }

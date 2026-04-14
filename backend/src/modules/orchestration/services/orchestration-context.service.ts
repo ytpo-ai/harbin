@@ -646,7 +646,11 @@ export class OrchestrationContextService {
 
   buildOrchestrationCollaborationContext(
     task: OrchestrationTask | OrchestrationTaskDocument,
-    options: { dependencyContext?: string; executorAgentId?: string } = {},
+    options: {
+      dependencyContext?: string;
+      executorAgentId?: string;
+      skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
+    } = {},
   ): Record<string, unknown> {
     return CollaborationContextFactory.orchestration({
       planId: String((task as any).planId || '').trim(),
@@ -656,6 +660,7 @@ export class OrchestrationContextService {
       executorAgentId: options.executorAgentId,
       dependencies: task.dependencyTaskIds || [],
       upstreamOutputs: options.dependencyContext || '',
+      ...(options.skillActivation ? { skillActivation: options.skillActivation } : {}),
     });
   }
 
