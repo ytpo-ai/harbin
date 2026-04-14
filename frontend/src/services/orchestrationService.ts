@@ -3,6 +3,7 @@ import api from './api';
 export type PlanMode = 'sequential' | 'parallel' | 'hybrid';
 export type PlanDomainType = 'general' | 'development' | 'research';
 export type PlanRunMode = 'once' | 'multi';
+export type SkillActivationMode = 'standard' | 'precise';
 export type DebugRuntimeTaskTypeOverride =
   | 'general'
   | 'development.plan'
@@ -62,6 +63,10 @@ export interface OrchestrationPlan {
     plannerAgentId?: string;
     mode: PlanMode;
     runMode?: PlanRunMode;
+    skillActivation?: {
+      mode: SkillActivationMode;
+      skillIds?: string[];
+    };
   };
   stats: {
     totalTasks: number;
@@ -177,6 +182,10 @@ export interface CreatePlanFromPromptDto {
   autoRun?: boolean;
   autoGenerate?: boolean;
   projectId?: string;
+  skillActivation?: {
+    mode: SkillActivationMode;
+    skillIds?: string[];
+  };
 }
 
 export interface RunPlanAcceptedResponse {

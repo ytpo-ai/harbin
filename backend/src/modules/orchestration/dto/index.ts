@@ -12,6 +12,16 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class SkillActivationDto {
+  @IsEnum(['standard', 'precise'])
+  mode: 'standard' | 'precise';
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  skillIds?: string[];
+}
+
 export class CreatePlanFromPromptDto {
   @IsString()
   @MaxLength(4000)
@@ -52,6 +62,11 @@ export class CreatePlanFromPromptDto {
   @IsOptional()
   @IsString()
   projectId?: string; // 所属孵化项目ID
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SkillActivationDto)
+  skillActivation?: SkillActivationDto;
 }
 
 export class RunPlanDto {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowPathIcon, PlusIcon } from '@heroicons/react/24/outline';
 import { useQuery, useQueryClient } from 'react-query';
 import { useNavigate } from 'react-router-dom';
@@ -29,6 +29,7 @@ import { useOrchestrationQueries } from './hooks/useOrchestrationQueries';
 import { useTaskEditing } from './hooks/useTaskEditing';
 import { extractErrorMessage } from './utils';
 import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
+import { skillService } from '../../services/skillService';
 
 const Orchestration: React.FC = () => {
   const navigate = useNavigate();
@@ -46,6 +47,7 @@ const Orchestration: React.FC = () => {
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [plannerAgentId, setPlannerAgentId] = useState('');
   const [createProjectId, setCreateProjectId] = useState<string | undefined>(undefined);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
 
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
   const [debugTaskId, setDebugTaskId] = useState('');
@@ -115,6 +117,47 @@ const Orchestration: React.FC = () => {
     () => incubationProjectService.list(),
     { retry: false, staleTime: 60_000 },
   );
+
+  const { data: plannerAgentSkills = [], isFetching: plannerSkillsLoading } = useQuery<
+    Array<{
+      skillId: string;
+      skill: {
+        id: string;
+        name: string;
+        description?: string;
+        tags: string[];
+      } | null;
+    }>
+  >(
+    ['orchestration-create-plan-agent-skills', plannerAgentId],
+    () => skillService.getAgentSkills(plannerAgentId),
+    {
+      enabled: isCreateModalOpen && Boolean(plannerAgentId),
+      staleTime: 30_000,
+    },
+  );
+
+  const plannerSkills = useMemo(() => {
+    const expectedPrefix = `domainType:${domainType}:`;
+    const result = plannerAgentSkills
+      .map((item) => item.skill)
+      .filter(
+        (skill): skill is { id: string; name: string; description?: string; tags: string[] } => Boolean(skill),
+      )
+      .filter((skill) => Array.isArray(skill.tags) && skill.tags.some((tag) => String(tag || '').startsWith(expectedPrefix)))
+      .map((skill) => ({
+        id: skill.id,
+        name: skill.name,
+        description: skill.description,
+      }));
+    const unique = new Map(result.map((item) => [item.id, item]));
+    return Array.from(unique.values());
+  }, [domainType, plannerAgentSkills]);
+
+  useEffect(() => {
+    const availableIds = new Set(plannerSkills.map((item) => item.id));
+    setSelectedSkillIds((previous) => previous.filter((id) => availableIds.has(id)));
+  }, [plannerSkills]);
 
   const mutations = useOrchestrationMutations({
     navigate,
@@ -260,12 +303,14 @@ const Orchestration: React.FC = () => {
     setDomainType((plan.domainType || 'general') as PlanDomainType);
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
     setCreateProjectId(String(plan.projectId || '').trim() || undefined);
+    setSelectedSkillIds(plan.strategy?.skillActivation?.mode === 'precise' ? plan.strategy.skillActivation.skillIds || [] : []);
     setAutoGenerate(false);
     setIsCreateModalOpen(true);
   };
 
   const openCreateModal = () => {
     setCreateProjectId(projectIdFilter || undefined);
+    setSelectedSkillIds([]);
     setIsCreateModalOpen(true);
   };
 
@@ -391,6 +436,9 @@ const Orchestration: React.FC = () => {
         autoGenerate={autoGenerate}
         plannerAgentId={plannerAgentId}
         projectId={createProjectId}
+        plannerSkills={plannerSkills}
+        plannerSkillsLoading={plannerSkillsLoading}
+        selectedSkillIds={selectedSkillIds}
         agents={agents}
         projects={incubationProjects}
         createLoading={mutations.createPlanMutation.isLoading}
@@ -404,6 +452,7 @@ const Orchestration: React.FC = () => {
         onAutoGenerateChange={setAutoGenerate}
         onPlannerAgentIdChange={setPlannerAgentId}
         onProjectIdChange={setCreateProjectId}
+        onSelectedSkillIdsChange={setSelectedSkillIds}
         onSubmit={() => {
           mutations.createPlanMutation.mutate({
             prompt: prompt.trim(),
@@ -414,6 +463,14 @@ const Orchestration: React.FC = () => {
             runMode,
             autoGenerate,
             projectId: createProjectId,
+            ...(selectedSkillIds.length > 0
+              ? {
+                  skillActivation: {
+                    mode: 'precise',
+                    skillIds: selectedSkillIds,
+                  },
+                }
+              : {}),
           });
         }}
       />

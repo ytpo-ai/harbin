@@ -12,6 +12,12 @@ type ProjectOption = {
   name: string;
 };
 
+type SkillOption = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 type Props = {
   open: boolean;
   title: string;
@@ -22,6 +28,9 @@ type Props = {
   autoGenerate: boolean;
   plannerAgentId: string;
   projectId?: string;
+  plannerSkills: SkillOption[];
+  plannerSkillsLoading: boolean;
+  selectedSkillIds: string[];
   agents: AgentOption[];
   projects: ProjectOption[];
   createLoading: boolean;
@@ -35,6 +44,7 @@ type Props = {
   onAutoGenerateChange: (value: boolean) => void;
   onPlannerAgentIdChange: (value: string) => void;
   onProjectIdChange: (value?: string) => void;
+  onSelectedSkillIdsChange: (value: string[]) => void;
   onSubmit: () => void;
 };
 
@@ -48,6 +58,9 @@ const CreatePlanModal: React.FC<Props> = ({
   autoGenerate,
   plannerAgentId,
   projectId,
+  plannerSkills,
+  plannerSkillsLoading,
+  selectedSkillIds,
   agents,
   projects,
   createLoading,
@@ -61,6 +74,7 @@ const CreatePlanModal: React.FC<Props> = ({
   onAutoGenerateChange,
   onPlannerAgentIdChange,
   onProjectIdChange,
+  onSelectedSkillIdsChange,
   onSubmit,
 }) => {
   if (!open) return null;
@@ -152,6 +166,44 @@ const CreatePlanModal: React.FC<Props> = ({
             />
             创建并生成任务
           </label>
+          <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-xs font-medium text-slate-700">Skill 精确激活（可选）</p>
+            {!plannerAgentId ? (
+              <p className="text-xs text-slate-500">请选择 Planner Agent 后再选择 skill。</p>
+            ) : plannerSkillsLoading ? (
+              <p className="text-xs text-slate-500">正在加载可选 skill...</p>
+            ) : plannerSkills.length === 0 ? (
+              <p className="text-xs text-slate-500">当前 domainType 下没有可精确激活的 skill。</p>
+            ) : (
+              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                {plannerSkills.map((skill) => {
+                  const checked = selectedSkillIds.includes(skill.id);
+                  return (
+                    <label key={skill.id} className="flex items-start gap-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            onSelectedSkillIdsChange([...selectedSkillIds, skill.id]);
+                            return;
+                          }
+                          onSelectedSkillIdsChange(selectedSkillIds.filter((id) => id !== skill.id));
+                        }}
+                      />
+                      <span>
+                        <span className="font-medium text-slate-800">{skill.name}</span>
+                        {skill.description ? <span className="block text-slate-500">{skill.description}</span> : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[11px] text-slate-500">
+              选中后将使用 precise 模式创建计划；不选则使用默认标签激活。
+            </p>
+          </div>
           {createError && <p className="text-xs text-rose-600">创建失败，请稍后重试。</p>}
         </div>
 
