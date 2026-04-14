@@ -21,7 +21,7 @@ import { SceneOptimizationService } from './scene-optimization.service';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { ORCH_EVENTS, OrchestrationSource } from '../orchestration-events';
 
-type Phase = 'idle' | 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
+type Phase = 'idle' | 'initialize' | 'easy_run' | 'generating' | 'pre_execute' | 'executing' | 'post_execute';
 type PlannerSessionPhase = Exclude<Phase, 'idle' | 'executing'>;
 
 const AUTO_RETRY_DISABLED_TASK_TYPES = new Set([
@@ -86,7 +86,10 @@ export class OrchestrationStepDispatcherService {
       }
 
       if (phase === 'idle') {
-        const targetPhase: Phase = this.shouldRunInitialize(plan, state) ? 'initialize' : 'generating';
+        const executionMode = this.resolveExecutionMode(plan);
+        const targetPhase: Phase = executionMode === 'easy'
+          ? 'easy_run'
+          : (this.shouldRunInitialize(plan, state) ? 'initialize' : 'generating');
         const plannerSessionId = await this.ensurePlannerSession(
           normalizedPlanId,
           plan,
@@ -112,6 +115,11 @@ export class OrchestrationStepDispatcherService {
           return { advanced: true, phase: 'initialize' };
         }
 
+        if (targetPhase === 'easy_run') {
+          await this.phaseEasyRun(normalizedPlanId, plan, claimedState, plannerSessionId);
+          return { advanced: true, phase: 'easy_run' };
+        }
+
         await this.phaseGenerate(
           normalizedPlanId,
           plan.sourcePrompt || '',
@@ -126,6 +134,13 @@ export class OrchestrationStepDispatcherService {
         const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'initialize');
         const effectiveState = this.withPlannerSession(state, 'initialize', plannerSessionId);
         await this.phaseInitialize(normalizedPlanId, plan, effectiveState, plannerSessionId, source);
+        return { advanced: true, phase };
+      }
+
+      if (phase === 'easy_run') {
+        const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'easy_run');
+        const effectiveState = this.withPlannerSession(state, 'easy_run', plannerSessionId);
+        await this.phaseEasyRun(normalizedPlanId, plan, effectiveState, plannerSessionId);
         return { advanced: true, phase };
       }
 
@@ -320,6 +335,59 @@ export class OrchestrationStepDispatcherService {
     });
 
     await this.autoAdvance(planId, source);
+  }
+
+  private async phaseEasyRun(
+    planId: string,
+    plan: OrchestrationPlanDocument,
+    state: OrchestrationGenerationState,
+    plannerSessionId: string,
+  ): Promise<void> {
+    await this.planModel.updateOne({ _id: planId }, { $set: { status: 'drafting' } }).exec();
+    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'drafting',
+      phase: 'easy_run',
+    });
+
+    const easyRunPrompt = await this.contextService.buildEasyRunPrompt({
+      planId,
+      sourcePrompt: plan.sourcePrompt || '',
+      domainType: String((plan as { domainType?: string }).domainType || 'general'),
+    });
+
+    const easyRunResult = await this.plannerService.executeEasyRun(planId, easyRunPrompt, {
+      sessionId: plannerSessionId,
+    });
+
+    const mergedState: OrchestrationGenerationState = {
+      ...this.withPlannerSession(state, 'easy_run', plannerSessionId),
+      totalCost: Number(state.totalCost || 0) + Number(easyRunResult.costTokens || 0),
+      lastDecision: 'stop',
+    };
+
+    await this.planModel
+      .updateOne(
+        { _id: planId },
+        {
+          $set: {
+            'metadata.easyRunResult': {
+              summary: String(easyRunResult.summary || '').trim() || 'Easy run completed',
+              completedAt: new Date().toISOString(),
+            },
+          },
+        },
+      )
+      .exec();
+
+    await this.completeAndArchive(planId, mergedState);
+
+    await this.planModel.updateOne({ _id: planId }, { $set: { status: 'completed' } }).exec();
+    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
+      planId,
+      status: 'completed',
+      phase: 'easy_run_completed',
+    });
   }
 
   private async phaseGenerate(
@@ -846,6 +914,11 @@ export class OrchestrationStepDispatcherService {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
     const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
     return !this.hasValidOutlineWithPrompts(outline);
+  }
+
+  private resolveExecutionMode(plan: OrchestrationPlanDocument): 'standard' | 'easy' {
+    const rawMode = String(plan.strategy?.executionMode || 'standard').trim().toLowerCase();
+    return rawMode === 'easy' ? 'easy' : 'standard';
   }
 
   private hasValidOutlineWithPrompts(outline: Array<Record<string, unknown>>): boolean {

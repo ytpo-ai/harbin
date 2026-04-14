@@ -338,6 +338,19 @@ export class OrchestrationContextService {
     });
   }
 
+  async buildEasyRunPrompt(input: {
+    planId: string;
+    sourcePrompt: string;
+    domainType: string;
+  }): Promise<string> {
+    const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerEasyRun);
+    return this.renderTemplate(template, {
+      planId: input.planId,
+      domainType: String(input.domainType || 'general').trim().toLowerCase(),
+      sourcePrompt: input.sourcePrompt,
+    });
+  }
+
   async buildDefaultOutline(
     domainType: string,
   ): Promise<Array<{

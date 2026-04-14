@@ -60,6 +60,10 @@ export class CreatePlanFromPromptDto {
   domainType: 'general' | 'development' | 'research' = 'general';
 
   @IsOptional()
+  @IsEnum(['standard', 'easy'])
+  executionMode?: 'standard' | 'easy';
+
+  @IsOptional()
   @IsString()
   projectId?: string; // 所属孵化项目ID
 

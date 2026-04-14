@@ -13,7 +13,7 @@ export type OrchestrationSource = 'internal' | 'api' | 'scheduler' | 'external';
 export interface OrchestrationAdvanceEvent {
   planId: string;
   source: OrchestrationSource;
-  targetPhase?: 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
+  targetPhase?: 'easy_run' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
   metadata?: Record<string, unknown>;
 }
 

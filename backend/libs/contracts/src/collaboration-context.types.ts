@@ -39,7 +39,13 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   scenarioMode: 'orchestration';
   responseDirective: ResponseDirective;
   planId: string;
-  roleInPlan: 'planner' | 'planner_initialize' | 'executor' | 'planner_pre_execution' | 'planner_post_execution';
+  roleInPlan:
+    | 'planner'
+    | 'planner_initialize'
+    | 'planner_easy_run'
+    | 'executor'
+    | 'planner_pre_execution'
+    | 'planner_post_execution';
   agentTier?: 'leadership' | 'operations' | 'temporary';
   collaborators?: Array<{
     agentId: string;
@@ -58,7 +64,7 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   dependencies?: unknown;
   upstreamOutputs?: unknown;
   domainType?: 'general' | 'development' | 'research';
-  phase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
+  phase?: 'initialize' | 'easy_run' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
   taskType?: string;
   skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };
   format?: 'json';

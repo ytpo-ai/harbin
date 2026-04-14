@@ -71,6 +71,7 @@ export class PlanManagementService {
         plannerAgentId: dto.plannerAgentId,
         mode: dto.mode || 'hybrid',
         runMode: dto.runMode || 'multi',
+        ...(dto.executionMode ? { executionMode: dto.executionMode } : {}),
         ...(dto.skillActivation ? { skillActivation: dto.skillActivation } : {}),
       },
       generationMode: 'incremental',

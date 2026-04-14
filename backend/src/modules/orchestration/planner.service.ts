@@ -115,6 +115,11 @@ export interface PostExecutionDecision {
   };
 }
 
+export interface EasyRunResult {
+  summary: string;
+  costTokens?: number;
+}
+
 @Injectable()
 export class PlannerService {
   private readonly logger = new Logger(PlannerService.name);
@@ -475,6 +480,68 @@ export class PlannerService {
         ? decisionCandidate.nextTaskHints.map((item: unknown) => String(item || '').trim()).filter(Boolean)
         : undefined,
       validation: this.normalizePostValidationResult(decisionCandidate.validation),
+    };
+  }
+
+  async executeEasyRun(
+    planId: string,
+    easyRunPrompt: string,
+    options?: { sessionId?: string },
+  ): Promise<EasyRunResult> {
+    const plan = await this.planModel.findById(planId).exec();
+    if (!plan) {
+      throw new NotFoundException('Plan not found');
+    }
+
+    const plannerAgentId = String(plan.strategy?.plannerAgentId || '').trim();
+    if (!plannerAgentId) {
+      throw new BadRequestException('Plan has no planner agent configured');
+    }
+
+    const domainType = String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as
+      | 'general'
+      | 'development'
+      | 'research';
+
+    const task: AgentExecutionTask = {
+      title: `[Incremental Planning] ${plan.title} easy-run`,
+      description: easyRunPrompt,
+      type: 'planning',
+      priority: 'high',
+      status: 'pending',
+      assignedAgents: [plannerAgentId],
+      teamId: 'orchestration',
+      messages: [{ role: 'user', content: easyRunPrompt, timestamp: new Date() }],
+    };
+
+    const response = await this.agentClientService.executeTask(plannerAgentId, task, {
+      collaborationContext: CollaborationContextFactory.orchestration({
+        planId,
+        roleInPlan: 'planner_easy_run',
+        responseDirective: 'text',
+        domainType,
+        phase: 'easy_run',
+        taskType: 'planning',
+        ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+      }),
+      sessionContext: {
+        ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
+      },
+    });
+
+    const parsed = this.tryParseJson(response);
+    if (parsed && typeof parsed === 'object') {
+      const summary = String(parsed.summary || parsed.result || parsed.message || '').trim();
+      if (summary) {
+        return {
+          summary,
+          costTokens: Number.isFinite(parsed.costTokens) ? Number(parsed.costTokens) : undefined,
+        };
+      }
+    }
+
+    return {
+      summary: String(response || '').trim() || 'Easy run completed',
     };
   }
 

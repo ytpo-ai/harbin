@@ -116,6 +116,27 @@ const DEFAULT_PLANNER_INITIALIZE_PROMPT = [
   '{{existingRequirementHint}}',
 ].join('\n');
 
+const DEFAULT_PLANNER_EASY_RUN_PROMPT = [
+  '## 你正在执行 easyRun 模式',
+  '',
+  '本次计划为轻量任务，由你（Planner）直接使用工具完成所有工作。',
+  '不需要生成大纲、不需要分配任务给其他 agent。',
+  '',
+  '### 执行要求',
+  '1. 阅读已激活 skill 中的执行步骤定义',
+  '2. 按 skill 定义的步骤序列，逐步调用工具完成工作',
+  '3. 所有工具调用完成后，输出执行结果摘要',
+  '',
+  '### 输出要求',
+  '- 可输出纯文本，或 JSON 格式：{"summary":"..."}',
+  '- summary 必须包含：完成事项、关键结果、失败项（如有）',
+  '',
+  '### 输入',
+  '- planId: {{planId}}',
+  '- domainType: {{domainType}}',
+  '- sourcePrompt: {{sourcePrompt}}',
+].join('\n');
+
 const DEFAULT_PLANNER_DEFAULT_OUTLINE_PROMPT = JSON.stringify(
   {
     development: [
@@ -255,6 +276,12 @@ export const ORCHESTRATION_PROMPTS: Record<string, OrchestrationPromptEntry> = {
     scene: 'orchestration',
     role: 'planner-initialize',
     buildDefaultContent: () => DEFAULT_PLANNER_INITIALIZE_PROMPT,
+  },
+  plannerEasyRun: {
+    symbol: 'PLANNER_EASY_RUN_PROMPT',
+    scene: 'orchestration',
+    role: 'planner-easy-run',
+    buildDefaultContent: () => DEFAULT_PLANNER_EASY_RUN_PROMPT,
   },
   plannerDefaultOutline: {
     symbol: 'PLANNER_DEFAULT_OUTLINE_PROMPT',

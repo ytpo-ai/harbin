@@ -6,6 +6,7 @@ export type OrchestrationPlanDocument = OrchestrationPlan & Document;
 export type OrchestrationMode = 'sequential' | 'parallel' | 'hybrid';
 export type OrchestrationDomainType = 'general' | 'development' | 'research';
 export type OrchestrationRunMode = 'once' | 'multi';
+export type OrchestrationExecutionMode = 'standard' | 'easy';
 export type SkillActivationMode = 'standard' | 'precise';
 export type OrchestrationPlanStatus =
   | 'draft'
@@ -34,7 +35,7 @@ export interface OrchestrationGenerationState {
   totalCost: number;
   isComplete: boolean;
   lastError?: string;
-  currentPhase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'idle';
+  currentPhase?: 'initialize' | 'generating' | 'pre_execute' | 'executing' | 'post_execute' | 'easy_run' | 'idle';
   lastDecision?: 'generate_next' | 'stop' | 'redesign' | 'retry';
   /** shared 模式下使用的单一 planner session ID */
   plannerSessionId?: string;
@@ -64,6 +65,7 @@ export class OrchestrationPlan {
     plannerAgentId: { type: String },
     mode: { type: String, enum: ['sequential', 'parallel', 'hybrid'], default: 'sequential' },
     runMode: { type: String, enum: ['once', 'multi'], default: 'multi' },
+    executionMode: { type: String, enum: ['standard', 'easy'], default: undefined },
     skillActivation: {
       type: {
         mode: { type: String, enum: ['standard', 'precise'] },
@@ -76,6 +78,7 @@ export class OrchestrationPlan {
     plannerAgentId?: string;
     mode: OrchestrationMode;
     runMode: OrchestrationRunMode;
+    executionMode?: OrchestrationExecutionMode;
     skillActivation?: {
       mode: SkillActivationMode;
       skillIds?: string[];
@@ -133,7 +136,7 @@ export class OrchestrationPlan {
     totalCost: { type: Number, default: 0 },
     isComplete: { type: Boolean, default: false },
     lastError: { type: String },
-    currentPhase: { type: String, enum: ['initialize', 'generating', 'pre_execute', 'executing', 'post_execute', 'idle'], default: 'idle' },
+    currentPhase: { type: String, enum: ['initialize', 'generating', 'pre_execute', 'executing', 'post_execute', 'easy_run', 'idle'], default: 'idle' },
     lastDecision: { type: String, enum: ['generate_next', 'stop', 'redesign', 'retry'] },
     plannerSessionId: { type: String },
     plannerSessionIds: { type: Object },

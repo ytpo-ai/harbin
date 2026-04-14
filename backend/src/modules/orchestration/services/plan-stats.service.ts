@@ -75,7 +75,16 @@ export class PlanStatsService {
   }
 
   normalizePlanStatus(status?: string, taskCount = 0): OrchestrationPlanStatus {
-    if (status === 'draft' || status === 'drafting' || status === 'planned' || status === 'production') {
+    if (
+      status === 'draft'
+      || status === 'drafting'
+      || status === 'planned'
+      || status === 'production'
+      || status === 'running'
+      || status === 'paused'
+      || status === 'completed'
+      || status === 'failed'
+    ) {
       return status;
     }
     if (status === 'failed' && taskCount === 0) {

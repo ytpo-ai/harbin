@@ -395,6 +395,63 @@ describe('OrchestrationStepDispatcherService', () => {
     expect((service as any).phaseGenerate).toHaveBeenCalledTimes(1);
   });
 
+  it('routes idle phase to easy_run when executionMode is easy', async () => {
+    const planDoc = {
+      _id: 'plan-1',
+      title: 'easy plan',
+      sourcePrompt: 'extract requirements from plan doc',
+      strategy: { plannerAgentId: 'planner-1', executionMode: 'easy' },
+      domainType: 'development',
+      generationConfig: {},
+      generationState: {
+        currentStep: 0,
+        totalGenerated: 0,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'idle',
+      },
+    };
+
+    const service = new OrchestrationStepDispatcherService(
+      {
+        findById: jest.fn().mockReturnValue({
+          exec: jest.fn().mockResolvedValue(planDoc),
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {
+        resolveGenerationConfig: jest.fn().mockReturnValue({
+          maxTasks: 10,
+          maxCostTokens: 100000,
+          maxRetries: 3,
+          maxTotalFailures: 6,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      { emit: jest.fn() } as any,
+      {
+        getOrCreatePlanSession: jest.fn().mockResolvedValue({ id: 'planner-session-1' }),
+        archiveSession: jest.fn(),
+      } as any,
+      {} as any,
+    );
+
+    jest.spyOn(service as any, 'updateGenerationState').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'updateGenerationStateIfExpected').mockResolvedValue(true);
+    const easyRunSpy = jest.spyOn(service as any, 'phaseEasyRun').mockResolvedValue(undefined);
+
+    const result = await service.advanceOnce('plan-1', { source: 'internal' });
+
+    expect(result).toEqual({ advanced: true, phase: 'easy_run' });
+    expect(easyRunSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('blocks execute phase when pre-execution decision disallows execution', async () => {
     const taskUpdateOne = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
     const findOneAndUpdate = jest.fn().mockReturnValue({
