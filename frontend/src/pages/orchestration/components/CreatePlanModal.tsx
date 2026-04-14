@@ -7,6 +7,11 @@ type AgentOption = {
   name: string;
 };
 
+type ProjectOption = {
+  _id: string;
+  name: string;
+};
+
 type Props = {
   open: boolean;
   title: string;
@@ -16,7 +21,9 @@ type Props = {
   domainType: PlanDomainType;
   autoGenerate: boolean;
   plannerAgentId: string;
+  projectId?: string;
   agents: AgentOption[];
+  projects: ProjectOption[];
   createLoading: boolean;
   createError: boolean;
   onClose: () => void;
@@ -27,6 +34,7 @@ type Props = {
   onDomainTypeChange: (value: PlanDomainType) => void;
   onAutoGenerateChange: (value: boolean) => void;
   onPlannerAgentIdChange: (value: string) => void;
+  onProjectIdChange: (value?: string) => void;
   onSubmit: () => void;
 };
 
@@ -39,7 +47,9 @@ const CreatePlanModal: React.FC<Props> = ({
   domainType,
   autoGenerate,
   plannerAgentId,
+  projectId,
   agents,
+  projects,
   createLoading,
   createError,
   onClose,
@@ -50,6 +60,7 @@ const CreatePlanModal: React.FC<Props> = ({
   onDomainTypeChange,
   onAutoGenerateChange,
   onPlannerAgentIdChange,
+  onProjectIdChange,
   onSubmit,
 }) => {
   if (!open) return null;
@@ -111,6 +122,18 @@ const CreatePlanModal: React.FC<Props> = ({
               <option value="general">通用（general）</option>
               <option value="development">研发（development）</option>
               <option value="research">调研（research）</option>
+            </select>
+            <select
+              value={projectId ?? ''}
+              onChange={(event) => onProjectIdChange(event.target.value || undefined)}
+              className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            >
+              <option value="">全局（无项目）</option>
+              {projects.map((project) => (
+                <option key={project._id} value={project._id}>
+                  {project.name}
+                </option>
+              ))}
             </select>
             <select
               value={runMode}

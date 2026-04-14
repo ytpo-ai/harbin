@@ -45,6 +45,7 @@ const Orchestration: React.FC = () => {
   const [domainType, setDomainType] = useState<PlanDomainType>('general');
   const [autoGenerate, setAutoGenerate] = useState(false);
   const [plannerAgentId, setPlannerAgentId] = useState('');
+  const [createProjectId, setCreateProjectId] = useState<string | undefined>(undefined);
 
   const [debugDrawerOpen, setDebugDrawerOpen] = useState(false);
   const [debugTaskId, setDebugTaskId] = useState('');
@@ -258,7 +259,13 @@ const Orchestration: React.FC = () => {
     setRunMode((plan.strategy?.runMode || 'multi') as PlanRunMode);
     setDomainType((plan.domainType || 'general') as PlanDomainType);
     setPlannerAgentId(plan.strategy?.plannerAgentId || '');
+    setCreateProjectId(String(plan.projectId || '').trim() || undefined);
     setAutoGenerate(false);
+    setIsCreateModalOpen(true);
+  };
+
+  const openCreateModal = () => {
+    setCreateProjectId(projectIdFilter || undefined);
     setIsCreateModalOpen(true);
   };
 
@@ -355,7 +362,7 @@ const Orchestration: React.FC = () => {
               <ArrowPathIcon className="h-4 w-4" /> 刷新
             </button>
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={openCreateModal}
               className="inline-flex items-center gap-1 rounded-md bg-primary-600 px-3 py-2 text-sm text-white hover:bg-primary-700"
             >
               <PlusIcon className="h-4 w-4" /> 创建计划
@@ -383,7 +390,9 @@ const Orchestration: React.FC = () => {
         domainType={domainType}
         autoGenerate={autoGenerate}
         plannerAgentId={plannerAgentId}
+        projectId={createProjectId}
         agents={agents}
+        projects={incubationProjects}
         createLoading={mutations.createPlanMutation.isLoading}
         createError={mutations.createPlanMutation.isError}
         onClose={() => setIsCreateModalOpen(false)}
@@ -394,6 +403,7 @@ const Orchestration: React.FC = () => {
         onDomainTypeChange={setDomainType}
         onAutoGenerateChange={setAutoGenerate}
         onPlannerAgentIdChange={setPlannerAgentId}
+        onProjectIdChange={setCreateProjectId}
         onSubmit={() => {
           mutations.createPlanMutation.mutate({
             prompt: prompt.trim(),
@@ -403,7 +413,7 @@ const Orchestration: React.FC = () => {
             mode,
             runMode,
             autoGenerate,
-            projectId: projectIdFilter || undefined,
+            projectId: createProjectId,
           });
         }}
       />

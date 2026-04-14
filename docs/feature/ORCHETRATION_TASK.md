@@ -157,6 +157,7 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 - Guide：`docs/guide/ORCHESTRATION_SERVICE_SPLIT_RUNTIME.MD`、`docs/guide/ORCHESTRATION_TASK_TYPE_ROUTING_CHAIN.MD`
 - Technical：`docs/technical/SCHEDULER_SERVICE_REFACTOR_TECHNICAL_DESIGN.md`
 - Plan（仍在使用/推进）：
+  - `docs/plan/ORCHESTRATION_CREATE_PLAN_PROJECT_SELECTOR_PLAN.MD`
   - `docs/plan/ORCHESTRATION_DOMAIN_TYPE_SIMPLIFICATION_PLAN.MD`
   - `docs/plan/ORCHESTRATION_AGENT_FIRST_REQUIREMENT_MCP_PLAN.MD`
   - `docs/plan/ORCHESTRATION_OPENCODE_ROUTING_FOR_DEV_WORKFLOW_PLAN.md`
@@ -224,3 +225,9 @@ Run 关键状态：`running`、`completed`、`failed`、`cancelled`
 - 定时调度：`docs/feature/ORCHETRATION_SCHEDULER.md`
 - Agent 运行时：`docs/feature/AGENT_RUNTIME.md`
 - Agent 协作消息：`docs/feature/INNER_MESSAGE.md`
+
+## 8. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|---|---|---|---|
+| [ORCHESTRATION_CREATE_PLAN_PROJECT_SELECTOR_PLAN](../plan/ORCHESTRATION_CREATE_PLAN_PROJECT_SELECTOR_PLAN.MD) | [ORCHESTRATION_TASK_REQ-001_CREATE_PLAN_PROJECT_SELECTOR](../requirement/ORCHESTRATION_TASK_REQ-001_CREATE_PLAN_PROJECT_SELECTOR.md) | [待创建](../development/ORCHESTRATION_TASK_REQ-001_DEVELOPMENT.md) | — |

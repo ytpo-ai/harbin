@@ -56,6 +56,7 @@ export interface OrchestrationPlan {
   title: string;
   sourcePrompt: string;
   domainType: PlanDomainType;
+  projectId?: string;
   status: PlanStatus;
   strategy: {
     plannerAgentId?: string;
