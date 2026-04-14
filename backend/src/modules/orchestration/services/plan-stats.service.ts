@@ -83,12 +83,14 @@ export class PlanStatsService {
       || status === 'running'
       || status === 'paused'
       || status === 'completed'
-      || status === 'failed'
     ) {
       return status;
     }
     if (status === 'failed' && taskCount === 0) {
       return 'draft';
+    }
+    if (status === 'failed') {
+      return 'failed';
     }
     return 'planned';
   }

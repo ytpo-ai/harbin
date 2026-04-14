@@ -13,6 +13,7 @@ import {
   OrchestrationPlanDocument,
   OrchestrationGenerationConfig,
   OrchestrationGenerationState,
+  OrchestrationPlanStatus,
 } from '../../../shared/schemas/orchestration-plan.schema';
 import {
   OrchestrationTask,
@@ -1091,13 +1092,20 @@ export class IncrementalPlanningService {
     return map;
   }
 
-  async completePlanning(planId: string, state: OrchestrationGenerationState): Promise<void> {
+  async completePlanning(
+    planId: string,
+    state: OrchestrationGenerationState,
+    options?: { finalStatus?: OrchestrationPlanStatus; statusPhase?: string },
+  ): Promise<void> {
+    const finalStatus = options?.finalStatus || 'planned';
+    const statusPhase = options?.statusPhase || 'planning_completed';
+
     await this.planModel
       .updateOne(
         { _id: planId },
         {
           $set: {
-            status: 'planned',
+            status: finalStatus,
             generationState: {
               ...state,
               isComplete: true,
@@ -1125,8 +1133,8 @@ export class IncrementalPlanningService {
 
     this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
       planId,
-      status: 'planned',
-      phase: 'planning_completed',
+      status: finalStatus,
+      phase: statusPhase,
     });
   }
 

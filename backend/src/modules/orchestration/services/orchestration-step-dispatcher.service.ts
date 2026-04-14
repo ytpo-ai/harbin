@@ -116,7 +116,7 @@ export class OrchestrationStepDispatcherService {
         }
 
         if (targetPhase === 'easy_run') {
-          await this.phaseEasyRun(normalizedPlanId, plan, claimedState, plannerSessionId);
+          await this.phaseEasyRun(normalizedPlanId, plan, claimedState, plannerSessionId, source);
           return { advanced: true, phase: 'easy_run' };
         }
 
@@ -140,7 +140,7 @@ export class OrchestrationStepDispatcherService {
       if (phase === 'easy_run') {
         const plannerSessionId = await this.ensurePlannerSession(normalizedPlanId, plan, state, 'easy_run');
         const effectiveState = this.withPlannerSession(state, 'easy_run', plannerSessionId);
-        await this.phaseEasyRun(normalizedPlanId, plan, effectiveState, plannerSessionId);
+        await this.phaseEasyRun(normalizedPlanId, plan, effectiveState, plannerSessionId, source);
         return { advanced: true, phase };
       }
 
@@ -342,6 +342,7 @@ export class OrchestrationStepDispatcherService {
     plan: OrchestrationPlanDocument,
     state: OrchestrationGenerationState,
     plannerSessionId: string,
+    source: OrchestrationSource,
   ): Promise<void> {
     await this.planModel.updateOne({ _id: planId }, { $set: { status: 'drafting' } }).exec();
     this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
@@ -350,44 +351,55 @@ export class OrchestrationStepDispatcherService {
       phase: 'easy_run',
     });
 
-    const easyRunPrompt = await this.contextService.buildEasyRunPrompt({
-      planId,
-      sourcePrompt: plan.sourcePrompt || '',
-      domainType: String((plan as { domainType?: string }).domainType || 'general'),
-    });
+    try {
+      const easyRunPrompt = await this.contextService.buildEasyRunPrompt({
+        planId,
+        sourcePrompt: plan.sourcePrompt || '',
+        domainType: String((plan as { domainType?: string }).domainType || 'general'),
+      });
 
-    const easyRunResult = await this.plannerService.executeEasyRun(planId, easyRunPrompt, {
-      sessionId: plannerSessionId,
-    });
+      const easyRunResult = await this.plannerService.executeEasyRun(planId, easyRunPrompt, {
+        sessionId: plannerSessionId,
+      });
 
-    const mergedState: OrchestrationGenerationState = {
-      ...this.withPlannerSession(state, 'easy_run', plannerSessionId),
-      totalCost: Number(state.totalCost || 0) + Number(easyRunResult.costTokens || 0),
-      lastDecision: 'stop',
-    };
+      const mergedState: OrchestrationGenerationState = {
+        ...this.withPlannerSession(state, 'easy_run', plannerSessionId),
+        totalCost: Number(state.totalCost || 0) + Number(easyRunResult.costTokens || 0),
+        lastDecision: 'stop',
+      };
 
-    await this.planModel
-      .updateOne(
-        { _id: planId },
-        {
-          $set: {
-            'metadata.easyRunResult': {
-              summary: String(easyRunResult.summary || '').trim() || 'Easy run completed',
-              completedAt: new Date().toISOString(),
+      await this.planModel
+        .updateOne(
+          { _id: planId },
+          {
+            $set: {
+              'metadata.easyRunResult': {
+                summary: String(easyRunResult.summary || '').trim() || 'Easy run completed',
+                completedAt: new Date().toISOString(),
+              },
             },
           },
-        },
-      )
-      .exec();
+        )
+        .exec();
 
-    await this.completeAndArchive(planId, mergedState);
-
-    await this.planModel.updateOne({ _id: planId }, { $set: { status: 'completed' } }).exec();
-    this.eventStream.emitPlanStreamEvent(planId, 'plan.status.changed', {
-      planId,
-      status: 'completed',
-      phase: 'easy_run_completed',
-    });
+      await this.completeAndArchive(planId, mergedState, {
+        finalStatus: 'completed',
+        statusPhase: 'easy_run_completed',
+      });
+    } catch (error) {
+      const nextFailures = this.bumpFailureCounters(
+        state,
+        `phaseEasyRun failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      const advanced = await this.updateGenerationStateIfExpected(planId, state, {
+        ...nextFailures,
+        currentPhase: 'idle',
+      });
+      if (!advanced) {
+        return;
+      }
+      await this.autoAdvance(planId, source);
+    }
   }
 
   private async phaseGenerate(
@@ -989,13 +1001,17 @@ export class OrchestrationStepDispatcherService {
     });
   }
 
-  private async completeAndArchive(planId: string, state: OrchestrationGenerationState): Promise<void> {
+  private async completeAndArchive(
+    planId: string,
+    state: OrchestrationGenerationState,
+    options?: { finalStatus?: 'planned' | 'completed'; statusPhase?: string },
+  ): Promise<void> {
     await this.incrementalPlanningService.completePlanning(planId, {
       ...state,
       isComplete: true,
       currentPhase: 'idle',
       currentTaskId: undefined,
-    });
+    }, options);
     await this.archivePlannerSessionIfNeeded(state);
     this.eventEmitter.emit(ORCH_EVENTS.PLAN_COMPLETED, {
       planId,

@@ -47,6 +47,7 @@ metadata:
 
 > 说明：outline 与 phasePrompts 由初始化核心指令统一生成并通过 `plan-initialize(mode=outline)` 写入。
 > 本节定义 plan 文档解析与 requirement 入库的扩展步骤。
+> 当 phase=`easy_run` 时，直接执行本节“步骤序列”，无需生成 outline。
 
 ### 前置条件
 
@@ -115,6 +116,8 @@ metadata:
    ```
 
 ## Outline 生成规则
+
+> 仅适用于标准 initialize 流程；easy_run 模式忽略本节。
 
 本技能**不生成任何执行步骤**。phaseInitialize Phase 1 生成 outline 时，传入**空数组**：
 

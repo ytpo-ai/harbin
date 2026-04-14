@@ -452,6 +452,114 @@ describe('OrchestrationStepDispatcherService', () => {
     expect(easyRunSpy).toHaveBeenCalledTimes(1);
   });
 
+  it('completes easy_run with completed final status', async () => {
+    const planModel = {
+      updateOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+    } as any;
+    const contextService = {
+      buildEasyRunPrompt: jest.fn().mockResolvedValue('easy-run prompt'),
+    } as any;
+    const plannerService = {
+      executeEasyRun: jest.fn().mockResolvedValue({ summary: 'done', costTokens: 12 }),
+    } as any;
+
+    const service = new OrchestrationStepDispatcherService(
+      planModel,
+      {} as any,
+      plannerService,
+      {} as any,
+      { emitPlanStreamEvent: jest.fn() } as any,
+      contextService,
+      {} as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const completeSpy = jest.spyOn(service as any, 'completeAndArchive').mockResolvedValue(undefined);
+
+    await (service as any).phaseEasyRun(
+      'plan-1',
+      { sourcePrompt: 'from docs', domainType: 'development' },
+      {
+        currentStep: 0,
+        totalGenerated: 0,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'easy_run',
+      },
+      'planner-session-1',
+      'internal',
+    );
+
+    expect(completeSpy).toHaveBeenCalledWith(
+      'plan-1',
+      expect.objectContaining({
+        lastDecision: 'stop',
+        totalCost: 12,
+      }),
+      {
+        finalStatus: 'completed',
+        statusPhase: 'easy_run_completed',
+      },
+    );
+  });
+
+  it('falls back to idle and auto-advances when easy_run fails', async () => {
+    const service = new OrchestrationStepDispatcherService(
+      {
+        updateOne: jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) }),
+      } as any,
+      {} as any,
+      {
+        executeEasyRun: jest.fn().mockRejectedValue(new Error('easy run timeout')),
+      } as any,
+      {} as any,
+      { emitPlanStreamEvent: jest.fn() } as any,
+      {
+        buildEasyRunPrompt: jest.fn().mockResolvedValue('easy-run prompt'),
+      } as any,
+      {} as any,
+      { emit: jest.fn() } as any,
+      {} as any,
+      {} as any,
+    );
+
+    const updateStateSpy = jest.spyOn(service as any, 'updateGenerationStateIfExpected').mockResolvedValue(true);
+    const autoAdvanceSpy = jest.spyOn(service as any, 'autoAdvance').mockResolvedValue(undefined);
+
+    await (service as any).phaseEasyRun(
+      'plan-1',
+      { sourcePrompt: 'from docs', domainType: 'development' },
+      {
+        currentStep: 0,
+        totalGenerated: 0,
+        totalRetries: 0,
+        consecutiveFailures: 0,
+        totalFailures: 0,
+        totalCost: 0,
+        isComplete: false,
+        currentPhase: 'easy_run',
+      },
+      'planner-session-1',
+      'api',
+    );
+
+    expect(updateStateSpy).toHaveBeenCalledWith(
+      'plan-1',
+      expect.any(Object),
+      expect.objectContaining({
+        currentPhase: 'idle',
+        consecutiveFailures: 1,
+        totalFailures: 1,
+      }),
+    );
+    expect(autoAdvanceSpy).toHaveBeenCalledWith('plan-1', 'api');
+  });
+
   it('blocks execute phase when pre-execution decision disallows execution', async () => {
     const taskUpdateOne = jest.fn().mockReturnValue({ exec: jest.fn().mockResolvedValue({}) });
     const findOneAndUpdate = jest.fn().mockReturnValue({
