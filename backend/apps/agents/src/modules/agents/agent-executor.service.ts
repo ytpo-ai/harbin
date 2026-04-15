@@ -33,6 +33,7 @@ import { ContextStrategyService } from './context/context-strategy.service';
 import {
   GET_TOOL_SCHEMA_TOOL_ID,
   DEFAULT_MAX_TOOL_ROUNDS,
+  DEFAULT_MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS,
   SKILL_CONTENT_MAX_INJECT_LENGTH,
   AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS,
   normalizeToolId,
@@ -994,6 +995,10 @@ export class AgentExecutorService {
     let emptyResponseRetryUsed = false;
     let errorRetryUsed = false;
     let plannerTextOnlyRetryUsed = false;
+    // 连续相同工具+相同参数调用追踪（防死循环）
+    let lastToolCallFingerprint = '';
+    let consecutiveIdenticalToolCalls = 0;
+    const maxConsecutiveIdenticalToolCalls = DEFAULT_MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS;
     const emptyMeetingResponseFallback = await this.resolveAgentPromptContent(AGENT_PROMPTS.emptyMeetingResponseFallback);
     const generationErrorRetryPrompt = meetingLike
       ? await this.resolveAgentPromptContent(AGENT_PROMPTS.generationErrorRetryInstruction)
@@ -1683,6 +1688,67 @@ export class AgentExecutorService {
           });
         }
         scorer.trackToolCall(normalizedToolCallId);
+
+        // 连续相同工具+相同参数调用检测：超过阈值后强制中断，防止死循环。
+        const currentFingerprint = `${normalizedToolCallId}::${JSON.stringify(toolCall.parameters || {})}`;
+        if (currentFingerprint === lastToolCallFingerprint) {
+          consecutiveIdenticalToolCalls++;
+        } else {
+          consecutiveIdenticalToolCalls = 1;
+          lastToolCallFingerprint = currentFingerprint;
+        }
+        if (consecutiveIdenticalToolCalls > maxConsecutiveIdenticalToolCalls) {
+          scorer.deduct('D13', round, {
+            toolId: normalizedToolCallId,
+            detail: `连续 ${consecutiveIdenticalToolCalls} 次以相同参数调用 ${normalizedToolCallId}，强制中断`,
+          });
+          this.logger.warn(
+            `[repeated_identical_tool_halt] agent=${agent.name} taskId=${task.id} round=${round + 1} tool=${normalizedToolCallId} consecutiveCount=${consecutiveIdenticalToolCalls}`,
+          );
+          const haltInstruction = await this.resolveAgentPromptContent(
+            AGENT_PROMPTS.repeatedIdenticalToolCallHalt,
+            { toolId: normalizedToolCallId, count: consecutiveIdenticalToolCalls },
+          );
+          messages.push({
+            role: 'system',
+            content: haltInstruction,
+            timestamp: new Date(),
+          });
+          await persistIntermediateSystemMessage(
+            round,
+            intermediateSystemOffset++,
+            haltInstruction,
+            {
+              source: 'tool-calling-loop.repeated-identical-tool-halt',
+              toolId: normalizedToolCallId,
+            },
+          );
+          stepParts.push({
+            type: 'tool_call',
+            status: 'error',
+            toolId: normalizedToolCallId,
+            input: toolCall.parameters,
+            error: `repeated_identical_call_${consecutiveIdenticalToolCalls}`,
+          });
+          stepParts.push({
+            type: 'system_event',
+            status: 'error',
+            content: 'repeated_identical_tool_halt',
+            error: `${normalizedToolCallId} called ${consecutiveIdenticalToolCalls} times with identical params`,
+          });
+          await persistStepMessage({
+            round,
+            response,
+            finish: 'tool-calls',
+            parts: stepParts,
+            usage,
+            cost,
+            stepStartAt: stepStartedAt,
+            stepEndAt: new Date(),
+          });
+          continue;
+        }
+
         stepParts.push({
           type: 'tool_call',
           status: 'completed',
@@ -2553,7 +2619,6 @@ export class AgentExecutorService {
         enabled: Boolean(routeDecision.openCodeExecutionConfig),
         strictExecution: executionChannel === 'opencode',
         selected: executionChannel === 'opencode',
-        projectDirectory: routeDecision.openCodeExecutionConfig?.projectDirectory,
         endpoint: routeDecision.openCodeExecutionConfig?.endpoint,
         endpointRef: routeDecision.openCodeExecutionConfig?.endpointRef,
         authEnable: routeDecision.openCodeExecutionConfig?.authEnable,

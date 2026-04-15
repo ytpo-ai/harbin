@@ -42,10 +42,7 @@ export class OpencodeStreamingAgentExecutorEngine implements AgentExecutorEngine
         mode: 'streaming',
       },
     };
-    const resolvedProjectDirectory =
-      openCodeExecutionConfig.projectDirectory
-      || input.context?.projectBinding?.opencodeProjectPath
-      || undefined;
+    const resolvedProjectDirectory = input.context?.projectBinding?.opencodeProjectPath || undefined;
     if (resolvedProjectDirectory) {
       sessionConfig.directory = resolvedProjectDirectory;
       sessionConfig.projectPath = resolvedProjectDirectory;

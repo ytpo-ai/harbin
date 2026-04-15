@@ -13,7 +13,6 @@ export interface OpenCodeModelBinding {
 
 export interface OpenCodeExecutionConfig {
   provider: 'opencode';
-  projectDirectory?: string;
   endpoint?: string;
   endpointRef?: string;
   authEnable: boolean;
@@ -101,15 +100,6 @@ export class AgentOpenCodePolicyService {
       return null;
     }
 
-    const projectDirectoryRaw = (execution as Record<string, unknown>).projectDirectory;
-    if (projectDirectoryRaw !== undefined && projectDirectoryRaw !== null && typeof projectDirectoryRaw !== 'string') {
-      throw new BadRequestException('agent.config.execution.projectDirectory must be a string');
-    }
-    const projectDirectory =
-      typeof projectDirectoryRaw === 'string' && projectDirectoryRaw.trim().length > 0
-        ? projectDirectoryRaw.trim()
-        : undefined;
-
     const endpointRaw = (execution as Record<string, unknown>).endpoint;
     if (endpointRaw !== undefined && endpointRaw !== null && typeof endpointRaw !== 'string') {
       throw new BadRequestException('agent.config.execution.endpoint must be a string');
@@ -167,7 +157,6 @@ export class AgentOpenCodePolicyService {
 
     return {
       provider: 'opencode',
-      projectDirectory,
       endpoint,
       endpointRef,
       authEnable,

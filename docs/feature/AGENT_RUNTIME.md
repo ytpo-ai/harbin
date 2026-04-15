@@ -61,7 +61,7 @@
   - 配额检测：按 `agent + period` 检测，超限触发 `permission.asked` 审批流并暂停 run。
 - 执行通道一致性：当 `agent.config.execution.provider=opencode` 时，执行能力为“可路由双通道”；具体 run 按任务类型判定走 `opencode` 或 `native`，命中 `opencode` 后非流式与流式路径均强制走 OpenCode 执行桥接。
 - `config` 解析入口：从 `agent.config.execution` 与 `agent.config.budget` 读取执行与预算策略。
-- OpenCode 项目目录：支持 `agent.config.execution.projectDirectory`，用于创建 OpenCode session 时绑定目录上下文。
+- OpenCode 项目目录：从 `context.projectBinding.opencodeProjectPath` 读取，用于创建 OpenCode session 时绑定目录上下文。
 - OpenCode Endpoint 解析优先级：`agent.config.execution.endpoint` > `agent.config.execution.endpointRef` > `context.opencodeRuntime.endpoint` > `context.opencodeRuntime.endpointRef` > `OPENCODE_SERVER_URL`。
 - OpenCode 认证开关：支持 `agent.config.execution.auth_enable`（boolean，默认 `false`）；仅当为 `true` 时读取 `OPENCODE_SERVER_PASSWORD` 并携带 Basic Auth（username=`opencode`）。
 - OpenCode 调用通道：Runtime 侧已移除 SDK 依赖，统一通过 OpenCode HTTP API（含 SSE）直连执行与事件读取。

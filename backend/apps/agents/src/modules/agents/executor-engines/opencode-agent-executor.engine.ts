@@ -33,10 +33,7 @@ export class OpencodeAgentExecutorEngine implements AgentExecutorEngine {
         source: 'agents-runtime',
       },
     };
-    const resolvedProjectDirectory =
-      openCodeExecutionConfig.projectDirectory
-      || input.context?.projectBinding?.opencodeProjectPath
-      || undefined;
+    const resolvedProjectDirectory = input.context?.projectBinding?.opencodeProjectPath || undefined;
     if (resolvedProjectDirectory) {
       sessionConfig.directory = resolvedProjectDirectory;
       sessionConfig.projectPath = resolvedProjectDirectory;

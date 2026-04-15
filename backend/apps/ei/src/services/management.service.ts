@@ -256,7 +256,6 @@ export class EiManagementService {
     };
 
     const executionRecord = execution as Record<string, unknown>;
-    pushPath(executionRecord.projectDirectory);
     pushPath(executionRecord.projectPath);
 
     const projectDirectories = executionRecord.projectDirectories;
