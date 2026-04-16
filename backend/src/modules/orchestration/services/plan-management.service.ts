@@ -61,7 +61,18 @@ export class PlanManagementService {
 
     const domainType = this.normalizeDomainType(dto.domainType);
     const requirementId = String(dto.requirementId || '').trim() || undefined;
-    const projectId = String(dto.projectId || '').trim() || undefined;
+    // Resolve projectId: explicit param > planner agent's projectId (auto-infer)
+    let projectId = String(dto.projectId || '').trim() || undefined;
+    if (!projectId && dto.plannerAgentId) {
+      const plannerAgent = await this.agentClientService.getAgent(dto.plannerAgentId);
+      const agentProjectId = String(plannerAgent?.projectId || '').trim() || undefined;
+      if (agentProjectId) {
+        this.logger.log(
+          `[createPlanFromPrompt] auto-inferred projectId=${agentProjectId} from plannerAgent=${dto.plannerAgentId}`,
+        );
+        projectId = agentProjectId;
+      }
+    }
     const plan = await new this.orchestrationPlanModel({
       title: dto.title || this.derivePlanTitle(prompt),
       sourcePrompt: prompt,

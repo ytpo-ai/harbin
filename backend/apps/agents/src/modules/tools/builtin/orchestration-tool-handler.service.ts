@@ -157,6 +157,9 @@ export class OrchestrationToolHandler {
       plannerAgentId?: string;
       autoRun?: boolean;
       requirementId?: string;
+      domainType?: 'general' | 'development' | 'research';
+      executionMode?: 'standard' | 'easy';
+      projectId?: string;
     },
     agentId?: string,
     executionContext?: ToolExecutionContext,
@@ -189,6 +192,19 @@ export class OrchestrationToolHandler {
         `orchestration_create_plan invalid mode: ${params.mode}. allowed=${validModes.join('|')}`,
       );
     }
+    const validDomainTypes: Array<'general' | 'development' | 'research'> = ['general', 'development', 'research'];
+    const domainType = params.domainType && validDomainTypes.includes(params.domainType)
+      ? params.domainType
+      : undefined;
+    const validExecutionModes: Array<'standard' | 'easy'> = ['standard', 'easy'];
+    const executionMode = params.executionMode && validExecutionModes.includes(params.executionMode)
+      ? params.executionMode
+      : undefined;
+    // Resolve projectId: explicit param > collaborationContext > undefined
+    const contextProjectId = String(
+      (executionContext?.collaborationContext as Record<string, unknown> | undefined)?.projectId || '',
+    ).trim() || undefined;
+    const projectId = String(params.projectId || '').trim() || contextProjectId;
     const payload = {
       prompt,
       title,
@@ -196,6 +212,9 @@ export class OrchestrationToolHandler {
       plannerAgentId: params.plannerAgentId,
       autoRun: params.autoRun === true,
       requirementId: params.requirementId,
+      ...(domainType ? { domainType } : {}),
+      ...(executionMode ? { executionMode } : {}),
+      ...(projectId ? { projectId } : {}),
     };
     const result = await this.internalApiClient.callOrchestrationApi('POST', '/plans/from-prompt', payload);
     return {
@@ -355,8 +374,12 @@ export class OrchestrationToolHandler {
   }
 
   private validateOutlineData(data: unknown): { valid: boolean; reason?: string } {
-    if (!Array.isArray(data) || data.length === 0) {
-      return { valid: false, reason: 'plan-initialize mode=outline requires a non-empty array' };
+    if (!Array.isArray(data)) {
+      return { valid: false, reason: 'plan-initialize mode=outline requires an array' };
+    }
+    // 允许空数组：某些 skill（如 rd-plan-requirement-extract）声明不生成执行步骤
+    if (data.length === 0) {
+      return { valid: true };
     }
 
     for (let index = 0; index < data.length; index += 1) {
