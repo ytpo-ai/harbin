@@ -103,14 +103,26 @@ export class OpenCodeAdapter {
       });
 
       const messages = this.extractSessionMessages(session);
+      const lastMessage = this.findLastMessage(messages);
       const lastAssistantMessage = this.findLastAssistantMessage(messages);
       const sessionState = String(session?.status || session?.state || '').trim().toLowerCase();
+      const activeBySessionFlag = this.resolveSessionActiveFlag(session);
       const activeBySessionState = this.isActiveSessionState(sessionState);
+      const activeByLastMessage = this.isActiveMessage(lastMessage);
       const activeByAssistantMessage = this.isActiveMessage(lastAssistantMessage);
-      const lastActivityAt = this.resolveLastActivityAt(lastAssistantMessage, session);
+      const inactiveBySessionState = this.isTerminalSessionState(sessionState);
+      const fallbackActiveBySessionPresence = this.hasSessionPayload(session) && !inactiveBySessionState;
+      const lastActivityAt = this.resolveLastActivityAt(lastMessage, session);
+
+      const activeBySignals =
+        activeBySessionState
+        || activeByLastMessage
+        || activeByAssistantMessage
+        || fallbackActiveBySessionPresence;
+      const active = activeBySessionFlag !== undefined ? activeBySessionFlag : activeBySignals;
 
       return {
-        active: activeBySessionState || activeByAssistantMessage,
+        active: inactiveBySessionState ? false : active,
         ...(lastActivityAt ? { lastActivityAt } : {}),
       };
     } catch (error) {
@@ -120,6 +132,30 @@ export class OpenCodeAdapter {
       );
       return { active: false };
     }
+  }
+
+  private hasSessionPayload(session: unknown): boolean {
+    return Boolean(session && typeof session === 'object' && !Array.isArray(session));
+  }
+
+  private resolveSessionActiveFlag(session: unknown): boolean | undefined {
+    if (!this.hasSessionPayload(session)) {
+      return undefined;
+    }
+    const payload = session as Record<string, unknown>;
+    const candidates = [
+      payload.active,
+      payload.isActive,
+      payload.busy,
+      payload.inProgress,
+      payload.running,
+    ];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'boolean') {
+        return candidate;
+      }
+    }
+    return undefined;
   }
 
   private extractResponseText(result: any): string {
@@ -196,6 +232,16 @@ export class OpenCodeAdapter {
     return undefined;
   }
 
+  private findLastMessage(messages: Array<Record<string, unknown>>): Record<string, unknown> | undefined {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index];
+      if (message && typeof message === 'object') {
+        return message;
+      }
+    }
+    return undefined;
+  }
+
   private isActiveMessage(message: Record<string, unknown> | undefined): boolean {
     if (!message) {
       return false;
@@ -212,6 +258,20 @@ export class OpenCodeAdapter {
       return false;
     }
     return status === 'pending' || status === 'running' || status === 'in_progress' || status === 'processing';
+  }
+
+  private isTerminalSessionState(status: string): boolean {
+    if (!status) {
+      return false;
+    }
+    return status === 'completed'
+      || status === 'done'
+      || status === 'failed'
+      || status === 'error'
+      || status === 'aborted'
+      || status === 'cancelled'
+      || status === 'canceled'
+      || status === 'stopped';
   }
 
   private resolveLastActivityAt(
