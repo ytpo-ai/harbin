@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Agent, AgentDocument } from '@agent/schemas/agent.schema';
 import { AgentClientService } from '../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../shared/types';
@@ -9,6 +9,7 @@ import {
   OrchestrationPlan,
   OrchestrationPlanDocument,
 } from '../../shared/schemas/orchestration-plan.schema';
+import { RdProject, RdProjectDocument } from '../../shared/schemas/ei-project.schema';
 import {
   MAX_TASKS,
   MAX_TITLE_LENGTH,
@@ -124,13 +125,86 @@ export interface EasyRunResult {
 export class PlannerService {
   private readonly logger = new Logger(PlannerService.name);
 
+  /** Cache projectBinding per planId to avoid repeated DB lookups within the same service instance. */
+  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeProjectPath?: string; localProjectId?: string } | null>();
+
   constructor(
     @InjectModel(Agent.name) private readonly agentModel: Model<AgentDocument>,
     @InjectModel(OrchestrationPlan.name)
     private readonly planModel: Model<OrchestrationPlanDocument>,
+    @InjectModel(RdProject.name)
+    private readonly rdProjectModel: Model<RdProjectDocument>,
     private readonly agentClientService: AgentClientService,
     private readonly contextService: OrchestrationContextService,
   ) {}
+
+  /**
+   * Resolve project binding from plan.projectId.
+   * Supports both ei_projects._id and incubation project ID fallback.
+   */
+  private async resolveProjectBindingForPlan(
+    plan: OrchestrationPlanDocument,
+  ): Promise<{ localPath?: string; opencodeProjectPath?: string; localProjectId?: string } | null> {
+    const projectId = String((plan as any).projectId || '').trim();
+    if (!projectId) {
+      return null;
+    }
+    if (this.projectBindingCache.has(projectId)) {
+      return this.projectBindingCache.get(projectId) ?? null;
+    }
+    try {
+      let project = await this.rdProjectModel
+        .findOne({ _id: projectId })
+        .select({ _id: 1, localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+        .lean<{ _id?: any; localPath?: string; opencodeProjectPath?: string; opencodeBindingIds?: any[]; sourceType?: string }>()
+        .exec();
+
+      // Fallback: projectId may be an incubation project ID
+      if (!project) {
+        project = await this.rdProjectModel
+          .findOne({ incubationProjectId: new Types.ObjectId(projectId), sourceType: 'local' })
+          .select({ _id: 1, localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+          .lean<{ _id?: any; localPath?: string; opencodeProjectPath?: string; opencodeBindingIds?: any[]; sourceType?: string }>()
+          .exec();
+      }
+
+      if (!project) {
+        this.projectBindingCache.set(projectId, null);
+        return null;
+      }
+
+      const binding: { localPath?: string; opencodeProjectPath?: string; localProjectId?: string } = {
+        localPath: project.localPath || undefined,
+        opencodeProjectPath: project.opencodeProjectPath || undefined,
+        localProjectId: project.sourceType === 'local' && project._id ? String(project._id) : undefined,
+      };
+
+      // If LOCAL project, resolve opencodeProjectPath from linked opencode project
+      if (project.sourceType === 'local' && !binding.opencodeProjectPath && Array.isArray(project.opencodeBindingIds) && project.opencodeBindingIds.length > 0) {
+        const linkedProject = await this.rdProjectModel
+          .findOne({ _id: project.opencodeBindingIds[0] })
+          .select({ opencodeProjectPath: 1 })
+          .lean<{ opencodeProjectPath?: string }>()
+          .exec();
+        if (linkedProject?.opencodeProjectPath) {
+          binding.opencodeProjectPath = linkedProject.opencodeProjectPath;
+        }
+      }
+
+      if (!binding.localPath && !binding.opencodeProjectPath) {
+        this.projectBindingCache.set(projectId, null);
+        return null;
+      }
+
+      this.logger.log(`[resolveProjectBindingForPlan] projectId=${projectId} localProjectId=${binding.localProjectId || '-'} localPath=${binding.localPath || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`);
+      this.projectBindingCache.set(projectId, binding);
+      return binding;
+    } catch (err) {
+      this.logger.warn(`[resolveProjectBindingForPlan] failed: ${(err as Error).message}`);
+      this.projectBindingCache.set(projectId, null);
+      return null;
+    }
+  }
 
   /**
    * @deprecated Legacy batch planning path. Incremental planning should use generateNextTask().
@@ -176,6 +250,7 @@ export class PlannerService {
     }
 
     const planDomainType = String((plan as any).domainType || 'general').trim();
+    const projectBinding = await this.resolveProjectBindingForPlan(plan);
     const prompt = await this.contextService.buildGeneratingPrompt(context, {
       domainType: planDomainType,
       planId,
@@ -202,6 +277,8 @@ export class PlannerService {
         phase: 'generating',
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+        ...(projectBinding ? { projectBinding } : {}),
+        ...(String((plan as any).projectId || '').trim() ? { projectId: String((plan as any).projectId || '').trim() } : {}),
       }),
       sessionContext: {
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
@@ -293,6 +370,7 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
+    const projectBinding = await this.resolveProjectBindingForPlan(plan);
     const stepTag = Number.isFinite(step) && Number(step) > 0 ? ` 任务#${Number(step)}` : '';
     const task: AgentExecutionTask = {
       title: `[Incremental Planning] ${plan.title}${stepTag} pre-execution`,
@@ -314,6 +392,8 @@ export class PlannerService {
         phase: 'pre_execute',
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+        ...(projectBinding ? { projectBinding } : {}),
+        ...(String((plan as any).projectId || '').trim() ? { projectId: String((plan as any).projectId || '').trim() } : {}),
       }),
       sessionContext: {
         sessionId,
@@ -358,11 +438,14 @@ export class PlannerService {
     }
 
     const planDomainType = String((plan as { domainType?: string }).domainType || input.domainType || 'general').trim().toLowerCase();
+    const planProjectId = String((plan as any).projectId || '').trim() || undefined;
+    const projectBinding = await this.resolveProjectBindingForPlan(plan);
     const prompt = await this.contextService.buildPhaseInitializePrompt({
       planId,
       sourcePrompt: input.sourcePrompt,
       domainType: planDomainType,
       existingTaskContext: input.existingTaskContext,
+      projectId: planProjectId,
     });
 
     const task: AgentExecutionTask = {
@@ -385,6 +468,8 @@ export class PlannerService {
         phase: 'initialize',
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+        ...(projectBinding ? { projectBinding } : {}),
+        ...(String((plan as any).projectId || '').trim() ? { projectId: String((plan as any).projectId || '').trim() } : {}),
       }),
       sessionContext: {
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
@@ -425,6 +510,7 @@ export class PlannerService {
       throw new BadRequestException('Plan has no planner agent configured');
     }
 
+    const projectBinding = await this.resolveProjectBindingForPlan(plan);
     const stepTag = Number.isFinite(step) && Number(step) > 0 ? ` 任务#${Number(step)}` : '';
     const task: AgentExecutionTask = {
       title: `[Incremental Planning] ${plan.title}${stepTag} post-execution`,
@@ -446,6 +532,8 @@ export class PlannerService {
         phase: 'post_execute',
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+        ...(projectBinding ? { projectBinding } : {}),
+        ...(String((plan as any).projectId || '').trim() ? { projectId: String((plan as any).projectId || '').trim() } : {}),
       }),
       sessionContext: {
         sessionId,
@@ -502,6 +590,7 @@ export class PlannerService {
       | 'general'
       | 'development'
       | 'research';
+    const projectBinding = await this.resolveProjectBindingForPlan(plan);
 
     const task: AgentExecutionTask = {
       title: `[Incremental Planning] ${plan.title} easy-run`,
@@ -523,6 +612,8 @@ export class PlannerService {
         phase: 'easy_run',
         taskType: 'planning',
         ...(plan.strategy?.skillActivation ? { skillActivation: plan.strategy.skillActivation } : {}),
+        ...(projectBinding ? { projectBinding } : {}),
+        ...(String((plan as any).projectId || '').trim() ? { projectId: String((plan as any).projectId || '').trim() } : {}),
       }),
       sessionContext: {
         ...(options?.sessionId ? { sessionId: options.sessionId } : {}),

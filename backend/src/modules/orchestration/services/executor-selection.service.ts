@@ -49,6 +49,7 @@ export interface AgentToolFitValidationResult {
   fit: boolean;
   requiredTools: string[];
   missingTools: string[];
+  rejectionReason?: 'project_scope_mismatch' | 'opencode_capability';
   suggestion?: ExecutorSelectionResult;
 }
 
@@ -84,6 +85,7 @@ const W_ROLE = parseInt(process.env.EXECUTOR_WEIGHT_ROLE || '40', 10);
 const W_TOOL = parseInt(process.env.EXECUTOR_WEIGHT_TOOL || '30', 10);
 const W_CAPABILITY = parseInt(process.env.EXECUTOR_WEIGHT_CAPABILITY || '20', 10);
 const W_KEYWORD = parseInt(process.env.EXECUTOR_WEIGHT_KEYWORD || '10', 10);
+const W_PROJECT_AFFINITY = parseInt(process.env.EXECUTOR_WEIGHT_PROJECT_AFFINITY || '15', 10);
 
 const MIN_SCORE_THRESHOLD = parseInt(process.env.EXECUTOR_MIN_SCORE_THRESHOLD || '10', 10);
 
@@ -151,7 +153,7 @@ export class ExecutorSelectionService {
       ? explicitRequiredTools
       : this.resolveRequiredToolHints(normalizedTaskType, input.taskTitle, input.taskDescription);
 
-    if (!normalizedAgentId || requiredTools.length === 0) {
+    if (!normalizedAgentId) {
       return {
         fit: true,
         requiredTools,
@@ -188,7 +190,8 @@ export class ExecutorSelectionService {
         return {
           fit: false,
           requiredTools,
-          missingTools: ['project_scope_mismatch'],
+          missingTools: [],
+          rejectionReason: 'project_scope_mismatch',
           suggestion: await this.selectExecutor({
             title: input.taskTitle,
             description: input.taskDescription,
@@ -209,12 +212,21 @@ export class ExecutorSelectionService {
         fit: false,
         requiredTools,
         missingTools: ['opencode_capability'],
+        rejectionReason: 'opencode_capability',
         suggestion: await this.selectExecutor({
           title: input.taskTitle,
           description: input.taskDescription,
           projectId: input.projectId,
           taskType: normalizedTaskType,
         }),
+      };
+    }
+
+    if (requiredTools.length === 0) {
+      return {
+        fit: true,
+        requiredTools,
+        missingTools: [],
       };
     }
 
@@ -348,6 +360,14 @@ export class ExecutorSelectionService {
       // D. Keyword relevance (lightweight, preserved for breadth)
       breakdown.keywordRelevance = this.computeKeywordScore(ctx.title, ctx.description, agent, role);
 
+      // E. Project affinity — prefer agents belonging to the plan's project over global agents
+      if (projectId) {
+        const agentProjectId = String((agent as any).projectId || '').trim();
+        breakdown.projectAffinity = agentProjectId === projectId ? W_PROJECT_AFFINITY : 0;
+      } else {
+        breakdown.projectAffinity = 0;
+      }
+
       // --- Hard gates (applied AFTER dimension scoring to avoid overwrite) ---
 
       // Gate 1: Tier delegation — planner tier cannot delegate to this agent tier
@@ -356,6 +376,7 @@ export class ExecutorSelectionService {
         breakdown.toolCoverage = 0;
         breakdown.capabilityMatch = 0;
         breakdown.keywordRelevance = 0;
+        breakdown.projectAffinity = 0;
       }
 
       // Gate 2: Required capabilities — agent must have ALL required caps
@@ -368,6 +389,7 @@ export class ExecutorSelectionService {
           breakdown.toolCoverage = 0;
           breakdown.capabilityMatch = 0;
           breakdown.keywordRelevance = 0;
+          breakdown.projectAffinity = 0;
         }
       }
 
@@ -377,6 +399,7 @@ export class ExecutorSelectionService {
         breakdown.toolCoverage = 0;
         breakdown.capabilityMatch = 0;
         breakdown.keywordRelevance = 0;
+        breakdown.projectAffinity = 0;
       }
 
       const score = Object.values(breakdown).reduce((a, b) => a + b, 0);

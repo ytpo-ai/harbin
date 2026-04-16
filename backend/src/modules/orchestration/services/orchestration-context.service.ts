@@ -316,6 +316,7 @@ export class OrchestrationContextService {
     sourcePrompt: string;
     domainType: string;
     existingTaskContext?: Record<string, unknown>;
+    projectId?: string;
   }): Promise<string> {
     const domainType = String(input.domainType || 'general').trim().toLowerCase();
     const existingTaskContext = input.existingTaskContext || {};
@@ -329,12 +330,24 @@ export class OrchestrationContextService {
       ? `提示：已有 requirementId=${existingRequirementId}，可直接用于扩展步骤。`
       : '提示：如需 requirementId，请在扩展步骤中按 skill 指导获取并写入 taskContext。';
 
+    const projectId = String(input.projectId || '').trim();
+    const projectAgentPriorityHint = projectId
+      ? [
+        '**Agent 选择优先级规则（项目上下文）**：',
+        '当前计划属于特定项目（projectId 非空），选择 recommendedAgent 时必须遵循：',
+        '1. **优先选择项目内 agent**（名称中含项目关键词，或明确属于本项目的 agent）',
+        '2. 仅当项目内无匹配 capabilitySet 的 agent 时，才降级选择全局 agent',
+        '3. 禁止在项目内存在匹配 agent 的情况下选择全局 agent',
+      ].join('\n')
+      : '';
+
     return this.renderTemplate(template, {
       planId: input.planId,
       domainType,
       sourcePrompt: input.sourcePrompt,
       existingRequirementHint,
       extensionStepHint,
+      projectAgentPriorityHint,
     });
   }
 

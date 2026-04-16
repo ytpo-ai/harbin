@@ -65,6 +65,8 @@ const DEFAULT_PLANNER_INITIALIZE_PROMPT = [
   '3. 为每个步骤生成 4 个阶段的 phasePrompts，并选择推荐执行 agent。',
   '4. 调用 `builtin.sys-mg.mcp.orchestration.initialize` 写入 outline（planId={{planId}}，mode="outline"）。',
   '',
+  '{{projectAgentPriorityHint}}',
+  '',
   '**OutlineItem 数据结构**（data 数组中每个元素必须符合）：',
   '```',
   '{',

@@ -213,7 +213,16 @@ export class AgentMasterToolHandler {
       || executionContext?.projectId
       || '',
     ).trim() || undefined;
-    const agents = await this.agentModel.find().exec();
+    const agentQuery: Record<string, unknown> = contextProjectId
+      ? {
+        $or: [
+          { projectId: contextProjectId },
+          { projectId: { $in: [null, ''] } },
+          { projectId: { $exists: false } },
+        ],
+      }
+      : {};
+    const agents = await this.agentModel.find(agentQuery).exec();
     const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
     const roleMap = await this.getRoleMapByIds(roleIds);
     const roleCodes = Array.from(new Set(Array.from(roleMap.values()).map((role) => role.code).filter(Boolean)));
@@ -319,6 +328,7 @@ export class AgentMasterToolHandler {
         };
       });
 
+      const agentProjectId = String(plain.projectId || '').trim();
       return {
         id: plain.id || plain._id?.toString?.() || plain._id,
         name: plain.name,
@@ -326,22 +336,15 @@ export class AgentMasterToolHandler {
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...((profile as any).permissions || profile.capabilities || [])])).slice(0, 12),
         tools: enrichedTools,
         _skillIds: Array.from(new Set((plain.skills || []).map((item: any) => String(item || '').trim()).filter(Boolean))),
-        _projectId: String(plain.projectId || '').trim(),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
+        ...(contextProjectId ? { scope: agentProjectId === contextProjectId ? 'project' : 'global' } : {}),
       };
     });
 
-    const projectScoped = contextProjectId
-      ? mapped.filter((item) => {
-        const agentProjectId = String(item._projectId || '').trim();
-        return !agentProjectId || agentProjectId === contextProjectId;
-      })
-      : mapped;
-
     const filtered = targetAgentId
-      ? projectScoped.filter((item) => String(item.id || '').trim() === targetAgentId)
-      : projectScoped.filter((item) => includeHidden || item.exposed);
+      ? mapped.filter((item) => String(item.id || '').trim() === targetAgentId)
+      : mapped.filter((item) => includeHidden || item.exposed);
     const visibleAgents = filtered.slice(0, limit);
     const skillIds = Array.from(new Set(visibleAgents.flatMap((item) => item._skillIds || [])));
     const skills = skillIds.length
@@ -386,13 +389,14 @@ export class AgentMasterToolHandler {
         skills: skillsWithMetadata,
         exposed: item.exposed,
         isActive: item.isActive,
+        ...((item as any).scope ? { scope: (item as any).scope } : {}),
         identify: identifyMap.get(String(item.id || '').trim()) || '',
         runtimeStatus: runtimeStatusMap.get(String(item.id || '').trim()) || buildIdleAgentRuntimeStatus(String(item.id || '').trim()),
       };
     });
 
     return {
-      total: projectScoped.length,
+      total: mapped.length,
       visible: agentsWithIdentify.length,
       includeHidden,
       ...(contextProjectId ? { projectId: contextProjectId } : {}),
