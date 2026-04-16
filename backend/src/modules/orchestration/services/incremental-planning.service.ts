@@ -675,12 +675,13 @@ export class IncrementalPlanningService {
 
     const plan = await this.planModel
       .findById(planId)
-      .select({ generationState: 1 })
-      .lean<{ generationState?: { currentStep?: number } }>()
+      .select({ generationState: 1, projectId: 1 })
+      .lean<{ generationState?: { currentStep?: number }; projectId?: string }>()
       .exec();
     if (!plan) {
       throw new NotFoundException('Plan not found');
     }
+    const planProjectId = String(plan.projectId || '').trim() || undefined;
 
     const action = String(input?.action || 'new').trim().toLowerCase() === 'redesign' ? 'redesign' : 'new';
     const title = String(input?.title || '').trim().slice(0, 200);
@@ -730,11 +731,12 @@ export class IncrementalPlanningService {
     const nextOrder = typeof maxOrderDoc?.order === 'number' ? maxOrderDoc.order + 1 : 0;
 
     const createdTask = action === 'redesign'
-      ? await this.redesignFailedTask(planId, redesignedTaskId, taskPayload)
+      ? await this.redesignFailedTask(planId, redesignedTaskId, taskPayload, planProjectId)
       : await this.createTaskFromPlannerOutput(
         planId,
         taskPayload,
         nextOrder,
+        planProjectId,
       );
 
     return {
@@ -805,11 +807,14 @@ export class IncrementalPlanningService {
     planId: string,
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     order: number,
+    inheritedProjectId?: string,
   ): Promise<OrchestrationTaskDocument> {
-    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
-    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
+    const planProjectId = String(inheritedProjectId || '').trim() || undefined;
+    const effectiveProjectId = planProjectId
+      || String((await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec() as any)?.projectId || '').trim()
+      || undefined;
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, planProjectId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, effectiveProjectId);
 
     const requirementId = await this.resolveRequirementId(planId);
 
@@ -846,7 +851,7 @@ export class IncrementalPlanningService {
           },
         },
       ],
-      ...(planProjectId ? { projectId: planProjectId } : {}),
+      ...(effectiveProjectId ? { projectId: effectiveProjectId } : {}),
     }).save();
 
     await this.planModel
@@ -869,6 +874,7 @@ export class IncrementalPlanningService {
     planId: string,
     redesignTaskId: string,
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
+    inheritedProjectId?: string,
   ): Promise<OrchestrationTaskDocument> {
     const normalizedTaskId = String(redesignTaskId || '').trim();
     if (!normalizedTaskId) {
@@ -887,10 +893,12 @@ export class IncrementalPlanningService {
       throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
     }
 
-    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
-    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
+    const planProjectId = String(inheritedProjectId || '').trim() || undefined;
+    const effectiveProjectId = planProjectId
+      || String((await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec() as any)?.projectId || '').trim()
+      || undefined;
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, planProjectId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, effectiveProjectId);
     const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
     await this.taskModel
       .updateOne(
@@ -980,7 +988,7 @@ export class IncrementalPlanningService {
     projectId?: string,
   ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
     const mode = this.resolvePlannerAgentSelectionMode();
-    const validAgentId = await this.resolveValidAgentId(taskAgentId);
+    const validAgentId = await this.resolveValidAgentId(taskAgentId, projectId);
 
     if (mode === 'override') {
       this.logger.log(
@@ -1011,6 +1019,50 @@ export class IncrementalPlanningService {
     });
 
     if (fitCheck.fit) {
+      // Project affinity override: if the planner chose a global agent but a project-scoped agent
+      // with equivalent capabilities exists, prefer the project-scoped agent.
+      const scopedProjectId = String(projectId || '').trim();
+      if (scopedProjectId) {
+        const chosenAgent = await this.agentModel
+          .findOne(Types.ObjectId.isValid(validAgentId) ? { _id: new Types.ObjectId(validAgentId) } : { id: validAgentId })
+          .select({ projectId: 1 })
+          .lean()
+          .exec();
+        const chosenAgentProjectId = String((chosenAgent as any)?.projectId || '').trim();
+        if (!chosenAgentProjectId || chosenAgentProjectId !== scopedProjectId) {
+          // Chosen agent is global — check if a project-scoped alternative exists
+          const projectAlternative = await this.executorSelectionService.selectExecutor({
+            title: taskResult.title,
+            description: taskResult.description,
+            projectId: scopedProjectId,
+            taskType: taskResult.taskType || 'general',
+          });
+          if (
+            projectAlternative.executorType === 'agent'
+            && projectAlternative.executorId
+            && projectAlternative.executorId !== validAgentId
+          ) {
+            // Verify the alternative is actually a project agent (not another global agent)
+            const altAgent = await this.agentModel
+              .findOne(Types.ObjectId.isValid(projectAlternative.executorId) ? { _id: new Types.ObjectId(projectAlternative.executorId) } : { id: projectAlternative.executorId })
+              .select({ projectId: 1 })
+              .lean()
+              .exec();
+            const altProjectId = String((altAgent as any)?.projectId || '').trim();
+            if (altProjectId === scopedProjectId) {
+              this.logger.log(
+                `[planner_project_affinity_override] plannerAgent=${validAgentId}(global) → override=${projectAlternative.executorId}(project) title="${taskResult.title.slice(0, 60)}"`,
+              );
+              return {
+                executorType: 'agent',
+                executorId: projectAlternative.executorId,
+                reason: `Project affinity override: planner chose global agent, replaced with project-scoped agent; ${projectAlternative.reason}`,
+              };
+            }
+          }
+        }
+      }
+
       return {
         executorType: 'agent',
         executorId: validAgentId,
@@ -1019,20 +1071,27 @@ export class IncrementalPlanningService {
     }
 
     this.logger.warn(
-      `[planner_verify_fallback] plannerAgent=${validAgentId} missingTools=${fitCheck.missingTools.join(',') || 'none'} title="${taskResult.title.slice(0, 60)}"`,
+      `[planner_verify_fallback] plannerAgent=${validAgentId} rejectionReason=${fitCheck.rejectionReason || '-'} missingTools=${fitCheck.missingTools.join(',') || 'none'} title="${taskResult.title.slice(0, 60)}"`,
     );
+
+    const mismatchReason =
+      fitCheck.rejectionReason === 'project_scope_mismatch'
+        ? 'Planner assignment out of project scope'
+        : fitCheck.rejectionReason === 'opencode_capability'
+          ? 'Planner assignment lacks opencode capability'
+          : `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}`;
 
     if (fitCheck.suggestion) {
       return {
         executorType: fitCheck.suggestion.executorType,
         executorId: fitCheck.suggestion.executorId,
-        reason: `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}; fallback=${fitCheck.suggestion.reason}`,
+        reason: `${mismatchReason}; fallback=${fitCheck.suggestion.reason}`,
       };
     }
 
     return this.resolveFallbackAssignment(
       taskResult,
-      `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}`,
+      mismatchReason,
       projectId,
     );
   }
@@ -1221,7 +1280,7 @@ export class IncrementalPlanningService {
     };
   }
 
-  private async resolveValidAgentId(agentId: string): Promise<string | null> {
+  private async resolveValidAgentId(agentId: string, projectId?: string): Promise<string | null> {
     const normalized = String(agentId || '').trim();
     if (!normalized) {
       return null;
@@ -1231,6 +1290,18 @@ export class IncrementalPlanningService {
     if (Types.ObjectId.isValid(normalized)) {
       query.$or = [{ id: normalized }, { _id: new Types.ObjectId(normalized) }];
       delete query.id;
+    }
+    const scopedProjectId = String(projectId || '').trim();
+    if (scopedProjectId) {
+      query.$and = [
+        {
+          $or: [
+            { projectId: scopedProjectId },
+            { projectId: { $in: [null, ''] } },
+            { projectId: { $exists: false } },
+          ],
+        },
+      ];
     }
 
     const agent = await this.agentModel
