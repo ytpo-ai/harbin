@@ -31,6 +31,20 @@ import { extractErrorMessage } from './utils';
 import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 import { skillService } from '../../services/skillService';
 
+type PlannerAgentSkill = {
+  id: string;
+  name: string;
+  description?: string;
+  tags: string[];
+};
+
+type PlannerAgentSkillBinding = {
+  skillId: string;
+  skill: PlannerAgentSkill | null;
+};
+
+const EMPTY_PLANNER_AGENT_SKILLS: PlannerAgentSkillBinding[] = [];
+
 const Orchestration: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -121,16 +135,8 @@ const Orchestration: React.FC = () => {
     { retry: false, staleTime: 60_000 },
   );
 
-  const { data: plannerAgentSkills = [], isFetching: plannerSkillsLoading } = useQuery<
-    Array<{
-      skillId: string;
-      skill: {
-        id: string;
-        name: string;
-        description?: string;
-        tags: string[];
-      } | null;
-    }>
+  const { data: plannerAgentSkills = EMPTY_PLANNER_AGENT_SKILLS, isFetching: plannerSkillsLoading } = useQuery<
+    PlannerAgentSkillBinding[]
   >(
     ['orchestration-create-plan-agent-skills', plannerAgentId],
     () => skillService.getAgentSkills(plannerAgentId),
@@ -144,9 +150,7 @@ const Orchestration: React.FC = () => {
     const expectedPrefix = `domainType:${domainType}:`;
     const result = plannerAgentSkills
       .map((item) => item.skill)
-      .filter(
-        (skill): skill is { id: string; name: string; description?: string; tags: string[] } => Boolean(skill),
-      )
+      .filter((skill): skill is PlannerAgentSkill => Boolean(skill))
       .filter((skill) => Array.isArray(skill.tags) && skill.tags.some((tag) => String(tag || '').startsWith(expectedPrefix)))
       .map((skill) => ({
         id: skill.id,
@@ -159,7 +163,13 @@ const Orchestration: React.FC = () => {
 
   useEffect(() => {
     const availableIds = new Set(plannerSkills.map((item) => item.id));
-    setSelectedSkillIds((previous) => previous.filter((id) => availableIds.has(id)));
+    setSelectedSkillIds((previous) => {
+      const next = previous.filter((id) => availableIds.has(id));
+      if (next.length === previous.length && next.every((id, index) => id === previous[index])) {
+        return previous;
+      }
+      return next;
+    });
   }, [plannerSkills]);
 
   useEffect(() => {

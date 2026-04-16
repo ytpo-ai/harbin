@@ -271,20 +271,92 @@ const normalizePlan = (plan: OrchestrationPlan): OrchestrationPlan => ({
   status: normalizePlanStatus(plan.status, plan.taskIds?.length || plan.tasks?.length || 0),
 });
 
+const unwrapApiPayload = (payload: unknown): unknown => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload;
+  }
+
+  const obj = payload as Record<string, unknown>;
+  if (Object.prototype.hasOwnProperty.call(obj, 'data')) {
+    return obj.data;
+  }
+
+  return payload;
+};
+
+const extractPlanArray = (payload: unknown): OrchestrationPlan[] => {
+  const unwrapped = unwrapApiPayload(payload);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped as OrchestrationPlan[];
+  }
+
+  if (!unwrapped || typeof unwrapped !== 'object') {
+    return [];
+  }
+
+  const obj = unwrapped as Record<string, unknown>;
+  const candidateKeys = ['data', 'items', 'list', 'rows', 'records', 'result'] as const;
+
+  for (const key of candidateKeys) {
+    const value = obj[key];
+    if (Array.isArray(value)) {
+      return value as OrchestrationPlan[];
+    }
+  }
+
+  const data = obj.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const nested = data as Record<string, unknown>;
+    for (const key of candidateKeys) {
+      const value = nested[key];
+      if (Array.isArray(value)) {
+        return value as OrchestrationPlan[];
+      }
+    }
+  }
+
+  const numericKeys = Object.keys(obj).filter((key) => /^\d+$/.test(key));
+  if (numericKeys.length > 0) {
+    return numericKeys
+      .sort((a, b) => Number(a) - Number(b))
+      .map((key) => obj[key])
+      .filter((item): item is OrchestrationPlan => Boolean(item) && typeof item === 'object');
+  }
+
+  return [];
+};
+
+const extractPlanObject = (payload: unknown): OrchestrationPlan | null => {
+  const unwrapped = unwrapApiPayload(payload);
+  if (!unwrapped || typeof unwrapped !== 'object' || Array.isArray(unwrapped)) {
+    return null;
+  }
+  return unwrapped as OrchestrationPlan;
+};
+
 export const orchestrationService = {
   async createPlanFromPrompt(payload: CreatePlanFromPromptDto): Promise<OrchestrationPlan> {
     const response = await api.post('/orchestration/plans/from-prompt', payload);
-    return normalizePlan(response.data);
+    const plan = extractPlanObject(response.data);
+    if (!plan) {
+      throw new Error('Invalid plan response');
+    }
+    return normalizePlan(plan);
   },
 
   async getPlans(filters?: { projectId?: string }): Promise<OrchestrationPlan[]> {
     const response = await api.get('/orchestration/plans', { params: filters });
-    return Array.isArray(response.data) ? response.data.map((plan: OrchestrationPlan) => normalizePlan(plan)) : [];
+    return extractPlanArray(response.data).map((plan) => normalizePlan(plan));
   },
 
   async getPlanById(planId: string): Promise<OrchestrationPlan> {
     const response = await api.get(`/orchestration/plans/${planId}`);
-    return normalizePlan(response.data);
+    const plan = extractPlanObject(response.data);
+    if (!plan) {
+      throw new Error('Invalid plan response');
+    }
+    return normalizePlan(plan);
   },
 
   subscribePlanEvents(
@@ -432,12 +504,20 @@ export const orchestrationService = {
 
   async publishPlan(planId: string): Promise<OrchestrationPlan> {
     const response = await api.post(`/orchestration/plans/${planId}/publish`);
-    return normalizePlan(response.data);
+    const plan = extractPlanObject(response.data);
+    if (!plan) {
+      throw new Error('Invalid publish response');
+    }
+    return normalizePlan(plan);
   },
 
   async unlockPlan(planId: string): Promise<OrchestrationPlan> {
     const response = await api.post(`/orchestration/plans/${planId}/unlock`);
-    return normalizePlan(response.data);
+    const plan = extractPlanObject(response.data);
+    if (!plan) {
+      throw new Error('Invalid unlock response');
+    }
+    return normalizePlan(plan);
   },
 
   async generateNext(planId: string): Promise<{ accepted: boolean }> {
