@@ -331,19 +331,59 @@ export const agentService = {
   },
 
   // 获取可分配agent（优先 active）
-  async getAssignableAgents(): Promise<Agent[]> {
-    try {
-      const response = await api.get('/agents/active');
-      const active = agentService.normalizeAgentList(response.data);
-      if (active.length > 0) {
-        return active;
-      }
-    } catch {
-      // fallback to /agents
-    }
+  async getAssignableAgents(projectId?: string): Promise<Agent[]> {
+    const normalizedProjectId = String(projectId || '').trim();
+    const withProjectFilter = Boolean(normalizedProjectId);
 
-    const all = await agentService.getAgents();
-    return all.filter((agent) => agent.isActive !== false);
+    const mergeById = (items: Agent[]): Agent[] => {
+      const map = new Map<string, Agent>();
+      for (const item of items) {
+        const id = String(item.id || '').trim();
+        if (!id) {
+          continue;
+        }
+        map.set(id, item);
+      }
+      return Array.from(map.values());
+    };
+
+    try {
+      if (withProjectFilter) {
+        const [projectResponse, globalResponse] = await Promise.all([
+          api.get('/agents/active', { params: { projectId: normalizedProjectId } }),
+          api.get('/agents/active', { params: { projectId: '' } }),
+        ]);
+        const active = mergeById([
+          ...agentService.normalizeAgentList(projectResponse.data),
+          ...agentService.normalizeAgentList(globalResponse.data),
+        ]);
+        if (active.length > 0) {
+          return active;
+        }
+      } else {
+        const response = await api.get('/agents/active');
+        const active = agentService.normalizeAgentList(response.data);
+        if (active.length > 0) {
+          return active;
+        }
+      }
+
+      const all = withProjectFilter
+        ? mergeById([
+          ...(await agentService.getAgents({ projectId: normalizedProjectId })),
+          ...(await agentService.getAgents({ projectId: '' })),
+        ])
+        : await agentService.getAgents();
+      return all.filter((agent) => agent.isActive !== false);
+    } catch {
+      const all = withProjectFilter
+        ? mergeById([
+          ...(await agentService.getAgents({ projectId: normalizedProjectId })),
+          ...(await agentService.getAgents({ projectId: '' })),
+        ])
+        : await agentService.getAgents();
+      return all.filter((agent) => agent.isActive !== false);
+    }
   },
 
   // 获取单个agent

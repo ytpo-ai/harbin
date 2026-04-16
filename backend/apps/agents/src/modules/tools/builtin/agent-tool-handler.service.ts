@@ -12,6 +12,7 @@ import { ModelManagementService } from '../../models/model-management.service';
 import { MemoService } from '../../memos/memo.service';
 import { AGENT_TASK_RUNTIME_STATUS_INDEX_KEY, buildAgentRuntimeStatusKey, buildIdleAgentRuntimeStatus, parseAgentRuntimeStatus } from '../../agent-tasks/agent-task-runtime-status.util';
 import { normalizeStringArray } from '../tool-identity.util';
+import { ToolExecutionContext } from '../tool-execution-context.type';
 
 const DEFAULT_PROFILE = {
   role: 'general-assistant',
@@ -200,10 +201,18 @@ export class AgentMasterToolHandler {
       createdAt: new Date().toISOString(),
     };
   }
-  async getAgentsMcpList(params: { includeHidden?: boolean; limit?: number; agentId?: string }): Promise<any> {
+  async getAgentsMcpList(
+    params: { includeHidden?: boolean; limit?: number; agentId?: string },
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> {
     const includeHidden = params?.includeHidden === true;
     const limit = Math.max(1, Math.min(Number(params?.limit || 20), 100));
     const targetAgentId = String(params?.agentId || '').trim();
+    const contextProjectId = String(
+      (executionContext?.collaborationContext as Record<string, unknown> | undefined)?.projectId
+      || executionContext?.projectId
+      || '',
+    ).trim() || undefined;
     const agents = await this.agentModel.find().exec();
     const roleIds = Array.from(new Set(agents.map((agent: any) => String(agent.roleId || '').trim()).filter(Boolean)));
     const roleMap = await this.getRoleMapByIds(roleIds);
@@ -317,14 +326,22 @@ export class AgentMasterToolHandler {
         capabilitySet: Array.from(new Set([...(plain.capabilities || []), ...((profile as any).permissions || profile.capabilities || [])])).slice(0, 12),
         tools: enrichedTools,
         _skillIds: Array.from(new Set((plain.skills || []).map((item: any) => String(item || '').trim()).filter(Boolean))),
+        _projectId: String(plain.projectId || '').trim(),
         exposed: profile.exposed === true,
         isActive: plain.isActive === true,
       };
     });
 
+    const projectScoped = contextProjectId
+      ? mapped.filter((item) => {
+        const agentProjectId = String(item._projectId || '').trim();
+        return !agentProjectId || agentProjectId === contextProjectId;
+      })
+      : mapped;
+
     const filtered = targetAgentId
-      ? mapped.filter((item) => String(item.id || '').trim() === targetAgentId)
-      : mapped.filter((item) => includeHidden || item.exposed);
+      ? projectScoped.filter((item) => String(item.id || '').trim() === targetAgentId)
+      : projectScoped.filter((item) => includeHidden || item.exposed);
     const visibleAgents = filtered.slice(0, limit);
     const skillIds = Array.from(new Set(visibleAgents.flatMap((item) => item._skillIds || [])));
     const skills = skillIds.length
@@ -375,9 +392,10 @@ export class AgentMasterToolHandler {
     });
 
     return {
-      total: mapped.length,
+      total: projectScoped.length,
       visible: agentsWithIdentify.length,
       includeHidden,
+      ...(contextProjectId ? { projectId: contextProjectId } : {}),
       ...(targetAgentId ? { agentId: targetAgentId } : {}),
       agents: agentsWithIdentify,
       fetchedAt: new Date().toISOString(),

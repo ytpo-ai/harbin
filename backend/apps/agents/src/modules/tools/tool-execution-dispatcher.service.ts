@@ -119,7 +119,7 @@ export class ToolExecutionDispatcherService {
       case TOOL_ID__SEND_INTERNAL_MESSAGE:
         return this.communicationToolHandler.sendInternalMessage(parameters, agentId);
       case TOOL_ID__AGENT_LIST:
-        return this.agentMasterToolHandler.getAgentsMcpList(parameters);
+        return this.agentMasterToolHandler.getAgentsMcpList(parameters, executionContext);
       case TOOL_ID__AGENT_CREATE:
         return this.agentMasterToolHandler.createAgentByMcp(parameters);
       case TOOL_ID__AGENT_ROLE_LIST:

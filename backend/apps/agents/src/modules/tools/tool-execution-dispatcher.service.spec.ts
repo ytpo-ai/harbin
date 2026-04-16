@@ -55,8 +55,23 @@ describe('ToolExecutionDispatcherService', () => {
       'agent-1',
     );
 
-    expect(agentMasterToolHandler.getAgentsMcpList).toHaveBeenCalledWith({ limit: 10 });
+    expect(agentMasterToolHandler.getAgentsMcpList).toHaveBeenCalledWith({ limit: 10 }, undefined);
     expect(result).toEqual({ total: 1, agents: [] });
+  });
+
+  it('passes execution context to agent list tool', async () => {
+    const { service, agentMasterToolHandler } = createService();
+    agentMasterToolHandler.getAgentsMcpList.mockResolvedValue({ total: 1, agents: [] });
+
+    const executionContext = { collaborationContext: { projectId: 'proj-1' } };
+    await service.executeToolImplementation(
+      { id: 'builtin.sys-mg.mcp.agent.list' } as any,
+      { limit: 10 },
+      'agent-1',
+      executionContext as any,
+    );
+
+    expect(agentMasterToolHandler.getAgentsMcpList).toHaveBeenCalledWith({ limit: 10 }, executionContext);
   });
 
   it('does not dispatch removed requirement board tool', async () => {

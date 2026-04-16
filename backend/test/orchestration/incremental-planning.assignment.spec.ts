@@ -105,4 +105,26 @@ describe('IncrementalPlanningService assignment routing', () => {
       1,
     );
   });
+
+  it('passes plan projectId into fallback executor selection', async () => {
+    const selectExecutor = jest.fn().mockResolvedValue({
+      executorType: 'agent',
+      executorId: 'agent-a',
+      reason: 'ok',
+    });
+    const service = createService({ selectExecutor });
+
+    await (service as any).resolveFallbackAssignment(
+      {
+        title: '执行任务',
+        description: 'step',
+        priority: 'high',
+        taskType: 'general',
+      },
+      'fallback reason',
+      'proj-1',
+    );
+
+    expect(selectExecutor).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'proj-1' }));
+  });
 });

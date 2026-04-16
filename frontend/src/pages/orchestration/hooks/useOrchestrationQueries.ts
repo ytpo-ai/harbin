@@ -22,6 +22,7 @@ type Params = {
   runStatusFilter: RunStatusFilter;
   runTriggerFilter: RunTriggerFilter;
   projectIdFilter?: string;
+  agentProjectIdFilter?: string;
 };
 
 export const useOrchestrationQueries = ({
@@ -36,6 +37,7 @@ export const useOrchestrationQueries = ({
   runStatusFilter,
   runTriggerFilter,
   projectIdFilter,
+  agentProjectIdFilter,
 }: Params) => {
   const planFilters = projectIdFilter !== undefined ? { projectId: projectIdFilter } : undefined;
   const { data: plans = [], isLoading: plansLoading } = useQuery<OrchestrationPlan[]>(
@@ -152,7 +154,10 @@ export const useOrchestrationQueries = ({
     },
   );
 
-  const { data: agents = [] } = useQuery('orchestration-agents', () => agentService.getAssignableAgents());
+  const { data: agents = [] } = useQuery(
+    ['orchestration-agents', agentProjectIdFilter],
+    () => agentService.getAssignableAgents(agentProjectIdFilter),
+  );
   const { data: employees = [] } = useQuery('orchestration-employees', () => employeeService.getEmployees());
 
   return {

@@ -806,8 +806,10 @@ export class IncrementalPlanningService {
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     order: number,
   ): Promise<OrchestrationTaskDocument> {
+    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
+    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, planProjectId);
 
     const requirementId = await this.resolveRequirementId(planId);
 
@@ -820,8 +822,6 @@ export class IncrementalPlanningService {
       .exec();
     const dependencyTaskIds = completedPredecessors.map((t) => String(t._id));
 
-    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
-    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
     const task = await new this.taskModel({
       planId,
       ...(requirementId ? { requirementId } : {}),
@@ -887,8 +887,10 @@ export class IncrementalPlanningService {
       throw new NotFoundException(`Failed task ${normalizedTaskId} not found for redesign`);
     }
 
+    const planDoc = await this.planModel.findById(planId).select({ projectId: 1 }).lean().exec();
+    const planProjectId = String((planDoc as any)?.projectId || '').trim() || undefined;
     const normalizedAgentId = String(taskResult.agentId || '').trim();
-    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId);
+    const assignment = await this.resolveAssignmentForPlannerTask(taskResult, normalizedAgentId, planProjectId);
     const status = assignment.executorType === 'unassigned' ? 'pending' : 'assigned';
     await this.taskModel
       .updateOne(
@@ -955,12 +957,14 @@ export class IncrementalPlanningService {
   private async resolveFallbackAssignment(
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     reasonPrefix: string,
+    projectId?: string,
   ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
     const fallback = await this.executorSelectionService.selectExecutor({
       title: taskResult.title,
       description: taskResult.description,
       taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
+      projectId,
     });
 
     return {
@@ -973,6 +977,7 @@ export class IncrementalPlanningService {
   private async resolveAssignmentForPlannerTask(
     taskResult: NonNullable<GenerateNextTaskResult['task']>,
     taskAgentId: string,
+    projectId?: string,
   ): Promise<{ executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason: string }> {
     const mode = this.resolvePlannerAgentSelectionMode();
     const validAgentId = await this.resolveValidAgentId(taskAgentId);
@@ -981,11 +986,11 @@ export class IncrementalPlanningService {
       this.logger.log(
         `[planner_override_mode] mode=override taskAgent=${taskAgentId || 'empty'} title="${taskResult.title.slice(0, 60)}"`,
       );
-      return this.resolveFallbackAssignment(taskResult, 'Planner assignment overridden by policy');
+      return this.resolveFallbackAssignment(taskResult, 'Planner assignment overridden by policy', projectId);
     }
 
     if (!validAgentId) {
-      return this.resolveFallbackAssignment(taskResult, 'Planner did not provide valid agentId');
+      return this.resolveFallbackAssignment(taskResult, 'Planner did not provide valid agentId', projectId);
     }
 
     if (mode === 'trust') {
@@ -1002,6 +1007,7 @@ export class IncrementalPlanningService {
       taskDescription: taskResult.description,
       taskType: taskResult.taskType || 'general',
       requiredTools: taskResult.requiredTools,
+      projectId,
     });
 
     if (fitCheck.fit) {
@@ -1027,6 +1033,7 @@ export class IncrementalPlanningService {
     return this.resolveFallbackAssignment(
       taskResult,
       `Planner assignment tool mismatch: ${fitCheck.missingTools.join(', ') || 'unknown'}`,
+      projectId,
     );
   }
 

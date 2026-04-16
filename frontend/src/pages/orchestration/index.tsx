@@ -75,6 +75,8 @@ const Orchestration: React.FC = () => {
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [newTaskInsertAfterTaskId, setNewTaskInsertAfterTaskId] = useState('');
 
+  const agentProjectIdFilter = isCreateModalOpen ? createProjectId : projectIdFilter;
+
   const {
     plans,
     plansLoading,
@@ -110,6 +112,7 @@ const Orchestration: React.FC = () => {
     runStatusFilter,
     runTriggerFilter,
     projectIdFilter,
+    agentProjectIdFilter,
   });
 
   const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
@@ -158,6 +161,16 @@ const Orchestration: React.FC = () => {
     const availableIds = new Set(plannerSkills.map((item) => item.id));
     setSelectedSkillIds((previous) => previous.filter((id) => availableIds.has(id)));
   }, [plannerSkills]);
+
+  useEffect(() => {
+    if (!isCreateModalOpen || !plannerAgentId) {
+      return;
+    }
+    const isStillAvailable = agents.some((agent) => agent.id === plannerAgentId);
+    if (!isStillAvailable) {
+      setPlannerAgentId('');
+    }
+  }, [agents, isCreateModalOpen, plannerAgentId]);
 
   const mutations = useOrchestrationMutations({
     navigate,

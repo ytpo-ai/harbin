@@ -23,6 +23,7 @@ import {
 export interface ExecutorSelectionContext {
   title: string;
   description: string;
+  projectId?: string;
   taskType?: 'development.plan' | 'development.exec' | 'development.review' | 'research' | 'general';
   requiredTools?: string[];
   requiredCapabilities?: string[];
@@ -132,6 +133,7 @@ export class ExecutorSelectionService {
     agentId: string;
     taskTitle: string;
     taskDescription: string;
+    projectId?: string;
     taskType?:
       | 'research'
       | 'development.plan'
@@ -163,7 +165,8 @@ export class ExecutorSelectionService {
       delete agentLookup.id;
     }
 
-    const agent = await this.agentModel.findOne(agentLookup).select({ tools: 1, config: 1 }).lean().exec();
+    const scopedProjectId = String(input.projectId || '').trim() || undefined;
+    const agent = await this.agentModel.findOne(agentLookup).select({ tools: 1, config: 1, projectId: 1 }).lean().exec();
     if (!agent) {
       return {
         fit: false,
@@ -172,9 +175,28 @@ export class ExecutorSelectionService {
         suggestion: await this.selectExecutor({
           title: input.taskTitle,
           description: input.taskDescription,
+          projectId: input.projectId,
           taskType: normalizedTaskType,
         }),
       };
+    }
+
+    if (scopedProjectId) {
+      const candidateProjectId = String((agent as any).projectId || '').trim();
+      const inScope = !candidateProjectId || candidateProjectId === scopedProjectId;
+      if (!inScope) {
+        return {
+          fit: false,
+          requiredTools,
+          missingTools: ['project_scope_mismatch'],
+          suggestion: await this.selectExecutor({
+            title: input.taskTitle,
+            description: input.taskDescription,
+            projectId: scopedProjectId,
+            taskType: normalizedTaskType,
+          }),
+        };
+      }
     }
 
     // OpenCode capability hard gate: development runtime tasks require opencode-enabled agent.
@@ -190,6 +212,7 @@ export class ExecutorSelectionService {
         suggestion: await this.selectExecutor({
           title: input.taskTitle,
           description: input.taskDescription,
+          projectId: input.projectId,
           taskType: normalizedTaskType,
         }),
       };
@@ -221,6 +244,7 @@ export class ExecutorSelectionService {
       suggestion: await this.selectExecutor({
         title: input.taskTitle,
         description: input.taskDescription,
+        projectId: input.projectId,
         taskType: normalizedTaskType,
       }),
     };
@@ -245,11 +269,21 @@ export class ExecutorSelectionService {
 
     // 1. Resolve task type
     const taskType = ctx.taskType || 'general';
+    const projectId = String(ctx.projectId || '').trim() || undefined;
     const requiredCapabilities = this.resolveRequiredCapabilities(taskType, ctx.requiredCapabilities);
+
+    const agentQuery: Record<string, unknown> = { isActive: true };
+    if (projectId) {
+      agentQuery.$or = [
+        { projectId },
+        { projectId: { $in: [null, ''] } },
+        { projectId: { $exists: false } },
+      ];
+    }
 
     // 2. Load candidates + roles
     const [agents, employees, roles] = await Promise.all([
-      this.agentModel.find({ isActive: true }).exec(),
+      this.agentModel.find(agentQuery).exec(),
       this.employeeModel
         .find({ status: { $in: [EmployeeStatus.ACTIVE, EmployeeStatus.PROBATION] } })
         .exec(),
