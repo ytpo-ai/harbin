@@ -863,10 +863,18 @@ export class PlannerService {
     if (typeof parsed.taskId === 'string' && parsed.taskId.trim()) {
       return parsed;
     }
+    // Check nested `result` wrapper (e.g. { result: { taskId: "..." } })
     if (parsed.result && typeof parsed.result === 'object' && !Array.isArray(parsed.result)) {
       const result = parsed.result as Record<string, any>;
       if (typeof result.taskId === 'string' && result.taskId.trim()) {
         return result;
+      }
+    }
+    // Check nested `data` wrapper (e.g. { action: "submit_task", code: 0, data: { taskId: "..." } })
+    if (parsed.data && typeof parsed.data === 'object' && !Array.isArray(parsed.data)) {
+      const data = parsed.data as Record<string, any>;
+      if (typeof data.taskId === 'string' && data.taskId.trim()) {
+        return data;
       }
     }
     return null;

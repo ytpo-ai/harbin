@@ -245,7 +245,7 @@ export class OrchestrationContextService {
     const template = await this.resolvePromptFromRegistry(ORCHESTRATION_PROMPTS.plannerGenerating);
 
     const currentStepGuidanceSection = generatingPrompt
-      ? ['## 当前步骤指导（Step {{nextStep}}）', '{{generatingPrompt}}', ''].join('\n')
+      ? [`## 当前步骤指导（Step ${nextStep}）`, generatingPrompt, ''].join('\n')
       : '';
 
     const completedTasksSummary = context.completedTasks.length > 0

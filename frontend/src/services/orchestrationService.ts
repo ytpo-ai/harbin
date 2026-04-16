@@ -335,6 +335,33 @@ const extractPlanObject = (payload: unknown): OrchestrationPlan | null => {
   return unwrapped as OrchestrationPlan;
 };
 
+/**
+ * Generic unwrap for API responses that return non-plan data.
+ * Strips the `{code, message, data}` envelope if present.
+ */
+const unwrapData = <T>(payload: unknown): T => {
+  return unwrapApiPayload(payload) as T;
+};
+
+const extractArray = <T>(payload: unknown): T[] => {
+  const unwrapped = unwrapApiPayload(payload);
+  if (Array.isArray(unwrapped)) {
+    return unwrapped as T[];
+  }
+  if (!unwrapped || typeof unwrapped !== 'object') {
+    return [];
+  }
+  const obj = unwrapped as Record<string, unknown>;
+  const candidateKeys = ['data', 'items', 'list', 'rows', 'records', 'result'] as const;
+  for (const key of candidateKeys) {
+    const value = obj[key];
+    if (Array.isArray(value)) {
+      return value as T[];
+    }
+  }
+  return [];
+};
+
 export const orchestrationService = {
   async createPlanFromPrompt(payload: CreatePlanFromPromptDto): Promise<OrchestrationPlan> {
     const response = await api.post('/orchestration/plans/from-prompt', payload);
@@ -474,24 +501,28 @@ export const orchestrationService = {
 
   async updatePlan(planId: string, payload: UpdatePlanDto): Promise<OrchestrationPlan> {
     const response = await api.patch(`/orchestration/plans/${planId}`, payload);
-    return response.data;
+    const plan = extractPlanObject(response.data);
+    if (!plan) {
+      throw new Error('Invalid update plan response');
+    }
+    return normalizePlan(plan);
   },
 
   async replanPlan(planId: string, payload: ReplanPlanDto): Promise<ReplanPlanAcceptedResponse> {
     const response = await api.post(`/orchestration/plans/${planId}/replan`, payload);
-    return response.data;
+    return unwrapData<ReplanPlanAcceptedResponse>(response.data);
   },
 
   async deletePlan(planId: string): Promise<{ success: boolean; deletedTasks: number }> {
     const response = await api.delete(`/orchestration/plans/${planId}`);
-    return response.data;
+    return unwrapData<{ success: boolean; deletedTasks: number }>(response.data);
   },
 
   async runPlan(planId: string, continueOnFailure = true): Promise<RunPlanAcceptedResponse> {
     const response = await api.post(`/orchestration/plans/${planId}/run`, {
       continueOnFailure,
     });
-    return response.data;
+    return unwrapData<RunPlanAcceptedResponse>(response.data);
   },
 
   async cancelRun(
@@ -499,7 +530,7 @@ export const orchestrationService = {
     reason?: string,
   ): Promise<{ success: boolean; runId: string; status: 'cancelled'; cancelledTasks: number }> {
     const response = await api.post(`/orchestration/runs/${runId}/cancel`, { reason });
-    return response.data;
+    return unwrapData<{ success: boolean; runId: string; status: 'cancelled'; cancelledTasks: number }>(response.data);
   },
 
   async publishPlan(planId: string): Promise<OrchestrationPlan> {
@@ -522,7 +553,7 @@ export const orchestrationService = {
 
   async generateNext(planId: string): Promise<{ accepted: boolean }> {
     const response = await api.post(`/orchestration/plans/${planId}/generate-next`);
-    return response.data;
+    return unwrapData<{ accepted: boolean }>(response.data);
   },
 
   async stopPlanGeneration(
@@ -532,29 +563,29 @@ export const orchestrationService = {
     const response = await api.post(`/orchestration/plans/${planId}/stop-generation`, {
       reason,
     });
-    return response.data;
+    return unwrapData<{ success: boolean; planId: string; stopped: boolean; alreadyStopped?: boolean }>(response.data);
   },
 
   async getPlanRuns(planId: string, limit = 20): Promise<OrchestrationRun[]> {
     const response = await api.get(`/orchestration/plans/${planId}/runs`, {
       params: { limit },
     });
-    return response.data;
+    return extractArray<OrchestrationRun>(response.data);
   },
 
   async getPlanLatestRun(planId: string): Promise<OrchestrationRun | null> {
     const response = await api.get(`/orchestration/plans/${planId}/runs/latest`);
-    return response.data;
+    return unwrapData<OrchestrationRun | null>(response.data);
   },
 
   async getRunById(runId: string): Promise<OrchestrationRun> {
     const response = await api.get(`/orchestration/runs/${runId}`);
-    return response.data;
+    return unwrapData<OrchestrationRun>(response.data);
   },
 
   async getRunTasks(runId: string): Promise<OrchestrationRunTask[]> {
     const response = await api.get(`/orchestration/runs/${runId}/tasks`);
-    return response.data;
+    return extractArray<OrchestrationRunTask>(response.data);
   },
 
   async reassignTask(
@@ -562,12 +593,12 @@ export const orchestrationService = {
     payload: { executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason?: string },
   ): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/tasks/${taskId}/reassign`, payload);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async completeHumanTask(taskId: string, payload: { summary?: string; output?: string }): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/tasks/${taskId}/complete-human`, payload);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async retryTask(taskId: string): Promise<{
@@ -575,7 +606,10 @@ export const orchestrationService = {
     run: { accepted: boolean; planId: string; status: string; alreadyRunning?: boolean };
   }> {
     const response = await api.post(`/orchestration/tasks/${taskId}/retry`);
-    return response.data;
+    return unwrapData<{
+      task: OrchestrationTask;
+      run: { accepted: boolean; planId: string; status: string; alreadyRunning?: boolean };
+    }>(response.data);
   },
 
   async updateTaskDraft(
@@ -583,7 +617,7 @@ export const orchestrationService = {
     payload: { title?: string; description?: string; runtimeTaskType?: DebugRuntimeTaskTypeOverride | 'auto' },
   ): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/tasks/${taskId}/draft`, payload);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async addTaskToPlan(
@@ -591,12 +625,12 @@ export const orchestrationService = {
     payload: AddTaskToPlanPayload,
   ): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/plans/${planId}/tasks`, payload);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async deleteTask(taskId: string): Promise<{ success: boolean }> {
     const response = await api.delete(`/orchestration/tasks/${taskId}`);
-    return response.data;
+    return unwrapData<{ success: boolean }>(response.data);
   },
 
   async updateTaskFull(
@@ -604,12 +638,12 @@ export const orchestrationService = {
     payload: UpdateTaskFullPayload,
   ): Promise<OrchestrationTask> {
     const response = await api.patch(`/orchestration/tasks/${taskId}`, payload);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async reorderTasks(planId: string, taskIds: string[]): Promise<{ success: boolean }> {
     const response = await api.put(`/orchestration/plans/${planId}/tasks/reorder`, { taskIds });
-    return response.data;
+    return unwrapData<{ success: boolean }>(response.data);
   },
 
   async batchUpdateTasks(
@@ -617,12 +651,12 @@ export const orchestrationService = {
     updates: BatchUpdateTaskItem[],
   ): Promise<OrchestrationTask[]> {
     const response = await api.put(`/orchestration/plans/${planId}/tasks/batch-update`, { updates });
-    return response.data;
+    return extractArray<OrchestrationTask>(response.data);
   },
 
   async duplicateTask(planId: string, taskId: string): Promise<OrchestrationTask> {
     const response = await api.post(`/orchestration/plans/${planId}/tasks/duplicate/${taskId}`);
-    return response.data;
+    return unwrapData<OrchestrationTask>(response.data);
   },
 
   async debugTaskStep(
@@ -638,7 +672,10 @@ export const orchestrationService = {
     execution: { status: TaskStatus; result?: string; error?: string };
   }> {
     const response = await api.post(`/orchestration/tasks/${taskId}/debug-run`, payload);
-    return response.data;
+    return unwrapData<{
+      task: OrchestrationTask;
+      execution: { status: TaskStatus; result?: string; error?: string };
+    }>(response.data);
   },
 
   async getSessions(filters?: {
@@ -648,12 +685,12 @@ export const orchestrationService = {
     linkedPlanId?: string;
   }): Promise<AgentSession[]> {
     const response = await api.get('/orchestration/sessions', { params: filters || {} });
-    return response.data;
+    return extractArray<AgentSession>(response.data);
   },
 
   async getSessionById(sessionId: string): Promise<AgentSession> {
     const response = await api.get(`/orchestration/sessions/${sessionId}`);
-    return response.data;
+    return unwrapData<AgentSession>(response.data);
   },
 
   async createSession(payload: {
@@ -665,7 +702,7 @@ export const orchestrationService = {
     tags?: string[];
   }): Promise<AgentSession> {
     const response = await api.post('/orchestration/sessions', payload);
-    return response.data;
+    return unwrapData<AgentSession>(response.data);
   },
 
   async appendMessage(
@@ -673,18 +710,18 @@ export const orchestrationService = {
     payload: { role: 'user' | 'assistant' | 'system'; content: string },
   ): Promise<AgentSession> {
     const response = await api.post(`/orchestration/sessions/${sessionId}/messages`, payload);
-    return response.data;
+    return unwrapData<AgentSession>(response.data);
   },
 
   async archiveSession(sessionId: string, summary?: string): Promise<AgentSession> {
     const response = await api.post(`/orchestration/sessions/${sessionId}/archive`, {
       summary,
     });
-    return response.data;
+    return unwrapData<AgentSession>(response.data);
   },
 
   async resumeSession(sessionId: string): Promise<AgentSession> {
     const response = await api.post(`/orchestration/sessions/${sessionId}/resume`);
-    return response.data;
+    return unwrapData<AgentSession>(response.data);
   },
 };
