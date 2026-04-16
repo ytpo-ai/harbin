@@ -18,6 +18,10 @@ import {
   EiRequirementStatusEvent,
 } from '../schemas/ei-requirement.schema';
 import { RdProject, RdProjectDocument } from '../../../../src/shared/schemas/ei-project.schema';
+import {
+  OrchestrationPlan,
+  OrchestrationPlanDocument,
+} from '../../../../src/shared/schemas/orchestration-plan.schema';
 import { EiGithubClientService } from './ei-github-client.service';
 
 const REQ_AGENT_ASSIGN_FORBIDDEN_CODE = 'REQ_AGENT_ASSIGN_FORBIDDEN';
@@ -39,8 +43,186 @@ export class EiRequirementsService {
     private readonly requirementModel: Model<EiRequirementDocument>,
     @InjectModel(RdProject.name)
     private readonly rdProjectModel: Model<RdProjectDocument>,
+    @InjectModel(OrchestrationPlan.name)
+    private readonly planModel: Model<OrchestrationPlanDocument>,
     private readonly githubClient: EiGithubClientService,
   ) {}
+
+  private normalizeRequirementCode(rawCode?: string): { family: string; order: number; code: string } | undefined {
+    const normalizedRaw = String(rawCode || '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '');
+    if (!normalizedRaw) {
+      return undefined;
+    }
+
+    const match = normalizedRaw.match(/([A-Z0-9_-]*REQ[-_]\d+)/);
+    const code = String(match?.[1] || '').trim();
+    if (!code) {
+      return undefined;
+    }
+
+    const parsed = code.match(/^(.*?REQ)[-_]0*(\d+)$/);
+    if (!parsed) {
+      return undefined;
+    }
+
+    const family = String(parsed[1] || '').replace(/[-_]+$/, '');
+    const order = Number(parsed[2]);
+    if (!family || !Number.isFinite(order)) {
+      return undefined;
+    }
+
+    return {
+      family,
+      order,
+      code,
+    };
+  }
+
+  private extractRequirementOrder(
+    requirement: Pick<EiRequirement, 'title' | 'labels'>,
+  ): { family: string; order: number; code: string } | undefined {
+    const labels = Array.isArray(requirement.labels) ? requirement.labels : [];
+    for (const label of labels) {
+      const normalizedLabel = String(label || '').trim();
+      if (!normalizedLabel) {
+        continue;
+      }
+
+      const reqTagMatch = normalizedLabel.match(/^req:(.+)$/i);
+      const fromReqTag = this.normalizeRequirementCode(reqTagMatch?.[1]);
+      if (fromReqTag) {
+        return fromReqTag;
+      }
+
+      const fromLabel = this.normalizeRequirementCode(normalizedLabel);
+      if (fromLabel) {
+        return fromLabel;
+      }
+    }
+
+    const title = String(requirement.title || '').trim();
+    const fromTitle = this.normalizeRequirementCode(title);
+    if (fromTitle) {
+      return fromTitle;
+    }
+
+    return undefined;
+  }
+
+  private extractOrderedRequirementIdsFromPlanMetadata(
+    metadata: Record<string, unknown> | undefined,
+  ): string[] {
+    if (!metadata || typeof metadata !== 'object') {
+      return [];
+    }
+
+    const taskContext =
+      metadata.taskContext && typeof metadata.taskContext === 'object'
+        ? (metadata.taskContext as Record<string, unknown>)
+        : undefined;
+    const requirements = Array.isArray(taskContext?.requirements) ? taskContext?.requirements : [];
+
+    const ids = requirements
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return '';
+        }
+        return String((item as Record<string, unknown>).requirementId || '').trim();
+      })
+      .filter(Boolean);
+
+    return Array.from(new Set(ids));
+  }
+
+  private async assertSequentialRequirementOrder(
+    requirement: EiRequirementDocument,
+    toStatus: EiRequirementStatus,
+    planId?: string,
+  ): Promise<void> {
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId || toStatus === 'todo') {
+      return;
+    }
+
+    const plan = await this.planModel
+      .findById(normalizedPlanId)
+      .select('strategy metadata projectId')
+      .lean()
+      .exec();
+
+    if (!plan || String(plan?.strategy?.mode || '') !== 'sequential') {
+      return;
+    }
+
+    const currentRequirementId = String(requirement.requirementId || '').trim();
+    if (!currentRequirementId) {
+      return;
+    }
+
+    const orderedIds = this.extractOrderedRequirementIdsFromPlanMetadata(plan.metadata as Record<string, unknown> | undefined);
+    if (orderedIds.length > 0) {
+      const scopedRequirements = await this.requirementModel
+        .find({ requirementId: { $in: orderedIds } })
+        .select('requirementId status')
+        .lean()
+        .exec();
+
+      const requirementMap = new Map(
+        scopedRequirements.map((item) => [String(item.requirementId || '').trim(), item]),
+      );
+      const currentIndex = orderedIds.findIndex((id) => id === currentRequirementId);
+      if (currentIndex <= 0) {
+        return;
+      }
+
+      const blockerIds = orderedIds
+        .slice(0, currentIndex)
+        .filter((id) => String(requirementMap.get(id)?.status || 'todo') !== 'done');
+
+      if (blockerIds.length > 0) {
+        throw new BadRequestException(
+          `sequential requirement order violated: ${currentRequirementId} cannot move to ${toStatus} before predecessors are done (${blockerIds.join(', ')})`,
+        );
+      }
+      return;
+    }
+
+    const currentOrder = this.extractRequirementOrder(requirement);
+    if (!currentOrder) {
+      return;
+    }
+
+    const projectId = String(requirement.projectId || plan.projectId || '').trim();
+    if (!projectId) {
+      return;
+    }
+
+    const projectRequirements = await this.requirementModel
+      .find({ projectId })
+      .select('requirementId status title labels')
+      .lean()
+      .exec();
+
+    const blockerIds = projectRequirements
+      .filter((item) => {
+        const order = this.extractRequirementOrder(item as Pick<EiRequirement, 'title' | 'labels'>);
+        if (!order) {
+          return false;
+        }
+        return order.family === currentOrder.family && order.order < currentOrder.order && item.status !== 'done';
+      })
+      .map((item) => String(item.requirementId || '').trim())
+      .filter(Boolean);
+
+    if (blockerIds.length > 0) {
+      throw new BadRequestException(
+        `sequential requirement order violated: ${currentRequirementId} cannot move to ${toStatus} before predecessors are done (${blockerIds.join(', ')})`,
+      );
+    }
+  }
 
   private generateRequirementId(): string {
     return `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -220,7 +402,12 @@ export class EiRequirementsService {
   }
 
   listRequirements(query: ListRequirementsDto) {
-    const limit = Math.min(Math.max(Number(query.limit) || 50, 1), 200);
+    const parsedPageNo = Number(query.pageNo);
+    const pageNo = Number.isFinite(parsedPageNo) && parsedPageNo > 0 ? Math.floor(parsedPageNo) : 1;
+    const rawPageSize = query.pageSize !== undefined ? query.pageSize : query.limit;
+    const parsedPageSize = Number(rawPageSize);
+    const pageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? Math.min(Math.floor(parsedPageSize), 100) : 10;
+    const skip = (pageNo - 1) * pageSize;
     const search = String(query.search || '').trim();
     const filters: Record<string, unknown> = {};
 
@@ -230,24 +417,47 @@ export class EiRequirementsService {
     if (query.assigneeAgentId) {
       filters.currentAssigneeAgentId = String(query.assigneeAgentId).trim();
     }
+    // 收集需要 $and 组合的 $or 条件，避免多个 $or 互相覆盖
+    const andConditions: Array<Record<string, unknown>> = [];
+
     if (query.localProjectId) {
-      filters.localProjectId = String(query.localProjectId).trim();
+      const trimmedLocalProjectId = String(query.localProjectId).trim();
+      // Agent 创建的需求可能只有 projectId 而没有 localProjectId，需同时匹配两个字段
+      andConditions.push({ $or: [{ localProjectId: trimmedLocalProjectId }, { projectId: trimmedLocalProjectId }] });
     }
     if (query.projectId !== undefined) {
       const trimmedProjectId = String(query.projectId || '').trim();
-      filters.projectId = trimmedProjectId || { $in: [null, '', undefined] };
+      if (trimmedProjectId) {
+        andConditions.push({ $or: [{ projectId: trimmedProjectId }, { localProjectId: trimmedProjectId }] });
+      } else {
+        filters.projectId = { $in: [null, '', undefined] };
+      }
     }
     if (search) {
-      filters.$or = [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }];
+      andConditions.push({ $or: [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }] });
+    }
+    if (andConditions.length === 1) {
+      Object.assign(filters, andConditions[0]);
+    } else if (andConditions.length > 1) {
+      filters.$and = andConditions;
     }
 
-    return this.requirementModel
-      .find(filters)
-      .sort({ updatedAt: -1 })
-      .limit(limit)
-      .lean()
-      .exec()
-      .then((requirements) => requirements.map((requirement) => this.withAssignAgentState(requirement as EiRequirement)));
+    return Promise.all([
+      this.requirementModel.countDocuments(filters).exec(),
+      this.requirementModel
+        .find(filters)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(pageSize)
+        .lean()
+        .exec(),
+    ]).then(([total, requirements]) => ({
+      list: requirements.map((requirement) => this.withAssignAgentState(requirement as EiRequirement)),
+      total,
+      pageNo,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    }));
   }
 
   getRequirementBoard() {
@@ -383,6 +593,8 @@ export class EiRequirementsService {
     if (!forceComplete) {
       this.validateStatusTransition(fromStatus, toStatus);
     }
+
+    await this.assertSequentialRequirementOrder(requirement, toStatus, payload.planId);
 
     const nextAssigneeId = payload.toAgentId ? String(payload.toAgentId).trim() : '';
     const nextAssigneeName = payload.toAgentName ? String(payload.toAgentName).trim() : '';
