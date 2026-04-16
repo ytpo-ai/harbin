@@ -407,9 +407,11 @@ export class PlanManagementService {
     // User-initiated generate-next: reset isComplete and consecutive failures
     // so the user can always manually trigger the next step (even after auto-stop).
     const currentState = plan.generationState;
+    // Layer 3: also reset when stuck at 'initialize' phase (outline already written but phase not advanced)
     const needsReset =
       currentState?.isComplete ||
-      Number(currentState?.consecutiveFailures || 0) > 0;
+      Number(currentState?.consecutiveFailures || 0) > 0 ||
+      currentState?.currentPhase === 'initialize';
     if (needsReset) {
       await this.orchestrationPlanModel
         .updateOne(

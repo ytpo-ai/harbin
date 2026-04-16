@@ -270,15 +270,40 @@ export class OrchestrationStepDispatcherService {
   ): Promise<void> {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
     const existingTaskContext = this.contextService.resolvePlanTaskContextFromMetadata(metadata);
-    await this.plannerService.initializePlan(
-      planId,
-      {
-        sourcePrompt: plan.sourcePrompt || '',
-        domainType: String((plan as { domainType?: string }).domainType || 'general'),
-        existingTaskContext,
-      },
-      { sessionId: plannerSessionId },
-    );
+
+    // Layer 2: wrap initializePlan in try/catch to prevent stuck state on exceptions
+    try {
+      await this.plannerService.initializePlan(
+        planId,
+        {
+          sourcePrompt: plan.sourcePrompt || '',
+          domainType: String((plan as { domainType?: string }).domainType || 'general'),
+          existingTaskContext,
+        },
+        { sessionId: plannerSessionId },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`[phaseInitialize] initializePlan failed for planId=${planId}: ${message}`);
+      await this.agentClientService.archiveSession(plannerSessionId).catch(() => {});
+      const nextState = this.bumpFailureCounters(state, `initializePlan failed: ${message}`);
+      const recoveryState = this.isIsolatedSessionMode
+        ? {
+            ...nextState,
+            currentPhase: 'idle' as const,
+            plannerSessionIds: {
+              ...(nextState.plannerSessionIds || {}),
+              initialize: undefined,
+            },
+          }
+        : {
+            ...nextState,
+            currentPhase: 'idle' as const,
+          };
+      await this.updateGenerationStateIfExpected(planId, state, recoveryState);
+      await this.autoAdvance(planId, source);
+      return;
+    }
 
     const refreshedPlan = await this.planModel
       .findById(planId)
@@ -289,6 +314,27 @@ export class OrchestrationStepDispatcherService {
     const outline = Array.isArray(refreshedMetadata.outline)
       ? refreshedMetadata.outline as Array<Record<string, unknown>>
       : [];
+
+    // 空 outline 且 metadata 中明确写入了 outline 键：skill 声明无执行步骤，直接完成
+    const isExplicitEmptyOutline = Array.isArray(refreshedMetadata.outline) && outline.length === 0;
+    if (isExplicitEmptyOutline) {
+      this.logger.log(`[phaseInitialize] planId=${planId} empty outline from skill, completing plan`);
+      const mergedState: OrchestrationGenerationState = {
+        ...this.withPlannerSession(state, 'initialize', plannerSessionId),
+        lastDecision: 'stop',
+      };
+      this.eventStream.emitPlanStreamEvent(planId, 'planning.initialized', {
+        planId,
+        requirementId: this.contextService.resolvePlanTaskContextFromMetadata(refreshedMetadata).requirementId,
+        outline,
+      });
+      await this.completeAndArchive(planId, mergedState, {
+        finalStatus: 'completed',
+        statusPhase: 'initialize_completed_no_outline',
+      });
+      return;
+    }
+
     const hasValidOutline = this.hasValidOutlineWithPrompts(outline);
 
     if (!hasValidOutline) {
@@ -312,6 +358,9 @@ export class OrchestrationStepDispatcherService {
           };
       const advanced = await this.updateGenerationStateIfExpected(planId, state, stateWithClearedSession);
       if (!advanced) {
+        // Layer 1: CAS failed on failure path — schedule recovery instead of silent exit
+        this.logger.warn(`[phaseInitialize] CAS failed on failure path for planId=${planId}, scheduling recovery autoAdvance`);
+        await this.autoAdvance(planId, source);
         return;
       }
       await this.autoAdvance(planId, source);
@@ -325,6 +374,9 @@ export class OrchestrationStepDispatcherService {
       lastError: undefined,
     });
     if (!advanced) {
+      // Layer 1: CAS failed on success path — schedule recovery instead of silent exit
+      this.logger.warn(`[phaseInitialize] CAS failed on success path for planId=${planId}, scheduling recovery autoAdvance`);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -924,8 +976,12 @@ export class OrchestrationStepDispatcherService {
 
   private shouldRunInitialize(plan: OrchestrationPlanDocument, _state: OrchestrationGenerationState): boolean {
     const metadata = ((plan as unknown as { metadata?: Record<string, unknown> }).metadata || {}) as Record<string, unknown>;
-    const outline = Array.isArray(metadata.outline) ? metadata.outline as Array<Record<string, unknown>> : [];
-    return !this.hasValidOutlineWithPrompts(outline);
+    // outline 键已存在（含空数组）= initialize 已执行过，不再重跑
+    if (Array.isArray(metadata.outline)) {
+      return !this.hasValidOutlineWithPrompts(metadata.outline as Array<Record<string, unknown>>)
+        && (metadata.outline as unknown[]).length > 0;
+    }
+    return true;
   }
 
   private resolveExecutionMode(plan: OrchestrationPlanDocument): 'standard' | 'easy' {
