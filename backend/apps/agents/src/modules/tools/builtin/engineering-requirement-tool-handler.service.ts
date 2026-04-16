@@ -1,10 +1,75 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InternalApiClient } from '../internal-api-client.service';
 import { ToolExecutionContext } from '../tool-execution-context.type';
 
 @Injectable()
 export class RequirementToolHandler {
+  private readonly logger = new Logger(RequirementToolHandler.name);
+
   constructor(private readonly internalApiClient: InternalApiClient) {}
+
+  private isEiNotFoundError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    return message.includes('ei_api_request_failed') && message.includes(' returned 404;');
+  }
+
+  private pickRequirementIdFromContext(executionContext?: ToolExecutionContext): string | undefined {
+    const collaborationContext = (executionContext?.collaborationContext || {}) as Record<string, unknown>;
+    const direct = String(collaborationContext.requirementId || '').trim();
+    if (direct) {
+      return direct;
+    }
+    const taskContext =
+      collaborationContext.taskContext && typeof collaborationContext.taskContext === 'object'
+        ? collaborationContext.taskContext as Record<string, unknown>
+        : undefined;
+    const nested = String(taskContext?.requirementId || '').trim();
+    return nested || undefined;
+  }
+
+  private async resolveRequirementIdFromPlan(planId?: string): Promise<string | undefined> {
+    const normalizedPlanId = String(planId || '').trim();
+    if (!normalizedPlanId) {
+      return undefined;
+    }
+    try {
+      const plan = await this.internalApiClient.callOrchestrationApi('GET', `/plans/${encodeURIComponent(normalizedPlanId)}`);
+      const metadata = plan?.metadata && typeof plan.metadata === 'object' ? plan.metadata as Record<string, unknown> : {};
+      const taskContext =
+        metadata.taskContext && typeof metadata.taskContext === 'object'
+          ? metadata.taskContext as Record<string, unknown>
+          : undefined;
+      const taskContextRequirementId = String(taskContext?.requirementId || '').trim();
+      if (taskContextRequirementId) {
+        return taskContextRequirementId;
+      }
+      const metadataRequirementId = String(metadata.requirementId || '').trim();
+      return metadataRequirementId || undefined;
+    } catch (error) {
+      this.logger.warn(
+        `[requirement_id_fallback_skip] resolve plan requirementId failed: planId=${normalizedPlanId}, error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
+  }
+
+  private async resolveFallbackRequirementId(
+    currentRequirementId: string,
+    executionContext?: ToolExecutionContext,
+    planId?: string,
+  ): Promise<string | undefined> {
+    const contextRequirementId = this.pickRequirementIdFromContext(executionContext);
+    if (contextRequirementId && contextRequirementId !== currentRequirementId) {
+      return contextRequirementId;
+    }
+    const planRequirementId = await this.resolveRequirementIdFromPlan(planId);
+    if (planRequirementId && planRequirementId !== currentRequirementId) {
+      return planRequirementId;
+    }
+    return undefined;
+  }
 
   private buildRequirementQuery(params: {
     status?: string;
@@ -138,7 +203,7 @@ export class RequirementToolHandler {
       createdById: String(params?.createdById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
       createdByName: String(params?.createdByName || '').trim() || undefined,
       createdByType: params?.createdByType || 'agent',
-      localProjectId: String(params?.localProjectId || '').trim() || undefined,
+      localProjectId: String(params?.localProjectId || params?.projectId || executionContext?.projectId || (executionContext?.collaborationContext as any)?.projectId || '').trim() || undefined,
       projectId: String(params?.projectId || executionContext?.projectId || (executionContext?.collaborationContext as any)?.projectId || '').trim() || undefined,
     });
     return {
@@ -179,7 +244,7 @@ export class RequirementToolHandler {
     // 自动从 collaborationContext 补充 planId（如果工具参数未显式传入）
     const planId = String(params?.planId || executionContext?.collaborationContext?.planId || '').trim() || undefined;
 
-    const result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(requirementId)}/status`, {
+    const payload = {
       status: params.status,
       changedById: String(params?.changedById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
       changedByName: String(params?.changedByName || '').trim() || undefined,
@@ -192,11 +257,31 @@ export class RequirementToolHandler {
       executorAgentId: String(params?.executorAgentId || '').trim() || undefined,
       executorAgentName: String(params?.executorAgentName || '').trim() || undefined,
       taskTitle: String(params?.taskTitle || '').trim() || undefined,
-    });
+    };
+
+    let effectiveRequirementId = requirementId;
+    let result: any;
+    try {
+      result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(effectiveRequirementId)}/status`, payload);
+    } catch (error) {
+      if (!this.isEiNotFoundError(error)) {
+        throw error;
+      }
+      const fallbackRequirementId = await this.resolveFallbackRequirementId(effectiveRequirementId, executionContext, planId);
+      if (!fallbackRequirementId) {
+        throw error;
+      }
+      this.logger.warn(
+        `[requirement_id_fallback_retry] update-status 404, retry with fallback requirementId: from=${effectiveRequirementId}, to=${fallbackRequirementId}, planId=${planId || 'none'}`,
+      );
+      effectiveRequirementId = fallbackRequirementId;
+      result = await this.internalApiClient.callEiApi('POST', `/requirements/${encodeURIComponent(effectiveRequirementId)}/status`, payload);
+    }
+
     return {
       action: 'requirement_update_status',
       initiatorAgentId: agentId,
-      requirementId,
+      requirementId: effectiveRequirementId,
       status: params.status,
       planId,
       requirement: result,

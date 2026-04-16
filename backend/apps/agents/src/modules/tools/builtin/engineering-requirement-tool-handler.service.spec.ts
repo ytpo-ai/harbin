@@ -1,6 +1,61 @@
 import { RequirementToolHandler } from './engineering-requirement-tool-handler.service';
 
 describe('RequirementToolHandler', () => {
+  it('retries update-status with requirementId from plan metadata when initial id returns 404', async () => {
+    const internalApiClient = {
+      callEiApi: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('ei_api_request_failed: POST /requirements/REQ-001/status returned 404; response={"message":"Requirement not found"}'))
+        .mockResolvedValueOnce({ requirementId: 'req-20260416-abc123', status: 'in_progress' }),
+      callOrchestrationApi: jest.fn().mockResolvedValue({
+        metadata: {
+          taskContext: {
+            requirementId: 'req-20260416-abc123',
+          },
+        },
+      }),
+    };
+    const handler = new RequirementToolHandler(internalApiClient as any);
+
+    const result = await handler.updateRequirementStatus(
+      { requirementId: 'REQ-001', status: 'in_progress' },
+      'agent-1',
+      { collaborationContext: { planId: 'plan-1' }, actor: { employeeId: 'emp-1' } } as any,
+    );
+
+    expect(internalApiClient.callEiApi).toHaveBeenNthCalledWith(1, 'POST', '/requirements/REQ-001/status', {
+      status: 'in_progress',
+      changedById: 'emp-1',
+      changedByName: undefined,
+      changedByType: 'agent',
+      note: undefined,
+      toAgentId: undefined,
+      toAgentName: undefined,
+      planId: 'plan-1',
+      taskType: undefined,
+      executorAgentId: undefined,
+      executorAgentName: undefined,
+      taskTitle: undefined,
+    });
+    expect(internalApiClient.callOrchestrationApi).toHaveBeenCalledWith('GET', '/plans/plan-1');
+    expect(internalApiClient.callEiApi).toHaveBeenNthCalledWith(2, 'POST', '/requirements/req-20260416-abc123/status', {
+      status: 'in_progress',
+      changedById: 'emp-1',
+      changedByName: undefined,
+      changedByType: 'agent',
+      note: undefined,
+      toAgentId: undefined,
+      toAgentName: undefined,
+      planId: 'plan-1',
+      taskType: undefined,
+      executorAgentId: undefined,
+      executorAgentName: undefined,
+      taskTitle: undefined,
+    });
+    expect(result.requirementId).toBe('req-20260416-abc123');
+    expect(result.status).toBe('in_progress');
+  });
+
   it('returns board payload when view=board', async () => {
     const internalApiClient = {
       callEiApi: jest.fn().mockResolvedValue({ total: 2, columns: { todo: [{ requirementId: 'req-1' }] } }),
