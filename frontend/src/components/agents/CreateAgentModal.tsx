@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { CpuChipIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import { useQuery } from 'react-query';
 import { PromptTemplateRefPicker } from '../PromptTemplateRefPicker';
 import type { PromptTemplateRefValue } from '../PromptTemplateRefPicker';
 import { apiKeyService } from '../../services/apiKeyService';
+import type { ApiKey } from '../../services/apiKeyService';
 import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 import type { AgentTier } from '../../services/agentService';
 import { useAgentFormSync } from './hooks/useAgentFormSync';
@@ -11,6 +12,8 @@ import { useAgentToolFilter } from './hooks/useAgentToolFilter';
 import type { CreateAgentModalProps } from './types';
 import {
   buildAutoGrantedPermissions,
+  filterAndSortModelsByApiKeys,
+  formatModelPriceSummary,
   getRoleDisplayName,
   getTierLabel,
   getToolKey,
@@ -20,6 +23,7 @@ import {
   normalizeTier,
   parseConfigText,
   upsertDailyCostBudget,
+  validateDailyCostBudgetConflict,
 } from './utils';
 
 export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
@@ -62,16 +66,20 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     projectId: '',
   });
 
-  const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
+  const { data: apiKeys = [] } = useQuery<ApiKey[]>('api-keys', () => apiKeyService.getAllApiKeys());
   const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
     'create-agent-incubation-projects',
     () => incubationProjectService.list(),
     { retry: false, staleTime: 60_000 },
   );
-  const selectedModel = availableModels.find((m) => m.id === formData.modelId);
-  const filteredApiKeys = (apiKeys || []).filter((key) => {
+  const selectableModels = useMemo(
+    () => filterAndSortModelsByApiKeys(availableModels, apiKeys),
+    [availableModels, apiKeys],
+  );
+  const selectedModel = selectableModels.find((m) => m.id === formData.modelId);
+  const filteredApiKeys = apiKeys.filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
-    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive && !key.isDeprecated;
+    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive !== false;
   });
 
   const { getRoleCodeByRoleId, syncRoleChange } = useAgentFormSync({ businessRoles, toolPermissionSets });
@@ -94,6 +102,28 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
       selectedTools: prev.selectedTools.filter((toolId) => allowedToolIds.has(toolId)),
     }));
   }, [allowedToolIds]);
+
+  useEffect(() => {
+    setFormData((prev) => {
+      if (selectableModels.length === 0) {
+        if (!prev.modelId && !prev.apiKeyId) return prev;
+        return {
+          ...prev,
+          modelId: '',
+          apiKeyId: '',
+        };
+      }
+
+      const currentModelStillSelectable = selectableModels.some((model) => model.id === prev.modelId);
+      if (currentModelStillSelectable) return prev;
+
+      return {
+        ...prev,
+        modelId: selectableModels[0].id,
+        apiKeyId: '',
+      };
+    });
+  }, [selectableModels]);
 
   const handleCreateRoleChange = (nextRoleId: string) => {
     setFormData((prev) => {
@@ -130,6 +160,12 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     const configParsed = parseConfigText(formData.configText);
     if (configParsed.error) {
       alert(configParsed.error);
+      return;
+    }
+
+    const budgetConflict = validateDailyCostBudgetConflict(configParsed.config || {}, formData.dailyCostLimitUsd);
+    if (budgetConflict) {
+      alert(budgetConflict);
       return;
     }
 
@@ -281,12 +317,17 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
             >
               <option value="">请选择模型...</option>
-              {availableModels.map((model) => (
+              {selectableModels.map((model) => (
                 <option key={model.id} value={model.id}>
-                  {model.name} ({model.provider})
+                  {model.name} ({model.provider}) - {formatModelPriceSummary(model)}
                 </option>
               ))}
             </select>
+            {selectableModels.length === 0 && (
+              <p className="mt-2 text-sm text-amber-600">
+                当前没有已配置 API Key 的供应商可用，请先在 API Key 管理中启用供应商密钥。
+              </p>
+            )}
             {selectedModel && (
               <div className="mt-2 rounded-md bg-gray-50 p-3 text-sm">
                 <div className="flex justify-between">
@@ -352,16 +393,16 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
           </div>
 
           <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
-              <textarea
+            <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
+            <textarea
               value={formData.configText}
               onChange={(e) => setFormData({ ...formData, configText: e.target.value })}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-xs"
               rows={8}
-                placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
-              />
-              <p className="mt-1 text-xs text-gray-500">仅支持 JSON 对象，创建时将原样传给后端 `config` 字段。</p>
-            </div>
+              placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
+            />
+            <p className="mt-1 text-xs text-gray-500">仅支持 JSON 对象，创建时将原样传给后端 `config` 字段。</p>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">工具设置</label>

@@ -5,6 +5,7 @@ import { PromptTemplateRefPicker } from '../PromptTemplateRefPicker';
 import type { AgentTestResult } from '../../services/agentService';
 import { agentService } from '../../services/agentService';
 import { apiKeyService } from '../../services/apiKeyService';
+import type { ApiKey } from '../../services/apiKeyService';
 import { incubationProjectService, IncubationProject } from '../../services/incubationProjectService';
 import type { PromptTemplateRef } from '../../types';
 import { ModelTestPanel } from './ModelTestPanel';
@@ -14,6 +15,8 @@ import type { EditAgentModalProps } from './types';
 import {
   buildAutoGrantedPermissions,
   extractDailyCostBudgetLimit,
+  filterAndSortModelsByApiKeys,
+  formatModelPriceSummary,
   getRoleDisplayName,
   getTierLabel,
   getToolKey,
@@ -24,6 +27,7 @@ import {
   parseConfigText,
   prettyConfigText,
   upsertDailyCostBudget,
+  validateDailyCostBudgetConflict,
 } from './utils';
 
 const getProviderColor = (provider: string) => {
@@ -88,16 +92,20 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
   const [isTesting, setIsTesting] = useState(false);
   const [streamingResponse, setStreamingResponse] = useState('');
 
-  const { data: apiKeys } = useQuery('apiKeys', apiKeyService.getAllApiKeys);
+  const { data: apiKeys = [] } = useQuery<ApiKey[]>('api-keys', () => apiKeyService.getAllApiKeys());
   const { data: incubationProjects = [] } = useQuery<IncubationProject[]>(
     'edit-agent-incubation-projects',
     () => incubationProjectService.list(),
     { retry: false, staleTime: 60_000 },
   );
-  const selectedModel = availableModels.find((m) => m.id === selectedModelId);
-  const filteredApiKeys = (apiKeys || []).filter((key) => {
+  const selectableModels = useMemo(
+    () => filterAndSortModelsByApiKeys(availableModels, apiKeys),
+    [availableModels, apiKeys],
+  );
+  const selectedModel = selectableModels.find((m) => m.id === selectedModelId);
+  const filteredApiKeys = apiKeys.filter((key) => {
     if (!selectedModel?.provider || !key?.provider) return false;
-    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive;
+    return isProviderCompatible(selectedModel.provider, key.provider) && key.isActive !== false;
   });
 
   const parsedCapabilities = useMemo(() => {
@@ -143,6 +151,22 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
   }, [allowedToolIds]);
 
   useEffect(() => {
+    if (selectableModels.length === 0) {
+      if (selectedModelId) setSelectedModelId('');
+      if (selectedApiKeyId) setSelectedApiKeyId('');
+      return;
+    }
+
+    const modelIsSelectable = selectableModels.some((model) => model.id === selectedModelId);
+    if (modelIsSelectable) return;
+
+    setSelectedModelId(selectableModels[0].id);
+    if (selectedApiKeyId) {
+      setSelectedApiKeyId('');
+    }
+  }, [selectableModels, selectedModelId, selectedApiKeyId]);
+
+  useEffect(() => {
     if (!selectedApiKeyId) return;
     const matched = filteredApiKeys.some((key) => (key.id || key._id) === selectedApiKeyId);
     if (!matched) {
@@ -183,6 +207,12 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
     const configParsed = parseConfigText(configText);
     if (configParsed.error) {
       alert(configParsed.error);
+      setActiveTab('basic');
+      return;
+    }
+    const budgetConflict = validateDailyCostBudgetConflict(configParsed.config || {}, dailyCostLimitUsd);
+    if (budgetConflict) {
+      alert(budgetConflict);
       setActiveTab('basic');
       return;
     }
@@ -327,12 +357,17 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
               >
                 <option value="">请选择模型...</option>
-                {availableModels.map((model) => (
+                {selectableModels.map((model) => (
                   <option key={model.id} value={model.id}>
-                    {model.name} ({model.provider})
+                    {model.name} ({model.provider}) - {formatModelPriceSummary(model)}
                   </option>
                 ))}
               </select>
+              {selectableModels.length === 0 && (
+                <p className="mt-2 text-sm text-amber-600">
+                  当前没有已配置 API Key 的供应商可用，请先在 API Key 管理中启用供应商密钥。
+                </p>
+              )}
             </div>
 
             {selectedModel && (
@@ -369,6 +404,20 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 )}
               </div>
             )}
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">每日 Cost 额度 USD</label>
+              <input
+                type="number"
+                min="0"
+                step="0.000001"
+                value={dailyCostLimitUsd}
+                onChange={(e) => setDailyCostLimitUsd(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: 2.5"
+              />
+              <p className="mt-1 text-xs text-gray-500">为空或 0 表示不启用每日 Cost 管控；保存后会写入 config.budget。</p>
+            </div>
 
             {selectedModel && (
               <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -602,20 +651,6 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 onApplyTemplate={({ content }) => setSystemPrompt(content)}
                 helperText="仅用于填充 Prompt 文本，不会在 Agent 上保存模板绑定关系。"
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">每日 Cost 额度 USD</label>
-              <input
-                type="number"
-                min="0"
-                step="0.000001"
-                value={dailyCostLimitUsd}
-                onChange={(e) => setDailyCostLimitUsd(e.target.value)}
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                placeholder="例如: 2.5"
-              />
-              <p className="mt-1 text-xs text-gray-500">为空或 0 表示不启用每日 Cost 管控；保存后会写入 config.budget。</p>
             </div>
 
             <div>

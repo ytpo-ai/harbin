@@ -54,9 +54,41 @@ export interface UpdateApiKeyDto {
 }
 
 class ApiKeyService {
+  private normalizeApiKeyList(payload: unknown): ApiKey[] {
+    if (Array.isArray(payload)) {
+      return payload as ApiKey[];
+    }
+
+    if (!payload || typeof payload !== 'object') {
+      return [];
+    }
+
+    const container = payload as Record<string, unknown>;
+    const arrayCandidateKeys = ['data', 'items', 'list', 'rows', 'results', 'records'];
+
+    for (const key of arrayCandidateKeys) {
+      const value = container[key];
+      if (Array.isArray(value)) {
+        return value as ApiKey[];
+      }
+    }
+
+    for (const key of ['data', 'result', 'payload']) {
+      const value = container[key];
+      if (value && typeof value === 'object') {
+        const nested = this.normalizeApiKeyList(value);
+        if (nested.length > 0) {
+          return nested;
+        }
+      }
+    }
+
+    return [];
+  }
+
   async getAllApiKeys(): Promise<ApiKey[]> {
     const response = await api.get('/api-keys');
-    return response.data;
+    return this.normalizeApiKeyList(response.data);
   }
 
   async getApiKeyStats(): Promise<ApiKeyStats> {
@@ -71,7 +103,7 @@ class ApiKeyService {
 
   async getApiKeysByProvider(provider: string): Promise<ApiKey[]> {
     const response = await api.get(`/api-keys/by-provider/${provider}`);
-    return response.data;
+    return this.normalizeApiKeyList(response.data);
   }
 
   async createApiKey(data: CreateApiKeyDto): Promise<ApiKey> {

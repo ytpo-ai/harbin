@@ -42,7 +42,15 @@
 
 ---
 
-## 2. 相关文档
+## 2. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN](../plan/AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN.md) | [AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT](../requirement/AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT.md) | [开发记录](../development/AGENT_MG_REQ-001_DEVELOPMENT.md) | — |
+
+---
+
+## 3. 相关文档
 
 ### 规划文档 (docs/plan/)
 
@@ -50,6 +58,13 @@
 |------|------|
 | `AGENT_MANAGEMENT_PERSON_CARD_UI_PLAN.md` | Agent 管理页人物卡片与创建顺序优化计划 |
 | `AGENTS_PAGE_SPLIT_REFACTOR_PLAN.md` | Agent 管理页页面拆分重构计划 |
+| `AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN.md` | Agent 编辑模型选择：按 API Key 供应商过滤并按价格排序 |
+
+### 需求文档 (docs/requirement/)
+
+| 文件 | 说明 |
+|------|------|
+| `AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT.md` | Agent 模型候选过滤与价格排序优化 |
 
 ### 开发总结 (docs/development/)
 
@@ -67,7 +82,7 @@
 
 ---
 
-## 3. 相关代码文件
+## 4. 相关代码文件
 
 ### 前端页面 (frontend/src/pages/)
 
