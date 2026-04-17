@@ -18,7 +18,11 @@ export interface ToolExecutionContext {
     role?: string;
   };
   assignedToolIds?: string[];
-  /** Project ID from orchestration plan's ei_project binding. */
+  /**
+   * Project ID from orchestration plan (plan.projectId).
+   * NOTE: This is typically an IncubationProject._id, NOT the local RdProject._id.
+   * For the local RdProject ID, use collaborationContext.projectBinding.localProjectId.
+   */
   projectId?: string;
   /** Local filesystem path of the bound project. */
   localProjectPath?: string;

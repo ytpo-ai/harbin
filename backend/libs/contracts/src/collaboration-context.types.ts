@@ -33,6 +33,8 @@ export interface MeetingCollaborationContext extends CollaborationContextBase {
 export interface ProjectBinding {
   localPath?: string;
   opencodeProjectPath?: string;
+  /** local RdProject._id — the ei_projects document ID for sourceType='local' */
+  localProjectId?: string;
 }
 
 export interface OrchestrationCollaborationContext extends CollaborationContextBase {

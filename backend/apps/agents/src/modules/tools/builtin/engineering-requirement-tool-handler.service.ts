@@ -203,7 +203,14 @@ export class RequirementToolHandler {
       createdById: String(params?.createdById || executionContext?.actor?.employeeId || agentId || '').trim() || undefined,
       createdByName: String(params?.createdByName || '').trim() || undefined,
       createdByType: params?.createdByType || 'agent',
-      localProjectId: String(params?.localProjectId || params?.projectId || executionContext?.projectId || (executionContext?.collaborationContext as any)?.projectId || '').trim() || undefined,
+      localProjectId: String(
+        params?.localProjectId
+        || (executionContext?.collaborationContext as any)?.projectBinding?.localProjectId
+        || params?.projectId
+        || executionContext?.projectId
+        || (executionContext?.collaborationContext as any)?.projectId
+        || '',
+      ).trim() || undefined,
       projectId: String(params?.projectId || executionContext?.projectId || (executionContext?.collaborationContext as any)?.projectId || '').trim() || undefined,
     });
     return {
