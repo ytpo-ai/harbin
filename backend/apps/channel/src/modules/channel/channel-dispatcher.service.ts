@@ -236,6 +236,9 @@ export class ChannelDispatcherService implements OnModuleInit, OnModuleDestroy {
     if (eventType === 'system.alert.scheduler') {
       return 'alert';
     }
+    if (eventType === 'agent.cost.exceeded') {
+      return 'alert';
+    }
     if (eventType === 'meeting.session.ended') {
       return 'meeting_ended';
     }

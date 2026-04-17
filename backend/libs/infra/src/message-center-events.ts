@@ -14,6 +14,7 @@ export type MessageCenterEventType =
   | 'engineering.tool.completed'
   | 'orchestration.task.completed'
   | 'agent.action.completed'
+  | 'agent.cost.exceeded'
   | 'system.alert.scheduler'
   | 'scheduler.report.generated';
 export type MessageCenterMessageType = 'engineering_statistics' | 'orchestration' | 'system_alert';
@@ -116,6 +117,7 @@ export function validateMessageCenterEventEnvelope(payload: unknown): {
     eventType !== 'engineering.tool.completed' &&
     eventType !== 'orchestration.task.completed' &&
     eventType !== 'agent.action.completed' &&
+    eventType !== 'agent.cost.exceeded' &&
     eventType !== 'system.alert.scheduler' &&
     eventType !== 'scheduler.report.generated'
   ) {

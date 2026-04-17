@@ -19,6 +19,7 @@ import {
   isProviderCompatible,
   normalizeTier,
   parseConfigText,
+  upsertDailyCostBudget,
 } from './utils';
 
 export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
@@ -43,6 +44,7 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     apiKeyId: string;
     selectedTools: string[];
     configText: string;
+    dailyCostLimitUsd: string;
     projectId: string;
   }>({
     name: '',
@@ -56,6 +58,7 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
     apiKeyId: '',
     selectedTools: [] as string[],
     configText: '{\n  "execution": {\n    "provider": "opencode"\n  }\n}',
+    dailyCostLimitUsd: '',
     projectId: '',
   });
 
@@ -130,6 +133,8 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
       return;
     }
 
+    const nextConfig = upsertDailyCostBudget(configParsed.config || {}, formData.dailyCostLimitUsd);
+
     onCreate({
       name: formData.name,
       roleId: formData.roleId,
@@ -149,7 +154,7 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
         teamwork: 80,
       },
       learningAbility: 80,
-      config: configParsed.config || {},
+      config: nextConfig,
       projectId: formData.projectId || undefined,
     } as any);
   };
@@ -333,16 +338,30 @@ export const CreateAgentModal: React.FC<CreateAgentModalProps> = ({
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
-            <textarea
+            <label className="block text-sm font-medium text-gray-700 mb-1">每日 Cost 额度 USD</label>
+            <input
+              type="number"
+              min="0"
+              step="0.000001"
+              value={formData.dailyCostLimitUsd}
+              onChange={(e) => setFormData({ ...formData, dailyCostLimitUsd: e.target.value })}
+              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+              placeholder="例如: 2.5"
+            />
+            <p className="mt-1 text-xs text-gray-500">为空或 0 表示不启用每日 Cost 管控；创建时会写入 config.budget。</p>
+          </div>
+
+          <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Config (JSON)</label>
+              <textarea
               value={formData.configText}
               onChange={(e) => setFormData({ ...formData, configText: e.target.value })}
               className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono text-xs"
               rows={8}
-              placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
-            />
-            <p className="mt-1 text-xs text-gray-500">仅支持 JSON 对象，创建时将原样传给后端 `config` 字段。</p>
-          </div>
+                placeholder='例如: {"execution":{"provider":"opencode"},"budget":{"period":"day","limit":10,"unit":"runCount"}}'
+              />
+              <p className="mt-1 text-xs text-gray-500">仅支持 JSON 对象，创建时将原样传给后端 `config` 字段。</p>
+            </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">工具设置</label>

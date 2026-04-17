@@ -2,6 +2,7 @@ import { Module, OnModuleInit } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
+import { AgentMessage, AgentMessageSchema } from '../../schemas/agent-message.schema';
 import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { AgentRole, AgentRoleSchema } from '../../schemas/agent-role.schema';
 import { AgentService } from './agent.service';
@@ -33,6 +34,7 @@ import { ContextModule } from './context/context.module';
     MongooseModule.forFeature([
       { name: Agent.name, schema: AgentSchema },
       { name: AgentRun.name, schema: AgentRunSchema },
+      { name: AgentMessage.name, schema: AgentMessageSchema },
       { name: Skill.name, schema: SkillSchema },
       { name: AgentRole.name, schema: AgentRoleSchema },
     ]),

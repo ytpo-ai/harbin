@@ -1,5 +1,11 @@
 # Agent Runtime（运行时）
 
+## 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|-------------|-------------|-----|
+| [AGENT_DAILY_COST_BUDGET_PLAN](../plan/AGENT_DAILY_COST_BUDGET_PLAN.md) | [REQ-001 Agent 每日 Cost 额度管控](../requirement/AGENT_DAILY_COST_BUDGET_REQ-001_FULL_CHAIN.md) | — | — |
+
 ## 1. 功能设计
 
 ### 1.1 目标

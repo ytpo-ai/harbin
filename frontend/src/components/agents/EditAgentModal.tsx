@@ -13,6 +13,7 @@ import { useAgentToolFilter } from './hooks/useAgentToolFilter';
 import type { EditAgentModalProps } from './types';
 import {
   buildAutoGrantedPermissions,
+  extractDailyCostBudgetLimit,
   getRoleDisplayName,
   getTierLabel,
   getToolKey,
@@ -22,6 +23,7 @@ import {
   normalizeTier,
   parseConfigText,
   prettyConfigText,
+  upsertDailyCostBudget,
 } from './utils';
 
 const getProviderColor = (provider: string) => {
@@ -80,6 +82,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
   const [promptTemplateRef, setPromptTemplateRef] = useState<PromptTemplateRef | undefined>(agent.promptTemplateRef);
   const [capabilitiesText, setCapabilitiesText] = useState((agent.capabilities || []).join(', '));
   const [configText, setConfigText] = useState(prettyConfigText(agent.config));
+  const [dailyCostLimitUsd, setDailyCostLimitUsd] = useState(extractDailyCostBudgetLimit(agent.config));
   const [testResult, setTestResult] = useState<AgentTestResult | null>(null);
   const [testedModelId, setTestedModelId] = useState<string | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -132,6 +135,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
     systemPrompt.trim() !== (agent.systemPrompt || '').trim() ||
     !promptTemplateRefEqual(promptTemplateRef, agent.promptTemplateRef) ||
     !arraysEqual(parsedCapabilities, agent.capabilities || []) ||
+    dailyCostLimitUsd.trim() !== extractDailyCostBudgetLimit(agent.config) ||
     configText.trim() !== prettyConfigText(agent.config).trim();
 
   useEffect(() => {
@@ -182,6 +186,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
       setActiveTab('basic');
       return;
     }
+    const nextConfig = upsertDailyCostBudget(configParsed.config || {}, dailyCostLimitUsd);
 
     const selectedAllowedTools = selectedTools.filter((toolId) => allowedToolIds.has(toolId));
     const basePermissions = Array.isArray(agent.permissions) ? agent.permissions : [];
@@ -190,7 +195,7 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
       : basePermissions;
 
     onSave({
-      config: configParsed.config || {},
+      config: nextConfig,
       model: selectedModel,
       apiKeyId: selectedApiKeyId || undefined,
       tools: selectedAllowedTools,
@@ -597,6 +602,20 @@ export const EditAgentModal: React.FC<EditAgentModalProps> = ({
                 onApplyTemplate={({ content }) => setSystemPrompt(content)}
                 helperText="仅用于填充 Prompt 文本，不会在 Agent 上保存模板绑定关系。"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">每日 Cost 额度 USD</label>
+              <input
+                type="number"
+                min="0"
+                step="0.000001"
+                value={dailyCostLimitUsd}
+                onChange={(e) => setDailyCostLimitUsd(e.target.value)}
+                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                placeholder="例如: 2.5"
+              />
+              <p className="mt-1 text-xs text-gray-500">为空或 0 表示不启用每日 Cost 管控；保存后会写入 config.budget。</p>
             </div>
 
             <div>

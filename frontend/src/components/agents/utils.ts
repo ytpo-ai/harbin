@@ -121,3 +121,51 @@ export const parseConfigText = (raw: string): { config?: Record<string, unknown>
     return { error: `config JSON 解析失败: ${message}` };
   }
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+};
+
+export const extractDailyCostBudgetLimit = (config?: Record<string, unknown>): string => {
+  if (!isRecord(config)) {
+    return '';
+  }
+
+  const budget = config.budget;
+  if (!isRecord(budget)) {
+    return '';
+  }
+
+  const unit = String(budget.unit || '').trim();
+  const period = String(budget.period || '').trim();
+  const limit = Number(budget.limit);
+  if (unit !== 'dailyCost' || period !== 'day' || !Number.isFinite(limit) || limit <= 0) {
+    return '';
+  }
+
+  return String(limit);
+};
+
+export const upsertDailyCostBudget = (
+  config: Record<string, unknown>,
+  dailyCostLimitInput: string,
+): Record<string, unknown> => {
+  const normalizedInput = String(dailyCostLimitInput || '').trim();
+  const parsedLimit = Number(normalizedInput);
+  const nextConfig: Record<string, unknown> = { ...config };
+
+  if (!normalizedInput || !Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+    const budget = nextConfig.budget;
+    if (isRecord(budget) && String(budget.unit || '').trim() === 'dailyCost') {
+      delete nextConfig.budget;
+    }
+    return nextConfig;
+  }
+
+  nextConfig.budget = {
+    period: 'day',
+    unit: 'dailyCost',
+    limit: parsedLimit,
+  };
+  return nextConfig;
+};

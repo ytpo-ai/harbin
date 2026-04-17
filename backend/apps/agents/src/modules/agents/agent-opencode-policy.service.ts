@@ -1,7 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import {
+  buildMessageCenterEvent,
+  MESSAGE_BUS,
+  MESSAGE_CENTER_EVENT_SOURCE_AGENTS,
+  type MessageBus,
+} from '@libs/infra';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
+import { AgentMessage, AgentMessageDocument } from '../../schemas/agent-message.schema';
 import { Agent } from '@agent/schemas/agent.schema';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
 import { Task } from '../../../../../src/shared/types';
@@ -31,7 +38,7 @@ export interface OpenCodeExecutionConfig {
 interface AgentBudgetConfig {
   period: 'day' | 'week' | 'month';
   limit: number;
-  unit: 'runCount';
+  unit: 'runCount' | 'dailyCost';
 }
 
 interface AgentTaskExecutionContext {
@@ -48,13 +55,18 @@ interface AgentTaskExecutionContext {
 
 const OPENCODE_ALLOWED_ROLE_CODES = new Set(['devops-engineer', 'fullstack-engineer', 'technical-architect']);
 const OPENCODE_BUDGET_PERIOD_SET = new Set(['day', 'week', 'month']);
+const OPENCODE_BUDGET_UNIT_SET = new Set(['runCount', 'dailyCost']);
 const OPENCODE_MODEL_BINDING_CHECK_ENABLED = 'OPENCODE_MODEL_BINDING_CHECK_ENABLED';
 
 @Injectable()
 export class AgentOpenCodePolicyService {
+  private readonly logger = new Logger(AgentOpenCodePolicyService.name);
+
   constructor(
     @InjectModel(AgentRun.name) private readonly agentRunModel: Model<AgentRunDocument>,
+    @InjectModel(AgentMessage.name) private readonly agentMessageModel: Model<AgentMessageDocument>,
     private readonly runtimeOrchestrator: RuntimeOrchestratorService,
+    @Inject(MESSAGE_BUS) private readonly messageBus: MessageBus,
   ) {}
 
   assertOpenCodeExecutionGate(agent: Agent, roleCode: string, executionConfig: OpenCodeExecutionConfig): void {
@@ -243,6 +255,21 @@ export class AgentOpenCodePolicyService {
       return;
     }
 
+    if (budgetConfig.unit === 'dailyCost') {
+      await this.publishAgentDailyCostExceededEvent({
+        agent,
+        runtimeAgentId,
+        task,
+        runtimeContext,
+        context,
+        budgetConfig,
+        usage,
+      });
+      throw new BadRequestException(
+        `Agent daily cost quota exceeded. period=${budgetConfig.period}, limit=${budgetConfig.limit}, used=${usage.usedAfter}`,
+      );
+    }
+
     const approval = context?.approval;
     const approved = approval?.approved === true;
     const quotaPayload = {
@@ -376,14 +403,18 @@ export class AgentOpenCodePolicyService {
     if (!Number.isFinite(limitRaw) || limitRaw < 0) {
       throw new BadRequestException('agent.config.budget.limit must be a non-negative number');
     }
-    if (unitRaw !== 'runCount') {
-      throw new BadRequestException('agent.config.budget.unit currently only supports runCount');
+    if (!OPENCODE_BUDGET_UNIT_SET.has(unitRaw)) {
+      throw new BadRequestException('agent.config.budget.unit must be runCount or dailyCost');
+    }
+
+    if (unitRaw === 'dailyCost' && periodRaw !== 'day') {
+      throw new BadRequestException('agent.config.budget.period must be day when unit=dailyCost');
     }
 
     return {
       period: periodRaw as AgentBudgetConfig['period'],
-      limit: Math.floor(limitRaw),
-      unit: 'runCount',
+      limit: unitRaw === 'runCount' ? Math.floor(limitRaw) : limitRaw,
+      unit: unitRaw as AgentBudgetConfig['unit'],
     };
   }
 
@@ -398,6 +429,10 @@ export class AgentOpenCodePolicyService {
     periodStart: Date;
     periodEnd: Date;
   }> {
+    if (budgetConfig.unit === 'dailyCost') {
+      return this.evaluateAgentDailyCostUsage(agentId, budgetConfig);
+    }
+
     const periodStart = this.resolveBudgetPeriodStart(budgetConfig.period);
     const periodEnd = new Date();
     const usedAfter = await this.agentRunModel
@@ -418,6 +453,112 @@ export class AgentOpenCodePolicyService {
       periodStart,
       periodEnd,
     };
+  }
+
+  private async evaluateAgentDailyCostUsage(
+    agentId: string,
+    budgetConfig: AgentBudgetConfig,
+  ): Promise<{
+    usedBefore: number;
+    usedAfter: number;
+    exceeded: boolean;
+    periodStart: Date;
+    periodEnd: Date;
+  }> {
+    const periodStart = this.resolveBudgetPeriodStart('day');
+    const periodEnd = new Date();
+    const aggregate = await this.agentMessageModel
+      .aggregate<{ totalCost: number }>([
+        {
+          $match: {
+            agentId,
+            createdAt: {
+              $gte: periodStart,
+              $lte: periodEnd,
+            },
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalCost: {
+              $sum: {
+                $ifNull: ['$cost', 0],
+              },
+            },
+          },
+        },
+      ])
+      .exec();
+
+    const usedAfter = Number(aggregate[0]?.totalCost || 0);
+
+    return {
+      usedBefore: usedAfter,
+      usedAfter,
+      exceeded: usedAfter >= budgetConfig.limit,
+      periodStart,
+      periodEnd,
+    };
+  }
+
+  private async publishAgentDailyCostExceededEvent(input: {
+    agent: Agent;
+    runtimeAgentId: string;
+    task: Task;
+    runtimeContext: RuntimeRunContext;
+    context?: AgentTaskExecutionContext;
+    budgetConfig: AgentBudgetConfig;
+    usage: {
+      usedBefore: number;
+      usedAfter: number;
+      exceeded: boolean;
+      periodStart: Date;
+      periodEnd: Date;
+    };
+  }): Promise<void> {
+    const receiverId = String(input.context?.actor?.employeeId || '').trim() || undefined;
+    const taskTitle = String(input.task.title || '').trim() || input.task.id || '未命名任务';
+    const occurredAt = new Date().toISOString();
+    const event = buildMessageCenterEvent({
+      eventType: 'agent.cost.exceeded',
+      source: MESSAGE_CENTER_EVENT_SOURCE_AGENTS,
+      occurredAt,
+      traceId: input.runtimeContext.traceId,
+      data: {
+        receiverId,
+        messageType: 'system_alert',
+        title: 'Agent 每日 Cost 额度已超限',
+        content: `Agent「${input.agent.name}」今日已消耗 $${input.usage.usedAfter.toFixed(6)}，超出额度 $${input.budgetConfig.limit.toFixed(6)}，任务「${taskTitle}」已被拦截。`,
+        bizKey: `agent-cost-exceeded:${input.runtimeAgentId}:${input.runtimeContext.runId}`,
+        priority: 'high',
+        extra: {
+          agentId: input.runtimeAgentId,
+          agentName: input.agent.name,
+          runId: input.runtimeContext.runId,
+          sessionId: input.runtimeContext.sessionId,
+          taskId: input.task.id,
+          taskTitle,
+          traceId: input.runtimeContext.traceId,
+          period: input.budgetConfig.period,
+          unit: input.budgetConfig.unit,
+          limit: input.budgetConfig.limit,
+          usedBefore: input.usage.usedBefore,
+          usedAfter: input.usage.usedAfter,
+          periodStart: input.usage.periodStart.toISOString(),
+          periodEnd: input.usage.periodEnd.toISOString(),
+        },
+      },
+    });
+
+    try {
+      await this.messageBus.publish('message-center.events', { payload: event });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error || 'unknown');
+      this.logger.warn(
+        `Publish agent cost exceeded message-center event failed: agentId=${input.runtimeAgentId} runId=${input.runtimeContext.runId} reason=${reason}`,
+      );
+    }
   }
 
   private resolveBudgetPeriodStart(period: AgentBudgetConfig['period']): Date {

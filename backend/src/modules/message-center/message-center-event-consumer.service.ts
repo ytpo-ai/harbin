@@ -18,6 +18,7 @@ const CHANNEL_FORWARD_EVENT_TYPES_REDIS_KEY =
 const CHANNEL_FORWARD_EVENT_TYPES_DEFAULT = [
   'orchestration.task.completed',
   'agent.action.completed',
+  'agent.cost.exceeded',
   'system.alert.scheduler',
   'meeting.session.ended',
   'meeting.summary.generated',

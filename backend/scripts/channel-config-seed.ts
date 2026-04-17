@@ -34,6 +34,7 @@ function resolveDefaultEventFilters(): string[] {
   return [
     'orchestration.task.completed',
     'agent.action.completed',
+    'agent.cost.exceeded',
     'system.alert.scheduler',
     'meeting.session.ended',
     'meeting.summary.generated',

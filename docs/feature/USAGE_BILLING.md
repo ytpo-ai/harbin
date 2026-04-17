@@ -19,7 +19,13 @@
 - Guide：`docs/guide/USAGE_BILLING_SYSTEM.MD`
 - API 文档：`docs/api/agents-api.md`（Usage 模块章节）
 
-## 3. 相关代码文件
+## 3. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|-------------|-------------|-----|
+| [AGENT_DAILY_COST_BUDGET_PLAN](../plan/AGENT_DAILY_COST_BUDGET_PLAN.md) | [REQ-001 Agent 每日 Cost 额度管控](../requirement/AGENT_DAILY_COST_BUDGET_REQ-001_FULL_CHAIN.md) | — | — |
+
+## 4. 相关代码文件
 
 - 后端：
   - `backend/apps/agents/src/modules/models/model-pricing.service.ts`
