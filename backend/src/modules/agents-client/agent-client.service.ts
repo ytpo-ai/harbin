@@ -145,6 +145,22 @@ export class AgentClientService {
     };
   }
 
+  private unwrapResponseEnvelope<T>(payload: unknown): T {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload as T;
+    }
+
+    const body = payload as Record<string, unknown>;
+    if (
+      typeof body.code === 'number' &&
+      'message' in body &&
+      Object.prototype.hasOwnProperty.call(body, 'data')
+    ) {
+      return body.data as T;
+    }
+    return payload as T;
+  }
+
   async resolvePrompt(input: {
     scene: string;
     role: string;
@@ -160,12 +176,13 @@ export class AgentClientService {
         timeout: this.timeout,
       });
 
-      const content = String(response.data?.content || '').trim();
+      const body = this.unwrapResponseEnvelope<Record<string, unknown>>(response.data);
+      const content = String(body?.content || '').trim();
       if (content) {
         return {
           content,
-          source: String(response.data?.source || 'api'),
-          version: typeof response.data?.version === 'number' ? response.data.version : undefined,
+          source: String(body?.source || 'api'),
+          version: typeof body?.version === 'number' ? body.version : undefined,
         };
       }
 
@@ -190,7 +207,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders(),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope<Agent>(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Failed to fetch agent ${agentId}: ${message}`);
@@ -206,7 +223,7 @@ export class AgentClientService {
       headers: this.buildSignedHeaders(),
       timeout: this.timeout,
     });
-    return response.data;
+    return this.unwrapResponseEnvelope<Agent[]>(response.data);
   }
 
   async getActiveAgents(filters?: { projectId?: string }): Promise<Agent[]> {
@@ -217,7 +234,7 @@ export class AgentClientService {
       headers: this.buildSignedHeaders(),
       timeout: this.timeout,
     });
-    return response.data;
+    return this.unwrapResponseEnvelope<Agent[]>(response.data);
   }
 
   async getToolExecutions(agentId?: string, toolId?: string): Promise<ToolExecution[]> {
@@ -229,7 +246,7 @@ export class AgentClientService {
       headers: this.buildSignedHeaders(),
       timeout: Number(process.env.AGENTS_CLIENT_TIMEOUT_MS || 15000),
     });
-    return response.data;
+    return this.unwrapResponseEnvelope<ToolExecution[]>(response.data);
   }
 
   async createAgent(agentData: Omit<Agent, 'id' | 'createdAt' | 'updatedAt'>): Promise<Agent> {
@@ -237,7 +254,7 @@ export class AgentClientService {
       headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
       timeout: this.timeout,
     });
-    return response.data;
+    return this.unwrapResponseEnvelope<Agent>(response.data);
   }
 
   async updateAgent(agentId: string, updates: Partial<Agent>): Promise<Agent | null> {
@@ -246,7 +263,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope<Agent>(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.error(`Failed to update agent ${agentId}: ${message}`);
@@ -291,14 +308,39 @@ export class AgentClientService {
         },
       );
 
+      const rawPayload = response.data;
+      const envelope = (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload))
+        ? (rawPayload as Record<string, unknown>)
+        : {};
+      const body = this.unwrapResponseEnvelope<Record<string, unknown>>(rawPayload);
+
+      const responseText =
+        typeof body?.response === 'string'
+          ? body.response
+          : typeof body?.output === 'string'
+            ? body.output
+            : '';
+      const runId =
+        typeof body?.runId === 'string'
+          ? body.runId
+          : typeof envelope?.runId === 'string'
+            ? envelope.runId
+            : undefined;
+      const sessionId =
+        typeof body?.sessionId === 'string'
+          ? body.sessionId
+          : typeof envelope?.sessionId === 'string'
+            ? envelope.sessionId
+            : undefined;
+
       this.logger.log(
-        `[agents_execute_response] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=success durationMs=${Date.now() - startedAt} runId=${response.data?.runId || 'none'} sessionId=${response.data?.sessionId || 'none'} responseLength=${(response.data?.response || '').length}`,
+        `[agents_execute_response] requestId=${requestId} agentId=${agentId} taskId=${task.id || 'unknown'} status=success durationMs=${Date.now() - startedAt} runId=${runId || 'none'} sessionId=${sessionId || 'none'} responseLength=${responseText.length}`,
       );
 
       return {
-        response: response.data?.response || '',
-        runId: response.data?.runId,
-        sessionId: response.data?.sessionId,
+        response: responseText,
+        runId,
+        sessionId,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -370,7 +412,18 @@ export class AgentClientService {
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       },
     );
-    return response.data;
+    const body = this.unwrapResponseEnvelope<CreateAsyncAgentTaskResult>(response.data);
+    const taskId = String((body as any)?.taskId || '').trim();
+    if (!taskId) {
+      throw new Error('createAsyncAgentTask response missing taskId');
+    }
+    const runId = typeof (body as any)?.runId === 'string' ? (body as any).runId : undefined;
+    const status = String((body as any)?.status || 'queued').trim().toLowerCase() as AsyncAgentTaskStatus;
+    return {
+      taskId,
+      runId,
+      status,
+    };
   }
 
   async getAsyncAgentTask(taskId: string): Promise<AsyncAgentTaskSnapshot> {
@@ -385,7 +438,17 @@ export class AgentClientService {
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       },
     );
-    return response.data;
+    const body = this.unwrapResponseEnvelope<AsyncAgentTaskSnapshot>(response.data);
+    const normalizedBody = (body && typeof body === 'object')
+      ? (body as unknown as Record<string, unknown>)
+      : {};
+    const resolvedTaskId = String((body as any)?.taskId || normalizedTaskId).trim() || normalizedTaskId;
+    const status = String((body as any)?.status || '').trim().toLowerCase() as AsyncAgentTaskStatus;
+    return {
+      ...normalizedBody,
+      taskId: resolvedTaskId,
+      status,
+    } as AsyncAgentTaskSnapshot;
   }
 
   async waitForAsyncAgentTaskCompletionBySse(
@@ -586,7 +649,7 @@ export class AgentClientService {
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       },
     );
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   async executeToolQuery(
@@ -622,7 +685,7 @@ export class AgentClientService {
         timeout: this.timeout,
       },
     );
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   async sendDirectInnerMessage(input: SendDirectInnerMessageInput): Promise<{ messageId: string; accepted: boolean }> {
@@ -635,11 +698,22 @@ export class AgentClientService {
       },
     );
 
-    const data = response.data?.data || {};
-    const messageId = String(data.messageId || data.id || '').trim();
+    const rawPayload = response.data;
+    const envelope = (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload))
+      ? (rawPayload as Record<string, unknown>)
+      : {};
+    const body = this.unwrapResponseEnvelope<Record<string, unknown>>(rawPayload) || {};
+    const messageId = String(body?.messageId || body?.id || '').trim();
+    const isSuccess =
+      typeof envelope?.code === 'number'
+        ? Number(envelope.code) === 0
+        : envelope?.success === undefined
+          ? true
+          : Boolean(envelope.success);
+
     return {
       messageId,
-      accepted: Boolean(response.data?.success && messageId),
+      accepted: Boolean(isSuccess && messageId),
     };
   }
 
@@ -666,7 +740,7 @@ export class AgentClientService {
       },
     );
 
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   async listInnerMessages(input: ListInnerMessagesInput): Promise<ListInnerMessagesResult> {
@@ -685,14 +759,14 @@ export class AgentClientService {
       },
     });
 
-    const data = response.data?.data || {};
+    const data = this.unwrapResponseEnvelope<Record<string, unknown>>(response.data) || {};
     return {
       total: Number(data.total || 0),
       page: Number(data.page || 1),
       pageSize: Number(data.pageSize || 20),
       totalPages: Number(data.totalPages || 0),
       items: Array.isArray(data.items) ? data.items : [],
-      fetchedAt: data.fetchedAt,
+      fetchedAt: typeof data.fetchedAt === 'string' ? data.fetchedAt : undefined,
     };
   }
 
@@ -704,7 +778,7 @@ export class AgentClientService {
       headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
       timeout: this.timeout,
     });
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   async getAgentMemoSnapshot(agentId: string): Promise<AgentMemoSnapshot | null> {
@@ -722,7 +796,8 @@ export class AgentClientService {
           pageSize: memoKind === 'topic' ? 5 : 2,
         },
       });
-      const rows = Array.isArray(response.data?.items) ? response.data.items : [];
+      const body = this.unwrapResponseEnvelope<{ items?: any[] }>(response.data);
+      const rows = Array.isArray(body?.items) ? body.items : [];
       return rows.map((item) => ({
         id: String(item?.id || ''),
         memoKind,
@@ -763,7 +838,7 @@ export class AgentClientService {
           timeout: this.timeout,
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to flush memo events: ${message}`);
@@ -781,7 +856,7 @@ export class AgentClientService {
           timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to trigger full memo aggregation: ${message}`);
@@ -824,7 +899,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders(),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to get session ${sessionId}: ${message}`);
@@ -846,7 +921,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to create session: ${message}`);
@@ -868,7 +943,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to append message to session ${sessionId}: ${message}`);
@@ -886,7 +961,7 @@ export class AgentClientService {
           timeout: this.timeout,
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to archive session ${sessionId}: ${message}`);
@@ -900,7 +975,7 @@ export class AgentClientService {
         headers: this.buildSignedHeaders({ 'content-type': 'application/json' }),
         timeout: this.timeout,
       });
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to resume session ${sessionId}: ${message}`);
@@ -928,7 +1003,7 @@ export class AgentClientService {
           timeout: this.timeout,
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to get/create meeting session: ${message}`);
@@ -957,7 +1032,7 @@ export class AgentClientService {
           timeout: this.timeout,
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to get/create task session: ${message}`);
@@ -991,7 +1066,7 @@ export class AgentClientService {
           timeout: this.timeout,
         },
       );
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       this.logger.warn(`Failed to get/create plan session: ${message}`);

@@ -169,7 +169,8 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
           timeout: this.timeoutMs,
         });
         httpOk = true;
-        duplicate = Boolean(response?.data?.duplicate);
+        const body = this.unwrapResponseEnvelope<Record<string, unknown>>(response?.data);
+        duplicate = Boolean(body?.duplicate);
         channels.push('http');
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
@@ -301,5 +302,20 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
     const raw = String(process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004').trim();
     const normalized = raw.replace(/\/+$/, '');
     return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  private unwrapResponseEnvelope<T>(payload: unknown): T {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload as T;
+    }
+    const body = payload as Record<string, unknown>;
+    if (
+      typeof body.code === 'number' &&
+      'message' in body &&
+      Object.prototype.hasOwnProperty.call(body, 'data')
+    ) {
+      return body.data as T;
+    }
+    return payload as T;
   }
 }

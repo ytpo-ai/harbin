@@ -52,7 +52,7 @@ export class MeetingToolHandler {
 
     const meetingId = params.meetingId.trim();
     const result = await this.internalApiClient.callMeetingApi('GET', `/${meetingId}/detail`);
-    const meeting = result?.data || result;
+    const meeting = result;
 
     return {
       action: 'get_detail',
@@ -146,7 +146,7 @@ export class MeetingToolHandler {
       overwrite: Boolean(params.overwrite),
       generatedByAgentId: agentId,
     });
-    const summaryResult = result?.data || result;
+    const summaryResult = result;
 
     return {
       action: 'save_summary',

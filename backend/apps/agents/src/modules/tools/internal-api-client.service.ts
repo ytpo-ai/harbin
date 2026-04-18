@@ -126,7 +126,7 @@ export class InternalApiClient {
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       },
     );
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   async postDocsHeatRefresh(payload: Record<string, unknown>): Promise<any> {
@@ -138,7 +138,7 @@ export class InternalApiClient {
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       },
     );
-    return response.data;
+    return this.unwrapResponseEnvelope(response.data);
   }
 
   private async callApi(args: {
@@ -157,7 +157,7 @@ export class InternalApiClient {
         data: args.body,
         timeout: Number(process.env.AGENTS_EXEC_TIMEOUT_MS || 120000),
       });
-      return response.data;
+      return this.unwrapResponseEnvelope(response.data);
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const status = error.response?.status;
@@ -212,6 +212,21 @@ export class InternalApiClient {
     const raw = String(process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004').trim();
     const normalized = raw.replace(/\/+$/, '');
     return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
+  }
+
+  private unwrapResponseEnvelope<T>(payload: unknown): T {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      return payload as T;
+    }
+    const body = payload as Record<string, unknown>;
+    if (
+      typeof body.code === 'number' &&
+      'message' in body &&
+      Object.prototype.hasOwnProperty.call(body, 'data')
+    ) {
+      return body.data as T;
+    }
+    return payload as T;
   }
 
   private summarizeApiErrorBody(body: unknown): string {

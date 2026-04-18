@@ -54,7 +54,7 @@ export class CommunicationToolHandler {
       ...(Number.isFinite(maxAttempts) && maxAttempts > 0 ? { maxAttempts: Math.floor(maxAttempts) } : {}),
     });
 
-    const message = response?.data || response;
+    const message = response;
     const messageId = String(message?.messageId || '').trim();
     return {
       action: 'send_internal_message',
