@@ -30,6 +30,9 @@ export class InnerMessageAgentRuntimeBridgeService {
 
     const agent = await this.resolveActiveAgent(receiverAgentId);
     if (!agent) {
+      const reason = `receiver agent is unavailable or inactive: ${receiverAgentId}`;
+      this.logger.warn(`Skip inner message runtime execution: messageId=${messageId} ${reason}`);
+      await this.innerMessageService.markDispatchFailed(messageId, reason).catch(() => undefined);
       return;
     }
 

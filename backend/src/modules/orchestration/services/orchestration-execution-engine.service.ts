@@ -237,6 +237,13 @@ export class OrchestrationExecutionEngineService {
           preactivatedToolIds: this.resolvePreactivatedToolIds(task as any),
         },
       });
+      const acceptedTaskId = String(accepted?.taskId || '').trim();
+      if (!acceptedTaskId) {
+        this.logger.error(
+          `[async_agent_task_accept_invalid] planId=${planId} taskId=${taskId} executorId=${assignment.executorId} acceptedStatus=${String(accepted?.status || 'unknown')}`,
+        );
+        throw new Error('Async agent task accepted response missing taskId');
+      }
 
       await this.orchestrationTaskModel
         .updateOne(
@@ -251,7 +258,7 @@ export class OrchestrationExecutionEngineService {
                 level: 'info',
                 message: 'Async agent task submitted',
                 metadata: {
-                  asyncAgentTaskId: accepted.taskId,
+                  asyncAgentTaskId: acceptedTaskId,
                   acceptedStatus: accepted.status,
                 },
               },
@@ -260,7 +267,7 @@ export class OrchestrationExecutionEngineService {
         )
         .exec();
 
-      const execution = await this.waitForAsyncAgentTaskResult(accepted.taskId);
+      const execution = await this.waitForAsyncAgentTaskResult(acceptedTaskId);
       const output = String(execution.output || '').trim();
 
       if (!output && execution.status === 'succeeded') {
@@ -497,6 +504,13 @@ export class OrchestrationExecutionEngineService {
           ...(runProjectBinding ? { projectBinding: runProjectBinding } : {}),
         },
       });
+      const acceptedTaskId = String(accepted?.taskId || '').trim();
+      if (!acceptedTaskId) {
+        this.logger.error(
+          `[async_agent_task_accept_invalid] planId=${runTask.planId} runId=${runId} runTaskId=${runTaskId} executorId=${assignment.executorId} acceptedStatus=${String(accepted?.status || 'unknown')}`,
+        );
+        throw new Error('Async agent task accepted response missing taskId');
+      }
 
       await this.orchestrationRunTaskModel
         .updateOne(
@@ -511,7 +525,7 @@ export class OrchestrationExecutionEngineService {
                 level: 'info',
                 message: 'Async agent task submitted',
                 metadata: {
-                  asyncAgentTaskId: accepted.taskId,
+                  asyncAgentTaskId: acceptedTaskId,
                   acceptedStatus: accepted.status,
                 },
               },
@@ -520,7 +534,7 @@ export class OrchestrationExecutionEngineService {
         )
         .exec();
 
-      const execution = await this.waitForAsyncAgentTaskResult(accepted.taskId, runId);
+      const execution = await this.waitForAsyncAgentTaskResult(acceptedTaskId, runId);
       const output = String(execution.output || '').trim();
 
       if (!output && execution.status === 'succeeded') {

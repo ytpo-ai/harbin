@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ChannelAppModule } from './app.module';
+import { ResponseInterceptor } from '../../../src/shared/common/interceptors/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(ChannelAppModule);
@@ -11,6 +12,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalInterceptors(new ResponseInterceptor());
 
   app.setGlobalPrefix('api');
 

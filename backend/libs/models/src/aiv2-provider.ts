@@ -56,6 +56,7 @@ export class AIV2Provider extends BaseAIProvider {
         this.languageModel = google(this.model.model);
         break;
       }
+      case 'moonshotai':
       case 'moonshot':
       case 'kimi': {
         const moonshot = createOpenAI({
@@ -132,6 +133,7 @@ export class AIV2Provider extends BaseAIProvider {
     if (options?.responseFormat?.type === 'json_object') {
       if (
         this.providerName === 'openai'
+        || this.providerName === 'moonshotai'
         || this.providerName === 'moonshot'
         || this.providerName === 'kimi'
         || this.providerName === 'alibaba'

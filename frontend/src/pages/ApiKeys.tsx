@@ -36,8 +36,8 @@ const ApiKeys: React.FC = () => {
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<'LLM' | 'OTHER' | 'all'>('all');
 
-  const { data: apiKeys, isLoading } = useQuery('api-keys', apiKeyService.getAllApiKeys);
-  const { data: stats } = useQuery('api-key-stats', apiKeyService.getApiKeyStats);
+  const { data: apiKeys, isLoading } = useQuery('api-keys', () => apiKeyService.getAllApiKeys());
+  const { data: stats } = useQuery('api-key-stats', () => apiKeyService.getApiKeyStats());
 
   const createMutation = useMutation(apiKeyService.createApiKey, {
     onSuccess: () => {

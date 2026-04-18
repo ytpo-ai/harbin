@@ -3,6 +3,7 @@ import { WsAppModule } from './app.module';
 import { RedisService } from '@libs/infra';
 import { WebSocketServer, WebSocket } from 'ws';
 import { isWsStandardChannel, WS_PROTOCOL_VERSION, WsStandardMessage } from '@libs/infra';
+import { ResponseInterceptor } from '../../../src/shared/common/interceptors/response.interceptor';
 
 interface WsEnvelope {
   action: 'subscribe' | 'unsubscribe' | 'ping';
@@ -11,6 +12,7 @@ interface WsEnvelope {
 
 async function bootstrap() {
   const app = await NestFactory.create(WsAppModule);
+  app.useGlobalInterceptors(new ResponseInterceptor());
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,

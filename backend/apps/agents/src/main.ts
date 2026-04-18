@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { AgentsAppModule } from './app.module';
 import { initializeNetworkProxy } from '@libs/infra';
 import { HttpExceptionLoggingFilter } from './filters/http-exception-logging.filter';
+import { ResponseInterceptor } from '../../../src/shared/common/interceptors/response.interceptor';
 
 async function bootstrap() {
   await initializeNetworkProxy();
@@ -15,6 +16,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalInterceptors(new ResponseInterceptor());
   app.useGlobalFilters(new HttpExceptionLoggingFilter());
 
   app.setGlobalPrefix('api');

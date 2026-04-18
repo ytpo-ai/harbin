@@ -201,8 +201,14 @@ export class ToolExecutionService {
     const strictPermissions = String(process.env.TOOLS_AUTH_STRICT_PERMISSIONS || 'false').trim().toLowerCase();
     const strict = strictPermissions === 'true' || strictPermissions === '1' || strictPermissions === 'yes' || strictPermissions === 'on';
     const assignedToolIds = new Set((agent.tools || []).map((item) => String(item || '').trim()).filter(Boolean));
+    const authFree = tool.authFree === true;
     const enforceAssignment = strict || authMode === 'jwt' || assignedToolIds.size > 0;
-    if (enforceAssignment && !assignedToolIds.has(resolvedToolId) && !assignedToolIds.has(String(tool.id || '').trim())) {
+    if (
+      enforceAssignment
+      && !authFree
+      && !assignedToolIds.has(resolvedToolId)
+      && !assignedToolIds.has(String(tool.id || '').trim())
+    ) {
       throw new Error(`Tool not assigned: ${resolvedToolId}`);
     }
 

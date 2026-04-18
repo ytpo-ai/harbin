@@ -39,7 +39,7 @@ export class AgentMasterToolHandler {
 
   private normalizeProvider(provider?: string): string {
     const value = String(provider || '').trim().toLowerCase();
-    if (value === 'kimi') return 'moonshot';
+    if (value === 'kimi' || value === 'moonshot' || value === 'moonshotai') return 'moonshotai';
     if (value === 'claude') return 'anthropic';
     return value;
   }

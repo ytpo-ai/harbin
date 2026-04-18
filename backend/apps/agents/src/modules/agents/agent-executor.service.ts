@@ -572,7 +572,7 @@ export class AgentExecutorService {
     // 统一提供商别名，避免 key/provider 比较误判。
     const normalizeProvider = (provider?: string): string => {
       const value = (provider || '').trim().toLowerCase();
-      if (value === 'kimi') return 'moonshot';
+      if (value === 'kimi' || value === 'moonshot' || value === 'moonshotai') return 'moonshotai';
       if (value === 'claude') return 'anthropic';
       return value;
     };

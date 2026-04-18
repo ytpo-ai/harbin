@@ -203,6 +203,26 @@ export interface UpdateRdProjectDto {
 }
 
 class RdConversationService {
+  private toProjectList(payload: any): RdProject[] {
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+
+    if (Array.isArray(payload?.list)) {
+      return payload.list;
+    }
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+
+    if (Array.isArray(payload?.items)) {
+      return payload.items;
+    }
+
+    return [];
+  }
+
   private getAuthHeaders() {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('token');
     return {
@@ -249,7 +269,7 @@ class RdConversationService {
       ...this.getAuthHeaders(),
       params: filters,
     });
-    return response.data;
+    return this.toProjectList(response.data);
   }
 
   async getProjectById(projectId: string): Promise<RdProject> {

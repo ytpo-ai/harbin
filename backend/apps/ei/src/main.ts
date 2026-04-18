@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json, urlencoded } from 'express';
 import { EngineeringIntelligenceAppModule } from './app.module';
+import { ResponseInterceptor } from '../../../src/shared/common/interceptors/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(EngineeringIntelligenceAppModule);
@@ -16,6 +17,7 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  app.useGlobalInterceptors(new ResponseInterceptor());
 
   app.setGlobalPrefix('api');
   app.enableCors({

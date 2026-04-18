@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AgentMessage, AgentMessageDocument } from '../../schemas/agent-message.schema';
 import { Agent, AgentDocument } from '../../schemas/agent.schema';
 import { ModelRegistry, ModelRegistryDocument } from '../../schemas/model-registry.schema';
@@ -93,8 +93,28 @@ export class UsageAggregationService implements OnModuleInit {
     ]);
 
     const agentIds = rows.map((row) => String(row._id)).filter(Boolean);
-    const agents = await this.agentModel.find({ id: { $in: agentIds } }).select({ id: 1, name: 1 }).lean().exec();
-    const agentNameMap = new Map(agents.map((item) => [String(item.id), String(item.name || item.id)]));
+    const objectIdAgentIds = agentIds.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id));
+    const agents = await this.agentModel
+      .find({
+        $or: [
+          { id: { $in: agentIds } },
+          { _id: { $in: objectIdAgentIds } },
+        ],
+      })
+      .select({ id: 1, name: 1 })
+      .lean()
+      .exec();
+
+    const agentNameMap = new Map<string, string>();
+    for (const item of agents) {
+      const displayName = String(item.name || item.id || item._id || 'unknown');
+      if (item.id) {
+        agentNameMap.set(String(item.id), displayName);
+      }
+      if (item._id) {
+        agentNameMap.set(String(item._id), displayName);
+      }
+    }
 
     return rows.map((row) => {
       const agentId = String(row._id || 'unknown');

@@ -97,6 +97,7 @@ export class ModelService {
       case 'google':
         provider = new GoogleAIProvider(model, apiKey);
         break;
+      case 'moonshotai':
       case 'moonshot':
       case 'kimi':
         provider = new MoonshotProvider(model, apiKey);
@@ -165,7 +166,7 @@ export class ModelService {
   private createGenericProvider(model: AIModel): BaseAIProvider {
     return new (class extends BaseAIProvider {
       async chat(messages: ChatMessage[], options?: any): Promise<string> {
-        const envKey = model.provider.toLowerCase() === 'moonshot'
+        const envKey = ['moonshot', 'moonshotai', 'kimi'].includes(model.provider.toLowerCase())
           ? 'MOONSHOT_API_KEY (or KIMI_API_KEY)'
           : `${model.provider.toUpperCase()}_API_KEY`;
         return `[${model.provider} - ${model.name}] API调用暂未实现。请确保已配置 ${envKey} 环境变量`;
