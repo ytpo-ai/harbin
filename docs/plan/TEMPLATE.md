@@ -6,8 +6,10 @@
 |------|-----|
 | 所属 Feature | [<FEATURE_NAME>](../feature/<MODULE>.md) |
 | 需求管理 ID | <!-- 工程智能需求管理系统中的 ID，可选 --> |
+| 所属项目 | <!-- 孵化项目 ID，可选 --> |
 | OpenCode Session | <!-- 产出该 plan 的 session 标识，可选 --> |
 | 状态 | draft / approved / in-progress / done |
+| 优先级 | low / medium / high / critical |
 | 创建日期 | YYYY-MM-DD |
 
 ## 2. 背景

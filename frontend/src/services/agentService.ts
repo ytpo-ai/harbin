@@ -347,6 +347,16 @@ export const agentService = {
       return Array.from(map.values());
     };
 
+    const getScopedAgents = async (): Promise<Agent[]> => {
+      if (!withProjectFilter) {
+        return agentService.getAgents();
+      }
+      return mergeById([
+        ...(await agentService.getAgents({ projectId: normalizedProjectId })),
+        ...(await agentService.getAgents({ projectId: '' })),
+      ]);
+    };
+
     try {
       if (withProjectFilter) {
         const [projectResponse, globalResponse] = await Promise.all([
@@ -368,20 +378,10 @@ export const agentService = {
         }
       }
 
-      const all = withProjectFilter
-        ? mergeById([
-          ...(await agentService.getAgents({ projectId: normalizedProjectId })),
-          ...(await agentService.getAgents({ projectId: '' })),
-        ])
-        : await agentService.getAgents();
+      const all = await getScopedAgents();
       return all.filter((agent) => agent.isActive !== false);
     } catch {
-      const all = withProjectFilter
-        ? mergeById([
-          ...(await agentService.getAgents({ projectId: normalizedProjectId })),
-          ...(await agentService.getAgents({ projectId: '' })),
-        ])
-        : await agentService.getAgents();
+      const all = await getScopedAgents();
       return all.filter((agent) => agent.isActive !== false);
     }
   },

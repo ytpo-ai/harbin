@@ -106,3 +106,4 @@ RdProjectSchema.index(
   { bindingLocalProjectId: 1, sourceType: 1 },
   { unique: true, partialFilterExpression: { sourceType: RdProjectSourceType.GITHUB, bindingLocalProjectId: { $exists: true } } },
 );
+RdProjectSchema.index({ incubationProjectId: 1 }, { sparse: true });

@@ -82,7 +82,7 @@ class AgentActionLogService {
     });
 
     const response = await api.get(`/agent-action-logs?${params.toString()}`);
-    return response.data.data;
+    return response.data;
   }
 }
 

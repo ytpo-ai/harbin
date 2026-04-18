@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { RunPlanDto } from '../dto';
 import {
   OrchestrationRun,
@@ -162,11 +162,24 @@ export class PlanExecutionService {
     if (plan.projectId && !taskContext.projectId) {
       taskContext.projectId = String(plan.projectId);
       try {
-        const project = await this.rdProjectModel
+        let project = await this.rdProjectModel
           .findOne({ _id: plan.projectId })
           .select({ localPath: 1, name: 1 })
           .lean<{ localPath?: string; name?: string }>()
           .exec();
+
+        // Fallback: projectId may be an incubation project ID, not an ei_project _id.
+        if (!project) {
+          project = await this.rdProjectModel
+            .findOne({ incubationProjectId: new Types.ObjectId(plan.projectId), sourceType: 'local' })
+            .select({ localPath: 1, name: 1 })
+            .lean<{ localPath?: string; name?: string }>()
+            .exec();
+          if (project) {
+            this.logger.log(`[executePlanRun] resolved project via incubationProjectId fallback: ${plan.projectId}`);
+          }
+        }
+
         if (project?.localPath) {
           taskContext.localProjectPath = project.localPath;
         }

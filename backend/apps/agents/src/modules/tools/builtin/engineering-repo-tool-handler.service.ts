@@ -397,6 +397,8 @@ export class RepoToolHandler {
 
   private async resolveWorkspaceRoot(executionContext?: ToolExecutionContext): Promise<string> {
     // Priority 1: Project binding from orchestration plan context
+    const collabCtx = (executionContext?.collaborationContext || {}) as Record<string, any>;
+    this.logger.log(`[resolveWorkspaceRoot] localProjectPath=${executionContext?.localProjectPath || '-'} projectBinding.localPath=${collabCtx?.projectBinding?.localPath || '-'} scenarioMode=${collabCtx?.scenarioMode || '-'}`);
     const contextLocalPath = String(
       executionContext?.localProjectPath
         || (executionContext?.collaborationContext as any)?.projectBinding?.localPath

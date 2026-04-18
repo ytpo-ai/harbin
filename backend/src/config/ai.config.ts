@@ -1,6 +1,12 @@
 import { registerAs } from '@nestjs/config';
 
 export default registerAs('ai', () => ({
+  api: {
+    endpoint: process.env.AI_API_ENDPOINT || 'https://api.openai.com/v1',
+    key: process.env.AI_API_KEY || process.env.OPENAI_API_KEY,
+    timeoutMs: Number(process.env.AI_TIMEOUT_MS || 60000),
+    maxRetries: Number(process.env.AI_MAX_RETRIES || 2),
+  },
   openai: {
     apiKey: process.env.OPENAI_API_KEY,
     models: {

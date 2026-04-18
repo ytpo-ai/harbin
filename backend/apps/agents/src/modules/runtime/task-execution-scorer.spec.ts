@@ -24,6 +24,7 @@ describe('TaskExecutionScorer', () => {
     scorer.deduct('D10', 2);
     scorer.deduct('D11', 2);
     scorer.deduct('D12', 2);
+    scorer.deduct('D13', 2, { toolId: 'tool.g', detail: '连续 4 次以相同参数调用 tool.g' });
 
     const summary = scorer.summarize();
 
@@ -37,7 +38,7 @@ describe('TaskExecutionScorer', () => {
     expect(summary.stats.totalToolCalls).toBe(2);
     expect(summary.stats.successfulToolCalls).toBe(1);
     expect(summary.stats.failedToolCalls).toBe(1);
-    expect(summary.deductions).toHaveLength(12);
+    expect(summary.deductions).toHaveLength(13);
     expect(summary.deductionsByRule.D1.count).toBe(1);
     expect(summary.deductionsByRule.D11.totalPoints).toBe(AGENT_RUN_SCORE_RULE_POINTS.D11);
     expect(summary.ruleVersion).toBe('1.0');
@@ -142,6 +143,22 @@ describe('TaskExecutionScorer', () => {
       expect(summary.deductions).toHaveLength(2);
       expect(summary.deductionsByRule.D2.count).toBe(1);
       expect(summary.deductionsByRule.D9.count).toBe(1);
+    });
+
+    it('applies D13 for repeated identical tool call halt', () => {
+      const scorer = new TaskExecutionScorer();
+
+      scorer.deduct('D13', 3, {
+        toolId: 'tool.repo-read',
+        detail: '连续 4 次以相同参数调用 tool.repo-read，强制中断',
+      });
+
+      const summary = scorer.summarize();
+      expect(summary.deductions).toHaveLength(1);
+      expect(summary.deductions[0].ruleId).toBe('D13');
+      expect(summary.deductions[0].toolId).toBe('tool.repo-read');
+      expect(summary.totalDeductions).toBe(Math.abs(AGENT_RUN_SCORE_RULE_POINTS.D13));
+      expect(summary.score).toBe(100 - Math.abs(AGENT_RUN_SCORE_RULE_POINTS.D13));
     });
 
     it('counts only executed tools, not just tracked ones', () => {

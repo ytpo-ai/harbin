@@ -10,6 +10,7 @@ import {
 export class CollaborationContextFactory {
   static orchestration(params: {
     planId: string;
+    initiatorId?: string;
     roleInPlan: OrchestrationCollaborationContext['roleInPlan'];
     responseDirective?: OrchestrationCollaborationContext['responseDirective'];
     skillActivation?: { mode: 'standard' | 'precise'; skillIds?: string[] };

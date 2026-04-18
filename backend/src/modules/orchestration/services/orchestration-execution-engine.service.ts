@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AgentClientService, AsyncAgentTaskSnapshot } from '../../agents-client/agent-client.service';
 import {
   OrchestrationTask,
@@ -41,7 +41,7 @@ export class OrchestrationExecutionEngineService {
     String(process.env.ORCHESTRATION_AGENT_TASK_USE_SSE || 'true').trim().toLowerCase() !== 'false';
 
   /** Per-plan projectBinding cache (planId -> binding | null). */
-  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeProjectPath?: string } | null>();
+  private readonly projectBindingCache = new Map<string, { localPath?: string; opencodeProjectPath?: string; localProjectId?: string } | null>();
 
   constructor(
     @InjectModel(OrchestrationPlan.name)
@@ -905,7 +905,7 @@ export class OrchestrationExecutionEngineService {
   private async resolveProjectBinding(
     projectId: string | undefined,
     planId?: string,
-  ): Promise<{ localPath?: string; opencodeProjectPath?: string } | null> {
+  ): Promise<{ localPath?: string; opencodeProjectPath?: string; localProjectId?: string } | null> {
     if (!projectId) {
       return null;
     }
@@ -914,25 +914,47 @@ export class OrchestrationExecutionEngineService {
       return this.projectBindingCache.get(cacheKey) ?? null;
     }
     try {
-      const project = await this.rdProjectModel
+      let project = await this.rdProjectModel
         .findOne({ _id: projectId })
-        .select({ localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+        .select({ _id: 1, localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
         .lean<{
+          _id?: any;
           localPath?: string;
           opencodeProjectPath?: string;
           opencodeBindingIds?: any[];
           sourceType?: string;
         }>()
         .exec();
+
+      // Fallback: projectId may be an incubation project ID, not an ei_project _id.
+      // Try to find the ei_project that references this incubation project.
+      if (!project) {
+        project = await this.rdProjectModel
+          .findOne({ incubationProjectId: new Types.ObjectId(projectId), sourceType: 'local' })
+          .select({ _id: 1, localPath: 1, opencodeProjectPath: 1, opencodeBindingIds: 1, sourceType: 1 })
+          .lean<{
+            _id?: any;
+            localPath?: string;
+            opencodeProjectPath?: string;
+            opencodeBindingIds?: any[];
+            sourceType?: string;
+          }>()
+          .exec();
+        if (project) {
+          this.logger.log(`[resolveProjectBinding] resolved via incubationProjectId fallback: projectId=${projectId}`);
+        }
+      }
+
       if (!project) {
         this.logger.warn(`[resolveProjectBinding] ei_project not found: projectId=${projectId}`);
         this.projectBindingCache.set(cacheKey, null);
         return null;
       }
 
-      let binding: { localPath?: string; opencodeProjectPath?: string } = {
+      const binding: { localPath?: string; opencodeProjectPath?: string; localProjectId?: string } = {
         localPath: project.localPath || undefined,
         opencodeProjectPath: project.opencodeProjectPath || undefined,
+        localProjectId: project.sourceType === 'local' && project._id ? String(project._id) : undefined,
       };
 
       // If this is a LOCAL project, try to resolve opencodeProjectPath from its linked opencode project
@@ -953,7 +975,7 @@ export class OrchestrationExecutionEngineService {
       }
 
       this.logger.log(
-        `[resolveProjectBinding] projectId=${projectId} localPath=${binding.localPath || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`,
+        `[resolveProjectBinding] projectId=${projectId} localProjectId=${binding.localProjectId || '-'} localPath=${binding.localPath || '-'} opencodePath=${binding.opencodeProjectPath || '-'}`,
       );
       this.projectBindingCache.set(cacheKey, binding);
       return binding;

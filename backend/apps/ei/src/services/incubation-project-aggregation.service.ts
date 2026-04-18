@@ -70,7 +70,7 @@ export class IncubationProjectAggregationService {
    */
   async getProjectRequirements(projectId: string): Promise<EiRequirement[]> {
     await this.assertProjectExists(projectId);
-    return this.requirementModel.find({ projectId }).sort({ updatedAt: -1 }).exec();
+    return this.requirementModel.find({ projectId }).sort({ createdAt: 1, _id: 1 }).exec();
   }
 
   /**

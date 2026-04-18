@@ -19,6 +19,7 @@ import {
   IncubationProjectStatus,
   CreateIncubationProjectDto,
   UpdateIncubationProjectDto,
+  InitializeTemplateResult,
 } from '../services/incubationProjectService';
 import { Agent } from '../types';
 import { useToast } from '../hooks/useToast';
@@ -92,7 +93,7 @@ const ProjectManagement: React.FC = () => {
   const navigate = useNavigate();
 
   // ---- Page-level Tab ----
-  const [pageTab, setPageTab] = useState<PageTab>('local');
+  const [pageTab, setPageTab] = useState<PageTab>('incubation');
 
   // ---- Local project state ----
   const [localSearch, setLocalSearch] = useState('');
@@ -124,6 +125,7 @@ const ProjectManagement: React.FC = () => {
   const [incubationStatusFilter, setIncubationStatusFilter] = useState<IncubationProjectStatus | ''>('');
   const [isIncubationCreateModalOpen, setIsIncubationCreateModalOpen] = useState(false);
   const [isIncubationEditModalOpen, setIsIncubationEditModalOpen] = useState(false);
+  const [initializingIncubationProjectId, setInitializingIncubationProjectId] = useState('');
   const [editingIncubationProject, setEditingIncubationProject] = useState<IncubationProject | null>(null);
   const [incubationForm, setIncubationForm] = useState<{
     name: string;
@@ -273,6 +275,24 @@ const ProjectManagement: React.FC = () => {
         refetchIncubationProjects();
       },
       onError: (error) => showToast('error', extractRequestErrorMessage(error)),
+    },
+  );
+
+  const initializeTemplateMutation = useMutation(
+    (id: string) => incubationProjectService.initializeTemplate(id),
+    {
+      onMutate: (id: string) => {
+        setInitializingIncubationProjectId(id);
+      },
+      onSuccess: async (result: InitializeTemplateResult) => {
+        const message = `模板初始化完成：复制 ${result.copiedFiles} 个文件，跳过 ${result.skippedExistingFiles} 个已有文件`;
+        showToast('success', message);
+        await refetchIncubationProjects();
+      },
+      onError: (error) => showToast('error', extractRequestErrorMessage(error)),
+      onSettled: () => {
+        setInitializingIncubationProjectId('');
+      },
     },
   );
 
@@ -554,6 +574,10 @@ const ProjectManagement: React.FC = () => {
     setIsDrawerOpen(true);
   };
 
+  const navigateToIncubationDetail = (projectId: string) => {
+    navigate(`/ei/incubation/${projectId}`);
+  };
+
   const handleGithubRepositoryUrlChange = (value: string) => {
     setGithubRepositoryUrl(value);
 
@@ -581,16 +605,16 @@ const ProjectManagement: React.FC = () => {
         <p className="mt-1 text-sm text-gray-600">管理本地项目与孵化项目，在对应模块页面中可按项目维度筛选资源。</p>
         <div className="mt-3 flex gap-2">
           <button
-            onClick={() => setPageTab('local')}
-            className={`px-4 py-1.5 text-sm rounded ${pageTab === 'local' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
-          >
-            本地项目
-          </button>
-          <button
             onClick={() => setPageTab('incubation')}
             className={`px-4 py-1.5 text-sm rounded ${pageTab === 'incubation' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
           >
             孵化项目
+          </button>
+          <button
+            onClick={() => setPageTab('local')}
+            className={`px-4 py-1.5 text-sm rounded ${pageTab === 'local' ? 'bg-primary-100 text-primary-700 font-medium' : 'text-gray-600 hover:bg-gray-100'}`}
+          >
+            本地项目
           </button>
         </div>
       </div>
@@ -730,9 +754,21 @@ const ProjectManagement: React.FC = () => {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                        <button
+                          type="button"
+                          onClick={() => navigateToIncubationDetail(project._id)}
+                          className="truncate text-left text-sm font-semibold text-primary-700 hover:text-primary-800 hover:underline focus:outline-none focus-visible:underline focus-visible:text-primary-800"
+                          title={`查看「${project.name}」详情`}
+                        >
+                          {project.name}
+                        </button>
                         <span className={`shrink-0 inline-block px-1.5 py-0.5 text-[11px] rounded ${INCUBATION_STATUS_COLOR[project.status]}`}>
                           {INCUBATION_STATUS_LABEL[project.status]}
+                        </span>
+                        <span
+                          className={`shrink-0 inline-block px-1.5 py-0.5 text-[11px] rounded ${project.isTemplateInitialized ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}
+                        >
+                          {project.isTemplateInitialized ? '已初始化模板' : '未初始化模板'}
                         </span>
                       </div>
                       {project.goal && <p className="text-xs text-gray-600 mt-1 line-clamp-1">{project.goal}</p>}
@@ -744,8 +780,17 @@ const ProjectManagement: React.FC = () => {
                       </div>
                     </div>
                     <div className="shrink-0 flex items-center gap-1.5">
+                      {!project.isTemplateInitialized && (
+                        <button
+                          onClick={() => initializeTemplateMutation.mutate(project._id)}
+                          disabled={initializeTemplateMutation.isLoading}
+                          className="inline-flex items-center gap-1 text-xs border border-primary-300 text-primary-700 rounded px-2 py-1 hover:bg-primary-50 disabled:opacity-60"
+                        >
+                          {initializeTemplateMutation.isLoading && initializingIncubationProjectId === project._id ? '初始化中...' : '初始化模板'}
+                        </button>
+                      )}
                       <button
-                        onClick={() => navigate(`/ei/incubation/${project._id}`)}
+                        onClick={() => navigateToIncubationDetail(project._id)}
                         className="inline-flex items-center gap-1 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50"
                       >
                         查看详情

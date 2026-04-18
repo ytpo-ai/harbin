@@ -41,6 +41,7 @@ export interface OrchestrationCollaborationContext extends CollaborationContextB
   scenarioMode: 'orchestration';
   responseDirective: ResponseDirective;
   planId: string;
+  initiatorId?: string;
   roleInPlan:
     | 'planner'
     | 'planner_initialize'

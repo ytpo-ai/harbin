@@ -92,17 +92,7 @@ metadata:
    }
    ```
 
-4. **逐条同步 requirement 到 GitHub Issue**：每个 requirement 入库成功后，立即调用 `builtin.engineering.mcp.requirement.sync-github` 将其同步为 GitHub Issue。
-
-   步骤 4 的 `requirement.sync-github` 参数（每个 requirement 调用一次）：
-   ```json
-   {
-     "requirementId": "<入库返回的ID>"
-   }
-   ```
-   > 说明：`owner` 和 `repo` 参数可省略，由系统从项目配置中自动获取。如需指定可显式传入。
-
-5. **输出入库结果摘要**：汇总所有入库成功的 requirement 信息，作为本次编排的最终输出。
+4. **输出入库结果摘要**：汇总所有入库成功的 requirement 信息，作为本次编排的最终输出。
 
    输出格式：
    ```

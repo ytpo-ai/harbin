@@ -10,6 +10,7 @@ export interface IncubationProject {
   description: string;
   goal?: string;
   status: IncubationProjectStatus;
+  isTemplateInitialized?: boolean;
   createdBy?: string;
   startDate?: string;
   endDate?: string;
@@ -47,6 +48,16 @@ export interface IncubationProjectStats {
   meetings: { total: number; byStatus: Record<string, number> };
 }
 
+export interface InitializeTemplateResult {
+  projectId: string;
+  isTemplateInitialized: boolean;
+  localProjectId: string;
+  localPath: string;
+  copiedFiles: number;
+  skippedExistingFiles: number;
+  createdDirectories: number;
+}
+
 // ========== Service ==========
 
 export const incubationProjectService = {
@@ -74,6 +85,11 @@ export const incubationProjectService = {
 
   async delete(id: string): Promise<{ success: boolean }> {
     const response = await api.delete(`/ei/incubation-projects/${id}`);
+    return response.data;
+  },
+
+  async initializeTemplate(id: string): Promise<InitializeTemplateResult> {
+    const response = await api.post(`/ei/incubation-projects/${id}/initialize-template`);
     return response.data;
   },
 

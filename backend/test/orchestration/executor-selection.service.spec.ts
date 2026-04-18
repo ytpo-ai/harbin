@@ -130,6 +130,7 @@ describe('ExecutorSelectionService capability routing', () => {
     });
 
     expect(result.fit).toBe(false);
-    expect(result.missingTools).toContain('project_scope_mismatch');
+    expect(result.rejectionReason).toBe('project_scope_mismatch');
+    expect(result.missingTools).toEqual([]);
   });
 });

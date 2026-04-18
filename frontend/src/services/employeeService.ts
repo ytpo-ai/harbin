@@ -142,12 +142,12 @@ export interface ParticipantIdentity {
 class EmployeeService {
   async getEmployees(): Promise<Employee[]> {
     const response = await api.get('/employees/organization');
-    return response.data.data;
+    return response.data;
   }
 
   async createEmployee(data: CreateEmployeeDto): Promise<Employee> {
     const response = await api.post('/employees', data);
-    return response.data.data;
+    return response.data;
   }
 
   async getEmployeesByOrganization(
@@ -159,22 +159,22 @@ class EmployeeService {
     if (filters?.departmentId) params.append('departmentId', filters.departmentId);
     
     const response = await api.get(`/employees/organization?${params.toString()}`);
-    return response.data.data;
+    return response.data;
   }
 
   async getEmployee(id: string): Promise<Employee> {
     const response = await api.get(`/employees/${id}`);
-    return response.data.data;
+    return response.data;
   }
 
   async getEmployeeStats(): Promise<EmployeeStats> {
     const response = await api.get('/employees/stats');
-    return response.data.data;
+    return response.data;
   }
 
   async updateEmployee(id: string, data: UpdateEmployeeDto): Promise<Employee> {
     const response = await api.put(`/employees/${id}`, data);
-    return response.data.data;
+    return response.data;
   }
 
   async deleteEmployee(id: string): Promise<void> {
@@ -183,32 +183,32 @@ class EmployeeService {
 
   async confirmEmployee(id: string): Promise<Employee> {
     const response = await api.post(`/employees/${id}/confirm`);
-    return response.data.data;
+    return response.data;
   }
 
   async terminateEmployee(id: string, reason?: string): Promise<Employee> {
     const response = await api.post(`/employees/${id}/terminate`, { reason });
-    return response.data.data;
+    return response.data;
   }
 
   async setAIProxy(id: string, agentId: string | null): Promise<Employee> {
     const response = await api.post(`/employees/${id}/ai-proxy`, { agentId });
-    return response.data.data;
+    return response.data;
   }
 
   async setExclusiveAssistant(id: string, agentId: string): Promise<Employee> {
     const response = await api.post(`/employees/${id}/exclusive-assistant`, { agentId });
-    return response.data.data;
+    return response.data;
   }
 
   async getExclusiveAssistant(id: string): Promise<{ employeeId: string; agentId: string | null }> {
     const response = await api.get(`/employees/${id}/exclusive-assistant`);
-    return response.data.data;
+    return response.data;
   }
 
   async createAndBindExclusiveAssistant(id: string): Promise<Employee> {
     const response = await api.post(`/employees/${id}/exclusive-assistant/auto-create`);
-    return response.data.data;
+    return response.data;
   }
 
   // 获取当前用户的员工信息

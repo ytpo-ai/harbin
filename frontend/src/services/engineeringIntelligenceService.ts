@@ -210,6 +210,7 @@ export interface RequirementItem {
   createdByName?: string;
   createdByType: RequirementActorType;
   localProjectId?: string;
+  projectId?: string;
   comments: RequirementComment[];
   assignments: RequirementAssignment[];
   statusHistory: RequirementStatusEvent[];
@@ -223,6 +224,14 @@ export interface RequirementBoardResult {
   updatedAt: string;
   total: number;
   columns: Record<RequirementStatus, RequirementItem[]>;
+}
+
+export interface RequirementListPageResult {
+  list: RequirementItem[];
+  total: number;
+  pageNo: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 export const engineeringIntelligenceService = {
@@ -351,11 +360,26 @@ export const engineeringIntelligenceService = {
     status?: RequirementStatus;
     assigneeAgentId?: string;
     search?: string;
+    pageNo?: number;
+    pageSize?: number;
     limit?: number;
     localProjectId?: string;
-  }): Promise<RequirementItem[]> {
+  }): Promise<RequirementListPageResult> {
     const response = await api.get('/ei/requirements', { params });
-    return response.data;
+    const payload = response.data;
+    if (Array.isArray(payload)) {
+      const list = payload as RequirementItem[];
+      const pageNo = Number(params?.pageNo) > 0 ? Number(params?.pageNo) : 1;
+      const pageSize = Number(params?.pageSize) > 0 ? Number(params?.pageSize) : list.length || 10;
+      return {
+        list,
+        total: list.length,
+        pageNo,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(list.length / pageSize)),
+      };
+    }
+    return payload as RequirementListPageResult;
   },
 
   async getRequirementById(requirementId: string): Promise<RequirementItem> {

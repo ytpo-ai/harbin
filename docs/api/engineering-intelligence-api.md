@@ -97,6 +97,18 @@
 - `PUT /ei/config/docs-heat` (`active`)
   - 请求体：`weights[]`、`excludes[]`、`defaultWeight`、`topN`、`updatedBy?`。
 
+### 10) Incubation Projects（孵化项目）
+
+- `GET /ei/incubation-projects` (`active`)
+- `POST /ei/incubation-projects` (`active`)
+- `GET /ei/incubation-projects/:id` (`active`)
+- `PUT /ei/incubation-projects/:id` (`active`)
+- `DELETE /ei/incubation-projects/:id` (`active`)
+- `POST /ei/incubation-projects/:id/initialize-template` (`active`)
+  - 作用：将 `data/template/` 模板文件复制到该孵化项目绑定的本地项目目录。
+  - 复制策略：仅复制缺失文件，不覆盖已有文件。
+  - 返回：`copiedFiles`、`skippedExistingFiles`、`createdDirectories`、`localPath` 等初始化结果。
+
 ## 兼容路径映射
 
 - `POST /ei/opencode/runs/sync` (`compat`) -> `POST /ei/sync-batches`
@@ -124,6 +136,7 @@
 - `ei_projects`
 - `ei_doc_commit_facts`
 - `ei_app_configs`
+- `incubation_projects`
 
 ## 约束
 

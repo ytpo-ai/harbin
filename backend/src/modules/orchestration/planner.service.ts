@@ -271,6 +271,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
+        ...(String(plan.createdBy || '').trim() ? { initiatorId: String(plan.createdBy || '').trim() } : {}),
         roleInPlan: 'planner',
         responseDirective: 'text',
         domainType: planDomainType as 'general' | 'development' | 'research',
@@ -386,6 +387,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
+        ...(String(plan.createdBy || '').trim() ? { initiatorId: String(plan.createdBy || '').trim() } : {}),
         roleInPlan: 'planner_pre_execution',
         responseDirective: 'text',
         domainType: String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as 'general' | 'development' | 'research',
@@ -462,6 +464,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
+        ...(String(plan.createdBy || '').trim() ? { initiatorId: String(plan.createdBy || '').trim() } : {}),
         roleInPlan: 'planner_initialize',
         responseDirective: 'text',
         domainType: planDomainType as 'general' | 'development' | 'research',
@@ -526,6 +529,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
+        ...(String(plan.createdBy || '').trim() ? { initiatorId: String(plan.createdBy || '').trim() } : {}),
         roleInPlan: 'planner_post_execution',
         responseDirective: 'text',
         domainType: String((plan as { domainType?: string }).domainType || 'general').trim().toLowerCase() as 'general' | 'development' | 'research',
@@ -606,6 +610,7 @@ export class PlannerService {
     const response = await this.agentClientService.executeTask(plannerAgentId, task, {
       collaborationContext: CollaborationContextFactory.orchestration({
         planId,
+        ...(String(plan.createdBy || '').trim() ? { initiatorId: String(plan.createdBy || '').trim() } : {}),
         roleInPlan: 'planner_easy_run',
         responseDirective: 'text',
         domainType,

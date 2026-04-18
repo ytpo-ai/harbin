@@ -28,6 +28,9 @@ export class IncubationProject {
   })
   status: IncubationProjectStatus;
 
+  @Prop({ default: false })
+  isTemplateInitialized: boolean;
+
   @Prop()
   createdBy?: string; // 创建者（Employee ID）
 

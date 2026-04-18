@@ -147,6 +147,69 @@ interface OneToOneMeetingParams {
   agentCandidateIds?: string[];
 }
 
+const unwrapMeetingPayload = <T>(payload: unknown): T => {
+  let current = payload;
+  for (let i = 0; i < 4; i += 1) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      break;
+    }
+
+    const obj = current as Record<string, unknown>;
+    const hasData = Object.prototype.hasOwnProperty.call(obj, 'data');
+    if (!hasData) {
+      break;
+    }
+
+    const isEnvelope =
+      Object.prototype.hasOwnProperty.call(obj, 'success') ||
+      Object.prototype.hasOwnProperty.call(obj, 'code') ||
+      Object.prototype.hasOwnProperty.call(obj, 'message');
+
+    if (!isEnvelope) {
+      break;
+    }
+
+    current = obj.data;
+  }
+
+  return current as T;
+};
+
+const extractMeetingArray = (payload: unknown): Meeting[] => {
+  const unwrapped = unwrapMeetingPayload<unknown>(payload);
+
+  if (Array.isArray(unwrapped)) {
+    return unwrapped as Meeting[];
+  }
+
+  if (!unwrapped || typeof unwrapped !== 'object') {
+    return [];
+  }
+
+  const obj = unwrapped as Record<string, unknown>;
+  const candidateKeys = ['data', 'items', 'list', 'rows', 'records', 'result'] as const;
+
+  for (const key of candidateKeys) {
+    const value = obj[key];
+    if (Array.isArray(value)) {
+      return value as Meeting[];
+    }
+  }
+
+  const nestedData = obj.data;
+  if (nestedData && typeof nestedData === 'object' && !Array.isArray(nestedData)) {
+    const nestedObj = nestedData as Record<string, unknown>;
+    for (const key of candidateKeys) {
+      const value = nestedObj[key];
+      if (Array.isArray(value)) {
+        return value as Meeting[];
+      }
+    }
+  }
+
+  return [];
+};
+
 class MeetingService {
   private isOneToOneMeeting(meeting: Meeting, employeeId: string, agentIds: string[]): boolean {
     const participants = meeting.participants || [];
@@ -220,7 +283,7 @@ class MeetingService {
 
   async createMeeting(data: CreateMeetingDto): Promise<Meeting> {
     const response = await api.post('/meetings', data);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async getAllMeetings(filters?: { type?: MeetingType; status?: MeetingStatus }): Promise<Meeting[]> {
@@ -229,82 +292,82 @@ class MeetingService {
     if (filters?.status) params.append('status', filters.status);
     
     const response = await api.get(`/meetings?${params.toString()}`);
-    return response.data.data;
+    return extractMeetingArray(response.data);
   }
 
   async getMeeting(id: string): Promise<Meeting> {
     const response = await api.get(`/meetings/${id}`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async getMeetingAgentStates(id: string): Promise<MeetingAgentState[]> {
     const response = await api.get(`/meetings/${id}/agent-states`);
-    return response.data.data;
+    return unwrapMeetingPayload<MeetingAgentState[]>(response.data) || [];
   }
 
   async getMeetingsByParticipant(participantId: string, type: 'employee' | 'agent' = 'employee'): Promise<Meeting[]> {
     const response = await api.get(`/meetings/by-participant/${participantId}?type=${type}`);
-    return response.data.data;
+    return extractMeetingArray(response.data);
   }
 
   async getMeetingStats(): Promise<MeetingStats> {
     const response = await api.get('/meetings/stats');
-    return response.data.data;
+    return unwrapMeetingPayload<MeetingStats>(response.data);
   }
 
   async startMeeting(id: string, startedBy: ParticipantIdentity): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/start`, startedBy);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async endMeeting(id: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/end`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async pauseMeeting(id: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/pause`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async resumeMeeting(id: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/resume`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async updateSpeakingMode(id: string, speakingOrder: MeetingSpeakingMode): Promise<Meeting> {
     const response = await api.put(`/meetings/${id}/speaking-mode`, { speakingOrder });
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async updateMeetingTitle(id: string, title: string): Promise<Meeting> {
     const response = await api.put(`/meetings/${id}/title`, { title });
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async joinMeeting(id: string, participant: ParticipantIdentity): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/join`, participant);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async leaveMeeting(id: string, participant: ParticipantIdentity): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/leave`, participant);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async sendMessage(id: string, data: MeetingMessageDto): Promise<MeetingMessage> {
     const response = await api.post(`/meetings/${id}/messages`, data);
-    return response.data.data;
+    return unwrapMeetingPayload<MeetingMessage>(response.data);
   }
 
   async pauseMessageResponse(id: string, messageId: string, employeeId: string): Promise<MeetingMessage> {
     const response = await api.post(`/meetings/${id}/messages/${messageId}/pause`, { employeeId });
-    return response.data.data;
+    return unwrapMeetingPayload<MeetingMessage>(response.data);
   }
 
   async revokePausedMessage(id: string, messageId: string, employeeId: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/messages/${messageId}/revoke`, { employeeId });
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async inviteParticipant(
@@ -313,12 +376,12 @@ class MeetingService {
     invitedBy: ParticipantIdentity
   ): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/invite`, { participant, invitedBy });
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async archiveMeeting(id: string): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/archive`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async deleteMeeting(id: string): Promise<void> {
@@ -330,17 +393,17 @@ class MeetingService {
       participant: { id: agentId, type: 'agent', name: 'Agent', isHuman: false },
       invitedBy: { id: invitedBy, type: 'employee', name: 'Host', isHuman: true }
     });
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async addParticipant(id: string, participant: ManageMeetingParticipantDto): Promise<Meeting> {
     const response = await api.post(`/meetings/${id}/participants`, participant);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async removeParticipant(id: string, participantId: string, participantType: 'employee' | 'agent'): Promise<Meeting> {
     const response = await api.delete(`/meetings/${id}/participants/${participantType}/${participantId}`);
-    return response.data.data;
+    return unwrapMeetingPayload<Meeting>(response.data);
   }
 
   async getOrCreateOneToOneMeeting(params: OneToOneMeetingParams): Promise<Meeting> {

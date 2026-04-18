@@ -103,12 +103,12 @@ class MessageCenterService {
     type?: MessageType;
   }): Promise<MessageCenterListResponse> {
     const response = await api.get('/message-center/messages', { params: params || {} });
-    return response.data.data;
+    return response.data;
   }
 
   async getUnreadCount(): Promise<number> {
     const response = await api.get('/message-center/unread-count');
-    return Number(response.data?.data?.unreadCount || 0);
+    return Number(response.data?.unreadCount || 0);
   }
 
   async listInnerMessages(params?: {
@@ -119,7 +119,7 @@ class MessageCenterService {
     eventType?: string;
   }): Promise<InnerMessageCenterListResponse> {
     const response = await api.get('/message-center/inner-messages', { params: params || {} });
-    return response.data.data;
+    return response.data;
   }
 
   async listInnerMessageSubscriptions(params?: {
@@ -128,7 +128,7 @@ class MessageCenterService {
     isActive?: boolean;
   }): Promise<InnerMessageSubscriptionItem[]> {
     const response = await api.get('/inner-message-subscriptions', { params: params || {} });
-    return response.data.data;
+    return response.data;
   }
 
   async upsertInnerMessageSubscription(payload: {
@@ -139,7 +139,7 @@ class MessageCenterService {
     source?: string;
   }): Promise<InnerMessageSubscriptionItem> {
     const response = await api.post('/inner-message-subscriptions', payload);
-    return response.data.data;
+    return response.data;
   }
 
   async listInnerMessageEventDefinitions(params?: {
@@ -148,7 +148,7 @@ class MessageCenterService {
     limit?: number;
   }): Promise<InnerMessageEventDefinitionItem[]> {
     const response = await api.get('/inner-message-subscriptions/event-definitions', { params: params || {} });
-    return response.data.data;
+    return response.data;
   }
 
   async markAsRead(messageId: string): Promise<void> {
@@ -159,7 +159,7 @@ class MessageCenterService {
   async markAllAsRead(): Promise<number> {
     const response = await api.patch('/message-center/messages/read-all');
     await this.emitUpdatedWithUnreadCount();
-    return Number(response.data?.data?.updatedCount || 0);
+    return Number(response.data?.updatedCount || 0);
   }
 }
 

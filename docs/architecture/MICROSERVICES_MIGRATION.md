@@ -14,18 +14,25 @@
 - `ws`（3003）：WebSocket 推送层（`/ws`）
 - `legacy`（3001）：未迁移模块
 - `engineering-intelligence`（3004）：研发智能独立后端
+- `channel`（3006）：消息通道服务（飞书等消息聚合转发）
 
 ## Gateway 路由策略（当前生效）
 
 实现：`backend/apps/gateway/src/gateway-proxy.service.ts`
 
-- `/api/engineering-intelligence/**` -> `ENGINEERING_INTELLIGENCE_SERVICE_URL`
+- `/api/ei/**` 或 `/api/engineering-intelligence/**` -> `ENGINEERING_INTELLIGENCE_SERVICE_URL`
 - `/api/agents/**` -> `AGENTS_SERVICE_URL`
 - `/api/tools/**` -> `AGENTS_SERVICE_URL`
 - `/api/skills/**` -> `AGENTS_SERVICE_URL`
+- `/api/memos/**` -> `AGENTS_SERVICE_URL`
 - `/api/models/**` -> `AGENTS_SERVICE_URL`
 - `/api/model-management/**` -> `AGENTS_SERVICE_URL`
-- `/api/agent-action-logs/**` -> `LEGACY_SERVICE_URL`
+- `/api/usage/**` -> `AGENTS_SERVICE_URL`
+- `/api/prompt-registry/**` -> `AGENTS_SERVICE_URL`
+- `/api/agent-action-logs/**` -> `AGENTS_SERVICE_URL`
+- `/api/inner-messages/**` -> `AGENTS_SERVICE_URL`
+- `/api/inner-message-subscriptions/**` -> `AGENTS_SERVICE_URL`
+- `/api/message-center/inner-messages/**` -> `AGENTS_SERVICE_URL`
 - 其他 `/api/**` -> `LEGACY_SERVICE_URL`
 
 ## 服务间安全与上下文
@@ -73,6 +80,7 @@ npm run start:agents -- --watch
 npm run start:gateway -- --watch
 npm run start:ws -- --watch
 npm run start:ei -- --watch
+npm run start:channel -- --watch
 ```
 
 根目录可用：
@@ -86,4 +94,4 @@ npm run dev
 ---
 
 **文档状态**: 与当前代码实现对齐
-**最后更新**: 2026-03-02
+**最后更新**: 2026-04-13

@@ -78,6 +78,17 @@ export const LEGACY_TOOL_ID_ALIASES: Record<string, string> = {
 
 export const DEFAULT_MAX_TOOL_ROUNDS = 30;
 
+/**
+ * 连续相同工具+相同参数调用的最大允许次数。
+ * 超过此阈值后，执行循环将强制终止该轮并注入停止指令，
+ * 防止 agent 陷入"重复调用同一工具期望不同结果"的死循环。
+ * 可通过环境变量 MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS 覆盖。
+ */
+export const DEFAULT_MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS = Math.max(
+  2,
+  Number(process.env.MAX_CONSECUTIVE_IDENTICAL_TOOL_CALLS || 3),
+);
+
 export const SKILL_CONTENT_MAX_INJECT_LENGTH = Math.max(500, Number(process.env.SKILL_CONTENT_MAX_INJECT_LENGTH || 4000));
 
 export const AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS = Math.max(60, Number(process.env.AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS || 300));

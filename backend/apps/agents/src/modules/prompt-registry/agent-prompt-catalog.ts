@@ -142,6 +142,26 @@ export const AGENT_PROMPTS = {
       '格式：<tool_call>{"tool":"tool_id","parameters":{...}}</tool_call>',
   ),
 
+  repeatedIdenticalToolCallHalt: {
+    symbol: 'REPEATED_IDENTICAL_TOOL_CALL_HALT_PROMPT',
+    slug: 'repeated-identical-tool-call-halt',
+    scene: 'agent-runtime',
+    role: 'repeated-tool-halt',
+    buildDefaultContent: ({
+      toolId,
+      count,
+    }: {
+      toolId: string;
+      count: number;
+    }) =>
+      `【强制停止】你已连续 ${count} 次使用完全相同的参数调用工具 ${toolId}，每次返回相同结果。` +
+      `重复调用不会产生不同结果。请立即停止重试，改变策略：` +
+      `1) 使用不同参数重试（如修正路径、关键词等）；` +
+      `2) 换用其他工具完成任务；` +
+      `3) 如果确实无法完成，直接向用户说明原因和替代方案。` +
+      `禁止再次以相同参数调用 ${toolId}。`,
+  } as AgentPromptTemplate<{ toolId: string; count: number }>,
+
   toolRoundLimitMessage: staticPrompt(
     'TOOL_ROUND_LIMIT_MESSAGE',
     'tool-round-limit',

@@ -103,6 +103,7 @@ describe('IncrementalPlanningService assignment routing', () => {
       '507f1f77bcf86cd799439011',
       expect.objectContaining({ agentId: 'agent-doctor-w' }),
       1,
+      undefined,
     );
   });
 

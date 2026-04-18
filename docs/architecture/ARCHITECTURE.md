@@ -18,6 +18,10 @@ Gateway (3100) ------------------> Engineering Intelligence Service (3004)
    |                                   |
    |                                   +--> Redis Pub/Sub
    |
+   +------------------------------> Channel Service (3006)
+   |                                   |
+   |                                   +--> 消息通道聚合（飞书等）
+   |
    +------------------------------> Legacy Service (3001)
                                        |
                                        +--> MongoDB
@@ -27,7 +31,7 @@ WebSocket Service (3003) <------------- Redis Pub/Sub
 
 ## Monorepo 应用边界
 
-后端应用定义见 `backend/nest-cli.json`，当前包含 5 个应用：
+后端应用定义见 `backend/nest-cli.json`，当前包含 6 个应用：
 
 - `legacy`（`backend/src`）
   - 承载尚未拆分的历史业务模块。
@@ -44,17 +48,27 @@ WebSocket Service (3003) <------------- Redis Pub/Sub
 - `ei`（`backend/apps/ei`）
   - 独立承载研发智能文档分析能力。
   - 端口默认 `3004`，全局前缀 `/api`。
+- `channel`（`backend/apps/channel`）
+  - 消息通道服务，聚合多平台消息（飞书等）并转发至消息中心。
+  - 端口默认 `3006`，全局前缀 `/api`。
 
 ## Gateway 分流策略
 
 实现位置：`backend/apps/gateway/src/gateway-proxy.service.ts`
 
-- `/api/engineering-intelligence/**` -> `ENGINEERING_INTELLIGENCE_SERVICE_URL`（默认 `http://localhost:3004`）
+- `/api/ei/**` 或 `/api/engineering-intelligence/**` -> `ENGINEERING_INTELLIGENCE_SERVICE_URL`（默认 `http://localhost:3004`）
 - `/api/agents/**` -> `AGENTS_SERVICE_URL`（默认 `http://localhost:3002`）
 - `/api/tools/**` -> `AGENTS_SERVICE_URL`
 - `/api/skills/**` -> `AGENTS_SERVICE_URL`
+- `/api/memos/**` -> `AGENTS_SERVICE_URL`
 - `/api/models/**` -> `AGENTS_SERVICE_URL`
 - `/api/model-management/**` -> `AGENTS_SERVICE_URL`
+- `/api/usage/**` -> `AGENTS_SERVICE_URL`
+- `/api/prompt-registry/**` -> `AGENTS_SERVICE_URL`
+- `/api/agent-action-logs/**` -> `AGENTS_SERVICE_URL`
+- `/api/inner-messages/**` -> `AGENTS_SERVICE_URL`
+- `/api/inner-message-subscriptions/**` -> `AGENTS_SERVICE_URL`
+- `/api/message-center/inner-messages/**` -> `AGENTS_SERVICE_URL`
 - 其余 `/api/**` -> `LEGACY_SERVICE_URL`（默认 `http://localhost:3001`）
 
 ## 服务间安全模型
@@ -76,6 +90,7 @@ Agents 等下游服务只信任 Gateway 签名上下文，不直接信任前端�
 - WS: `3003`
 - Legacy: `3001`
 - Engineering Intelligence: `3004`
+- Channel: `3006`
 
 常用命令（根目录）：
 
@@ -92,6 +107,7 @@ npm run start:agents -- --watch
 npm run start:ws -- --watch
 npm run start:legacy -- --watch # legacy
 npm run start:ei -- --watch     # ei
+npm run start:channel -- --watch
 
 # 说明：开发态修改代码后通常会自动生效，不用重启服务；仅在服务报错后再重启对应服务。
 ```
@@ -126,5 +142,5 @@ npm run start:ei -- --watch     # ei
 
 ---
 
-**架构版本**: v2（微服务迁移态）
-**最后更新**: 2026-03-02
+**架构版本**: v3（6 服务）
+**最后更新**: 2026-04-13

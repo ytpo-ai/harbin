@@ -77,6 +77,15 @@ export class IncubationProjectsController {
     return this.incubationProjectsService.delete(id);
   }
 
+  @Post(':id/initialize-template')
+  async initializeTemplate(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.incubationProjectsService.initializeTemplate(id);
+  }
+
   // ---- 聚合查询接口 ----
 
   @Get(':id/agents')

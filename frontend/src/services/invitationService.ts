@@ -68,17 +68,17 @@ export interface InvitationStats {
 class InvitationService {
   async createInvitation(data: CreateInvitationDto): Promise<Invitation> {
     const response = await api.post('/invitations', data);
-    return response.data.data;
+    return response.data;
   }
 
   async getByOrganization(): Promise<Invitation[]> {
     const response = await api.get('/invitations/organization');
-    return response.data.data;
+    return response.data;
   }
 
   async getStats(): Promise<InvitationStats> {
     const response = await api.get('/invitations/stats');
-    return response.data.data;
+    return response.data;
   }
 
   async validateInvitation(code: string, linkToken: string): Promise<{
@@ -109,12 +109,12 @@ class InvitationService {
 
   async resendInvitation(id: string, expiresInDays?: number): Promise<Invitation> {
     const response = await api.post(`/invitations/${id}/resend`, { expiresInDays });
-    return response.data.data;
+    return response.data;
   }
 
   async deleteExpired(): Promise<number> {
     const response = await api.delete('/invitations/cleanup');
-    return response.data.data.deletedCount;
+    return response.data.deletedCount;
   }
 
   // 生成邀请链接

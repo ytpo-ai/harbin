@@ -10,7 +10,8 @@ export type ScoreRuleId =
   | 'D9'
   | 'D10'
   | 'D11'
-  | 'D12';
+  | 'D12'
+  | 'D13';
 
 export const AGENT_RUN_SCORE_RULE_VERSION = '1.0';
 export const AGENT_RUN_SCORE_BASE = 100;
@@ -28,6 +29,7 @@ export const AGENT_RUN_SCORE_RULE_POINTS: Record<ScoreRuleId, number> = {
   D10: -3,
   D11: -15,
   D12: -2,
+  D13: -20,  // 连续相同工具+相同参数调用超限，强制中断
 };
 
 export interface ScoreDeduction {

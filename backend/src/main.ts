@@ -1,7 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import { AppModule } from './app.module';
 import { initializeNetworkProxy } from '@libs/infra';
+import { ResponseInterceptor } from './shared/common/interceptors/response.interceptor';
+import { HttpExceptionFilter } from './shared/common/filters/http-exception.filter';
 
 async function bootstrap() {
   await initializeNetworkProxy();
@@ -20,6 +23,10 @@ async function bootstrap() {
     whitelist: true,
     forbidNonWhitelisted: true,
   }));
+
+  app.useWebSocketAdapter(new IoAdapter(app));
+  app.useGlobalInterceptors(new ResponseInterceptor());
+  app.useGlobalFilters(new HttpExceptionFilter());
 
   // API前缀
   app.setGlobalPrefix('api');

@@ -30,18 +30,35 @@ export interface FeishuBindTokenResponse {
   command: string;
 }
 
+interface ApiEnvelope<T> {
+  code: number;
+  message: string;
+  data: T;
+  timestamp: string;
+  requestId: string;
+}
+
 class AuthService {
   private tokenKey = 'auth_token';
   private userKey = 'current_user';
 
+  private unwrapApiData<T>(payload: T | ApiEnvelope<T>): T {
+    if (payload && typeof payload === 'object' && 'data' in (payload as Record<string, unknown>)) {
+      return (payload as ApiEnvelope<T>).data;
+    }
+
+    return payload as T;
+  }
+
   async login(data: LoginDto): Promise<AuthResponse> {
     const response = await api.post('/auth/login', data);
-    const { token, employee } = response.data;
+    const authData = this.unwrapApiData<AuthResponse>(response.data);
+    const { token, employee } = authData;
     
     localStorage.setItem(this.tokenKey, token);
     localStorage.setItem(this.userKey, JSON.stringify(employee));
     
-    return response.data;
+    return authData;
   }
 
   async verify(): Promise<CurrentUser | null> {
@@ -52,7 +69,7 @@ class AuthService {
       const response = await api.get('/auth/verify', {
         headers: { Authorization: `Bearer ${token}` }
       });
-      return response.data.employee;
+      return this.unwrapApiData<{ valid: boolean; employee: CurrentUser }>(response.data).employee;
     } catch {
       this.logout();
       return null;
@@ -67,7 +84,7 @@ class AuthService {
       const response = await api.get('/auth/me', {
         headers: { Authorization: `Bearer ${this.getToken()}` }
       });
-      return response.data;
+      return this.unwrapApiData<CurrentUser>(response.data);
     } catch {
       return JSON.parse(stored);
     }
@@ -81,7 +98,7 @@ class AuthService {
       headers: { Authorization: `Bearer ${token}` }
     });
     
-    localStorage.setItem(this.tokenKey, response.data.token);
+    localStorage.setItem(this.tokenKey, this.unwrapApiData<{ token: string }>(response.data).token);
   }
 
   async changePassword(oldPassword: string, newPassword: string): Promise<void> {
@@ -94,7 +111,7 @@ class AuthService {
 
   async generateFeishuBindToken(): Promise<FeishuBindTokenResponse> {
     const response = await api.post('/auth/me/feishu-bind-token');
-    return response.data;
+    return this.unwrapApiData<FeishuBindTokenResponse>(response.data);
   }
 
   getToken(): string | null {

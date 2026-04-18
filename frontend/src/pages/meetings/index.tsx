@@ -177,7 +177,16 @@ const Meetings: React.FC = () => {
       return;
     }
 
-    setThinkingAgentIds(meetingAgentStates.filter((item) => item.state === 'thinking').map((item) => item.agentId));
+    const nextThinkingAgentIds = meetingAgentStates
+      .filter((item) => item.state === 'thinking')
+      .map((item) => item.agentId);
+
+    setThinkingAgentIds((prev) => {
+      if (prev.length === nextThinkingAgentIds.length && prev.every((id, idx) => id === nextThinkingAgentIds[idx])) {
+        return prev;
+      }
+      return nextThinkingAgentIds;
+    });
   }, [meetingAgentStates]);
 
   const participantNameResolver = (

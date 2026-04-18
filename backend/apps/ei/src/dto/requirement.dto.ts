@@ -67,6 +67,14 @@ export class ListRequirementsDto {
 
   @IsOptional()
   @IsString()
+  pageNo?: string;
+
+  @IsOptional()
+  @IsString()
+  pageSize?: string;
+
+  @IsOptional()
+  @IsString()
   localProjectId?: string;
 
   @IsOptional()

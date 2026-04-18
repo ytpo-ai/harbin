@@ -23,6 +23,8 @@
   - `startDate` / `endDate`
   - `metadata`
 - 索引：`{ status: 1, createdAt: -1 }`、`{ createdBy: 1 }`
+- 模板初始化字段：
+  - `isTemplateInitialized`：是否已将模板目录初始化到绑定本地项目（默认 `false`）
 
 #### projectId 归属策略
 
@@ -43,6 +45,10 @@
 #### 后端能力
 
 - 提供孵化项目 CRUD：`/ei/incubation-projects`
+- 提供模板初始化能力：
+  - `POST /ei/incubation-projects/:id/initialize-template`
+  - 行为：将 `data/template/` 复制到孵化项目绑定的本地项目目录（仅复制缺失文件，不覆盖已有文件）
+  - 前置条件：孵化项目需且仅需绑定一个本地项目，且本地目录可写
 - 提供项目聚合查询：
   - `GET /ei/incubation-projects/:id/agents`
   - `GET /ei/incubation-projects/:id/plans`
@@ -56,6 +62,7 @@
 
 - `项目管理` 页支持 Tab 切换：`本地项目` / `孵化项目`
 - 孵化项目提供列表、搜索、状态筛选、分页、创建、编辑、删除。
+- 孵化项目列表新增模板初始化状态展示与“初始化模板”按钮（未初始化时可触发）。
 - 新增孵化项目详情页（`/ei/incubation/:id`）：展示概览统计与 `Agent/计划/调度/需求` 分栏。
 - Agent 创建弹窗与 Agent 列表支持按孵化项目关联/筛选，满足“全局 Agent 与项目 Agent 共存”模型。
 

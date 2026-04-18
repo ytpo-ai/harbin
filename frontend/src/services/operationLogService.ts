@@ -53,7 +53,7 @@ class OperationLogService {
     });
 
     const response = await api.get(`/operation-logs?${params.toString()}`);
-    return response.data.data;
+    return response.data;
   }
 }
 

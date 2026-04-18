@@ -5,6 +5,7 @@ import { PlusIcon, ArrowPathIcon, ArrowUpOnSquareIcon, MagnifyingGlassIcon } fro
 import {
   engineeringIntelligenceService,
   RequirementItem,
+  RequirementListPageResult,
   RequirementPriority,
   RequirementStatus,
   RequirementCategory,
@@ -19,6 +20,7 @@ const STATUS_OPTIONS: RequirementStatus[] = ['todo', 'assigned', 'in_progress', 
 const PRIORITY_OPTIONS: RequirementPriority[] = ['low', 'medium', 'high', 'critical'];
 const CATEGORY_OPTIONS: RequirementCategory[] = ['fix', 'feature', 'optimize'];
 const COMPLEXITY_OPTIONS: RequirementComplexity[] = ['low', 'medium', 'high', 'very_high'];
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 const STATUS_LABEL: Record<RequirementStatus, string> = {
   todo: 'Todo',
@@ -69,6 +71,8 @@ const EngineeringRequirements: React.FC = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<RequirementStatus | 'all'>('all');
   const [localProjectFilterId, setLocalProjectFilterId] = useState('');
+  const [pageNo, setPageNo] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -102,17 +106,29 @@ const EngineeringRequirements: React.FC = () => {
     }
   }, [localProjects, selectedLocalProjectId]);
 
-  const { data: requirements = [], isLoading, refetch } = useQuery(
-    ['ei-requirements', statusFilter, search, localProjectFilterId],
+  const { data: requirementsPage, isLoading, refetch } = useQuery<RequirementListPageResult>(
+    ['ei-requirements', statusFilter, search, localProjectFilterId, pageNo, pageSize],
     () =>
       engineeringIntelligenceService.listRequirements({
         status: statusFilter === 'all' ? undefined : statusFilter,
         search: search.trim() || undefined,
-        limit: 100,
+        pageNo,
+        pageSize,
         localProjectId: localProjectFilterId || undefined,
       }),
     { retry: false },
   );
+
+  const requirements = requirementsPage?.list || [];
+  const total = requirementsPage?.total || 0;
+  const totalPages = requirementsPage?.totalPages || 1;
+  const currentPageNo = requirementsPage?.pageNo || pageNo;
+
+  React.useEffect(() => {
+    if (!isLoading && total > 0 && requirements.length === 0 && pageNo > 1) {
+      setPageNo((prev) => Math.max(1, prev - 1));
+    }
+  }, [isLoading, pageNo, requirements.length, total]);
 
   const createMutation = useMutation(
     async () => {
@@ -178,7 +194,7 @@ const EngineeringRequirements: React.FC = () => {
 
   const openSyncModal = (item: RequirementItem) => {
     setSyncTarget(item);
-    const project = item.localProjectId ? localProjectById.get(item.localProjectId) : undefined;
+    const project = (item.localProjectId || item.projectId) ? localProjectById.get(item.localProjectId || item.projectId || '') : undefined;
     const githubBinding = project?.githubBindingId && typeof project.githubBindingId !== 'string'
       ? project.githubBindingId
       : undefined;
@@ -190,7 +206,7 @@ const EngineeringRequirements: React.FC = () => {
 
   const submitSyncToGithub = () => {
     if (!syncTarget) return;
-    const project = syncTarget.localProjectId ? localProjectById.get(syncTarget.localProjectId) : undefined;
+    const project = (syncTarget.localProjectId || syncTarget.projectId) ? localProjectById.get(syncTarget.localProjectId || syncTarget.projectId || '') : undefined;
     const githubBinding = project?.githubBindingId && typeof project.githubBindingId !== 'string'
       ? project.githubBindingId
       : undefined;
@@ -233,6 +249,9 @@ const EngineeringRequirements: React.FC = () => {
     });
     return counts;
   }, [requirements]);
+
+  const pageRangeStart = total === 0 ? 0 : (currentPageNo - 1) * pageSize + 1;
+  const pageRangeEnd = total === 0 ? 0 : Math.min(currentPageNo * pageSize, total);
 
   return (
     <div className="space-y-4">
@@ -325,14 +344,20 @@ const EngineeringRequirements: React.FC = () => {
             <MagnifyingGlassIcon className="h-4 w-4 text-gray-400 absolute left-2 top-2.5" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPageNo(1);
+              }}
               placeholder="搜索标题或描述"
               className="pl-8 border border-gray-300 rounded px-3 py-2 text-sm"
             />
           </div>
           <select
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as RequirementStatus | 'all')}
+            onChange={(e) => {
+              setStatusFilter(e.target.value as RequirementStatus | 'all');
+              setPageNo(1);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm"
           >
             <option value="all">全部状态</option>
@@ -342,7 +367,10 @@ const EngineeringRequirements: React.FC = () => {
           </select>
           <select
             value={localProjectFilterId}
-            onChange={(e) => setLocalProjectFilterId(e.target.value)}
+            onChange={(e) => {
+              setLocalProjectFilterId(e.target.value);
+              setPageNo(1);
+            }}
             className="border border-gray-300 rounded px-3 py-2 text-sm"
           >
             <option value="">全部项目</option>
@@ -426,7 +454,7 @@ const EngineeringRequirements: React.FC = () => {
                     <td className="px-3 py-2 text-xs text-gray-700">{PRIORITY_LABEL[item.priority]}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.complexity ? COMPLEXITY_LABEL[item.complexity] : '-'}</td>
                     <td className="px-3 py-2 text-xs text-gray-700">{item.currentAssigneeAgentName || item.currentAssigneeAgentId || '-'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-700">{item.localProjectId ? localProjectById.get(item.localProjectId)?.name || item.localProjectId : '-'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-700">{(item.localProjectId || item.projectId) ? localProjectById.get(item.localProjectId || item.projectId || '')?.name || item.localProjectId || item.projectId : '-'}</td>
                     <td className="px-3 py-2 text-xs">
                       {item.githubLink?.issueNumber && item.githubLink.issueNumber > 0 && item.githubLink?.issueUrl ? (
                         <a href={item.githubLink.issueUrl} target="_blank" rel="noreferrer" className="text-primary-700 hover:underline">
@@ -438,7 +466,7 @@ const EngineeringRequirements: React.FC = () => {
                     </td>
                     <td className="px-3 py-2 text-xs text-right">
                       {(() => {
-                        const project = item.localProjectId ? localProjectById.get(item.localProjectId) : undefined;
+                        const project = (item.localProjectId || item.projectId) ? localProjectById.get(item.localProjectId || item.projectId || '') : undefined;
                         const hasGithubBinding = Boolean(project?.githubBindingId);
                         return (
                       <button
@@ -458,6 +486,58 @@ const EngineeringRequirements: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-gray-600">
+          <div className="inline-flex items-center gap-2">
+            <span>每页</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPageNo(1);
+              }}
+              className="border border-gray-300 rounded px-2 py-1 text-xs"
+            >
+              {PAGE_SIZE_OPTIONS.map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+            <span>共 {total} 条</span>
+            <span>{pageRangeStart}-{pageRangeEnd}</span>
+          </div>
+
+          <div className="inline-flex items-center gap-2">
+            <span>第 {currentPageNo}/{totalPages} 页</span>
+            <button
+              onClick={() => setPageNo(1)}
+              disabled={currentPageNo <= 1}
+              className="rounded border border-gray-300 px-2 py-1 disabled:text-gray-400"
+            >
+              首页
+            </button>
+            <button
+              onClick={() => setPageNo((prev) => Math.max(1, prev - 1))}
+              disabled={currentPageNo <= 1}
+              className="rounded border border-gray-300 px-2 py-1 disabled:text-gray-400"
+            >
+              上一页
+            </button>
+            <button
+              onClick={() => setPageNo((prev) => Math.min(totalPages, prev + 1))}
+              disabled={currentPageNo >= totalPages}
+              className="rounded border border-gray-300 px-2 py-1 disabled:text-gray-400"
+            >
+              下一页
+            </button>
+            <button
+              onClick={() => setPageNo(totalPages)}
+              disabled={currentPageNo >= totalPages}
+              className="rounded border border-gray-300 px-2 py-1 disabled:text-gray-400"
+            >
+              末页
+            </button>
+          </div>
+        </div>
       </div>
 
       {isSyncModalOpen && (
@@ -476,7 +556,7 @@ const EngineeringRequirements: React.FC = () => {
               <p className="text-xs text-gray-500 mt-1">{syncTarget?.title || '-'}</p>
             </div>
 
-            {syncTarget?.localProjectId && !localProjectById.get(syncTarget.localProjectId)?.githubBindingId ? (
+            {(syncTarget?.localProjectId || syncTarget?.projectId) && !localProjectById.get(syncTarget.localProjectId || syncTarget.projectId || '')?.githubBindingId ? (
               <p className="text-xs text-rose-600">该需求所属项目未绑定 GitHub 仓库，无法同步。</p>
             ) : null}
 

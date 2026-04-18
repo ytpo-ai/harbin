@@ -45,6 +45,7 @@ interface AgentTaskExecutionContext {
   actor?: {
     employeeId?: string;
   };
+  collaborationContext?: Record<string, unknown>;
   approval?: {
     approved?: boolean;
     approvalId?: string;
@@ -255,21 +256,6 @@ export class AgentOpenCodePolicyService {
       return;
     }
 
-    if (budgetConfig.unit === 'dailyCost') {
-      await this.publishAgentDailyCostExceededEvent({
-        agent,
-        runtimeAgentId,
-        task,
-        runtimeContext,
-        context,
-        budgetConfig,
-        usage,
-      });
-      throw new BadRequestException(
-        `Agent daily cost quota exceeded. period=${budgetConfig.period}, limit=${budgetConfig.limit}, used=${usage.usedAfter}`,
-      );
-    }
-
     const approval = context?.approval;
     const approved = approval?.approved === true;
     const quotaPayload = {
@@ -282,6 +268,40 @@ export class AgentOpenCodePolicyService {
       periodStart: usage.periodStart.toISOString(),
       periodEnd: usage.periodEnd.toISOString(),
     };
+
+    if (budgetConfig.unit === 'dailyCost') {
+      if (approved) {
+        const approverId = approval?.approverId || context?.actor?.employeeId;
+        await this.runtimeOrchestrator.recordPermissionDecision({
+          runId: runtimeContext.runId,
+          agentId: runtimeAgentId,
+          sessionId: runtimeContext.sessionId,
+          taskId: task.id,
+          traceId: runtimeContext.traceId,
+          approved: true,
+          payload: {
+            ...quotaPayload,
+            approvalId: approval?.approvalId,
+            approverId,
+            reason: approval?.reason || 'daily cost quota approval granted',
+          },
+        });
+        return;
+      }
+
+      await this.publishAgentDailyCostExceededEvent({
+        agent,
+        runtimeAgentId,
+        task,
+        runtimeContext,
+        context,
+        budgetConfig,
+        usage,
+      });
+      throw new BadRequestException(
+        `Agent daily cost quota exceeded and execution blocked. period=${budgetConfig.period}, limit=${budgetConfig.limit}, used=${usage.usedAfter}. Please check Message Center system alerts for details.`,
+      );
+    }
 
     if (approved) {
       const approverId = approval?.approverId || context?.actor?.employeeId;
@@ -430,7 +450,7 @@ export class AgentOpenCodePolicyService {
     periodEnd: Date;
   }> {
     if (budgetConfig.unit === 'dailyCost') {
-      return this.evaluateAgentDailyCostUsage(agentId, budgetConfig);
+      return this.evaluateAgentDailyCostUsage(agentId, budgetConfig, resumedRun);
     }
 
     const periodStart = this.resolveBudgetPeriodStart(budgetConfig.period);
@@ -458,6 +478,7 @@ export class AgentOpenCodePolicyService {
   private async evaluateAgentDailyCostUsage(
     agentId: string,
     budgetConfig: AgentBudgetConfig,
+    resumedRun: boolean,
   ): Promise<{
     usedBefore: number;
     usedAfter: number;
@@ -472,6 +493,7 @@ export class AgentOpenCodePolicyService {
         {
           $match: {
             agentId,
+            role: 'assistant',
             createdAt: {
               $gte: periodStart,
               $lte: periodEnd,
@@ -492,11 +514,12 @@ export class AgentOpenCodePolicyService {
       .exec();
 
     const usedAfter = Number(aggregate[0]?.totalCost || 0);
+    const usedBefore = resumedRun ? usedAfter : Number(Math.max(0, usedAfter));
 
     return {
-      usedBefore: usedAfter,
+      usedBefore,
       usedAfter,
-      exceeded: usedAfter >= budgetConfig.limit,
+      exceeded: usedAfter > budgetConfig.limit,
       periodStart,
       periodEnd,
     };
@@ -517,7 +540,7 @@ export class AgentOpenCodePolicyService {
       periodEnd: Date;
     };
   }): Promise<void> {
-    const receiverId = String(input.context?.actor?.employeeId || '').trim() || undefined;
+    const receiverId = this.resolveAlertReceiverId(input.context);
     const taskTitle = String(input.task.title || '').trim() || input.task.id || '未命名任务';
     const occurredAt = new Date().toISOString();
     const event = buildMessageCenterEvent({
@@ -543,7 +566,6 @@ export class AgentOpenCodePolicyService {
           period: input.budgetConfig.period,
           unit: input.budgetConfig.unit,
           limit: input.budgetConfig.limit,
-          usedBefore: input.usage.usedBefore,
           usedAfter: input.usage.usedAfter,
           periodStart: input.usage.periodStart.toISOString(),
           periodEnd: input.usage.periodEnd.toISOString(),
@@ -559,6 +581,40 @@ export class AgentOpenCodePolicyService {
         `Publish agent cost exceeded message-center event failed: agentId=${input.runtimeAgentId} runId=${input.runtimeContext.runId} reason=${reason}`,
       );
     }
+  }
+
+  private resolveAlertReceiverId(context?: AgentTaskExecutionContext): string | undefined {
+    const actorId = String(context?.actor?.employeeId || '').trim();
+    const collaboration = this.toRecord(context?.collaborationContext);
+    const initiatorId = String(collaboration?.initiatorId || '').trim();
+    const initiator = this.toRecord(collaboration?.initiator);
+    const initiatorUserId = String(initiator?.id || '').trim();
+
+    if (actorId && !this.isSystemActorId(actorId)) {
+      return actorId;
+    }
+
+    return initiatorId || initiatorUserId || (actorId || undefined);
+  }
+
+  private isSystemActorId(actorId: string): boolean {
+    const normalized = String(actorId || '').trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+    if (
+      normalized === 'legacy-service'
+      || normalized === 'system'
+      || normalized === 'approval-system'
+      || normalized === 'agents-service'
+    ) {
+      return true;
+    }
+    return normalized.endsWith('-service');
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    return this.isPlainObject(value) ? value : undefined;
   }
 
   private resolveBudgetPeriodStart(period: AgentBudgetConfig['period']): Date {

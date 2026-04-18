@@ -262,16 +262,30 @@ export class FeishuCardBuilder {
 
     return [
       {
-        tag: 'action',
-        actions: [
+        tag: 'column_set',
+        flex_mode: 'none',
+        background_style: 'default',
+        columns: [
           {
-            tag: 'button',
-            type: 'primary',
-            text: {
-              tag: 'plain_text',
-              content: '查看详情',
-            },
-            url: actionUrl,
+            tag: 'column',
+            width: 'auto',
+            vertical_align: 'top',
+            elements: [
+              {
+                tag: 'button',
+                type: 'primary',
+                text: {
+                  tag: 'plain_text',
+                  content: '查看详情',
+                },
+                behaviors: [
+                  {
+                    type: 'open_url',
+                    default_url: actionUrl,
+                  },
+                ],
+              },
+            ],
           },
         ],
       },
@@ -282,18 +296,27 @@ export class FeishuCardBuilder {
     buttons: Array<{ label: string; action: string; value: Record<string, unknown> }>,
   ): Record<string, unknown> {
     return {
-      tag: 'action',
-      actions: buttons.map((button) => ({
-        tag: 'button',
-        text: {
-          tag: 'plain_text',
-          content: button.label,
-        },
-        type: 'default',
-        value: {
-          action: button.action,
-          ...button.value,
-        },
+      tag: 'column_set',
+      flex_mode: 'none',
+      background_style: 'default',
+      columns: buttons.map((button) => ({
+        tag: 'column',
+        width: 'auto',
+        vertical_align: 'top',
+        elements: [
+          {
+            tag: 'button',
+            text: {
+              tag: 'plain_text',
+              content: button.label,
+            },
+            type: 'default',
+            value: {
+              action: button.action,
+              ...button.value,
+            },
+          },
+        ],
       })),
     };
   }
