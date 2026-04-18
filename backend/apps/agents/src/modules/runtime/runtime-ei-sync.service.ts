@@ -7,6 +7,7 @@ import { GatewayUserContext } from '@libs/contracts';
 import { MESSAGE_BUS, type MessageBus } from '@libs/infra';
 import { AgentRun, AgentRunDocument } from '../../schemas/agent-run.schema';
 import { RuntimePersistenceService } from './runtime-persistence.service';
+import { unwrapResponseEnvelope } from '../../../../../src/shared/common/utils/unwrap-response-envelope';
 
 @Injectable()
 export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
@@ -169,7 +170,7 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
           timeout: this.timeoutMs,
         });
         httpOk = true;
-        const body = this.unwrapResponseEnvelope<Record<string, unknown>>(response?.data);
+        const body = unwrapResponseEnvelope<Record<string, unknown>>(response?.data);
         duplicate = Boolean(body?.duplicate);
         channels.push('http');
       } catch (error) {
@@ -304,18 +305,4 @@ export class RuntimeEiSyncService implements OnModuleInit, OnModuleDestroy {
     return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
   }
 
-  private unwrapResponseEnvelope<T>(payload: unknown): T {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return payload as T;
-    }
-    const body = payload as Record<string, unknown>;
-    if (
-      typeof body.code === 'number' &&
-      'message' in body &&
-      Object.prototype.hasOwnProperty.call(body, 'data')
-    ) {
-      return body.data as T;
-    }
-    return payload as T;
-  }
 }

@@ -30,7 +30,7 @@ export class MeetingToolHandler {
     const endpoint = queryParams.toString() ? `?${queryParams.toString()}` : '';
     const result = await this.internalApiClient.callMeetingApi('GET', endpoint);
 
-    const rawList = Array.isArray(result?.data) ? result.data : Array.isArray(result) ? result : [];
+    const rawList = Array.isArray(result) ? result : [];
     const meetings = rawList.map((item: any) => {
       if (!item || typeof item !== 'object') return item;
       const { messages, ...lightweight } = item;

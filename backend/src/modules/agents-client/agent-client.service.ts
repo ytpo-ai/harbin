@@ -11,6 +11,7 @@ import { RedisService } from '@libs/infra';
 import { randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import { Agent, AgentExecutionTask, AIModel, ToolExecution } from '../../shared/types';
+import { unwrapResponseEnvelope as unwrapResponseEnvelopeUtil } from '../../shared/common/utils/unwrap-response-envelope';
 
 export interface AgentMemoSnapshotItem {
   id: string;
@@ -146,19 +147,7 @@ export class AgentClientService {
   }
 
   private unwrapResponseEnvelope<T>(payload: unknown): T {
-    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return payload as T;
-    }
-
-    const body = payload as Record<string, unknown>;
-    if (
-      typeof body.code === 'number' &&
-      'message' in body &&
-      Object.prototype.hasOwnProperty.call(body, 'data')
-    ) {
-      return body.data as T;
-    }
-    return payload as T;
+    return unwrapResponseEnvelopeUtil<T>(payload);
   }
 
   async resolvePrompt(input: {
@@ -702,6 +691,7 @@ export class AgentClientService {
     const envelope = (rawPayload && typeof rawPayload === 'object' && !Array.isArray(rawPayload))
       ? (rawPayload as Record<string, unknown>)
       : {};
+    // Keep envelope for status fields (`code`/`success`), and body for normalized business payload.
     const body = this.unwrapResponseEnvelope<Record<string, unknown>>(rawPayload) || {};
     const messageId = String(body?.messageId || body?.id || '').trim();
     const isSuccess =
