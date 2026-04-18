@@ -496,6 +496,29 @@ export class OrchestrationStepDispatcherService {
       return;
     }
 
+    // 回退机制：当 generateNextTask 未解析出 task 或 createdTaskId 时，
+    // 检查 planner 是否通过 submit-task tool 已在 DB 中创建了任务（响应传回解析失败的场景）。
+    // 如果找到本轮新增的任务，用它替代失败结果继续流程，避免重复 generating。
+    if (
+      !nextTaskResult.createdTaskId
+      && (!nextTaskResult.task?.title || !nextTaskResult.task?.description)
+    ) {
+      const toolCreatedTask = await this.findToolCreatedTaskFallback(planId, preGenerateTaskIds);
+      if (toolCreatedTask) {
+        this.logger.warn(
+          `[generate_parse_fail_fallback] planId=${planId} step=${mergedState.currentStep} fallbackTaskId=${String(toolCreatedTask._id)} title="${toolCreatedTask.title}" — planner response parse failed but submit-task tool already created a task, using fallback`,
+        );
+        nextTaskResult.createdTaskId = String(toolCreatedTask._id);
+        nextTaskResult.task = {
+          title: toolCreatedTask.title,
+          description: toolCreatedTask.description,
+          priority: (toolCreatedTask.priority || 'medium') as 'low' | 'medium' | 'high' | 'urgent',
+          agentId: toolCreatedTask.assignment?.executorId,
+          taskType: ((toolCreatedTask as any).taskType || 'general') as 'general' | 'research' | 'development.plan' | 'development.exec' | 'development.review',
+        };
+      }
+    }
+
     if (!nextTaskResult.task?.title || !nextTaskResult.task?.description) {
       const nextFailures = this.bumpFailureCounters(
         mergedState,
@@ -1178,6 +1201,27 @@ export class OrchestrationStepDispatcherService {
         },
       )
       .exec();
+  }
+
+  /**
+   * 回退查询：当 generateNextTask 响应解析失败但 planner 可能已通过 submit-task tool
+   * 在 DB 中创建了任务时，查找本轮新增的任务作为替代。
+   * 通过对比 planner 调用前的任务快照（preGenerateTaskIds）识别新增任务。
+   */
+  private async findToolCreatedTaskFallback(
+    planId: string,
+    preGenerateTaskIds: Set<string>,
+  ): Promise<OrchestrationTaskDocument | null> {
+    const currentTasks = await this.taskModel
+      .find({
+        planId,
+        status: { $in: ['assigned', 'pending'] },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+
+    const newTask = currentTasks.find((t) => !preGenerateTaskIds.has(String(t._id)));
+    return newTask || null;
   }
 
   private async getCurrentTaskOrThrow(planId: string, taskId?: string): Promise<OrchestrationTaskDocument> {
