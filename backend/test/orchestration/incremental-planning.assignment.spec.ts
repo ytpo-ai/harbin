@@ -15,14 +15,21 @@ describe('IncrementalPlanningService assignment routing', () => {
       }),
     };
     const taskModel = {
-      findOne: jest.fn().mockReturnValue({
-        sort: jest.fn().mockReturnValue({
-          select: jest.fn().mockReturnValue({
-            lean: jest.fn().mockReturnValue({
-              exec: jest.fn().mockResolvedValue({ order: 0 }),
+      findOne: jest.fn().mockImplementation((filter) => {
+        // 幂等性查询（title 匹配）返回 null（无重复任务）
+        if (filter && filter.title) {
+          return { exec: jest.fn().mockResolvedValue(null) };
+        }
+        // maxOrderDoc 查询返回链式调用
+        return {
+          sort: jest.fn().mockReturnValue({
+            select: jest.fn().mockReturnValue({
+              lean: jest.fn().mockReturnValue({
+                exec: jest.fn().mockResolvedValue({ order: 0 }),
+              }),
             }),
           }),
-        }),
+        };
       }),
     };
 

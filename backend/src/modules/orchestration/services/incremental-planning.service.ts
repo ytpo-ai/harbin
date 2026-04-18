@@ -720,6 +720,42 @@ export class IncrementalPlanningService {
     if (action === 'redesign' && !redesignedTaskId) {
       throw new ConflictException('redesignTaskId is required when action=redesign');
     }
+
+    // 幂等性保护：如果同一 plan 下已经存在相同 title 的 assigned/pending 任务（近 60 秒内创建），
+    // 直接返回已有任务，避免 submit-task HTTP 重试导致的重复创建。
+    if (action === 'new') {
+      const recentCutoff = new Date(Date.now() - 60_000);
+      const existingTask = await this.taskModel
+        .findOne({
+          planId,
+          title,
+          status: { $in: ['assigned', 'pending'] },
+          createdAt: { $gte: recentCutoff },
+        })
+        .exec();
+      if (existingTask) {
+        this.logger.warn(
+          `[submit_task_idempotent] planId=${planId} title="${title}" existingTaskId=${String(existingTask._id)} — returning existing task instead of creating duplicate`,
+        );
+        return {
+          plannerAction: action,
+          taskId: String(existingTask._id),
+          title: existingTask.title,
+          description: existingTask.description,
+          status: existingTask.status,
+          priority: existingTask.priority,
+          taskType: (existingTask as any).taskType || 'general',
+          order: Number(existingTask.order || 0),
+          assignment: {
+            executorType: existingTask.assignment?.executorType,
+            executorId: existingTask.assignment?.executorId,
+          },
+          reasoning: String(input?.reasoning || '').trim() || undefined,
+          idempotent: true,
+        };
+      }
+    }
+
     // Resolve order from max existing task order + 1 to avoid collisions
     // (generationState.currentStep may not yet be incremented by the dispatcher)
     const maxOrderDoc = await this.taskModel

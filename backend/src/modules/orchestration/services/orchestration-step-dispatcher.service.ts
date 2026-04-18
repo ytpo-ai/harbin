@@ -469,6 +469,17 @@ export class OrchestrationStepDispatcherService {
     });
 
     await this.emitStepStarted(planId, state.currentStep + 1);
+
+    // 记录调用 planner 前的已有任务 ID，用于后续识别孤儿任务
+    const preGenerateTaskIds = new Set(
+      (await this.taskModel
+        .find({ planId })
+        .select({ _id: 1 })
+        .lean()
+        .exec()
+      ).map((t) => String(t._id)),
+    );
+
     const plannerContext = await this.incrementalPlanningService.buildPlannerContext(planId, sourcePrompt);
     const nextTaskResult = await this.plannerService.generateNextTask(planId, plannerContext, {
       sessionId: plannerSessionId,
@@ -536,6 +547,11 @@ export class OrchestrationStepDispatcherService {
       await this.autoAdvance(planId, source);
       return;
     }
+
+    // 安全防护：清理同一 generating 阶段中由 planner tool 重复创建的"孤儿任务"
+    // 当 submit-task HTTP 调用间歇性失败/超时后重试时，可能在 DB 中残留多个 assigned/pending 任务，
+    // 但 dispatcher 只跟踪最终成功返回的那一个（createdTask）。将其他孤儿任务标记为 cancelled 避免 UI 混淆。
+    await this.cancelOrphanTasksFromGenerating(planId, String(createdTask._id), preGenerateTaskIds);
 
     const nextState: OrchestrationGenerationState = {
       ...mergedState,
@@ -901,7 +917,7 @@ export class OrchestrationStepDispatcherService {
         currentPhase: 'pre_execute',
         lastDecision: 'retry',
       });
-      await this.autoAdvance(planId);
+      await this.autoAdvance(planId, source);
       return;
     }
 
@@ -1092,6 +1108,76 @@ export class OrchestrationStepDispatcherService {
     for (const sessionId of sessionIds) {
       await this.agentClientService.archiveSession(sessionId);
     }
+  }
+
+  /**
+   * 清理同一 generating 阶段中 planner tool 重复创建的"孤儿任务"。
+   *
+   * 根因场景：planner agent 在 tool-calling loop 中调用 submit-task 时，
+   * 若 HTTP 调用到主后端成功创建了任务但返回到 agents 端时超时/报错，
+   * agent executor 不会触发 terminal 检查（在 catch 块中），随后 LLM 在下一轮
+   * 再次调用 submit-task，导致 DB 中残留多个 assigned/pending 任务，
+   * 但 dispatcher 只跟踪最终成功返回的那一个。
+   *
+   * 本方法对比 planner 调用前后的任务快照，找出本轮新增的且非 retainedTaskId 的任务，
+   * 将其标记为 cancelled。仅清理"本轮新增"的任务，避免误伤前序步骤中正常的任务。
+   *
+   * @param planId 计划 ID
+   * @param retainedTaskId dispatcher 跟踪的有效任务 ID
+   * @param preGenerateTaskIds planner 调用前已存在的所有任务 ID 集合
+   */
+  private async cancelOrphanTasksFromGenerating(
+    planId: string,
+    retainedTaskId: string,
+    preGenerateTaskIds: Set<string>,
+  ): Promise<void> {
+    // 查找本轮 generating 中新增的所有任务
+    const currentTasks = await this.taskModel
+      .find({ planId })
+      .select({ _id: 1, status: 1 })
+      .lean()
+      .exec();
+
+    const orphanIds = currentTasks
+      .map((t) => String(t._id))
+      .filter((id) =>
+        id !== retainedTaskId
+        && !preGenerateTaskIds.has(id),
+      );
+
+    if (orphanIds.length === 0) {
+      return;
+    }
+
+    this.logger.warn(
+      `[orphan_task_cleanup] planId=${planId} retainedTaskId=${retainedTaskId} cancelledOrphans=${orphanIds.join(',')}`,
+    );
+
+    await this.taskModel
+      .updateMany(
+        {
+          _id: { $in: orphanIds },
+          planId,
+          status: { $in: ['assigned', 'pending'] },
+        },
+        {
+          $set: {
+            status: 'cancelled',
+          },
+          $push: {
+            runLogs: {
+              timestamp: new Date(),
+              level: 'warn',
+              message: 'Task cancelled: orphan from generating phase (duplicate submit-task)',
+              metadata: {
+                retainedTaskId,
+                reason: 'orphan_cleanup_on_generating',
+              },
+            },
+          },
+        },
+      )
+      .exec();
   }
 
   private async getCurrentTaskOrThrow(planId: string, taskId?: string): Promise<OrchestrationTaskDocument> {
