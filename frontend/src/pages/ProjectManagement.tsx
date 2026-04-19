@@ -101,6 +101,10 @@ const ProjectManagement: React.FC = () => {
   const [selectedLocalProjectId, setSelectedLocalProjectId] = useState('');
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditLocalPathModalOpen, setIsEditLocalPathModalOpen] = useState(false);
+  const [editingLocalProjectId, setEditingLocalProjectId] = useState('');
+  const [editingLocalProjectName, setEditingLocalProjectName] = useState('');
+  const [editingLocalPath, setEditingLocalPath] = useState('');
   const [localName, setLocalName] = useState('');
   const [localPath, setLocalPath] = useState('');
   const [localDescription, setLocalDescription] = useState('');
@@ -444,6 +448,28 @@ const ProjectManagement: React.FC = () => {
     },
   );
 
+  const updateLocalPathMutation = useMutation<RdProject | null>(
+    () => {
+      if (!editingLocalProjectId) return Promise.resolve(null);
+      return rdManagementService.updateLocalProjectPath(editingLocalProjectId, {
+        localPath: editingLocalPath.trim(),
+      });
+    },
+    {
+      onSuccess: async () => {
+        showToast('success', '本地项目路径更新成功');
+        setIsEditLocalPathModalOpen(false);
+        setEditingLocalProjectId('');
+        setEditingLocalProjectName('');
+        setEditingLocalPath('');
+        await Promise.all([refetchLocalProjects(), refetchBoundOpencode()]);
+      },
+      onError: (error) => {
+        showToast('error', extractRequestErrorMessage(error));
+      },
+    },
+  );
+
   const syncAgentProjectsMutation = useMutation(
     () => {
       const execution = (rdAgents.find((agent) => agent.id === selectedAgentId)?.config as Record<string, any> | undefined)
@@ -574,6 +600,13 @@ const ProjectManagement: React.FC = () => {
     setIsDrawerOpen(true);
   };
 
+  const openEditLocalPathModal = (project: RdProject) => {
+    setEditingLocalProjectId(project._id);
+    setEditingLocalProjectName(project.name || '未命名项目');
+    setEditingLocalPath(project.localPath || '');
+    setIsEditLocalPathModalOpen(true);
+  };
+
   const navigateToIncubationDetail = (projectId: string) => {
     navigate(`/ei/incubation/${projectId}`);
   };
@@ -662,7 +695,14 @@ const ProjectManagement: React.FC = () => {
                 <div key={project._id} className="px-4 py-3 border-b border-gray-100">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-900 truncate">{project.name}</p>
+                      <button
+                        type="button"
+                        onClick={() => openDetailDrawer(project._id)}
+                        className="truncate text-left text-sm font-semibold text-primary-700 hover:text-primary-800 hover:underline focus:outline-none focus-visible:underline focus-visible:text-primary-800"
+                        title={`查看「${project.name}」详情`}
+                      >
+                        {project.name}
+                      </button>
                       <p className="text-xs text-gray-600 mt-1 break-all">{project.localPath || '-'}</p>
                       {project.description ? <p className="text-xs text-gray-500 mt-1 line-clamp-2">{project.description}</p> : null}
                     </div>
@@ -670,10 +710,10 @@ const ProjectManagement: React.FC = () => {
                       <div className="text-[11px] text-gray-500">OpenCode: {opencodeCount}</div>
                       <div className="text-[11px] text-gray-500">GitHub: {hasGithub ? '已绑定' : '未绑定'}</div>
                       <button
-                        onClick={() => openDetailDrawer(project._id)}
-                        className="mt-2 inline-flex items-center gap-1 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50"
+                        onClick={() => openEditLocalPathModal(project)}
+                        className="mt-2 ml-2 inline-flex items-center gap-1 text-xs border border-gray-300 rounded px-2 py-1 hover:bg-gray-50"
                       >
-                        <LinkIcon className="h-3.5 w-3.5" />查看详情
+                        <PencilIcon className="h-3.5 w-3.5" />修改路径
                       </button>
                     </div>
                   </div>
@@ -1049,6 +1089,73 @@ const ProjectManagement: React.FC = () => {
                 className="rounded px-3 py-2 text-sm bg-primary-600 text-white disabled:bg-gray-300"
               >
                 {createLocalProjectMutation.isLoading ? '创建中...' : '确认创建'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========== 本地项目路径修改弹窗 ========== */}
+      {isEditLocalPathModalOpen && (
+        <div className="fixed inset-0 z-[90]">
+          <button
+            className="absolute inset-0 bg-black/40"
+            onClick={() => {
+              if (updateLocalPathMutation.isLoading) return;
+              setIsEditLocalPathModalOpen(false);
+              setEditingLocalProjectId('');
+              setEditingLocalProjectName('');
+              setEditingLocalPath('');
+            }}
+            aria-label="关闭弹窗"
+          />
+          <div className="absolute left-1/2 top-1/2 w-[92vw] max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white border border-gray-200 shadow-2xl p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-gray-900">修改本地项目路径</p>
+              <button
+                onClick={() => {
+                  if (updateLocalPathMutation.isLoading) return;
+                  setIsEditLocalPathModalOpen(false);
+                  setEditingLocalProjectId('');
+                  setEditingLocalProjectName('');
+                  setEditingLocalPath('');
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XMarkIcon className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">项目：{editingLocalProjectName}</p>
+            <div className="mt-3 space-y-2">
+              <input
+                value={editingLocalPath}
+                onChange={(e) => setEditingLocalPath(e.target.value)}
+                placeholder="新的本地目录，例如 /root/workspace/harbin"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              />
+              <p className="text-[11px] text-gray-500">
+                说明：仅支持绝对路径，且目录需具备读写权限。
+              </p>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  if (updateLocalPathMutation.isLoading) return;
+                  setIsEditLocalPathModalOpen(false);
+                  setEditingLocalProjectId('');
+                  setEditingLocalProjectName('');
+                  setEditingLocalPath('');
+                }}
+                className="border border-gray-300 rounded px-3 py-2 text-sm hover:bg-gray-50"
+              >
+                取消
+              </button>
+              <button
+                onClick={() => updateLocalPathMutation.mutate()}
+                disabled={!editingLocalPath.trim() || updateLocalPathMutation.isLoading}
+                className="rounded px-3 py-2 text-sm bg-primary-600 text-white disabled:bg-gray-300"
+              >
+                {updateLocalPathMutation.isLoading ? '保存中...' : '保存路径'}
               </button>
             </div>
           </div>

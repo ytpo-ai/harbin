@@ -120,6 +120,10 @@ export interface CreateLocalRdProjectDto {
   metadata?: Record<string, any>;
 }
 
+export interface UpdateLocalRdProjectPathDto {
+  localPath: string;
+}
+
 export interface BindOpencodeProjectDto {
   localProjectId: string;
   projectId?: string;
@@ -329,6 +333,15 @@ class RdConversationService {
     const response = await axios.patch(
       `${API_URL}/ei/projects/${localProjectId}/incubation-binding`,
       { incubationProjectId: incubationProjectId || undefined },
+      this.getAuthHeaders(),
+    );
+    return response.data;
+  }
+
+  async updateLocalProjectPath(localProjectId: string, data: UpdateLocalRdProjectPathDto): Promise<RdProject> {
+    const response = await axios.patch(
+      `${API_URL}/ei/projects/${localProjectId}/local-path`,
+      data,
       this.getAuthHeaders(),
     );
     return response.data;

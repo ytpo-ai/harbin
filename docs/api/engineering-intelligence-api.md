@@ -47,6 +47,10 @@
 ### 5) Projects（项目与绑定）
 
 - `GET /ei/projects` (`active`)
+- `PATCH /ei/projects/:id/local-path` (`active`)
+  - 作用：更新本地项目路径（仅 `sourceType=local`）。
+  - 请求体：`{ localPath: string }`。
+  - 约束：必须为绝对路径，且目录需具备读写权限；若与其他本地项目路径冲突则拒绝。
 - `POST /ei/projects/opencode/sync` (`active`)
 - `POST /ei/projects/:projectId/bindings/opencode` (`active`)
 - `DELETE /ei/projects/:projectId/bindings/opencode/:bindingId` (`active`)

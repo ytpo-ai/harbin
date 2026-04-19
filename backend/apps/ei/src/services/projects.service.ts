@@ -10,6 +10,7 @@ import {
   SyncAgentOpencodeProjectsDto,
   SyncOpencodeContextDto,
   UnbindOpencodeProjectDto,
+  UpdateLocalRdProjectPathDto,
   UpdateRdProjectDto,
 } from '../dto';
 import { EiManagementService } from './management.service';
@@ -60,6 +61,10 @@ export class EiProjectsService {
 
   bindIncubationProject(localProjectId: string, payload: BindIncubationProjectDto) {
     return this.core.bindIncubationProject(localProjectId, payload);
+  }
+
+  updateLocalProjectPath(projectId: string, payload: UpdateLocalRdProjectPathDto) {
+    return this.core.updateLocalProjectPath(projectId, payload);
   }
 
   importOpencodeProject(payload: ImportOpencodeProjectDto) {

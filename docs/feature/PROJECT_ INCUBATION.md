@@ -74,7 +74,13 @@
 
 ---
 
-## 2. 相关文档
+## 2. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN](../plan/PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN.MD) | [PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE](../requirement/PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE.md) | [开发记录](../development/PROJECT_INCUBATION_REQ-001_DEVELOPMENT.md) | — |
+
+## 3. 相关文档
 
 ### 规划文档 (docs/plan/)
 
@@ -90,7 +96,7 @@
 
 ---
 
-## 3. 相关代码文件
+## 4. 相关代码文件
 
 ### 后端代码
 

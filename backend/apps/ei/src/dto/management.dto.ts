@@ -483,3 +483,8 @@ export class BindIncubationProjectDto {
   @IsMongoId()
   incubationProjectId?: string;
 }
+
+export class UpdateLocalRdProjectPathDto {
+  @IsString()
+  localPath: string;
+}
