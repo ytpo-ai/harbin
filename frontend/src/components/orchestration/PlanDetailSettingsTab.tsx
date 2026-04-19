@@ -29,7 +29,7 @@ interface PlanDetailSettingsTabProps {
   settingsFormValues: PlanSettingsFormValues;
   agents: AgentOption[];
   projects: ProjectOption[];
-  onOpenSettings: () => void;
+  planMetadata?: Record<string, any>;
   onCloseSettings: () => void;
   onSaveSettings: (values: PlanSettingsFormValues) => void;
   tasks: OrchestrationTask[];
@@ -66,7 +66,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
   settingsFormValues,
   agents,
   projects,
-  onOpenSettings,
+  planMetadata,
   onCloseSettings,
   onSaveSettings,
   tasks,
@@ -98,8 +98,6 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
         runMode={runMode}
         domainType={domainType}
         projectName={projectName}
-        isPlanEditable={isPlanEditable}
-        onOpenSettings={onOpenSettings}
       />
       <PlanSettingsModal
         open={settingsModalOpen}
@@ -112,6 +110,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
       />
       <TaskList
         tasks={tasks}
+        planMetadata={planMetadata}
         agentNameById={agentNameById}
         planStatus={planStatus}
         isPlanEditable={isPlanEditable}

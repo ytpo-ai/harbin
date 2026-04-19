@@ -2,6 +2,30 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from 'react-query';
 import { OrchestrationPlan, orchestrationService } from '../services/orchestrationService';
 
+const toInitializeHint = (data: Record<string, any> | undefined): string => {
+  if (!data) {
+    return '初始化完成';
+  }
+
+  const requirementId = String(data.requirementId || '').trim();
+  const rawOutline = Array.isArray(data.outline) ? data.outline : [];
+  const outlineTitles = rawOutline
+    .map((item) => String(item?.title || item?.name || '').trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const outlineCount = rawOutline.length;
+
+  const parts: string[] = ['Initialize 完成'];
+  if (requirementId) {
+    parts.push(`需求 ${requirementId}`);
+  }
+  if (outlineCount > 0) {
+    const preview = outlineTitles.join(' / ');
+    parts.push(`步骤 ${outlineCount}${preview ? `（${preview}${outlineCount > outlineTitles.length ? '…' : ''}）` : ''}`);
+  }
+  return parts.join(' · ');
+};
+
 interface UsePlanStreamingOptions {
   planId?: string;
   isReplanPending: boolean;
@@ -70,6 +94,13 @@ export const usePlanStreaming = ({
 
         if (eventType === 'planning.task.completed' || eventType === 'planning.task.failed') {
           void queryClient.invalidateQueries(['orchestration-plan', planId]);
+          return;
+        }
+
+        if (eventType === 'planning.initialized') {
+          const initializeHint = toInitializeHint(event.data);
+          setStreamHint(initializeHint);
+          setPromptHint(initializeHint);
           return;
         }
 

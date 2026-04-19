@@ -1,10 +1,12 @@
 import React from 'react';
 import { PlusIcon } from '@heroicons/react/24/outline';
 import { OrchestrationTask } from '../../services/orchestrationService';
+import PlanInitializePanel from './PlanInitializePanel';
 import TaskCard from './TaskCard';
 
 interface TaskListProps {
   tasks: OrchestrationTask[];
+  planMetadata?: Record<string, any>;
   agentNameById?: Record<string, string>;
   planStatus: string;
   isPlanEditable: boolean;
@@ -26,6 +28,7 @@ interface TaskListProps {
 
 const TaskList: React.FC<TaskListProps> = ({
   tasks,
+  planMetadata,
   agentNameById,
   planStatus,
   isPlanEditable,
@@ -60,6 +63,8 @@ const TaskList: React.FC<TaskListProps> = ({
       </div>
 
       {taskHint ? <p className="text-xs text-indigo-700">{taskHint}</p> : null}
+
+      <PlanInitializePanel metadata={planMetadata} defaultCollapsed />
 
       {tasks.length === 0 ? (
         <p className="py-4 text-sm text-slate-400">该计划暂无任务</p>

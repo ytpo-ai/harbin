@@ -38,6 +38,7 @@ interface PlanHeaderProps {
   onDeletePlan: () => void;
   onSavePrompt: () => void;
   onOpenReplan: () => void;
+  onOpenSettings: () => void;
   onRunPlan: () => void;
   runPlanDisabled?: boolean;
   runPlanDisabledReason?: string;
@@ -71,6 +72,7 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
   onDeletePlan,
   onSavePrompt,
   onOpenReplan,
+  onOpenSettings,
   onRunPlan,
   runPlanDisabled,
   runPlanDisabledReason,
@@ -172,6 +174,19 @@ const PlanHeader: React.FC<PlanHeaderProps> = ({
             </button>
             {moreActionsOpen && (
               <div className="absolute right-0 z-20 mt-1 min-w-40 rounded-md border border-slate-200 bg-white p-1 shadow-lg">
+                {!isProductionPlan && (
+                  <button
+                    onClick={() => {
+                      setMoreActionsOpen(false);
+                      onOpenSettings();
+                    }}
+                    disabled={!planId || !isPlanEditable}
+                    className="inline-flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-indigo-700 hover:bg-indigo-50 disabled:opacity-50"
+                  >
+                    <PencilSquareIcon className="h-4 w-4 shrink-0" />
+                    编辑计划
+                  </button>
+                )}
                 {!isProductionPlan && (
                   <button
                     onClick={() => {

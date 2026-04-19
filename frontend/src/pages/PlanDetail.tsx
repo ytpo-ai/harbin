@@ -359,6 +359,7 @@ const PlanDetail: React.FC = () => {
       view.setReplanAutoGenerate(true);
       view.setIsReplanModalOpen(true);
     },
+    onOpenSettings: () => view.setIsSettingsModalOpen(true),
     onRunPlan: () => { if (planId) runPlan(planId, true); },
     runPlanDisabled: planDetail?.strategy?.runMode === 'once',
     runPlanDisabledReason: planDetail?.strategy?.runMode === 'once'
@@ -389,7 +390,7 @@ const PlanDetail: React.FC = () => {
     settingsFormValues,
     agents: agents.map((a) => ({ id: a.id, name: a.name })),
     projects: incubationProjects.map((p) => ({ _id: p._id, name: p.name })),
-    onOpenSettings: () => view.setIsSettingsModalOpen(true),
+    planMetadata: planDetail.metadata,
     onCloseSettings: () => view.setIsSettingsModalOpen(false),
     onSaveSettings: handleSaveSettings,
     taskHint: view.taskHint,

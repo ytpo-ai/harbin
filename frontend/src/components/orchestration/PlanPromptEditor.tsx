@@ -1,5 +1,4 @@
 import React from 'react';
-import { PencilSquareIcon } from '@heroicons/react/24/outline';
 import { PlanMode } from '../../services/orchestrationService';
 
 const MODE_LABEL: Record<string, string> = {
@@ -28,8 +27,6 @@ interface PlanPromptEditorProps {
   runMode?: string;
   domainType?: string;
   projectName?: string;
-  isPlanEditable: boolean;
-  onOpenSettings: () => void;
 }
 
 const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
@@ -41,8 +38,6 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
   runMode,
   domainType,
   projectName,
-  isPlanEditable,
-  onOpenSettings,
 }) => {
   const plannerDisplay = plannerAgentId
     ? plannerAgentName && plannerAgentName !== plannerAgentId
@@ -58,14 +53,6 @@ const PlanPromptEditor: React.FC<PlanPromptEditorProps> = ({
     <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
       <div className="flex items-center justify-between mb-2">
         <p className="text-xs font-semibold text-slate-800">计划设置</p>
-        {isPlanEditable && (
-          <button
-            onClick={onOpenSettings}
-            className="inline-flex items-center gap-1 rounded-md border border-indigo-200 px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
-          >
-            <PencilSquareIcon className="h-3.5 w-3.5" /> 编辑
-          </button>
-        )}
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs md:grid-cols-5">
         <div>

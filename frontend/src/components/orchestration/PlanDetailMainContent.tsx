@@ -41,7 +41,7 @@ interface PlanDetailMainContentProps {
   settingsFormValues: PlanSettingsFormValues;
   agents: AgentOption[];
   projects: ProjectOption[];
-  onOpenSettings: () => void;
+  planMetadata?: Record<string, any>;
   onCloseSettings: () => void;
   onSaveSettings: (values: PlanSettingsFormValues) => void;
   taskHint: string;
@@ -89,7 +89,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   settingsFormValues,
   agents,
   projects,
-  onOpenSettings,
+  planMetadata,
   onCloseSettings,
   onSaveSettings,
   taskHint,
@@ -153,7 +153,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
           settingsFormValues={settingsFormValues}
           agents={agents}
           projects={projects}
-          onOpenSettings={onOpenSettings}
+          planMetadata={planMetadata}
           onCloseSettings={onCloseSettings}
           onSaveSettings={onSaveSettings}
           tasks={planDetail.tasks || []}
