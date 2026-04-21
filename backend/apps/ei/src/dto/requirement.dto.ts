@@ -50,6 +50,10 @@ export class CreateRequirementDto {
 
 export class ListRequirementsDto {
   @IsOptional()
+  @IsIn(['requirement_to_develop'])
+  mode?: 'requirement_to_develop';
+
+  @IsOptional()
   @IsIn(['todo', 'assigned', 'in_progress', 'review', 'done', 'blocked'])
   status?: 'todo' | 'assigned' | 'in_progress' | 'review' | 'done' | 'blocked';
 
@@ -80,6 +84,14 @@ export class ListRequirementsDto {
   @IsOptional()
   @IsString()
   projectId?: string; // 按孵化项目过滤
+
+  @IsOptional()
+  @IsIn(['priority', 'createdAt', 'updatedAt'])
+  sortBy?: 'priority' | 'createdAt' | 'updatedAt';
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
 }
 
 export class AddRequirementCommentDto {

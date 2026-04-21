@@ -20,6 +20,9 @@ export class EiRequirementsController {
 
   @Get()
   listRequirements(@Query() query: ListRequirementsDto) {
+    if (query.mode === 'requirement_to_develop') {
+      return this.requirementsService.getRequirementToDevelop(query);
+    }
     return this.requirementsService.listRequirements(query);
   }
 

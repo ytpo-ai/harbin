@@ -63,6 +63,11 @@
 
 - `POST /ei/requirements` (`active`)
 - `GET /ei/requirements` (`active`)
+  - 查询参数（新增）：
+    - `mode?=requirement_to_develop`：返回 todo 中“最高优先级 + 最早创建”的单条需求。
+    - `sortBy?=priority|createdAt|updatedAt`。
+    - `sortOrder?=asc|desc`。
+  - 排序规则：`sortBy=priority` 时按业务优先级排序（`critical > high > medium > low`），同优先级按 `createdAt asc`。
 - `GET /ei/requirements/:requirementId` (`active`)
 - `PATCH /ei/requirements/:requirementId/status` (`active`)
   - 请求体：

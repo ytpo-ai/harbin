@@ -72,13 +72,17 @@ export class RequirementToolHandler {
   }
 
   private buildRequirementQuery(params: {
+    mode?: string;
     status?: string;
     assigneeAgentId?: string;
     localProjectId?: string;
     search?: string;
     limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
   }): string {
     const query = new URLSearchParams();
+    if (params?.mode) query.append('mode', String(params.mode).trim());
     const normalizedStatus = this.normalizeRequirementStatus(params?.status);
     if (normalizedStatus) query.append('status', normalizedStatus);
     if (params?.assigneeAgentId) query.append('assigneeAgentId', String(params.assigneeAgentId).trim());
@@ -88,6 +92,8 @@ export class RequirementToolHandler {
       const limit = Math.max(1, Math.min(Number(params.limit || 50), 200));
       query.append('limit', String(limit));
     }
+    if (params?.sortBy) query.append('sortBy', String(params.sortBy).trim());
+    if (params?.sortOrder) query.append('sortOrder', String(params.sortOrder).trim());
     const text = query.toString();
     return text ? `?${text}` : '';
   }
@@ -119,11 +125,14 @@ export class RequirementToolHandler {
   async listRequirements(
     params: {
       view?: string;
+      mode?: string;
       status?: string;
       assigneeAgentId?: string;
       localProjectId?: string;
       search?: string;
       limit?: number;
+      sortBy?: string;
+      sortOrder?: string;
     },
     agentId?: string,
     _executionContext?: ToolExecutionContext,
@@ -145,11 +154,18 @@ export class RequirementToolHandler {
 
     const query = this.buildRequirementQuery(params || {});
     const result = await this.internalApiClient.callEiApi('GET', `/requirements${query}`);
+    const requirementsList = Array.isArray(result)
+      ? result
+      : Array.isArray(result?.list)
+        ? result.list
+        : Array.isArray(result?.requirements)
+          ? result.requirements
+          : [];
     return {
       action: 'requirement_list',
       view: 'list',
       initiatorAgentId: agentId,
-      total: Array.isArray(result) ? result.length : 0,
+      total: Number(result?.total ?? requirementsList.length ?? 0),
       requirements: result,
       fetchedAt: new Date().toISOString(),
     };

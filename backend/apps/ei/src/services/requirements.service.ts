@@ -271,6 +271,56 @@ export class EiRequirementsService {
     };
   }
 
+  private buildRequirementListFilters(query: ListRequirementsDto): Record<string, unknown> {
+    const search = String(query.search || '').trim();
+    const filters: Record<string, unknown> = {};
+
+    if (query.status) {
+      filters.status = query.status;
+    }
+    if (query.assigneeAgentId) {
+      filters.currentAssigneeAgentId = String(query.assigneeAgentId).trim();
+    }
+
+    const andConditions: Array<Record<string, unknown>> = [];
+    if (query.localProjectId) {
+      const trimmedLocalProjectId = String(query.localProjectId).trim();
+      andConditions.push({ $or: [{ localProjectId: trimmedLocalProjectId }, { projectId: trimmedLocalProjectId }] });
+    }
+    if (query.projectId !== undefined) {
+      const trimmedProjectId = String(query.projectId || '').trim();
+      if (trimmedProjectId) {
+        andConditions.push({ $or: [{ projectId: trimmedProjectId }, { localProjectId: trimmedProjectId }] });
+      } else {
+        filters.projectId = { $in: [null, '', undefined] };
+      }
+    }
+    if (search) {
+      andConditions.push({ $or: [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }] });
+    }
+    if (andConditions.length === 1) {
+      Object.assign(filters, andConditions[0]);
+    } else if (andConditions.length > 1) {
+      filters.$and = andConditions;
+    }
+
+    return filters;
+  }
+
+  private buildPrioritySortWeightExpression(): Record<string, unknown> {
+    return {
+      $switch: {
+        branches: [
+          { case: { $eq: ['$priority', 'critical'] }, then: 4 },
+          { case: { $eq: ['$priority', 'high'] }, then: 3 },
+          { case: { $eq: ['$priority', 'medium'] }, then: 2 },
+          { case: { $eq: ['$priority', 'low'] }, then: 1 },
+        ],
+        default: 0,
+      },
+    };
+  }
+
   private async resolveRequirementGithubTarget(
     requirement: EiRequirementDocument,
     payload: SyncRequirementToGithubDto,
@@ -408,45 +458,40 @@ export class EiRequirementsService {
     const parsedPageSize = Number(rawPageSize);
     const pageSize = Number.isFinite(parsedPageSize) && parsedPageSize > 0 ? Math.min(Math.floor(parsedPageSize), 100) : 10;
     const skip = (pageNo - 1) * pageSize;
-    const search = String(query.search || '').trim();
-    const filters: Record<string, unknown> = {};
+    const filters = this.buildRequirementListFilters(query);
+    const sortBy = query.sortBy === 'priority' || query.sortBy === 'createdAt' || query.sortBy === 'updatedAt'
+      ? query.sortBy
+      : 'createdAt';
+    const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
 
-    if (query.status) {
-      filters.status = query.status;
-    }
-    if (query.assigneeAgentId) {
-      filters.currentAssigneeAgentId = String(query.assigneeAgentId).trim();
-    }
-    // 收集需要 $and 组合的 $or 条件，避免多个 $or 互相覆盖
-    const andConditions: Array<Record<string, unknown>> = [];
-
-    if (query.localProjectId) {
-      const trimmedLocalProjectId = String(query.localProjectId).trim();
-      // Agent 创建的需求可能只有 projectId 而没有 localProjectId，需同时匹配两个字段
-      andConditions.push({ $or: [{ localProjectId: trimmedLocalProjectId }, { projectId: trimmedLocalProjectId }] });
-    }
-    if (query.projectId !== undefined) {
-      const trimmedProjectId = String(query.projectId || '').trim();
-      if (trimmedProjectId) {
-        andConditions.push({ $or: [{ projectId: trimmedProjectId }, { localProjectId: trimmedProjectId }] });
-      } else {
-        filters.projectId = { $in: [null, '', undefined] };
-      }
-    }
-    if (search) {
-      andConditions.push({ $or: [{ title: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }] });
-    }
-    if (andConditions.length === 1) {
-      Object.assign(filters, andConditions[0]);
-    } else if (andConditions.length > 1) {
-      filters.$and = andConditions;
+    if (sortBy === 'priority') {
+      return Promise.all([
+        this.requirementModel.countDocuments(filters).exec(),
+        this.requirementModel
+          .aggregate([
+            { $match: filters },
+            { $addFields: { __priorityWeight: this.buildPrioritySortWeightExpression() } },
+            { $sort: { __priorityWeight: sortOrder, createdAt: 1, _id: 1 } },
+            { $skip: skip },
+            { $limit: pageSize },
+            { $project: { __priorityWeight: 0 } },
+          ])
+          .exec(),
+      ]).then(([total, requirements]) => ({
+        list: requirements.map((requirement) => this.withAssignAgentState(requirement as EiRequirement)),
+        total,
+        pageNo,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      }));
     }
 
+    const sortField = sortBy;
     return Promise.all([
       this.requirementModel.countDocuments(filters).exec(),
       this.requirementModel
         .find(filters)
-        .sort({ createdAt: -1, _id: -1 })
+        .sort({ [sortField]: sortOrder, _id: sortOrder })
         .skip(skip)
         .limit(pageSize)
         .lean()
@@ -458,6 +503,26 @@ export class EiRequirementsService {
       pageSize,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
     }));
+  }
+
+  async getRequirementToDevelop(query: ListRequirementsDto) {
+    const filters = this.buildRequirementListFilters({ ...query, status: 'todo' });
+    const requirements = await this.requirementModel
+      .aggregate([
+        { $match: filters },
+        { $addFields: { __priorityWeight: this.buildPrioritySortWeightExpression() } },
+        { $sort: { __priorityWeight: -1, createdAt: 1, _id: 1 } },
+        { $limit: 1 },
+        { $project: { __priorityWeight: 0 } },
+      ])
+      .exec();
+
+    const requirement = requirements[0] ? this.withAssignAgentState(requirements[0] as EiRequirement) : null;
+    return {
+      mode: 'requirement_to_develop',
+      requirement,
+      fetchedAt: new Date().toISOString(),
+    };
   }
 
   getRequirementBoard() {

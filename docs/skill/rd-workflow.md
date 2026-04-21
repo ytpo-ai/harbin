@@ -48,12 +48,13 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 > 说明：outline 与 phasePrompts 由初始化核心指令统一生成并通过 `plan-initialize(mode=outline)` 写入。
 > 本节仅定义 RD 领域的扩展步骤（需求锚定 + taskContext 写入）。
 
-1. 调用 `builtin.sys-mg.mcp.requirement.list`（参数 `status=todo`）获取待办需求列表。
-2. 选择优先级最高且可执行的需求后，调用 `builtin.sys-mg.mcp.requirement.get` 获取详情。
-3. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入共享上下文：
-4. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`，同时设置需求负责人为 Planner Agent（CTO）并关联当前计划。
+1. 优先调用 `builtin.sys-mg.mcp.requirement.list`（参数 `mode=requirement_to_develop`）直接获取待开发需求。
+2. 若当前环境暂不支持 `mode=requirement_to_develop`，回退调用 `builtin.sys-mg.mcp.requirement.list`（参数 `status=todo&sortBy=priority&sortOrder=desc`）获取待办需求列表，并选择首条需求（若同优先级，按创建时间升序已由后端排序保证最早创建优先）。
+3. 调用 `builtin.sys-mg.mcp.requirement.get` 获取选定需求详情。
+4. 调用 `builtin.sys-mg.mcp.orchestration.plan-initialize` 写入共享上下文：
+5. 调用 `builtin.sys-mg.mcp.requirement.update-status` 将需求状态置为 `assigned`，同时设置需求负责人为 Planner Agent（CTO）并关联当前计划。
 
-步骤 3 的 `plan-initialize` 参数：
+步骤 4 的 `plan-initialize` 参数：
 ```json
 {
   "mode": "taskContext",
@@ -65,7 +66,7 @@ Planner 的职责是根据步骤定义通过 `submit-task` 提交任务卡片，
 }
 ```
 
-步骤 4 的 `requirement.update-status` 参数（**必须包含以下字段**）：
+步骤 5 的 `requirement.update-status` 参数（**必须包含以下字段**）：
 ```json
 {
   "requirementId": "<选定的需求ID>",

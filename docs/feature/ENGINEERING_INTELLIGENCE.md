@@ -270,7 +270,13 @@ GET ranking -> Redis 有值 -> 返回
 
 ## 2. 相关文档
 
-### 规划文档 (docs/plan/)
+### 2.1 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [EI_REQUIREMENT_SELECTION_ORDER_PLAN](../plan/EI_REQUIREMENT_SELECTION_ORDER_PLAN.md) | [ENGINEERING_INTELLIGENCE_REQ-001_REQUIREMENT_SELECTION_ORDER](../requirement/ENGINEERING_INTELLIGENCE_REQ-001_REQUIREMENT_SELECTION_ORDER.md) | [开发记录](../development/ENGINEERING_INTELLIGENCE_REQ-001_DEVELOPMENT.md) | — |
+
+### 2.2 规划文档 (docs/plan/)
 
 | 文件 | 说明 |
 |------|------|
@@ -284,8 +290,9 @@ GET ranking -> Redis 有值 -> 返回
 | `plan/CTO_DAILY_REQUIREMENT_TRIAGE_SCHEDULE_SEED_PLAN.md` | CTO 每日需求整理分发定时 seed 计划 |
 | `plan/EI_DOCS_HEAT_PLAN.md` | 文档热度统计功能开发计划 |
 | `plan/EI_SERVICE_SPLIT_PLAN.md` | EI 服务拆分计划（移除 God Service） |
+| `plan/EI_REQUIREMENT_SELECTION_ORDER_PLAN.md` | EI 需求选择排序优化计划 |
 
-### 技术文档 (docs/technical/)
+### 2.3 技术文档 (docs/technical/)
 
 | 文件 | 说明 |
 |------|------|
@@ -293,13 +300,13 @@ GET ranking -> Redis 有值 -> 返回
 | `technical/EI_API_RESOURCE_RESTRUCTURE_DESIGN.md` | EI 资源化接口与 Controller/Service 拆分设计 |
 | `technical/OPENCODE_MULTI_ENV_COLLAB_TECHNICAL_DESIGN.md` | 多环境同步、节点治理与冲突处理 |
 
-### Guide 缓存文档 (docs/guide/)
+### 2.4 Guide 缓存文档 (docs/guide/)
 
 | 文件 | 说明 |
 |------|------|
 | `guide/EI_SERVICE_SPLIT_RUNTIME.MD` | EI 拆分后运行态职责与模块装配映射 |
 
-### 开发讨论文档 (docs/development/)
+### 2.5 开发讨论文档 (docs/development/)
 
 | 文件 | 说明 |
 |------|------|
@@ -309,8 +316,9 @@ GET ranking -> Redis 有值 -> 返回
 | `development/OPENCODE_SDK_REMOVAL_API_DIRECT_CALL_PLAN.md` | OpenCode SDK 移除与 API 直连实现总结 |
 | `development/CTO_AGENT_DAILY_DEV_WORKFLOW_PLAN.md` | CTO Agent 日常研发工作流改造开发沉淀 |
 | `development/RD_CONVERSATION_CHAT_EVENTS_UI_OPTIMIZATION_DEVELOPMENT_SUMMARY.md` | 研发会话 Chat/Events 可读性与 SSE 观测优化沉淀 |
+| `development/ENGINEERING_INTELLIGENCE_REQ-001_DEVELOPMENT.md` | EI 需求选择排序优化开发总结（待创建） |
 
-### API 文档 (docs/api/)
+### 2.6 API 文档 (docs/api/)
 
 | 文件 | 说明 |
 |------|------|
