@@ -61,11 +61,31 @@ export interface InitializeTemplateResult {
 // ========== Service ==========
 
 export const incubationProjectService = {
+  toList(payload: any): IncubationProject[] {
+    if (Array.isArray(payload)) {
+      return payload;
+    }
+
+    if (Array.isArray(payload?.list)) {
+      return payload.list;
+    }
+
+    if (Array.isArray(payload?.data)) {
+      return payload.data;
+    }
+
+    if (Array.isArray(payload?.items)) {
+      return payload.items;
+    }
+
+    return [];
+  },
+
   // CRUD
 
   async list(params?: { status?: IncubationProjectStatus }): Promise<IncubationProject[]> {
     const response = await api.get('/ei/incubation-projects', { params });
-    return response.data;
+    return this.toList(response.data);
   },
 
   async getById(id: string): Promise<IncubationProject> {

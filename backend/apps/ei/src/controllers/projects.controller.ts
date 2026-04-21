@@ -9,6 +9,7 @@ import {
   QueryRdProjectDto,
   SyncOpencodeContextDto,
   UnbindOpencodeProjectDto,
+  UpdateLocalRdProjectPathDto,
   UpdateRdProjectDto,
 } from '../dto';
 import { EiProjectsService } from '../services/projects.service';
@@ -118,6 +119,16 @@ export class EiProjectsController {
   ) {
     await this.getUserFromAuthHeader(authHeader);
     return this.projectsService.bindIncubationProject(localProjectId, dto);
+  }
+
+  @Patch(':id/local-path')
+  async updateLocalProjectPath(
+    @Param('id') projectId: string,
+    @Body() dto: UpdateLocalRdProjectPathDto,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.projectsService.updateLocalProjectPath(projectId, dto);
   }
 
   @Post(':id/opencode/sync-current')

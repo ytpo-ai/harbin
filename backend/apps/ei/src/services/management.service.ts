@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, Logger, NotFoundException, ServiceUnav
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { basename } from 'path';
+import { access } from 'fs/promises';
+import { constants as fsConstants } from 'fs';
 import { RdTask, RdTaskDocument, RdTaskStatus } from '../../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectDocument, RdProjectSourceType } from '../../../../src/shared/schemas/ei-project.schema';
 import { Employee, EmployeeDocument } from '../../../../src/shared/schemas/employee.schema';
@@ -22,6 +24,7 @@ import {
   UpdateRdProjectDto,
   UpdateRdTaskDto,
   BindIncubationProjectDto,
+  UpdateLocalRdProjectPathDto,
 } from '../dto';
 import { ApiKeyService } from '../../../../src/modules/api-keys/api-key.service';
 
@@ -97,6 +100,25 @@ export class EiManagementService {
       return '/';
     }
     return trimmed.replace(/\/+$/, '').toLowerCase();
+  }
+
+  private normalizeLocalPath(input: string): string {
+    const trimmed = String(input || '').trim();
+    if (!trimmed) {
+      return '';
+    }
+    if (trimmed === '/') {
+      return '/';
+    }
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  private async assertReadableWritableDirectory(path: string, label: string): Promise<void> {
+    try {
+      await access(path, fsConstants.R_OK | fsConstants.W_OK);
+    } catch {
+      throw new BadRequestException(`${label} 不存在或无读写权限: ${path}`);
+    }
   }
 
   private isDuplicateKeyError(error: unknown): boolean {
@@ -676,6 +698,49 @@ export class EiManagementService {
 
     const updated = await this.rdProjectModel
       .findOneAndUpdate({ _id: localProject._id }, update, { new: true })
+      .populate('manager', 'name email')
+      .populate('members', 'name email')
+      .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
+      .populate('githubBindingId', 'name repositoryUrl githubOwner githubRepo branch sourceType githubApiKeyId')
+      .exec();
+
+    return updated;
+  }
+
+  async updateLocalProjectPath(projectId: string, payload: UpdateLocalRdProjectPathDto): Promise<RdProject> {
+    const localProject = await this.requireLocalProject(projectId);
+    const nextPath = this.normalizeLocalPath(payload.localPath);
+
+    if (!nextPath) {
+      throw new BadRequestException('localPath is required');
+    }
+
+    if (!nextPath.startsWith('/')) {
+      throw new BadRequestException('localPath must be an absolute path');
+    }
+
+    await this.assertReadableWritableDirectory(nextPath, '本地项目路径');
+
+    const existing = await this.rdProjectModel
+      .findOne({
+        _id: { $ne: localProject._id },
+        sourceType: RdProjectSourceType.LOCAL,
+        localPath: nextPath,
+      })
+      .select('_id name localPath')
+      .lean()
+      .exec();
+
+    if (existing) {
+      throw new BadRequestException(`本地项目路径已被占用: ${nextPath}`);
+    }
+
+    const updated = await this.rdProjectModel
+      .findOneAndUpdate(
+        { _id: localProject._id },
+        { $set: { localPath: nextPath } },
+        { new: true },
+      )
       .populate('manager', 'name email')
       .populate('members', 'name email')
       .populate('opencodeBindingIds', 'name opencodeProjectPath opencodeProjectId opencodeEndpointRef sourceType')
