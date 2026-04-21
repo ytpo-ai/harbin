@@ -4,7 +4,6 @@ import { RedisService } from '@libs/infra';
 import { Model } from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { AgentMemo, AgentMemoDocument, MemoKind, MemoType } from '../../schemas/agent-memo.schema';
-import { AgentMemoVersion, AgentMemoVersionDocument } from '../../schemas/agent-memo-version.schema';
 import { MemoDocSyncService } from './memo-doc-sync.service';
 import { MemoTaskHistoryService, TaskStatus } from './memo-task-history.service';
 import { MemoTaskTodoService, TaskSourceType, TodoTaskItem } from './memo-task-todo.service';
@@ -83,7 +82,6 @@ export class MemoService {
 
   constructor(
     @InjectModel(AgentMemo.name) private readonly memoModel: Model<AgentMemoDocument>,
-    @InjectModel(AgentMemoVersion.name) private readonly memoVersionModel: Model<AgentMemoVersionDocument>,
     private readonly memoDocSyncService: MemoDocSyncService,
     private readonly redisService: RedisService,
     private readonly memoTaskTodoService: MemoTaskTodoService,
@@ -260,8 +258,6 @@ export class MemoService {
         ? this.buildStableSlug(memoKind, nextTitle, nextTopic)
         : existing.slug);
     payload.slug = nextSlug;
-
-    await this.createMemoVersionSnapshot(existing as unknown as AgentMemo, this.resolveChangeNote(updates));
 
     const updated = await this.memoModel.findOneAndUpdate({ id }, payload, { new: true }).exec();
     if (!updated) throw new NotFoundException(`Memo not found: ${id}`);
@@ -1335,30 +1331,6 @@ export class MemoService {
       next.topic = String(next.topic).trim();
     }
     return next;
-  }
-
-  private resolveChangeNote(updates: Partial<CreateMemoInput>): string {
-    if (updates.content) return 'content updated';
-    if (updates.payload) return 'payload updated';
-    if (updates.title) return 'title updated';
-    return 'memo updated';
-  }
-
-  private async createMemoVersionSnapshot(memo: AgentMemo, changeNote: string): Promise<void> {
-    const version = Math.max(1, Number(memo.version || 1));
-    const exists = await this.memoVersionModel.findOne({ memoId: memo.id, version }).exec();
-    if (exists) return;
-    await this.memoVersionModel.create({
-      id: uuidv4(),
-      memoId: memo.id,
-      version,
-      content: memo.content || '',
-      changeNote: changeNote || 'memo updated',
-    });
-  }
-
-  async listMemoVersions(memoId: string): Promise<AgentMemoVersion[]> {
-    return (await this.memoVersionModel.find({ memoId }).sort({ version: -1 }).exec()) as unknown as AgentMemoVersion[];
   }
 
   private memoCacheKey(agentId: string, memoKind: MemoKind): string {

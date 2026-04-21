@@ -36,20 +36,10 @@ class AgentMemo {
 }
 ```
 
-### 3.2 版本快照模型
+### 3.2 版本策略
 
-```typescript
-// backend/apps/agents/src/schemas/agent-memo-version.schema.ts
-
-class AgentMemoVersion {
-  id: string;
-  memoId: string;
-  version: number;
-  content: string;
-  changeNote: string;
-  createdAt: Date;
-}
-```
+- Memo 使用主文档上的 `version` 字段递增标记版本。
+- 不再维护独立版本快照集合（`agent_memo_versions`）。
 
 ### 3.3 现有事件驱动架构
 
@@ -289,7 +279,7 @@ interface IdentityPayload {
 ### 9.2 现有 API 复用
 
 - `GET /api/memos?agentId=xxx&memoKind=identity` - 获取 identity
-- `GET /api/memos/:id/versions` - 获取版本历史
+- `GET /api/memos/:id` - 获取单条 memo 详情
 
 ## 10. 部署配置
 

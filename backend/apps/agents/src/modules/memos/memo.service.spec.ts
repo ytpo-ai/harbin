@@ -22,11 +22,6 @@ describe('MemoService', () => {
       countDocuments: jest.fn(),
       deleteOne: jest.fn(),
     };
-    const memoVersionModel = {
-      create: jest.fn(),
-      findOne: jest.fn(),
-      find: jest.fn(),
-    };
     const memoDocSyncService = {
       syncMemo: jest.fn(),
       removeMemo: jest.fn(),
@@ -50,15 +45,12 @@ describe('MemoService', () => {
     const memoTaskTodoService = new MemoTaskTodoService(memoTaskHistoryService);
     const service = new MemoService(
       memoModel as any,
-      memoVersionModel as any,
       memoDocSyncService as any,
       redisService as any,
       memoTaskTodoService,
       memoTaskHistoryService,
     );
     memoModel.find.mockReturnValue(queryResult([]));
-    memoVersionModel.findOne.mockReturnValue(queryResult(null));
-    memoVersionModel.find.mockReturnValue(queryResult([]));
     return { service, memoModel, redisService };
   };
 

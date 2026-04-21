@@ -162,11 +162,6 @@ export class MemoController {
     });
   }
 
-  @Get(':id/versions')
-  async listMemoVersions(@Param('id') id: string) {
-    return this.memoService.listMemoVersions(id);
-  }
-
   @Get('agents/:agentId/context')
   async getTaskContext(@Param('agentId') agentId: string, @Query('taskText') taskText?: string) {
     const context = await this.memoService.getTaskMemoryContext(agentId, taskText || '');

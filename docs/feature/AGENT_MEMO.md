@@ -5,7 +5,7 @@
 ### 1.1 目标
 
 - 为 agent 提供长期记忆能力，沉淀简历、TODO、历史任务、草稿与主题知识。
-- Memo 更新支持自动版本快照，主文档维护 `version` 递增。
+- Memo 主文档维护 `version` 递增，不再额外写入版本快照表。
 - 使用 Redis 聚合缓存 + MongoDB 持久化 + Markdown 文档三层协同。
 - 任务执行时按需优先读取 Redis（`memo:{agentId}:{memoKind}`），缓存缺失时回源 DB 并回填。
 - 自动聚合 Agent 简历（Identity）和工作评估（Evaluation）文档
@@ -37,13 +37,11 @@ type MemoType = 'knowledge' | 'standard';
 | `title` | string | 标题 |
 | `slug` | string | 稳定 URL |
 | `content` | string | 内容 (Markdown) |
-| `version` | number | 版本号 |
+| `version` | number | 版本号（主文档内递增） |
 | `payload` | Object | 扩展字段 (topic/taskId/status/toolCalls/period/sources) |
 | `tags` | string[] | 标签 |
 | `contextKeywords` | string[] | 上下文关键词 |
 | `source` | string | 来源 |
-
-- 版本表：`AgentMemoVersion(memoId, version, content, changeNote, createdAt)`
 
 ### 1.3 文档类型
 
@@ -155,7 +153,6 @@ type MemoType = 'knowledge' | 'standard';
 | POST | `/api/memos` | 创建备忘录（异步入队，返回 202 + requestId） |
 | PUT | `/api/memos/:id` | 更新备忘录（异步入队，返回 202 + requestId） |
 | DELETE | `/api/memos/:id` | 删除备忘录（异步入队，返回 202 + requestId） |
-| GET | `/api/memos/:id/versions` | 查看版本历史 |
 | POST | `/api/memos/behavior` | 写入 Redis 事件流（不直接落库） |
 | POST | `/api/memos/todos/upsert` | 创建/更新 TODO（异步入队） |
 | PUT | `/api/memos/todos/:id/status` | 更新 TODO 状态（异步入队） |
@@ -276,7 +273,6 @@ type MemoType = 'knowledge' | 'standard';
 | 文件 | 功能 |
 |------|------|
 | `schemas/agent-memo.schema.ts` | AgentMemo 数据模型定义，包含 memoKind, memoType, payload 等字段 |
-| `schemas/agent-memo-version.schema.ts` | AgentMemoVersion 版本快照模型 |
 
 #### 核心服务
 
@@ -284,7 +280,7 @@ type MemoType = 'knowledge' | 'standard';
 |------|------|
 | `modules/memos/memo.module.ts` | Memo 模块依赖注入配置 |
 | `modules/memos/memo.controller.ts` | REST API 控制器，处理所有 memo 相关请求 |
-| `modules/memos/memo.service.ts` | 核心业务逻辑，CRUD、搜索、版本管理 |
+| `modules/memos/memo.service.ts` | 核心业务逻辑，CRUD 与搜索 |
 | `modules/memos/memo-write-queue.service.ts` | memo 写命令生产者，统一入队封装 |
 | `modules/memos/memo-write-command-consumer.service.ts` | memo 写命令消费者（重试/去重/死信） |
 | `modules/memos/memo-task-todo.service.ts` | TODO 状态归一化、读写聚合、内容渲染 |

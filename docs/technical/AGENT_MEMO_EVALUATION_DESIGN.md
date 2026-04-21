@@ -245,7 +245,7 @@ interface EvaluationPayload {
 ### 8.2 现有 API 复用
 
 - `GET /api/memos?agentId=xxx&memoKind=evaluation` - 获取 evaluation
-- `GET /api/memos/:id/versions` - 获取版本历史
+- `GET /api/memos/:id` - 获取单条 memo 详情
 
 ## 9. 部署配置
 

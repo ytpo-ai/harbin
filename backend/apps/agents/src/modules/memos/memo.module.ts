@@ -3,7 +3,6 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Agent, AgentSchema } from '@agent/schemas/agent.schema';
 import { Tool, ToolSchema } from '../../schemas/tool.schema';
 import { AgentMemo, AgentMemoSchema } from '../../schemas/agent-memo.schema';
-import { AgentMemoVersion, AgentMemoVersionSchema } from '../../schemas/agent-memo-version.schema';
 import { Skill, SkillSchema } from '../../schemas/agent-skill.schema';
 import { OrchestrationTask, OrchestrationTaskSchema } from '../../../../../src/shared/schemas/orchestration-task.schema';
 import { AgentRun, AgentRunSchema } from '../../schemas/agent-run.schema';
@@ -27,7 +26,6 @@ import { MemoWriteCommandConsumerService } from './memo-write-command-consumer.s
   imports: [
     MongooseModule.forFeature([
       { name: AgentMemo.name, schema: AgentMemoSchema },
-      { name: AgentMemoVersion.name, schema: AgentMemoVersionSchema },
       { name: Agent.name, schema: AgentSchema },
       { name: Tool.name, schema: ToolSchema },
       { name: Skill.name, schema: SkillSchema },

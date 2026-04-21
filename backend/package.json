@@ -43,6 +43,7 @@
     "maintain:restore": "npm run maintain -- --task=restore",
     "cleanup:agents-runtime": "ts-node -r tsconfig-paths/register scripts/maintenance/maintenance-runner.ts --task=cleanup-runtime",
     "migrate:session-token-cost": "ts-node -r tsconfig-paths/register scripts/migrate/backfill-session-token-cost.ts",
+    "migrate:drop-agent-memo-versions": "ts-node -r tsconfig-paths/register scripts/migrate/drop-agent-memo-versions.ts",
     "migrate:unset-skill-planning-rules": "ts-node -r tsconfig-paths/register scripts/migrate/unset-skill-planning-rules.ts",
     "migrate:cleanup-removed-requirement-tools": "ts-node -r tsconfig-paths/register scripts/migrate/cleanup-removed-requirement-tools.ts",
     "migrate:schema-collection-governance": "ts-node -r tsconfig-paths/register scripts/migrate/migrate-schema-collection-governance.ts",
