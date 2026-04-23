@@ -313,6 +313,14 @@ export class OrchestrationExecutionEngineService {
         summary: output.slice(0, 300),
       });
 
+      await this.appendSubtaskOutputToParentTask({
+        planId,
+        subtaskId: taskId,
+        subtaskTitle: task.title,
+        parentTaskId: String((task as any).parentTaskId || '').trim() || undefined,
+        output,
+      });
+
       this.planEventStreamService.emitTaskLifecycleEvent(taskId, 'task.status.changed', {
         planId,
         status: 'completed',
@@ -713,6 +721,72 @@ export class OrchestrationExecutionEngineService {
         },
       )
       .exec();
+  }
+
+  private async appendSubtaskOutputToParentTask(params: {
+    planId: string;
+    subtaskId: string;
+    subtaskTitle: string;
+    parentTaskId?: string;
+    output: string;
+  }): Promise<void> {
+    const { planId, subtaskId, subtaskTitle, parentTaskId, output } = params;
+    if (!parentTaskId || !output.trim()) {
+      return;
+    }
+
+    const parentTask = await this.orchestrationTaskModel.findOne({ _id: parentTaskId, planId }).exec();
+    if (!parentTask) {
+      return;
+    }
+
+    const markerStart = `<!--subtask:${subtaskId}:start-->`;
+    const markerEnd = `<!--subtask:${subtaskId}:end-->`;
+    const escapedStart = markerStart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existingOutput = String(parentTask.result?.output || '').trim();
+    const cleanedOutput = existingOutput
+      ? existingOutput.replace(new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, 'g'), '').trim()
+      : '';
+
+    const normalizedSubtaskTitle = String(subtaskTitle || '').trim() || subtaskId;
+    const appendedBlock = `${markerStart}\n[Subtask ${normalizedSubtaskTitle}]\n${output.trim()}\n${markerEnd}`;
+    const nextOutput = cleanedOutput ? `${cleanedOutput}\n\n${appendedBlock}` : appendedBlock;
+
+    await this.orchestrationTaskModel
+      .updateOne(
+        { _id: parentTaskId },
+        {
+          $set: {
+            result: {
+              ...(parentTask.result || {}),
+              output: nextOutput,
+            },
+          },
+          $push: {
+            runLogs: {
+              timestamp: new Date(),
+              level: 'info',
+              message: 'Subtask output aggregated to parent task',
+              metadata: {
+                subtaskId,
+              },
+            },
+          },
+        },
+      )
+      .exec();
+
+    await this.planStatsService.updatePlanSessionTask(planId, parentTaskId, {
+      output: nextOutput,
+    });
+
+    this.planEventStreamService.emitTaskLifecycleEvent(parentTaskId, 'task.updated', {
+      planId,
+      taskId: parentTaskId,
+      reason: 'subtask_output_aggregated',
+      subtaskId,
+    });
   }
 
   private async waitForAsyncAgentTaskResult(

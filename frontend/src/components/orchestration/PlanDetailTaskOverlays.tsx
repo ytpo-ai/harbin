@@ -14,6 +14,9 @@ interface PlanDetailTaskOverlaysProps {
   newTaskDescription: string;
   newTaskPriority: 'low' | 'medium' | 'high' | 'urgent';
   newTaskInsertAfterTaskId: string;
+  newTaskParentTaskId: string;
+  newTaskExecutorType: 'agent' | 'employee' | 'unassigned';
+  newTaskExecutorId: string;
   addTaskLoading: boolean;
   dependencyModalTask: OrchestrationTask | null;
   dependencyModalCandidates: OrchestrationTask[];
@@ -25,6 +28,7 @@ interface PlanDetailTaskOverlaysProps {
   debugRuntimeTaskType: 'auto' | DebugRuntimeTaskTypeOverride;
   debugHint: string;
   agents: Array<{ id: string; name: string }>;
+  employees: Array<{ id: string; name?: string }>;
   debugRunning: boolean;
   reassignRunning: boolean;
   onCloseAddModal: () => void;
@@ -32,6 +36,8 @@ interface PlanDetailTaskOverlaysProps {
   onChangeNewTaskDescription: (value: string) => void;
   onChangeNewTaskPriority: (value: 'low' | 'medium' | 'high' | 'urgent') => void;
   onChangeNewTaskInsertAfter: (value: string) => void;
+  onChangeNewTaskExecutorType: (value: 'agent' | 'employee' | 'unassigned') => void;
+  onChangeNewTaskExecutorId: (value: string) => void;
   onSubmitAddTask: () => void;
   onCloseDependencyModal: () => void;
   onToggleDependency: (taskId: string) => void;
@@ -55,6 +61,9 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
   newTaskDescription,
   newTaskPriority,
   newTaskInsertAfterTaskId,
+  newTaskParentTaskId,
+  newTaskExecutorType,
+  newTaskExecutorId,
   addTaskLoading,
   dependencyModalTask,
   dependencyModalCandidates,
@@ -66,6 +75,7 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
   debugRuntimeTaskType,
   debugHint,
   agents,
+  employees,
   debugRunning,
   reassignRunning,
   onCloseAddModal,
@@ -73,6 +83,8 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
   onChangeNewTaskDescription,
   onChangeNewTaskPriority,
   onChangeNewTaskInsertAfter,
+  onChangeNewTaskExecutorType,
+  onChangeNewTaskExecutorId,
   onSubmitAddTask,
   onCloseDependencyModal,
   onToggleDependency,
@@ -95,13 +107,20 @@ const PlanDetailTaskOverlays: React.FC<PlanDetailTaskOverlaysProps> = ({
         description={newTaskDescription}
         priority={newTaskPriority}
         insertAfterTaskId={newTaskInsertAfterTaskId}
+        parentTaskId={newTaskParentTaskId}
+        executorType={newTaskExecutorType}
+        executorId={newTaskExecutorId}
         planTasks={planTasks}
+        agents={agents}
+        employees={employees}
         isLoading={addTaskLoading}
         onClose={onCloseAddModal}
         onChangeTitle={onChangeNewTaskTitle}
         onChangeDescription={onChangeNewTaskDescription}
         onChangePriority={onChangeNewTaskPriority}
         onChangeInsertAfterTaskId={onChangeNewTaskInsertAfter}
+        onChangeExecutorType={onChangeNewTaskExecutorType}
+        onChangeExecutorId={onChangeNewTaskExecutorId}
         onSubmit={onSubmitAddTask}
       />
 

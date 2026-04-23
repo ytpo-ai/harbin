@@ -62,6 +62,12 @@ export class TaskManagementService {
 
     const assignment = this.normalizeAssignment(dto.assignment);
     const dependencyTaskIds = this.normalizeDependencyTaskIds(dto.dependencyTaskIds);
+    const parentTaskId = String(dto.parentTaskId || '').trim() || undefined;
+
+    if (parentTaskId && String(dto.insertAfterTaskId || '').trim()) {
+      throw new BadRequestException('insertAfterTaskId cannot be used together with parentTaskId');
+    }
+
     if (dependencyTaskIds.length) {
       await this.assertTaskIdsBelongToPlan(planId, dependencyTaskIds);
     }
@@ -69,16 +75,30 @@ export class TaskManagementService {
     const tasks = await this.listTasksByPlan(planId);
     let insertIndex = tasks.length;
     const insertAfterTaskId = String(dto.insertAfterTaskId || '').trim();
-    if (insertAfterTaskId) {
+    if (parentTaskId) {
+      const parentTask = tasks.find((item) => this.getEntityId(item as any) === parentTaskId);
+      if (!parentTask) {
+        throw new BadRequestException('parentTaskId does not belong to current plan');
+      }
+
+      insertIndex = this.resolveInsertIndexForParent(tasks, parentTaskId);
+    } else if (insertAfterTaskId) {
       const targetIndex = tasks.findIndex((item) => this.getEntityId(item as any) === insertAfterTaskId);
       if (targetIndex < 0) {
         throw new BadRequestException('insertAfterTaskId does not belong to current plan');
       }
       insertIndex = targetIndex + 1;
+    }
+
+    if (insertIndex < tasks.length) {
       await this.orchestrationTaskModel
         .updateMany({ planId, order: { $gte: insertIndex } }, { $inc: { order: 1 } })
         .exec();
     }
+
+    const inheritedProjectId = parentTaskId
+      ? tasks.find((item) => this.getEntityId(item as any) === parentTaskId)?.projectId || plan.projectId
+      : plan.projectId;
 
     const createdTask = await new this.orchestrationTaskModel({
       planId,
@@ -88,6 +108,7 @@ export class TaskManagementService {
       status: this.resolveTaskStatusByAssignment(assignment),
       order: insertIndex,
       dependencyTaskIds,
+      ...(parentTaskId ? { parentTaskId } : {}),
       assignment,
       runLogs: [
         {
@@ -96,10 +117,11 @@ export class TaskManagementService {
           message: 'Task added manually',
           metadata: {
             insertAfterTaskId: insertAfterTaskId || undefined,
+            parentTaskId,
           },
         },
       ],
-      ...(plan.projectId ? { projectId: plan.projectId } : {}),
+      ...(inheritedProjectId ? { projectId: inheritedProjectId } : {}),
     }).save();
 
     const nextTaskIds = tasks.map((item) => this.getEntityId(item as any));
@@ -149,6 +171,13 @@ export class TaskManagementService {
 
     if (task.status === 'in_progress' || task.status === 'completed' || task.status === 'waiting_human') {
       throw new BadRequestException(`Task in "${task.status}" status cannot be deleted`);
+    }
+
+    const subtaskCount = await this.orchestrationTaskModel
+      .countDocuments({ planId, parentTaskId: taskId })
+      .exec();
+    if (subtaskCount > 0) {
+      throw new BadRequestException('Task has subtasks and cannot be deleted');
     }
 
     await this.orchestrationTaskModel
@@ -681,5 +710,27 @@ export class TaskManagementService {
       return docId.toString();
     }
     return String(entity?.id || '');
+  }
+
+  private resolveInsertIndexForParent(tasks: OrchestrationTask[], parentTaskId: string): number {
+    const parentIndex = tasks.findIndex((item) => this.getEntityId(item as any) === parentTaskId);
+    if (parentIndex < 0) {
+      return tasks.length;
+    }
+
+    const subtreeTaskIds = new Set<string>([parentTaskId]);
+    let insertIndex = parentIndex + 1;
+
+    while (insertIndex < tasks.length) {
+      const candidate = tasks[insertIndex] as any;
+      const candidateParentId = String(candidate?.parentTaskId || '').trim();
+      if (!candidateParentId || !subtreeTaskIds.has(candidateParentId)) {
+        break;
+      }
+      subtreeTaskIds.add(this.getEntityId(candidate));
+      insertIndex += 1;
+    }
+
+    return insertIndex;
   }
 }

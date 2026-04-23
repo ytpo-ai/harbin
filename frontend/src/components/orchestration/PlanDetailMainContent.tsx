@@ -2,6 +2,7 @@ import React from 'react';
 import {
   OrchestrationPlan,
   OrchestrationRun,
+  OrchestrationTask,
   PlanMode,
 } from '../../services/orchestrationService';
 import { PlanSettingsFormValues } from './PlanSettingsModal';
@@ -56,6 +57,7 @@ interface PlanDetailMainContentProps {
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
   filteredPlanRuns: OrchestrationRun[];
@@ -104,6 +106,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
+  onCreateSubtask,
   onCompleteHuman,
   onRetryTask,
   filteredPlanRuns,
@@ -171,6 +174,7 @@ const PlanDetailMainContent: React.FC<PlanDetailMainContentProps> = ({
           onDuplicateTask={onDuplicateTask}
           onRemoveTask={onRemoveTask}
           onOpenTaskEdit={onOpenTaskEdit}
+          onCreateSubtask={onCreateSubtask}
           onCompleteHuman={onCompleteHuman}
           onRetryTask={onRetryTask}
         />

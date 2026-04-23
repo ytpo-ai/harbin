@@ -35,6 +35,9 @@ type Params = {
   setNewTaskDescription: (value: string) => void;
   setNewTaskPriority: (value: TaskPriority) => void;
   setNewTaskInsertAfterTaskId: (value: string) => void;
+  setNewTaskParentTaskId: (value: string) => void;
+  setNewTaskExecutorType: (value: 'agent' | 'employee' | 'unassigned') => void;
+  setNewTaskExecutorId: (value: string) => void;
 };
 
 export const useOrchestrationMutations = ({
@@ -63,6 +66,9 @@ export const useOrchestrationMutations = ({
   setNewTaskDescription,
   setNewTaskPriority,
   setNewTaskInsertAfterTaskId,
+  setNewTaskParentTaskId,
+  setNewTaskExecutorType,
+  setNewTaskExecutorId,
 }: Params) => {
   const queryClient = useQueryClient();
 
@@ -293,13 +299,17 @@ export const useOrchestrationMutations = ({
       description,
       priority,
       insertAfterTaskId,
+      parentTaskId,
+      assignment,
     }: {
       planId: string;
       title: string;
       description: string;
       priority: TaskPriority;
       insertAfterTaskId?: string;
-    }) => orchestrationService.addTaskToPlan(planId, { title, description, priority, insertAfterTaskId }),
+      parentTaskId?: string;
+      assignment?: { executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string };
+    }) => orchestrationService.addTaskToPlan(planId, { title, description, priority, insertAfterTaskId, parentTaskId, assignment }),
     {
       onSuccess: async () => {
         setTaskHint('任务已添加');
@@ -308,6 +318,9 @@ export const useOrchestrationMutations = ({
         setNewTaskDescription('');
         setNewTaskPriority('medium');
         setNewTaskInsertAfterTaskId('');
+        setNewTaskParentTaskId('');
+        setNewTaskExecutorType('unassigned');
+        setNewTaskExecutorId('');
         await refreshPlanData();
       },
     },

@@ -39,6 +39,9 @@ export const usePlanDetailViewState = (planId?: string) => {
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'low' | 'medium' | 'high' | 'urgent'>('medium');
   const [newTaskInsertAfterTaskId, setNewTaskInsertAfterTaskId] = useState('');
+  const [newTaskParentTaskId, setNewTaskParentTaskId] = useState('');
+  const [newTaskExecutorType, setNewTaskExecutorType] = useState<'agent' | 'employee' | 'unassigned'>('unassigned');
+  const [newTaskExecutorId, setNewTaskExecutorId] = useState('');
 
   const openDebugDrawer = (taskId: string, tab: DrawerTab = 'debug') => {
     setDebugTaskId(taskId);
@@ -89,6 +92,9 @@ export const usePlanDetailViewState = (planId?: string) => {
     setStreamHint('');
     setStreamTaskIds([]);
     setTaskHint('');
+    setNewTaskParentTaskId('');
+    setNewTaskExecutorType('unassigned');
+    setNewTaskExecutorId('');
     extraReset?.();
   };
 
@@ -160,6 +166,12 @@ export const usePlanDetailViewState = (planId?: string) => {
     setNewTaskPriority,
     newTaskInsertAfterTaskId,
     setNewTaskInsertAfterTaskId,
+    newTaskParentTaskId,
+    setNewTaskParentTaskId,
+    newTaskExecutorType,
+    setNewTaskExecutorType,
+    newTaskExecutorId,
+    setNewTaskExecutorId,
     openDebugDrawer,
     openRunDetailDrawer,
     syncDebugDraftFromTask,

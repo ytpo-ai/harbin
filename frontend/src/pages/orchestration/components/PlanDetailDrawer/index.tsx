@@ -68,6 +68,7 @@ type Props = {
   onReassignTask: (payload: { taskId: string; executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string }) => void;
   onCompleteHumanTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onOpenSessionTab: (taskId: string, sessionId?: string) => void;
   onOpenRunDetail: (runId: string) => void;
   onRunTriggerFilterChange: (value: RunTriggerFilter) => void;
@@ -129,6 +130,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
   onReassignTask,
   onCompleteHumanTask,
   onRetryTask,
+  onCreateSubtask,
   onOpenSessionTab,
   onOpenRunDetail,
   onRunTriggerFilterChange,
@@ -228,6 +230,7 @@ const PlanDetailDrawer: React.FC<Props> = ({
                   onReassignTask={onReassignTask}
                   onCompleteHumanTask={onCompleteHumanTask}
                   onRetryTask={onRetryTask}
+                  onCreateSubtask={onCreateSubtask}
                   onOpenSessionTab={onOpenSessionTab}
                 />
               ) : (

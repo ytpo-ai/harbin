@@ -18,6 +18,9 @@ export class OrchestrationRunTask {
   @Prop({ required: true })
   sourceTaskId: string;
 
+  @Prop({ type: String, required: false, index: true })
+  parentTaskId?: string;
+
   @Prop({ required: true })
   order: number;
 
@@ -109,4 +112,5 @@ export const OrchestrationRunTaskSchema = SchemaFactory.createForClass(Orchestra
 
 OrchestrationRunTaskSchema.index({ runId: 1, order: 1 });
 OrchestrationRunTaskSchema.index({ planId: 1, runId: 1 });
+OrchestrationRunTaskSchema.index({ runId: 1, parentTaskId: 1, order: 1 });
 OrchestrationRunTaskSchema.index({ sourceTaskId: 1 });

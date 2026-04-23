@@ -88,6 +88,9 @@ const Orchestration: React.FC = () => {
   const [newTaskDescription, setNewTaskDescription] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
   const [newTaskInsertAfterTaskId, setNewTaskInsertAfterTaskId] = useState('');
+  const [newTaskParentTaskId, setNewTaskParentTaskId] = useState('');
+  const [newTaskExecutorType, setNewTaskExecutorType] = useState<'agent' | 'employee' | 'unassigned'>('unassigned');
+  const [newTaskExecutorId, setNewTaskExecutorId] = useState('');
 
   const agentProjectIdFilter = isCreateModalOpen ? createProjectId : projectIdFilter;
 
@@ -208,6 +211,9 @@ const Orchestration: React.FC = () => {
     setNewTaskDescription,
     setNewTaskPriority,
     setNewTaskInsertAfterTaskId,
+    setNewTaskParentTaskId,
+    setNewTaskExecutorType,
+    setNewTaskExecutorId,
   });
 
   const taskEditing = useTaskEditing({
@@ -275,6 +281,9 @@ const Orchestration: React.FC = () => {
     setTaskHint('');
     taskEditing.setDependencyModalTaskId('');
     taskEditing.setDependencyModalDraftIds([]);
+    setNewTaskParentTaskId('');
+    setNewTaskExecutorType('unassigned');
+    setNewTaskExecutorId('');
   }, [selectedPlanId]);
 
   useEffect(() => {
@@ -585,7 +594,12 @@ const Orchestration: React.FC = () => {
             void handleDeletePlan(selectedPlanId);
           }
         }}
-        onOpenAddTaskModal={() => setIsAddTaskModalOpen(true)}
+        onOpenAddTaskModal={() => {
+          setIsAddTaskModalOpen(true);
+          setNewTaskParentTaskId('');
+          setNewTaskExecutorType('unassigned');
+          setNewTaskExecutorId('');
+        }}
         onSaveTaskEdits={() => {
           void taskEditing.handleSaveTaskEdits();
         }}
@@ -611,6 +625,13 @@ const Orchestration: React.FC = () => {
           mutations.completeHumanTaskMutation.mutate({ taskId, summary });
         }}
         onRetryTask={(taskId) => mutations.retryTaskMutation.mutate(taskId)}
+        onCreateSubtask={(task) => {
+          setIsAddTaskModalOpen(true);
+          setNewTaskParentTaskId(task._id);
+          setNewTaskInsertAfterTaskId('');
+          setNewTaskExecutorType('unassigned');
+          setNewTaskExecutorId('');
+        }}
         onOpenSessionTab={(taskId, sessionId) => {
           openDebugDrawer(taskId, 'session');
           setDebugSessionId(sessionId || '');
@@ -627,12 +648,27 @@ const Orchestration: React.FC = () => {
         newTaskDescription={newTaskDescription}
         newTaskPriority={newTaskPriority}
         newTaskInsertAfterTaskId={newTaskInsertAfterTaskId}
+        newTaskParentTaskId={newTaskParentTaskId}
+        newTaskExecutorType={newTaskExecutorType}
+        newTaskExecutorId={newTaskExecutorId}
+        agents={agents}
+        employees={employees}
         addTaskLoading={mutations.addTaskMutation.isLoading}
-        onClose={() => setIsAddTaskModalOpen(false)}
+        onClose={() => {
+          setIsAddTaskModalOpen(false);
+          setNewTaskParentTaskId('');
+          setNewTaskExecutorType('unassigned');
+          setNewTaskExecutorId('');
+        }}
         onTitleChange={setNewTaskTitle}
         onDescriptionChange={setNewTaskDescription}
         onPriorityChange={setNewTaskPriority}
         onInsertAfterTaskIdChange={setNewTaskInsertAfterTaskId}
+        onExecutorTypeChange={(executorType) => {
+          setNewTaskExecutorType(executorType);
+          setNewTaskExecutorId('');
+        }}
+        onExecutorIdChange={setNewTaskExecutorId}
         onConfirm={() => {
           if (!selectedPlanId) return;
           const finalTitle = newTaskTitle.trim();
@@ -641,12 +677,23 @@ const Orchestration: React.FC = () => {
             setTaskHint('任务标题和描述不能为空');
             return;
           }
+          if ((newTaskExecutorType === 'agent' || newTaskExecutorType === 'employee') && !newTaskExecutorId.trim()) {
+            setTaskHint('请先选择执行者');
+            return;
+          }
           mutations.addTaskMutation.mutate({
             planId: selectedPlanId,
             title: finalTitle,
             description,
             priority: newTaskPriority,
             insertAfterTaskId: newTaskInsertAfterTaskId || undefined,
+            parentTaskId: newTaskParentTaskId || undefined,
+            assignment: newTaskExecutorType === 'unassigned'
+              ? { executorType: 'unassigned' }
+              : {
+                  executorType: newTaskExecutorType,
+                  executorId: newTaskExecutorId.trim(),
+                },
           });
         }}
       />

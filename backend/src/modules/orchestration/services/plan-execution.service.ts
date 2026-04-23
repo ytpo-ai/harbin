@@ -223,6 +223,7 @@ export class PlanExecutionService {
         runId,
         planId,
         sourceTaskId: this.getEntityId(task as any),
+        parentTaskId: (task as any).parentTaskId,
         order: task.order,
         title: task.title,
         description: task.description,

@@ -324,6 +324,10 @@ export class AddTaskToPlanDto {
   @ValidateNested()
   @Type(() => TaskAssignmentDto)
   assignment?: TaskAssignmentDto;
+
+  @IsOptional()
+  @IsString()
+  parentTaskId?: string;
 }
 
 export class UpdateTaskFullDto {

@@ -47,6 +47,7 @@ interface PlanDetailSettingsTabProps {
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }
@@ -84,6 +85,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
+  onCreateSubtask,
   onCompleteHuman,
   onRetryTask,
 }) => {
@@ -126,6 +128,7 @@ const PlanDetailSettingsTab: React.FC<PlanDetailSettingsTabProps> = ({
         onDuplicateTask={onDuplicateTask}
         onRemoveTask={onRemoveTask}
         onOpenTaskEdit={onOpenTaskEdit}
+        onCreateSubtask={onCreateSubtask}
         onCompleteHuman={onCompleteHuman}
         onRetryTask={onRetryTask}
       />

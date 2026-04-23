@@ -2,19 +2,28 @@ import React from 'react';
 import { PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { OrchestrationTask } from '../../services/orchestrationService';
 
+type ExecutorType = 'agent' | 'employee' | 'unassigned';
+
 interface AddTaskModalProps {
   open: boolean;
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   insertAfterTaskId: string;
+  parentTaskId: string;
+  executorType: ExecutorType;
+  executorId: string;
   planTasks: OrchestrationTask[];
+  agents: Array<{ id: string; name: string }>;
+  employees: Array<{ id: string; name?: string }>;
   isLoading: boolean;
   onClose: () => void;
   onChangeTitle: (value: string) => void;
   onChangeDescription: (value: string) => void;
   onChangePriority: (value: 'low' | 'medium' | 'high' | 'urgent') => void;
   onChangeInsertAfterTaskId: (value: string) => void;
+  onChangeExecutorType: (value: ExecutorType) => void;
+  onChangeExecutorId: (value: string) => void;
   onSubmit: () => void;
 }
 
@@ -24,18 +33,27 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({
   description,
   priority,
   insertAfterTaskId,
+  parentTaskId,
+  executorType,
+  executorId,
   planTasks,
+  agents,
+  employees,
   isLoading,
   onClose,
   onChangeTitle,
   onChangeDescription,
   onChangePriority,
   onChangeInsertAfterTaskId,
+  onChangeExecutorType,
+  onChangeExecutorId,
   onSubmit,
 }) => {
   if (!open) {
     return null;
   }
+
+  const parentTask = parentTaskId ? planTasks.find((task) => task._id === parentTaskId) : null;
 
   return (
     <div className="fixed inset-0 z-[92] flex items-center justify-center bg-slate-900/40 p-4">
@@ -78,7 +96,8 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({
             <select
               value={insertAfterTaskId}
               onChange={(event) => onChangeInsertAfterTaskId(event.target.value)}
-              className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+              disabled={Boolean(parentTaskId)}
+              className="rounded-md border border-slate-300 px-2 py-2 text-sm disabled:bg-slate-100"
             >
               <option value="">追加到末尾</option>
               {planTasks.map((task) => (
@@ -87,6 +106,52 @@ const AddTaskModal: React.FC<AddTaskModalProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+
+          {parentTask ? (
+            <p className="text-xs text-emerald-700">
+              将创建为补充任务，父任务：#{parentTask.order + 1} {parentTask.title || '未命名任务'}
+            </p>
+          ) : null}
+
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+            <select
+              value={executorType}
+              onChange={(event) => onChangeExecutorType(event.target.value as ExecutorType)}
+              className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+            >
+              <option value="agent">Agent</option>
+              <option value="employee">Employee</option>
+              <option value="unassigned">Unassigned</option>
+            </select>
+
+            {executorType === 'agent' ? (
+              <select
+                value={executorId}
+                onChange={(event) => onChangeExecutorId(event.target.value)}
+                className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+              >
+                <option value="">选择 Agent</option>
+                {agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>{agent.name}</option>
+                ))}
+              </select>
+            ) : executorType === 'employee' ? (
+              <select
+                value={executorId}
+                onChange={(event) => onChangeExecutorId(event.target.value)}
+                className="rounded-md border border-slate-300 px-2 py-2 text-sm"
+              >
+                <option value="">选择员工</option>
+                {employees.map((employee) => (
+                  <option key={employee.id} value={employee.id}>{employee.name || employee.id}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="flex items-center rounded-md border border-dashed border-slate-300 px-2 py-2 text-xs text-slate-500">
+                未分配执行者
+              </div>
+            )}
           </div>
         </div>
 

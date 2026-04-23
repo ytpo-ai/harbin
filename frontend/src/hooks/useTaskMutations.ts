@@ -10,6 +10,9 @@ interface UseTaskMutationsOptions {
   setNewTaskDescription: (value: string) => void;
   setNewTaskPriority: (value: 'low' | 'medium' | 'high' | 'urgent') => void;
   setNewTaskInsertAfterTaskId: (value: string) => void;
+  setNewTaskParentTaskId: (value: string) => void;
+  setNewTaskExecutorType: (value: 'agent' | 'employee' | 'unassigned') => void;
+  setNewTaskExecutorId: (value: string) => void;
   setDebugHint: (value: string) => void;
   setDebugSessionId: (value: string) => void;
   onRefreshPlanData: () => Promise<void>;
@@ -24,6 +27,9 @@ export const useTaskMutations = ({
   setNewTaskDescription,
   setNewTaskPriority,
   setNewTaskInsertAfterTaskId,
+  setNewTaskParentTaskId,
+  setNewTaskExecutorType,
+  setNewTaskExecutorId,
   setDebugHint,
   setDebugSessionId,
   onRefreshPlanData,
@@ -77,18 +83,24 @@ export const useTaskMutations = ({
       description,
       priority,
       insertAfterTaskId,
+      parentTaskId,
+      assignment,
     }: {
       targetPlanId: string;
       title: string;
       description: string;
       priority: 'low' | 'medium' | 'high' | 'urgent';
       insertAfterTaskId?: string;
+      parentTaskId?: string;
+      assignment?: { executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string };
     }) =>
       orchestrationService.addTaskToPlan(targetPlanId, {
         title,
         description,
         priority,
         insertAfterTaskId,
+        parentTaskId,
+        assignment,
       }),
     {
       onSuccess: async () => {
@@ -98,6 +110,9 @@ export const useTaskMutations = ({
         setNewTaskDescription('');
         setNewTaskPriority('medium');
         setNewTaskInsertAfterTaskId('');
+        setNewTaskParentTaskId('');
+        setNewTaskExecutorType('unassigned');
+        setNewTaskExecutorId('');
         await onRefreshPlanData();
       },
     },

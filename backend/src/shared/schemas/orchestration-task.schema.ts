@@ -57,6 +57,9 @@ export class OrchestrationTask {
   @Prop({ type: [String], default: [] })
   mergedFromTaskIds: string[];
 
+  @Prop({ type: String, required: false, index: true })
+  parentTaskId?: string;
+
   @Prop({
     enum: [
       'research',
@@ -129,6 +132,7 @@ export class OrchestrationTask {
 export const OrchestrationTaskSchema = SchemaFactory.createForClass(OrchestrationTask);
 
 OrchestrationTaskSchema.index({ planId: 1, order: 1 });
+OrchestrationTaskSchema.index({ planId: 1, parentTaskId: 1, order: 1 });
 OrchestrationTaskSchema.index({ requirementId: 1, status: 1, updatedAt: -1 });
 OrchestrationTaskSchema.index({ status: 1 });
 OrchestrationTaskSchema.index({ projectId: 1, status: 1 });

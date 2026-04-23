@@ -22,6 +22,7 @@ interface TaskListProps {
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }
@@ -44,9 +45,12 @@ const TaskList: React.FC<TaskListProps> = ({
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
+  onCreateSubtask,
   onCompleteHuman,
   onRetryTask,
 }) => {
+  const taskTitleById = new Map(tasks.map((task) => [task._id, `#${task.order + 1} ${task.title || '未命名任务'}`]));
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -85,8 +89,10 @@ const TaskList: React.FC<TaskListProps> = ({
             onDuplicateTask={onDuplicateTask}
             onRemoveTask={onRemoveTask}
             onOpenTaskEdit={onOpenTaskEdit}
+            onCreateSubtask={onCreateSubtask}
             onCompleteHuman={onCompleteHuman}
             onRetryTask={onRetryTask}
+            parentTaskTitle={task.parentTaskId ? taskTitleById.get(task.parentTaskId) : undefined}
           />
         ))
       )}

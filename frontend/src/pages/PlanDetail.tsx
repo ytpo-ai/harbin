@@ -3,11 +3,13 @@ import { useQuery } from 'react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import { agentService } from '../services/agentService';
+import { employeeService } from '../services/employeeService';
 import { incubationProjectService, IncubationProject } from '../services/incubationProjectService';
 import {
   AgentSession,
   orchestrationService,
   OrchestrationPlan,
+  OrchestrationTask,
 } from '../services/orchestrationService';
 import PlanDetailScaffold from '../components/orchestration/PlanDetailScaffold';
 import { PlanSettingsFormValues } from '../components/orchestration/PlanSettingsModal';
@@ -65,6 +67,7 @@ const PlanDetail: React.FC = () => {
   } = usePlanRunHistory(planId, view.activeTab, view.runDrawerOpen, view.selectedRunId);
 
   const { data: agents = [] } = useQuery('plan-detail-agents', () => agentService.getAssignableAgents());
+  const { data: employees = [] } = useQuery('plan-detail-employees', () => employeeService.getEmployees());
   const agentNameById = useMemo(
     () => Object.fromEntries(agents.map((agent) => [agent.id, agent.name])),
     [agents],
@@ -213,6 +216,9 @@ const PlanDetail: React.FC = () => {
     setNewTaskDescription: view.setNewTaskDescription,
     setNewTaskPriority: view.setNewTaskPriority,
     setNewTaskInsertAfterTaskId: view.setNewTaskInsertAfterTaskId,
+    setNewTaskParentTaskId: view.setNewTaskParentTaskId,
+    setNewTaskExecutorType: view.setNewTaskExecutorType,
+    setNewTaskExecutorId: view.setNewTaskExecutorId,
     setDebugHint: view.setDebugHint,
     setDebugSessionId: view.setDebugSessionId,
     onRefreshPlanData: refreshPlanData,
@@ -409,6 +415,14 @@ const PlanDetail: React.FC = () => {
       removeTaskEdit(taskId);
     },
     onOpenTaskEdit: openTaskEditDrawer,
+    onCreateSubtask: (task: OrchestrationTask) => {
+      view.setIsAddTaskModalOpen(true);
+      view.setNewTaskParentTaskId(task._id);
+      view.setNewTaskInsertAfterTaskId('');
+      view.setNewTaskExecutorType('unassigned');
+      view.setNewTaskExecutorId('');
+      view.setTaskHint('');
+    },
     onCompleteHuman: (taskId: string) => {
       const summary = window.prompt('请输入人工完成说明', '由人工完成') || undefined;
       completeHumanTaskMutation.mutate({ taskId, summary });
@@ -436,6 +450,9 @@ const PlanDetail: React.FC = () => {
     newTaskDescription: view.newTaskDescription,
     newTaskPriority: view.newTaskPriority,
     newTaskInsertAfterTaskId: view.newTaskInsertAfterTaskId,
+    newTaskParentTaskId: view.newTaskParentTaskId,
+    newTaskExecutorType: view.newTaskExecutorType,
+    newTaskExecutorId: view.newTaskExecutorId,
     addTaskLoading: addTaskMutation.isLoading,
     dependencyModalTask,
     dependencyModalCandidates,
@@ -447,24 +464,48 @@ const PlanDetail: React.FC = () => {
     debugRuntimeTaskType: view.debugRuntimeTaskType,
     debugHint: view.debugHint,
     agents,
+    employees,
     debugRunning: debugStepMutation.isLoading,
     reassignRunning: reassignMutation.isLoading,
-    onCloseAddModal: () => view.setIsAddTaskModalOpen(false),
+    onCloseAddModal: () => {
+      view.setIsAddTaskModalOpen(false);
+      view.setNewTaskParentTaskId('');
+      view.setNewTaskExecutorType('unassigned');
+      view.setNewTaskExecutorId('');
+    },
     onChangeNewTaskTitle: view.setNewTaskTitle,
     onChangeNewTaskDescription: view.setNewTaskDescription,
     onChangeNewTaskPriority: view.setNewTaskPriority,
     onChangeNewTaskInsertAfter: view.setNewTaskInsertAfterTaskId,
+    onChangeNewTaskExecutorType: (executorType: 'agent' | 'employee' | 'unassigned') => {
+      view.setNewTaskExecutorType(executorType);
+      view.setNewTaskExecutorId('');
+    },
+    onChangeNewTaskExecutorId: view.setNewTaskExecutorId,
     onSubmitAddTask: () => {
       if (!planId) return;
       const title = view.newTaskTitle.trim();
       const description = view.newTaskDescription.trim();
       if (!title || !description) return view.setTaskHint('任务标题和描述不能为空');
+      if (
+        (view.newTaskExecutorType === 'agent' || view.newTaskExecutorType === 'employee')
+        && !view.newTaskExecutorId.trim()
+      ) {
+        return view.setTaskHint('请先选择执行者');
+      }
       addTaskMutation.mutate({
         targetPlanId: planId,
         title,
         description,
         priority: view.newTaskPriority,
         insertAfterTaskId: view.newTaskInsertAfterTaskId || undefined,
+        parentTaskId: view.newTaskParentTaskId || undefined,
+        assignment: view.newTaskExecutorType === 'unassigned'
+          ? { executorType: 'unassigned' }
+          : {
+              executorType: view.newTaskExecutorType,
+              executorId: view.newTaskExecutorId.trim(),
+            },
       });
     },
     onCloseDependencyModal: closeDependencyModal,

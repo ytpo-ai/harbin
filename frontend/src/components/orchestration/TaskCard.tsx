@@ -28,8 +28,10 @@ interface TaskCardProps {
   onDuplicateTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onOpenTaskEdit: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onCompleteHuman: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
+  parentTaskTitle?: string;
 }
 
 const TaskCard: React.FC<TaskCardProps> = ({
@@ -46,8 +48,10 @@ const TaskCard: React.FC<TaskCardProps> = ({
   onDuplicateTask,
   onRemoveTask,
   onOpenTaskEdit,
+  onCreateSubtask,
   onCompleteHuman,
   onRetryTask,
+  parentTaskTitle,
 }) => {
   const editable = isTaskEditable(planStatus);
   const taskResultText = task.result?.error || task.result?.output || task.result?.summary || '';
@@ -58,7 +62,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
 
   return (
     <div
-      className={`rounded-lg border bg-white ${highlightDebug ? 'border-primary-300 bg-primary-50/40' : 'border-slate-200'} ${highlightStream ? 'ring-1 ring-amber-300' : ''}`}
+      className={`rounded-lg border bg-white ${highlightDebug ? 'border-primary-300 bg-primary-50/40' : 'border-slate-200'} ${highlightStream ? 'ring-1 ring-amber-300' : ''} ${task.parentTaskId ? 'ml-5 border-l-4 border-l-emerald-200' : ''}`}
     >
       {/* Header row: always visible, clickable to toggle */}
       <button
@@ -126,6 +130,9 @@ const TaskCard: React.FC<TaskCardProps> = ({
           </div>
 
           {/* Description */}
+          {task.parentTaskId ? (
+            <p className="mb-2 text-[11px] text-emerald-700">补充任务 · 父任务：{parentTaskTitle || task.parentTaskId}</p>
+          ) : null}
           <p className="text-xs text-slate-500">{task.description || '-'}</p>
 
           {/* Result */}
@@ -183,6 +190,15 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 className="text-xs px-2 py-1.5 rounded bg-blue-600 text-white disabled:opacity-50"
               >
                 重试
+              </button>
+            )}
+            {(task.status === 'failed' || task.status === 'completed') && (
+              <button
+                onClick={() => onCreateSubtask(task)}
+                disabled={!editable}
+                className="text-xs px-2 py-1.5 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                创建补充任务
               </button>
             )}
           </div>

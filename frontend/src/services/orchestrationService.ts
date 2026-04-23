@@ -24,6 +24,7 @@ export type TaskStatus =
 export interface OrchestrationTask {
   _id: string;
   planId?: string;
+  parentTaskId?: string;
   title: string;
   description: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
@@ -240,6 +241,7 @@ export interface AddTaskToPlanPayload {
   description: string;
   priority?: 'low' | 'medium' | 'high' | 'urgent';
   insertAfterTaskId?: string;
+  parentTaskId?: string;
   dependencyTaskIds?: string[];
   assignment?: TaskAssignmentPayload;
 }

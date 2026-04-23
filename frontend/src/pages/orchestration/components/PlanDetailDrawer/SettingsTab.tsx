@@ -68,6 +68,7 @@ type Props = {
   onReassignTask: (payload: { taskId: string; executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string }) => void;
   onCompleteHumanTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
+  onCreateSubtask: (task: OrchestrationTask) => void;
   onOpenSessionTab: (taskId: string, sessionId?: string) => void;
 };
 
@@ -114,6 +115,7 @@ const SettingsTab: React.FC<Props> = ({
   onReassignTask,
   onCompleteHumanTask,
   onRetryTask,
+  onCreateSubtask,
   onOpenSessionTab,
 }) => {
   return (
@@ -231,11 +233,14 @@ const SettingsTab: React.FC<Props> = ({
             return (
               <div
                 key={task._id}
-                className={`space-y-2 rounded-lg border p-3 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-gray-200'}`}
+                className={`space-y-2 rounded-lg border p-3 ${debugTaskId === task._id ? 'border-primary-300 bg-primary-50/40' : 'border-gray-200'} ${task.parentTaskId ? 'ml-5 border-l-4 border-l-emerald-200' : ''}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">任务 #{task.order + 1}</p>
+                    {task.parentTaskId ? (
+                      <p className="mt-1 text-[11px] text-emerald-700">补充任务 · 父任务ID: {task.parentTaskId}</p>
+                    ) : null}
                     <input
                       value={draft.title}
                       onChange={(event) => onUpdateTaskDraftField(task, { title: event.target.value })}
@@ -407,6 +412,14 @@ const SettingsTab: React.FC<Props> = ({
                       className="rounded bg-blue-600 px-2 py-1.5 text-xs text-white disabled:bg-gray-300"
                     >
                       重试
+                    </button>
+                  )}
+                  {(task.status === 'failed' || task.status === 'completed') && (
+                    <button
+                      onClick={() => onCreateSubtask(task)}
+                      className="ml-2 rounded border border-emerald-200 px-2 py-1.5 text-xs text-emerald-700 hover:bg-emerald-50"
+                    >
+                      创建补充任务
                     </button>
                   )}
                 </div>
