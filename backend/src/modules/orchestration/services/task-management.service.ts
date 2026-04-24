@@ -12,7 +12,9 @@ import {
 import {
   OrchestrationTask,
   OrchestrationTaskDocument,
+  OrchestrationTaskRuntimeType,
   OrchestrationTaskStatus,
+  OrchestrationTaskType,
 } from '../../../shared/schemas/orchestration-task.schema';
 import {
   OrchestrationPlan,
@@ -60,9 +62,13 @@ export class TaskManagementService {
       throw new BadRequestException('title and description are required');
     }
 
-    const assignment = this.normalizeAssignment(dto.assignment);
+    let assignment = this.normalizeAssignment(dto.assignment);
     const dependencyTaskIds = this.normalizeDependencyTaskIds(dto.dependencyTaskIds);
     const parentTaskId = String(dto.parentTaskId || '').trim() || undefined;
+    let parentTask: OrchestrationTask | undefined;
+    let inheritedTaskType: OrchestrationTaskType | undefined;
+    let inheritedRuntimeTaskType: OrchestrationTaskRuntimeType | undefined;
+    let inheritedSessionId: string | undefined;
 
     if (parentTaskId && String(dto.insertAfterTaskId || '').trim()) {
       throw new BadRequestException('insertAfterTaskId cannot be used together with parentTaskId');
@@ -76,9 +82,17 @@ export class TaskManagementService {
     let insertIndex = tasks.length;
     const insertAfterTaskId = String(dto.insertAfterTaskId || '').trim();
     if (parentTaskId) {
-      const parentTask = tasks.find((item) => this.getEntityId(item as any) === parentTaskId);
+      parentTask = tasks.find((item) => this.getEntityId(item as any) === parentTaskId);
       if (!parentTask) {
         throw new BadRequestException('parentTaskId does not belong to current plan');
+      }
+
+      const inherited = this.resolveDevelopmentSubtaskInheritance(parentTask);
+      if (inherited) {
+        assignment = inherited.assignment;
+        inheritedTaskType = inherited.taskType;
+        inheritedRuntimeTaskType = inherited.runtimeTaskType;
+        inheritedSessionId = inherited.sessionId;
       }
 
       insertIndex = this.resolveInsertIndexForParent(tasks, parentTaskId);
@@ -110,17 +124,23 @@ export class TaskManagementService {
       dependencyTaskIds,
       ...(parentTaskId ? { parentTaskId } : {}),
       assignment,
+      ...(inheritedTaskType ? { taskType: inheritedTaskType } : {}),
+      ...(inheritedRuntimeTaskType ? { runtimeTaskType: inheritedRuntimeTaskType } : {}),
+      ...(inheritedSessionId ? { sessionId: inheritedSessionId } : {}),
       runLogs: [
         {
           timestamp: new Date(),
           level: 'info',
           message: 'Task added manually',
-          metadata: {
-            insertAfterTaskId: insertAfterTaskId || undefined,
-            parentTaskId,
-          },
-        },
-      ],
+              metadata: {
+                insertAfterTaskId: insertAfterTaskId || undefined,
+                parentTaskId,
+                inheritedFromParentTask: Boolean(parentTaskId && inheritedTaskType),
+                inheritedRuntimeTaskType,
+                inheritedSessionId: inheritedSessionId || undefined,
+              },
+            },
+          ],
       ...(inheritedProjectId ? { projectId: inheritedProjectId } : {}),
     }).save();
 
@@ -608,6 +628,43 @@ export class TaskManagementService {
       return fallbackStatus;
     }
     return 'assigned';
+  }
+
+  private resolveDevelopmentSubtaskInheritance(parentTask: OrchestrationTask): {
+    assignment: { executorType: 'agent' | 'employee' | 'unassigned'; executorId?: string; reason?: string };
+    taskType: OrchestrationTaskType;
+    runtimeTaskType: OrchestrationTaskRuntimeType;
+    sessionId?: string;
+  } | null {
+    const parentRuntimeTaskType = this.contextService.normalizeRuntimeTaskTypeOverride(
+      parentTask.runtimeTaskType || (parentTask as any).taskType,
+    );
+    const isDevelopmentParent =
+      parentRuntimeTaskType === 'development.plan'
+      || parentRuntimeTaskType === 'development.exec'
+      || parentRuntimeTaskType === 'development.review';
+
+    if (!isDevelopmentParent) {
+      return null;
+    }
+
+    const parentAssignment = this.normalizeAssignment(parentTask.assignment);
+    if (parentAssignment.executorType !== 'agent' || !parentAssignment.executorId) {
+      throw new BadRequestException('Development subtask parent must have an assigned agent executor');
+    }
+
+    const inheritedSessionId = String(parentTask.sessionId || '').trim() || undefined;
+
+    return {
+      assignment: {
+        executorType: 'agent',
+        executorId: parentAssignment.executorId,
+        reason: 'Inherited from parent development task',
+      },
+      taskType: parentRuntimeTaskType,
+      runtimeTaskType: parentRuntimeTaskType,
+      ...(inheritedSessionId ? { sessionId: inheritedSessionId } : {}),
+    };
   }
 
   private async assertTaskIdsBelongToPlan(planId: string, taskIds: string[]): Promise<void> {

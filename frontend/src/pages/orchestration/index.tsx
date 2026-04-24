@@ -629,8 +629,13 @@ const Orchestration: React.FC = () => {
           setIsAddTaskModalOpen(true);
           setNewTaskParentTaskId(task._id);
           setNewTaskInsertAfterTaskId('');
-          setNewTaskExecutorType('unassigned');
-          setNewTaskExecutorId('');
+          if (task.assignment?.executorType === 'agent' && task.assignment.executorId) {
+            setNewTaskExecutorType('agent');
+            setNewTaskExecutorId(task.assignment.executorId);
+          } else {
+            setNewTaskExecutorType('unassigned');
+            setNewTaskExecutorId('');
+          }
         }}
         onOpenSessionTab={(taskId, sessionId) => {
           openDebugDrawer(taskId, 'session');

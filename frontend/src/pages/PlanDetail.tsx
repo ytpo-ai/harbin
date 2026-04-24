@@ -419,8 +419,13 @@ const PlanDetail: React.FC = () => {
       view.setIsAddTaskModalOpen(true);
       view.setNewTaskParentTaskId(task._id);
       view.setNewTaskInsertAfterTaskId('');
-      view.setNewTaskExecutorType('unassigned');
-      view.setNewTaskExecutorId('');
+      if (task.assignment?.executorType === 'agent' && task.assignment.executorId) {
+        view.setNewTaskExecutorType('agent');
+        view.setNewTaskExecutorId(task.assignment.executorId);
+      } else {
+        view.setNewTaskExecutorType('unassigned');
+        view.setNewTaskExecutorId('');
+      }
       view.setTaskHint('');
     },
     onCompleteHuman: (taskId: string) => {
