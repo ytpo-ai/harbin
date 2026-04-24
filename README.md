@@ -184,10 +184,34 @@ npm run build
 # 运行测试
 npm run test
 
+# 运行 E2E（Playwright）
+npm run test:e2e
+
+# 运行真实后端 token 的 smoke E2E
+E2E_AUTH_TOKEN=<your_token> npm run test:e2e:smoke
+
+# 以有界面模式运行 E2E
+npm run test:e2e:headed
+
+# 打开 Playwright UI
+npm run test:e2e:ui
+
 # 创建初始管理员账号（如首次启动）
 cd backend
 pnpm run seed:initial-admin -- --email=admin@example.com --name="System Admin" --password="StrongPass123"
 ```
+
+### Playwright E2E 说明
+
+- 配置文件：`playwright.config.ts`
+- 测试目录：`tests/`
+- 运行机制：执行 E2E 时会自动启动 `frontend`（Vite）测试服务，无需手动先起前端
+- 首次执行需要安装浏览器：`npx playwright install chromium`
+- 真实后端 smoke 用例需要提供 `E2E_AUTH_TOKEN`，并确保 gateway(3100) 可访问
+- Demo 用例：
+  - `tests/login-page.demo.spec.ts`
+  - `tests/login-success.demo.spec.ts`
+  - `tests/auth-smoke.real.spec.ts`
 
 ### 环境变量配置
 
