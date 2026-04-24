@@ -189,7 +189,11 @@ export class TaskManagementService {
     }
     await this.assertPlanEditable(plan, task);
 
-    if (task.status === 'in_progress' || task.status === 'completed' || task.status === 'waiting_human') {
+    const isSubtask = Boolean(String((task as any).parentTaskId || '').trim());
+    if (task.status === 'in_progress' || task.status === 'waiting_human') {
+      throw new BadRequestException(`Task in "${task.status}" status cannot be deleted`);
+    }
+    if (task.status === 'completed' && !isSubtask) {
       throw new BadRequestException(`Task in "${task.status}" status cannot be deleted`);
     }
 
@@ -203,6 +207,10 @@ export class TaskManagementService {
     await this.orchestrationTaskModel
       .updateMany({ planId, dependencyTaskIds: taskId }, { $pull: { dependencyTaskIds: taskId } })
       .exec();
+
+    if (isSubtask) {
+      await this.cleanupParentTaskSubtaskOutput(planId, String((task as any).parentTaskId || '').trim(), taskId);
+    }
 
     await this.orchestrationTaskModel.deleteOne({ _id: taskId }).exec();
 
@@ -239,6 +247,66 @@ export class TaskManagementService {
     });
 
     return { success: true };
+  }
+
+  private async cleanupParentTaskSubtaskOutput(planId: string, parentTaskId: string, subtaskId: string): Promise<void> {
+    if (!parentTaskId || !subtaskId) {
+      return;
+    }
+
+    const parentTask = await this.orchestrationTaskModel.findOne({ _id: parentTaskId, planId }).exec();
+    if (!parentTask) {
+      return;
+    }
+
+    const markerStart = `<!--subtask:${subtaskId}:start-->`;
+    const markerEnd = `<!--subtask:${subtaskId}:end-->`;
+    const escapedStart = markerStart.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escapedEnd = markerEnd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existingOutput = String(parentTask.result?.output || '');
+    const nextOutput = existingOutput
+      .replace(new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}`, 'g'), '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    if (nextOutput === existingOutput.trim()) {
+      return;
+    }
+
+    await this.orchestrationTaskModel
+      .updateOne(
+        { _id: parentTaskId },
+        {
+          $set: {
+            result: {
+              ...(parentTask.result || {}),
+              output: nextOutput,
+            },
+          },
+          $push: {
+            runLogs: {
+              timestamp: new Date(),
+              level: 'info',
+              message: 'Subtask output removed after subtask deletion',
+              metadata: {
+                subtaskId,
+              },
+            },
+          },
+        },
+      )
+      .exec();
+
+    await this.planStatsService.updatePlanSessionTask(planId, parentTaskId, {
+      output: nextOutput || undefined,
+    });
+
+    this.planEventStreamService.emitTaskLifecycleEvent(parentTaskId, 'task.updated', {
+      planId,
+      taskId: parentTaskId,
+      reason: 'subtask_deleted_cleanup_output',
+      subtaskId,
+    });
   }
 
   async updateTaskFull(taskId: string, dto: UpdateTaskFullDto): Promise<OrchestrationTask> {
