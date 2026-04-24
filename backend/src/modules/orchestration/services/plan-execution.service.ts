@@ -456,6 +456,9 @@ export class PlanExecutionService {
       );
 
       const runnableTasks = runTasks.filter((task) => {
+        if ((task as any).parentTaskId) {
+          return false;
+        }
         const statusAllowsRun = task.status === 'pending' || task.status === 'assigned';
         if (!statusAllowsRun) {
           return false;

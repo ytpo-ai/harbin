@@ -201,6 +201,14 @@ const TaskCard: React.FC<TaskCardProps> = ({
                 创建补充任务
               </button>
             )}
+            {task.parentTaskId && (task.status === 'pending' || task.status === 'assigned' || task.status === 'failed') && (
+              <button
+                onClick={() => onOpenTaskEdit(task._id)}
+                className="text-xs px-2 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700"
+              >
+                执行
+              </button>
+            )}
           </div>
         </div>
       )}

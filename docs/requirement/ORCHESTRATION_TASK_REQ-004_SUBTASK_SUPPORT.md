@@ -39,6 +39,9 @@
 - [ ] 任务列表中子任务以缩进样式展示，可识别其父任务
 - [ ] 子任务完成后，其 result.output 追加到父任务的 result.output 中
 - [ ] 查询任务列表时返回 parentTaskId 字段
+- [ ] 子任务不参与 plan run 自动调度（step dispatcher 跳过 parentTaskId 非空的任务）
+- [ ] 子任务在任务列表中显示"执行"按钮，复用 debug-run 机制触发单任务执行
+- [ ] "执行"按钮仅在子任务状态为 pending / assigned / failed 时可用
 
 ## 3. 技术方案摘要
 
@@ -68,13 +71,19 @@ parentTaskId?: string;
 - 新增产出聚合逻辑：
   - 在 `task-lifecycle.service.ts` 中，子任务 completed 时，将 output 追加到父任务 result
 
-### 3.4 前端
+### 3.4 后端调度器隔离
+
+- `orchestration-step-dispatcher.service.ts` 的 `advanceOnce()` 在选择下一个待执行任务时，跳过 `parentTaskId` 非空的任务
+- 子任务仅通过 `POST /orchestration/tasks/:id/debug-run` 手动触发执行
+
+### 3.5 前端
 
 - `AddTaskModal`：新增 `parentTaskId` hidden 字段
 - 任务列表：
   - 对 failed/completed 任务增加"创建补充任务"菜单项
   - 子任务缩进展示，左侧增加连线或缩进标识
   - `parentTaskId` 作为分组依据
+  - 子任务显示"执行"按钮（状态为 pending/assigned/failed 时可用），点击调用 debug-run API
 
 ### 影响范围
 
@@ -104,6 +113,6 @@ parentTaskId?: string;
 ## 5. 备注
 
 - 依赖 REQ-003 的 AddTaskModal 改造（执行者选择 UI）
-- 子任务与四阶段调度器（step dispatcher）的兼容需要注意：子任务是否参与自动推进，还是仅在手动触发时执行
+- 子任务不参与 plan run 自动调度，仅通过手动"执行"按钮（debug-run）触发，step dispatcher 推进时跳过 parentTaskId 非空的任务
 - 产出聚合边界需明确：建议仅聚合 `result.output` 文本，不覆盖父任务的 `result.summary`
-- 建议分两步实现：Step A = Schema + DTO + CRUD + 前端入口；Step B = 产出聚合 + 调度兼容
+- 建议分两步实现：Step A = Schema + DTO + CRUD + 前端入口 + 执行按钮；Step B = 产出聚合 + 调度器跳过逻辑
