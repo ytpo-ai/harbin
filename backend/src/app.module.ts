@@ -14,6 +14,7 @@ import { AgentClientModule } from './modules/agents-client/agent-client.module';
 import { OperationLogModule } from './modules/operation-logs/operation-log.module';
 import { MessagesModule } from './modules/messages/messages.module';
 import { MessageCenterModule } from './modules/message-center/message-center.module';
+import { DiscussionModule } from './modules/discussions/discussion.module';
 import { InfraModule } from '@libs/infra';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
@@ -47,6 +48,7 @@ import jwtConfig from './config/jwt.config';
     OperationLogModule,
     MessagesModule,
     MessageCenterModule,
+    DiscussionModule,
     AgentClientModule,
     HRModule,
     ApiKeysModule,
