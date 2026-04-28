@@ -8,6 +8,7 @@ import {
   FolderIcon,
   IdentificationIcon,
   VideoCameraIcon,
+  ChatBubbleLeftRightIcon,
   WrenchScrewdriverIcon,
   CpuChipIcon,
   KeyIcon,
@@ -40,6 +41,7 @@ import { wsService } from '../services/wsService';
 const topLevelNavigation = [
   { name: '仪表板', href: '/', icon: HomeIcon },
   { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
+  { name: '讨论空间', href: '/discussions', icon: ChatBubbleLeftRightIcon },
   { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
 ];
 

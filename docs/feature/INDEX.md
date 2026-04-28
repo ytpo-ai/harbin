@@ -42,6 +42,7 @@
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
 | `meeting/meeting_chat` | 会议聊天 | `docs/feature/MEETING_CHAT.md` |
+| `meeting/discussion_space` | 讨论空间（树状分叉讨论） | `docs/feature/DISCUSSION_SPACE.md` |
 | `meeting/meeting_context` | 上下文同步 | (待完善) |
 
 ### 4. 工程智能模块 (engineering-intelligence)
@@ -98,6 +99,7 @@
 | `docs/feature/ORCHETRATION_TASK.md` | orchestration/task, orchestration/prompt_registry, orchestration/workflow |
 | `docs/feature/ORCHETRATION_SCHEDULER.md` | orchestration/scheduler |
 | `docs/feature/MEETING_CHAT.md` | meeting/meeting_chat |
+| `docs/feature/DISCUSSION_SPACE.md` | meeting/discussion_space |
 | `docs/feature/ENGINEERING_INTELLIGENCE.md` | engineering-intelligence/code_self_awareness, engineering-intelligence/code_self_evolution |
 | `docs/feature/PROJECT_ INCUBATION.md` | engineering-intelligence/project_incubation |
 | `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |

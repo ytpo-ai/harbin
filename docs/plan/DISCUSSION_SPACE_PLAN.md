@@ -51,7 +51,7 @@
 6. [x] **文档沉淀系统**：实现手动触发沉淀 + 实时沉淀（AI 维护文档大纲）+ 模式切换 + 文档导出
 7. [ ] **讨论线交叉引用**：实现跨 Thread 引用机制，含引用解析、上下文注入、引用展示
 8. [ ] **上下文压缩与 Token 管理**：实现多线程场景下的 prompt 压缩策略，含摘要生成、知识库 RAG 检索、滑动窗口
-9. [ ] **前端页面开发**：讨论空间列表页 + 详情页（三栏布局）+ 树状导航 + 分叉交互 + @ 提及 + 文档沉淀面板 + 知识库面板
+9. [x] **前端页面开发**：讨论空间列表页 + 详情页（三栏布局）+ 树状导航 + 分叉交互 + @ 提及 + 文档沉淀面板 + 知识库面板
 10. [ ] **API 接口联调与测试**
 11. [ ] **文档更新**：功能文档、API 文档、技术设计文档
 
@@ -61,7 +61,7 @@
 |------|----------|------|------|
 | REQ-001 | 讨论空间核心数据模型、Schema、后端 CRUD + 树状对话分叉引擎 | [链接](../requirement/DISCUSSION_SPACE_REQ-001_CORE_MODEL_AND_BRANCHING.md) | in-progress |
 | REQ-002 | 多角色参与、@ 唤醒机制 + Agent 知识积累引擎 + 文档沉淀系统 | [链接](../requirement/DISCUSSION_SPACE_REQ-002_ROLES_KNOWLEDGE_SEDIMENT.md) | in-progress |
-| REQ-003 | 前端完整页面（列表 + 详情三栏 + 全部交互）+ API 联调 | [链接](../requirement/DISCUSSION_SPACE_REQ-003_FRONTEND_INTEGRATION.md) | draft |
+| REQ-003 | 前端完整页面（列表 + 详情三栏 + 全部交互）+ API 联调 | [链接](../requirement/DISCUSSION_SPACE_REQ-003_FRONTEND_INTEGRATION.md) | in-progress |
 
 ## 6. 关键影响点
 

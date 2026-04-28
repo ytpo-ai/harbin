@@ -29,6 +29,8 @@ import MessageCenter from './pages/MessageCenter';
 import PromptRegistry from './pages/PromptRegistry';
 import PromptRegistryDetail from './pages/PromptRegistryDetail';
 import UiManagement from './pages/UiManagement';
+import Discussions from './pages/Discussions';
+import DiscussionDetail from './pages/DiscussionDetail';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import { authService } from './services/authService';
@@ -92,6 +94,8 @@ function App() {
             <Route path="/governance" element={<ProtectedRoute><Navigate to="/" replace /></ProtectedRoute>} />
             <Route path="/meetings" element={<ProtectedRoute><Meetings /></ProtectedRoute>} />
             <Route path="/rd-conversation" element={<ProtectedRoute><RdConversation /></ProtectedRoute>} />
+            <Route path="/discussions" element={<ProtectedRoute><Discussions /></ProtectedRoute>} />
+            <Route path="/discussions/:spaceId" element={<ProtectedRoute><DiscussionDetail /></ProtectedRoute>} />
             <Route path="/agent-task-runner" element={<ProtectedRoute><AgentTaskRunner /></ProtectedRoute>} />
             <Route path="/orchestration" element={<ProtectedRoute><Orchestration /></ProtectedRoute>} />
             <Route path="/orchestration/plans/:id" element={<ProtectedRoute><PlanDetail /></ProtectedRoute>} />
