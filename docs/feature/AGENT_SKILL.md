@@ -66,6 +66,7 @@
 | `AGENT_SKILL_MANAGER_PLAN.md` | Agent Skill Manager 初始实现计划（已归档） |
 | `AGENT_SKILL_BIND_DUPKEY_FIX_PLAN.md` | Agent 技能绑定唯一索引冲突修复计划 |
 | `AGENT_SKILL_DB_REDIS_PROGRESSIVE_LOADING_PLAN.md` | Skill 正文 DB 内嵌与 Redis 渐进式加载实施计划 |
+| `AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN.md` | 项目功能认知 Skill（feature 文档优先）落地计划 |
 | `SKILL_BINDING_CHECKBOX_SELECT_ALL_PLAN.md` | Skill 详情页 Agent 绑定勾选化与全选交互优化计划 |
 
 ### 开发总结 (docs/development/)
@@ -122,3 +123,11 @@
 - 详情 Tab 在 `content` 上方提供 Prompt 模板绑定选择器（scene/role 联动、预览、清除）；绑定后 `content` 字段进入 fallback 语义提示态。
 - 「Agent 绑定」Tab 采用 Agent 列表勾选模式，支持单项勾选、当前可见列表全选/取消全选，并按差异批量提交绑定与解绑（解绑复用 `/skills/assign` 且 `enabled=false`）。
 - 状态与分类展示中文文案，筛选项同样使用中文显示（传参仍保持后端枚举值）。
+
+---
+
+## 4. 需求追溯
+
+| Plan | Requirement | Development | Fix |
+|------|------------|-------------|-----|
+| [AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN](../plan/AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN.md) | [AGENT_SKILL_REQ-001 项目功能认知 Skill](../requirement/AGENT_SKILL_REQ-001_PROJECT_FEATURE_GROUNDING.md) | [待创建](../development/AGENT_SKILL_REQ-001_DEVELOPMENT.md) | — |

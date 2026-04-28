@@ -272,6 +272,11 @@ feature → plan → requirement → development + fix
 ### 前端设计规范
 遇到前端开发任务时，请先阅读 `docs/FRONTEND_GUIDELINE.md` 中的前端设计建议规范。
 
+### DESIGN.md 使用规范
+- 项目根目录已提供 `DESIGN.md`（基于 IBM / Carbon 风格）。
+- 所有前端 UI 新增与重构任务，必须先读取 `DESIGN.md`，并按其中的颜色、排版、间距、组件状态与交互规范执行。
+- 若 `DESIGN.md` 与历史页面样式冲突，优先遵循 `DESIGN.md`，并在同次改动中保持相关页面视觉一致性。
+
 ### 测试要求
 - 新功能必须包含测试
 - 修改现有功能时更新相关测试
