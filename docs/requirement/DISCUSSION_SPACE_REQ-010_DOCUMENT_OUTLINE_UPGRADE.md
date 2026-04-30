@@ -35,11 +35,11 @@
 - [ ] 创建 `industry_observation` 空间后自动触发大纲生成
 - [ ] Agent 大纲生成 Prompt 设计完成并可输出结构化 JSON
 - [ ] 大纲 CRUD API 全部实现（generate/get/update/add-section/delete-section/update-section）
-- [ ] 章节丰富 API 实现（enrich-section/enrich-all）
-- [ ] 大纲任务 SSE 事件流实现
-- [ ] 前端 `OutlinePanel.tsx` 组件完成（树状展示 + 状态徽标 + 知识计数）
-- [ ] 前端大纲编辑交互完成（修改标题/描述、调整排序、增删章节）
-- [ ] 前端"让 Agent 丰富此章节"按钮和反馈 UI 完成
+- [x] 章节丰富 API 实现（enrich-section/enrich-all）
+- [x] 大纲任务 SSE 事件流实现
+- [x] 前端 `OutlinePanel.tsx` 组件完成（树状展示 + 状态徽标 + 知识计数）
+- [x] 前端大纲编辑交互完成（修改标题/描述、调整排序、增删章节）
+- [x] 前端"让 Agent 丰富此章节"按钮和反馈 UI 完成
 
 ## 3. 技术方案摘要
 

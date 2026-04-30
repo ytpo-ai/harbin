@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, MessageEvent, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomUUID } from 'crypto';
+import { Observable, Subject } from 'rxjs';
 import {
   DiscussionSpace,
   DiscussionSpaceCategory,
@@ -16,19 +17,121 @@ import {
 } from '../../../shared/schemas/discussion-knowledge-entry.schema';
 import {
   CreateDiscussionOutlineSectionDto,
+  DiscussionOutlineTaskEventPayload,
+  DiscussionOutlineTaskSnapshot,
+  DiscussionOutlineTaskStatus,
   DiscussionKnowledgeCoverageResult,
+  EnrichAllDiscussionOutlineSectionsResult,
+  EnrichDiscussionOutlineSectionResult,
   UpdateDiscussionOutlineDto,
   UpdateDiscussionOutlineSectionDto,
 } from '../discussion.types';
+import { DiscussionKnowledgeService } from './discussion-knowledge.service';
+import { DiscussionKnowledgeSourceType } from '../../../shared/schemas/discussion-knowledge-entry.schema';
 
 @Injectable()
 export class DiscussionOutlineService {
+  private readonly logger = new Logger(DiscussionOutlineService.name);
+  private readonly outlineTaskStore = new Map<string, DiscussionOutlineTaskSnapshot>();
+  private readonly outlineTaskChannels = new Map<string, Set<Subject<MessageEvent>>>();
+
   constructor(
     @InjectModel(DiscussionSpace.name)
     private readonly discussionSpaceModel: Model<DiscussionSpaceDocument>,
     @InjectModel(DiscussionKnowledgeEntry.name)
     private readonly discussionKnowledgeEntryModel: Model<DiscussionKnowledgeEntryDocument>,
+    private readonly discussionKnowledgeService: DiscussionKnowledgeService,
   ) {}
+
+  private buildTaskId(spaceId: string): string {
+    return `discussion-outline-${spaceId}-${randomUUID()}`;
+  }
+
+  private touchTask(task: DiscussionOutlineTaskSnapshot): DiscussionOutlineTaskSnapshot {
+    const next: DiscussionOutlineTaskSnapshot = {
+      ...task,
+      updatedAt: new Date().toISOString(),
+    };
+    this.outlineTaskStore.set(task.taskId, next);
+    return next;
+  }
+
+  private emitTaskEvent(taskId: string, payload: DiscussionOutlineTaskEventPayload): void {
+    const channels = this.outlineTaskChannels.get(taskId);
+    if (!channels?.size) {
+      return;
+    }
+
+    const event: MessageEvent = {
+      data: payload,
+    };
+
+    for (const channel of channels) {
+      channel.next(event);
+    }
+  }
+
+  private scheduleTaskCleanup(taskId: string): void {
+    setTimeout(() => {
+      this.outlineTaskStore.delete(taskId);
+      this.outlineTaskChannels.delete(taskId);
+    }, 30 * 60 * 1000);
+  }
+
+  private createTaskSnapshot(input: {
+    spaceId: string;
+    taskType: DiscussionOutlineTaskSnapshot['taskType'];
+    sectionId?: string;
+  }): DiscussionOutlineTaskSnapshot {
+    const now = new Date().toISOString();
+    const task: DiscussionOutlineTaskSnapshot = {
+      taskId: this.buildTaskId(input.spaceId),
+      spaceId: input.spaceId,
+      taskType: input.taskType,
+      sectionId: input.sectionId,
+      status: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.outlineTaskStore.set(task.taskId, task);
+    return task;
+  }
+
+  private markTaskStatus(taskId: string, status: DiscussionOutlineTaskStatus): DiscussionOutlineTaskSnapshot {
+    const current = this.outlineTaskStore.get(taskId);
+    if (!current) {
+      throw new NotFoundException(`大纲任务不存在: ${taskId}`);
+    }
+    const next = this.touchTask({
+      ...current,
+      status,
+      startedAt: status === 'running' ? new Date().toISOString() : current.startedAt,
+      finishedAt: status === 'succeeded' || status === 'failed' ? new Date().toISOString() : current.finishedAt,
+      error: status === 'failed' ? current.error : undefined,
+    });
+    return next;
+  }
+
+  private buildEnrichmentContent(section: OutlineSection, index: number): { title: string; content: string; summary: string } {
+    const title = `${section.title} 补充观察 ${index + 1}`;
+    const content = [
+      `研究章节：${section.title}`,
+      section.description ? `章节说明：${section.description}` : undefined,
+      '建议从至少 2 个来源交叉验证该章节的关键结论。',
+      section.metadata?.isStructuredData
+        ? '重点补充可量化指标（数值、单位、时间区间、对比基准）。'
+        : '重点补充事实脉络、观点分歧和影响分析。',
+      '后续可将关键结论沉淀到结构化报告章节中。',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    return {
+      title,
+      content,
+      summary: `${section.title} 的补充知识条目（自动生成）`,
+    };
+  }
 
   private buildSection(input: Partial<OutlineSection> & { title: string; order: number; depth: number }): OutlineSection {
     return {
@@ -254,6 +357,206 @@ export class DiscussionOutlineService {
       sections: current.sections.filter((item) => !toDelete.has(item.id)),
       generatedBy: 'human',
       title: current.title,
+    });
+  }
+
+  async enrichSection(spaceId: string, sectionId: string): Promise<EnrichDiscussionOutlineSectionResult> {
+    const outline = await this.getOutline(spaceId);
+    const section = outline.sections.find((item) => item.id === sectionId);
+    if (!section) {
+      throw new NotFoundException(`章节不存在: ${sectionId}`);
+    }
+
+    const existingCount = await this.discussionKnowledgeEntryModel.countDocuments({
+      spaceId,
+      outlineSectionId: sectionId,
+      isActive: true,
+    });
+
+    const targetThreshold = 5;
+    const remaining = Math.max(0, targetThreshold - Number(existingCount || 0));
+    const addCount = Math.min(3, remaining);
+
+    for (let index = 0; index < addCount; index += 1) {
+      const generated = this.buildEnrichmentContent(section, index);
+      await this.discussionKnowledgeService.createKnowledgeEntry(spaceId, {
+        participantId: 'system',
+        title: generated.title,
+        content: generated.content,
+        summary: generated.summary,
+        outlineSectionId: section.id,
+        entryType: section.metadata?.isStructuredData ? 'data_point' : 'analysis',
+        sourceType: DiscussionKnowledgeSourceType.DISCUSSION_DERIVED,
+        sourceName: 'outline-enricher',
+        topicTags: [section.title],
+      });
+    }
+
+    return {
+      sectionId,
+      enrichedCount: addCount,
+      outline: await this.getOutline(spaceId),
+    };
+  }
+
+  async enrichAllDraftSections(spaceId: string): Promise<EnrichAllDiscussionOutlineSectionsResult> {
+    const outline = await this.getOutline(spaceId);
+    const draftSections = outline.sections.filter((item) => item.status === 'draft');
+
+    let enrichedCount = 0;
+    for (const section of draftSections) {
+      const result = await this.enrichSection(spaceId, section.id);
+      enrichedCount += result.enrichedCount;
+    }
+
+    return {
+      processedSectionIds: draftSections.map((item) => item.id),
+      enrichedCount,
+      outline: await this.getOutline(spaceId),
+    };
+  }
+
+  async createGenerateOutlineTask(spaceId: string, input?: { industryContext?: string }): Promise<DiscussionOutlineTaskSnapshot> {
+    const task = this.createTaskSnapshot({ spaceId, taskType: 'generate' });
+
+    setTimeout(async () => {
+      try {
+        const running = this.markTaskStatus(task.taskId, 'running');
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.running',
+          data: { task: running },
+        });
+
+        const outline = await this.generateOutline(spaceId, input);
+        const succeeded = this.touchTask({
+          ...running,
+          status: 'succeeded',
+          finishedAt: new Date().toISOString(),
+          result: { outline },
+        });
+
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.succeeded',
+          data: { task: succeeded },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'outline_generate_failed';
+        const current = this.outlineTaskStore.get(task.taskId);
+        if (!current) {
+          return;
+        }
+        const failed = this.touchTask({
+          ...current,
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          error: message,
+        });
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.failed',
+          data: { task: failed },
+        });
+        this.logger.warn(`Generate outline task failed: spaceId=${spaceId} taskId=${task.taskId} reason=${message}`);
+      } finally {
+        this.scheduleTaskCleanup(task.taskId);
+      }
+    }, 0);
+
+    return task;
+  }
+
+  async createEnrichSectionTask(spaceId: string, sectionId: string): Promise<DiscussionOutlineTaskSnapshot> {
+    const task = this.createTaskSnapshot({ spaceId, taskType: 'enrich_section', sectionId });
+
+    setTimeout(async () => {
+      try {
+        const running = this.markTaskStatus(task.taskId, 'running');
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.running',
+          data: { task: running },
+        });
+
+        const result = await this.enrichSection(spaceId, sectionId);
+        const succeeded = this.touchTask({
+          ...running,
+          status: 'succeeded',
+          finishedAt: new Date().toISOString(),
+          result: {
+            outline: result.outline,
+            enrichedCount: result.enrichedCount,
+          },
+        });
+
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.succeeded',
+          data: { task: succeeded },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'outline_enrich_failed';
+        const current = this.outlineTaskStore.get(task.taskId);
+        if (!current) {
+          return;
+        }
+        const failed = this.touchTask({
+          ...current,
+          status: 'failed',
+          finishedAt: new Date().toISOString(),
+          error: message,
+        });
+        this.emitTaskEvent(task.taskId, {
+          type: 'discussion.outline.task.failed',
+          data: { task: failed },
+        });
+        this.logger.warn(`Enrich section task failed: spaceId=${spaceId} sectionId=${sectionId} taskId=${task.taskId} reason=${message}`);
+      } finally {
+        this.scheduleTaskCleanup(task.taskId);
+      }
+    }, 0);
+
+    return task;
+  }
+
+  async streamOutlineTaskEvents(spaceId: string, taskId: string): Promise<Observable<MessageEvent>> {
+    const task = this.outlineTaskStore.get(taskId);
+    if (!task || task.spaceId !== spaceId) {
+      throw new NotFoundException(`大纲任务不存在: ${taskId}`);
+    }
+
+    return new Observable<MessageEvent>((subscriber) => {
+      let channels = this.outlineTaskChannels.get(taskId);
+      if (!channels) {
+        channels = new Set<Subject<MessageEvent>>();
+        this.outlineTaskChannels.set(taskId, channels);
+      }
+
+      const channel = new Subject<MessageEvent>();
+      const subscription = channel.subscribe({
+        next: (event) => subscriber.next(event),
+        error: (error) => subscriber.error(error),
+        complete: () => subscriber.complete(),
+      });
+
+      channels.add(channel);
+      channel.next({
+        data: {
+          type: 'discussion.outline.task.snapshot',
+          data: {
+            task,
+          },
+        },
+      });
+
+      return () => {
+        subscription.unsubscribe();
+        const target = this.outlineTaskChannels.get(taskId);
+        if (!target) {
+          return;
+        }
+        target.delete(channel);
+        channel.complete();
+        if (!target.size) {
+          this.outlineTaskChannels.delete(taskId);
+        }
+      };
     });
   }
 

@@ -34,12 +34,12 @@
 - [ ] 新增 `structuredData` 嵌入对象字段（value/unit/measureDate/compareTo）
 - [ ] 创建知识条目时可指定 `outlineSectionId` 和 `entryType`
 - [ ] Agent 丰富章节时创建的知识条目自动关联 `outlineSectionId`
-- [ ] 前端知识面板支持按大纲章节过滤
-- [ ] 前端知识条目卡片展示 `entryType` 标签
+- [x] 前端知识面板支持按大纲章节过滤
+- [x] 前端知识条目卡片展示 `entryType` 标签
 - [ ] `discussion-sediment.service.ts` 的 `generateSediment` 改造：大纲存在时按章节结构组织
 - [ ] 沉淀生成 Prompt 改造为大纲驱动模式
 - [ ] `GET /discussions/:spaceId/knowledge/coverage` API 实现
-- [ ] 前端大纲视图展示每个章节的知识积累覆盖度进度
+- [x] 前端大纲视图展示每个章节的知识积累覆盖度进度
 
 ## 3. 技术方案摘要
 

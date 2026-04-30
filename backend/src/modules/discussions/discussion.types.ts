@@ -234,6 +234,49 @@ export interface DiscussionKnowledgeCoverageResult {
   }>;
 }
 
+export interface EnrichDiscussionOutlineSectionResult {
+  sectionId: string;
+  enrichedCount: number;
+  outline: DocumentOutline;
+}
+
+export interface EnrichAllDiscussionOutlineSectionsResult {
+  processedSectionIds: string[];
+  enrichedCount: number;
+  outline: DocumentOutline;
+}
+
+export type DiscussionOutlineTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface DiscussionOutlineTaskSnapshot {
+  taskId: string;
+  spaceId: string;
+  taskType: 'generate' | 'enrich_section' | 'enrich_all';
+  status: DiscussionOutlineTaskStatus;
+  sectionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  result?: {
+    outline: DocumentOutline;
+    enrichedCount?: number;
+    processedSectionIds?: string[];
+  };
+}
+
+export interface DiscussionOutlineTaskEventPayload {
+  type:
+    | 'discussion.outline.task.snapshot'
+    | 'discussion.outline.task.running'
+    | 'discussion.outline.task.succeeded'
+    | 'discussion.outline.task.failed';
+  data: {
+    task: DiscussionOutlineTaskSnapshot;
+  };
+}
+
 export interface UpdateDiscussionSedimentModeDto {
   mode: DiscussionSedimentMode;
 }

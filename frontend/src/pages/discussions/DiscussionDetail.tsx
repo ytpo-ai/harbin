@@ -7,6 +7,7 @@ import MessageInput from '../../components/discussion/MessageInput';
 import ThreadTree from '../../components/discussion/ThreadTree';
 import SedimentPanel from '../../components/discussion/SedimentPanel';
 import OutlinePanel from '../../components/discussion/OutlinePanel';
+import OutlineSectionModal from '../../components/discussion/OutlineSectionModal';
 import KnowledgePanel from '../../components/discussion/KnowledgePanel';
 import ParticipantPanel from '../../components/discussion/ParticipantPanel';
 import KnowledgeArchiveModal from '../../components/discussion/KnowledgeArchiveModal';
@@ -18,7 +19,9 @@ import {
   discussionService,
   DiscussionMessage,
   DiscussionMessageStreamEvent,
+  OutlineSection,
   DiscussionParticipant,
+  DiscussionOutlineTaskStreamEvent,
   DiscussionSedimentTaskStreamEvent,
 } from '../../services/discussionService';
 import { DiscussionRightPanelTab, useDiscussionStore } from '../../stores/discussionStore';
@@ -41,6 +44,8 @@ const DiscussionDetail: React.FC = () => {
   const [actionError, setActionError] = useState('');
   const [actionNotice, setActionNotice] = useState('');
   const [isSedimentStreaming, setIsSedimentStreaming] = useState(false);
+  const [isOutlineStreaming, setIsOutlineStreaming] = useState(false);
+  const [enrichingOutlineSectionId, setEnrichingOutlineSectionId] = useState('');
   const [archiveTargetMessage, setArchiveTargetMessage] = useState<DiscussionMessage | null>(null);
   const [archiveMode, setArchiveMode] = useState<'existing' | 'create'>('existing');
   const [archiveExistingKeyword, setArchiveExistingKeyword] = useState('');
@@ -48,12 +53,21 @@ const DiscussionDetail: React.FC = () => {
   const [archiveCreateTitle, setArchiveCreateTitle] = useState('');
   const [archiveCreateSummary, setArchiveCreateSummary] = useState('');
   const [archiveCreateContent, setArchiveCreateContent] = useState('');
+  const [knowledgeOutlineSectionId, setKnowledgeOutlineSectionId] = useState('');
   const [selectedOutlineTemplateId, setSelectedOutlineTemplateId] = useState('');
+  const [outlineSectionModalOpen, setOutlineSectionModalOpen] = useState(false);
+  const [outlineSectionModalMode, setOutlineSectionModalMode] = useState<'create' | 'edit'>('create');
+  const [editingOutlineSection, setEditingOutlineSection] = useState<OutlineSection | null>(null);
+  const [outlineSectionTitle, setOutlineSectionTitle] = useState('');
+  const [outlineSectionDescription, setOutlineSectionDescription] = useState('');
+  const [outlineSectionStatus, setOutlineSectionStatus] = useState<OutlineSection['status']>('draft');
+  const [outlineSectionParentId, setOutlineSectionParentId] = useState('');
   const [toRequirementMessage, setToRequirementMessage] = useState<DiscussionMessage | null>(null);
   const [toRequirementTitle, setToRequirementTitle] = useState('');
   const [toRequirementDescription, setToRequirementDescription] = useState('');
   const [toRequirementPriority, setToRequirementPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
   const sedimentTaskUnsubscribeRef = useRef<null | (() => void)>(null);
+  const outlineTaskUnsubscribeRef = useRef<null | (() => void)>(null);
   const focusFromUrlDoneRef = useRef(false);
 
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -105,6 +119,10 @@ const DiscussionDetail: React.FC = () => {
     }
   }, [detailQuery.data, initialThreadId, selectedThreadId, setSelectedThread, spaceId]);
 
+  useEffect(() => {
+    setKnowledgeOutlineSectionId('');
+  }, [spaceId]);
+
   const messagesQuery = useQuery(
     ['discussion-messages', spaceId, selectedThreadId],
     () => discussionService.listMessages(spaceId, selectedThreadId, 200),
@@ -115,11 +133,12 @@ const DiscussionDetail: React.FC = () => {
   );
 
   const knowledgeQuery = useQuery(
-    ['discussion-knowledge', spaceId, selectedThreadId, knowledgeKeyword],
+    ['discussion-knowledge', spaceId, selectedThreadId, knowledgeKeyword, knowledgeOutlineSectionId],
     () =>
       discussionService.listKnowledge(spaceId, {
         threadId: selectedThreadId || undefined,
         keyword: knowledgeKeyword.trim() || undefined,
+        outlineSectionId: knowledgeOutlineSectionId || undefined,
       }),
     {
       enabled: Boolean(spaceId),
@@ -182,6 +201,76 @@ const DiscussionDetail: React.FC = () => {
       staleTime: 60_000,
     },
   );
+
+  const recalculateOutlineDepth = (sections: OutlineSection[]): OutlineSection[] => {
+    const sectionMap = new Map(sections.map((item) => [item.id, item]));
+
+    const resolveDepth = (section: OutlineSection, visited: Set<string>): number => {
+      const parentId = String(section.parentSectionId || '').trim();
+      if (!parentId) {
+        return 0;
+      }
+      if (visited.has(section.id)) {
+        return section.depth || 0;
+      }
+      const parent = sectionMap.get(parentId);
+      if (!parent) {
+        return 0;
+      }
+      const nextVisited = new Set(visited);
+      nextVisited.add(section.id);
+      return resolveDepth(parent, nextVisited) + 1;
+    };
+
+    return sections.map((section) => ({
+      ...section,
+      depth: resolveDepth(section, new Set()),
+    }));
+  };
+
+  const sortedOutlineSections = useMemo(() => {
+    return (outlineQuery.data?.sections || []).slice().sort((a, b) => {
+      if (a.depth !== b.depth) {
+        return a.depth - b.depth;
+      }
+      return a.order - b.order;
+    });
+  }, [outlineQuery.data?.sections]);
+
+  const outlineSectionParentOptions = useMemo(() => {
+    const editingId = String(editingOutlineSection?.id || '').trim();
+    if (!editingId) {
+      return sortedOutlineSections;
+    }
+
+    const childrenMap = new Map<string, string[]>();
+    for (const section of sortedOutlineSections) {
+      const parentId = String(section.parentSectionId || '').trim();
+      if (!parentId) {
+        continue;
+      }
+      if (!childrenMap.has(parentId)) {
+        childrenMap.set(parentId, []);
+      }
+      childrenMap.get(parentId)?.push(section.id);
+    }
+
+    const blocked = new Set<string>([editingId]);
+    const queue = [editingId];
+    while (queue.length) {
+      const current = queue.shift() as string;
+      const children = childrenMap.get(current) || [];
+      for (const childId of children) {
+        if (blocked.has(childId)) {
+          continue;
+        }
+        blocked.add(childId);
+        queue.push(childId);
+      }
+    }
+
+    return sortedOutlineSections.filter((item) => !blocked.has(item.id));
+  }, [sortedOutlineSections, editingOutlineSection?.id]);
 
   const savePrefillSourcesToDashboard = (templateId: string) => {
     const projectId = String(detailQuery.data?.projectId || '').trim();
@@ -418,24 +507,327 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
+  const startOutlineTaskStream = (taskId: string) => {
+    outlineTaskUnsubscribeRef.current?.();
+    setIsOutlineStreaming(true);
+
+    const stop = discussionService.subscribeOutlineTaskEvents(spaceId, taskId, {
+      onEvent: (event: DiscussionOutlineTaskStreamEvent) => {
+        const task = event.data.task;
+        const status = task?.status;
+        if (!status) {
+          return;
+        }
+
+        if (status === 'queued' || status === 'running') {
+          setActionError('');
+          if (task.taskType === 'generate') {
+            setActionNotice('大纲任务执行中，请稍候...');
+          } else if (task.taskType === 'enrich_section') {
+            setActionNotice('章节丰富任务执行中，请稍候...');
+          } else {
+            setActionNotice('大纲任务执行中，请稍候...');
+          }
+          return;
+        }
+
+        if (status === 'succeeded') {
+          setIsOutlineStreaming(false);
+          setEnrichingOutlineSectionId('');
+          outlineTaskUnsubscribeRef.current?.();
+          outlineTaskUnsubscribeRef.current = null;
+          setActionError('');
+
+          if (task.taskType === 'generate') {
+            setActionNotice('大纲生成完成，已刷新大纲与覆盖率');
+          } else if (task.taskType === 'enrich_section') {
+            const enrichedCount = Number(task.result?.enrichedCount || 0);
+            setActionNotice(enrichedCount > 0 ? `章节已补充 ${enrichedCount} 条知识` : '章节知识已充足，无需补充');
+          } else {
+            setActionNotice('大纲任务已完成');
+          }
+
+          void Promise.all([
+            queryClient.invalidateQueries(['discussion-outline', spaceId]),
+            queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+            queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+            queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
+          ]);
+          return;
+        }
+
+        if (status === 'failed') {
+          setIsOutlineStreaming(false);
+          setEnrichingOutlineSectionId('');
+          outlineTaskUnsubscribeRef.current?.();
+          outlineTaskUnsubscribeRef.current = null;
+          setActionNotice('');
+          setActionError(task.error || '大纲任务失败，请稍后重试');
+        }
+      },
+      onError: () => {
+        setIsOutlineStreaming(false);
+        setEnrichingOutlineSectionId('');
+        outlineTaskUnsubscribeRef.current?.();
+        outlineTaskUnsubscribeRef.current = null;
+        setActionError('大纲任务连接中断，请重试');
+      },
+    });
+
+    outlineTaskUnsubscribeRef.current = stop;
+  };
+
   const generateOutlineMutation = useMutation(
     async () => {
-      return discussionService.generateOutline(spaceId, {
+      return discussionService.generateOutlineTask(spaceId, {
         industryContext: detailQuery.data?.metadata?.industryContext,
+      });
+    },
+    {
+      onSuccess: (task) => {
+        setActionError('');
+        setActionNotice('大纲任务已提交，正在连接结果流...');
+        if (task?.taskId) {
+          startOutlineTaskStream(task.taskId);
+          return;
+        }
+        setActionError('大纲任务创建失败，请稍后重试');
+      },
+      onError: () => {
+        setActionError('生成大纲失败，请稍后重试');
+      },
+    },
+  );
+
+  const enrichOutlineSectionMutation = useMutation(
+    async (section: { id: string; title: string }) => {
+      return discussionService.enrichOutlineSectionTask(spaceId, section.id);
+    },
+    {
+      onSuccess: (task, section) => {
+        setActionError('');
+        setEnrichingOutlineSectionId(section.id);
+        setActionNotice(`章节「${section.title}」丰富任务已提交，正在连接结果流...`);
+        if (task?.taskId) {
+          startOutlineTaskStream(task.taskId);
+          return;
+        }
+        setActionError('章节丰富任务创建失败，请稍后重试');
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '章节丰富失败')
+            : '章节丰富失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const enrichAllOutlineSectionsMutation = useMutation(
+    async () => {
+      return discussionService.enrichAllOutlineSections(spaceId);
+    },
+    {
+      onSuccess: async (result) => {
+        setActionError('');
+        setActionNotice(
+          result.processedSectionIds.length > 0
+            ? `已处理 ${result.processedSectionIds.length} 个 draft 章节，补充 ${result.enrichedCount} 条知识`
+            : '当前没有 draft 章节需要批量丰富',
+        );
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '批量丰富失败')
+            : '批量丰富失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const addOutlineSectionMutation = useMutation(
+    async (payload: { title: string; description?: string; status?: OutlineSection['status']; parentSectionId?: string }) => {
+      return discussionService.addOutlineSection(spaceId, payload);
+    },
+    {
+      onSuccess: async () => {
+        setActionError('');
+        setActionNotice('章节已新增');
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '新增章节失败')
+            : '新增章节失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const editOutlineSectionMutation = useMutation(
+    async (payload: { sectionId: string; title: string; description?: string; status: OutlineSection['status']; parentSectionId?: string }) => {
+      const outline = outlineQuery.data;
+      if (!outline) {
+        throw new Error('当前无可用大纲，无法更新章节');
+      }
+
+      const target = outline.sections.find((item) => item.id === payload.sectionId);
+      if (!target) {
+        throw new Error('未找到待更新章节');
+      }
+
+      const nextParentId = String(payload.parentSectionId || '').trim();
+      const currentParentId = String(target.parentSectionId || '').trim();
+      const parentChanged = nextParentId !== currentParentId;
+
+      let nextOrder = target.order;
+      if (parentChanged) {
+        const siblingOrders = outline.sections
+          .filter((item) => item.id !== payload.sectionId && String(item.parentSectionId || '') === nextParentId)
+          .map((item) => item.order);
+        nextOrder = siblingOrders.length ? Math.max(...siblingOrders) + 1 : 0;
+      }
+
+      const nextSections = recalculateOutlineDepth(
+        outline.sections.map((section) => {
+          if (section.id !== payload.sectionId) {
+            return section;
+          }
+          return {
+            ...section,
+            title: payload.title,
+            description: payload.description,
+            status: payload.status,
+            parentSectionId: nextParentId || undefined,
+            order: nextOrder,
+          };
+        }),
+      );
+
+      return discussionService.updateOutline(spaceId, {
+        title: outline.title,
+        sections: nextSections,
+        generatedBy: 'human',
       });
     },
     {
       onSuccess: async () => {
         setActionError('');
-        setActionNotice('大纲已生成');
+        setActionNotice('章节已更新');
         await Promise.all([
           queryClient.invalidateQueries(['discussion-outline', spaceId]),
           queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
-          queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
         ]);
       },
-      onError: () => {
-        setActionError('生成大纲失败，请稍后重试');
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '更新章节失败')
+            : '更新章节失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const deleteOutlineSectionMutation = useMutation(
+    async (sectionId: string) => {
+      return discussionService.deleteOutlineSection(spaceId, sectionId);
+    },
+    {
+      onSuccess: async () => {
+        setActionError('');
+        setActionNotice('章节已删除');
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '删除章节失败')
+            : '删除章节失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const moveOutlineSectionMutation = useMutation(
+    async (payload: { sectionId: string; direction: 'up' | 'down' }) => {
+      const outline = outlineQuery.data;
+      if (!outline) {
+        throw new Error('当前无可用大纲，无法调整顺序');
+      }
+
+      const target = outline.sections.find((item) => item.id === payload.sectionId);
+      if (!target) {
+        throw new Error('未找到目标章节');
+      }
+
+      const siblings = outline.sections
+        .filter((item) => String(item.parentSectionId || '') === String(target.parentSectionId || ''))
+        .slice()
+        .sort((a, b) => a.order - b.order);
+      const currentIndex = siblings.findIndex((item) => item.id === payload.sectionId);
+      if (currentIndex < 0) {
+        throw new Error('章节排序信息异常');
+      }
+
+      const swapIndex = payload.direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (swapIndex < 0 || swapIndex >= siblings.length) {
+        return outline;
+      }
+
+      const nextSiblings = siblings.slice();
+      const temp = nextSiblings[currentIndex];
+      nextSiblings[currentIndex] = nextSiblings[swapIndex];
+      nextSiblings[swapIndex] = temp;
+
+      const siblingOrderMap = new Map<string, number>();
+      nextSiblings.forEach((item, index) => {
+        siblingOrderMap.set(item.id, index);
+      });
+
+      const nextSections = outline.sections.map((section) => {
+        if (siblingOrderMap.has(section.id)) {
+          return {
+            ...section,
+            order: siblingOrderMap.get(section.id) || 0,
+          };
+        }
+        return section;
+      });
+
+      return discussionService.updateOutline(spaceId, {
+        title: outline.title,
+        sections: nextSections,
+        generatedBy: 'human',
+      });
+    },
+    {
+      onSuccess: async () => {
+        setActionError('');
+        setActionNotice('章节顺序已更新');
+        await queryClient.invalidateQueries(['discussion-outline', spaceId]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '调整章节顺序失败')
+            : '调整章节顺序失败';
+        setActionError(message);
       },
     },
   );
@@ -772,6 +1164,97 @@ const DiscussionDetail: React.FC = () => {
     archiveKnowledgeMutation.mutate();
   };
 
+  const openCreateOutlineSectionModal = (parentSectionId?: string) => {
+    setOutlineSectionModalMode('create');
+    setEditingOutlineSection(null);
+    setOutlineSectionTitle('新章节');
+    setOutlineSectionDescription('');
+    setOutlineSectionStatus('draft');
+    setOutlineSectionParentId(String(parentSectionId || ''));
+    setOutlineSectionModalOpen(true);
+  };
+
+  const openEditOutlineSectionModal = (section: OutlineSection) => {
+    setOutlineSectionModalMode('edit');
+    setEditingOutlineSection(section);
+    setOutlineSectionTitle(section.title || '');
+    setOutlineSectionDescription(section.description || '');
+    setOutlineSectionStatus(section.status || 'draft');
+    setOutlineSectionParentId(String(section.parentSectionId || ''));
+    setOutlineSectionModalOpen(true);
+  };
+
+  const closeOutlineSectionModal = () => {
+    setOutlineSectionModalOpen(false);
+    setEditingOutlineSection(null);
+    setOutlineSectionParentId('');
+  };
+
+  const handleSubmitOutlineSectionModal = () => {
+    const title = outlineSectionTitle.trim();
+    if (!title) {
+      setActionError('章节标题不能为空');
+      return;
+    }
+
+    setActionError('');
+    setActionNotice('');
+
+    if (outlineSectionModalMode === 'create') {
+      addOutlineSectionMutation.mutate(
+        {
+          title,
+          description: outlineSectionDescription.trim() || undefined,
+          status: outlineSectionStatus,
+          parentSectionId: outlineSectionParentId || undefined,
+        },
+        {
+          onSuccess: () => {
+            closeOutlineSectionModal();
+          },
+        },
+      );
+      return;
+    }
+
+    if (!editingOutlineSection?.id) {
+      setActionError('未找到待编辑章节');
+      return;
+    }
+
+    editOutlineSectionMutation.mutate(
+      {
+        sectionId: editingOutlineSection.id,
+        title,
+        description: outlineSectionDescription.trim() || undefined,
+        status: outlineSectionStatus,
+        parentSectionId: outlineSectionParentId || undefined,
+      },
+      {
+        onSuccess: () => {
+          closeOutlineSectionModal();
+        },
+      },
+    );
+  };
+
+  const handleDeleteOutlineSection = (section: OutlineSection) => {
+    const confirmed = window.confirm(`确认删除章节「${section.title}」吗？其子章节也会被删除。`);
+    if (!confirmed) {
+      return;
+    }
+
+    setActionError('');
+    setActionNotice('');
+    deleteOutlineSectionMutation.mutate(section.id);
+  };
+
+  const handleMoveOutlineSection = (section: OutlineSection, direction: 'up' | 'down') => {
+    setActionError('');
+    setActionNotice('');
+    moveOutlineSectionMutation.mutate({ sectionId: section.id, direction });
+  };
+
   const toggleArchiveKnowledgeSelection = (knowledgeEntryId: string) => {
     setArchiveSelectedKnowledgeEntryIds((prev) =>
       prev.includes(knowledgeEntryId)
@@ -931,6 +1414,8 @@ const DiscussionDetail: React.FC = () => {
     return () => {
       sedimentTaskUnsubscribeRef.current?.();
       sedimentTaskUnsubscribeRef.current = null;
+      outlineTaskUnsubscribeRef.current?.();
+      outlineTaskUnsubscribeRef.current = null;
     };
   }, []);
 
@@ -1121,9 +1606,12 @@ const DiscussionDetail: React.FC = () => {
               {rightPanelTab === 'knowledge' ? (
                 <KnowledgePanel
                   keyword={knowledgeKeyword}
+                  selectedOutlineSectionId={knowledgeOutlineSectionId}
                   loading={knowledgeQuery.isLoading}
                   items={knowledgeQuery.data || []}
+                  outlineSections={sortedOutlineSections}
                   onKeywordChange={(value) => setKnowledgeKeyword(spaceId, value)}
+                  onOutlineSectionChange={setKnowledgeOutlineSectionId}
                   creatingRequirementForKnowledgeId={
                     knowledgeToRequirementMutation.isLoading ? knowledgeToRequirementMutation.variables?.id : undefined
                   }
@@ -1136,13 +1624,71 @@ const DiscussionDetail: React.FC = () => {
                   outline={outlineQuery.data}
                   coverage={coverageQuery.data}
                   loading={outlineQuery.isLoading || coverageQuery.isLoading}
-                  generating={generateOutlineMutation.isLoading}
+                  generating={generateOutlineMutation.isLoading || isOutlineStreaming}
                   onGenerate={() => generateOutlineMutation.mutate()}
                   templates={outlineTemplatesQuery.data || []}
                   selectedTemplateId={selectedOutlineTemplateId}
                   onTemplateChange={setSelectedOutlineTemplateId}
                   applyingTemplate={applyOutlineTemplateMutation.isLoading}
                   onApplyTemplate={() => applyOutlineTemplateMutation.mutate()}
+                  onEnrichSection={(section) => {
+                    if (enrichOutlineSectionMutation.isLoading || isOutlineStreaming || enrichAllOutlineSectionsMutation.isLoading) {
+                      return;
+                    }
+                    setActionError('');
+                    setActionNotice('');
+                    enrichOutlineSectionMutation.mutate({ id: section.id, title: section.title });
+                  }}
+                  enrichingSectionId={enrichingOutlineSectionId || undefined}
+                  onEnrichAllSections={() => {
+                    if (enrichAllOutlineSectionsMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    setActionError('');
+                    setActionNotice('');
+                    enrichAllOutlineSectionsMutation.mutate();
+                  }}
+                  enrichingAllSections={enrichAllOutlineSectionsMutation.isLoading}
+                  onAddSection={() => {
+                    if (addOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    openCreateOutlineSectionModal();
+                  }}
+                  onAddChildSection={(section) => {
+                    if (addOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    openCreateOutlineSectionModal(section.id);
+                  }}
+                  addingSection={addOutlineSectionMutation.isLoading}
+                  onEditSection={(section) => {
+                    if (editOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    openEditOutlineSectionModal(section);
+                  }}
+                  editingSectionId={
+                    editOutlineSectionMutation.isLoading ? editOutlineSectionMutation.variables?.sectionId : undefined
+                  }
+                  onDeleteSection={(section) => {
+                    if (deleteOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    handleDeleteOutlineSection(section);
+                  }}
+                  deletingSectionId={
+                    deleteOutlineSectionMutation.isLoading ? deleteOutlineSectionMutation.variables : undefined
+                  }
+                  onMoveSection={(section, direction) => {
+                    if (moveOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                      return;
+                    }
+                    handleMoveOutlineSection(section, direction);
+                  }}
+                  movingSectionId={
+                    moveOutlineSectionMutation.isLoading ? moveOutlineSectionMutation.variables?.sectionId : undefined
+                  }
                   onGoDataDashboard={() => {
                     const projectId = String(detail.projectId || '').trim();
                     if (!projectId) {
@@ -1240,6 +1786,28 @@ const DiscussionDetail: React.FC = () => {
         onDescriptionChange={setToRequirementDescription}
         onPriorityChange={setToRequirementPriority}
         onSubmit={() => toRequirementMutation.mutate()}
+      />
+
+      <OutlineSectionModal
+        open={outlineSectionModalOpen}
+        mode={outlineSectionModalMode}
+        title={outlineSectionTitle}
+        description={outlineSectionDescription}
+        status={outlineSectionStatus}
+        parentSectionId={outlineSectionParentId}
+        parentOptions={outlineSectionParentOptions}
+        submitting={addOutlineSectionMutation.isLoading || editOutlineSectionMutation.isLoading}
+        onClose={() => {
+          if (addOutlineSectionMutation.isLoading || editOutlineSectionMutation.isLoading) {
+            return;
+          }
+          closeOutlineSectionModal();
+        }}
+        onTitleChange={setOutlineSectionTitle}
+        onDescriptionChange={setOutlineSectionDescription}
+        onStatusChange={setOutlineSectionStatus}
+        onParentSectionIdChange={setOutlineSectionParentId}
+        onSubmit={handleSubmitOutlineSectionModal}
       />
       </div>
     </div>

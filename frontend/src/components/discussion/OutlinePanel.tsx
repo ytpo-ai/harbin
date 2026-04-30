@@ -15,6 +15,18 @@ type OutlinePanelProps = {
   applyingTemplate?: boolean;
   onGoDataDashboard?: () => void;
   onEnrichSection?: (section: OutlineSection) => void;
+  enrichingSectionId?: string;
+  onEnrichAllSections?: () => void;
+  enrichingAllSections?: boolean;
+  onAddSection?: () => void;
+  addingSection?: boolean;
+  onEditSection?: (section: OutlineSection) => void;
+  editingSectionId?: string;
+  onDeleteSection?: (section: OutlineSection) => void;
+  deletingSectionId?: string;
+  onMoveSection?: (section: OutlineSection, direction: 'up' | 'down') => void;
+  movingSectionId?: string;
+  onAddChildSection?: (section: OutlineSection) => void;
 };
 
 const statusLabelMap: Record<OutlineSection['status'], string> = {
@@ -44,9 +56,61 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
   applyingTemplate = false,
   onGoDataDashboard,
   onEnrichSection,
+  enrichingSectionId,
+  onEnrichAllSections,
+  enrichingAllSections = false,
+  onAddSection,
+  addingSection = false,
+  onEditSection,
+  editingSectionId,
+  onDeleteSection,
+  deletingSectionId,
+  onMoveSection,
+  movingSectionId,
+  onAddChildSection,
 }) => {
   const sections = (outline?.sections || []).slice().sort((a, b) => a.order - b.order);
   const coveragePercent = Math.round((coverage?.coverage || 0) * 100);
+  const coverageDetailMap = new Map((coverage?.sectionDetails || []).map((item) => [item.sectionId, item]));
+  const siblingIndexMap = new Map<string, { index: number; total: number }>();
+
+  const siblingBuckets = new Map<string, OutlineSection[]>();
+  for (const section of sections) {
+    const parentKey = String(section.parentSectionId || '');
+    if (!siblingBuckets.has(parentKey)) {
+      siblingBuckets.set(parentKey, []);
+    }
+    siblingBuckets.get(parentKey)?.push(section);
+  }
+
+  for (const siblings of siblingBuckets.values()) {
+    siblings
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .forEach((item, index, list) => {
+        siblingIndexMap.set(item.id, { index, total: list.length });
+      });
+  }
+
+  const renderLatestEntryDate = (value?: string) => {
+    if (!value) {
+      return '暂无更新';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '暂无更新';
+    }
+    return date.toLocaleDateString('zh-CN');
+  };
+
+  const getSectionProgressPercent = (knowledgeCount: number) => {
+    if (knowledgeCount <= 0) {
+      return 0;
+    }
+    return Math.min(100, Math.round((knowledgeCount / 3) * 100));
+  };
+
+  const missingSections = (coverage?.sectionDetails || []).filter((item) => item.knowledgeCount <= 0);
 
   return (
     <div className="space-y-4">
@@ -112,35 +176,137 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
           <div className="mt-1 text-[11px] text-[#6f6f6f]">
             覆盖章节 {coverage?.coveredSections || 0}/{coverage?.totalSections || 0} · 充足章节 {coverage?.sufficientSections || 0}
           </div>
+          {missingSections.length > 0 ? (
+            <div className="mt-2 border border-[#ffd7d9] bg-[#fff1f1] px-2 py-1 text-[11px] text-[#a2191f]">
+              待补充章节：{missingSections.slice(0, 3).map((item) => item.sectionTitle).join('、')}
+              {missingSections.length > 3 ? ` 等 ${missingSections.length} 个` : ''}
+            </div>
+          ) : null}
         </div>
       </div>
 
       <div className="border border-[#c6c6c6] bg-white p-4">
-        <div className="mb-3 text-sm font-medium text-[#161616]">章节 ({sections.length})</div>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="text-sm font-medium text-[#161616]">章节 ({sections.length})</div>
+          <div className="flex items-center gap-2">
+            {onAddSection ? (
+              <button
+                type="button"
+                onClick={onAddSection}
+                disabled={addingSection}
+                className="border border-[#525252] px-2 py-1 text-xs text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {addingSection ? '新增中...' : '新增章节'}
+              </button>
+            ) : null}
+            {onEnrichAllSections ? (
+              <button
+                type="button"
+                onClick={onEnrichAllSections}
+                disabled={enrichingAllSections}
+                className="border border-[#0f62fe] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {enrichingAllSections ? '批量丰富中...' : '一键丰富 draft'}
+              </button>
+            ) : null}
+          </div>
+        </div>
         {loading ? <div className="text-sm text-[#6f6f6f]">加载中...</div> : null}
         {!loading && sections.length === 0 ? <div className="text-sm text-[#6f6f6f]">暂无章节，点击上方生成大纲</div> : null}
         <div className="max-h-[420px] space-y-2 overflow-auto pr-1">
-          {sections.map((section) => (
-            <div key={section.id} className="border border-[#e0e0e0] bg-[#f4f4f4] p-3" style={{ marginLeft: `${section.depth * 12}px` }}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm text-[#161616]">{section.title}</div>
-                <span className={`px-2 py-0.5 text-[11px] ${statusClassMap[section.status]}`}>{statusLabelMap[section.status]}</span>
+          {sections.map((section) => {
+            const detail = coverageDetailMap.get(section.id);
+            const knowledgeCount = detail?.knowledgeCount ?? section.knowledgeCount ?? 0;
+            const progress = getSectionProgressPercent(knowledgeCount);
+            const siblingIndex = siblingIndexMap.get(section.id);
+            const moveUpDisabled = movingSectionId === section.id || (siblingIndex ? siblingIndex.index <= 0 : false);
+            const moveDownDisabled =
+              movingSectionId === section.id || (siblingIndex ? siblingIndex.index >= siblingIndex.total - 1 : false);
+
+            return (
+              <div key={section.id} className="border border-[#e0e0e0] bg-[#f4f4f4] p-3" style={{ marginLeft: `${section.depth * 12}px` }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-sm text-[#161616]">{section.title}</div>
+                  <span className={`px-2 py-0.5 text-[11px] ${statusClassMap[section.status]}`}>{statusLabelMap[section.status]}</span>
+                </div>
+                {section.description ? <div className="mt-1 text-xs text-[#6f6f6f]">{section.description}</div> : null}
+
+                <div className="mt-2">
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-[#6f6f6f]">
+                    <span>知识条目 {knowledgeCount}</span>
+                    <span>最近更新 {renderLatestEntryDate(detail?.latestEntryDate)}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-white">
+                    <div className="h-1.5 bg-[#0f62fe]" style={{ width: `${progress}%` }} />
+                  </div>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between text-[11px] text-[#6f6f6f]">
+                  <div className="flex items-center gap-2">
+                    {onMoveSection ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onMoveSection(section, 'up')}
+                          disabled={moveUpDisabled}
+                          className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          上移
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onMoveSection(section, 'down')}
+                          disabled={moveDownDisabled}
+                          className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          下移
+                        </button>
+                      </>
+                    ) : null}
+                    {onEditSection ? (
+                      <button
+                        type="button"
+                        onClick={() => onEditSection(section)}
+                        disabled={editingSectionId === section.id}
+                        className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {editingSectionId === section.id ? '编辑中...' : '编辑'}
+                      </button>
+                    ) : null}
+                    {onAddChildSection ? (
+                      <button
+                        type="button"
+                        onClick={() => onAddChildSection(section)}
+                        className="text-[#525252] hover:underline"
+                      >
+                        新增子章节
+                      </button>
+                    ) : null}
+                    {onDeleteSection ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteSection(section)}
+                        disabled={deletingSectionId === section.id}
+                        className="text-[#da1e28] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingSectionId === section.id ? '删除中...' : '删除'}
+                      </button>
+                    ) : null}
+                  </div>
+                  {onEnrichSection ? (
+                    <button
+                      type="button"
+                      onClick={() => onEnrichSection(section)}
+                      disabled={enrichingSectionId === section.id}
+                      className="text-[#0f62fe] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {enrichingSectionId === section.id ? '丰富中...' : '丰富此章节'}
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              {section.description ? <div className="mt-1 text-xs text-[#6f6f6f]">{section.description}</div> : null}
-              <div className="mt-2 flex items-center justify-between text-[11px] text-[#6f6f6f]">
-                <span>知识条目 {section.knowledgeCount || 0}</span>
-                {onEnrichSection ? (
-                  <button
-                    type="button"
-                    onClick={() => onEnrichSection(section)}
-                    className="text-[#0f62fe] hover:underline"
-                  >
-                    丰富此章节
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

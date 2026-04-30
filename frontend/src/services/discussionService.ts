@@ -355,6 +355,37 @@ export type DiscussionSedimentTaskStreamEvent = {
   };
 };
 
+export type DiscussionOutlineTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface DiscussionOutlineTask {
+  taskId: string;
+  spaceId: string;
+  taskType: 'generate' | 'enrich_section' | 'enrich_all';
+  status: DiscussionOutlineTaskStatus;
+  sectionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+  result?: {
+    outline: DiscussionDocumentOutline;
+    enrichedCount?: number;
+    processedSectionIds?: string[];
+  };
+}
+
+export type DiscussionOutlineTaskStreamEvent = {
+  type:
+    | 'discussion.outline.task.snapshot'
+    | 'discussion.outline.task.running'
+    | 'discussion.outline.task.succeeded'
+    | 'discussion.outline.task.failed';
+  data: {
+    task: DiscussionOutlineTask;
+  };
+};
+
 export interface UpdateDiscussionParticipantPayload {
   displayName?: string;
   avatar?: string;
@@ -392,6 +423,18 @@ export interface UpdateOutlineSectionPayload {
   order?: number;
   status?: OutlineSectionStatus;
   metadata?: OutlineSection['metadata'];
+}
+
+export interface EnrichOutlineSectionResult {
+  sectionId: string;
+  enrichedCount: number;
+  outline: DiscussionDocumentOutline;
+}
+
+export interface EnrichAllOutlineSectionsResult {
+  processedSectionIds: string[];
+  enrichedCount: number;
+  outline: DiscussionDocumentOutline;
 }
 
 const normalizeWithId = <T extends { id?: string | number | { toString: () => string }; _id?: string | number | { toString: () => string } }>(
@@ -722,6 +765,11 @@ class DiscussionService {
     return unwrapPayload<DiscussionDocumentOutline>(response.data);
   }
 
+  async generateOutlineTask(spaceId: string, payload?: { industryContext?: string }): Promise<DiscussionOutlineTask> {
+    const response = await api.post(`/discussions/${spaceId}/outline/generate-task`, payload || {});
+    return unwrapPayload<DiscussionOutlineTask>(response.data);
+  }
+
   async updateOutline(
     spaceId: string,
     payload: { title?: string; sections: OutlineSection[]; generatedBy?: 'agent' | 'human' | 'hybrid' },
@@ -747,6 +795,21 @@ class DiscussionService {
   async deleteOutlineSection(spaceId: string, sectionId: string): Promise<DiscussionDocumentOutline> {
     const response = await api.delete(`/discussions/${spaceId}/outline/sections/${sectionId}`);
     return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async enrichOutlineSection(spaceId: string, sectionId: string): Promise<EnrichOutlineSectionResult> {
+    const response = await api.post(`/discussions/${spaceId}/outline/sections/${sectionId}/enrich`);
+    return unwrapPayload<EnrichOutlineSectionResult>(response.data);
+  }
+
+  async enrichOutlineSectionTask(spaceId: string, sectionId: string): Promise<DiscussionOutlineTask> {
+    const response = await api.post(`/discussions/${spaceId}/outline/sections/${sectionId}/enrich-task`);
+    return unwrapPayload<DiscussionOutlineTask>(response.data);
+  }
+
+  async enrichAllOutlineSections(spaceId: string): Promise<EnrichAllOutlineSectionsResult> {
+    const response = await api.post(`/discussions/${spaceId}/outline/enrich-all`);
+    return unwrapPayload<EnrichAllOutlineSectionsResult>(response.data);
   }
 
   async createKnowledge(
@@ -829,6 +892,97 @@ class DiscussionService {
           }
           try {
             const payload = JSON.parse(raw) as DiscussionSedimentTaskStreamEvent;
+            handlers.onEvent(payload);
+          } catch {
+            // ignore invalid payload
+          }
+        };
+
+        while (!stopped) {
+          const { value, done } = await reader.read();
+          if (done) {
+            flushEvent();
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line) {
+              flushEvent();
+              continue;
+            }
+            if (line.startsWith('data:')) {
+              currentData.push(line.slice(5).trimStart());
+            }
+          }
+        }
+
+        if (!stopped) {
+          handlers.onError?.();
+        }
+      } catch {
+        if (stopped || controller.signal.aborted) {
+          return;
+        }
+        handlers.onError?.();
+      }
+    };
+
+    void connect();
+
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
+  }
+
+  subscribeOutlineTaskEvents(
+    spaceId: string,
+    taskId: string,
+    handlers: {
+      onEvent: (event: DiscussionOutlineTaskStreamEvent) => void;
+      onError?: () => void;
+    },
+  ): () => void {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
+    const streamUrl = `${baseURL}/discussions/${encodeURIComponent(spaceId)}/outline/tasks/${encodeURIComponent(taskId)}/events${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
+    const controller = new AbortController();
+    let stopped = false;
+
+    const connect = async () => {
+      try {
+        const response = await fetch(streamUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`discussion outline sse failed: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let currentData: string[] = [];
+
+        const flushEvent = () => {
+          if (!currentData.length) {
+            return;
+          }
+          const raw = currentData.join('\n').trim();
+          currentData = [];
+          if (!raw) {
+            return;
+          }
+          try {
+            const payload = JSON.parse(raw) as DiscussionOutlineTaskStreamEvent;
             handlers.onEvent(payload);
           } catch {
             // ignore invalid payload

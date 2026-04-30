@@ -15,6 +15,9 @@ import {
   AddDiscussionParticipantDto,
   BranchDiscussionThreadDto,
   CreateDiscussionOutlineSectionDto,
+  DiscussionOutlineTaskSnapshot,
+  EnrichAllDiscussionOutlineSectionsResult,
+  EnrichDiscussionOutlineSectionResult,
   CreateDiscussionRequirementDto,
   CreateDiscussionRequirementResult,
   CreateDiscussionSpaceDto,
@@ -341,6 +344,14 @@ export class DiscussionController {
     return this.discussionOutlineService.generateOutline(spaceId, { industryContext });
   }
 
+  @Post(':spaceId/outline/generate-task')
+  async generateOutlineTask(
+    @Param('spaceId') spaceId: string,
+    @Body('industryContext') industryContext?: string,
+  ): Promise<DiscussionOutlineTaskSnapshot> {
+    return this.discussionOutlineService.createGenerateOutlineTask(spaceId, { industryContext });
+  }
+
   @Get(':spaceId/outline')
   async getOutline(@Param('spaceId') spaceId: string) {
     return this.discussionOutlineService.getOutline(spaceId);
@@ -368,6 +379,36 @@ export class DiscussionController {
   @Delete(':spaceId/outline/sections/:sectionId')
   async deleteOutlineSection(@Param('spaceId') spaceId: string, @Param('sectionId') sectionId: string) {
     return this.discussionOutlineService.deleteSection(spaceId, sectionId);
+  }
+
+  @Post(':spaceId/outline/sections/:sectionId/enrich')
+  async enrichOutlineSection(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+  ): Promise<EnrichDiscussionOutlineSectionResult> {
+    return this.discussionOutlineService.enrichSection(spaceId, sectionId);
+  }
+
+  @Post(':spaceId/outline/sections/:sectionId/enrich-task')
+  async enrichOutlineSectionTask(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+  ): Promise<DiscussionOutlineTaskSnapshot> {
+    return this.discussionOutlineService.createEnrichSectionTask(spaceId, sectionId);
+  }
+
+  @Post(':spaceId/outline/enrich-all')
+  async enrichAllOutlineSections(@Param('spaceId') spaceId: string): Promise<EnrichAllDiscussionOutlineSectionsResult> {
+    return this.discussionOutlineService.enrichAllDraftSections(spaceId);
+  }
+
+  @Sse(':spaceId/outline/tasks/:taskId/events')
+  async streamOutlineTaskEvents(
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+    @Query('access_token') _accessToken?: string,
+  ): Promise<Observable<MessageEvent>> {
+    return this.discussionOutlineService.streamOutlineTaskEvents(spaceId, taskId);
   }
 
   @Put(':spaceId/sediment/mode')

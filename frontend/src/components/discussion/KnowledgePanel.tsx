@@ -3,9 +3,16 @@ import { DiscussionKnowledgeEntry } from '../../services/discussionService';
 
 type KnowledgePanelProps = {
   keyword: string;
+  selectedOutlineSectionId?: string;
   loading: boolean;
   items: DiscussionKnowledgeEntry[];
+  outlineSections?: Array<{
+    id: string;
+    title: string;
+    depth: number;
+  }>;
   onKeywordChange: (keyword: string) => void;
+  onOutlineSectionChange?: (sectionId: string) => void;
   creatingRequirementForKnowledgeId?: string;
   onToRequirement?: (entry: DiscussionKnowledgeEntry) => void;
 };
@@ -28,12 +35,17 @@ const entryTypeLabelMap: Record<string, string> = {
 
 const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   keyword,
+  selectedOutlineSectionId,
   loading,
   items,
+  outlineSections,
   onKeywordChange,
+  onOutlineSectionChange,
   creatingRequirementForKnowledgeId,
   onToRequirement,
 }) => {
+  const sectionLabelMap = new Map((outlineSections || []).map((section) => [section.id, section.title]));
+
   return (
     <div className="space-y-4">
       <div className="border border-[#c6c6c6] bg-white p-4">
@@ -44,6 +56,22 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
           placeholder="按关键词过滤"
           className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
         />
+
+        <div className="mt-3">
+          <label className="mb-1 block text-xs tracking-wide text-[#6f6f6f]">章节筛选</label>
+          <select
+            value={selectedOutlineSectionId || ''}
+            onChange={(event) => onOutlineSectionChange?.(event.target.value)}
+            className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
+          >
+            <option value="">全部章节</option>
+            {(outlineSections || []).map((section) => (
+              <option key={section.id} value={section.id}>
+                {`${'  '.repeat(Math.max(0, section.depth))}${section.title}`}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="border border-[#c6c6c6] bg-white p-4">
@@ -58,6 +86,11 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                 {credibilityLabelMap[item.credibility]} · {entryTypeLabelMap[item.entryType || 'fact'] || '事实'} · {item.sourceType}
               </div>
               <div className="mt-2 text-xs leading-5 text-[#262626]">{item.summary || item.content}</div>
+              {item.outlineSectionId ? (
+                <div className="mt-1 text-[11px] text-[#525252]">
+                  章节：{sectionLabelMap.get(item.outlineSectionId) || item.outlineSectionId}
+                </div>
+              ) : null}
               {item.entryType === 'action_item' && item.metadata?.isStructuredData ? (
                 <div className="mt-2">
                   <button
