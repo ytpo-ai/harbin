@@ -215,6 +215,14 @@ export interface RequirementItem {
   assignments: RequirementAssignment[];
   statusHistory: RequirementStatusEvent[];
   githubLink?: RequirementGithubLink;
+  discussionSource?: {
+    spaceId: string;
+    spaceTitle: string;
+    threadId: string;
+    threadTitle: string;
+    messageId: string;
+    messagePreview: string;
+  };
   lastBoardEventAt?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -351,6 +359,8 @@ export const engineeringIntelligenceService = {
     createdByName?: string;
     createdByType?: RequirementActorType;
     localProjectId?: string;
+    projectId?: string;
+    discussionSource?: RequirementItem['discussionSource'];
   }): Promise<RequirementItem> {
     const response = await api.post('/ei/requirements', payload);
     return response.data;

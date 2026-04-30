@@ -126,6 +126,7 @@ export class DiscussionKnowledgeService {
             measureDate: dto.structuredData.measureDate ? new Date(dto.structuredData.measureDate) : undefined,
           }
         : undefined,
+      metadata: dto.metadata,
       credibility,
       contentDate: dto.contentDate ? new Date(dto.contentDate) : undefined,
       credibilityDetail: {

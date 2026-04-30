@@ -28,14 +28,14 @@
 
 ### 2.3 验收条件
 
-- [ ] `ei-requirement.schema.ts` 新增 `discussionSource` 嵌入对象（spaceId/spaceTitle/threadId/threadTitle/messageId/messagePreview）
-- [ ] Legacy 服务新增 `discussion-requirement-bridge.service.ts`，实现跨服务需求创建
-- [ ] 新增 API `POST /discussions/:spaceId/threads/:threadId/messages/:messageId/to-requirement`
-- [ ] 前端 `MessageBubble.tsx` 操作菜单新增"转为需求"按钮
-- [ ] 转需求弹窗 UI 完成（标题/描述/优先级/关联项目/来源信息展示）
-- [ ] 前端 `EngineeringRequirementDetail.tsx` 中如有 `discussionSource` 展示"来源讨论"卡片
-- [ ] 来源讨论卡片点击跳转到讨论空间对应消息
-- [ ] 知识面板中 `action_item` 类型条目展示"转为需求"快捷操作
+- [x] `ei-requirement.schema.ts` 新增 `discussionSource` 嵌入对象（spaceId/spaceTitle/threadId/threadTitle/messageId/messagePreview）
+- [x] Legacy 服务新增 `discussion-requirement-bridge.service.ts`，实现跨服务需求创建
+- [x] 新增 API `POST /discussions/:spaceId/threads/:threadId/messages/:messageId/to-requirement`
+- [x] 前端 `MessageBubble.tsx` 操作菜单新增"转为需求"按钮
+- [x] 转需求弹窗 UI 完成（标题/描述/优先级/关联项目/来源信息展示）
+- [x] 前端 `EngineeringRequirementDetail.tsx` 中如有 `discussionSource` 展示"来源讨论"卡片
+- [x] 来源讨论卡片点击跳转到讨论空间对应消息
+- [x] 知识面板中 `action_item` 类型条目展示"转为需求"快捷操作
 
 ## 3. 技术方案摘要
 

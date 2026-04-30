@@ -60,6 +60,15 @@ export type EiRequirementGithubLink = {
   lastError?: string;
 };
 
+export type EiRequirementDiscussionSource = {
+  spaceId: string;
+  spaceTitle: string;
+  threadId: string;
+  threadTitle: string;
+  messageId: string;
+  messagePreview: string;
+};
+
 @Schema({ timestamps: true, collection: 'ei_requirements' })
 export class EiRequirement {
   @Prop({ required: true, unique: true })
@@ -121,6 +130,9 @@ export class EiRequirement {
 
   @Prop({ type: Object })
   githubLink?: EiRequirementGithubLink;
+
+  @Prop({ type: Object })
+  discussionSource?: EiRequirementDiscussionSource;
 
   @Prop({ type: Date })
   lastBoardEventAt?: Date;

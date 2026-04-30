@@ -6,6 +6,8 @@ type KnowledgePanelProps = {
   loading: boolean;
   items: DiscussionKnowledgeEntry[];
   onKeywordChange: (keyword: string) => void;
+  creatingRequirementForKnowledgeId?: string;
+  onToRequirement?: (entry: DiscussionKnowledgeEntry) => void;
 };
 
 const credibilityLabelMap: Record<DiscussionKnowledgeEntry['credibility'], string> = {
@@ -24,7 +26,14 @@ const entryTypeLabelMap: Record<string, string> = {
   action_item: '行动项',
 };
 
-const KnowledgePanel: React.FC<KnowledgePanelProps> = ({ keyword, loading, items, onKeywordChange }) => {
+const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
+  keyword,
+  loading,
+  items,
+  onKeywordChange,
+  creatingRequirementForKnowledgeId,
+  onToRequirement,
+}) => {
   return (
     <div className="space-y-4">
       <div className="border border-[#c6c6c6] bg-white p-4">
@@ -49,6 +58,18 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({ keyword, loading, items
                 {credibilityLabelMap[item.credibility]} · {entryTypeLabelMap[item.entryType || 'fact'] || '事实'} · {item.sourceType}
               </div>
               <div className="mt-2 text-xs leading-5 text-[#262626]">{item.summary || item.content}</div>
+              {item.entryType === 'action_item' && item.metadata?.isStructuredData ? (
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => onToRequirement?.(item)}
+                    disabled={!onToRequirement || creatingRequirementForKnowledgeId === item.id}
+                    className="text-xs text-[#0f62fe] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {creatingRequirementForKnowledgeId === item.id ? '转需求中...' : '转为数据采集需求'}
+                  </button>
+                </div>
+              ) : null}
               {item.keywordTags.length > 0 ? (
                 <div className="mt-2 flex flex-wrap gap-1">
                   {item.keywordTags.slice(0, 5).map((tag) => (

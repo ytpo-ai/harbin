@@ -5,14 +5,16 @@ type MessageBubbleProps = {
   message: DiscussionMessage;
   participant?: DiscussionParticipant;
   onBranch: (message: DiscussionMessage) => void;
+  onArchiveKnowledge: (message: DiscussionMessage) => void;
+  onToRequirement: (message: DiscussionMessage) => void;
 };
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, participant, onBranch }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, participant, onBranch, onArchiveKnowledge, onToRequirement }) => {
   const isUser = message.senderType === 'user';
   const isSystem = message.senderType === 'system';
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div id={`message-${message.id}`} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[82%] border px-4 py-3 ${
           isUser
@@ -26,13 +28,33 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, participant, onB
           <div className="text-xs text-[#6f6f6f]">
             {participant?.displayName || message.senderType} · #{message.sequence}
           </div>
-          <button
-            type="button"
-            onClick={() => onBranch(message)}
-            className="text-xs text-[#0f62fe] hover:underline"
-          >
-            从此分叉
-          </button>
+          <div className="flex items-center gap-3">
+            {!isSystem ? (
+              <button
+                type="button"
+                onClick={() => onArchiveKnowledge(message)}
+                className="text-xs text-[#0f62fe] hover:underline"
+              >
+                落档知识库
+              </button>
+            ) : null}
+            {!isSystem ? (
+              <button
+                type="button"
+                onClick={() => onToRequirement(message)}
+                className="text-xs text-[#0f62fe] hover:underline"
+              >
+                转为需求
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onBranch(message)}
+              className="text-xs text-[#0f62fe] hover:underline"
+            >
+              从此分叉
+            </button>
+          </div>
         </div>
 
         <div className="whitespace-pre-wrap text-sm leading-6 text-[#161616]">{message.content}</div>

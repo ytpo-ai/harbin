@@ -432,6 +432,16 @@ export class EiRequirementsService {
         createdByType: payload.createdByType || 'human',
         localProjectId: payload.localProjectId ? String(payload.localProjectId).trim() : undefined,
         projectId: payload.projectId ? String(payload.projectId).trim() : undefined,
+        discussionSource: payload.discussionSource
+          ? {
+              spaceId: String(payload.discussionSource.spaceId || '').trim(),
+              spaceTitle: String(payload.discussionSource.spaceTitle || '').trim(),
+              threadId: String(payload.discussionSource.threadId || '').trim(),
+              threadTitle: String(payload.discussionSource.threadTitle || '').trim(),
+              messageId: String(payload.discussionSource.messageId || '').trim(),
+              messagePreview: String(payload.discussionSource.messagePreview || '').trim().slice(0, 200),
+            }
+          : undefined,
         comments: [],
         assignments: [],
         statusHistory: [

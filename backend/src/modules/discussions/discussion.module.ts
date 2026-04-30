@@ -32,6 +32,7 @@ import { DiscussionSedimentService } from './services/discussion-sediment.servic
 import { AgentClientModule } from '../agents-client/agent-client.module';
 import { DiscussionMessageStreamService } from './services/discussion-message-stream.service';
 import { DiscussionOutlineService } from './services/discussion-outline.service';
+import { DiscussionRequirementBridgeService } from './services/discussion-requirement-bridge.service';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { DiscussionOutlineService } from './services/discussion-outline.service'
     DiscussionSedimentService,
     DiscussionMessageStreamService,
     DiscussionOutlineService,
+    DiscussionRequirementBridgeService,
   ],
   exports: [
     DiscussionSpaceService,
@@ -67,6 +69,7 @@ import { DiscussionOutlineService } from './services/discussion-outline.service'
     DiscussionSedimentService,
     DiscussionMessageStreamService,
     DiscussionOutlineService,
+    DiscussionRequirementBridgeService,
   ],
 })
 export class DiscussionModule {}

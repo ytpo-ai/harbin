@@ -88,6 +88,20 @@ export interface LinkDiscussionMessageKnowledgeResult {
   knowledgeEntryIds: string[];
 }
 
+export interface CreateDiscussionRequirementDto {
+  title: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+  projectId?: string;
+  createdById?: string;
+  createdByName?: string;
+}
+
+export interface CreateDiscussionRequirementResult {
+  requirementId: string;
+  title: string;
+}
+
 export interface SendDiscussionMessageDto {
   participantId: string;
   senderType: DiscussionMessageSenderType;
@@ -147,6 +161,9 @@ export interface CreateDiscussionKnowledgeEntryDto {
       period: string;
       changePercent?: number;
     };
+  };
+  metadata?: {
+    isStructuredData?: boolean;
   };
   sourceUrl?: string;
   sourceType: DiscussionKnowledgeSourceType;

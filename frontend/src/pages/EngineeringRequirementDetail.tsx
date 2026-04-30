@@ -345,6 +345,22 @@ const EngineeringRequirementDetail: React.FC = () => {
             </div>
           ) : null}
 
+          {detail?.discussionSource ? (
+            <div>
+              <p className="text-sm font-semibold text-gray-900">来源讨论</p>
+              <div className="mt-2 rounded border border-gray-200 bg-gray-50 p-2">
+                <p className="text-xs text-gray-700">{detail.discussionSource.spaceTitle} / {detail.discussionSource.threadTitle}</p>
+                <p className="mt-1 max-h-16 overflow-hidden text-[11px] text-gray-500">{detail.discussionSource.messagePreview}</p>
+                <Link
+                  to={`/discussions/${detail.discussionSource.spaceId}?threadId=${encodeURIComponent(detail.discussionSource.threadId)}&messageId=${encodeURIComponent(detail.discussionSource.messageId)}`}
+                  className="mt-2 inline-block text-xs text-primary-700 hover:underline"
+                >
+                  跳转到来源消息
+                </Link>
+              </div>
+            </div>
+          ) : null}
+
           <div>
             <p className="text-sm font-semibold text-gray-900">状态轨迹</p>
             <div className="mt-2 space-y-2 max-h-[360px] overflow-y-auto">

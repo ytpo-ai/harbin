@@ -66,6 +66,11 @@ export class DiscussionKnowledgeEntry {
     };
   };
 
+  @Prop({ type: Object })
+  metadata?: {
+    isStructuredData?: boolean;
+  };
+
   @Prop()
   sourceUrl?: string;
 

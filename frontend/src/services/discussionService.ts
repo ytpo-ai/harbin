@@ -146,6 +146,9 @@ export interface DiscussionKnowledgeEntry {
       changePercent?: number;
     };
   };
+  metadata?: {
+    isStructuredData?: boolean;
+  };
   sourceUrl?: string;
   sourceType: DiscussionKnowledgeSourceType;
   sourceName?: string;
@@ -264,6 +267,20 @@ export interface LinkDiscussionMessageKnowledgeResult {
   linked: true;
   messageId: string;
   knowledgeEntryIds: string[];
+}
+
+export interface DiscussionMessageToRequirementPayload {
+  title: string;
+  description?: string;
+  priority?: 'low' | 'medium' | 'high' | 'critical';
+  projectId?: string;
+  createdById?: string;
+  createdByName?: string;
+}
+
+export interface DiscussionMessageToRequirementResult {
+  requirementId: string;
+  title: string;
 }
 
 export type DiscussionMessageStreamEvent =
@@ -649,6 +666,19 @@ class DiscussionService {
     return unwrapPayload<LinkDiscussionMessageKnowledgeResult>(response.data);
   }
 
+  async createRequirementFromMessage(
+    spaceId: string,
+    threadId: string,
+    messageId: string,
+    payload: DiscussionMessageToRequirementPayload,
+  ): Promise<DiscussionMessageToRequirementResult> {
+    const response = await api.post(
+      `/discussions/${spaceId}/threads/${threadId}/messages/${messageId}/to-requirement`,
+      payload,
+    );
+    return unwrapPayload<DiscussionMessageToRequirementResult>(response.data);
+  }
+
   async listKnowledge(
     spaceId: string,
     filters?: {
@@ -717,6 +747,7 @@ class DiscussionService {
       outlineSectionId?: string;
       entryType?: DiscussionKnowledgeEntryType;
       structuredData?: DiscussionKnowledgeEntry['structuredData'];
+      metadata?: DiscussionKnowledgeEntry['metadata'];
       sourceUrl?: string;
       sourceType: DiscussionKnowledgeSourceType;
       sourceName?: string;

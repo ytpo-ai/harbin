@@ -1,4 +1,28 @@
-import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsIn, IsObject, IsOptional, IsString, MaxLength, ValidateNested } from 'class-validator';
+
+export class RequirementDiscussionSourceDto {
+  @IsString()
+  spaceId: string;
+
+  @IsString()
+  @MaxLength(200)
+  spaceTitle: string;
+
+  @IsString()
+  threadId: string;
+
+  @IsString()
+  @MaxLength(200)
+  threadTitle: string;
+
+  @IsString()
+  messageId: string;
+
+  @IsString()
+  @MaxLength(200)
+  messagePreview: string;
+}
 
 export class CreateRequirementDto {
   @IsString()
@@ -46,6 +70,11 @@ export class CreateRequirementDto {
   @IsOptional()
   @IsString()
   projectId?: string; // 所属孵化项目ID
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RequirementDiscussionSourceDto)
+  discussionSource?: RequirementDiscussionSourceDto;
 }
 
 export class ListRequirementsDto {

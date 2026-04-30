@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowPathIcon, ChevronLeftIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
 import MessageBubble from '../../components/discussion/MessageBubble';
 import MessageInput from '../../components/discussion/MessageInput';
@@ -10,6 +10,8 @@ import OutlinePanel from '../../components/discussion/OutlinePanel';
 import KnowledgePanel from '../../components/discussion/KnowledgePanel';
 import ParticipantPanel from '../../components/discussion/ParticipantPanel';
 import KnowledgeArchiveModal from '../../components/discussion/KnowledgeArchiveModal';
+import MessageToRequirementModal from '../../components/discussion/MessageToRequirementModal';
+import { engineeringIntelligenceService } from '../../services/engineeringIntelligenceService';
 import { agentService } from '../../services/agentService';
 import { authService, CurrentUser } from '../../services/authService';
 import {
@@ -30,6 +32,7 @@ const rightTabLabel: Record<DiscussionRightPanelTab, string> = {
 
 const DiscussionDetail: React.FC = () => {
   const { spaceId = '' } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -45,7 +48,16 @@ const DiscussionDetail: React.FC = () => {
   const [archiveCreateTitle, setArchiveCreateTitle] = useState('');
   const [archiveCreateSummary, setArchiveCreateSummary] = useState('');
   const [archiveCreateContent, setArchiveCreateContent] = useState('');
+  const [toRequirementMessage, setToRequirementMessage] = useState<DiscussionMessage | null>(null);
+  const [toRequirementTitle, setToRequirementTitle] = useState('');
+  const [toRequirementDescription, setToRequirementDescription] = useState('');
+  const [toRequirementPriority, setToRequirementPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
   const sedimentTaskUnsubscribeRef = useRef<null | (() => void)>(null);
+  const focusFromUrlDoneRef = useRef(false);
+
+  const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const initialThreadId = queryParams.get('threadId') || '';
+  const initialMessageId = queryParams.get('messageId') || '';
 
   const selectedThreadId = useDiscussionStore((state) => state.selectedThreadBySpace[spaceId] || '');
   const setSelectedThread = useDiscussionStore((state) => state.setSelectedThread);
@@ -77,6 +89,11 @@ const DiscussionDetail: React.FC = () => {
       return;
     }
 
+    if (initialThreadId && detailQuery.data.threadTree.some((thread) => thread.id === initialThreadId)) {
+      setSelectedThread(spaceId, initialThreadId);
+      return;
+    }
+
     if (selectedThreadId && detailQuery.data.threadTree.some((thread) => thread.id === selectedThreadId)) {
       return;
     }
@@ -85,7 +102,7 @@ const DiscussionDetail: React.FC = () => {
     if (fallbackThreadId) {
       setSelectedThread(spaceId, fallbackThreadId);
     }
-  }, [detailQuery.data, selectedThreadId, setSelectedThread, spaceId]);
+  }, [detailQuery.data, initialThreadId, selectedThreadId, setSelectedThread, spaceId]);
 
   const messagesQuery = useQuery(
     ['discussion-messages', spaceId, selectedThreadId],
@@ -545,6 +562,105 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
+  const toRequirementMutation = useMutation(
+    async () => {
+      if (!toRequirementMessage) {
+        throw new Error('未找到目标消息');
+      }
+
+      const title = toRequirementTitle.trim();
+      if (!title) {
+        throw new Error('需求标题不能为空');
+      }
+
+      return discussionService.createRequirementFromMessage(
+        spaceId,
+        toRequirementMessage.threadId,
+        toRequirementMessage.id,
+        {
+          title,
+          description: toRequirementDescription.trim() || toRequirementMessage.content,
+          priority: toRequirementPriority,
+          projectId: detailQuery.data?.projectId,
+          createdById: currentUser?.id,
+          createdByName: currentUser?.name,
+        },
+      );
+    },
+    {
+      onSuccess: (result) => {
+        setActionError('');
+        setActionNotice(`需求已创建：${result.requirementId}`);
+        setToRequirementMessage(null);
+        setToRequirementTitle('');
+        setToRequirementDescription('');
+        setToRequirementPriority('medium');
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '转需求失败')
+            : '转需求失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const knowledgeToRequirementMutation = useMutation(
+    async (entry: {
+      id: string;
+      title: string;
+      content: string;
+      summary?: string;
+      threadId?: string;
+      messageId?: string;
+    }) => {
+      const title = String(entry.title || '').trim() || '讨论行动项';
+      const description = String(entry.content || entry.summary || '').trim();
+      const projectId = String(detailQuery.data?.projectId || '').trim();
+      const threadId = String(entry.threadId || '').trim();
+      const messageId = String(entry.messageId || '').trim();
+      const threadTitle = detailQuery.data?.threadTree?.find((thread) => thread.id === threadId)?.title || '讨论线';
+      const messagePreview = String(entry.summary || entry.content || '').trim().slice(0, 200);
+
+      return engineeringIntelligenceService.createRequirement({
+        title,
+        description,
+        priority: 'medium',
+        category: 'feature',
+        complexity: 'low',
+        createdById: currentUser?.id,
+        createdByName: currentUser?.name,
+        createdByType: 'human',
+        projectId: projectId || undefined,
+        localProjectId: projectId || undefined,
+        discussionSource: threadId && messageId
+          ? {
+              spaceId,
+              spaceTitle: detailQuery.data?.title || '讨论空间',
+              threadId,
+              threadTitle,
+              messageId,
+              messagePreview,
+            }
+          : undefined,
+      });
+    },
+    {
+      onSuccess: (result) => {
+        setActionError('');
+        setActionNotice(`需求已创建：${result.requirementId}`);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '转需求失败')
+            : '转需求失败';
+        setActionError(message);
+      },
+    },
+  );
+
   const handleOpenArchiveKnowledge = (message: DiscussionMessage) => {
     const normalizedTitle = (message.content || '').replace(/\s+/g, ' ').trim();
     const defaultTitle = normalizedTitle ? `消息#${message.sequence} ${normalizedTitle.slice(0, 40)}` : `消息#${message.sequence} 知识条目`;
@@ -577,6 +693,35 @@ const DiscussionDetail: React.FC = () => {
       return;
     }
     branchMutation.mutate({ message, title: title.trim() });
+  };
+
+  const handleOpenToRequirement = (message: DiscussionMessage) => {
+    const fallbackTitle = message.content.trim().replace(/\s+/g, ' ').slice(0, 50) || `讨论消息 #${message.sequence}`;
+    setToRequirementMessage(message);
+    setToRequirementTitle(fallbackTitle);
+    setToRequirementDescription(message.content);
+    setToRequirementPriority('medium');
+  };
+
+  const handleKnowledgeToRequirement = (entry: {
+    id: string;
+    title: string;
+    content: string;
+    summary?: string;
+    threadId?: string;
+    messageId?: string;
+  }) => {
+    if (knowledgeToRequirementMutation.isLoading) {
+      return;
+    }
+    knowledgeToRequirementMutation.mutate(entry);
+  };
+
+  const handleCloseToRequirement = () => {
+    if (toRequirementMutation.isLoading) {
+      return;
+    }
+    setToRequirementMessage(null);
   };
 
   const handleDeleteThread = (thread: { id: string; title?: string }) => {
@@ -626,6 +771,23 @@ const DiscussionDetail: React.FC = () => {
   const sortedMessages = useMemo(() => {
     return [...(messagesQuery.data || [])].sort((a, b) => a.sequence - b.sequence);
   }, [messagesQuery.data]);
+
+  useEffect(() => {
+    if (!initialMessageId || focusFromUrlDoneRef.current || !sortedMessages.length) {
+      return;
+    }
+
+    const matched = sortedMessages.some((item) => item.id === initialMessageId);
+    if (!matched) {
+      return;
+    }
+
+    const node = document.getElementById(`message-${initialMessageId}`);
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      focusFromUrlDoneRef.current = true;
+    }
+  }, [initialMessageId, sortedMessages]);
 
   useEffect(() => {
     if (!spaceId || !selectedThreadId) {
@@ -782,6 +944,7 @@ const DiscussionDetail: React.FC = () => {
                   participant={participantMap[message.participantId] as DiscussionParticipant | undefined}
                   onBranch={handleBranch}
                   onArchiveKnowledge={handleOpenArchiveKnowledge}
+                  onToRequirement={handleOpenToRequirement}
                 />
               ))}
             </div>
@@ -867,6 +1030,10 @@ const DiscussionDetail: React.FC = () => {
                   loading={knowledgeQuery.isLoading}
                   items={knowledgeQuery.data || []}
                   onKeywordChange={(value) => setKnowledgeKeyword(spaceId, value)}
+                  creatingRequirementForKnowledgeId={
+                    knowledgeToRequirementMutation.isLoading ? knowledgeToRequirementMutation.variables?.id : undefined
+                  }
+                  onToRequirement={handleKnowledgeToRequirement}
                 />
               ) : null}
 
@@ -924,7 +1091,7 @@ const DiscussionDetail: React.FC = () => {
           </div>
         ) : null}
 
-        <KnowledgeArchiveModal
+      <KnowledgeArchiveModal
           open={Boolean(archiveTargetMessage)}
           mode={archiveMode}
           messageSequence={archiveTargetMessage?.sequence}
@@ -949,8 +1116,24 @@ const DiscussionDetail: React.FC = () => {
           onCreateTitleChange={setArchiveCreateTitle}
           onCreateSummaryChange={setArchiveCreateSummary}
           onCreateContentChange={setArchiveCreateContent}
-          onSubmit={handleArchiveSubmit}
-        />
+        onSubmit={handleArchiveSubmit}
+      />
+
+      <MessageToRequirementModal
+        open={Boolean(toRequirementMessage)}
+        messageSequence={toRequirementMessage?.sequence}
+        messagePreview={toRequirementMessage?.content || ''}
+        title={toRequirementTitle}
+        description={toRequirementDescription}
+        priority={toRequirementPriority}
+        projectId={detail.projectId}
+        submitting={toRequirementMutation.isLoading}
+        onClose={handleCloseToRequirement}
+        onTitleChange={setToRequirementTitle}
+        onDescriptionChange={setToRequirementDescription}
+        onPriorityChange={setToRequirementPriority}
+        onSubmit={() => toRequirementMutation.mutate()}
+      />
       </div>
     </div>
   );

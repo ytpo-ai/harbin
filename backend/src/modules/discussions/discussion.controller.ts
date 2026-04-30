@@ -15,6 +15,8 @@ import {
   AddDiscussionParticipantDto,
   BranchDiscussionThreadDto,
   CreateDiscussionOutlineSectionDto,
+  CreateDiscussionRequirementDto,
+  CreateDiscussionRequirementResult,
   CreateDiscussionSpaceDto,
   CreateDiscussionKnowledgeEntryDto,
   CreateDiscussionThreadDto,
@@ -43,6 +45,7 @@ import { DiscussionSedimentService } from './services/discussion-sediment.servic
 import { DiscussionSpaceService } from './services/discussion-space.service';
 import { DiscussionThreadService } from './services/discussion-thread.service';
 import { DiscussionMessageStreamService } from './services/discussion-message-stream.service';
+import { DiscussionRequirementBridgeService } from './services/discussion-requirement-bridge.service';
 
 @Controller('discussions')
 export class DiscussionController {
@@ -55,6 +58,7 @@ export class DiscussionController {
     private readonly discussionOutlineService: DiscussionOutlineService,
     private readonly discussionSedimentService: DiscussionSedimentService,
     private readonly discussionMessageStreamService: DiscussionMessageStreamService,
+    private readonly discussionRequirementBridgeService: DiscussionRequirementBridgeService,
   ) {}
 
   @Post()
@@ -234,6 +238,45 @@ export class DiscussionController {
     });
 
     return thread;
+  }
+
+  @Post(':spaceId/threads/:threadId/messages/:messageId/to-requirement')
+  async createRequirementFromMessage(
+    @Param('spaceId') spaceId: string,
+    @Param('threadId') threadId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: CreateDiscussionRequirementDto,
+  ): Promise<CreateDiscussionRequirementResult> {
+    const [space, thread, message] = await Promise.all([
+      this.discussionSpaceService.getSpaceById(spaceId),
+      this.discussionThreadService.getThreadById(spaceId, threadId),
+      this.discussionMessageService.getMessageById(spaceId, threadId, messageId),
+    ]);
+
+    const messagePreview = String(message.content || '').trim().slice(0, 200);
+    const title = String(dto.title || '').trim() || messagePreview || '讨论转化需求';
+    const description = String(dto.description || '').trim() || String(message.content || '').trim();
+    const result = await this.discussionRequirementBridgeService.createRequirementFromDiscussion({
+      title,
+      description,
+      priority: dto.priority || 'medium',
+      projectId: dto.projectId || space.projectId,
+      createdById: dto.createdById,
+      createdByName: dto.createdByName,
+      source: {
+        spaceId,
+        spaceTitle: space.title,
+        threadId,
+        threadTitle: thread.title,
+        messageId,
+        messagePreview,
+      },
+    });
+
+    return {
+      requirementId: result.requirementId,
+      title: result.title,
+    };
   }
 
   @Post(':spaceId/participants')
