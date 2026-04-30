@@ -54,6 +54,11 @@
 9. [x] **前端页面开发**：讨论空间列表页 + 详情页（三栏布局）+ 树状导航 + 分叉交互 + @ 提及 + 文档沉淀面板 + 知识库面板
 10. [ ] **API 接口联调与测试**
 11. [ ] **文档更新**：功能文档、API 文档、技术设计文档
+12. [x] **讨论输入效率优化**：支持消息复制按钮 + 默认回复 Agent（免 @）
+13. [x] **讨论详情可读性与沉淀可追溯优化**：放宽详情页宽度限制、扩大主讨论区、补充沉淀历史查看入口
+14. [x] **沉淀任务 SSE 化**：立即沉淀改为异步任务 + SSE 状态流，避免同步超时
+15. [x] **沉淀标题驱动执行**：用户输入沉淀标题并作为会议助手 Agent prompt 生成文档，标题持久化展示
+16. [ ] **消息级知识落档交互**：在消息条目新增“落档知识库”入口，支持关联已有知识条目或新建条目并回链消息
 
 ## 5. Requirement 拆解
 
@@ -62,6 +67,11 @@
 | REQ-001 | 讨论空间核心数据模型、Schema、后端 CRUD + 树状对话分叉引擎 | [链接](../requirement/DISCUSSION_SPACE_REQ-001_CORE_MODEL_AND_BRANCHING.md) | in-progress |
 | REQ-002 | 多角色参与、@ 唤醒机制 + Agent 知识积累引擎 + 文档沉淀系统 | [链接](../requirement/DISCUSSION_SPACE_REQ-002_ROLES_KNOWLEDGE_SEDIMENT.md) | in-progress |
 | REQ-003 | 前端完整页面（列表 + 详情三栏 + 全部交互）+ API 联调 | [链接](../requirement/DISCUSSION_SPACE_REQ-003_FRONTEND_INTEGRATION.md) | in-progress |
+| REQ-004 | 讨论空间输入效率优化（消息复制、默认回复 Agent） | [链接](../requirement/DISCUSSION_SPACE_REQ-004_REPLY_EFFICIENCY_OPTIMIZATION.md) | done |
+| REQ-005 | 讨论详情区布局优化 + 文档沉淀历史可见性增强 | [链接](../requirement/DISCUSSION_SPACE_REQ-005_LAYOUT_AND_SEDIMENT_HISTORY.md) | in-progress |
+| REQ-006 | 讨论空间沉淀历史删除能力（软删除 + 权限校验 + 前端删除交互） | [链接](../requirement/DISCUSSION_SPACE_REQ-006_SEDIMENT_HISTORY_DELETE.md) | in-progress |
+| REQ-007 | 讨论线删除能力（非主讨论线可删 + 级联删除子线 + 前端回退） | [链接](../requirement/DISCUSSION_SPACE_REQ-007_THREAD_DELETE_CAPABILITY.md) | in-progress |
+| REQ-008 | 消息级知识落档能力（消息按钮 + 关联已有知识 + 新建知识并关联） | [链接](../requirement/DISCUSSION_SPACE_REQ-008_MESSAGE_KNOWLEDGE_ARCHIVE_ACTION.md) | in-progress |
 
 ## 6. 关键影响点
 
@@ -949,3 +959,4 @@ frontend/src/
 - `organizationId` 禁止项：本模块不引入 organizationId
 - 分叉深度不设硬限制，但在 Space.settings 中提供可配置的 maxBranchDepth 供用户按需设置
 - 知识库设计为 Space 级别隔离，后续可考虑跨 Space 知识共享（需单独评估）
+- **后续演进**：讨论空间分类、大纲驱动、知识库/沉淀职责重定义、与工程智能协作闭环等能力见 [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](./DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md)
