@@ -80,7 +80,7 @@
 |------|------------|-------------|-----|
 | [PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN](../plan/PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN.MD) | [PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE](../requirement/PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE.md) | [开发记录](../development/PROJECT_INCUBATION_REQ-001_DEVELOPMENT.md) | — |
 | [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-012 孵化项目与讨论空间聚合打通](../requirement/DISCUSSION_SPACE_REQ-012_INCUBATION_DISCUSSION_LINK.md) | 待创建 | — |
-| [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-014 数据采集框架](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | 待创建 | — |
+| [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-014 数据采集框架](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | [开发记录](../development/DISCUSSION_SPACE_REQ-014_DEVELOPMENT.md) | — |
 | [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-015 数据讨论闭环协作](../requirement/DISCUSSION_SPACE_REQ-015_DATA_DISCUSSION_CLOSED_LOOP.md) | 待创建 | — |
 
 ## 3. 相关文档
@@ -116,6 +116,15 @@
 - `backend/src/shared/schemas/schedule.schema.ts`
 - `backend/src/shared/schemas/meeting.schema.ts`
 - `backend/apps/ei/src/schemas/ei-requirement.schema.ts`
+- `backend/apps/ei/src/schemas/ei-data-source.schema.ts`
+- `backend/apps/ei/src/schemas/ei-data-record.schema.ts`
+- `backend/apps/ei/src/controllers/data-sources.controller.ts`
+- `backend/apps/ei/src/controllers/data-records.controller.ts`
+- `backend/apps/ei/src/services/ei-data-sources.service.ts`
+- `backend/apps/ei/src/services/ei-data-records.service.ts`
+- `backend/apps/agents/src/modules/tools/builtin/data-collection-tool-handler.service.ts`
+- `backend/apps/agents/src/modules/tools/builtin-tool-definitions.ts`
+- `backend/apps/agents/src/modules/tools/builtin-tool-catalog.ts`
 
 ### 前端代码
 
@@ -126,3 +135,5 @@
 - `frontend/src/pages/Agents.tsx`
 - `frontend/src/components/agents/AgentListHeader.tsx`
 - `frontend/src/App.tsx`
+- `frontend/src/pages/DataDashboard.tsx`
+- `frontend/src/services/dataCollectionService.ts`

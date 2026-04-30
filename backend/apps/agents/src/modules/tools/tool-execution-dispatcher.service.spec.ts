@@ -16,6 +16,7 @@ describe('ToolExecutionDispatcherService', () => {
     const memoToolHandler = { searchMemoMemory: jest.fn() };
     const communicationToolHandler = { sendSlackMessage: jest.fn() };
     const rdIntelligenceToolHandler = { runEngineeringStatistics: jest.fn() };
+    const dataCollectionToolHandler = { getSourceConfig: jest.fn(), writeRecord: jest.fn() };
     const toolRegistryService = { getToolInputContract: jest.fn() };
 
     const service = new ToolExecutionDispatcherService(
@@ -33,6 +34,7 @@ describe('ToolExecutionDispatcherService', () => {
       memoToolHandler as any,
       communicationToolHandler as any,
       rdIntelligenceToolHandler as any,
+      dataCollectionToolHandler as any,
       toolRegistryService as any,
     );
 

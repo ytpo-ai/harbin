@@ -17,6 +17,8 @@ import {
 import { EiRequirement, EiRequirementSchema } from './schemas/ei-requirement.schema';
 import { EiDocCommitFact, EiDocCommitFactSchema } from './schemas/ei-doc-commit-fact.schema';
 import { EiAppConfig, EiAppConfigSchema } from './schemas/ei-app-config.schema';
+import { EiDataSource, EiDataSourceSchema } from './schemas/ei-data-source.schema';
+import { EiDataRecord, EiDataRecordSchema } from './schemas/ei-data-record.schema';
 import { IncubationProject, IncubationProjectSchema } from './schemas/incubation-project.schema';
 import { RdTask, RdTaskSchema } from '../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectSchema } from '../../../src/shared/schemas/ei-project.schema';
@@ -40,6 +42,8 @@ import { EiOpencodeController } from './controllers/opencode.controller';
 import { DocsHeatController } from './controllers/docs-heat.controller';
 import { EiConfigController } from './controllers/config.controller';
 import { IncubationProjectsController } from './controllers/incubation-projects.controller';
+import { EiDataSourcesController } from './controllers/data-sources.controller';
+import { EiDataRecordsController } from './controllers/data-records.controller';
 import { EiRepositoriesService } from './services/repositories.service';
 import { EiOpencodeSyncService } from './services/opencode-sync.service';
 import { EiStatisticsService } from './services/statistics.service';
@@ -55,6 +59,8 @@ import { EiGithubClientService } from './services/ei-github-client.service';
 import { IncubationProjectsService } from './services/incubation-projects.service';
 import { IncubationProjectAggregationService } from './services/incubation-project-aggregation.service';
 import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consumer.service';
+import { EiDataSourcesService } from './services/ei-data-sources.service';
+import { EiDataRecordsService } from './services/ei-data-records.service';
 
 @Module({
   imports: [
@@ -87,6 +93,8 @@ import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consume
       { name: EiRequirement.name, schema: EiRequirementSchema },
       { name: EiDocCommitFact.name, schema: EiDocCommitFactSchema },
       { name: EiAppConfig.name, schema: EiAppConfigSchema },
+      { name: EiDataSource.name, schema: EiDataSourceSchema },
+      { name: EiDataRecord.name, schema: EiDataRecordSchema },
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },
       { name: Employee.name, schema: EmployeeSchema },
@@ -110,6 +118,8 @@ import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consume
     DocsHeatController,
     EiConfigController,
     IncubationProjectsController,
+    EiDataSourcesController,
+    EiDataRecordsController,
   ],
   providers: [
     EiRepositoriesService,
@@ -127,6 +137,8 @@ import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consume
     IncubationProjectsService,
     IncubationProjectAggregationService,
     EiRuntimeSyncConsumerService,
+    EiDataSourcesService,
+    EiDataRecordsService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

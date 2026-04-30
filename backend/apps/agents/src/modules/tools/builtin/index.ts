@@ -12,3 +12,4 @@ export { AgentRoleToolHandler } from './agent-role-tool-handler.service';
 export { MemoToolHandler } from './agent-memory-tool-handler.service';
 export { CommunicationToolHandler } from './communication-tool-handler.service';
 export { RdIntelligenceToolHandler } from './engineering-statistics-tool-handler.service';
+export { DataCollectionToolHandler } from './data-collection-tool-handler.service';

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Tool } from '../../schemas/tool.schema';
 import { ToolExecutionContext } from './tool-execution-context.type';
-import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler } from './builtin';
+import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler, DataCollectionToolHandler } from './builtin';
 import {
   TOOL_ID__AGENT_CREATE,
   TOOL_ID__AGENT_LIST,
@@ -10,6 +10,8 @@ import {
   TOOL_ID__AGENT_ROLE_LIST,
   TOOL_ID__AGENT_ROLE_UPDATE,
   TOOL_ID__EMPLYEE_LOGS,
+  TOOL_ID__DATA_COLLECTION_GET_SOURCE_CONFIG,
+  TOOL_ID__DATA_COLLECTION_WRITE_RECORD,
   TOOL_ID__CONTENT_EXTRACT,
   TOOL_ID__ENGINEERING_COMMIT_READ,
   TOOL_ID__ENGINEERING_STATISTICS_DOCS_HEAT_RUN,
@@ -74,6 +76,7 @@ export class ToolExecutionDispatcherService {
     private readonly memoToolHandler: MemoToolHandler,
     private readonly communicationToolHandler: CommunicationToolHandler,
     private readonly rdIntelligenceToolHandler: RdIntelligenceToolHandler,
+    private readonly dataCollectionToolHandler: DataCollectionToolHandler,
     private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
@@ -96,6 +99,11 @@ export class ToolExecutionDispatcherService {
     const requirementDispatch = this.dispatchRequirementToolImplementation(tool.id, parameters, agentId, executionContext);
     if (requirementDispatch) {
       return requirementDispatch;
+    }
+
+    const dataCollectionDispatch = this.dispatchDataCollectionToolImplementation(tool.id, parameters, agentId, executionContext);
+    if (dataCollectionDispatch) {
+      return dataCollectionDispatch;
     }
 
     const promptRegistryDispatch = this.dispatchPromptRegistryToolImplementation(tool.id, parameters);
@@ -245,6 +253,23 @@ export class ToolExecutionDispatcherService {
         return undefined;
     }
   }
+
+  private dispatchDataCollectionToolImplementation(
+    toolId: string,
+    parameters: any,
+    agentId?: string,
+    executionContext?: ToolExecutionContext,
+  ): Promise<any> | undefined {
+    switch (toolId) {
+      case TOOL_ID__DATA_COLLECTION_GET_SOURCE_CONFIG:
+        return this.dataCollectionToolHandler.getSourceConfig(parameters, agentId, executionContext);
+      case TOOL_ID__DATA_COLLECTION_WRITE_RECORD:
+        return this.dataCollectionToolHandler.writeRecord(parameters, agentId, executionContext);
+      default:
+        return undefined;
+    }
+  }
+
   getImplementedToolIds(): string[] {
     return IMPLEMENTED_TOOL_IDS;
   }

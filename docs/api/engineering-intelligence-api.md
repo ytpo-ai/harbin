@@ -118,6 +118,27 @@
   - 复制策略：仅复制缺失文件，不覆盖已有文件。
   - 返回：`copiedFiles`、`skippedExistingFiles`、`createdDirectories`、`localPath` 等初始化结果。
 
+### 11) Data Sources（数据源管理）
+
+- `POST /ei/data-sources` (`active`)
+  - 关键字段：`executorAgentId`（必填，调度投递的目标 Agent）。
+- `GET /ei/data-sources?projectId=&sourceType=&status=` (`active`)
+- `GET /ei/data-sources/:id` (`active`)
+- `PUT /ei/data-sources/:id` (`active`)
+- `DELETE /ei/data-sources/:id` (`active`)
+- `POST /ei/data-sources/:id/test` (`active`)
+  - 作用：测试数据源连通性（当前 `api` 类型执行在线请求）。
+- `POST /ei/data-sources/:id/collect` (`active`)
+  - 作用：手动触发采集并写入一条 `ei_data_records` 记录，同时更新数据源统计信息。
+
+### 12) Data Records（采集数据）
+
+- `GET /ei/data-records?projectId=&dataSourceId=&dataCategory=&status=&startDate=&endDate=&tag=` (`active`)
+- `GET /ei/data-records/:id` (`active`)
+- `GET /ei/data-records/aggregate?projectId=&dataCategory=&groupBy=day|dataCategory|tag` (`active`)
+- `DELETE /ei/data-records/:id` (`active`)
+- `DELETE /ei/data-records?dataSourceId=&before=` (`active`)
+
 ## 兼容路径映射
 
 - `POST /ei/opencode/runs/sync` (`compat`) -> `POST /ei/sync-batches`
@@ -146,6 +167,8 @@
 - `ei_doc_commit_facts`
 - `ei_app_configs`
 - `incubation_projects`
+- `ei_data_sources`
+- `ei_data_records`
 
 ## 约束
 

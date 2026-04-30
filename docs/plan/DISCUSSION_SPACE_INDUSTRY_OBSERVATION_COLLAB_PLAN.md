@@ -860,7 +860,7 @@ EiOutlineTemplateSchema.index({ applicableIndustries: 1 });
 | REQ-011 | 知识库增强（outlineSectionId + entryType + 覆盖度统计）+ 沉淀文档大纲驱动改造 | [链接](../requirement/DISCUSSION_SPACE_REQ-011_KNOWLEDGE_OUTLINE_DRIVEN.md) | draft | Phase 0 |
 | REQ-012 | 孵化项目与讨论空间聚合打通 | [链接](../requirement/DISCUSSION_SPACE_REQ-012_INCUBATION_DISCUSSION_LINK.md) | draft | Phase 1 |
 | REQ-013 | 讨论消息"转为需求"能力 + 需求来源追溯 | [链接](../requirement/DISCUSSION_SPACE_REQ-013_DISCUSSION_TO_REQUIREMENT.md) | draft | Phase 2 |
-| REQ-014 | 数据源管理 + 采集数据存储 + Schedule 集成 | [链接](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | draft | Phase 3 |
+| REQ-014 | 数据源管理 + 采集数据存储 + Schedule 集成 | [链接](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | done | Phase 3 |
 | REQ-015 | 数据回灌讨论 + 数据引用 + 大纲模板 + 自动分析触发 | [链接](../requirement/DISCUSSION_SPACE_REQ-015_DATA_DISCUSSION_CLOSED_LOOP.md) | draft | Phase 4 |
 
 ## 6. 关键影响点

@@ -39,6 +39,11 @@ const INNER_MESSAGE_TOOL_IDS = {
   sendInternalMessage: 'builtin.sys-mg.mcp.inner-message.create',
 } as const;
 
+const DATA_COLLECTION_TOOL_IDS = {
+  getSourceConfig: 'builtin.sys-mg.mcp.data-collection.get-source-config',
+  writeRecord: 'builtin.sys-mg.mcp.data-collection.write-record',
+} as const;
+
 const AGENT_ROLE_TOOL_IDS = {
   listRoles: 'builtin.sys-mg.mcp.agent-role.list',
   createRole: 'builtin.sys-mg.mcp.agent-role.create',
@@ -202,7 +207,13 @@ const AGENT_TYPE_ROLE_SEEDS: AgentTypeRoleSeed[] = [
     roleCode: 'data-analyst',
     roleName: '数据分析师',
     promptTemplate: '你是一名数据分析师，负责数据清洗、分析建模、洞察提炼与报告输出。请明确方法、结论与依据。',
-    tools: ['builtin.data-gathering.internal.web.search-exa', 'builtin.data-gathering.internal.web.fetch', 'internal.content.extract'],
+    tools: [
+      'builtin.data-gathering.internal.web.search-exa',
+      'builtin.data-gathering.internal.web.fetch',
+      'internal.content.extract',
+      DATA_COLLECTION_TOOL_IDS.getSourceConfig,
+      DATA_COLLECTION_TOOL_IDS.writeRecord,
+    ],
     permissions: ['data_analysis', 'insight_generation', 'reporting'],
     exposed: true,
     description: '负责数据分析、结论提炼与报告输出。',

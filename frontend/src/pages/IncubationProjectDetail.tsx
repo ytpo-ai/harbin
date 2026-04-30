@@ -10,6 +10,7 @@ import {
   CalendarIcon,
   ChatBubbleLeftRightIcon,
   ClockIcon,
+  CircleStackIcon,
 } from '@heroicons/react/24/outline';
 import {
   incubationProjectService,
@@ -19,7 +20,7 @@ import {
   IncubationProjectStatus,
 } from '../services/incubationProjectService';
 
-type DetailTab = 'agents' | 'plans' | 'schedules' | 'requirements' | 'discussions';
+type DetailTab = 'agents' | 'plans' | 'schedules' | 'requirements' | 'discussions' | 'data';
 
 const PLAN_STATUS_LABEL: Record<string, string> = {
   draft: '草稿',
@@ -197,6 +198,7 @@ const IncubationProjectDetail: React.FC = () => {
         <StatCard icon={<CalendarIcon className="h-4 w-4 text-orange-500" />} label="调度" value={stats?.schedules.total} loading={statsLoading} />
         <StatCard icon={<ChatBubbleLeftRightIcon className="h-4 w-4 text-purple-500" />} label="会议" value={stats?.meetings.total} loading={statsLoading} />
         <StatCard icon={<ChatBubbleLeftRightIcon className="h-4 w-4 text-cyan-500" />} label="讨论空间" value={stats?.discussions.total} loading={statsLoading} />
+        <StatCard icon={<CircleStackIcon className="h-4 w-4 text-sky-500" />} label="数据看板" value={undefined} loading={false} />
         <StatCard
           icon={<ArrowPathIcon className="h-4 w-4 text-teal-500" />}
           label="运行"
@@ -214,6 +216,7 @@ const IncubationProjectDetail: React.FC = () => {
             { key: 'schedules' as const, label: '调度', count: schedules.length },
             { key: 'requirements' as const, label: '需求', count: requirements.length },
             { key: 'discussions' as const, label: '讨论空间', count: discussions.length },
+            { key: 'data' as const, label: '数据看板', count: 0 },
           ]).map((tab) => (
             <button
               key={tab.key}
@@ -496,6 +499,26 @@ const IncubationProjectDetail: React.FC = () => {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'data' && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">项目数据采集与看板</p>
+                <Link to={`/ei/incubation/${encodeURIComponent(project._id)}/data`} className="text-xs text-primary-600 hover:underline">
+                  进入数据看板
+                </Link>
+              </div>
+              <div className="border border-dashed border-gray-300 rounded p-4 bg-gray-50">
+                <p className="text-sm text-gray-700">在数据看板中可查看数据源状态、手动触发采集、浏览采集记录与分类统计。</p>
+                <Link
+                  to={`/ei/incubation/${encodeURIComponent(project._id)}/data`}
+                  className="inline-flex mt-3 text-xs px-3 py-1.5 rounded border border-gray-300 hover:border-primary-400 hover:text-primary-700"
+                >
+                  打开数据看板
+                </Link>
+              </div>
             </div>
           )}
         </div>
