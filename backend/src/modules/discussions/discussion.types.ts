@@ -107,6 +107,12 @@ export interface SendDiscussionMessageDto {
   senderType: DiscussionMessageSenderType;
   content: string;
   messageType?: DiscussionMessageType;
+  dataReferences?: Array<{
+    dataRecordId: string;
+    dataSourceName: string;
+    dataPreview: string;
+    collectedAt: string;
+  }>;
   metadata?: Record<string, any>;
 }
 

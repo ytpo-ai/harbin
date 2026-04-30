@@ -19,6 +19,7 @@ import { EiDocCommitFact, EiDocCommitFactSchema } from './schemas/ei-doc-commit-
 import { EiAppConfig, EiAppConfigSchema } from './schemas/ei-app-config.schema';
 import { EiDataSource, EiDataSourceSchema } from './schemas/ei-data-source.schema';
 import { EiDataRecord, EiDataRecordSchema } from './schemas/ei-data-record.schema';
+import { EiOutlineTemplate, EiOutlineTemplateSchema } from './schemas/ei-outline-template.schema';
 import { IncubationProject, IncubationProjectSchema } from './schemas/incubation-project.schema';
 import { RdTask, RdTaskSchema } from '../../../src/shared/schemas/ei-task.schema';
 import { RdProject, RdProjectSchema } from '../../../src/shared/schemas/ei-project.schema';
@@ -44,6 +45,7 @@ import { EiConfigController } from './controllers/config.controller';
 import { IncubationProjectsController } from './controllers/incubation-projects.controller';
 import { EiDataSourcesController } from './controllers/data-sources.controller';
 import { EiDataRecordsController } from './controllers/data-records.controller';
+import { EiOutlineTemplatesController } from './controllers/outline-templates.controller';
 import { EiRepositoriesService } from './services/repositories.service';
 import { EiOpencodeSyncService } from './services/opencode-sync.service';
 import { EiStatisticsService } from './services/statistics.service';
@@ -61,6 +63,8 @@ import { IncubationProjectAggregationService } from './services/incubation-proje
 import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consumer.service';
 import { EiDataSourcesService } from './services/ei-data-sources.service';
 import { EiDataRecordsService } from './services/ei-data-records.service';
+import { EiOutlineTemplatesService } from './services/ei-outline-templates.service';
+import { EiDiscussionBackfillService } from './services/ei-discussion-backfill.service';
 
 @Module({
   imports: [
@@ -95,6 +99,7 @@ import { EiDataRecordsService } from './services/ei-data-records.service';
       { name: EiAppConfig.name, schema: EiAppConfigSchema },
       { name: EiDataSource.name, schema: EiDataSourceSchema },
       { name: EiDataRecord.name, schema: EiDataRecordSchema },
+      { name: EiOutlineTemplate.name, schema: EiOutlineTemplateSchema },
       { name: RdTask.name, schema: RdTaskSchema },
       { name: RdProject.name, schema: RdProjectSchema },
       { name: Employee.name, schema: EmployeeSchema },
@@ -120,6 +125,7 @@ import { EiDataRecordsService } from './services/ei-data-records.service';
     IncubationProjectsController,
     EiDataSourcesController,
     EiDataRecordsController,
+    EiOutlineTemplatesController,
   ],
   providers: [
     EiRepositoriesService,
@@ -139,6 +145,8 @@ import { EiDataRecordsService } from './services/ei-data-records.service';
     EiRuntimeSyncConsumerService,
     EiDataSourcesService,
     EiDataRecordsService,
+    EiOutlineTemplatesService,
+    EiDiscussionBackfillService,
   ],
 })
 export class EngineeringIntelligenceAppModule {}

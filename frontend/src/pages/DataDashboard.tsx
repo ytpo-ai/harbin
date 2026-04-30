@@ -1,14 +1,29 @@
-import React from 'react';
-import { Link, useParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { ArrowPathIcon, ChartBarIcon, ClockIcon } from '@heroicons/react/24/outline';
 import {
+  CreateDataSourcePayload,
   dataCollectionService,
   DataAggregateBucket,
   DataRecordItem,
   DataSourceItem,
 } from '../services/dataCollectionService';
 import { incubationProjectService } from '../services/incubationProjectService';
+
+type PendingPrefillSource = {
+  id: string;
+  name: string;
+  sourceType: 'api' | 'rss' | 'web_scrape' | 'manual';
+  config: Record<string, unknown>;
+  collectFrequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  templateName?: string;
+  templateId?: string;
+  discussionSpaceId?: string;
+};
+
+const DEFAULT_EXECUTOR_AGENT_ID = 'data-collection-agent';
+const DEFAULT_EXECUTOR_AGENT_NAME = 'Data Collection Agent';
 
 function formatDateTime(value?: string) {
   if (!value) {
@@ -25,7 +40,56 @@ function formatDateTime(value?: string) {
 
 const DataDashboard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const queryClient = useQueryClient();
+  const [sourceName, setSourceName] = useState('');
+  const [sourceDescription, setSourceDescription] = useState('');
+  const [sourceType, setSourceType] = useState<'api' | 'rss' | 'web_scrape' | 'manual'>('api');
+  const [sourceFrequency, setSourceFrequency] = useState<'hourly' | 'daily' | 'weekly' | 'monthly'>('daily');
+  const [sourceConfigText, setSourceConfigText] = useState('{\n  "url": ""\n}');
+  const [prefillSources, setPrefillSources] = useState<PendingPrefillSource[]>([]);
+  const [createError, setCreateError] = useState('');
+  const [createNotice, setCreateNotice] = useState('');
+
+  const prefillStorageKey = useMemo(() => `ei-data-source-prefill:${id || ''}`, [id]);
+
+  useEffect(() => {
+    if (!id) {
+      return;
+    }
+    const query = new URLSearchParams(location.search);
+    const openPrefill = query.get('prefill') === '1';
+    if (!openPrefill) {
+      return;
+    }
+
+    try {
+      const raw = window.sessionStorage.getItem(prefillStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      const normalized = Array.isArray(parsed)
+        ? parsed
+            .map((item) => ({
+              id: String(item?.id || Math.random().toString(36).slice(2)),
+              name: String(item?.name || '').trim(),
+              sourceType: ['api', 'rss', 'web_scrape', 'manual'].includes(String(item?.sourceType))
+                ? (item.sourceType as PendingPrefillSource['sourceType'])
+                : 'manual',
+              config: (item?.config || {}) as Record<string, unknown>,
+              collectFrequency: ['hourly', 'daily', 'weekly', 'monthly'].includes(String(item?.collectFrequency))
+                ? (item.collectFrequency as PendingPrefillSource['collectFrequency'])
+                : 'daily',
+              templateName: item?.templateName ? String(item.templateName) : undefined,
+              templateId: item?.templateId ? String(item.templateId) : undefined,
+              discussionSpaceId: item?.discussionSpaceId ? String(item.discussionSpaceId) : undefined,
+            }))
+            .filter((item) => item.name)
+        : [];
+
+      setPrefillSources(normalized);
+    } catch {
+      setPrefillSources([]);
+    }
+  }, [id, location.search, prefillStorageKey]);
 
   const projectQuery = useQuery(['incubation-project-detail', id], () => incubationProjectService.getById(id || ''), {
     enabled: Boolean(id),
@@ -57,6 +121,93 @@ const DataDashboard: React.FC = () => {
       queryClient.invalidateQueries(['ei-data-records-aggregate', id]);
     },
   });
+
+  const createDataSourceMutation = useMutation(
+    async (payload: CreateDataSourcePayload) => {
+      return dataCollectionService.createDataSource(payload);
+    },
+    {
+      onSuccess: () => {
+        setCreateError('');
+        setCreateNotice('数据源已创建');
+        queryClient.invalidateQueries(['ei-data-sources', id]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '创建数据源失败')
+            : '创建数据源失败';
+        setCreateError(message);
+      },
+    },
+  );
+
+  const handleCreateSource = async () => {
+    if (!id) {
+      return;
+    }
+
+    const trimmedName = sourceName.trim();
+    if (!trimmedName) {
+      setCreateError('请输入数据源名称');
+      return;
+    }
+
+    let config: Record<string, unknown>;
+    try {
+      config = JSON.parse(sourceConfigText || '{}') as Record<string, unknown>;
+    } catch {
+      setCreateError('配置 JSON 格式不正确');
+      return;
+    }
+
+    await createDataSourceMutation.mutateAsync({
+      name: trimmedName,
+      description: sourceDescription.trim() || undefined,
+      projectId: id,
+      sourceType,
+      config,
+      collectFrequency: sourceFrequency,
+      status: 'active',
+      notifyThreshold: 1,
+      executorAgentId: DEFAULT_EXECUTOR_AGENT_ID,
+      executorAgentName: DEFAULT_EXECUTOR_AGENT_NAME,
+    });
+
+    setSourceName('');
+    setSourceDescription('');
+    setSourceConfigText('{\n  "url": ""\n}');
+  };
+
+  const handleCreatePrefillSource = async (source: PendingPrefillSource) => {
+    if (!id) {
+      return;
+    }
+
+    await createDataSourceMutation.mutateAsync({
+      name: source.name,
+      projectId: id,
+      sourceType: source.sourceType,
+      config: source.config || {},
+      collectFrequency: source.collectFrequency,
+      status: 'active',
+      notifyThreshold: 1,
+      discussionSpaceId: source.discussionSpaceId,
+      executorAgentId: DEFAULT_EXECUTOR_AGENT_ID,
+      executorAgentName: DEFAULT_EXECUTOR_AGENT_NAME,
+    });
+
+    setPrefillSources((prev) => {
+      const next = prev.filter((item) => item.id !== source.id);
+      window.sessionStorage.setItem(prefillStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const clearPrefillSources = () => {
+    setPrefillSources([]);
+    window.sessionStorage.removeItem(prefillStorageKey);
+  };
 
   const dataSources = dataSourcesQuery.data || [];
   const records = recordsQuery.data || [];
@@ -96,6 +247,101 @@ const DataDashboard: React.FC = () => {
               <ArrowPathIcon className="h-3.5 w-3.5" />刷新
             </button>
           </div>
+
+          {prefillSources.length > 0 ? (
+            <div className="mb-3 rounded-md border border-[#78a9ff] bg-[#edf5ff] p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs text-[#0f62fe]">模板建议数据源 ({prefillSources.length})</p>
+                <button type="button" onClick={clearPrefillSources} className="text-xs text-[#0f62fe] hover:underline">
+                  清空
+                </button>
+              </div>
+              <div className="space-y-2">
+                {prefillSources.map((item) => (
+                  <div key={item.id} className="rounded border border-[#a6c8ff] bg-white px-2 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-xs text-[#161616]">{item.name}</div>
+                        <div className="text-[11px] text-[#6f6f6f]">
+                          {item.templateName ? `${item.templateName} · ` : ''}
+                          {item.sourceType} · {item.collectFrequency}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleCreatePrefillSource(item)}
+                        disabled={createDataSourceMutation.isLoading}
+                        className="rounded border border-[#0f62fe] px-2 py-1 text-[11px] text-[#0f62fe] hover:bg-[#edf5ff] disabled:opacity-60"
+                      >
+                        创建
+                      </button>
+                    </div>
+                    <pre className="mt-2 overflow-x-auto rounded border border-[#e0e0e0] bg-[#f4f4f4] p-2 text-[11px] text-[#525252]">
+                      {JSON.stringify(item.config || {}, null, 2)}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 p-3">
+            <p className="mb-2 text-xs text-gray-600">手动创建数据源</p>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              <input
+                value={sourceName}
+                onChange={(event) => setSourceName(event.target.value)}
+                placeholder="数据源名称"
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-primary-500"
+              />
+              <select
+                value={sourceType}
+                onChange={(event) => setSourceType(event.target.value as 'api' | 'rss' | 'web_scrape' | 'manual')}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-primary-500"
+              >
+                <option value="api">api</option>
+                <option value="rss">rss</option>
+                <option value="web_scrape">web_scrape</option>
+                <option value="manual">manual</option>
+              </select>
+              <input
+                value={sourceDescription}
+                onChange={(event) => setSourceDescription(event.target.value)}
+                placeholder="描述（可选）"
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-primary-500"
+              />
+              <select
+                value={sourceFrequency}
+                onChange={(event) => setSourceFrequency(event.target.value as 'hourly' | 'daily' | 'weekly' | 'monthly')}
+                className="rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-800 outline-none focus:border-primary-500"
+              >
+                <option value="hourly">hourly</option>
+                <option value="daily">daily</option>
+                <option value="weekly">weekly</option>
+                <option value="monthly">monthly</option>
+              </select>
+            </div>
+            <textarea
+              value={sourceConfigText}
+              onChange={(event) => setSourceConfigText(event.target.value)}
+              rows={5}
+              className="mt-2 w-full rounded border border-gray-300 bg-white px-2 py-2 text-[11px] text-gray-800 outline-none focus:border-primary-500"
+            />
+            <div className="mt-2 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => void handleCreateSource()}
+                disabled={createDataSourceMutation.isLoading}
+                className="rounded border border-primary-500 px-3 py-1.5 text-xs text-primary-600 hover:bg-primary-50 disabled:opacity-60"
+              >
+                {createDataSourceMutation.isLoading ? '创建中...' : '创建数据源'}
+              </button>
+            </div>
+          </div>
+
+          {createError ? <p className="mb-2 text-xs text-red-600">{createError}</p> : null}
+          {!createError && createNotice ? <p className="mb-2 text-xs text-green-700">{createNotice}</p> : null}
+
           {dataSourcesQuery.isLoading ? (
             <p className="text-sm text-gray-500">加载中...</p>
           ) : dataSources.length === 0 ? (

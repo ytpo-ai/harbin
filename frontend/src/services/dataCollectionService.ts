@@ -29,6 +29,23 @@ export interface DataSourceItem {
     errorCount?: number;
     lastSuccessAt?: string;
   };
+  notifyDiscussion?: boolean;
+  notifyThreshold?: number;
+}
+
+export interface CreateDataSourcePayload {
+  name: string;
+  description?: string;
+  projectId: string;
+  sourceType: DataSourceType;
+  config: Record<string, unknown>;
+  collectFrequency?: DataCollectFrequency;
+  status?: DataSourceStatus;
+  outlineSectionId?: string;
+  discussionSpaceId?: string;
+  notifyThreshold?: number;
+  executorAgentId: string;
+  executorAgentName?: string;
 }
 
 export interface DataRecordItem {
@@ -63,6 +80,11 @@ export const dataCollectionService = {
 
   async triggerCollect(dataSourceId: string): Promise<{ sourceId: string; recordId: string; status: DataRecordStatus }> {
     const res = await api.post(`/ei/data-sources/${dataSourceId}/collect`);
+    return res.data;
+  },
+
+  async createDataSource(payload: CreateDataSourcePayload): Promise<DataSourceItem> {
+    const res = await api.post('/ei/data-sources', payload);
     return res.data;
   },
 

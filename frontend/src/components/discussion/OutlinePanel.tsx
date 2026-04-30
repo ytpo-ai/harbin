@@ -1,5 +1,6 @@
 import React from 'react';
 import { DiscussionDocumentOutline, DiscussionKnowledgeCoverage, OutlineSection } from '../../services/discussionService';
+import { OutlineTemplateItem } from '../../services/engineeringIntelligenceService';
 
 type OutlinePanelProps = {
   outline?: DiscussionDocumentOutline;
@@ -7,6 +8,12 @@ type OutlinePanelProps = {
   loading: boolean;
   generating: boolean;
   onGenerate: () => void;
+  templates?: OutlineTemplateItem[];
+  selectedTemplateId?: string;
+  onTemplateChange?: (templateId: string) => void;
+  onApplyTemplate?: () => void;
+  applyingTemplate?: boolean;
+  onGoDataDashboard?: () => void;
   onEnrichSection?: (section: OutlineSection) => void;
 };
 
@@ -30,6 +37,12 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
   loading,
   generating,
   onGenerate,
+  templates = [],
+  selectedTemplateId = '',
+  onTemplateChange,
+  onApplyTemplate,
+  applyingTemplate = false,
+  onGoDataDashboard,
   onEnrichSection,
 }) => {
   const sections = (outline?.sections || []).slice().sort((a, b) => a.order - b.order);
@@ -52,6 +65,41 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
             {generating ? '生成中...' : '生成大纲'}
           </button>
         </div>
+
+        {onApplyTemplate ? (
+          <div className="mt-3 flex items-center gap-2">
+            <select
+              value={selectedTemplateId}
+              onChange={(event) => onTemplateChange?.(event.target.value)}
+              className="min-w-0 flex-1 border border-[#c6c6c6] bg-[#f4f4f4] px-2 py-1 text-xs text-[#161616] outline-none focus:border-[#0f62fe]"
+            >
+              <option value="">选择模板后可应用到当前空间</option>
+              {templates.map((template) => (
+                <option key={template._id} value={template._id}>
+                  {template.isSystem ? '[系统] ' : ''}
+                  {template.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={onApplyTemplate}
+              disabled={!selectedTemplateId || applyingTemplate}
+              className="border border-[#0f62fe] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {applyingTemplate ? '应用中...' : '应用模板'}
+            </button>
+            {onGoDataDashboard ? (
+              <button
+                type="button"
+                onClick={onGoDataDashboard}
+                className="border border-[#8d8d8d] px-2 py-1 text-xs text-[#525252] hover:bg-[#f4f4f4]"
+              >
+                数据看板
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="mt-3">
           <div className="mb-1 flex items-center justify-between text-xs text-[#6f6f6f]">

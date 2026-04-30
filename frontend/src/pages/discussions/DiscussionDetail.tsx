@@ -48,6 +48,7 @@ const DiscussionDetail: React.FC = () => {
   const [archiveCreateTitle, setArchiveCreateTitle] = useState('');
   const [archiveCreateSummary, setArchiveCreateSummary] = useState('');
   const [archiveCreateContent, setArchiveCreateContent] = useState('');
+  const [selectedOutlineTemplateId, setSelectedOutlineTemplateId] = useState('');
   const [toRequirementMessage, setToRequirementMessage] = useState<DiscussionMessage | null>(null);
   const [toRequirementTitle, setToRequirementTitle] = useState('');
   const [toRequirementDescription, setToRequirementDescription] = useState('');
@@ -169,6 +170,55 @@ const DiscussionDetail: React.FC = () => {
     enabled: Boolean(spaceId),
     staleTime: 10_000,
   });
+  const outlineTemplatesQuery = useQuery(
+    ['ei-outline-template-options', detailQuery.data?.metadata?.industryContext || ''],
+    () =>
+      engineeringIntelligenceService.listOutlineTemplates({
+        type: 'industry_observation',
+        industry: detailQuery.data?.metadata?.industryContext,
+      }),
+    {
+      enabled: Boolean(spaceId),
+      staleTime: 60_000,
+    },
+  );
+
+  const savePrefillSourcesToDashboard = (templateId: string) => {
+    const projectId = String(detailQuery.data?.projectId || '').trim();
+    if (!projectId) {
+      return;
+    }
+
+    const selectedTemplate = (outlineTemplatesQuery.data || []).find((item) => item._id === templateId);
+    if (!selectedTemplate || !Array.isArray(selectedTemplate.suggestedDataSources) || selectedTemplate.suggestedDataSources.length === 0) {
+      return;
+    }
+
+    const storageKey = `ei-data-source-prefill:${projectId}`;
+    const existedRaw = window.sessionStorage.getItem(storageKey);
+    let existed: Array<Record<string, unknown>> = [];
+    if (existedRaw) {
+      try {
+        existed = JSON.parse(existedRaw) as Array<Record<string, unknown>>;
+      } catch {
+        existed = [];
+      }
+    }
+    const next = [
+      ...existed,
+      ...selectedTemplate.suggestedDataSources.map((item, index) => ({
+        id: `${templateId}-${index}-${Date.now()}`,
+        name: item.name,
+        sourceType: item.sourceType,
+        config: item.config,
+        collectFrequency: item.collectFrequency,
+        templateId,
+        templateName: selectedTemplate.name,
+        discussionSpaceId: spaceId,
+      })),
+    ];
+    window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+  };
   const participantMap = useMemo(
     () => Object.fromEntries(participants.map((participant) => [participant.id, participant])),
     [participants],
@@ -188,15 +238,23 @@ const DiscussionDetail: React.FC = () => {
   }, [currentUser?.id, participants]);
 
   const sendMessageMutation = useMutation(
-    async () => {
+    async (
+      dataReferences: Array<{
+        dataRecordId: string;
+        dataSourceName: string;
+        dataPreview: string;
+        collectedAt: string;
+      }>,
+    ) => {
       if (!selectedThreadId || !currentParticipant || !messageText.trim()) {
         return;
       }
 
-      await discussionService.sendMessage(spaceId, selectedThreadId, {
+        await discussionService.sendMessage(spaceId, selectedThreadId, {
         participantId: currentParticipant.id,
         senderType: 'user',
         content: messageText.trim(),
+        dataReferences,
       });
     },
     {
@@ -661,6 +719,41 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
+  const applyOutlineTemplateMutation = useMutation(
+    async () => {
+      const templateId = String(selectedOutlineTemplateId || '').trim();
+      if (!templateId) {
+        throw new Error('请先选择一个模板');
+      }
+
+      return engineeringIntelligenceService.applyOutlineTemplate(templateId, {
+        spaceId,
+        outlineTitle: detailQuery.data?.title ? `${detailQuery.data.title} 大纲` : undefined,
+      });
+    },
+    {
+      onSuccess: async () => {
+        const templateId = String(selectedOutlineTemplateId || '').trim();
+        if (templateId) {
+          savePrefillSourcesToDashboard(templateId);
+        }
+        setActionError('');
+        setActionNotice('大纲模板已应用，建议数据源已预填到数据看板');
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '模板应用失败')
+            : '模板应用失败';
+        setActionError(message);
+      },
+    },
+  );
+
   const handleOpenArchiveKnowledge = (message: DiscussionMessage) => {
     const normalizedTitle = (message.content || '').replace(/\s+/g, ' ').trim();
     const defaultTitle = normalizedTitle ? `消息#${message.sequence} ${normalizedTitle.slice(0, 40)}` : `消息#${message.sequence} 知识条目`;
@@ -952,9 +1045,10 @@ const DiscussionDetail: React.FC = () => {
             <MessageInput
               value={messageText}
               sending={sendMessageMutation.isLoading}
+              projectId={detail.projectId}
               participants={participants}
               onChange={setMessageText}
-              onSend={() => {
+              onSend={(dataReferences) => {
                 if (!selectedThreadId) {
                   setActionError('请先选择讨论线');
                   return;
@@ -963,7 +1057,7 @@ const DiscussionDetail: React.FC = () => {
                   setActionError('当前空间暂无可用参与者，无法发送消息');
                   return;
                 }
-                sendMessageMutation.mutate();
+                sendMessageMutation.mutate(dataReferences);
               }}
             />
           </main>
@@ -1044,6 +1138,19 @@ const DiscussionDetail: React.FC = () => {
                   loading={outlineQuery.isLoading || coverageQuery.isLoading}
                   generating={generateOutlineMutation.isLoading}
                   onGenerate={() => generateOutlineMutation.mutate()}
+                  templates={outlineTemplatesQuery.data || []}
+                  selectedTemplateId={selectedOutlineTemplateId}
+                  onTemplateChange={setSelectedOutlineTemplateId}
+                  applyingTemplate={applyOutlineTemplateMutation.isLoading}
+                  onApplyTemplate={() => applyOutlineTemplateMutation.mutate()}
+                  onGoDataDashboard={() => {
+                    const projectId = String(detail.projectId || '').trim();
+                    if (!projectId) {
+                      setActionError('当前讨论空间未关联项目，无法跳转数据看板');
+                      return;
+                    }
+                    navigate(`/ei/incubation/${encodeURIComponent(projectId)}/data?prefill=1`);
+                  }}
                 />
               ) : null}
 

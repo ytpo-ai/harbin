@@ -5,6 +5,7 @@ export * from './management.dto';
 export * from './incubation-project.dto';
 export * from './docs-heat.dto';
 export * from './data-collection.dto';
+export * from './outline-template.dto';
 
 export class CreateEngineeringRepositoryDto {
   @IsString()

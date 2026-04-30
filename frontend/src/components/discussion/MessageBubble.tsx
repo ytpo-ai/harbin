@@ -83,6 +83,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, participant, onB
             ))}
           </div>
         ) : null}
+
+        {(message.dataReferences || []).length > 0 ? (
+          <div className="mt-3 space-y-2 border-t border-[#e0e0e0] pt-2">
+            {(message.dataReferences || []).map((reference) => (
+              <details key={reference.dataRecordId} className="bg-[#f4f4f4] p-2 text-xs text-[#161616]">
+                <summary className="cursor-pointer text-[#0f62fe]">数据引用: {reference.dataSourceName}</summary>
+                <div className="mt-1 text-[#525252]">{reference.dataPreview}</div>
+                <div className="mt-1 text-[11px] text-[#6f6f6f]">采集时间: {new Date(reference.collectedAt).toLocaleString()}</div>
+              </details>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );

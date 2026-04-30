@@ -113,6 +113,12 @@ export interface DiscussionMessage {
     offset: number;
   }>;
   crossReferences: DiscussionCrossReference[];
+  dataReferences: Array<{
+    dataRecordId: string;
+    dataSourceName: string;
+    dataPreview: string;
+    collectedAt: string;
+  }>;
   knowledgeEntryIds: string[];
   metadata?: {
     tokens?: number;
@@ -252,6 +258,12 @@ export interface SendDiscussionMessagePayload {
   senderType: DiscussionMessageSenderType;
   content: string;
   messageType?: DiscussionMessageType;
+  dataReferences?: Array<{
+    dataRecordId: string;
+    dataSourceName: string;
+    dataPreview: string;
+    collectedAt: string;
+  }>;
   metadata?: Record<string, unknown>;
 }
 

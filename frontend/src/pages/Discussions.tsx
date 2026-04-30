@@ -5,6 +5,7 @@ import { PlusIcon, ArrowPathIcon, ChatBubbleLeftRightIcon } from '@heroicons/rea
 import SpaceCreateModal from '../components/discussion/SpaceCreateModal';
 import { agentService } from '../services/agentService';
 import { authService, CurrentUser } from '../services/authService';
+import { engineeringIntelligenceService } from '../services/engineeringIntelligenceService';
 import { incubationProjectService } from '../services/incubationProjectService';
 import {
   discussionService,
@@ -78,16 +79,29 @@ const Discussions: React.FC = () => {
     },
   );
 
-  const createSpaceMutation = useMutation(
-    (payload: {
+  const outlineTemplateOptionsQuery = useQuery(
+    ['ei-outline-template-options'],
+    () => engineeringIntelligenceService.listOutlineTemplates({ type: 'industry_observation' }),
+    {
+      staleTime: 60_000,
+    },
+  );
+
+  const createSpaceMutation = useMutation<
+    DiscussionSpace,
+    unknown,
+    {
       title: string;
       description?: string;
       tags: string[];
       projectId?: string;
       category: DiscussionSpaceCategory;
       industryContext?: string;
+      outlineTemplateId?: string;
       initialAgentIds: string[];
-    }) => {
+    }
+  >(
+    async (payload) => {
       if (!currentUser?.id) {
         throw new Error('当前用户未登录，无法创建讨论空间');
       }
@@ -109,7 +123,7 @@ const Discussions: React.FC = () => {
         });
       }
 
-      return discussionService.createSpace({
+      const createdSpace = await discussionService.createSpace({
         title: payload.title,
         description: payload.description,
         category: payload.category,
@@ -119,6 +133,47 @@ const Discussions: React.FC = () => {
         creatorId: currentUser.id,
         initialParticipants,
       });
+
+      if (payload.category === 'industry_observation' && payload.outlineTemplateId) {
+        try {
+          await engineeringIntelligenceService.applyOutlineTemplate(payload.outlineTemplateId, {
+            spaceId: createdSpace.id,
+            outlineTitle: `${payload.title} 行业观察大纲`,
+          });
+
+          const matchedTemplate = (outlineTemplateOptionsQuery.data || []).find((item) => item._id === payload.outlineTemplateId);
+          const projectId = String(payload.projectId || '').trim();
+          if (matchedTemplate && projectId && Array.isArray(matchedTemplate.suggestedDataSources) && matchedTemplate.suggestedDataSources.length > 0) {
+            const storageKey = `ei-data-source-prefill:${projectId}`;
+            const raw = window.sessionStorage.getItem(storageKey);
+            let existed: Array<Record<string, unknown>> = [];
+            if (raw) {
+              try {
+                existed = JSON.parse(raw) as Array<Record<string, unknown>>;
+              } catch {
+                existed = [];
+              }
+            }
+            const next = [
+              ...existed,
+              ...matchedTemplate.suggestedDataSources.map((item, index) => ({
+                id: `${payload.outlineTemplateId}-${index}-${Date.now()}`,
+                name: item.name,
+                sourceType: item.sourceType,
+                config: item.config,
+                collectFrequency: item.collectFrequency,
+                templateId: payload.outlineTemplateId,
+                templateName: matchedTemplate.name,
+                discussionSpaceId: createdSpace.id,
+              })),
+            ];
+            window.sessionStorage.setItem(storageKey, JSON.stringify(next));
+          }
+        } catch {
+        }
+      }
+
+      return createdSpace;
     },
     {
       onSuccess: async (space) => {
@@ -268,6 +323,13 @@ const Discussions: React.FC = () => {
         }))}
         projectsLoading={projectOptionsQuery.isLoading}
         defaultProjectId={defaultProjectId}
+        outlineTemplateOptions={(outlineTemplateOptionsQuery.data || []).map((template) => ({
+          id: template._id,
+          name: template.name,
+          description: template.description,
+          isSystem: template.isSystem,
+        }))}
+        outlineTemplatesLoading={outlineTemplateOptionsQuery.isLoading}
         onClose={() => {
           setCreateOpen(false);
           setCreateError('');

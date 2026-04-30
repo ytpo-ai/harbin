@@ -8,6 +8,11 @@ import {
   DiscussionKnowledgeEntryType,
   DiscussionKnowledgeSourceType,
 } from '../../../shared/schemas/discussion-knowledge-entry.schema';
+import {
+  DiscussionSpace,
+  DiscussionSpaceDocument,
+  OutlineSectionStatus,
+} from '../../../shared/schemas/discussion-space.schema';
 import { DiscussionParticipant, DiscussionParticipantDocument } from '../../../shared/schemas/discussion-participant.schema';
 import { DiscussionMessage, DiscussionMessageDocument } from '../../../shared/schemas/discussion-message.schema';
 import { DiscussionSpaceService } from './discussion-space.service';
@@ -94,9 +99,30 @@ export function buildReusableKnowledgeFilter(
   return filter;
 }
 
+export function resolveOutlineSectionStatusByKnowledgeCount(
+  knowledgeCount: number,
+  currentStatus?: OutlineSectionStatus,
+): OutlineSectionStatus {
+  if (currentStatus === 'review') {
+    return 'review';
+  }
+
+  if (knowledgeCount <= 0) {
+    return 'draft';
+  }
+
+  if (knowledgeCount >= 5) {
+    return 'sufficient';
+  }
+
+  return 'enriching';
+}
+
 @Injectable()
 export class DiscussionKnowledgeService {
   constructor(
+    @InjectModel(DiscussionSpace.name)
+    private readonly discussionSpaceModel: Model<DiscussionSpaceDocument>,
     @InjectModel(DiscussionKnowledgeEntry.name)
     private readonly discussionKnowledgeEntryModel: Model<DiscussionKnowledgeEntryDocument>,
     @InjectModel(DiscussionParticipant.name)
@@ -105,6 +131,70 @@ export class DiscussionKnowledgeService {
     private readonly discussionMessageModel: Model<DiscussionMessageDocument>,
     private readonly discussionSpaceService: DiscussionSpaceService,
   ) {}
+
+  private async syncOutlineSectionProgress(spaceId: string, outlineSectionId?: string): Promise<void> {
+    const sectionId = String(outlineSectionId || '').trim();
+    if (!sectionId) {
+      return;
+    }
+
+    const [knowledgeCount, space] = await Promise.all([
+      this.discussionKnowledgeEntryModel.countDocuments({
+        spaceId,
+        outlineSectionId: sectionId,
+        isActive: true,
+      }),
+      this.discussionSpaceModel.findOne({ id: spaceId }).lean().exec(),
+    ]);
+
+    if (!space?.documentOutline || !Array.isArray((space.documentOutline as any).sections)) {
+      return;
+    }
+
+    const currentOutline = space.documentOutline as Record<string, any>;
+    const currentSections = (currentOutline.sections || []) as Array<Record<string, any>>;
+    let changed = false;
+    const nextSections = currentSections.map((section) => {
+      if (String(section?.id || '') !== sectionId) {
+        return section;
+      }
+      const nextStatus = resolveOutlineSectionStatusByKnowledgeCount(
+        Number(knowledgeCount || 0),
+        (section?.status || 'draft') as OutlineSectionStatus,
+      );
+      const prevKnowledgeCount = Number(section?.knowledgeCount || 0);
+      const prevStatus = String(section?.status || 'draft');
+      if (prevKnowledgeCount === Number(knowledgeCount || 0) && prevStatus === nextStatus) {
+        return section;
+      }
+      changed = true;
+      return {
+        ...section,
+        knowledgeCount: Number(knowledgeCount || 0),
+        status: nextStatus,
+      };
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    await this.discussionSpaceModel
+      .updateOne(
+        { id: spaceId },
+        {
+          $set: {
+            documentOutline: {
+              ...currentOutline,
+              version: Number(currentOutline.version || 1) + 1,
+              updatedAt: new Date(),
+              sections: nextSections,
+            },
+          },
+        },
+      )
+      .exec();
+  }
 
   async createKnowledgeEntry(spaceId: string, dto: CreateDiscussionKnowledgeEntryDto): Promise<DiscussionKnowledgeEntry> {
     const keywordTags = dto.keywordTags?.length ? dto.keywordTags : extractKeywordTags(dto.content);
@@ -144,6 +234,8 @@ export class DiscussionKnowledgeService {
         .exec(),
       this.discussionSpaceService.incrementStatistics(spaceId, { totalKnowledgeEntries: 1 }),
     ]);
+
+    await this.syncOutlineSectionProgress(spaceId, dto.outlineSectionId);
 
     return created;
   }

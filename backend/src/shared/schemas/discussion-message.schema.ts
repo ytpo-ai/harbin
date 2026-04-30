@@ -66,6 +66,14 @@ export class DiscussionMessage {
     summary: string;
   }>;
 
+  @Prop({ type: [Object], default: [] })
+  dataReferences: Array<{
+    dataRecordId: string;
+    dataSourceName: string;
+    dataPreview: string;
+    collectedAt: Date;
+  }>;
+
   @Prop({ type: [String], default: [] })
   knowledgeEntryIds: string[];
 

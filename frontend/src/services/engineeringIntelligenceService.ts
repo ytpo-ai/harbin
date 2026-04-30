@@ -228,6 +228,41 @@ export interface RequirementItem {
   updatedAt?: string;
 }
 
+export type OutlineTemplateType = 'industry_observation' | 'product_analysis' | 'technical_review';
+
+export interface OutlineTemplateSection {
+  key?: string;
+  title: string;
+  description?: string;
+  parentSectionKey?: string;
+  order: number;
+  depth: number;
+  metadata?: {
+    suggestedDataSources?: string[];
+    collectFrequency?: string;
+    isStructuredData?: boolean;
+  };
+}
+
+export interface OutlineTemplateItem {
+  _id: string;
+  name: string;
+  description?: string;
+  templateType: OutlineTemplateType;
+  applicableIndustries: string[];
+  sections: OutlineTemplateSection[];
+  suggestedDataSources: Array<{
+    name: string;
+    sourceType: 'api' | 'rss' | 'web_scrape' | 'manual';
+    config: Record<string, unknown>;
+    collectFrequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  }>;
+  isSystem: boolean;
+  createdBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface RequirementBoardResult {
   updatedAt: string;
   total: number;
@@ -448,6 +483,22 @@ export const engineeringIntelligenceService = {
     payload: { owner?: string; repo?: string; labels?: string[]; metadata?: Record<string, unknown> },
   ): Promise<{ success: boolean; requirementId: string; githubLink?: RequirementGithubLink }> {
     const response = await api.post(`/ei/requirements/${requirementId}/github/sync`, payload);
+    return response.data;
+  },
+
+  async listOutlineTemplates(params?: {
+    type?: OutlineTemplateType;
+    industry?: string;
+  }): Promise<OutlineTemplateItem[]> {
+    const response = await api.get('/ei/outline-templates', { params });
+    return response.data;
+  },
+
+  async applyOutlineTemplate(
+    templateId: string,
+    payload: { spaceId: string; outlineTitle?: string },
+  ): Promise<{ applied: true; spaceId: string; templateId: string }> {
+    const response = await api.post(`/ei/outline-templates/${templateId}/apply`, payload);
     return response.data;
   },
 };

@@ -13,6 +13,13 @@ type ProjectOption = {
   name: string;
 };
 
+type OutlineTemplateOption = {
+  id: string;
+  name: string;
+  description?: string;
+  isSystem?: boolean;
+};
+
 type SpaceCreateModalProps = {
   open: boolean;
   loading: boolean;
@@ -26,11 +33,14 @@ type SpaceCreateModalProps = {
     projectId?: string;
     category: DiscussionSpaceCategory;
     industryContext?: string;
+    outlineTemplateId?: string;
     initialAgentIds: string[];
   }) => Promise<unknown>;
   projectOptions?: ProjectOption[];
   projectsLoading?: boolean;
   defaultProjectId?: string;
+  outlineTemplateOptions?: OutlineTemplateOption[];
+  outlineTemplatesLoading?: boolean;
 };
 
 const categoryOptions: Array<{
@@ -68,6 +78,8 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
   projectOptions = [],
   projectsLoading = false,
   defaultProjectId,
+  outlineTemplateOptions = [],
+  outlineTemplatesLoading = false,
   onClose,
   onSubmit,
 }) => {
@@ -77,6 +89,7 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
   const [tags, setTags] = useState('');
   const [projectId, setProjectId] = useState(defaultProjectId || '');
   const [industryContext, setIndustryContext] = useState('');
+  const [outlineTemplateId, setOutlineTemplateId] = useState('');
   const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>([]);
   const [error, setError] = useState('');
 
@@ -96,6 +109,12 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
     setProjectId(defaultProjectId || '');
   }, [defaultProjectId, open]);
 
+  useEffect(() => {
+    if (category !== 'industry_observation' && outlineTemplateId) {
+      setOutlineTemplateId('');
+    }
+  }, [category, outlineTemplateId]);
+
   const reset = () => {
     setCategory('general');
     setTitle('');
@@ -103,6 +122,7 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
     setTags('');
     setProjectId(defaultProjectId || '');
     setIndustryContext('');
+    setOutlineTemplateId('');
     setSelectedAgentIds([]);
     setError('');
   };
@@ -138,6 +158,7 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
         tags: parsedTags,
         category,
         industryContext: category === 'industry_observation' ? industryContext.trim() || undefined : undefined,
+        outlineTemplateId: category === 'industry_observation' ? outlineTemplateId || undefined : undefined,
         projectId: projectId.trim() || undefined,
         initialAgentIds: selectedAgentIds,
       });
@@ -194,15 +215,41 @@ const SpaceCreateModal: React.FC<SpaceCreateModalProps> = ({
           </div>
 
           {category === 'industry_observation' ? (
-            <div>
-              <label className="mb-1 block text-xs tracking-wide text-[#6f6f6f]">观察行业（可选）</label>
-              <input
-                value={industryContext}
-                onChange={(event) => setIndustryContext(event.target.value)}
-                placeholder="例如：区块链 Web3、新能源、AI"
-                className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-xs tracking-wide text-[#6f6f6f]">观察行业（可选）</label>
+                <input
+                  value={industryContext}
+                  onChange={(event) => setIndustryContext(event.target.value)}
+                  placeholder="例如：区块链 Web3、新能源、AI"
+                  className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs tracking-wide text-[#6f6f6f]">大纲模板（可选）</label>
+                <select
+                  value={outlineTemplateId}
+                  onChange={(event) => setOutlineTemplateId(event.target.value)}
+                  className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
+                >
+                  <option value="">自动生成大纲（不使用模板）</option>
+                  {outlineTemplateOptions.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.isSystem ? '[系统] ' : ''}
+                      {template.name}
+                    </option>
+                  ))}
+                </select>
+                {outlineTemplatesLoading ? <div className="mt-1 text-xs text-[#6f6f6f]">加载模板中...</div> : null}
+                {!outlineTemplatesLoading && outlineTemplateId
+                  ? (
+                      <div className="mt-1 text-xs text-[#6f6f6f]">
+                        {outlineTemplateOptions.find((item) => item.id === outlineTemplateId)?.description || '已选择模板'}
+                      </div>
+                    )
+                  : null}
+              </div>
+            </>
           ) : null}
 
           <div>

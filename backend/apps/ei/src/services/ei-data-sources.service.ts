@@ -15,6 +15,7 @@ import {
 } from '../schemas/ei-data-source.schema';
 import { EiDataRecord, EiDataRecordDocument } from '../schemas/ei-data-record.schema';
 import { Schedule, ScheduleDocument } from '../../../../src/shared/schemas/schedule.schema';
+import { EiDiscussionBackfillService } from './ei-discussion-backfill.service';
 
 @Injectable()
 export class EiDataSourcesService {
@@ -25,6 +26,7 @@ export class EiDataSourcesService {
     private readonly dataRecordModel: Model<EiDataRecordDocument>,
     @InjectModel(Schedule.name)
     private readonly scheduleModel: Model<ScheduleDocument>,
+    private readonly eiDiscussionBackfillService: EiDiscussionBackfillService,
   ) {}
 
   private normalizeFrequencyToCron(frequency: 'hourly' | 'daily' | 'weekly' | 'monthly'): string {
@@ -331,6 +333,12 @@ export class EiDataSourcesService {
         },
       )
       .exec();
+
+    await this.eiDiscussionBackfillService.backfillRecordToDiscussion({
+      source: item as unknown as EiDataSource,
+      record: record as unknown as EiDataRecord,
+      nextStats,
+    });
 
     return {
       sourceId: String(item._id),
