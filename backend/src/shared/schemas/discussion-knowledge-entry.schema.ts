@@ -19,6 +19,15 @@ export enum DiscussionKnowledgeCredibility {
   UNVERIFIED = 'unverified',
 }
 
+export enum DiscussionKnowledgeEntryType {
+  FACT = 'fact',
+  DATA_POINT = 'data_point',
+  OPINION = 'opinion',
+  SOURCE_REFERENCE = 'source_reference',
+  ANALYSIS = 'analysis',
+  ACTION_ITEM = 'action_item',
+}
+
 @Schema({ timestamps: true, collection: 'discussion_knowledge_entries' })
 export class DiscussionKnowledgeEntry {
   @Prop({ required: true, unique: true, default: () => uuidv4() })
@@ -38,6 +47,24 @@ export class DiscussionKnowledgeEntry {
 
   @Prop({ required: true })
   summary: string;
+
+  @Prop()
+  outlineSectionId?: string;
+
+  @Prop({ enum: DiscussionKnowledgeEntryType, default: DiscussionKnowledgeEntryType.FACT })
+  entryType: DiscussionKnowledgeEntryType;
+
+  @Prop({ type: Object })
+  structuredData?: {
+    value?: string | number;
+    unit?: string;
+    measureDate?: Date;
+    compareTo?: {
+      value: string | number;
+      period: string;
+      changePercent?: number;
+    };
+  };
 
   @Prop()
   sourceUrl?: string;
@@ -89,6 +116,7 @@ export const DiscussionKnowledgeEntrySchema = SchemaFactory.createForClass(Discu
 
 DiscussionKnowledgeEntrySchema.index({ spaceId: 1, isActive: 1 });
 DiscussionKnowledgeEntrySchema.index({ participantId: 1 });
+DiscussionKnowledgeEntrySchema.index({ spaceId: 1, outlineSectionId: 1 });
 DiscussionKnowledgeEntrySchema.index({ domainTags: 1 });
 DiscussionKnowledgeEntrySchema.index({ topicTags: 1 });
 DiscussionKnowledgeEntrySchema.index({ keywordTags: 1 });

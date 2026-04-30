@@ -8,7 +8,14 @@ import {
   DiscussionParticipantRole,
   DiscussionParticipantType,
 } from '../../shared/schemas/discussion-participant.schema';
-import { DiscussionSedimentMode, DiscussionSpaceStatus } from '../../shared/schemas/discussion-space.schema';
+import {
+  DiscussionSedimentMode,
+  DocumentOutline,
+  OutlineSection,
+  OutlineSectionStatus,
+  DiscussionSpaceCategory,
+  DiscussionSpaceStatus,
+} from '../../shared/schemas/discussion-space.schema';
 import {
   DiscussionThreadBranchOrigin,
   DiscussionThreadStatus,
@@ -18,12 +25,15 @@ export interface CreateDiscussionSpaceDto {
   title: string;
   description?: string;
   creatorId: string;
+  category?: DiscussionSpaceCategory;
+  industryContext?: string;
   tags?: string[];
   projectId?: string;
   settings?: {
     maxBranchDepth?: number;
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
   };
   initialParticipants?: AddDiscussionParticipantDto[];
 }
@@ -36,11 +46,13 @@ export interface UpdateDiscussionSpaceDto {
     maxBranchDepth?: number;
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
   };
 }
 
 export interface ListDiscussionSpacesQuery {
   status?: DiscussionSpaceStatus;
+  category?: DiscussionSpaceCategory;
   creatorId?: string;
   projectId?: string;
   tags?: string[];
@@ -58,6 +70,22 @@ export interface UpdateDiscussionThreadDto {
   title?: string;
   summary?: string;
   status?: DiscussionThreadStatus;
+}
+
+export interface DeleteDiscussionThreadResult {
+  deleted: true;
+  threadId: string;
+  deletedThreadIds: string[];
+}
+
+export interface LinkDiscussionMessageKnowledgeDto {
+  knowledgeEntryIds: string[];
+}
+
+export interface LinkDiscussionMessageKnowledgeResult {
+  linked: true;
+  messageId: string;
+  knowledgeEntryIds: string[];
 }
 
 export interface SendDiscussionMessageDto {
@@ -108,6 +136,18 @@ export interface CreateDiscussionKnowledgeEntryDto {
   title: string;
   content: string;
   summary?: string;
+  outlineSectionId?: string;
+  entryType?: 'fact' | 'data_point' | 'opinion' | 'source_reference' | 'analysis' | 'action_item';
+  structuredData?: {
+    value?: string | number;
+    unit?: string;
+    measureDate?: string;
+    compareTo?: {
+      value: string | number;
+      period: string;
+      changePercent?: number;
+    };
+  };
   sourceUrl?: string;
   sourceType: DiscussionKnowledgeSourceType;
   sourceName?: string;
@@ -122,10 +162,53 @@ export interface CreateDiscussionKnowledgeEntryDto {
 
 export interface ListDiscussionKnowledgeQuery {
   threadId?: string;
+  outlineSectionId?: string;
   participantId?: string;
   keyword?: string;
   credibility?: DiscussionKnowledgeCredibility;
   limit?: number;
+}
+
+export interface GenerateDiscussionOutlineDto {
+  industryContext?: string;
+}
+
+export interface CreateDiscussionOutlineSectionDto {
+  title: string;
+  description?: string;
+  parentSectionId?: string;
+  order?: number;
+  status?: OutlineSectionStatus;
+  metadata?: OutlineSection['metadata'];
+}
+
+export interface UpdateDiscussionOutlineSectionDto {
+  title?: string;
+  description?: string;
+  parentSectionId?: string;
+  order?: number;
+  status?: OutlineSectionStatus;
+  metadata?: OutlineSection['metadata'];
+}
+
+export interface UpdateDiscussionOutlineDto {
+  title?: string;
+  sections: OutlineSection[];
+  generatedBy?: DocumentOutline['generatedBy'];
+}
+
+export interface DiscussionKnowledgeCoverageResult {
+  totalSections: number;
+  coveredSections: number;
+  sufficientSections: number;
+  coverage: number;
+  sectionDetails: Array<{
+    sectionId: string;
+    sectionTitle: string;
+    knowledgeCount: number;
+    status: OutlineSectionStatus;
+    latestEntryDate?: Date;
+  }>;
 }
 
 export interface UpdateDiscussionSedimentModeDto {
@@ -133,5 +216,15 @@ export interface UpdateDiscussionSedimentModeDto {
 }
 
 export interface GenerateDiscussionSedimentDto {
+  mode?: DiscussionSedimentMode;
+  title?: string;
   threadScope?: string[];
+}
+
+export interface ListDiscussionSedimentHistoryQuery {
+  limit?: number;
+}
+
+export interface DeleteDiscussionSedimentHistoryDto {
+  operatorId: string;
 }

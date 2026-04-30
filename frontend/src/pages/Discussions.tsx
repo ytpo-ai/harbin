@@ -1,10 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { PlusIcon, ArrowPathIcon, ChatBubbleLeftRightIcon } from '@heroicons/react/24/outline';
 import SpaceCreateModal from '../components/discussion/SpaceCreateModal';
+import { agentService } from '../services/agentService';
 import { authService, CurrentUser } from '../services/authService';
-import { discussionService, DiscussionSpace, DiscussionSpaceStatus } from '../services/discussionService';
+import { incubationProjectService } from '../services/incubationProjectService';
+import {
+  discussionService,
+  DiscussionSpaceCategory,
+  DiscussionSpace,
+  DiscussionSpaceStatus,
+  AddDiscussionParticipantPayload,
+} from '../services/discussionService';
 
 const statusLabelMap: Record<DiscussionSpaceStatus, string> = {
   active: '进行中',
@@ -12,14 +20,31 @@ const statusLabelMap: Record<DiscussionSpaceStatus, string> = {
   archived: '已归档',
 };
 
+const categoryLabelMap: Record<DiscussionSpaceCategory, string> = {
+  general: '通用',
+  industry_observation: '行业观察',
+  product_discussion: '产品讨论',
+  technical_design: '技术方案',
+};
+
 const Discussions: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | DiscussionSpaceStatus>('all');
   const [keyword, setKeyword] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState('');
+
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const defaultProjectId = searchParams.get('projectId') || '';
+
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      setCreateOpen(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const loadUser = async () => {
@@ -41,20 +66,58 @@ const Discussions: React.FC = () => {
     },
   );
 
+  const assignableAgentsQuery = useQuery(['discussion-assignable-agents'], () => agentService.getAssignableAgents(), {
+    staleTime: 60_000,
+  });
+
+  const projectOptionsQuery = useQuery(
+    ['incubation-project-options'],
+    () => incubationProjectService.list({ status: 'active' }),
+    {
+      staleTime: 60_000,
+    },
+  );
+
   const createSpaceMutation = useMutation(
     (payload: {
       title: string;
       description?: string;
       tags: string[];
       projectId?: string;
+      category: DiscussionSpaceCategory;
+      industryContext?: string;
+      initialAgentIds: string[];
     }) => {
       if (!currentUser?.id) {
         throw new Error('当前用户未登录，无法创建讨论空间');
       }
 
+      const agentMap = new Map((assignableAgentsQuery.data || []).map((agent) => [agent.id, agent]));
+      const initialParticipants: AddDiscussionParticipantPayload[] = [];
+      for (const agentId of payload.initialAgentIds) {
+        const matchedAgent = agentMap.get(agentId);
+        if (!matchedAgent) {
+          continue;
+        }
+        initialParticipants.push({
+          type: 'ai_agent',
+          agentId,
+          displayName: matchedAgent.name,
+          role: 'on_demand',
+          expertise: matchedAgent.description || undefined,
+          expertiseTags: matchedAgent.capabilities || [],
+        });
+      }
+
       return discussionService.createSpace({
-        ...payload,
+        title: payload.title,
+        description: payload.description,
+        category: payload.category,
+        industryContext: payload.industryContext,
+        tags: payload.tags,
+        projectId: payload.projectId,
         creatorId: currentUser.id,
+        initialParticipants,
       });
     },
     {
@@ -158,7 +221,10 @@ const Discussions: React.FC = () => {
                 className="group border border-[#c6c6c6] bg-white p-5 text-left transition hover:border-[#0f62fe] hover:bg-[#edf5ff]"
               >
                 <div className="mb-4 flex items-center justify-between">
-                  <span className="text-xs text-[#6f6f6f]">{statusLabelMap[space.status]}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#6f6f6f]">{statusLabelMap[space.status]}</span>
+                    <span className="bg-[#f4f4f4] px-2 py-0.5 text-[11px] text-[#525252]">{categoryLabelMap[space.category || 'general']}</span>
+                  </div>
                   <ChatBubbleLeftRightIcon className="h-4 w-4 text-[#8d8d8d] group-hover:text-[#0f62fe]" />
                 </div>
                 <div className="line-clamp-2 text-lg font-normal text-[#161616]">{space.title}</div>
@@ -190,6 +256,18 @@ const Discussions: React.FC = () => {
       <SpaceCreateModal
         open={createOpen}
         loading={createSpaceMutation.isLoading}
+        availableAgents={(assignableAgentsQuery.data || []).map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          description: agent.description,
+        }))}
+        agentsLoading={assignableAgentsQuery.isLoading}
+        projectOptions={(projectOptionsQuery.data || []).map((project) => ({
+          id: project._id,
+          name: project.name,
+        }))}
+        projectsLoading={projectOptionsQuery.isLoading}
+        defaultProjectId={defaultProjectId}
         onClose={() => {
           setCreateOpen(false);
           setCreateError('');

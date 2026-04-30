@@ -13,12 +13,13 @@ import {
 } from '@heroicons/react/24/outline';
 import {
   incubationProjectService,
+  IncubationProjectDiscussionSpace,
   IncubationProject,
   IncubationProjectStats,
   IncubationProjectStatus,
 } from '../services/incubationProjectService';
 
-type DetailTab = 'agents' | 'plans' | 'schedules' | 'requirements';
+type DetailTab = 'agents' | 'plans' | 'schedules' | 'requirements' | 'discussions';
 
 const PLAN_STATUS_LABEL: Record<string, string> = {
   draft: '草稿',
@@ -53,6 +54,13 @@ const STATUS_COLOR: Record<IncubationProjectStatus, string> = {
   paused: 'bg-yellow-100 text-yellow-700',
   completed: 'bg-blue-100 text-blue-700',
   archived: 'bg-gray-100 text-gray-600',
+};
+
+const DISCUSSION_CATEGORY_LABEL: Record<string, string> = {
+  general: '通用',
+  industry_observation: '行业观察',
+  product_discussion: '产品讨论',
+  technical_design: '技术方案',
 };
 
 function formatDate(dateStr?: string) {
@@ -130,6 +138,17 @@ const IncubationProjectDetail: React.FC = () => {
     { enabled: Boolean(id) && activeTab === 'requirements', retry: false },
   );
 
+  // ---- Discussions ----
+  const {
+    data: discussions = [],
+    isLoading: discussionsLoading,
+    refetch: refetchDiscussions,
+  } = useQuery<IncubationProjectDiscussionSpace[]>(
+    ['incubation-project-discussions', id],
+    () => incubationProjectService.getProjectDiscussions(id!),
+    { enabled: Boolean(id) && activeTab === 'discussions', retry: false },
+  );
+
   if (projectLoading) {
     return <div className="p-6 text-sm text-gray-500">加载中...</div>;
   }
@@ -171,12 +190,13 @@ const IncubationProjectDetail: React.FC = () => {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         <StatCard icon={<UserGroupIcon className="h-4 w-4 text-blue-500" />} label="Agent" value={stats?.agents} loading={statsLoading} />
         <StatCard icon={<ClipboardDocumentListIcon className="h-4 w-4 text-indigo-500" />} label="计划" value={stats?.plans.total} loading={statsLoading} />
         <StatCard icon={<DocumentTextIcon className="h-4 w-4 text-green-500" />} label="需求" value={stats?.requirements.total} loading={statsLoading} />
         <StatCard icon={<CalendarIcon className="h-4 w-4 text-orange-500" />} label="调度" value={stats?.schedules.total} loading={statsLoading} />
         <StatCard icon={<ChatBubbleLeftRightIcon className="h-4 w-4 text-purple-500" />} label="会议" value={stats?.meetings.total} loading={statsLoading} />
+        <StatCard icon={<ChatBubbleLeftRightIcon className="h-4 w-4 text-cyan-500" />} label="讨论空间" value={stats?.discussions.total} loading={statsLoading} />
         <StatCard
           icon={<ArrowPathIcon className="h-4 w-4 text-teal-500" />}
           label="运行"
@@ -193,6 +213,7 @@ const IncubationProjectDetail: React.FC = () => {
             { key: 'plans' as const, label: '计划', count: plans.length },
             { key: 'schedules' as const, label: '调度', count: schedules.length },
             { key: 'requirements' as const, label: '需求', count: requirements.length },
+            { key: 'discussions' as const, label: '讨论空间', count: discussions.length },
           ]).map((tab) => (
             <button
               key={tab.key}
@@ -413,6 +434,66 @@ const IncubationProjectDetail: React.FC = () => {
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'discussions' && (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs text-gray-500">项目关联讨论空间</p>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/discussions?projectId=${encodeURIComponent(project._id)}&create=1`}
+                    className="text-xs text-primary-600 hover:underline"
+                  >
+                    新建讨论空间
+                  </Link>
+                  <button
+                    onClick={() => refetchDiscussions()}
+                    className="text-xs text-gray-500 hover:text-gray-700 inline-flex items-center gap-1"
+                  >
+                    <ArrowPathIcon className="h-3.5 w-3.5" />刷新
+                  </button>
+                </div>
+              </div>
+              {discussionsLoading ? (
+                <p className="text-sm text-gray-500">加载中...</p>
+              ) : discussions.length === 0 ? (
+                <p className="text-sm text-gray-400">
+                  暂无讨论空间，前往
+                  <Link to={`/discussions?projectId=${encodeURIComponent(project._id)}&create=1`} className="text-primary-600 hover:underline">
+                    讨论空间
+                  </Link>
+                  创建并关联此项目。
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {discussions.map((space) => (
+                    <button
+                      key={space.id}
+                      type="button"
+                      onClick={() => navigate(`/discussions/${space.id}`)}
+                      className="w-full border border-gray-200 rounded p-3 text-left hover:border-primary-300 hover:bg-primary-50/40"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-gray-900">{space.title}</p>
+                          <span className="text-[10px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                            {DISCUSSION_CATEGORY_LABEL[space.category || 'general']}
+                          </span>
+                          <span className="text-[10px] bg-gray-50 text-gray-500 px-1.5 py-0.5 rounded">{space.status}</span>
+                        </div>
+                        <span className="text-xs text-primary-600">进入讨论</span>
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-gray-400">
+                        <span>消息: {space.statistics?.totalMessages ?? 0}</span>
+                        <span>知识: {space.statistics?.totalKnowledgeEntries ?? 0}</span>
+                        {space.updatedAt ? <span>更新: {formatDate(space.updatedAt)}</span> : null}
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
             </div>

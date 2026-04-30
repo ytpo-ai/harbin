@@ -15,6 +15,44 @@ export enum DiscussionSedimentMode {
   REALTIME = 'realtime',
 }
 
+export enum DiscussionSpaceCategory {
+  GENERAL = 'general',
+  INDUSTRY_OBSERVATION = 'industry_observation',
+  PRODUCT_DISCUSSION = 'product_discussion',
+  TECHNICAL_DESIGN = 'technical_design',
+}
+
+export type OutlineSectionStatus = 'draft' | 'enriching' | 'sufficient' | 'review';
+
+export interface OutlineSection {
+  id: string;
+  title: string;
+  description?: string;
+  parentSectionId?: string;
+  order: number;
+  depth: number;
+  status: OutlineSectionStatus;
+  knowledgeCount: number;
+  childSectionIds: string[];
+  metadata?: {
+    suggestedDataSources?: string[];
+    collectFrequency?: string;
+    isStructuredData?: boolean;
+  };
+}
+
+export interface DocumentOutline {
+  version: number;
+  title: string;
+  sections: OutlineSection[];
+  createdAt: Date;
+  updatedAt: Date;
+  generatedBy: 'agent' | 'human' | 'hybrid';
+  agentId?: string;
+  runId?: string;
+  sessionId?: string;
+}
+
 @Schema({ timestamps: true, collection: 'discussion_spaces' })
 export class DiscussionSpace {
   @Prop({ required: true, unique: true, default: () => uuidv4() })
@@ -35,6 +73,9 @@ export class DiscussionSpace {
   @Prop({ enum: DiscussionSedimentMode, default: DiscussionSedimentMode.MANUAL })
   sedimentMode: DiscussionSedimentMode;
 
+  @Prop({ enum: DiscussionSpaceCategory, default: DiscussionSpaceCategory.GENERAL })
+  category: DiscussionSpaceCategory;
+
   @Prop({ type: [String], default: [] })
   tags: string[];
 
@@ -42,18 +83,26 @@ export class DiscussionSpace {
   rootThreadId?: string;
 
   @Prop({ type: Object })
-  documentOutline?: Record<string, any>;
+  documentOutline?: DocumentOutline;
 
   @Prop({ type: [Object], default: [] })
   sedimentHistory: Array<{
+    id?: string;
     version: number;
+    title?: string;
     content: string;
     threadScope: string[];
     createdAt: Date;
+    isDeleted?: boolean;
+    deletedAt?: Date;
+    deletedBy?: string;
   }>;
 
   @Prop()
   latestSedimentedDocument?: string;
+
+  @Prop()
+  latestSedimentTitle?: string;
 
   @Prop()
   projectId?: string;
@@ -63,6 +112,12 @@ export class DiscussionSpace {
     maxBranchDepth?: number;
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
+  };
+
+  @Prop({ type: Object })
+  metadata?: {
+    industryContext?: string;
   };
 
   @Prop({ type: Object, default: { totalThreads: 1, totalMessages: 0, totalKnowledgeEntries: 0, totalTokensConsumed: 0, totalCost: 0 } })
@@ -80,3 +135,4 @@ export const DiscussionSpaceSchema = SchemaFactory.createForClass(DiscussionSpac
 DiscussionSpaceSchema.index({ creatorId: 1, status: 1 });
 DiscussionSpaceSchema.index({ projectId: 1 });
 DiscussionSpaceSchema.index({ tags: 1 });
+DiscussionSpaceSchema.index({ category: 1, status: 1 });

@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   DiscussionSpace,
+  DiscussionSpaceCategory,
   DiscussionSpaceDocument,
   DiscussionSpaceStatus,
 } from '../../../shared/schemas/discussion-space.schema';
@@ -16,8 +17,12 @@ export class DiscussionSpaceService {
   ) {}
 
   async createSpace(dto: CreateDiscussionSpaceDto): Promise<DiscussionSpace> {
+    const { industryContext, ...spacePayload } = dto;
+    const normalizedIndustryContext = industryContext?.trim();
     return this.discussionSpaceModel.create({
-      ...dto,
+      ...spacePayload,
+      category: dto.category || DiscussionSpaceCategory.GENERAL,
+      metadata: normalizedIndustryContext ? { industryContext: normalizedIndustryContext } : undefined,
       status: DiscussionSpaceStatus.ACTIVE,
       statistics: {
         totalThreads: 1,
@@ -34,6 +39,9 @@ export class DiscussionSpaceService {
 
     if (query.status) {
       filter.status = query.status;
+    }
+    if (query.category) {
+      filter.category = query.category;
     }
     if (query.creatorId) {
       filter.creatorId = query.creatorId;
@@ -88,6 +96,20 @@ export class DiscussionSpaceService {
 
   async setRootThread(spaceId: string, rootThreadId: string): Promise<void> {
     await this.discussionSpaceModel.updateOne({ id: spaceId }, { $set: { rootThreadId } }).exec();
+  }
+
+  async clearDefaultReplyAgentIfMatched(spaceId: string, participantId: string): Promise<void> {
+    await this.discussionSpaceModel.updateOne(
+      {
+        id: spaceId,
+        'settings.defaultReplyAgentId': participantId,
+      },
+      {
+        $unset: {
+          'settings.defaultReplyAgentId': '',
+        },
+      },
+    ).exec();
   }
 
   async incrementStatistics(

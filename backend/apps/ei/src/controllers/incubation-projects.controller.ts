@@ -133,6 +133,15 @@ export class IncubationProjectsController {
     return this.aggregationService.getProjectMeetings(id);
   }
 
+  @Get(':id/discussions')
+  async getProjectDiscussions(
+    @Param('id') id: string,
+    @Headers('authorization') authHeader: string,
+  ) {
+    await this.getUserFromAuthHeader(authHeader);
+    return this.aggregationService.getProjectDiscussionSpaces(id);
+  }
+
   @Get(':id/stats')
   async getProjectStats(
     @Param('id') id: string,

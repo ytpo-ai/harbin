@@ -29,10 +29,14 @@ import { MessageCenterModule } from '../message-center/message-center.module';
 import { DiscussionMentionDispatchService } from './services/discussion-mention-dispatch.service';
 import { DiscussionKnowledgeService } from './services/discussion-knowledge.service';
 import { DiscussionSedimentService } from './services/discussion-sediment.service';
+import { AgentClientModule } from '../agents-client/agent-client.module';
+import { DiscussionMessageStreamService } from './services/discussion-message-stream.service';
+import { DiscussionOutlineService } from './services/discussion-outline.service';
 
 @Module({
   imports: [
     MessageCenterModule,
+    AgentClientModule,
     MongooseModule.forFeature([
       { name: DiscussionSpace.name, schema: DiscussionSpaceSchema },
       { name: DiscussionThread.name, schema: DiscussionThreadSchema },
@@ -50,6 +54,8 @@ import { DiscussionSedimentService } from './services/discussion-sediment.servic
     DiscussionMentionDispatchService,
     DiscussionKnowledgeService,
     DiscussionSedimentService,
+    DiscussionMessageStreamService,
+    DiscussionOutlineService,
   ],
   exports: [
     DiscussionSpaceService,
@@ -59,6 +65,8 @@ import { DiscussionSedimentService } from './services/discussion-sediment.servic
     DiscussionMentionDispatchService,
     DiscussionKnowledgeService,
     DiscussionSedimentService,
+    DiscussionMessageStreamService,
+    DiscussionOutlineService,
   ],
 })
 export class DiscussionModule {}

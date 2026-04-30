@@ -15,6 +15,15 @@ const credibilityLabelMap: Record<DiscussionKnowledgeEntry['credibility'], strin
   unverified: '待验证',
 };
 
+const entryTypeLabelMap: Record<string, string> = {
+  fact: '事实',
+  data_point: '数据点',
+  opinion: '观点',
+  source_reference: '来源引用',
+  analysis: '分析',
+  action_item: '行动项',
+};
+
 const KnowledgePanel: React.FC<KnowledgePanelProps> = ({ keyword, loading, items, onKeywordChange }) => {
   return (
     <div className="space-y-4">
@@ -37,7 +46,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({ keyword, loading, items
             <div key={item.id} className="border border-[#e0e0e0] bg-[#f4f4f4] p-3">
               <div className="text-sm font-medium text-[#161616]">{item.title}</div>
               <div className="mt-1 text-xs text-[#6f6f6f]">
-                {credibilityLabelMap[item.credibility]} · {item.sourceType}
+                {credibilityLabelMap[item.credibility]} · {entryTypeLabelMap[item.entryType || 'fact'] || '事实'} · {item.sourceType}
               </div>
               <div className="mt-2 text-xs leading-5 text-[#262626]">{item.summary || item.content}</div>
               {item.keywordTags.length > 0 ? (

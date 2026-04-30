@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
   DiscussionKnowledgeCredibility,
   DiscussionKnowledgeEntry,
   DiscussionKnowledgeEntryDocument,
+  DiscussionKnowledgeEntryType,
   DiscussionKnowledgeSourceType,
 } from '../../../shared/schemas/discussion-knowledge-entry.schema';
 import { DiscussionParticipant, DiscussionParticipantDocument } from '../../../shared/schemas/discussion-participant.schema';
@@ -72,6 +73,27 @@ function buildSummary(content: string, maxLength = 140): string {
   return `${normalized.slice(0, maxLength - 1)}...`;
 }
 
+export function buildReusableKnowledgeFilter(
+  spaceId: string,
+  input: { topicTags?: string[]; includeDerived?: boolean },
+): Record<string, any> {
+  const topicTags = (input.topicTags || []).filter(Boolean);
+  const filter: Record<string, any> = {
+    spaceId,
+    isActive: true,
+  };
+
+  if (!input.includeDerived) {
+    filter.sourceType = { $ne: DiscussionKnowledgeSourceType.DISCUSSION_DERIVED };
+  }
+
+  if (topicTags.length) {
+    filter.$or = [{ topicTags: { $in: topicTags } }, { keywordTags: { $in: topicTags } }];
+  }
+
+  return filter;
+}
+
 @Injectable()
 export class DiscussionKnowledgeService {
   constructor(
@@ -96,6 +118,14 @@ export class DiscussionKnowledgeService {
       keywordTags,
       topicTags: dto.topicTags || [],
       domainTags: dto.domainTags || [],
+      outlineSectionId: dto.outlineSectionId,
+      entryType: dto.entryType || DiscussionKnowledgeEntryType.FACT,
+      structuredData: dto.structuredData
+        ? {
+            ...dto.structuredData,
+            measureDate: dto.structuredData.measureDate ? new Date(dto.structuredData.measureDate) : undefined,
+          }
+        : undefined,
       credibility,
       contentDate: dto.contentDate ? new Date(dto.contentDate) : undefined,
       credibilityDetail: {
@@ -152,6 +182,9 @@ export class DiscussionKnowledgeService {
     if (query.participantId) {
       filter.participantId = query.participantId;
     }
+    if (query.outlineSectionId) {
+      filter.outlineSectionId = query.outlineSectionId;
+    }
     if (query.credibility) {
       filter.credibility = query.credibility;
     }
@@ -172,16 +205,8 @@ export class DiscussionKnowledgeService {
       .exec() as unknown as DiscussionKnowledgeEntry[];
   }
 
-  async getReusableKnowledge(spaceId: string, input: { topicTags?: string[]; limit?: number }): Promise<DiscussionKnowledgeEntry[]> {
-    const topicTags = (input.topicTags || []).filter(Boolean);
-    const filter: Record<string, any> = {
-      spaceId,
-      isActive: true,
-    };
-
-    if (topicTags.length) {
-      filter.$or = [{ topicTags: { $in: topicTags } }, { keywordTags: { $in: topicTags } }];
-    }
+  async getReusableKnowledge(spaceId: string, input: { topicTags?: string[]; limit?: number; includeDerived?: boolean }): Promise<DiscussionKnowledgeEntry[]> {
+    const filter = buildReusableKnowledgeFilter(spaceId, input);
 
     return this.discussionKnowledgeEntryModel
       .find(filter)
@@ -211,5 +236,44 @@ export class DiscussionKnowledgeService {
         .updateMany({ id: { $in: knowledgeEntryIds }, spaceId }, { $inc: { referenceCount: 1 } })
         .exec(),
     ]);
+  }
+
+  async linkExistingKnowledgeEntriesToMessage(input: {
+    spaceId: string;
+    threadId: string;
+    messageId: string;
+    knowledgeEntryIds: string[];
+  }): Promise<string[]> {
+    const deduplicatedIds = Array.from(new Set((input.knowledgeEntryIds || []).map((id) => String(id || '').trim()).filter(Boolean)));
+    if (!deduplicatedIds.length) {
+      throw new BadRequestException('knowledgeEntryIds 至少需要包含一个条目');
+    }
+
+    const message = await this.discussionMessageModel
+      .findOne({ id: input.messageId, spaceId: input.spaceId, threadId: input.threadId })
+      .lean()
+      .exec();
+    if (!message) {
+      throw new NotFoundException(`消息不存在: ${input.messageId}`);
+    }
+
+    const existingKnowledgeEntries = await this.discussionKnowledgeEntryModel
+      .find({
+        spaceId: input.spaceId,
+        id: { $in: deduplicatedIds },
+        isActive: true,
+      })
+      .select({ id: 1 })
+      .lean()
+      .exec() as Array<Pick<DiscussionKnowledgeEntry, 'id'>>;
+
+    const existingIds = new Set(existingKnowledgeEntries.map((item) => item.id));
+    const missingIds = deduplicatedIds.filter((id) => !existingIds.has(id));
+    if (missingIds.length) {
+      throw new NotFoundException(`知识条目不存在或不可用: ${missingIds.join(',')}`);
+    }
+
+    await this.linkKnowledgeToMessage(input.spaceId, input.messageId, deduplicatedIds);
+    return deduplicatedIds;
   }
 }

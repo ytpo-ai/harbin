@@ -20,6 +20,7 @@ import {
 } from '../../../../src/shared/schemas/orchestration-task.schema';
 import { Schedule, ScheduleDocument } from '../../../../src/shared/schemas/schedule.schema';
 import { Meeting, MeetingDocument } from '../../../../src/shared/schemas/meeting.schema';
+import { DiscussionSpace, DiscussionSpaceDocument } from '../../../../src/shared/schemas/discussion-space.schema';
 import { AgentClientService } from '../../../../src/modules/agents-client/agent-client.service';
 
 @Injectable()
@@ -37,6 +38,8 @@ export class IncubationProjectAggregationService {
     private readonly scheduleModel: Model<ScheduleDocument>,
     @InjectModel(Meeting.name)
     private readonly meetingModel: Model<MeetingDocument>,
+    @InjectModel(DiscussionSpace.name)
+    private readonly discussionSpaceModel: Model<DiscussionSpaceDocument>,
     @InjectModel(EiRequirement.name)
     private readonly requirementModel: Model<EiRequirementDocument>,
     private readonly agentClientService: AgentClientService,
@@ -89,6 +92,27 @@ export class IncubationProjectAggregationService {
     return this.meetingModel.find({ projectId }).sort({ createdAt: -1 }).exec();
   }
 
+  async getProjectDiscussionSpaces(projectId: string): Promise<DiscussionSpace[]> {
+    await this.assertProjectExists(projectId);
+    return this.discussionSpaceModel
+      .find(
+        { projectId, status: { $ne: 'archived' } },
+        {
+          id: 1,
+          title: 1,
+          category: 1,
+          status: 1,
+          tags: 1,
+          statistics: 1,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      )
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec() as unknown as DiscussionSpace[];
+  }
+
   /**
    * 项目概览统计
    */
@@ -100,6 +124,7 @@ export class IncubationProjectAggregationService {
     requirements: { total: number; byStatus: Record<string, number> };
     schedules: { total: number; enabled: number };
     meetings: { total: number; byStatus: Record<string, number> };
+    discussions: { total: number; byCategory: Record<string, number> };
   }> {
     await this.assertProjectExists(projectId);
 
@@ -170,6 +195,23 @@ export class IncubationProjectAggregationService {
       meetingTotal += item.count;
     }
 
+    const discussionAgg = await this.discussionSpaceModel.aggregate([
+      {
+        $match: {
+          projectId,
+          status: { $ne: 'archived' },
+        },
+      },
+      { $group: { _id: '$category', count: { $sum: 1 } } },
+    ]);
+    const discussionByCategory: Record<string, number> = {};
+    let discussionTotal = 0;
+    for (const item of discussionAgg) {
+      const key = item._id || 'general';
+      discussionByCategory[key] = item.count;
+      discussionTotal += item.count;
+    }
+
     return {
       agents: agents.length,
       plans: { total: planTotal, byStatus: planByStatus },
@@ -178,6 +220,7 @@ export class IncubationProjectAggregationService {
       requirements: { total: reqTotal, byStatus: reqByStatus },
       schedules: { total: scheduleTotal, enabled: scheduleEnabled },
       meetings: { total: meetingTotal, byStatus: meetingByStatus },
+      discussions: { total: discussionTotal, byCategory: discussionByCategory },
     };
   }
 }

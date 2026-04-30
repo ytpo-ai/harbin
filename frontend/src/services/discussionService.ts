@@ -1,6 +1,9 @@
 import api from './api';
 
 export type DiscussionSpaceStatus = 'active' | 'paused' | 'archived';
+export type DiscussionSpaceCategory = 'general' | 'industry_observation' | 'product_discussion' | 'technical_design';
+export type OutlineSectionStatus = 'draft' | 'enriching' | 'sufficient' | 'review';
+export type DiscussionKnowledgeEntryType = 'fact' | 'data_point' | 'opinion' | 'source_reference' | 'analysis' | 'action_item';
 export type DiscussionSedimentMode = 'manual' | 'realtime';
 export type DiscussionThreadBranchOrigin = 'user' | 'ai_suggestion';
 export type DiscussionThreadStatus = 'active' | 'concluded' | 'archived';
@@ -18,15 +21,21 @@ export interface DiscussionSpace {
   description?: string;
   creatorId: string;
   status: DiscussionSpaceStatus;
+  category: DiscussionSpaceCategory;
   sedimentMode: DiscussionSedimentMode;
   tags: string[];
   rootThreadId?: string;
   projectId?: string;
+  metadata?: {
+    industryContext?: string;
+  };
   latestSedimentedDocument?: string;
+  latestSedimentTitle?: string;
   settings?: {
     maxBranchDepth?: number;
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
   };
   statistics?: {
     totalThreads: number;
@@ -125,6 +134,18 @@ export interface DiscussionKnowledgeEntry {
   title: string;
   content: string;
   summary: string;
+  outlineSectionId?: string;
+  entryType?: DiscussionKnowledgeEntryType;
+  structuredData?: {
+    value?: string | number;
+    unit?: string;
+    measureDate?: string;
+    compareTo?: {
+      value: string | number;
+      period: string;
+      changePercent?: number;
+    };
+  };
   sourceUrl?: string;
   sourceType: DiscussionKnowledgeSourceType;
   sourceName?: string;
@@ -140,22 +161,87 @@ export interface DiscussionKnowledgeEntry {
   updatedAt?: string;
 }
 
+export interface OutlineSection {
+  id: string;
+  title: string;
+  description?: string;
+  parentSectionId?: string;
+  order: number;
+  depth: number;
+  status: OutlineSectionStatus;
+  knowledgeCount: number;
+  childSectionIds: string[];
+  metadata?: {
+    suggestedDataSources?: string[];
+    collectFrequency?: string;
+    isStructuredData?: boolean;
+  };
+}
+
+export interface DiscussionDocumentOutline {
+  version: number;
+  title: string;
+  sections: OutlineSection[];
+  createdAt: string;
+  updatedAt: string;
+  generatedBy: 'agent' | 'human' | 'hybrid';
+  agentId?: string;
+  runId?: string;
+  sessionId?: string;
+}
+
+export interface DiscussionKnowledgeCoverage {
+  totalSections: number;
+  coveredSections: number;
+  sufficientSections: number;
+  coverage: number;
+  sectionDetails: Array<{
+    sectionId: string;
+    sectionTitle: string;
+    knowledgeCount: number;
+    status: OutlineSectionStatus;
+    latestEntryDate?: string;
+  }>;
+}
+
 export interface DiscussionSpaceDetail extends DiscussionSpace {
   threadTree: DiscussionThread[];
   participants: DiscussionParticipant[];
+}
+
+export interface DeleteDiscussionThreadResult {
+  deleted: true;
+  threadId: string;
+  deletedThreadIds: string[];
 }
 
 export interface CreateDiscussionSpacePayload {
   title: string;
   description?: string;
   creatorId: string;
+  category?: DiscussionSpaceCategory;
+  industryContext?: string;
   tags?: string[];
   projectId?: string;
   settings?: {
     maxBranchDepth?: number;
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
   };
+  initialParticipants?: AddDiscussionParticipantPayload[];
+}
+
+export interface AddDiscussionParticipantPayload {
+  type: DiscussionParticipantType;
+  userId?: string;
+  agentId?: string;
+  displayName: string;
+  avatar?: string;
+  role: DiscussionParticipantRole;
+  expertise?: string;
+  expertiseTags?: string[];
+  presence?: DiscussionParticipantPresence;
 }
 
 export interface SendDiscussionMessagePayload {
@@ -174,22 +260,172 @@ export interface SendDiscussionMessageResult {
   realtimeSedimentUpdated: boolean;
 }
 
+export interface LinkDiscussionMessageKnowledgeResult {
+  linked: true;
+  messageId: string;
+  knowledgeEntryIds: string[];
+}
+
+export type DiscussionMessageStreamEvent =
+  | {
+      type: 'discussion.message.snapshot';
+      data: { spaceId: string; threadId: string };
+    }
+  | {
+      type: 'discussion.message.created';
+      data: { spaceId: string; threadId: string; message: DiscussionMessage };
+    };
+
 export interface DiscussionLatestSediment {
   mode: DiscussionSedimentMode;
   latest?: {
     version: number;
+    title: string;
     content: string;
     threadScope: string[];
     createdAt: string;
   };
 }
 
-const normalizeWithId = <T extends { id?: string; _id?: string }>(item: T): T & { id: string } => {
+export interface DiscussionSedimentHistory {
+  mode: DiscussionSedimentMode;
+  items: Array<{
+    id: string;
+    version: number;
+    title: string;
+    content: string;
+    threadScope: string[];
+    createdAt: string;
+  }>;
+}
+
+export type DiscussionSedimentTaskStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface DiscussionSedimentTask {
+  taskId: string;
+  spaceId: string;
+  title: string;
+  status: DiscussionSedimentTaskStatus;
+  mode: DiscussionSedimentMode;
+  threadScope: string[];
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  error?: string;
+}
+
+export type DiscussionSedimentTaskStreamEvent = {
+  type:
+    | 'discussion.sediment.task.snapshot'
+    | 'discussion.sediment.task.running'
+    | 'discussion.sediment.task.succeeded'
+    | 'discussion.sediment.task.failed';
+  data: {
+    task: DiscussionSedimentTask;
+  };
+};
+
+export interface UpdateDiscussionParticipantPayload {
+  displayName?: string;
+  avatar?: string;
+  role?: DiscussionParticipantRole;
+  expertise?: string;
+  expertiseTags?: string[];
+  presence?: DiscussionParticipantPresence;
+}
+
+export interface UpdateDiscussionSpacePayload {
+  title?: string;
+  description?: string;
+  tags?: string[];
+  settings?: {
+    maxBranchDepth?: number;
+    knowledgeAutoAccumulate?: boolean;
+    branchSuggestionEnabled?: boolean;
+    defaultReplyAgentId?: string;
+  };
+}
+
+export interface CreateOutlineSectionPayload {
+  title: string;
+  description?: string;
+  parentSectionId?: string;
+  order?: number;
+  status?: OutlineSectionStatus;
+  metadata?: OutlineSection['metadata'];
+}
+
+export interface UpdateOutlineSectionPayload {
+  title?: string;
+  description?: string;
+  parentSectionId?: string;
+  order?: number;
+  status?: OutlineSectionStatus;
+  metadata?: OutlineSection['metadata'];
+}
+
+const normalizeWithId = <T extends { id?: string | number | { toString: () => string }; _id?: string | number | { toString: () => string } }>(
+  item: T,
+): T & { id: string } => {
   const id = item.id || item._id;
   return {
     ...item,
-    id: id || '',
+    id: typeof id === 'string' ? id : id ? String(id) : '',
   };
+};
+
+const normalizeThreadTree = (threadTree: unknown): DiscussionThread[] => {
+  if (!Array.isArray(threadTree)) {
+    return [];
+  }
+
+  const flattened: DiscussionThread[] = [];
+
+  const visit = (thread: unknown, parentThreadId?: string) => {
+    if (!thread || typeof thread !== 'object' || Array.isArray(thread)) {
+      return;
+    }
+
+    const raw = thread as DiscussionThread & {
+      id?: string;
+      _id?: string;
+      children?: unknown[];
+      parentThreadId?: string | { toString: () => string };
+    };
+    const normalized = normalizeWithId(raw);
+    const normalizedParentThreadId =
+      typeof normalized.parentThreadId === 'string'
+        ? normalized.parentThreadId
+        : normalized.parentThreadId
+          ? String(normalized.parentThreadId)
+          : parentThreadId;
+
+    flattened.push({
+      ...normalized,
+      parentThreadId: normalizedParentThreadId,
+      childThreadIds: Array.isArray(normalized.childThreadIds)
+        ? normalized.childThreadIds.map((id) => (typeof id === 'string' ? id : String(id)))
+        : [],
+      activeParticipantIds: Array.isArray(normalized.activeParticipantIds)
+        ? normalized.activeParticipantIds.map((id) => (typeof id === 'string' ? id : String(id)))
+        : [],
+    });
+
+    if (!Array.isArray(raw.children)) {
+      return;
+    }
+
+    for (const child of raw.children) {
+      visit(child, normalized.id);
+    }
+  };
+
+  for (const thread of threadTree) {
+    visit(thread);
+  }
+
+  return flattened;
 };
 
 const unwrapPayload = <T>(payload: unknown): T => {
@@ -208,6 +444,7 @@ const unwrapPayload = <T>(payload: unknown): T => {
 class DiscussionService {
   async listSpaces(filters?: {
     status?: DiscussionSpaceStatus;
+    category?: DiscussionSpaceCategory;
     creatorId?: string;
     projectId?: string;
     tags?: string[];
@@ -233,14 +470,24 @@ class DiscussionService {
     const detail = unwrapPayload<DiscussionSpaceDetail>(response.data);
     return {
       ...normalizeWithId(detail),
-      threadTree: (detail.threadTree || []).map((thread) => normalizeWithId(thread)),
+      threadTree: normalizeThreadTree(detail.threadTree),
       participants: (detail.participants || []).map((participant) => normalizeWithId(participant)),
     };
+  }
+
+  async updateSpace(spaceId: string, payload: UpdateDiscussionSpacePayload): Promise<DiscussionSpace> {
+    const response = await api.put(`/discussions/${spaceId}`, payload);
+    return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
   }
 
   async updateSedimentMode(spaceId: string, mode: DiscussionSedimentMode): Promise<DiscussionSpace> {
     const response = await api.put(`/discussions/${spaceId}/sediment/mode`, { mode });
     return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
+  }
+
+  async deleteThread(spaceId: string, threadId: string): Promise<DeleteDiscussionThreadResult> {
+    const response = await api.delete(`/discussions/${spaceId}/threads/${threadId}`);
+    return unwrapPayload<DeleteDiscussionThreadResult>(response.data);
   }
 
   async listMessages(spaceId: string, threadId: string, limit = 100): Promise<DiscussionMessage[]> {
@@ -249,6 +496,121 @@ class DiscussionService {
     });
     const list = unwrapPayload<DiscussionMessage[]>(response.data) || [];
     return list.map((item) => normalizeWithId(item));
+  }
+
+  subscribeThreadMessageEvents(
+    spaceId: string,
+    threadId: string,
+    handlers: {
+      onEvent: (event: DiscussionMessageStreamEvent) => void;
+      onError?: () => void;
+    },
+  ): () => void {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
+    const streamUrl = `${baseURL}/discussions/${encodeURIComponent(spaceId)}/threads/${encodeURIComponent(threadId)}/messages/events${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
+    const controller = new AbortController();
+    let stopped = false;
+    let retryTimer: number | null = null;
+
+    const clearRetryTimer = () => {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    const scheduleReconnect = () => {
+      if (stopped) {
+        return;
+      }
+      clearRetryTimer();
+      retryTimer = window.setTimeout(() => {
+        void connect();
+      }, 1200);
+    };
+
+    const connect = async () => {
+      if (stopped) {
+        return;
+      }
+
+      try {
+        const response = await fetch(streamUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`discussion sse failed: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let currentData: string[] = [];
+
+        const flushEvent = () => {
+          if (!currentData.length) {
+            return;
+          }
+          const raw = currentData.join('\n').trim();
+          currentData = [];
+          if (!raw) {
+            return;
+          }
+          try {
+            const payload = JSON.parse(raw) as DiscussionMessageStreamEvent;
+            handlers.onEvent(payload);
+          } catch {
+            // ignore invalid payload
+          }
+        };
+
+        while (!stopped) {
+          const { value, done } = await reader.read();
+          if (done) {
+            flushEvent();
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line) {
+              flushEvent();
+              continue;
+            }
+            if (line.startsWith('data:')) {
+              currentData.push(line.slice(5).trimStart());
+            }
+          }
+        }
+
+        if (!stopped) {
+          handlers.onError?.();
+          scheduleReconnect();
+        }
+      } catch {
+        if (stopped || controller.signal.aborted) {
+          return;
+        }
+        handlers.onError?.();
+        scheduleReconnect();
+      }
+    };
+
+    void connect();
+
+    return () => {
+      stopped = true;
+      clearRetryTimer();
+      controller.abort();
+    };
   }
 
   async sendMessage(
@@ -275,10 +637,23 @@ class DiscussionService {
     return normalizeWithId(unwrapPayload<DiscussionThread>(response.data));
   }
 
+  async linkMessageKnowledge(
+    spaceId: string,
+    threadId: string,
+    messageId: string,
+    knowledgeEntryIds: string[],
+  ): Promise<LinkDiscussionMessageKnowledgeResult> {
+    const response = await api.post(`/discussions/${spaceId}/threads/${threadId}/messages/${messageId}/knowledge/link`, {
+      knowledgeEntryIds,
+    });
+    return unwrapPayload<LinkDiscussionMessageKnowledgeResult>(response.data);
+  }
+
   async listKnowledge(
     spaceId: string,
     filters?: {
       threadId?: string;
+      outlineSectionId?: string;
       participantId?: string;
       keyword?: string;
       credibility?: DiscussionKnowledgeCredibility;
@@ -290,6 +665,48 @@ class DiscussionService {
     return list.map((item) => normalizeWithId(item));
   }
 
+  async getKnowledgeCoverage(spaceId: string): Promise<DiscussionKnowledgeCoverage> {
+    const response = await api.get(`/discussions/${spaceId}/knowledge/coverage`);
+    return unwrapPayload<DiscussionKnowledgeCoverage>(response.data);
+  }
+
+  async getOutline(spaceId: string): Promise<DiscussionDocumentOutline> {
+    const response = await api.get(`/discussions/${spaceId}/outline`);
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async generateOutline(spaceId: string, payload?: { industryContext?: string }): Promise<DiscussionDocumentOutline> {
+    const response = await api.post(`/discussions/${spaceId}/outline/generate`, payload || {});
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async updateOutline(
+    spaceId: string,
+    payload: { title?: string; sections: OutlineSection[]; generatedBy?: 'agent' | 'human' | 'hybrid' },
+  ): Promise<DiscussionDocumentOutline> {
+    const response = await api.put(`/discussions/${spaceId}/outline`, payload);
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async addOutlineSection(spaceId: string, payload: CreateOutlineSectionPayload): Promise<DiscussionDocumentOutline> {
+    const response = await api.post(`/discussions/${spaceId}/outline/sections`, payload);
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async updateOutlineSection(
+    spaceId: string,
+    sectionId: string,
+    payload: UpdateOutlineSectionPayload,
+  ): Promise<DiscussionDocumentOutline> {
+    const response = await api.put(`/discussions/${spaceId}/outline/sections/${sectionId}`, payload);
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
+  async deleteOutlineSection(spaceId: string, sectionId: string): Promise<DiscussionDocumentOutline> {
+    const response = await api.delete(`/discussions/${spaceId}/outline/sections/${sectionId}`);
+    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+  }
+
   async createKnowledge(
     spaceId: string,
     payload: {
@@ -297,6 +714,9 @@ class DiscussionService {
       title: string;
       content: string;
       summary?: string;
+      outlineSectionId?: string;
+      entryType?: DiscussionKnowledgeEntryType;
+      structuredData?: DiscussionKnowledgeEntry['structuredData'];
       sourceUrl?: string;
       sourceType: DiscussionKnowledgeSourceType;
       sourceName?: string;
@@ -313,16 +733,141 @@ class DiscussionService {
     return normalizeWithId(unwrapPayload<DiscussionKnowledgeEntry>(response.data));
   }
 
-  async generateSediment(spaceId: string, threadScope?: string[]): Promise<DiscussionSpace> {
+  async generateSediment(spaceId: string, payload?: { title?: string; threadScope?: string[] }): Promise<DiscussionSedimentTask> {
     const response = await api.post(`/discussions/${spaceId}/sediment/generate`, {
-      threadScope,
+      title: payload?.title,
+      threadScope: payload?.threadScope,
     });
-    return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
+    return unwrapPayload<DiscussionSedimentTask>(response.data);
+  }
+
+  subscribeSedimentTaskEvents(
+    spaceId: string,
+    taskId: string,
+    handlers: {
+      onEvent: (event: DiscussionSedimentTaskStreamEvent) => void;
+      onError?: () => void;
+    },
+  ): () => void {
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('token') || '';
+    const baseURL = (api.defaults.baseURL || '').replace(/\/$/, '');
+    const streamUrl = `${baseURL}/discussions/${encodeURIComponent(spaceId)}/sediment/tasks/${encodeURIComponent(taskId)}/events${token ? `?access_token=${encodeURIComponent(token)}` : ''}`;
+    const controller = new AbortController();
+    let stopped = false;
+
+    const connect = async () => {
+      try {
+        const response = await fetch(streamUrl, {
+          method: 'GET',
+          headers: {
+            Accept: 'text/event-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`discussion sediment sse failed: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+        let currentData: string[] = [];
+
+        const flushEvent = () => {
+          if (!currentData.length) {
+            return;
+          }
+          const raw = currentData.join('\n').trim();
+          currentData = [];
+          if (!raw) {
+            return;
+          }
+          try {
+            const payload = JSON.parse(raw) as DiscussionSedimentTaskStreamEvent;
+            handlers.onEvent(payload);
+          } catch {
+            // ignore invalid payload
+          }
+        };
+
+        while (!stopped) {
+          const { value, done } = await reader.read();
+          if (done) {
+            flushEvent();
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line) {
+              flushEvent();
+              continue;
+            }
+            if (line.startsWith('data:')) {
+              currentData.push(line.slice(5).trimStart());
+            }
+          }
+        }
+
+        if (!stopped) {
+          handlers.onError?.();
+        }
+      } catch {
+        if (stopped || controller.signal.aborted) {
+          return;
+        }
+        handlers.onError?.();
+      }
+    };
+
+    void connect();
+
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
   }
 
   async getLatestSediment(spaceId: string): Promise<DiscussionLatestSediment> {
     const response = await api.get(`/discussions/${spaceId}/sediment/latest`);
     return unwrapPayload<DiscussionLatestSediment>(response.data);
+  }
+
+  async getSedimentHistory(spaceId: string, limit = 20): Promise<DiscussionSedimentHistory> {
+    const response = await api.get(`/discussions/${spaceId}/sediment/history`, {
+      params: { limit },
+    });
+    return unwrapPayload<DiscussionSedimentHistory>(response.data);
+  }
+
+  async deleteSedimentHistory(spaceId: string, historyId: string, operatorId: string): Promise<{ deleted: true; historyId: string }> {
+    const response = await api.delete(`/discussions/${spaceId}/sediment/history/${historyId}`, {
+      params: { operatorId },
+    });
+    return unwrapPayload<{ deleted: true; historyId: string }>(response.data);
+  }
+
+  async addParticipant(spaceId: string, payload: AddDiscussionParticipantPayload): Promise<DiscussionParticipant> {
+    const response = await api.post(`/discussions/${spaceId}/participants`, payload);
+    return normalizeWithId(unwrapPayload<DiscussionParticipant>(response.data));
+  }
+
+  async updateParticipant(
+    spaceId: string,
+    participantId: string,
+    payload: UpdateDiscussionParticipantPayload,
+  ): Promise<DiscussionParticipant> {
+    const response = await api.put(`/discussions/${spaceId}/participants/${participantId}`, payload);
+    return normalizeWithId(unwrapPayload<DiscussionParticipant>(response.data));
+  }
+
+  async removeParticipant(spaceId: string, participantId: string): Promise<{ removed: boolean }> {
+    const response = await api.delete(`/discussions/${spaceId}/participants/${participantId}`);
+    return unwrapPayload<{ removed: boolean }>(response.data);
   }
 }
 

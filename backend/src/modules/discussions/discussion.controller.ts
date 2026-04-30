@@ -3,33 +3,46 @@ import {
   Controller,
   Delete,
   Get,
+  MessageEvent,
   Param,
   Post,
   Put,
   Query,
+  Sse,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
 import {
   AddDiscussionParticipantDto,
   BranchDiscussionThreadDto,
+  CreateDiscussionOutlineSectionDto,
   CreateDiscussionSpaceDto,
   CreateDiscussionKnowledgeEntryDto,
   CreateDiscussionThreadDto,
+  DeleteDiscussionThreadResult,
+  DeleteDiscussionSedimentHistoryDto,
   GenerateDiscussionSedimentDto,
   ListDiscussionSpacesQuery,
   ListDiscussionKnowledgeQuery,
+  LinkDiscussionMessageKnowledgeDto,
+  LinkDiscussionMessageKnowledgeResult,
+  ListDiscussionSedimentHistoryQuery,
   SendDiscussionMessageDto,
+  UpdateDiscussionOutlineDto,
+  UpdateDiscussionOutlineSectionDto,
   UpdateDiscussionSedimentModeDto,
   UpdateDiscussionParticipantDto,
   UpdateDiscussionSpaceDto,
   UpdateDiscussionThreadDto,
 } from './discussion.types';
-import { DiscussionSpaceStatus } from '../../shared/schemas/discussion-space.schema';
+import { DiscussionSpaceCategory, DiscussionSpaceStatus } from '../../shared/schemas/discussion-space.schema';
 import { DiscussionMessageService } from './services/discussion-message.service';
 import { DiscussionKnowledgeService } from './services/discussion-knowledge.service';
+import { DiscussionOutlineService } from './services/discussion-outline.service';
 import { DiscussionParticipantService } from './services/discussion-participant.service';
 import { DiscussionSedimentService } from './services/discussion-sediment.service';
 import { DiscussionSpaceService } from './services/discussion-space.service';
 import { DiscussionThreadService } from './services/discussion-thread.service';
+import { DiscussionMessageStreamService } from './services/discussion-message-stream.service';
 
 @Controller('discussions')
 export class DiscussionController {
@@ -39,7 +52,9 @@ export class DiscussionController {
     private readonly discussionMessageService: DiscussionMessageService,
     private readonly discussionParticipantService: DiscussionParticipantService,
     private readonly discussionKnowledgeService: DiscussionKnowledgeService,
+    private readonly discussionOutlineService: DiscussionOutlineService,
     private readonly discussionSedimentService: DiscussionSedimentService,
+    private readonly discussionMessageStreamService: DiscussionMessageStreamService,
   ) {}
 
   @Post()
@@ -55,18 +70,26 @@ export class DiscussionController {
       }
     }
 
+    if (dto.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION) {
+      await this.discussionOutlineService.generateOutline(space.id, {
+        industryContext: dto.industryContext,
+      });
+    }
+
     return this.discussionSpaceService.getSpaceById(space.id);
   }
 
   @Get()
   async listSpaces(
     @Query('status') status?: DiscussionSpaceStatus,
+    @Query('category') category?: DiscussionSpaceCategory,
     @Query('creatorId') creatorId?: string,
     @Query('projectId') projectId?: string,
     @Query('tags') tagsRaw?: string,
   ) {
     const query: ListDiscussionSpacesQuery = {
       status,
+      category,
       creatorId,
       projectId,
       tags: tagsRaw?.split(',').map((tag) => tag.trim()).filter(Boolean),
@@ -129,6 +152,14 @@ export class DiscussionController {
     return this.discussionThreadService.updateThread(spaceId, threadId, dto);
   }
 
+  @Delete(':spaceId/threads/:threadId')
+  async deleteThread(
+    @Param('spaceId') spaceId: string,
+    @Param('threadId') threadId: string,
+  ): Promise<DeleteDiscussionThreadResult> {
+    return this.discussionThreadService.deleteThread(spaceId, threadId);
+  }
+
   @Post(':spaceId/threads/:threadId/messages')
   async sendMessage(
     @Param('spaceId') spaceId: string,
@@ -147,6 +178,34 @@ export class DiscussionController {
     return this.discussionMessageService.listMessages(spaceId, threadId, Number(limit || 100));
   }
 
+  @Post(':spaceId/threads/:threadId/messages/:messageId/knowledge/link')
+  async linkMessageKnowledge(
+    @Param('spaceId') spaceId: string,
+    @Param('threadId') threadId: string,
+    @Param('messageId') messageId: string,
+    @Body() dto: LinkDiscussionMessageKnowledgeDto,
+  ): Promise<LinkDiscussionMessageKnowledgeResult> {
+    const knowledgeEntryIds = await this.discussionKnowledgeService.linkExistingKnowledgeEntriesToMessage({
+      spaceId,
+      threadId,
+      messageId,
+      knowledgeEntryIds: dto.knowledgeEntryIds,
+    });
+    return {
+      linked: true,
+      messageId,
+      knowledgeEntryIds,
+    };
+  }
+
+  @Sse(':spaceId/threads/:threadId/messages/events')
+  async streamThreadMessages(
+    @Param('spaceId') spaceId: string,
+    @Param('threadId') threadId: string,
+  ): Promise<Observable<MessageEvent>> {
+    return this.discussionMessageStreamService.streamThreadMessages(spaceId, threadId);
+  }
+
   @Post(':spaceId/threads/:threadId/messages/:messageId/branch')
   async branchFromMessage(
     @Param('spaceId') spaceId: string,
@@ -154,14 +213,27 @@ export class DiscussionController {
     @Param('messageId') messageId: string,
     @Body() dto: BranchDiscussionThreadDto,
   ) {
-    await this.discussionMessageService.getMessageById(spaceId, threadId, messageId);
-    return this.discussionThreadService.createThread(spaceId, {
+    const [sourceMessage, parentThread] = await Promise.all([
+      this.discussionMessageService.getMessageById(spaceId, threadId, messageId),
+      this.discussionThreadService.getThreadById(spaceId, threadId),
+    ]);
+
+    const thread = await this.discussionThreadService.createThread(spaceId, {
       title: dto.title,
       parentThreadId: threadId,
       branchFromMessageId: messageId,
       contextSummary: dto.contextSummary,
       branchOrigin: dto.branchOrigin,
     });
+
+    await this.discussionMessageService.createBranchContextMessage({
+      spaceId,
+      threadId: thread.id,
+      parentThreadTitle: parentThread.title,
+      sourceMessage,
+    });
+
+    return thread;
   }
 
   @Post(':spaceId/participants')
@@ -186,6 +258,7 @@ export class DiscussionController {
   @Delete(':spaceId/participants/:participantId')
   async removeParticipant(@Param('spaceId') spaceId: string, @Param('participantId') participantId: string) {
     await this.discussionParticipantService.removeParticipant(spaceId, participantId);
+    await this.discussionSpaceService.clearDefaultReplyAgentIfMatched(spaceId, participantId);
     return { removed: true };
   }
 
@@ -198,6 +271,7 @@ export class DiscussionController {
   async listKnowledgeEntries(
     @Param('spaceId') spaceId: string,
     @Query('threadId') threadId?: string,
+    @Query('outlineSectionId') outlineSectionId?: string,
     @Query('participantId') participantId?: string,
     @Query('keyword') keyword?: string,
     @Query('credibility') credibility?: ListDiscussionKnowledgeQuery['credibility'],
@@ -205,12 +279,52 @@ export class DiscussionController {
   ) {
     const query: ListDiscussionKnowledgeQuery = {
       threadId,
+      outlineSectionId,
       participantId,
       keyword,
       credibility,
       limit: limit ? Number(limit) : undefined,
     };
     return this.discussionKnowledgeService.listKnowledgeEntries(spaceId, query);
+  }
+
+  @Get(':spaceId/knowledge/coverage')
+  async getKnowledgeCoverage(@Param('spaceId') spaceId: string) {
+    return this.discussionOutlineService.getKnowledgeCoverage(spaceId);
+  }
+
+  @Post(':spaceId/outline/generate')
+  async generateOutline(@Param('spaceId') spaceId: string, @Body('industryContext') industryContext?: string) {
+    return this.discussionOutlineService.generateOutline(spaceId, { industryContext });
+  }
+
+  @Get(':spaceId/outline')
+  async getOutline(@Param('spaceId') spaceId: string) {
+    return this.discussionOutlineService.getOutline(spaceId);
+  }
+
+  @Put(':spaceId/outline')
+  async updateOutline(@Param('spaceId') spaceId: string, @Body() dto: UpdateDiscussionOutlineDto) {
+    return this.discussionOutlineService.updateOutline(spaceId, dto);
+  }
+
+  @Post(':spaceId/outline/sections')
+  async addOutlineSection(@Param('spaceId') spaceId: string, @Body() dto: CreateDiscussionOutlineSectionDto) {
+    return this.discussionOutlineService.addSection(spaceId, dto);
+  }
+
+  @Put(':spaceId/outline/sections/:sectionId')
+  async updateOutlineSection(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+    @Body() dto: UpdateDiscussionOutlineSectionDto,
+  ) {
+    return this.discussionOutlineService.updateSection(spaceId, sectionId, dto);
+  }
+
+  @Delete(':spaceId/outline/sections/:sectionId')
+  async deleteOutlineSection(@Param('spaceId') spaceId: string, @Param('sectionId') sectionId: string) {
+    return this.discussionOutlineService.deleteSection(spaceId, sectionId);
   }
 
   @Put(':spaceId/sediment/mode')
@@ -220,14 +334,45 @@ export class DiscussionController {
 
   @Post(':spaceId/sediment/generate')
   async generateSediment(@Param('spaceId') spaceId: string, @Body() dto: GenerateDiscussionSedimentDto) {
-    return this.discussionSedimentService.generateSediment({
+    return this.discussionSedimentService.createSedimentTask({
       spaceId,
+      mode: dto.mode,
+      title: dto.title,
       threadScope: dto.threadScope,
     });
+  }
+
+  @Sse(':spaceId/sediment/tasks/:taskId/events')
+  async streamSedimentTaskEvents(
+    @Param('spaceId') spaceId: string,
+    @Param('taskId') taskId: string,
+    @Query('access_token') _accessToken?: string,
+  ): Promise<Observable<MessageEvent>> {
+    return this.discussionSedimentService.streamSedimentTaskEvents(spaceId, taskId);
   }
 
   @Get(':spaceId/sediment/latest')
   async getLatestSediment(@Param('spaceId') spaceId: string) {
     return this.discussionSedimentService.getLatestSediment(spaceId);
+  }
+
+  @Get(':spaceId/sediment/history')
+  async getSedimentHistory(@Param('spaceId') spaceId: string, @Query('limit') limit?: string) {
+    const query: ListDiscussionSedimentHistoryQuery = {
+      limit: limit ? Number(limit) : undefined,
+    };
+    return this.discussionSedimentService.listSedimentHistory(spaceId, query.limit);
+  }
+
+  @Delete(':spaceId/sediment/history/:historyId')
+  async deleteSedimentHistory(
+    @Param('spaceId') spaceId: string,
+    @Param('historyId') historyId: string,
+    @Query('operatorId') operatorId?: string,
+  ) {
+    const dto: DeleteDiscussionSedimentHistoryDto = {
+      operatorId: String(operatorId || '').trim(),
+    };
+    return this.discussionSedimentService.deleteSedimentHistory(spaceId, historyId, dto.operatorId);
   }
 }

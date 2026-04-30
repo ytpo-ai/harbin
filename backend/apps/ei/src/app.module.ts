@@ -26,6 +26,7 @@ import { OrchestrationRun, OrchestrationRunSchema } from '../../../src/shared/sc
 import { OrchestrationTask, OrchestrationTaskSchema } from '../../../src/shared/schemas/orchestration-task.schema';
 import { Schedule, ScheduleSchema } from '../../../src/shared/schemas/schedule.schema';
 import { Meeting, MeetingSchema } from '../../../src/shared/schemas/meeting.schema';
+import { DiscussionSpace, DiscussionSpaceSchema } from '../../../src/shared/schemas/discussion-space.schema';
 import { AuthModule } from '../../../src/modules/auth/auth.module';
 import { AgentClientModule } from '../../../src/modules/agents-client/agent-client.module';
 import { ApiKeysModule } from '../../../src/modules/api-keys/api-keys.module';
@@ -95,6 +96,7 @@ import { EiRuntimeSyncConsumerService } from './services/ei-runtime-sync-consume
       { name: OrchestrationTask.name, schema: OrchestrationTaskSchema },
       { name: Schedule.name, schema: ScheduleSchema },
       { name: Meeting.name, schema: MeetingSchema },
+      { name: DiscussionSpace.name, schema: DiscussionSpaceSchema },
     ]),
   ],
   controllers: [

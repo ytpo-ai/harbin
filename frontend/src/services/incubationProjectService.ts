@@ -46,6 +46,21 @@ export interface IncubationProjectStats {
   requirements: { total: number; byStatus: Record<string, number> };
   schedules: { total: number; enabled: number };
   meetings: { total: number; byStatus: Record<string, number> };
+  discussions: { total: number; byCategory: Record<string, number> };
+}
+
+export interface IncubationProjectDiscussionSpace {
+  id: string;
+  title: string;
+  category?: 'general' | 'industry_observation' | 'product_discussion' | 'technical_design';
+  status: 'active' | 'paused' | 'archived';
+  tags?: string[];
+  statistics?: {
+    totalMessages?: number;
+    totalKnowledgeEntries?: number;
+  };
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface InitializeTemplateResult {
@@ -138,6 +153,21 @@ export const incubationProjectService = {
   async getProjectMeetings(id: string): Promise<any[]> {
     const response = await api.get(`/ei/incubation-projects/${id}/meetings`);
     return response.data;
+  },
+
+  async getProjectDiscussions(id: string): Promise<IncubationProjectDiscussionSpace[]> {
+    const response = await api.get(`/ei/incubation-projects/${id}/discussions`);
+    const payload = response.data;
+    if (Array.isArray(payload)) {
+      return payload as IncubationProjectDiscussionSpace[];
+    }
+    if (Array.isArray(payload?.data)) {
+      return payload.data as IncubationProjectDiscussionSpace[];
+    }
+    if (Array.isArray(payload?.items)) {
+      return payload.items as IncubationProjectDiscussionSpace[];
+    }
+    return [];
   },
 
   async getProjectStats(id: string): Promise<IncubationProjectStats> {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type DiscussionRightPanelTab = 'sediment' | 'knowledge' | 'participants';
+export type DiscussionRightPanelTab = 'sediment' | 'outline' | 'knowledge' | 'participants';
 
 interface DiscussionStore {
   selectedThreadBySpace: Record<string, string>;
