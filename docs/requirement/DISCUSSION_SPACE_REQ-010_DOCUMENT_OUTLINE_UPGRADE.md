@@ -29,12 +29,12 @@
 
 ### 2.3 验收条件
 
-- [ ] `DocumentOutline` 和 `OutlineSection` TypeScript 类型定义完成
-- [ ] `documentOutline` 字段兼容旧数据（读取时做 undefined/旧格式判断）
-- [ ] 大纲生成异步任务机制实现（`discussion-outline.service.ts` 新增）
-- [ ] 创建 `industry_observation` 空间后自动触发大纲生成
-- [ ] Agent 大纲生成 Prompt 设计完成并可输出结构化 JSON
-- [ ] 大纲 CRUD API 全部实现（generate/get/update/add-section/delete-section/update-section）
+- [x] `DocumentOutline` 和 `OutlineSection` TypeScript 类型定义完成
+- [x] `documentOutline` 字段兼容旧数据（读取时做 undefined/旧格式判断）
+- [x] 大纲生成异步任务机制实现（`discussion-outline.service.ts` 新增）
+- [x] 创建 `industry_observation` 空间后自动触发大纲生成
+- [x] Agent 大纲生成 Prompt 设计完成并可输出结构化 JSON
+- [x] 大纲 CRUD API 全部实现（generate/get/update/add-section/delete-section/update-section）
 - [x] 章节丰富 API 实现（enrich-section/enrich-all）
 - [x] 大纲任务 SSE 事件流实现
 - [x] 前端 `OutlinePanel.tsx` 组件完成（树状展示 + 状态徽标 + 知识计数）

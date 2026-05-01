@@ -12,6 +12,7 @@ import {
 } from '../../../shared/schemas/discussion-message.schema';
 import {
   DiscussionSedimentMode,
+  OutlineSection,
   DiscussionSpace,
   DiscussionSpaceDocument,
 } from '../../../shared/schemas/discussion-space.schema';
@@ -148,6 +149,127 @@ export function buildSedimentMarkdown(input: {
   return lines.join('\n').trim();
 }
 
+type OutlineKnowledgeSummary = {
+  title: string;
+  summary: string;
+  credibility: string;
+  outlineSectionId?: string;
+};
+
+const normalizeStructuredOutlineSections = (rawOutline: unknown): OutlineSection[] => {
+  if (!rawOutline || typeof rawOutline !== 'object') {
+    return [];
+  }
+  const candidate = rawOutline as Record<string, any>;
+  if (!Array.isArray(candidate.sections)) {
+    return [];
+  }
+  return candidate.sections
+    .filter((section) => section && typeof section === 'object' && typeof section.title === 'string')
+    .map((section, index) => ({
+      id: String(section.id || randomUUID()),
+      title: String(section.title || `章节 ${index + 1}`),
+      description: section.description ? String(section.description) : undefined,
+      parentSectionId: section.parentSectionId ? String(section.parentSectionId) : undefined,
+      order: Number.isFinite(section.order) ? Number(section.order) : index,
+      depth: Number.isFinite(section.depth) ? Number(section.depth) : 0,
+      status: (section.status || 'draft') as OutlineSection['status'],
+      knowledgeCount: Number(section.knowledgeCount || 0),
+      childSectionIds: Array.isArray(section.childSectionIds)
+        ? section.childSectionIds.map((item: unknown) => String(item)).filter(Boolean)
+        : [],
+      metadata: section.metadata,
+    }));
+};
+
+export function buildOutlineDrivenSedimentMarkdown(input: {
+  sedimentTitle: string;
+  spaceTitle: string;
+  outlineTitle: string;
+  outlineSections: OutlineSection[];
+  messages: DiscussionMessage[];
+  knowledge: OutlineKnowledgeSummary[];
+}): string {
+  const lines: string[] = [];
+  lines.push(`# ${input.sedimentTitle}`);
+  lines.push('');
+  lines.push(`> 讨论主题：${input.spaceTitle}`);
+  lines.push(`> 文档大纲：${input.outlineTitle}`);
+  lines.push('');
+  lines.push('## 关键结论概览');
+
+  const keyConclusions = input.messages
+    .slice(-5)
+    .map((message) => message.content.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  if (!keyConclusions.length) {
+    lines.push('- 暂无可提取的讨论结论。');
+  } else {
+    for (const item of keyConclusions) {
+      lines.push(`- ${item}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('## 大纲章节沉淀');
+
+  const sectionKnowledgeMap = new Map<string, OutlineKnowledgeSummary[]>();
+  for (const item of input.knowledge) {
+    const sectionId = String(item.outlineSectionId || '').trim();
+    if (!sectionId) {
+      continue;
+    }
+    if (!sectionKnowledgeMap.has(sectionId)) {
+      sectionKnowledgeMap.set(sectionId, []);
+    }
+    sectionKnowledgeMap.get(sectionId)?.push(item);
+  }
+
+  const sortedSections = [...input.outlineSections].sort((left, right) => {
+    if (left.depth !== right.depth) {
+      return left.depth - right.depth;
+    }
+    return left.order - right.order;
+  });
+
+  if (!sortedSections.length) {
+    lines.push('- 当前无结构化大纲章节。');
+  }
+
+  for (const section of sortedSections) {
+    const headingLevel = Math.min(6, Math.max(3, section.depth + 3));
+    lines.push(`${'#'.repeat(headingLevel)} ${section.title}`);
+    if (section.description) {
+      lines.push(section.description);
+    }
+
+    const sectionKnowledge = sectionKnowledgeMap.get(section.id) || [];
+    if (!sectionKnowledge.length) {
+      lines.push('- 待补充：当前章节暂无关联知识条目。');
+    } else {
+      for (const item of sectionKnowledge.slice(0, 5)) {
+        lines.push(`- ${item.title}（可信度：${item.credibility}）: ${item.summary}`);
+      }
+    }
+    lines.push('');
+  }
+
+  const dataCollectionHints = sortedSections
+    .filter((section) => section.metadata?.isStructuredData)
+    .map((section) => {
+      const frequency = section.metadata?.collectFrequency ? `，建议频率：${section.metadata.collectFrequency}` : '';
+      return `- ${section.title}${frequency}`;
+    });
+  lines.push('## 数据采集建议');
+  if (!dataCollectionHints.length) {
+    lines.push('- 暂无结构化采集建议。');
+  } else {
+    lines.push(...dataCollectionHints);
+  }
+
+  return lines.join('\n').trim();
+}
+
 @Injectable()
 export class DiscussionSedimentService {
   private readonly logger = new Logger(DiscussionSedimentService.name);
@@ -262,7 +384,9 @@ export class DiscussionSedimentService {
     threadScope: string[];
     threads: Array<{ id: string; title: string; depth: number }>;
     messages: DiscussionMessage[];
-    knowledge: Array<{ title: string; summary: string; credibility: string }>;
+    knowledge: OutlineKnowledgeSummary[];
+    outlineTitle?: string;
+    outlineSections?: Array<Pick<OutlineSection, 'id' | 'title' | 'description' | 'depth' | 'order'>>;
   }): AgentExecutionTask {
     const threadLines = input.threads
       .map((thread) => `${'  '.repeat(Math.max(0, thread.depth))}- ${thread.title} (${thread.id})`)
@@ -272,14 +396,28 @@ export class DiscussionSedimentService {
       ? input.knowledge.map((item) => `- ${item.title}（可信度：${item.credibility}）: ${item.summary}`).join('\n')
       : '- 暂无知识条目';
 
+    const outlineLines = input.outlineSections?.length
+      ? input.outlineSections
+          .sort((left, right) => {
+            if (left.depth !== right.depth) {
+              return left.depth - right.depth;
+            }
+            return left.order - right.order;
+          })
+          .map((section) => `${'  '.repeat(Math.max(0, section.depth))}- ${section.title}${section.description ? `：${section.description}` : ''}`)
+          .join('\n')
+      : '- 无结构化大纲';
+
     const description = [
       `请基于以下讨论上下文，输出一份可复用的结构化讨论沉淀文档（Markdown）。`,
       `沉淀标题：${input.sedimentTitle}`,
       `讨论主题：${input.spaceTitle}`,
       `讨论线范围：${input.threadScope.length ? input.threadScope.join(', ') : '全部讨论线'}`,
+      `文档大纲标题：${input.outlineTitle || '未设置'}`,
+      `\n【文档大纲】\n${outlineLines}`,
       `\n【讨论线结构】\n${threadLines || '- 暂无讨论线'}`,
       `\n【知识积累】\n${knowledgeLines}`,
-      '输出要求：包含“讨论沉淀摘要 / 讨论线梳理 / 关键结论与下一步 / 知识积累”四个部分；内容简明、可执行。',
+      '输出要求：严格按文档大纲章节结构组织内容，并在每个章节引用相关知识；标注证据不足章节为“待补充”；文末输出“数据采集建议”和“待深入讨论的问题”。',
     ].join('\n\n');
 
     const messages: ChatMessage[] = input.messages.slice(-SEDIMENT_CONTEXT_MESSAGE_LIMIT).map((message) => ({
@@ -314,7 +452,9 @@ export class DiscussionSedimentService {
     spaceTitle: string;
     threads: Array<{ id: string; title: string; depth: number }>;
     messages: DiscussionMessage[];
-    knowledge: Array<{ title: string; summary: string; credibility: string }>;
+    knowledge: OutlineKnowledgeSummary[];
+    outlineTitle?: string;
+    outlineSections?: Array<Pick<OutlineSection, 'id' | 'title' | 'description' | 'depth' | 'order'>>;
   }): Promise<{ content: string; runId?: string; sessionId?: string; agentId?: string }> {
     const meetingAssistantAgentId = await this.resolveMeetingAssistantAgentId(input.projectId);
     if (!meetingAssistantAgentId) {
@@ -329,6 +469,8 @@ export class DiscussionSedimentService {
       threads: input.threads,
       messages: input.messages,
       knowledge: input.knowledge,
+      outlineTitle: input.outlineTitle,
+      outlineSections: input.outlineSections,
     });
     task.assignedAgents = [meetingAssistantAgentId];
 
@@ -570,11 +712,16 @@ export class DiscussionSedimentService {
     const trigger = input.trigger || 'manual';
     const title = String(input.title || '').trim() || `讨论沉淀 V${nextVersion}`;
 
+    const existingOutline = (space.documentOutline || {}) as Record<string, any>;
+    const structuredOutlineSections = normalizeStructuredOutlineSections(existingOutline);
+    const hasStructuredSections = structuredOutlineSections.length > 0;
+
     const threadSummaries = threads.map((thread) => ({ id: thread.id, title: thread.title, depth: thread.depth }));
-    const knowledgeSummaries = knowledgeEntries.map((item) => ({
+    const knowledgeSummaries: OutlineKnowledgeSummary[] = knowledgeEntries.map((item) => ({
       title: item.title,
       summary: item.summary,
       credibility: item.credibility,
+      outlineSectionId: item.outlineSectionId,
     }));
 
     let content = '';
@@ -594,6 +741,14 @@ export class DiscussionSedimentService {
           threads: threadSummaries,
           messages,
           knowledge: knowledgeSummaries,
+          outlineTitle: String(existingOutline.title || `${space.title} 大纲`),
+          outlineSections: structuredOutlineSections.map((section) => ({
+            id: section.id,
+            title: section.title,
+            description: section.description,
+            depth: section.depth,
+            order: section.order,
+          })),
         });
         content = runtimeResult.content;
         runtimeRunId = runtimeResult.runId;
@@ -607,22 +762,24 @@ export class DiscussionSedimentService {
     }
 
     if (!content) {
-      content = buildSedimentMarkdown({
-        sedimentTitle: title,
-        spaceTitle: space.title,
-        threads: threadSummaries,
-        messages,
-        knowledge: knowledgeSummaries,
-      });
+      content = hasStructuredSections
+        ? buildOutlineDrivenSedimentMarkdown({
+            sedimentTitle: title,
+            spaceTitle: space.title,
+            outlineTitle: String(existingOutline.title || `${space.title} 大纲`),
+            outlineSections: structuredOutlineSections,
+            messages,
+            knowledge: knowledgeSummaries,
+          })
+        : buildSedimentMarkdown({
+            sedimentTitle: title,
+            spaceTitle: space.title,
+            threads: threadSummaries,
+            messages,
+            knowledge: knowledgeSummaries,
+          });
     }
 
-    const existingOutline = (space.documentOutline || {}) as Record<string, any>;
-    const existingSections = Array.isArray(existingOutline.sections) ? existingOutline.sections : [];
-    const hasStructuredSections =
-      existingSections.length > 0 &&
-      typeof existingSections[0] === 'object' &&
-      existingSections[0] !== null &&
-      typeof existingSections[0].title === 'string';
     const nextDocumentOutline = hasStructuredSections
       ? {
           ...existingOutline,

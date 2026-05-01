@@ -78,7 +78,7 @@ export class DiscussionController {
     }
 
     if (dto.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION) {
-      await this.discussionOutlineService.generateOutline(space.id, {
+      await this.discussionOutlineService.createGenerateOutlineTask(space.id, {
         industryContext: dto.industryContext,
       });
     }

@@ -28,6 +28,11 @@ import {
 } from '../discussion.types';
 import { DiscussionKnowledgeService } from './discussion-knowledge.service';
 import { DiscussionKnowledgeSourceType } from '../../../shared/schemas/discussion-knowledge-entry.schema';
+import { AgentClientService } from '../../agents-client/agent-client.service';
+import { AgentExecutionTask } from '../../../shared/types';
+
+const OUTLINE_TASK_RETENTION_MS = 30 * 60 * 1000;
+const INDUSTRY_RESEARCH_ROLE_CODE = 'industry-research';
 
 @Injectable()
 export class DiscussionOutlineService {
@@ -41,6 +46,7 @@ export class DiscussionOutlineService {
     @InjectModel(DiscussionKnowledgeEntry.name)
     private readonly discussionKnowledgeEntryModel: Model<DiscussionKnowledgeEntryDocument>,
     private readonly discussionKnowledgeService: DiscussionKnowledgeService,
+    private readonly agentClientService: AgentClientService,
   ) {}
 
   private buildTaskId(spaceId: string): string {
@@ -75,7 +81,195 @@ export class DiscussionOutlineService {
     setTimeout(() => {
       this.outlineTaskStore.delete(taskId);
       this.outlineTaskChannels.delete(taskId);
-    }, 30 * 60 * 1000);
+    }, OUTLINE_TASK_RETENTION_MS);
+  }
+
+  private extractAgentCandidateValue(candidate: Record<string, unknown>, key: string): string {
+    const value = candidate[key];
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+  }
+
+  private isOutlineResearchAgent(candidate: Record<string, unknown>): boolean {
+    const roleCode = this.extractAgentCandidateValue(candidate, 'roleCode');
+    const agentType = this.extractAgentCandidateValue(candidate, 'agentType');
+    const roleName = this.extractAgentCandidateValue(candidate, 'roleName');
+    const name = this.extractAgentCandidateValue(candidate, 'name');
+    const description = this.extractAgentCandidateValue(candidate, 'description');
+
+    if (roleCode === INDUSTRY_RESEARCH_ROLE_CODE) {
+      return true;
+    }
+    if (agentType === 'industry-research' || agentType === 'research') {
+      return true;
+    }
+
+    const labels = `${roleName} ${name} ${description}`;
+    return labels.includes('行业研究') || labels.includes('industry research') || labels.includes('行业观察');
+  }
+
+  private async resolveOutlineAgentId(space: DiscussionSpaceDocument): Promise<string | null> {
+    const defaultReplyAgentId = String(space.settings?.defaultReplyAgentId || '').trim();
+    if (defaultReplyAgentId) {
+      const matched = await this.agentClientService.getAgent(defaultReplyAgentId);
+      if (matched?.id && matched.isActive) {
+        return String(matched.id);
+      }
+    }
+
+    const projectAgents = await this.agentClientService.getActiveAgents(space.projectId ? { projectId: space.projectId } : undefined);
+    const projectMatch = projectAgents.find((item) => this.isOutlineResearchAgent(item as unknown as Record<string, unknown>));
+    if (projectMatch?.id) {
+      return String(projectMatch.id);
+    }
+
+    if (space.projectId) {
+      const globalAgents = await this.agentClientService.getActiveAgents();
+      const globalMatch = globalAgents.find((item) => this.isOutlineResearchAgent(item as unknown as Record<string, unknown>));
+      if (globalMatch?.id) {
+        return String(globalMatch.id);
+      }
+    }
+
+    return null;
+  }
+
+  private buildDefaultOutlineSections(context: string): OutlineSection[] {
+    return [
+      this.buildSection({ title: `${context} 发展脉络`, order: 0, depth: 0, metadata: { isStructuredData: false } }),
+      this.buildSection({ title: '核心公司图谱', order: 1, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'weekly' } }),
+      this.buildSection({ title: '关键人物与组织', order: 2, depth: 0, metadata: { isStructuredData: false } }),
+      this.buildSection({ title: '趋势叙事与争议焦点', order: 3, depth: 0, metadata: { isStructuredData: false } }),
+      this.buildSection({ title: '关键数据指标追踪', order: 4, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'daily' } }),
+      this.buildSection({ title: '下一步调研与采集任务', order: 5, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'weekly' } }),
+    ];
+  }
+
+  private buildOutlineGenerationTask(input: {
+    spaceId: string;
+    spaceTitle: string;
+    industryContext: string;
+    category: DiscussionSpaceCategory;
+  }): AgentExecutionTask {
+    const description = [
+      `你是行业研究专家。请为讨论空间生成结构化文档大纲，必须输出 JSON。`,
+      `讨论空间：${input.spaceTitle}`,
+      `分类：${input.category}`,
+      `行业上下文：${input.industryContext}`,
+      '要求：',
+      '1. 覆盖行业脉络、核心公司、关键人物、趋势叙事、数据验证、输出节奏。',
+      '2. 章节支持父子层级，顶层章节建议 5-8 个，每个顶层包含 2-4 个子章节。',
+      '3. 每个章节包含 title/description/order/depth，并尽量补充 metadata：suggestedDataSources/collectFrequency/isStructuredData。',
+      '4. 输出必须是 JSON，不要附加解释文本。',
+      '输出格式：',
+      '{',
+      '  "title": "...",',
+      '  "sections": [',
+      '    {',
+      '      "id": "optional",',
+      '      "title": "...",',
+      '      "description": "...",',
+      '      "parentSectionId": "optional",',
+      '      "order": 0,',
+      '      "depth": 0,',
+      '      "metadata": {',
+      '        "suggestedDataSources": ["..."],',
+      '        "collectFrequency": "daily|weekly|monthly",',
+      '        "isStructuredData": true',
+      '      }',
+      '    }',
+      '  ]',
+      '}',
+    ].join('\n');
+
+    return {
+      id: this.buildTaskId(input.spaceId),
+      title: `Discussion outline generation | ${input.spaceTitle}`,
+      description,
+      type: 'discussion_outline_generate',
+      priority: 'medium',
+      status: 'pending',
+      assignedAgents: [],
+      teamId: input.spaceId,
+      messages: [],
+    };
+  }
+
+  private parseOutlinePayload(raw: string): { title?: string; sections: Array<Record<string, unknown>> } | null {
+    const text = String(raw || '').trim();
+    if (!text) {
+      return null;
+    }
+
+    const candidates: string[] = [text];
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced?.[1]) {
+      candidates.unshift(fenced[1].trim());
+    }
+
+    const firstJsonStart = text.search(/[\[{]/);
+    if (firstJsonStart >= 0) {
+      candidates.push(text.slice(firstJsonStart).trim());
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        if (Array.isArray(parsed)) {
+          return { sections: parsed as Array<Record<string, unknown>> };
+        }
+        if (parsed && typeof parsed === 'object') {
+          const payload = parsed as Record<string, unknown>;
+          const sections = Array.isArray(payload.sections) ? (payload.sections as Array<Record<string, unknown>>) : [];
+          if (sections.length) {
+            return {
+              title: typeof payload.title === 'string' ? payload.title : undefined,
+              sections,
+            };
+          }
+        }
+      } catch (_error) {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeGeneratedSections(rawSections: Array<Record<string, unknown>>): OutlineSection[] {
+    const generated = rawSections
+      .filter((item) => item && typeof item === 'object' && String(item.title || '').trim())
+      .map((item, index) => {
+        const title = String(item.title || '').trim() || `章节 ${index + 1}`;
+        const rawOrder = Number(item.order);
+        const rawDepth = Number(item.depth);
+        const metadata = item.metadata && typeof item.metadata === 'object'
+          ? {
+              suggestedDataSources: Array.isArray((item.metadata as Record<string, unknown>).suggestedDataSources)
+                ? ((item.metadata as Record<string, unknown>).suggestedDataSources as unknown[])
+                    .map((value) => String(value || '').trim())
+                    .filter(Boolean)
+                : undefined,
+              collectFrequency: ['daily', 'weekly', 'monthly'].includes(String((item.metadata as Record<string, unknown>).collectFrequency || '').trim())
+                ? String((item.metadata as Record<string, unknown>).collectFrequency || '').trim()
+                : undefined,
+              isStructuredData: Boolean((item.metadata as Record<string, unknown>).isStructuredData),
+            }
+          : undefined;
+
+        return this.buildSection({
+          id: String(item.id || '').trim() || randomUUID(),
+          title,
+          description: String(item.description || '').trim() || undefined,
+          parentSectionId: String(item.parentSectionId || '').trim() || undefined,
+          order: Number.isFinite(rawOrder) ? rawOrder : index,
+          depth: Number.isFinite(rawDepth) ? Math.max(0, rawDepth) : 0,
+          metadata,
+          status: 'draft',
+          knowledgeCount: 0,
+        });
+      });
+
+    return this.rebuildChildSectionIds(generated);
   }
 
   private createTaskSnapshot(input: {
@@ -229,30 +423,81 @@ export class DiscussionOutlineService {
   }
 
   async generateOutline(spaceId: string, input?: { industryContext?: string }): Promise<DocumentOutline> {
-    const space = await this.discussionSpaceModel.findOne({ id: spaceId }).lean().exec();
+    const space = await this.discussionSpaceModel.findOne({ id: spaceId }).exec();
     if (!space) {
       throw new NotFoundException(`讨论空间不存在: ${spaceId}`);
     }
 
     const context = input?.industryContext?.trim() || (space.metadata as any)?.industryContext || '目标行业';
     const now = new Date();
-    const sections: OutlineSection[] = [
-      this.buildSection({ title: `${context} 发展脉络`, order: 0, depth: 0, metadata: { isStructuredData: false } }),
-      this.buildSection({ title: '核心公司图谱', order: 1, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'weekly' } }),
-      this.buildSection({ title: '关键人物与组织', order: 2, depth: 0, metadata: { isStructuredData: false } }),
-      this.buildSection({ title: '趋势叙事与争议焦点', order: 3, depth: 0, metadata: { isStructuredData: false } }),
-      this.buildSection({ title: '关键数据指标追踪', order: 4, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'daily' } }),
-      this.buildSection({ title: '下一步调研与采集任务', order: 5, depth: 0, metadata: { isStructuredData: true, collectFrequency: 'weekly' } }),
-    ];
+    const defaultSections = this.buildDefaultOutlineSections(context);
+
+    let sections = defaultSections;
+    let generatedBy: DocumentOutline['generatedBy'] = 'human';
+    let runtimeRunId: string | undefined;
+    let runtimeSessionId: string | undefined;
+    let runtimeAgentId: string | undefined;
+
+    try {
+      const agentId = await this.resolveOutlineAgentId(space);
+      if (agentId) {
+        const task = this.buildOutlineGenerationTask({
+          spaceId,
+          spaceTitle: space.title,
+          industryContext: context,
+          category: space.category,
+        });
+        task.assignedAgents = [agentId];
+
+        const runtime = await this.agentClientService.executeTaskDetailed(agentId, task, {
+          executionMode: 'chat',
+          source: 'discussion_outline_runtime',
+          agentSessionId: this.buildTaskId(spaceId),
+          collaborationContext: {
+            scene: 'discussion',
+            spaceId,
+            category: space.category,
+            industryContext: context,
+          },
+          requestMeta: {
+            source: 'discussion-outline-service',
+          },
+        });
+
+        const parsedPayload = this.parseOutlinePayload(runtime.response);
+        const parsedSections = parsedPayload?.sections?.length ? this.normalizeGeneratedSections(parsedPayload.sections) : [];
+        if (parsedSections.length) {
+          sections = parsedSections;
+          generatedBy = 'agent';
+        } else {
+          generatedBy = space.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION ? 'hybrid' : 'human';
+        }
+
+        runtimeRunId = runtime.runId;
+        runtimeSessionId = runtime.sessionId;
+        runtimeAgentId = agentId;
+      } else {
+        generatedBy = space.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION ? 'hybrid' : 'human';
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Outline runtime generation failed, fallback to default template: spaceId=${spaceId} reason=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+      generatedBy = space.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION ? 'hybrid' : 'human';
+      sections = defaultSections;
+    }
 
     const current = this.normalizeOutline(space.documentOutline, space.title);
     const outline: DocumentOutline = {
       version: (current.version || 1) + 1,
       title: `${space.title} 行业观察大纲`,
-      sections: this.rebuildChildSectionIds(sections),
+      sections,
       createdAt: current.createdAt || now,
       updatedAt: now,
-      generatedBy: space.category === DiscussionSpaceCategory.INDUSTRY_OBSERVATION ? 'hybrid' : 'human',
+      generatedBy,
+      agentId: runtimeAgentId || current.agentId,
+      runId: runtimeRunId || current.runId,
+      sessionId: runtimeSessionId || current.sessionId,
     };
 
     await this.discussionSpaceModel.updateOne({ id: spaceId }, { $set: { documentOutline: outline } }).exec();

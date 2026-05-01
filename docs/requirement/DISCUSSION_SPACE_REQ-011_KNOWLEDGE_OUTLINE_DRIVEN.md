@@ -36,8 +36,8 @@
 - [ ] Agent 丰富章节时创建的知识条目自动关联 `outlineSectionId`
 - [x] 前端知识面板支持按大纲章节过滤
 - [x] 前端知识条目卡片展示 `entryType` 标签
-- [ ] `discussion-sediment.service.ts` 的 `generateSediment` 改造：大纲存在时按章节结构组织
-- [ ] 沉淀生成 Prompt 改造为大纲驱动模式
+- [x] `discussion-sediment.service.ts` 的 `generateSediment` 改造：大纲存在时按章节结构组织
+- [x] 沉淀生成 Prompt 改造为大纲驱动模式
 - [ ] `GET /discussions/:spaceId/knowledge/coverage` API 实现
 - [x] 前端大纲视图展示每个章节的知识积累覆盖度进度
 
