@@ -61,6 +61,7 @@ const Discussions: React.FC = () => {
     () =>
       discussionService.listSpaces({
         status: statusFilter === 'all' ? undefined : statusFilter,
+        includeArchived: statusFilter === 'all',
       }),
     {
       staleTime: 20_000,
@@ -192,6 +193,28 @@ const Discussions: React.FC = () => {
     },
   );
 
+  const archiveSpaceMutation = useMutation(
+    async (space: DiscussionSpace) => {
+      return discussionService.archiveSpace(space.id, currentUser?.id);
+    },
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries('discussion-spaces');
+      },
+    },
+  );
+
+  const unarchiveSpaceMutation = useMutation(
+    async (space: DiscussionSpace) => {
+      return discussionService.unarchiveSpace(space.id);
+    },
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries('discussion-spaces');
+      },
+    },
+  );
+
   const filteredSpaces = useMemo(() => {
     const list = spacesQuery.data || [];
     if (!keyword.trim()) {
@@ -294,7 +317,34 @@ const Discussions: React.FC = () => {
                   ))}
                 </div>
                 <div className="mt-4 border-t border-[#e0e0e0] pt-3 text-xs text-[#6f6f6f]">
-                  讨论线 {space.statistics?.totalThreads || 0} · 消息 {space.statistics?.totalMessages || 0} · 知识 {space.statistics?.totalKnowledgeEntries || 0}
+                  <div>讨论线 {space.statistics?.totalThreads || 0} · 消息 {space.statistics?.totalMessages || 0} · 知识 {space.statistics?.totalKnowledgeEntries || 0}</div>
+                  <div className="mt-2 flex justify-end">
+                    {space.status === 'archived' ? (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          unarchiveSpaceMutation.mutate(space);
+                        }}
+                        disabled={unarchiveSpaceMutation.isLoading}
+                        className="border border-[#0f62fe] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        取消归档
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          archiveSpaceMutation.mutate(space);
+                        }}
+                        disabled={archiveSpaceMutation.isLoading}
+                        className="border border-[#a8a8a8] px-2 py-1 text-xs text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        归档
+                      </button>
+                    )}
+                  </div>
                 </div>
               </button>
             ))}

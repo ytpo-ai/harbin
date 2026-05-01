@@ -9,6 +9,31 @@ import {
 } from '../../../shared/schemas/discussion-space.schema';
 import { CreateDiscussionSpaceDto, ListDiscussionSpacesQuery, UpdateDiscussionSpaceDto } from '../discussion.types';
 
+export const buildListSpacesFilter = (query: ListDiscussionSpacesQuery): Record<string, any> => {
+  const filter: Record<string, any> = {};
+
+  if (query.status) {
+    filter.status = query.status;
+  } else if (!query.includeArchived) {
+    filter.status = { $ne: DiscussionSpaceStatus.ARCHIVED };
+  }
+
+  if (query.category) {
+    filter.category = query.category;
+  }
+  if (query.creatorId) {
+    filter.creatorId = query.creatorId;
+  }
+  if (query.projectId) {
+    filter.projectId = query.projectId;
+  }
+  if (query.tags?.length) {
+    filter.tags = { $in: query.tags };
+  }
+
+  return filter;
+};
+
 @Injectable()
 export class DiscussionSpaceService {
   constructor(
@@ -35,23 +60,7 @@ export class DiscussionSpaceService {
   }
 
   async listSpaces(query: ListDiscussionSpacesQuery): Promise<DiscussionSpace[]> {
-    const filter: Record<string, any> = {};
-
-    if (query.status) {
-      filter.status = query.status;
-    }
-    if (query.category) {
-      filter.category = query.category;
-    }
-    if (query.creatorId) {
-      filter.creatorId = query.creatorId;
-    }
-    if (query.projectId) {
-      filter.projectId = query.projectId;
-    }
-    if (query.tags?.length) {
-      filter.tags = { $in: query.tags };
-    }
+    const filter = buildListSpacesFilter(query);
 
     return this.discussionSpaceModel.find(filter).sort({ createdAt: -1 }).lean().exec() as unknown as DiscussionSpace[];
   }
@@ -77,9 +86,23 @@ export class DiscussionSpaceService {
     return updated as unknown as DiscussionSpace;
   }
 
-  async updateStatus(spaceId: string, status: DiscussionSpaceStatus): Promise<DiscussionSpace> {
+  async updateStatus(spaceId: string, status: DiscussionSpaceStatus, operatorId?: string): Promise<DiscussionSpace> {
+    if (status === DiscussionSpaceStatus.ARCHIVED) {
+      return this.archiveSpace(spaceId, operatorId);
+    }
+
     const updated = await this.discussionSpaceModel
-      .findOneAndUpdate({ id: spaceId }, { $set: { status } }, { new: true })
+      .findOneAndUpdate(
+        { id: spaceId },
+        {
+          $set: { status },
+          $unset: {
+            archivedAt: '',
+            archivedBy: '',
+          },
+        },
+        { new: true },
+      )
       .lean()
       .exec();
 
@@ -90,8 +113,39 @@ export class DiscussionSpaceService {
     return updated as unknown as DiscussionSpace;
   }
 
-  async archiveSpace(spaceId: string): Promise<DiscussionSpace> {
-    return this.updateStatus(spaceId, DiscussionSpaceStatus.ARCHIVED);
+  async archiveSpace(spaceId: string, operatorId?: string): Promise<DiscussionSpace> {
+    const archivedBy = String(operatorId || '').trim();
+    const updated = await this.discussionSpaceModel
+      .findOneAndUpdate(
+        { id: spaceId },
+        {
+          $set: {
+            status: DiscussionSpaceStatus.ARCHIVED,
+            archivedAt: new Date(),
+            ...(archivedBy ? { archivedBy } : {}),
+          },
+          ...(archivedBy
+            ? {}
+            : {
+                $unset: {
+                  archivedBy: '',
+                },
+              }),
+        },
+        { new: true },
+      )
+      .lean()
+      .exec();
+
+    if (!updated) {
+      throw new NotFoundException(`讨论空间不存在: ${spaceId}`);
+    }
+
+    return updated as unknown as DiscussionSpace;
+  }
+
+  async unarchiveSpace(spaceId: string): Promise<DiscussionSpace> {
+    return this.updateStatus(spaceId, DiscussionSpaceStatus.ACTIVE);
   }
 
   async setRootThread(spaceId: string, rootThreadId: string): Promise<void> {

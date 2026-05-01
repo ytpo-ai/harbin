@@ -90,13 +90,16 @@ export class DiscussionController {
   @Get()
   async listSpaces(
     @Query('status') status?: DiscussionSpaceStatus,
+    @Query('includeArchived') includeArchivedRaw?: string,
     @Query('category') category?: DiscussionSpaceCategory,
     @Query('creatorId') creatorId?: string,
     @Query('projectId') projectId?: string,
     @Query('tags') tagsRaw?: string,
   ) {
+    const includeArchived = includeArchivedRaw === '1' || includeArchivedRaw === 'true';
     const query: ListDiscussionSpacesQuery = {
       status,
+      includeArchived,
       category,
       creatorId,
       projectId,
@@ -127,8 +130,22 @@ export class DiscussionController {
   }
 
   @Put(':spaceId/status')
-  async updateSpaceStatus(@Param('spaceId') spaceId: string, @Body('status') status: DiscussionSpaceStatus) {
-    return this.discussionSpaceService.updateStatus(spaceId, status);
+  async updateSpaceStatus(
+    @Param('spaceId') spaceId: string,
+    @Body('status') status: DiscussionSpaceStatus,
+    @Body('operatorId') operatorId?: string,
+  ) {
+    return this.discussionSpaceService.updateStatus(spaceId, status, operatorId);
+  }
+
+  @Post(':spaceId/archive')
+  async archiveSpaceByAction(@Param('spaceId') spaceId: string, @Body('operatorId') operatorId?: string) {
+    return this.discussionSpaceService.archiveSpace(spaceId, operatorId);
+  }
+
+  @Post(':spaceId/unarchive')
+  async unarchiveSpace(@Param('spaceId') spaceId: string) {
+    return this.discussionSpaceService.unarchiveSpace(spaceId);
   }
 
   @Delete(':spaceId')

@@ -70,6 +70,12 @@ export class DiscussionSpace {
   @Prop({ enum: DiscussionSpaceStatus, default: DiscussionSpaceStatus.ACTIVE })
   status: DiscussionSpaceStatus;
 
+  @Prop()
+  archivedAt?: Date;
+
+  @Prop()
+  archivedBy?: string;
+
   @Prop({ enum: DiscussionSedimentMode, default: DiscussionSedimentMode.MANUAL })
   sedimentMode: DiscussionSedimentMode;
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import {
@@ -8,7 +8,7 @@ import {
   DiscussionMessageType,
 } from '../../../shared/schemas/discussion-message.schema';
 import { DiscussionParticipant, DiscussionParticipantType } from '../../../shared/schemas/discussion-participant.schema';
-import { DiscussionSedimentMode } from '../../../shared/schemas/discussion-space.schema';
+import { DiscussionSedimentMode, DiscussionSpaceStatus } from '../../../shared/schemas/discussion-space.schema';
 import { AgentExecutionTask, ChatMessage } from '../../../shared/types';
 import {
   SendDiscussionMessageDto,
@@ -201,6 +201,9 @@ export class DiscussionMessageService {
     dto: TriggerDiscussionDataAnalysisDto,
   ): Promise<{ created: true; messageId: string; threadId: string }> {
     const space = await this.discussionSpaceService.getSpaceById(spaceId);
+    if (space.status === DiscussionSpaceStatus.ARCHIVED) {
+      throw new ConflictException('讨论空间已归档，当前为只读状态，无法写入系统分析消息');
+    }
     const threadId = String(dto.threadId || space.rootThreadId || '').trim();
     if (!threadId) {
       throw new NotFoundException('讨论空间缺少可用讨论线，无法写入数据分析消息');
@@ -349,6 +352,9 @@ export class DiscussionMessageService {
     const thread = await this.discussionThreadService.getThreadById(spaceId, threadId);
     await this.discussionParticipantService.getParticipantById(spaceId, dto.participantId);
     const space = await this.discussionSpaceService.getSpaceById(spaceId);
+    if (space.status === DiscussionSpaceStatus.ARCHIVED) {
+      throw new ConflictException('讨论空间已归档，当前为只读状态，无法发送消息');
+    }
 
     const latest = await this.discussionMessageModel.findOne({ spaceId, threadId }).sort({ sequence: -1 }).lean().exec();
     const nextSequence = (latest?.sequence || 0) + 1;

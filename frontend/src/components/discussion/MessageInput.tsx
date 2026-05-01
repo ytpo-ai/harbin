@@ -12,6 +12,8 @@ type MessageDataReference = {
 type MessageInputProps = {
   value: string;
   sending: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
   projectId?: string;
   participants: DiscussionParticipant[];
   onChange: (value: string) => void;
@@ -21,6 +23,8 @@ type MessageInputProps = {
 const MessageInput: React.FC<MessageInputProps> = ({
   value,
   sending,
+  disabled = false,
+  disabledReason,
   projectId,
   participants,
   onChange,
@@ -35,6 +39,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const mentionableParticipants = participants.filter((participant) => participant.type === 'ai_agent' || participant.role === 'on_demand');
 
   const appendMention = (displayName: string) => {
+    if (disabled) {
+      return;
+    }
     const suffix = value.trimEnd().length > 0 ? ' ' : '';
     onChange(`${value}${suffix}@${displayName} `);
   };
@@ -141,6 +148,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
+    if (disabled) {
+      return;
+    }
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault();
       onSend(selectedDataReferences);
@@ -148,6 +158,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
   };
 
   const appendDataToken = () => {
+    if (disabled) {
+      return;
+    }
     const suffix = value.trimEnd().length > 0 ? ' ' : '';
     onChange(`${value}${suffix}#data:`);
     setOpenDataPicker(true);
@@ -157,12 +170,15 @@ const MessageInput: React.FC<MessageInputProps> = ({
     <div className="border-t border-[#c6c6c6] bg-white p-4">
       <textarea
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="输入消息，支持 @参与者"
+        placeholder={disabled ? (disabledReason || '当前空间为只读状态，暂不可发送消息') : '输入消息，支持 @参与者'}
         rows={4}
-        className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe]"
+        className="w-full border-0 border-b-2 border-[#c6c6c6] bg-[#f4f4f4] px-3 py-2 text-sm text-[#161616] outline-none focus:border-[#0f62fe] disabled:cursor-not-allowed disabled:opacity-70"
       />
+
+      {disabled && disabledReason ? <div className="mt-2 text-xs text-[#a2191f]">{disabledReason}</div> : null}
 
       {mentionableParticipants.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -170,8 +186,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
             <button
               key={participant.id}
               type="button"
+              disabled={disabled}
               onClick={() => appendMention(participant.displayName)}
-              className="border border-[#78a9ff] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff]"
+              className="border border-[#78a9ff] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-50"
             >
               @{participant.displayName}
             </button>
@@ -183,12 +200,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
         <button
           type="button"
           onClick={appendDataToken}
-          disabled={!projectId}
+          disabled={disabled || !projectId}
           className="border border-[#78a9ff] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-50"
         >
           #data: 引用采集数据
         </button>
-        {!projectId ? <span className="text-xs text-[#6f6f6f]">当前空间未关联项目，暂不可引用数据</span> : null}
+        {!disabled && !projectId ? <span className="text-xs text-[#6f6f6f]">当前空间未关联项目，暂不可引用数据</span> : null}
       </div>
 
       {selectedDataReferences.length > 0 ? (
@@ -206,7 +223,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         <button
           type="button"
           onClick={() => onSend(selectedDataReferences)}
-          disabled={sending || !value.trim()}
+          disabled={disabled || sending || !value.trim()}
           className="bg-[#0f62fe] px-4 py-2 text-sm text-white hover:bg-[#0353e9] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {sending ? '发送中...' : '发送'}

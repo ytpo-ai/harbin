@@ -33,6 +33,12 @@ const rightTabLabel: Record<DiscussionRightPanelTab, string> = {
   participants: '参与者',
 };
 
+const spaceStatusLabelMap: Record<'active' | 'paused' | 'archived', string> = {
+  active: '进行中',
+  paused: '已暂停',
+  archived: '已归档',
+};
+
 const DiscussionDetail: React.FC = () => {
   const { spaceId = '' } = useParams();
   const location = useLocation();
@@ -357,8 +363,44 @@ const DiscussionDetail: React.FC = () => {
           queryClient.invalidateQueries(['discussion-sediment-latest', spaceId]),
         ]);
       },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '消息发送失败，请稍后重试')
+            : '消息发送失败，请稍后重试';
+        setActionError(message);
+      },
+    },
+  );
+
+  const archiveSpaceMutation = useMutation(
+    async () => discussionService.archiveSpace(spaceId, currentUser?.id),
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(['discussion-space-detail', spaceId]);
+        await queryClient.invalidateQueries('discussion-spaces');
+        setActionError('');
+        setActionNotice('讨论空间已归档，当前为只读状态');
+      },
       onError: () => {
-        setActionError('消息发送失败，请稍后重试');
+        setActionNotice('');
+        setActionError('归档失败，请稍后重试');
+      },
+    },
+  );
+
+  const unarchiveSpaceMutation = useMutation(
+    async () => discussionService.unarchiveSpace(spaceId),
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(['discussion-space-detail', spaceId]);
+        await queryClient.invalidateQueries('discussion-spaces');
+        setActionError('');
+        setActionNotice('讨论空间已取消归档，恢复可写');
+      },
+      onError: () => {
+        setActionNotice('');
+        setActionError('取消归档失败，请稍后重试');
       },
     },
   );
@@ -1460,6 +1502,7 @@ const DiscussionDetail: React.FC = () => {
   }
 
   const detail = detailQuery.data;
+  const isSpaceArchived = detail.status === 'archived';
   const toRequirementThreadTitle = toRequirementMessage
     ? detail.threadTree.find((thread) => thread.id === toRequirementMessage.threadId)?.title || selectedThread?.title || ''
     : '';
@@ -1482,20 +1525,44 @@ const DiscussionDetail: React.FC = () => {
                 <h1 className="text-lg font-medium text-[#161616]">{detail.title}</h1>
                 <p className="text-xs text-[#6f6f6f]">{detail.description || '暂无描述'}</p>
               </div>
+              <span className={`px-2 py-1 text-[11px] ${isSpaceArchived ? 'bg-[#fff1f1] text-[#a2191f]' : 'bg-[#f4f4f4] text-[#525252]'}`}>
+                {spaceStatusLabelMap[detail.status] || detail.status}
+              </span>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                void Promise.all([detailQuery.refetch(), messagesQuery.refetch(), knowledgeQuery.refetch(), latestSedimentQuery.refetch()]);
-                void sedimentHistoryQuery.refetch();
-                void outlineQuery.refetch();
-                void coverageQuery.refetch();
-              }}
-              className="inline-flex items-center gap-1 border border-[#c6c6c6] px-3 py-2 text-xs text-[#262626] hover:bg-[#f4f4f4]"
-            >
-              <ArrowPathIcon className="h-4 w-4" />
-              刷新
-            </button>
+            <div className="flex items-center gap-2">
+              {isSpaceArchived ? (
+                <button
+                  type="button"
+                  onClick={() => unarchiveSpaceMutation.mutate()}
+                  disabled={unarchiveSpaceMutation.isLoading}
+                  className="inline-flex items-center gap-1 border border-[#0f62fe] px-3 py-2 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  取消归档
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => archiveSpaceMutation.mutate()}
+                  disabled={archiveSpaceMutation.isLoading}
+                  className="inline-flex items-center gap-1 border border-[#a8a8a8] px-3 py-2 text-xs text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  归档
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  void Promise.all([detailQuery.refetch(), messagesQuery.refetch(), knowledgeQuery.refetch(), latestSedimentQuery.refetch()]);
+                  void sedimentHistoryQuery.refetch();
+                  void outlineQuery.refetch();
+                  void coverageQuery.refetch();
+                }}
+                className="inline-flex items-center gap-1 border border-[#c6c6c6] px-3 py-2 text-xs text-[#262626] hover:bg-[#f4f4f4]"
+              >
+                <ArrowPathIcon className="h-4 w-4" />
+                刷新
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1554,10 +1621,16 @@ const DiscussionDetail: React.FC = () => {
             <MessageInput
               value={messageText}
               sending={sendMessageMutation.isLoading}
+              disabled={isSpaceArchived}
+              disabledReason="该讨论空间已归档，当前只读。请先取消归档后再发送消息。"
               projectId={detail.projectId}
               participants={participants}
               onChange={setMessageText}
               onSend={(dataReferences) => {
+                if (isSpaceArchived) {
+                  setActionError('该讨论空间已归档，当前只读。');
+                  return;
+                }
                 if (!selectedThreadId) {
                   setActionError('请先选择讨论线');
                   return;

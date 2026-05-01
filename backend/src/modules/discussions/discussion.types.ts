@@ -65,6 +65,7 @@ export interface TriggerDiscussionDataAnalysisDto {
 
 export interface ListDiscussionSpacesQuery {
   status?: DiscussionSpaceStatus;
+  includeArchived?: boolean;
   category?: DiscussionSpaceCategory;
   creatorId?: string;
   projectId?: string;

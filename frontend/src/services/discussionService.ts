@@ -21,6 +21,8 @@ export interface DiscussionSpace {
   description?: string;
   creatorId: string;
   status: DiscussionSpaceStatus;
+  archivedAt?: string;
+  archivedBy?: string;
   category: DiscussionSpaceCategory;
   sedimentMode: DiscussionSedimentMode;
   tags: string[];
@@ -519,6 +521,7 @@ const unwrapPayload = <T>(payload: unknown): T => {
 class DiscussionService {
   async listSpaces(filters?: {
     status?: DiscussionSpaceStatus;
+    includeArchived?: boolean;
     category?: DiscussionSpaceCategory;
     creatorId?: string;
     projectId?: string;
@@ -552,6 +555,18 @@ class DiscussionService {
 
   async updateSpace(spaceId: string, payload: UpdateDiscussionSpacePayload): Promise<DiscussionSpace> {
     const response = await api.put(`/discussions/${spaceId}`, payload);
+    return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
+  }
+
+  async archiveSpace(spaceId: string, operatorId?: string): Promise<DiscussionSpace> {
+    const response = await api.post(`/discussions/${spaceId}/archive`, {
+      operatorId,
+    });
+    return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
+  }
+
+  async unarchiveSpace(spaceId: string): Promise<DiscussionSpace> {
+    const response = await api.post(`/discussions/${spaceId}/unarchive`);
     return normalizeWithId(unwrapPayload<DiscussionSpace>(response.data));
   }
 
