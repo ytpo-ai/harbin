@@ -9,9 +9,9 @@
 | 所属 Plan | [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) |
 | 需求管理 ID | — |
 | OpenCode Session | — |
-| 状态 | draft |
+| 状态 | done |
 | 创建日期 | 2026-04-30 |
-| 最后更新 | 2026-04-30 |
+| 最后更新 | 2026-05-01 |
 
 ## 2. 需求描述
 
@@ -28,17 +28,17 @@
 
 ### 2.3 验收条件
 
-- [ ] `discussion-knowledge-entry.schema.ts` 新增 `outlineSectionId`（可选字符串）字段
-- [ ] 新增索引 `{ spaceId: 1, outlineSectionId: 1 }`
-- [ ] 新增 `entryType` 枚举字段（`fact`/`data_point`/`opinion`/`source_reference`/`analysis`/`action_item`）
-- [ ] 新增 `structuredData` 嵌入对象字段（value/unit/measureDate/compareTo）
-- [ ] 创建知识条目时可指定 `outlineSectionId` 和 `entryType`
-- [ ] Agent 丰富章节时创建的知识条目自动关联 `outlineSectionId`
+- [x] `discussion-knowledge-entry.schema.ts` 新增 `outlineSectionId`（可选字符串）字段
+- [x] 新增索引 `{ spaceId: 1, outlineSectionId: 1 }`
+- [x] 新增 `entryType` 枚举字段（`fact`/`data_point`/`opinion`/`source_reference`/`analysis`/`action_item`）
+- [x] 新增 `structuredData` 嵌入对象字段（value/unit/measureDate/compareTo）
+- [x] 创建知识条目时可指定 `outlineSectionId` 和 `entryType`
+- [x] Agent 丰富章节时创建的知识条目自动关联 `outlineSectionId`
 - [x] 前端知识面板支持按大纲章节过滤
 - [x] 前端知识条目卡片展示 `entryType` 标签
 - [x] `discussion-sediment.service.ts` 的 `generateSediment` 改造：大纲存在时按章节结构组织
 - [x] 沉淀生成 Prompt 改造为大纲驱动模式
-- [ ] `GET /discussions/:spaceId/knowledge/coverage` API 实现
+- [x] `GET /discussions/:spaceId/knowledge/coverage` API 实现
 - [x] 前端大纲视图展示每个章节的知识积累覆盖度进度
 
 ## 3. 技术方案摘要

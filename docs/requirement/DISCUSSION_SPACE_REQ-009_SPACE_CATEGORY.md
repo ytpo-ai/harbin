@@ -9,9 +9,9 @@
 | 所属 Plan | [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) |
 | 需求管理 ID | — |
 | OpenCode Session | — |
-| 状态 | draft |
+| 状态 | done |
 | 创建日期 | 2026-04-30 |
-| 最后更新 | 2026-04-30 |
+| 最后更新 | 2026-05-01 |
 
 ## 2. 需求描述
 
@@ -27,14 +27,14 @@
 
 ### 2.3 验收条件
 
-- [ ] `discussion-space.schema.ts` 新增 `category` 字段（enum，默认 `general`）
-- [ ] 新增索引 `{ category: 1, status: 1 }`
-- [ ] `CreateSpaceDto` 新增 `category` 和 `industryContext`（可选）字段
-- [ ] `discussion-space.service.ts` 的 `createSpace` 方法接收并持久化 `category` 字段
-- [ ] 前端 `SpaceCreateModal.tsx` 新增分类选择 UI（四个选项卡片式选择）
-- [ ] 选择 `industry_observation` 后展示"观察行业"输入框
-- [ ] 讨论空间列表页中展示分类标签
-- [ ] 已有讨论空间数据兼容（`category` 默认为 `general`）
+- [x] `discussion-space.schema.ts` 新增 `category` 字段（enum，默认 `general`）
+- [x] 新增索引 `{ category: 1, status: 1 }`
+- [x] `CreateSpaceDto` 新增 `category` 和 `industryContext`（可选）字段
+- [x] `discussion-space.service.ts` 的 `createSpace` 方法接收并持久化 `category` 字段
+- [x] 前端 `SpaceCreateModal.tsx` 新增分类选择 UI（四个选项卡片式选择）
+- [x] 选择 `industry_observation` 后展示"观察行业"输入框
+- [x] 讨论空间列表页中展示分类标签
+- [x] 已有讨论空间数据兼容（`category` 默认为 `general`）
 
 ## 3. 技术方案摘要
 

@@ -32,6 +32,7 @@ import {
   LinkDiscussionMessageKnowledgeResult,
   ListDiscussionSedimentHistoryQuery,
   SendDiscussionMessageDto,
+  TriggerDiscussionDataAnalysisDto,
   UpdateDiscussionOutlineDto,
   UpdateDiscussionOutlineSectionDto,
   UpdateDiscussionSedimentModeDto,
@@ -174,6 +175,14 @@ export class DiscussionController {
     @Body() dto: SendDiscussionMessageDto,
   ) {
     return this.discussionMessageService.sendMessage(spaceId, threadId, dto);
+  }
+
+  @Post(':spaceId/system/data-analysis')
+  async triggerDataAnalysis(
+    @Param('spaceId') spaceId: string,
+    @Body() dto: TriggerDiscussionDataAnalysisDto,
+  ) {
+    return this.discussionMessageService.createDataUpdateAnalysisMessage(spaceId, dto);
   }
 
   @Get(':spaceId/threads/:threadId/messages')

@@ -17,6 +17,8 @@ type PendingPrefillSource = {
   sourceType: 'api' | 'rss' | 'web_scrape' | 'manual';
   config: Record<string, unknown>;
   collectFrequency: 'hourly' | 'daily' | 'weekly' | 'monthly';
+  notifyDiscussion?: boolean;
+  notifyThreshold?: number;
   templateName?: string;
   templateId?: string;
   discussionSpaceId?: string;
@@ -46,6 +48,8 @@ const DataDashboard: React.FC = () => {
   const [sourceDescription, setSourceDescription] = useState('');
   const [sourceType, setSourceType] = useState<'api' | 'rss' | 'web_scrape' | 'manual'>('api');
   const [sourceFrequency, setSourceFrequency] = useState<'hourly' | 'daily' | 'weekly' | 'monthly'>('daily');
+  const [sourceNotifyDiscussion, setSourceNotifyDiscussion] = useState(true);
+  const [sourceNotifyThreshold, setSourceNotifyThreshold] = useState(1);
   const [sourceConfigText, setSourceConfigText] = useState('{\n  "url": ""\n}');
   const [prefillSources, setPrefillSources] = useState<PendingPrefillSource[]>([]);
   const [createError, setCreateError] = useState('');
@@ -78,6 +82,8 @@ const DataDashboard: React.FC = () => {
               collectFrequency: ['hourly', 'daily', 'weekly', 'monthly'].includes(String(item?.collectFrequency))
                 ? (item.collectFrequency as PendingPrefillSource['collectFrequency'])
                 : 'daily',
+              notifyDiscussion: item?.notifyDiscussion !== undefined ? Boolean(item.notifyDiscussion) : true,
+              notifyThreshold: Math.max(1, Number(item?.notifyThreshold || 1)),
               templateName: item?.templateName ? String(item.templateName) : undefined,
               templateId: item?.templateId ? String(item.templateId) : undefined,
               discussionSpaceId: item?.discussionSpaceId ? String(item.discussionSpaceId) : undefined,
@@ -169,13 +175,16 @@ const DataDashboard: React.FC = () => {
       config,
       collectFrequency: sourceFrequency,
       status: 'active',
-      notifyThreshold: 1,
+      notifyDiscussion: sourceNotifyDiscussion,
+      notifyThreshold: sourceNotifyDiscussion ? Math.max(1, Number(sourceNotifyThreshold || 1)) : 1,
       executorAgentId: DEFAULT_EXECUTOR_AGENT_ID,
       executorAgentName: DEFAULT_EXECUTOR_AGENT_NAME,
     });
 
     setSourceName('');
     setSourceDescription('');
+    setSourceNotifyDiscussion(true);
+    setSourceNotifyThreshold(1);
     setSourceConfigText('{\n  "url": ""\n}');
   };
 
@@ -191,7 +200,8 @@ const DataDashboard: React.FC = () => {
       config: source.config || {},
       collectFrequency: source.collectFrequency,
       status: 'active',
-      notifyThreshold: 1,
+      notifyDiscussion: source.notifyDiscussion !== undefined ? Boolean(source.notifyDiscussion) : true,
+      notifyThreshold: source.notifyDiscussion === false ? 1 : Math.max(1, Number(source.notifyThreshold || 1)),
       discussionSpaceId: source.discussionSpaceId,
       executorAgentId: DEFAULT_EXECUTOR_AGENT_ID,
       executorAgentName: DEFAULT_EXECUTOR_AGENT_NAME,
@@ -266,6 +276,9 @@ const DataDashboard: React.FC = () => {
                           {item.templateName ? `${item.templateName} · ` : ''}
                           {item.sourceType} · {item.collectFrequency}
                         </div>
+                        <div className="text-[11px] text-[#8d8d8d] mt-1">
+                          讨论通知：{item.notifyDiscussion === false ? '关闭' : `开启（每 ${Math.max(1, Number(item.notifyThreshold || 1))} 次采集）`}
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -321,6 +334,28 @@ const DataDashboard: React.FC = () => {
                 <option value="monthly">monthly</option>
               </select>
             </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
+              <label className="flex items-center justify-between rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700">
+                <span>回灌讨论通知</span>
+                <input
+                  type="checkbox"
+                  checked={sourceNotifyDiscussion}
+                  onChange={(event) => setSourceNotifyDiscussion(event.target.checked)}
+                  className="h-4 w-4"
+                />
+              </label>
+              <label className="flex items-center justify-between rounded border border-gray-300 bg-white px-2 py-1.5 text-xs text-gray-700">
+                <span>通知阈值（次）</span>
+                <input
+                  type="number"
+                  min={1}
+                  value={sourceNotifyThreshold}
+                  onChange={(event) => setSourceNotifyThreshold(Math.max(1, Number(event.target.value || 1)))}
+                  disabled={!sourceNotifyDiscussion}
+                  className="w-20 rounded border border-gray-300 px-1 py-1 text-right text-xs text-gray-800 outline-none focus:border-primary-500 disabled:bg-gray-100 disabled:text-gray-400"
+                />
+              </label>
+            </div>
             <textarea
               value={sourceConfigText}
               onChange={(event) => setSourceConfigText(event.target.value)}
@@ -359,6 +394,9 @@ const DataDashboard: React.FC = () => {
                         <p className="text-sm font-medium text-gray-900">{source.name}</p>
                         <p className="text-xs text-gray-500 mt-1">
                           类型: {source.sourceType} · 频率: {source.collectFrequency} · 状态: {source.status}
+                        </p>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          回灌通知: {source.notifyDiscussion === false ? '关闭' : `开启（每 ${Math.max(1, Number(source.notifyThreshold || 1))} 次采集）`}
                         </p>
                       </div>
                       <button

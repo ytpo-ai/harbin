@@ -9,9 +9,9 @@
 | 所属 Plan | [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) |
 | 需求管理 ID | — |
 | OpenCode Session | — |
-| 状态 | draft |
+| 状态 | done |
 | 创建日期 | 2026-04-30 |
-| 最后更新 | 2026-04-30 |
+| 最后更新 | 2026-05-01 |
 
 ## 2. 需求描述
 
@@ -29,29 +29,29 @@ Phase 3 完成后系统具备了数据采集能力，但采集到的数据与讨
 ### 2.3 验收条件
 
 #### 数据回灌
-- [ ] 采集完成后检测 `dataSource.discussionSpaceId`，存在时触发回灌
-- [ ] 采集数据自动转化为知识条目（`entryType=data_point`），写入讨论空间知识库
-- [ ] 知识条目自动关联 `outlineSectionId`（从数据源继承）
-- [ ] 可选的 system 消息通知（`notifyDiscussion` 开关 + `notifyThreshold` 阈值控制）
-- [ ] 大纲章节的 `knowledgeCount` 和 `status` 自动更新
+- [x] 采集完成后检测 `dataSource.discussionSpaceId`，存在时触发回灌
+- [x] 采集数据自动转化为知识条目（`entryType=data_point`），写入讨论空间知识库
+- [x] 知识条目自动关联 `outlineSectionId`（从数据源继承）
+- [x] 可选的 system 消息通知（`notifyDiscussion` 开关 + `notifyThreshold` 阈值控制）
+- [x] 大纲章节的 `knowledgeCount` 和 `status` 自动更新
 
 #### 数据引用
-- [ ] `discussion-message.schema.ts` 新增 `dataReferences` 字段
-- [ ] 前端输入框支持 `#data:` 触发数据搜索弹窗
-- [ ] 选择数据记录后插入格式化引用块
-- [ ] 消息中的数据引用可展开查看详情
+- [x] `discussion-message.schema.ts` 新增 `dataReferences` 字段
+- [x] 前端输入框支持 `#data:` 触发数据搜索弹窗
+- [x] 选择数据记录后插入格式化引用块
+- [x] 消息中的数据引用可展开查看详情
 
 #### 大纲模板
-- [ ] `ei-outline-template.schema.ts` 定义完成
-- [ ] 模板 CRUD API 实现
-- [ ] 模板应用 API 实现（将模板大纲导入到讨论空间）
-- [ ] 系统内置"行业观察通用模板"
-- [ ] 创建讨论空间时可选择模板
-- [ ] 选择模板后建议的数据源配置自动预填
+- [x] `ei-outline-template.schema.ts` 定义完成
+- [x] 模板 CRUD API 实现
+- [x] 模板应用 API 实现（将模板大纲导入到讨论空间）
+- [x] 系统内置"行业观察通用模板"
+- [x] 创建讨论空间时可选择模板
+- [x] 选择模板后建议的数据源配置自动预填
 
 #### 自动分析触发（可选）
-- [ ] `space.settings.autoAnalysisOnDataUpdate` 开关
-- [ ] 数据回灌后检测变化率，超阈值时触发 Agent 分析消息
+- [x] `space.settings.autoAnalysisOnDataUpdate` 开关
+- [x] 数据回灌后检测变化率，超阈值时触发 Agent 分析消息
 
 ## 3. 技术方案摘要
 

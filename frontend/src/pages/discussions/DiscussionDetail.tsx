@@ -939,6 +939,27 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
+  const updateAutoAnalysisOnDataUpdateMutation = useMutation(
+    async (enabled: boolean) => {
+      const settings = {
+        ...(detailQuery.data?.settings || {}),
+        autoAnalysisOnDataUpdate: enabled,
+      };
+
+      return discussionService.updateSpace(spaceId, { settings });
+    },
+    {
+      onSuccess: async (_, enabled) => {
+        await queryClient.invalidateQueries(['discussion-space-detail', spaceId]);
+        setActionError('');
+        setActionNotice(enabled ? '已开启数据更新自动分析' : '已关闭数据更新自动分析');
+      },
+      onError: () => {
+        setActionError('更新自动分析开关失败');
+      },
+    },
+  );
+
   const archiveKnowledgeMutation = useMutation(
     async () => {
       if (!archiveTargetMessage) {
@@ -1712,12 +1733,15 @@ const DiscussionDetail: React.FC = () => {
                   }))}
                   selectedAgentId={selectedAgentId}
                   defaultReplyAgentId={detail.settings?.defaultReplyAgentId}
+                  autoAnalysisOnDataUpdate={detail.settings?.autoAnalysisOnDataUpdate}
                   addingAgent={addParticipantMutation.isLoading || assignableAgentsQuery.isLoading}
+                  updatingAutoAnalysis={updateAutoAnalysisOnDataUpdateMutation.isLoading}
                   removingParticipantId={
                     typeof removeParticipantMutation.variables === 'string' ? removeParticipantMutation.variables : undefined
                   }
                   onSelectAgent={setSelectedAgentId}
                   onDefaultReplyAgentChange={(participantId) => updateDefaultReplyAgentMutation.mutate(participantId)}
+                  onAutoAnalysisOnDataUpdateChange={(enabled) => updateAutoAnalysisOnDataUpdateMutation.mutate(enabled)}
                   onAddAgent={() => {
                     if (!selectedAgentId) {
                       setActionError('请先选择一个 Agent');

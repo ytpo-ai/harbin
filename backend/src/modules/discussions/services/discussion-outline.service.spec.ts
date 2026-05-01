@@ -104,4 +104,48 @@ describe('DiscussionOutlineService', () => {
     expect(outline.sections.length).toBeGreaterThan(0);
     expect(outline.sections[0].title).toContain('发展脉络');
   });
+
+  it('computes outline knowledge coverage with section details', async () => {
+    const { service, discussionSpaceModel } = buildService();
+
+    discussionSpaceModel.findOne.mockReturnValue({
+      lean: jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue({
+          id: 'space-1',
+          title: 'Web3 行业观察',
+          documentOutline: {
+            version: 1,
+            title: 'Web3 行业观察大纲',
+            sections: [
+              { id: 'sec-1', title: '行业发展脉络', order: 0, depth: 0, status: 'sufficient', knowledgeCount: 5, childSectionIds: [] },
+              { id: 'sec-2', title: '核心公司图谱', order: 1, depth: 0, status: 'draft', knowledgeCount: 0, childSectionIds: [] },
+              { id: 'sec-3', title: '关键数据指标追踪', order: 2, depth: 0, status: 'enriching', knowledgeCount: 1, childSectionIds: [] },
+            ],
+            generatedBy: 'agent',
+            createdAt: new Date('2026-04-30T00:00:00.000Z'),
+            updatedAt: new Date('2026-04-30T00:00:00.000Z'),
+          },
+        }),
+      }),
+    });
+
+    (service as any).discussionKnowledgeEntryModel.aggregate.mockResolvedValue([
+      { _id: 'sec-1', knowledgeCount: 6, latestEntryDate: '2026-04-30T08:00:00.000Z' },
+      { _id: 'sec-3', knowledgeCount: 2, latestEntryDate: '2026-04-30T09:00:00.000Z' },
+    ]);
+
+    const coverage = await service.getKnowledgeCoverage('space-1');
+
+    expect(coverage.totalSections).toBe(3);
+    expect(coverage.coveredSections).toBe(2);
+    expect(coverage.sufficientSections).toBe(1);
+    expect(coverage.coverage).toBeCloseTo(0.6667, 4);
+    expect(coverage.sectionDetails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sectionId: 'sec-1', knowledgeCount: 6, status: 'sufficient' }),
+        expect.objectContaining({ sectionId: 'sec-2', knowledgeCount: 0, status: 'draft' }),
+        expect.objectContaining({ sectionId: 'sec-3', knowledgeCount: 2, status: 'enriching' }),
+      ]),
+    );
+  });
 });

@@ -36,6 +36,7 @@ export interface DiscussionSpace {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
   statistics?: {
     totalThreads: number;
@@ -237,6 +238,7 @@ export interface CreateDiscussionSpacePayload {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
   initialParticipants?: AddDiscussionParticipantPayload[];
 }
@@ -404,6 +406,7 @@ export interface UpdateDiscussionSpacePayload {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
 }
 

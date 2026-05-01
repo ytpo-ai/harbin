@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsObject, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreateDataSourceDto {
   @IsString()
@@ -54,6 +54,10 @@ export class CreateDataSourceDto {
   @IsInt()
   @Min(1)
   notifyThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyDiscussion?: boolean;
 }
 
 export class UpdateDataSourceDto {
@@ -91,6 +95,10 @@ export class UpdateDataSourceDto {
   @IsInt()
   @Min(1)
   notifyThreshold?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyDiscussion?: boolean;
 
   @IsOptional()
   @IsString()

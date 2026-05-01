@@ -43,6 +43,7 @@ export interface CreateDataSourcePayload {
   status?: DataSourceStatus;
   outlineSectionId?: string;
   discussionSpaceId?: string;
+  notifyDiscussion?: boolean;
   notifyThreshold?: number;
   executorAgentId: string;
   executorAgentName?: string;

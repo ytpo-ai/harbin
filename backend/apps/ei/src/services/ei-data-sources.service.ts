@@ -134,7 +134,7 @@ export class EiDataSourcesService {
         successCount: 0,
         errorCount: 0,
       },
-      notifyDiscussion: true,
+      notifyDiscussion: payload.notifyDiscussion !== undefined ? Boolean(payload.notifyDiscussion) : true,
       notifyThreshold: payload.notifyThreshold || 1,
     });
 
@@ -300,6 +300,15 @@ export class EiDataSourcesService {
       throw new NotFoundException(`数据源 ${id} 不存在`);
     }
 
+    const previousRecord = await this.dataRecordModel
+      .findOne({
+        dataSourceId: String(item._id),
+        status: { $in: ['success', 'partial'] },
+      })
+      .sort({ collectedAt: -1, createdAt: -1 })
+      .lean()
+      .exec();
+
     const record = await this.dataRecordModel.create({
       dataSourceId: String(item._id),
       projectId: item.projectId,
@@ -338,6 +347,7 @@ export class EiDataSourcesService {
       source: item as unknown as EiDataSource,
       record: record as unknown as EiDataRecord,
       nextStats,
+      previousRecord: previousRecord as unknown as EiDataRecord | null,
     });
 
     return {

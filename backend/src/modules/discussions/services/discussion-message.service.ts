@@ -10,7 +10,11 @@ import {
 import { DiscussionParticipant, DiscussionParticipantType } from '../../../shared/schemas/discussion-participant.schema';
 import { DiscussionSedimentMode } from '../../../shared/schemas/discussion-space.schema';
 import { AgentExecutionTask, ChatMessage } from '../../../shared/types';
-import { SendDiscussionMessageDto, SendDiscussionMessageResult } from '../discussion.types';
+import {
+  SendDiscussionMessageDto,
+  SendDiscussionMessageResult,
+  TriggerDiscussionDataAnalysisDto,
+} from '../discussion.types';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { DiscussionParticipantService } from './discussion-participant.service';
 import { DiscussionMentionDispatchService } from './discussion-mention-dispatch.service';
@@ -61,6 +65,44 @@ export const buildBranchContextMessageContent = (input: {
   ].join('\n\n');
 };
 
+export const buildDataUpdateAnalysisFallbackContent = (input: {
+  sourceName: string;
+  dataCategory?: string;
+  collectedAt?: string;
+  changePercent?: number;
+  currentData?: Record<string, unknown>;
+  previousData?: Record<string, unknown>;
+}): string => {
+  const sourceName = String(input.sourceName || '').trim() || '数据源';
+  const dataCategory = String(input.dataCategory || '').trim() || 'general';
+  const collectedAtText = input.collectedAt ? new Date(input.collectedAt).toISOString() : new Date().toISOString();
+  const changePercent = Number(input.changePercent);
+  const changeText = Number.isFinite(changePercent) ? `${changePercent.toFixed(2)}%` : '未知';
+  const currentJson = JSON.stringify(input.currentData || {}, null, 2);
+  const previousJson = JSON.stringify(input.previousData || {}, null, 2);
+
+  return [
+    `数据更新提醒：${sourceName} (${dataCategory})`,
+    `采集时间：${collectedAtText}`,
+    `变化幅度：${changeText}`,
+    '',
+    '当前数据：',
+    '```json',
+    currentJson,
+    '```',
+    '',
+    '历史基线：',
+    '```json',
+    previousJson,
+    '```',
+    '',
+    '建议关注：',
+    '- 确认该变化是一次性波动还是持续趋势。',
+    '- 与同周期其它指标交叉验证，排除单一来源噪音。',
+    '- 若变化持续，建议补充背景事件并更新章节结论。',
+  ].join('\n');
+};
+
 @Injectable()
 export class DiscussionMessageService {
   private readonly logger = new Logger(DiscussionMessageService.name);
@@ -108,6 +150,90 @@ export class DiscussionMessageService {
         };
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  }
+
+  private async createSystemMessage(input: {
+    spaceId: string;
+    threadId: string;
+    content: string;
+    messageType?: DiscussionMessageType;
+    metadata?: Record<string, unknown>;
+  }): Promise<DiscussionMessage> {
+    const latest = await this.discussionMessageModel
+      .findOne({ spaceId: input.spaceId, threadId: input.threadId })
+      .sort({ sequence: -1 })
+      .lean()
+      .exec();
+    const nextSequence = (latest?.sequence || 0) + 1;
+
+    const created = await this.discussionMessageModel.create({
+      spaceId: input.spaceId,
+      threadId: input.threadId,
+      participantId: 'system',
+      senderType: DiscussionMessageSenderType.SYSTEM,
+      content: input.content,
+      messageType: input.messageType || DiscussionMessageType.TEXT,
+      sequence: nextSequence,
+      mentions: [],
+      branchSuggestions: [],
+      crossReferences: [],
+      dataReferences: [],
+      knowledgeEntryIds: [],
+      metadata: input.metadata,
+    });
+
+    await Promise.all([
+      this.discussionThreadService.incrementSystemMessageCount(input.spaceId, input.threadId),
+      this.discussionSpaceService.incrementStatistics(input.spaceId, { totalMessages: 1 }),
+    ]);
+
+    this.discussionMessageStreamService.emitMessageCreated(
+      input.spaceId,
+      input.threadId,
+      created as unknown as DiscussionMessage,
+    );
+
+    return created as unknown as DiscussionMessage;
+  }
+
+  async createDataUpdateAnalysisMessage(
+    spaceId: string,
+    dto: TriggerDiscussionDataAnalysisDto,
+  ): Promise<{ created: true; messageId: string; threadId: string }> {
+    const space = await this.discussionSpaceService.getSpaceById(spaceId);
+    const threadId = String(dto.threadId || space.rootThreadId || '').trim();
+    if (!threadId) {
+      throw new NotFoundException('讨论空间缺少可用讨论线，无法写入数据分析消息');
+    }
+
+    await this.discussionThreadService.getThreadById(spaceId, threadId);
+
+    const content = buildDataUpdateAnalysisFallbackContent({
+      sourceName: dto.sourceName,
+      dataCategory: dto.dataCategory,
+      collectedAt: dto.collectedAt,
+      changePercent: dto.changePercent,
+      currentData: dto.currentData,
+      previousData: dto.previousData,
+    });
+
+    const created = await this.createSystemMessage({
+      spaceId,
+      threadId,
+      content,
+      metadata: {
+        autoAnalysisOnDataUpdate: true,
+        dataSourceName: dto.sourceName,
+        outlineSectionId: dto.outlineSectionId,
+        changePercent: dto.changePercent,
+      },
+    });
+
+    return {
+      created: true,
+      messageId: created.id,
+      threadId,
+    };
   }
 
   private async buildMentionRuntimeTask(input: {

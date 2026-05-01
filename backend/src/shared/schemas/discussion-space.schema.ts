@@ -113,6 +113,7 @@ export class DiscussionSpace {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
 
   @Prop({ type: Object })

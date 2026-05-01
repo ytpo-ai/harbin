@@ -855,13 +855,13 @@ EiOutlineTemplateSchema.index({ applicableIndustries: 1 });
 
 | 编号 | 需求简述 | 文档 | 状态 | 所属 Phase |
 |------|----------|------|------|-----------|
-| REQ-009 | 讨论空间分类（category）+ 创建弹窗改造 | [链接](../requirement/DISCUSSION_SPACE_REQ-009_SPACE_CATEGORY.md) | draft | Phase 0 |
-| REQ-010 | 文档大纲升级（结构化 DocumentOutline）+ 大纲视图 + Agent 自动生成 | [链接](../requirement/DISCUSSION_SPACE_REQ-010_DOCUMENT_OUTLINE_UPGRADE.md) | draft | Phase 0 |
-| REQ-011 | 知识库增强（outlineSectionId + entryType + 覆盖度统计）+ 沉淀文档大纲驱动改造 | [链接](../requirement/DISCUSSION_SPACE_REQ-011_KNOWLEDGE_OUTLINE_DRIVEN.md) | draft | Phase 0 |
+| REQ-009 | 讨论空间分类（category）+ 创建弹窗改造 | [链接](../requirement/DISCUSSION_SPACE_REQ-009_SPACE_CATEGORY.md) | done | Phase 0 |
+| REQ-010 | 文档大纲升级（结构化 DocumentOutline）+ 大纲视图 + Agent 自动生成 | [链接](../requirement/DISCUSSION_SPACE_REQ-010_DOCUMENT_OUTLINE_UPGRADE.md) | done | Phase 0 |
+| REQ-011 | 知识库增强（outlineSectionId + entryType + 覆盖度统计）+ 沉淀文档大纲驱动改造 | [链接](../requirement/DISCUSSION_SPACE_REQ-011_KNOWLEDGE_OUTLINE_DRIVEN.md) | done | Phase 0 |
 | REQ-012 | 孵化项目与讨论空间聚合打通 | [链接](../requirement/DISCUSSION_SPACE_REQ-012_INCUBATION_DISCUSSION_LINK.md) | done | Phase 1 |
 | REQ-013 | 讨论消息"转为需求"能力 + 需求来源追溯 | [链接](../requirement/DISCUSSION_SPACE_REQ-013_DISCUSSION_TO_REQUIREMENT.md) | done | Phase 2 |
 | REQ-014 | 数据源管理 + 采集数据存储 + Schedule 集成 | [链接](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | done | Phase 3 |
-| REQ-015 | 数据回灌讨论 + 数据引用 + 大纲模板 + 自动分析触发 | [链接](../requirement/DISCUSSION_SPACE_REQ-015_DATA_DISCUSSION_CLOSED_LOOP.md) | draft | Phase 4 |
+| REQ-015 | 数据回灌讨论 + 数据引用 + 大纲模板 + 自动分析触发 | [链接](../requirement/DISCUSSION_SPACE_REQ-015_DATA_DISCUSSION_CLOSED_LOOP.md) | done | Phase 4 |
 
 ## 6. 关键影响点
 

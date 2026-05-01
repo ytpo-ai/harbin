@@ -34,6 +34,7 @@ export interface CreateDiscussionSpaceDto {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
   initialParticipants?: AddDiscussionParticipantDto[];
 }
@@ -47,7 +48,19 @@ export interface UpdateDiscussionSpaceDto {
     knowledgeAutoAccumulate?: boolean;
     branchSuggestionEnabled?: boolean;
     defaultReplyAgentId?: string;
+    autoAnalysisOnDataUpdate?: boolean;
   };
+}
+
+export interface TriggerDiscussionDataAnalysisDto {
+  threadId?: string;
+  sourceName: string;
+  dataCategory?: string;
+  outlineSectionId?: string;
+  collectedAt?: string;
+  currentData?: Record<string, unknown>;
+  previousData?: Record<string, unknown>;
+  changePercent?: number;
 }
 
 export interface ListDiscussionSpacesQuery {

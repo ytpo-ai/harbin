@@ -51,6 +51,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
     return compact.slice(0, 220);
   };
 
+  const formatReferenceLine = (record: DataRecordItem): string => {
+    const collectedAt = new Date(record.collectedAt);
+    const collectedAtText = Number.isNaN(collectedAt.getTime()) ? record.collectedAt : collectedAt.toLocaleString();
+    return `根据 ${record.dataSourceId} 数据（${collectedAtText}）：${formatDataPreview(record)}`;
+  };
+
   useEffect(() => {
     if (!openDataPicker || !projectId) {
       return;
@@ -103,11 +109,23 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const selectedDataReferences = useMemo(() => Object.values(selectedDataMap), [selectedDataMap]);
 
   const toggleDataRecord = (record: DataRecordItem) => {
+    const referenceLine = formatReferenceLine(record);
     setSelectedDataMap((current) => {
       if (current[record._id]) {
         const next = { ...current };
         delete next[record._id];
+        if (value.includes(referenceLine)) {
+          const escapedLine = referenceLine.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const lineRegex = new RegExp(`(^|\\n)${escapedLine}(?=\\n|$)`, 'g');
+          const cleaned = value.replace(lineRegex, '').replace(/\n{3,}/g, '\n\n').trim();
+          onChange(cleaned);
+        }
         return next;
+      }
+
+      if (!value.includes(referenceLine)) {
+        const suffix = value.trimEnd().length > 0 ? '\n\n' : '';
+        onChange(`${value.trimEnd()}${suffix}${referenceLine}`);
       }
 
       return {
