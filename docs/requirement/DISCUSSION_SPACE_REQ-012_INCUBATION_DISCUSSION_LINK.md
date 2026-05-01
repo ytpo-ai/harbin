@@ -9,7 +9,7 @@
 | 所属 Plan | [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) |
 | 需求管理 ID | — |
 | OpenCode Session | — |
-| 状态 | draft |
+| 状态 | done |
 | 创建日期 | 2026-04-30 |
 | 最后更新 | 2026-04-30 |
 
@@ -28,16 +28,16 @@
 
 ### 2.3 验收条件
 
-- [ ] `incubation-project-aggregation.service.ts` 注入 `DiscussionSpace` model
-- [ ] 新增 `getProjectDiscussionSpaces(projectId)` 方法
-- [ ] `getProjectStats` 返回值中新增 `discussions` 统计
-- [ ] `incubation-projects.controller.ts` 新增 `GET :id/discussions` 端点
-- [ ] 前端 `IncubationProjectDetail.tsx` Tab 栏新增"讨论空间"
-- [ ] 讨论空间卡片展示标题、分类标签、状态、消息数、知识条目数、更新时间
-- [ ] 点击卡片跳转到讨论空间详情页
-- [ ] Stats 卡片区新增讨论空间数量
-- [ ] 前端 `incubationProjectService.ts` 新增 `getProjectDiscussions` 方法
-- [ ] `SpaceCreateModal.tsx` 关联项目改为下拉选择（拉取孵化项目列表）
+- [x] `incubation-project-aggregation.service.ts` 注入 `DiscussionSpace` model
+- [x] 新增 `getProjectDiscussionSpaces(projectId)` 方法
+- [x] `getProjectStats` 返回值中新增 `discussions` 统计
+- [x] `incubation-projects.controller.ts` 新增 `GET :id/discussions` 端点
+- [x] 前端 `IncubationProjectDetail.tsx` Tab 栏新增"讨论空间"
+- [x] 讨论空间卡片展示标题、分类标签、状态、消息数、知识条目数、更新时间
+- [x] 点击卡片跳转到讨论空间详情页
+- [x] Stats 卡片区新增讨论空间数量
+- [x] 前端 `incubationProjectService.ts` 新增 `getProjectDiscussions` 方法
+- [x] `SpaceCreateModal.tsx` 关联项目改为下拉选择（拉取孵化项目列表）
 
 ## 3. 技术方案摘要
 
@@ -56,7 +56,7 @@
 
 | 文档 | 状态 |
 |------|------|
-| [开发记录](../development/DISCUSSION_SPACE_REQ-012_DEVELOPMENT.md) | 待创建 |
+| [开发记录](../development/DISCUSSION_SPACE_REQ-012_DEVELOPMENT.md) | 已创建 |
 
 ### 4.2 Fix 记录
 

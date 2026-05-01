@@ -117,6 +117,13 @@
   - 作用：将 `data/template/` 模板文件复制到该孵化项目绑定的本地项目目录。
   - 复制策略：仅复制缺失文件，不覆盖已有文件。
   - 返回：`copiedFiles`、`skippedExistingFiles`、`createdDirectories`、`localPath` 等初始化结果。
+- `GET /ei/incubation-projects/:id/agents` (`active`)
+- `GET /ei/incubation-projects/:id/plans` (`active`)
+- `GET /ei/incubation-projects/:id/requirements` (`active`)
+- `GET /ei/incubation-projects/:id/schedules` (`active`)
+- `GET /ei/incubation-projects/:id/meetings` (`active`)
+- `GET /ei/incubation-projects/:id/discussions` (`active`)
+- `GET /ei/incubation-projects/:id/stats` (`active`)
 
 ### 11) Data Sources（数据源管理）
 

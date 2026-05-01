@@ -23,6 +23,28 @@ import { Meeting, MeetingDocument } from '../../../../src/shared/schemas/meeting
 import { DiscussionSpace, DiscussionSpaceDocument } from '../../../../src/shared/schemas/discussion-space.schema';
 import { AgentClientService } from '../../../../src/modules/agents-client/agent-client.service';
 
+type ProjectDiscussionSpaceSummary = {
+  id: string;
+  title: string;
+  category?: string;
+  status: string;
+  tags?: string[];
+  statistics?: DiscussionSpace['statistics'];
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
+type ProjectDiscussionSpaceLean = {
+  _id: unknown;
+  title: string;
+  category?: string;
+  status: string;
+  tags?: string[];
+  statistics?: DiscussionSpace['statistics'];
+  createdAt?: Date;
+  updatedAt?: Date;
+};
+
 @Injectable()
 export class IncubationProjectAggregationService {
   constructor(
@@ -92,13 +114,13 @@ export class IncubationProjectAggregationService {
     return this.meetingModel.find({ projectId }).sort({ createdAt: -1 }).exec();
   }
 
-  async getProjectDiscussionSpaces(projectId: string): Promise<DiscussionSpace[]> {
+  async getProjectDiscussionSpaces(projectId: string): Promise<ProjectDiscussionSpaceSummary[]> {
     await this.assertProjectExists(projectId);
-    return this.discussionSpaceModel
+    const spaces = await this.discussionSpaceModel
       .find(
         { projectId, status: { $ne: 'archived' } },
         {
-          id: 1,
+          _id: 1,
           title: 1,
           category: 1,
           status: 1,
@@ -109,8 +131,19 @@ export class IncubationProjectAggregationService {
         },
       )
       .sort({ updatedAt: -1 })
-      .lean()
-      .exec() as unknown as DiscussionSpace[];
+      .lean<ProjectDiscussionSpaceLean[]>()
+      .exec();
+
+    return spaces.map((space) => ({
+      id: String(space._id),
+      title: space.title,
+      category: space.category,
+      status: space.status,
+      tags: space.tags,
+      statistics: space.statistics,
+      createdAt: space.createdAt,
+      updatedAt: space.updatedAt,
+    }));
   }
 
   /**

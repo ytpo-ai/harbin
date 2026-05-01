@@ -51,6 +51,7 @@ export interface IncubationProjectStats {
 
 export interface IncubationProjectDiscussionSpace {
   id: string;
+  _id?: string;
   title: string;
   category?: 'general' | 'industry_observation' | 'product_discussion' | 'technical_design';
   status: 'active' | 'paused' | 'archived';
@@ -158,14 +159,18 @@ export const incubationProjectService = {
   async getProjectDiscussions(id: string): Promise<IncubationProjectDiscussionSpace[]> {
     const response = await api.get(`/ei/incubation-projects/${id}/discussions`);
     const payload = response.data;
+    const normalize = (item: any): IncubationProjectDiscussionSpace => ({
+      ...item,
+      id: item?.id || item?._id || '',
+    });
     if (Array.isArray(payload)) {
-      return payload as IncubationProjectDiscussionSpace[];
+      return payload.map(normalize);
     }
     if (Array.isArray(payload?.data)) {
-      return payload.data as IncubationProjectDiscussionSpace[];
+      return payload.data.map(normalize);
     }
     if (Array.isArray(payload?.items)) {
-      return payload.items as IncubationProjectDiscussionSpace[];
+      return payload.items.map(normalize);
     }
     return [];
   },

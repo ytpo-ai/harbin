@@ -55,6 +55,7 @@
   - `GET /ei/incubation-projects/:id/requirements`
   - `GET /ei/incubation-projects/:id/schedules`
   - `GET /ei/incubation-projects/:id/meetings`
+  - `GET /ei/incubation-projects/:id/discussions`
   - `GET /ei/incubation-projects/:id/stats`
 - 聚合统计中，Agent 数量通过 `AgentClientService` 跨服务查询；其余资源在 EI 内通过 shared schema 直接聚合查询。
 
@@ -63,7 +64,7 @@
 - `项目管理` 页支持 Tab 切换：`本地项目` / `孵化项目`
 - 孵化项目提供列表、搜索、状态筛选、分页、创建、编辑、删除。
 - 孵化项目列表新增模板初始化状态展示与“初始化模板”按钮（未初始化时可触发）。
-- 新增孵化项目详情页（`/ei/incubation/:id`）：展示概览统计与 `Agent/计划/调度/需求` 分栏。
+- 新增孵化项目详情页（`/ei/incubation/:id`）：展示概览统计与 `Agent/计划/调度/需求/讨论空间/数据看板` 分栏。
 - Agent 创建弹窗与 Agent 列表支持按孵化项目关联/筛选，满足“全局 Agent 与项目 Agent 共存”模型。
 
 ### 1.4 关键约束
@@ -79,7 +80,7 @@
 | Plan | Requirement | Development | Fix |
 |------|------------|-------------|-----|
 | [PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN](../plan/PROJECT_MANAGEMENT_LOCAL_PROJECT_PATH_UPDATE_PLAN.MD) | [PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE](../requirement/PROJECT_INCUBATION_REQ-001_LOCAL_PROJECT_PATH_UPDATE.md) | [开发记录](../development/PROJECT_INCUBATION_REQ-001_DEVELOPMENT.md) | — |
-| [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-012 孵化项目与讨论空间聚合打通](../requirement/DISCUSSION_SPACE_REQ-012_INCUBATION_DISCUSSION_LINK.md) | 待创建 | — |
+| [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-012 孵化项目与讨论空间聚合打通](../requirement/DISCUSSION_SPACE_REQ-012_INCUBATION_DISCUSSION_LINK.md) | [开发记录](../development/DISCUSSION_SPACE_REQ-012_DEVELOPMENT.md) | — |
 | [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-014 数据采集框架](../requirement/DISCUSSION_SPACE_REQ-014_DATA_COLLECTION_FRAMEWORK.md) | [开发记录](../development/DISCUSSION_SPACE_REQ-014_DEVELOPMENT.md) | — |
 | [INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) | [REQ-015 数据讨论闭环协作](../requirement/DISCUSSION_SPACE_REQ-015_DATA_DISCUSSION_CLOSED_LOOP.md) | 待创建 | — |
 

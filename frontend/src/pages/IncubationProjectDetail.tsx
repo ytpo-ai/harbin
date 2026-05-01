@@ -475,9 +475,13 @@ const IncubationProjectDetail: React.FC = () => {
                 <div className="space-y-2">
                   {discussions.map((space) => (
                     <button
-                      key={space.id}
+                      key={space.id || space._id}
                       type="button"
-                      onClick={() => navigate(`/discussions/${space.id}`)}
+                      onClick={() => {
+                        const spaceId = space.id || space._id;
+                        if (!spaceId) return;
+                        navigate(`/discussions/${spaceId}`);
+                      }}
                       className="w-full border border-gray-200 rounded p-3 text-left hover:border-primary-300 hover:bg-primary-50/40"
                     >
                       <div className="flex items-center justify-between">
