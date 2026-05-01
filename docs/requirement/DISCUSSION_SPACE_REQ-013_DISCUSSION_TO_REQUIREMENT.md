@@ -9,9 +9,9 @@
 | 所属 Plan | [DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN](../plan/DISCUSSION_SPACE_INDUSTRY_OBSERVATION_COLLAB_PLAN.md) |
 | 需求管理 ID | — |
 | OpenCode Session | — |
-| 状态 | draft |
+| 状态 | done |
 | 创建日期 | 2026-04-30 |
-| 最后更新 | 2026-04-30 |
+| 最后更新 | 2026-05-01 |
 
 ## 2. 需求描述
 
@@ -36,6 +36,7 @@
 - [x] 前端 `EngineeringRequirementDetail.tsx` 中如有 `discussionSource` 展示"来源讨论"卡片
 - [x] 来源讨论卡片点击跳转到讨论空间对应消息
 - [x] 知识面板中 `action_item` 类型条目展示"转为需求"快捷操作
+- [x] 新增 `discussion-requirement-bridge.service.spec.ts` 单测覆盖桥接请求 payload 与签名 header
 
 ## 3. 技术方案摘要
 

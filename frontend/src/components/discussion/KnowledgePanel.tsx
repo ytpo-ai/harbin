@@ -91,7 +91,7 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                   章节：{sectionLabelMap.get(item.outlineSectionId) || item.outlineSectionId}
                 </div>
               ) : null}
-              {item.entryType === 'action_item' && item.metadata?.isStructuredData ? (
+              {item.entryType === 'action_item' ? (
                 <div className="mt-2">
                   <button
                     type="button"
@@ -99,7 +99,11 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                     disabled={!onToRequirement || creatingRequirementForKnowledgeId === item.id}
                     className="text-xs text-[#0f62fe] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {creatingRequirementForKnowledgeId === item.id ? '转需求中...' : '转为数据采集需求'}
+                    {creatingRequirementForKnowledgeId === item.id
+                      ? '转需求中...'
+                      : item.metadata?.isStructuredData
+                        ? '转为数据采集需求'
+                        : '转为需求'}
                   </button>
                 </div>
               ) : null}

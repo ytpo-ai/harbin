@@ -3,6 +3,9 @@ import React from 'react';
 type MessageToRequirementModalProps = {
   open: boolean;
   messageSequence?: number;
+  sourceSpaceTitle?: string;
+  sourceThreadTitle?: string;
+  sourceMessageId?: string;
   messagePreview: string;
   title: string;
   description: string;
@@ -19,6 +22,9 @@ type MessageToRequirementModalProps = {
 const MessageToRequirementModal: React.FC<MessageToRequirementModalProps> = ({
   open,
   messageSequence,
+  sourceSpaceTitle,
+  sourceThreadTitle,
+  sourceMessageId,
   messagePreview,
   title,
   description,
@@ -53,6 +59,11 @@ const MessageToRequirementModal: React.FC<MessageToRequirementModalProps> = ({
         </div>
 
         <div className="border-b border-[#e0e0e0] bg-[#f4f4f4] px-4 py-3 text-xs leading-5 text-[#525252]">
+          <div className="mb-2 rounded border border-[#d9d9d9] bg-white px-3 py-2 text-[11px] leading-5 text-[#6f6f6f]">
+            <div>来源空间：{sourceSpaceTitle || '未命名空间'}</div>
+            <div>来源讨论线：{sourceThreadTitle || '未命名讨论线'}</div>
+            <div>来源消息：{sourceMessageId || '-'}</div>
+          </div>
           <div className="max-h-20 overflow-auto whitespace-pre-wrap">{messagePreview || '（空消息）'}</div>
         </div>
 

@@ -1439,6 +1439,9 @@ const DiscussionDetail: React.FC = () => {
   }
 
   const detail = detailQuery.data;
+  const toRequirementThreadTitle = toRequirementMessage
+    ? detail.threadTree.find((thread) => thread.id === toRequirementMessage.threadId)?.title || selectedThread?.title || ''
+    : '';
 
   return (
     <div className="h-[calc(100vh-48px)] bg-[#ffffff] font-['IBM_Plex_Sans','Helvetica_Neue',Arial,sans-serif]">
@@ -1775,6 +1778,9 @@ const DiscussionDetail: React.FC = () => {
       <MessageToRequirementModal
         open={Boolean(toRequirementMessage)}
         messageSequence={toRequirementMessage?.sequence}
+        sourceSpaceTitle={detail.title}
+        sourceThreadTitle={toRequirementThreadTitle}
+        sourceMessageId={toRequirementMessage?.id}
         messagePreview={toRequirementMessage?.content || ''}
         title={toRequirementTitle}
         description={toRequirementDescription}
