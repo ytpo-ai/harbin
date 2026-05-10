@@ -12,6 +12,7 @@ export const TOOL_ID__REQUIREMENT_LIST = 'builtin.engineering.mcp.requirement.li
 export const TOOL_ID__REQUIREMENT_SYNC_GITHUB = 'builtin.engineering.mcp.requirement.sync-github';
 export const TOOL_ID__REQUIREMENT_UPDATE = 'builtin.engineering.mcp.requirement.update';
 export const TOOL_ID__REQUIREMENT_UPDATE_STATUS = 'builtin.engineering.mcp.requirement.update-status';
+export const TOOL_ID__DISCUSSION_OUTLINE_MANAGE = 'builtin.engineering.mcp.discussion-outline.manage';
 export const TOOL_ID__DATA_COLLECTION_GET_SOURCE_CONFIG = 'builtin.sys-mg.mcp.data-collection.get-source-config';
 export const TOOL_ID__DATA_COLLECTION_WRITE_RECORD = 'builtin.sys-mg.mcp.data-collection.write-record';
 export const TOOL_ID__ENGINEERING_STATISTICS_DOCS_HEAT_RUN = 'builtin.engineering.mcp.statistics.docs-heat-run';

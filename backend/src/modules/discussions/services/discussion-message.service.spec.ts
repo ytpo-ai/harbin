@@ -2,6 +2,9 @@ import {
   buildDataUpdateAnalysisFallbackContent,
   buildBranchContextMessageContent,
   buildDiscussionAgentTaskId,
+  looksLikeClarificationResponse,
+  parseEnrichmentPayloadFromReply,
+  parseSearchEvidenceFromReply,
   resolveDiscussionMessageRole,
   shouldUseDefaultReplyAgent,
 } from './discussion-message.service';
@@ -67,5 +70,60 @@ describe('discussion message default reply agent', () => {
     expect(content).toContain('12.35%');
     expect(content).toContain('当前数据');
     expect(content).toContain('历史基线');
+  });
+
+  it('extracts json entries from fenced block in ai reply', () => {
+    const entries = parseEnrichmentPayloadFromReply([
+      '下面是章节条目：',
+      '```json',
+      '[{"title":"条目A","content":"内容A"}]',
+      '```',
+    ].join('\n'));
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ title: '条目A', content: '内容A' });
+  });
+
+  it('detects clarification-like responses', () => {
+    expect(looksLikeClarificationResponse('请告诉我你希望聚焦的时间范围？')).toBe(true);
+    expect(looksLikeClarificationResponse('基于已知上下文，建议优先补充产业链结构与关键公司演进。')).toBe(false);
+  });
+
+  it('extracts search evidence from object payload', () => {
+    const evidence = parseSearchEvidenceFromReply([
+      '```json',
+      JSON.stringify({
+        searchEvidence: [
+          {
+            sourceName: 'IEA',
+            sourceUrl: 'https://www.iea.org/reports/world-energy-outlook-2025',
+            snippet: 'Global demand growth remains uneven across regions.',
+            query: 'global energy outlook 2025',
+          },
+        ],
+        entries: [{ title: 'x', content: 'y' }],
+      }),
+      '```',
+    ].join('\n'));
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      sourceName: 'IEA',
+      sourceUrl: 'https://www.iea.org/reports/world-energy-outlook-2025',
+    });
+  });
+
+  it('falls back to entry source fields when no searchEvidence exists', () => {
+    const evidence = parseSearchEvidenceFromReply([
+      '```json',
+      '[{"title":"条目A","content":"内容A","sourceUrl":"https://example.com/a","sourceName":"Example"}]',
+      '```',
+    ].join('\n'));
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({
+      sourceName: 'Example',
+      sourceUrl: 'https://example.com/a',
+    });
   });
 });

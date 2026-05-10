@@ -111,6 +111,7 @@ export interface EnabledAgentSkillContext {
   id: string;
   name: string;
   description: string;
+  category?: string;
   tags: string[];
   proficiencyLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
 }

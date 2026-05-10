@@ -41,6 +41,9 @@ export class DiscussionThread {
   @Prop()
   contextSummary?: string;
 
+  @Prop()
+  outlineSectionId?: string;
+
   @Prop({ enum: DiscussionThreadStatus, default: DiscussionThreadStatus.ACTIVE })
   status: DiscussionThreadStatus;
 
@@ -61,4 +64,5 @@ export const DiscussionThreadSchema = SchemaFactory.createForClass(DiscussionThr
 
 DiscussionThreadSchema.index({ spaceId: 1, parentThreadId: 1 });
 DiscussionThreadSchema.index({ spaceId: 1, depth: 1 });
+DiscussionThreadSchema.index({ spaceId: 1, outlineSectionId: 1 });
 DiscussionThreadSchema.index({ branchFromMessageId: 1 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from 'react-query';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowPathIcon, ChevronLeftIcon, ArrowsRightLeftIcon } from '@heroicons/react/24/outline';
@@ -16,7 +16,9 @@ import { engineeringIntelligenceService } from '../../services/engineeringIntell
 import { agentService } from '../../services/agentService';
 import { authService, CurrentUser } from '../../services/authService';
 import {
+  DiscussionAgentExecutionStatus,
   discussionService,
+  DiscussionKnowledgeEntry,
   DiscussionMessage,
   DiscussionMessageStreamEvent,
   OutlineSection,
@@ -39,6 +41,28 @@ const spaceStatusLabelMap: Record<'active' | 'paused' | 'archived', string> = {
   archived: '已归档',
 };
 
+const outlineSectionStatusLabelMap: Record<OutlineSection['status'], string> = {
+  draft: '草稿',
+  enriching: '补充中（知识未达充足）',
+  sufficient: '已充分',
+  review: '待复核',
+};
+
+const SECTION_ENRICH_PROMPT = [
+  '请围绕当前章节主题补充 3 条可入库的知识条目，并优先调用可用的搜索工具检索信息。',
+  '请至少参考 2 个独立来源，并在回答里附上可追溯来源。',
+  '输出时请用 ```json code block``` 包裹对象，格式为 {"searchEvidence":[...],"entries":[...]}。',
+  'searchEvidence 每条包含 sourceName/sourceUrl/snippet/query/fetchedAt 字段；entries 每条包含 title/content/summary/entryType/sourceUrl/sourceName/credibility 字段。',
+  '如果关键信息不足，你可以先反问我 1-2 个澄清问题；如果已足够，请直接给出可执行结论。',
+].join('\n');
+
+type MessageDataReference = {
+  dataRecordId: string;
+  dataSourceName: string;
+  dataPreview: string;
+  collectedAt: string;
+};
+
 const DiscussionDetail: React.FC = () => {
   const { spaceId = '' } = useParams();
   const location = useLocation();
@@ -51,7 +75,6 @@ const DiscussionDetail: React.FC = () => {
   const [actionNotice, setActionNotice] = useState('');
   const [isSedimentStreaming, setIsSedimentStreaming] = useState(false);
   const [isOutlineStreaming, setIsOutlineStreaming] = useState(false);
-  const [enrichingOutlineSectionId, setEnrichingOutlineSectionId] = useState('');
   const [archiveTargetMessage, setArchiveTargetMessage] = useState<DiscussionMessage | null>(null);
   const [archiveMode, setArchiveMode] = useState<'existing' | 'create'>('existing');
   const [archiveExistingKeyword, setArchiveExistingKeyword] = useState('');
@@ -72,9 +95,11 @@ const DiscussionDetail: React.FC = () => {
   const [toRequirementTitle, setToRequirementTitle] = useState('');
   const [toRequirementDescription, setToRequirementDescription] = useState('');
   const [toRequirementPriority, setToRequirementPriority] = useState<'low' | 'medium' | 'high' | 'critical'>('medium');
+  const [runningAgentParticipantIds, setRunningAgentParticipantIds] = useState<string[]>([]);
   const sedimentTaskUnsubscribeRef = useRef<null | (() => void)>(null);
   const outlineTaskUnsubscribeRef = useRef<null | (() => void)>(null);
   const focusFromUrlDoneRef = useRef(false);
+  const runningAgentTimeoutsRef = useRef<Map<string, number>>(new Map());
 
   const queryParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const initialThreadId = queryParams.get('threadId') || '';
@@ -243,6 +268,14 @@ const DiscussionDetail: React.FC = () => {
     });
   }, [outlineQuery.data?.sections]);
 
+  const selectedOutlineSection = useMemo(() => {
+    const outlineSectionId = String(selectedThread?.outlineSectionId || '').trim();
+    if (!outlineSectionId) {
+      return undefined;
+    }
+    return sortedOutlineSections.find((section) => section.id === outlineSectionId);
+  }, [selectedThread?.outlineSectionId, sortedOutlineSections]);
+
   const outlineSectionParentOptions = useMemo(() => {
     const editingId = String(editingOutlineSection?.id || '').trim();
     if (!editingId) {
@@ -332,23 +365,193 @@ const DiscussionDetail: React.FC = () => {
     return participants.find((participant) => participant.type === 'human') || participants[0];
   }, [currentUser?.id, participants]);
 
-  const sendMessageMutation = useMutation(
-    async (
-      dataReferences: Array<{
-        dataRecordId: string;
-        dataSourceName: string;
-        dataPreview: string;
-        collectedAt: string;
-      }>,
-    ) => {
-      if (!selectedThreadId || !currentParticipant || !messageText.trim()) {
+  const clearRunningAgentTimeout = useCallback((participantId: string) => {
+    const timer = runningAgentTimeoutsRef.current.get(participantId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      runningAgentTimeoutsRef.current.delete(participantId);
+    }
+  }, []);
+
+  const removeRunningAgentParticipants = useCallback(
+    (participantIds: string[]) => {
+      const normalizedIds = participantIds.filter(Boolean);
+      if (!normalizedIds.length) {
+        return;
+      }
+      for (const participantId of normalizedIds) {
+        clearRunningAgentTimeout(participantId);
+      }
+      setRunningAgentParticipantIds((prev) => prev.filter((item) => !normalizedIds.includes(item)));
+    },
+    [clearRunningAgentTimeout],
+  );
+
+  const addRunningAgentParticipants = useCallback(
+    (participantIds: string[]) => {
+      const normalizedIds = participantIds.filter(Boolean);
+      if (!normalizedIds.length) {
         return;
       }
 
-        await discussionService.sendMessage(spaceId, selectedThreadId, {
-        participantId: currentParticipant.id,
-        senderType: 'user',
-        content: messageText.trim(),
+      setRunningAgentParticipantIds((prev) => {
+        const merged = new Set(prev);
+        for (const participantId of normalizedIds) {
+          merged.add(participantId);
+        }
+        return Array.from(merged);
+      });
+
+      for (const participantId of normalizedIds) {
+        clearRunningAgentTimeout(participantId);
+        const timer = window.setTimeout(() => {
+          runningAgentTimeoutsRef.current.delete(participantId);
+          setRunningAgentParticipantIds((prev) => prev.filter((item) => item !== participantId));
+        }, 60_000);
+        runningAgentTimeoutsRef.current.set(participantId, timer);
+      }
+    },
+    [clearRunningAgentTimeout],
+  );
+
+  const resolveLikelyTriggeredAgentParticipantIds = useCallback(
+    (content: string): string[] => {
+      const normalizedContent = String(content || '').trim();
+      if (!normalizedContent) {
+        return [];
+      }
+
+      const aiParticipants = participants.filter((item) => item.type === 'ai_agent');
+      if (!aiParticipants.length) {
+        return [];
+      }
+
+      const mentionMatches = Array.from(normalizedContent.matchAll(/@([^\s@]+)/g))
+        .map((match) => String(match[1] || '').trim().toLowerCase())
+        .filter(Boolean);
+
+      if (mentionMatches.length) {
+        return aiParticipants
+          .filter((participant) => {
+            const displayName = String(participant.displayName || '').trim();
+            const aliases = [displayName, displayName.replace(/\s+/g, ''), String(participant.id || '')]
+              .map((item) => item.toLowerCase())
+              .filter(Boolean);
+            return mentionMatches.some((mention) => aliases.includes(mention));
+          })
+          .map((participant) => participant.id);
+      }
+
+      const defaultReplyAgentId = String(detailQuery.data?.settings?.defaultReplyAgentId || '').trim();
+      if (!defaultReplyAgentId) {
+        return [];
+      }
+
+      return aiParticipants.some((item) => item.id === defaultReplyAgentId) ? [defaultReplyAgentId] : [];
+    },
+    [detailQuery.data?.settings?.defaultReplyAgentId, participants],
+  );
+
+  const sendDiscussionMessage = async (input: { content: string; threadId?: string; dataReferences?: MessageDataReference[] }) => {
+    const content = String(input.content || '').trim();
+    const targetThreadId = String(input.threadId || selectedThreadId || '').trim();
+    if (!targetThreadId) {
+      throw new Error('请先选择讨论线');
+    }
+    if (!currentParticipant) {
+      throw new Error('当前空间暂无可用参与者，无法发送消息');
+    }
+    if (!content) {
+      throw new Error('消息内容不能为空');
+    }
+
+    addRunningAgentParticipants(resolveLikelyTriggeredAgentParticipantIds(content));
+
+    await discussionService.sendMessage(spaceId, targetThreadId, {
+      participantId: currentParticipant.id,
+      senderType: 'user',
+      content,
+      dataReferences: input.dataReferences || [],
+    });
+  };
+
+  const buildOutlineInjectionMessage = (): string => {
+    const outline = outlineQuery.data;
+    if (!outline || !Array.isArray(outline.sections) || outline.sections.length === 0) {
+      throw new Error('当前暂无可注入的大纲');
+    }
+
+    const updatedAt = outline.updatedAt ? new Date(outline.updatedAt) : null;
+    const updatedAtText = updatedAt && !Number.isNaN(updatedAt.getTime()) ? updatedAt.toLocaleString() : '-';
+    const coverageMap = new Map((coverageQuery.data?.sectionDetails || []).map((item) => [item.sectionId, item]));
+    const sectionLines = sortedOutlineSections.map((section) => {
+      const indent = '  '.repeat(Math.max(0, section.depth));
+      const statusLabel = outlineSectionStatusLabelMap[section.status] || section.status;
+      const knowledgeCount = Number(section.knowledgeCount || 0);
+      const coverage = coverageMap.get(section.id);
+      const latestEntryDate = coverage?.latestEntryDate ? new Date(coverage.latestEntryDate) : null;
+      const latestEntryText = latestEntryDate && !Number.isNaN(latestEntryDate.getTime()) ? latestEntryDate.toLocaleString() : '无';
+      const description = String(section.description || '').trim() || '无';
+      const parentSectionId = String(section.parentSectionId || '').trim() || '无';
+      const suggestedDataSources = (section.metadata?.suggestedDataSources || []).filter(Boolean);
+      const suggestedDataSourcesText = suggestedDataSources.length ? suggestedDataSources.join('、') : '无';
+      const collectFrequency = String(section.metadata?.collectFrequency || '').trim() || '未指定';
+      const structuredDataLabel = section.metadata?.isStructuredData ? '是' : '否';
+
+      return [
+        `${indent}- [${section.id}] ${section.title}`,
+        `${indent}  - 状态：${statusLabel}`,
+        `${indent}  - 深度/顺序：${section.depth}/${section.order}`,
+        `${indent}  - 父章节：${parentSectionId}`,
+        `${indent}  - 描述：${description}`,
+        `${indent}  - 知识条目数：${knowledgeCount}`,
+        `${indent}  - 最新知识时间：${latestEntryText}`,
+        `${indent}  - 建议数据源：${suggestedDataSourcesText}`,
+        `${indent}  - 采集频率：${collectFrequency}`,
+        `${indent}  - 是否结构化数据章节：${structuredDataLabel}`,
+      ].join('\n');
+    });
+
+    const outlinePayload = {
+      title: outline.title,
+      version: outline.version,
+      generatedBy: outline.generatedBy,
+      updatedAt: outline.updatedAt,
+      sections: sortedOutlineSections.map((section) => ({
+        id: section.id,
+        title: section.title,
+        description: section.description || '',
+        parentSectionId: section.parentSectionId || '',
+        order: section.order,
+        depth: section.depth,
+        status: section.status,
+        knowledgeCount: section.knowledgeCount,
+        metadata: section.metadata || {},
+      })),
+    };
+
+    return [
+      '【文档大纲注入】',
+      `标题：${outline.title || '未命名大纲'}`,
+      `版本：v${Number(outline.version || 1)}`,
+      `更新时间：${updatedAtText}`,
+      `章节总数：${outline.sections.length}`,
+      '章节详细列表：',
+      ...sectionLines,
+      '',
+      '完整大纲 JSON：',
+      '```json',
+      JSON.stringify(outlinePayload, null, 2),
+      '```',
+      '',
+      '请基于以上大纲继续讨论。',
+    ].join('\n');
+  };
+
+  const sendMessageMutation = useMutation(
+    async (dataReferences: MessageDataReference[]) => {
+      await sendDiscussionMessage({
+        content: messageText,
         dataReferences,
       });
     },
@@ -368,6 +571,32 @@ const DiscussionDetail: React.FC = () => {
           typeof error === 'object' && error && 'message' in error
             ? String((error as { message?: string }).message || '消息发送失败，请稍后重试')
             : '消息发送失败，请稍后重试';
+        setActionError(message);
+      },
+    },
+  );
+
+  const injectOutlineMessageMutation = useMutation(
+    async () => {
+      const content = buildOutlineInjectionMessage();
+      await sendDiscussionMessage({ content });
+    },
+    {
+      onSuccess: async () => {
+        setActionError('');
+        setActionNotice('已将当前大纲注入讨论消息');
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-messages', spaceId, selectedThreadId]),
+          queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+          queryClient.invalidateQueries(['discussion-sediment-latest', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '大纲注入失败，请稍后重试')
+            : '大纲注入失败，请稍后重试';
         setActionError(message);
       },
     },
@@ -565,8 +794,6 @@ const DiscussionDetail: React.FC = () => {
           setActionError('');
           if (task.taskType === 'generate') {
             setActionNotice('大纲任务执行中，请稍候...');
-          } else if (task.taskType === 'enrich_section') {
-            setActionNotice('章节丰富任务执行中，请稍候...');
           } else {
             setActionNotice('大纲任务执行中，请稍候...');
           }
@@ -575,16 +802,12 @@ const DiscussionDetail: React.FC = () => {
 
         if (status === 'succeeded') {
           setIsOutlineStreaming(false);
-          setEnrichingOutlineSectionId('');
           outlineTaskUnsubscribeRef.current?.();
           outlineTaskUnsubscribeRef.current = null;
           setActionError('');
 
           if (task.taskType === 'generate') {
             setActionNotice('大纲生成完成，已刷新大纲与覆盖率');
-          } else if (task.taskType === 'enrich_section') {
-            const enrichedCount = Number(task.result?.enrichedCount || 0);
-            setActionNotice(enrichedCount > 0 ? `章节已补充 ${enrichedCount} 条知识` : '章节知识已充足，无需补充');
           } else {
             setActionNotice('大纲任务已完成');
           }
@@ -600,7 +823,6 @@ const DiscussionDetail: React.FC = () => {
 
         if (status === 'failed') {
           setIsOutlineStreaming(false);
-          setEnrichingOutlineSectionId('');
           outlineTaskUnsubscribeRef.current?.();
           outlineTaskUnsubscribeRef.current = null;
           setActionNotice('');
@@ -609,10 +831,15 @@ const DiscussionDetail: React.FC = () => {
       },
       onError: () => {
         setIsOutlineStreaming(false);
-        setEnrichingOutlineSectionId('');
         outlineTaskUnsubscribeRef.current?.();
         outlineTaskUnsubscribeRef.current = null;
-        setActionError('大纲任务连接中断，请重试');
+        void Promise.all([
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+          queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
+        ]);
+        setActionError('大纲任务连接中断，已自动刷新最新状态');
       },
     });
 
@@ -641,26 +868,108 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
-  const enrichOutlineSectionMutation = useMutation(
-    async (section: { id: string; title: string }) => {
-      return discussionService.enrichOutlineSectionTask(spaceId, section.id);
+  const openSectionThreadMutation = useMutation(
+    async (payload: { section: OutlineSection; triggerEnrich: boolean }) => {
+      const thread = await discussionService.getOrCreateSectionThread(spaceId, payload.section.id, payload.section.title);
+      if (payload.triggerEnrich) {
+        if (!currentParticipant?.id) {
+          throw new Error('当前空间暂无可用参与者，无法发起章节补充');
+        }
+        await discussionService.sendMessage(spaceId, thread.id, {
+          participantId: currentParticipant.id,
+          senderType: 'user',
+          content: SECTION_ENRICH_PROMPT,
+        });
+      }
+      return {
+        thread,
+        section: payload.section,
+        triggerEnrich: payload.triggerEnrich,
+      };
     },
     {
-      onSuccess: (task, section) => {
+      onSuccess: async ({ thread, section, triggerEnrich }) => {
+        setSelectedThread(spaceId, thread.id);
+        setRightPanelTab(spaceId, 'knowledge');
+        setKnowledgeOutlineSectionId(section.id);
         setActionError('');
-        setEnrichingOutlineSectionId(section.id);
-        setActionNotice(`章节「${section.title}」丰富任务已提交，正在连接结果流...`);
-        if (task?.taskId) {
-          startOutlineTaskStream(task.taskId);
-          return;
-        }
-        setActionError('章节丰富任务创建失败，请稍后重试');
+        setActionNotice(
+          triggerEnrich
+            ? `已进入章节「${section.title}」讨论线，并自动发起补充请求`
+            : `已进入章节「${section.title}」讨论线`,
+        );
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
+          queryClient.invalidateQueries(['discussion-messages', spaceId, thread.id]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+        ]);
       },
       onError: (error: unknown) => {
         const message =
           typeof error === 'object' && error && 'message' in error
-            ? String((error as { message?: string }).message || '章节丰富失败')
-            : '章节丰富失败';
+            ? String((error as { message?: string }).message || '章节讨论切换失败')
+            : '章节讨论切换失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const enrichCurrentSectionMutation = useMutation(
+    async () => {
+      const thread = selectedThread;
+      const outlineSectionId = String(thread?.outlineSectionId || '').trim();
+      if (!thread?.id || !outlineSectionId) {
+        throw new Error('当前讨论线未关联章节，无法执行丰富');
+      }
+      await sendDiscussionMessage({
+        content: SECTION_ENRICH_PROMPT,
+        threadId: thread.id,
+      });
+      return {
+        threadId: thread.id,
+        sectionTitle: selectedOutlineSection?.title || thread.title,
+      };
+    },
+    {
+      onSuccess: async (result) => {
+        setActionError('');
+        setActionNotice(`已在章节「${result.sectionTitle || '当前章节'}」讨论线发起丰富请求`);
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-messages', spaceId, result.threadId]),
+          queryClient.invalidateQueries(['discussion-space-detail', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+          queryClient.invalidateQueries(['discussion-sediment-latest', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '章节丰富请求发送失败')
+            : '章节丰富请求发送失败';
+        setActionError(message);
+      },
+    },
+  );
+
+  const deleteKnowledgeEntryMutation = useMutation(
+    async (entry: DiscussionKnowledgeEntry) => {
+      return discussionService.deleteKnowledge(spaceId, entry.id);
+    },
+    {
+      onSuccess: async (_, entry) => {
+        setActionError('');
+        setActionNotice(`已删除条目「${entry.title}」`);
+        await Promise.all([
+          queryClient.invalidateQueries(['discussion-knowledge', spaceId]),
+          queryClient.invalidateQueries(['discussion-outline', spaceId]),
+          queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          typeof error === 'object' && error && 'message' in error
+            ? String((error as { message?: string }).message || '删除知识条目失败')
+            : '删除知识条目失败';
         setActionError(message);
       },
     },
@@ -782,14 +1091,14 @@ const DiscussionDetail: React.FC = () => {
     },
   );
 
-  const deleteOutlineSectionMutation = useMutation(
-    async (sectionId: string) => {
-      return discussionService.deleteOutlineSection(spaceId, sectionId);
+  const clearOutlineSectionEnrichmentMutation = useMutation(
+    async (section: OutlineSection) => {
+      return discussionService.clearOutlineSectionEnrichments(spaceId, section.id);
     },
     {
-      onSuccess: async () => {
+      onSuccess: async (result, section) => {
         setActionError('');
-        setActionNotice('章节已删除');
+        setActionNotice(`章节「${section.title}」补充内容已清空（${result.clearedKnowledgeCount} 条）`);
         await Promise.all([
           queryClient.invalidateQueries(['discussion-outline', spaceId]),
           queryClient.invalidateQueries(['discussion-knowledge-coverage', spaceId]),
@@ -1301,15 +1610,17 @@ const DiscussionDetail: React.FC = () => {
     );
   };
 
-  const handleDeleteOutlineSection = (section: OutlineSection) => {
-    const confirmed = window.confirm(`确认删除章节「${section.title}」吗？其子章节也会被删除。`);
+  const handleClearOutlineSectionEnrichment = (section: OutlineSection) => {
+    const confirmed = window.confirm(
+      `确认清空章节「${section.title}」的补充内容吗？\n将删除本章节下所有自动生成的知识条目（含补充与聊天产出），用户手动创建的条目会保留。`,
+    );
     if (!confirmed) {
       return;
     }
 
     setActionError('');
     setActionNotice('');
-    deleteOutlineSectionMutation.mutate(section.id);
+    clearOutlineSectionEnrichmentMutation.mutate(section);
   };
 
   const handleMoveOutlineSection = (section: OutlineSection, direction: 'up' | 'down') => {
@@ -1354,6 +1665,19 @@ const DiscussionDetail: React.FC = () => {
       return;
     }
     knowledgeToRequirementMutation.mutate(entry);
+  };
+
+  const handleDeleteGeneratedKnowledge = (entry: DiscussionKnowledgeEntry) => {
+    if (deleteKnowledgeEntryMutation.isLoading) {
+      return;
+    }
+    const confirmed = window.confirm(`确认删除条目「${entry.title}」吗？删除后不可恢复。`);
+    if (!confirmed) {
+      return;
+    }
+    setActionError('');
+    setActionNotice('');
+    deleteKnowledgeEntryMutation.mutate(entry);
   };
 
   const handleCloseToRequirement = () => {
@@ -1411,6 +1735,16 @@ const DiscussionDetail: React.FC = () => {
     return [...(messagesQuery.data || [])].sort((a, b) => a.sequence - b.sequence);
   }, [messagesQuery.data]);
 
+  const runningAgents = useMemo(() => {
+    return runningAgentParticipantIds
+      .map((participantId) => participantMap[participantId] as DiscussionParticipant | undefined)
+      .filter((participant): participant is DiscussionParticipant => Boolean(participant));
+  }, [participantMap, runningAgentParticipantIds]);
+
+  const knowledgeEntryMap = useMemo(() => {
+    return new Map((knowledgeQuery.data || []).map((item) => [item.id, item]));
+  }, [knowledgeQuery.data]);
+
   useEffect(() => {
     if (!initialMessageId || focusFromUrlDoneRef.current || !sortedMessages.length) {
       return;
@@ -1433,6 +1767,12 @@ const DiscussionDetail: React.FC = () => {
       return;
     }
 
+    for (const timer of runningAgentTimeoutsRef.current.values()) {
+      window.clearTimeout(timer);
+    }
+    runningAgentTimeoutsRef.current.clear();
+    setRunningAgentParticipantIds([]);
+
     const unsubscribe = discussionService.subscribeThreadMessageEvents(
       spaceId,
       selectedThreadId,
@@ -1443,12 +1783,51 @@ const DiscussionDetail: React.FC = () => {
             return;
           }
 
+          if (event.type === 'discussion.agent.execution.status') {
+            const status = event.data.status as DiscussionAgentExecutionStatus;
+            const participantId = event.data.participantId;
+            if (status === 'running') {
+              addRunningAgentParticipants([participantId]);
+              return;
+            }
+
+            removeRunningAgentParticipants([participantId]);
+            void queryClient.invalidateQueries(['discussion-messages', spaceId, selectedThreadId]);
+            if (status === 'completed') {
+              void queryClient.invalidateQueries(['discussion-knowledge', spaceId]);
+              void queryClient.invalidateQueries(['discussion-sediment-latest', spaceId]);
+            }
+            return;
+          }
+
           if (event.type === 'discussion.message.created') {
-            const incoming = event.data.message;
+            const streamMessage = event.data.message as DiscussionMessage & { _id?: string };
+            const normalizedIncomingId = String(streamMessage.id || streamMessage._id || '').trim();
+            const incoming: DiscussionMessage = normalizedIncomingId
+              ? {
+                  ...streamMessage,
+                  id: normalizedIncomingId,
+                }
+              : streamMessage;
+            if (incoming.senderType === 'ai') {
+              removeRunningAgentParticipants([incoming.participantId]);
+            }
             queryClient.setQueryData<DiscussionMessage[]>(
               ['discussion-messages', spaceId, selectedThreadId],
               (prev = []) => {
-                if (prev.some((item) => item.id === incoming.id)) {
+                const duplicated = prev.some((item) => {
+                  const itemId = String(item.id || '').trim();
+                  const incomingId = String(incoming.id || '').trim();
+                  if (itemId && incomingId) {
+                    return itemId === incomingId;
+                  }
+                  return (
+                    item.sequence === incoming.sequence &&
+                    item.participantId === incoming.participantId &&
+                    item.senderType === incoming.senderType
+                  );
+                });
+                if (duplicated) {
                   return prev;
                 }
                 return [...prev, incoming].sort((a, b) => a.sequence - b.sequence);
@@ -1471,7 +1850,7 @@ const DiscussionDetail: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [queryClient, selectedThreadId, spaceId]);
+  }, [addRunningAgentParticipants, queryClient, removeRunningAgentParticipants, selectedThreadId, spaceId]);
 
   useEffect(() => {
     return () => {
@@ -1479,6 +1858,10 @@ const DiscussionDetail: React.FC = () => {
       sedimentTaskUnsubscribeRef.current = null;
       outlineTaskUnsubscribeRef.current?.();
       outlineTaskUnsubscribeRef.current = null;
+      for (const timer of runningAgentTimeoutsRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      runningAgentTimeoutsRef.current.clear();
     };
   }, []);
 
@@ -1590,6 +1973,49 @@ const DiscussionDetail: React.FC = () => {
               </div>
               <div className="flex items-center gap-3">
                 <div className="text-xs text-[#6f6f6f]">消息 {selectedThread?.messageCount || 0}</div>
+                {runningAgents.length ? (
+                  <div className="flex items-center gap-2">
+                    {runningAgents.map((participant) => (
+                      <span
+                        key={participant.id}
+                        className="inline-flex items-center gap-1 border border-[#78a9ff] bg-[#edf5ff] px-2 py-1 text-[11px] text-[#0043ce]"
+                      >
+                        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[#0f62fe]" />
+                        {participant.displayName} 执行中
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {selectedThread?.outlineSectionId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (enrichCurrentSectionMutation.isLoading || sendMessageMutation.isLoading || injectOutlineMessageMutation.isLoading) {
+                        return;
+                      }
+                      if (isSpaceArchived) {
+                        setActionError('该讨论空间已归档，当前只读。');
+                        return;
+                      }
+                      if (!currentParticipant) {
+                        setActionError('当前空间暂无可用参与者，无法发起章节补充');
+                        return;
+                      }
+                      setActionError('');
+                      setActionNotice('');
+                      enrichCurrentSectionMutation.mutate();
+                    }}
+                    disabled={
+                      enrichCurrentSectionMutation.isLoading ||
+                      sendMessageMutation.isLoading ||
+                      injectOutlineMessageMutation.isLoading ||
+                      isSpaceArchived
+                    }
+                    className="border border-[#0f62fe] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {enrichCurrentSectionMutation.isLoading ? '丰富中...' : '丰富此章节'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void handleCopyAllMessages()}
@@ -1611,6 +2037,13 @@ const DiscussionDetail: React.FC = () => {
                   key={message.id}
                   message={message}
                   participant={participantMap[message.participantId] as DiscussionParticipant | undefined}
+                  generatedKnowledgeEntries={(message.metadata?.generatedKnowledgeEntryIds || [])
+                    .map((id) => knowledgeEntryMap.get(id))
+                    .filter((item): item is DiscussionKnowledgeEntry => Boolean(item))}
+                  deletingKnowledgeEntryId={
+                    deleteKnowledgeEntryMutation.isLoading ? deleteKnowledgeEntryMutation.variables?.id : undefined
+                  }
+                  onDeleteGeneratedKnowledge={handleDeleteGeneratedKnowledge}
                   onBranch={handleBranch}
                   onArchiveKnowledge={handleOpenArchiveKnowledge}
                   onToRequirement={handleOpenToRequirement}
@@ -1621,6 +2054,8 @@ const DiscussionDetail: React.FC = () => {
             <MessageInput
               value={messageText}
               sending={sendMessageMutation.isLoading}
+              injectingOutline={injectOutlineMessageMutation.isLoading}
+              disableInjectOutline={!sortedOutlineSections.length}
               disabled={isSpaceArchived}
               disabledReason="该讨论空间已归档，当前只读。请先取消归档后再发送消息。"
               projectId={detail.projectId}
@@ -1640,6 +2075,26 @@ const DiscussionDetail: React.FC = () => {
                   return;
                 }
                 sendMessageMutation.mutate(dataReferences);
+              }}
+              onInjectOutline={() => {
+                if (isSpaceArchived) {
+                  setActionError('该讨论空间已归档，当前只读。');
+                  return;
+                }
+                if (!selectedThreadId) {
+                  setActionError('请先选择讨论线');
+                  return;
+                }
+                if (!currentParticipant) {
+                  setActionError('当前空间暂无可用参与者，无法发送消息');
+                  return;
+                }
+                if (!sortedOutlineSections.length) {
+                  setActionError('当前暂无可注入的大纲');
+                  return;
+                }
+                setActionError('');
+                injectOutlineMessageMutation.mutate();
               }}
             />
           </main>
@@ -1728,15 +2183,17 @@ const DiscussionDetail: React.FC = () => {
                   onTemplateChange={setSelectedOutlineTemplateId}
                   applyingTemplate={applyOutlineTemplateMutation.isLoading}
                   onApplyTemplate={() => applyOutlineTemplateMutation.mutate()}
-                  onEnrichSection={(section) => {
-                    if (enrichOutlineSectionMutation.isLoading || isOutlineStreaming || enrichAllOutlineSectionsMutation.isLoading) {
+                  onDiscussSection={(section) => {
+                    if (openSectionThreadMutation.isLoading || isOutlineStreaming || enrichAllOutlineSectionsMutation.isLoading) {
                       return;
                     }
                     setActionError('');
                     setActionNotice('');
-                    enrichOutlineSectionMutation.mutate({ id: section.id, title: section.title });
+                    openSectionThreadMutation.mutate({ section, triggerEnrich: false });
                   }}
-                  enrichingSectionId={enrichingOutlineSectionId || undefined}
+                  discussingSectionId={
+                    openSectionThreadMutation.isLoading ? openSectionThreadMutation.variables?.section.id : undefined
+                  }
                   onEnrichAllSections={() => {
                     if (enrichAllOutlineSectionsMutation.isLoading || isOutlineStreaming) {
                       return;
@@ -1769,13 +2226,13 @@ const DiscussionDetail: React.FC = () => {
                     editOutlineSectionMutation.isLoading ? editOutlineSectionMutation.variables?.sectionId : undefined
                   }
                   onDeleteSection={(section) => {
-                    if (deleteOutlineSectionMutation.isLoading || isOutlineStreaming) {
+                    if (clearOutlineSectionEnrichmentMutation.isLoading || isOutlineStreaming) {
                       return;
                     }
-                    handleDeleteOutlineSection(section);
+                    handleClearOutlineSectionEnrichment(section);
                   }}
                   deletingSectionId={
-                    deleteOutlineSectionMutation.isLoading ? deleteOutlineSectionMutation.variables : undefined
+                    clearOutlineSectionEnrichmentMutation.isLoading ? clearOutlineSectionEnrichmentMutation.variables?.id : undefined
                   }
                   onMoveSection={(section, direction) => {
                     if (moveOutlineSectionMutation.isLoading || isOutlineStreaming) {

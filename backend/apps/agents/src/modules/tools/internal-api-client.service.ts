@@ -88,6 +88,21 @@ export class InternalApiClient {
     });
   }
 
+  async callDiscussionApi(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    endpoint: string,
+    body?: any,
+  ): Promise<any> {
+    return this.callApi({
+      system: 'Discussion',
+      errorCode: 'discussion_api_request_failed',
+      method,
+      endpoint,
+      url: `${this.backendBaseUrl}/discussions${endpoint}`,
+      body,
+    });
+  }
+
   async callInnerMessageApi(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH',
     endpoint: string,

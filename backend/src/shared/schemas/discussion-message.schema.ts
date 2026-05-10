@@ -86,6 +86,20 @@ export class DiscussionMessage {
     searchesPerformed?: number;
     knowledgeHits?: number;
     contextCompressionApplied?: boolean;
+    generatedKnowledgeEntryIds?: string[];
+    outlineSectionId?: string;
+    runtimeTriggered?: boolean;
+    runtimeRunId?: string;
+    runtimeSessionId?: string;
+    searchEvidenceCount?: number;
+    searchEvidence?: Array<{
+      sourceName?: string;
+      sourceUrl: string;
+      snippet?: string;
+      query?: string;
+      fetchedAt?: string;
+      publishedAt?: string;
+    }>;
   };
 }
 

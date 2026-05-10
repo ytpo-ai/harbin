@@ -2356,7 +2356,13 @@ export class AgentExecutorService {
   ): ScenarioType {
     if (collaborationContext && typeof collaborationContext === 'object' && 'scenarioMode' in collaborationContext) {
       const scenarioMode = String((collaborationContext as CollaborationContext).scenarioMode || '').trim();
-      if (scenarioMode === 'meeting' || scenarioMode === 'orchestration' || scenarioMode === 'inner-message' || scenarioMode === 'chat') {
+      if (
+        scenarioMode === 'meeting' ||
+        scenarioMode === 'orchestration' ||
+        scenarioMode === 'discussion' ||
+        scenarioMode === 'inner-message' ||
+        scenarioMode === 'chat'
+      ) {
         return scenarioMode;
       }
     }
@@ -2367,6 +2373,9 @@ export class AgentExecutorService {
     }
     if (legacyContext?.planId) {
       return 'orchestration';
+    }
+    if (legacyContext?.discussionSpaceId || legacyContext?.discussionThreadId || legacyContext?.collaborationMode === 'discussion') {
+      return 'discussion';
     }
     if (task?.type === 'internal_message') {
       return 'inner-message';
@@ -2409,6 +2418,7 @@ export class AgentExecutorService {
       id: skill.id,
       name: skill.name,
       description: skill.description,
+      category: skill.category,
       tags: skill.tags || [],
       proficiencyLevel: 'beginner',
     }));

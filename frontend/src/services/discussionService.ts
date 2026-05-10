@@ -56,6 +56,7 @@ export interface DiscussionThread {
   spaceId: string;
   parentThreadId?: string;
   branchFromMessageId?: string;
+  outlineSectionId?: string;
   branchOrigin: DiscussionThreadBranchOrigin;
   title: string;
   summary?: string;
@@ -131,6 +132,17 @@ export interface DiscussionMessage {
     searchesPerformed?: number;
     knowledgeHits?: number;
     contextCompressionApplied?: boolean;
+    generatedKnowledgeEntryIds?: string[];
+    outlineSectionId?: string;
+    searchEvidenceCount?: number;
+    searchEvidence?: Array<{
+      sourceName?: string;
+      sourceUrl: string;
+      snippet?: string;
+      query?: string;
+      fetchedAt?: string;
+      publishedAt?: string;
+    }>;
   };
   createdAt?: string;
   updatedAt?: string;
@@ -285,6 +297,11 @@ export interface LinkDiscussionMessageKnowledgeResult {
   knowledgeEntryIds: string[];
 }
 
+export interface DeleteDiscussionKnowledgeEntryResult {
+  removed: true;
+  knowledgeEntryId: string;
+}
+
 export interface DiscussionMessageToRequirementPayload {
   title: string;
   description?: string;
@@ -299,6 +316,8 @@ export interface DiscussionMessageToRequirementResult {
   title: string;
 }
 
+export type DiscussionAgentExecutionStatus = 'running' | 'completed' | 'failed';
+
 export type DiscussionMessageStreamEvent =
   | {
       type: 'discussion.message.snapshot';
@@ -307,6 +326,17 @@ export type DiscussionMessageStreamEvent =
   | {
       type: 'discussion.message.created';
       data: { spaceId: string; threadId: string; message: DiscussionMessage };
+    }
+  | {
+      type: 'discussion.agent.execution.status';
+      data: {
+        spaceId: string;
+        threadId: string;
+        participantId: string;
+        agentId?: string;
+        status: DiscussionAgentExecutionStatus;
+        reason?: string;
+      };
     };
 
 export interface DiscussionLatestSediment {
@@ -376,7 +406,22 @@ export interface DiscussionOutlineTask {
     outline: DiscussionDocumentOutline;
     enrichedCount?: number;
     processedSectionIds?: string[];
+    enrichmentMeta?: OutlineEnrichmentMeta;
   };
+}
+
+export interface OutlineEnrichmentMeta {
+  mode: 'agent' | 'fallback';
+  agentId?: string;
+  acceptedAgentEntries: number;
+  createdFallbackEntries: number;
+  fallbackReason?:
+    | 'no_agent_available'
+    | 'agent_execution_failed'
+    | 'agent_response_empty'
+    | 'agent_response_non_json'
+    | 'agent_entries_invalid'
+    | 'agent_entries_duplicated';
 }
 
 export type DiscussionOutlineTaskStreamEvent = {
@@ -434,11 +479,25 @@ export interface EnrichOutlineSectionResult {
   sectionId: string;
   enrichedCount: number;
   outline: DiscussionDocumentOutline;
+  enrichmentMeta?: OutlineEnrichmentMeta;
 }
 
 export interface EnrichAllOutlineSectionsResult {
   processedSectionIds: string[];
   enrichedCount: number;
+  outline: DiscussionDocumentOutline;
+}
+
+export interface DeleteOutlineSectionResult {
+  sectionId: string;
+  deletedSectionIds: string[];
+  deletedKnowledgeCount: number;
+  outline: DiscussionDocumentOutline;
+}
+
+export interface ClearOutlineSectionEnrichmentResult {
+  sectionId: string;
+  clearedKnowledgeCount: number;
   outline: DiscussionDocumentOutline;
 }
 
@@ -810,9 +869,21 @@ class DiscussionService {
     return unwrapPayload<DiscussionDocumentOutline>(response.data);
   }
 
-  async deleteOutlineSection(spaceId: string, sectionId: string): Promise<DiscussionDocumentOutline> {
+  async deleteOutlineSection(spaceId: string, sectionId: string): Promise<DeleteOutlineSectionResult> {
     const response = await api.delete(`/discussions/${spaceId}/outline/sections/${sectionId}`);
-    return unwrapPayload<DiscussionDocumentOutline>(response.data);
+    return unwrapPayload<DeleteOutlineSectionResult>(response.data);
+  }
+
+  async clearOutlineSectionEnrichments(spaceId: string, sectionId: string): Promise<ClearOutlineSectionEnrichmentResult> {
+    const response = await api.delete(`/discussions/${spaceId}/outline/sections/${sectionId}/enrichments`);
+    return unwrapPayload<ClearOutlineSectionEnrichmentResult>(response.data);
+  }
+
+  async getOrCreateSectionThread(spaceId: string, sectionId: string, sectionTitle?: string): Promise<DiscussionThread> {
+    const response = await api.post(`/discussions/${spaceId}/outline/sections/${sectionId}/thread`, {
+      sectionTitle,
+    });
+    return normalizeWithId(unwrapPayload<DiscussionThread>(response.data));
   }
 
   async enrichOutlineSection(spaceId: string, sectionId: string): Promise<EnrichOutlineSectionResult> {
@@ -855,6 +926,11 @@ class DiscussionService {
   ): Promise<DiscussionKnowledgeEntry> {
     const response = await api.post(`/discussions/${spaceId}/knowledge`, payload);
     return normalizeWithId(unwrapPayload<DiscussionKnowledgeEntry>(response.data));
+  }
+
+  async deleteKnowledge(spaceId: string, knowledgeEntryId: string): Promise<DeleteDiscussionKnowledgeEntryResult> {
+    const response = await api.delete(`/discussions/${spaceId}/knowledge/${knowledgeEntryId}`);
+    return unwrapPayload<DeleteDiscussionKnowledgeEntryResult>(response.data);
   }
 
   async generateSediment(spaceId: string, payload?: { title?: string; threadScope?: string[] }): Promise<DiscussionSedimentTask> {

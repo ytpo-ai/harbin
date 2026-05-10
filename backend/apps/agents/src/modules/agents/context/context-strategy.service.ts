@@ -126,13 +126,29 @@ export class ContextStrategyService {
     }
 
     const meetingLike = isMeetingLikeTask(task, context);
+    const discussionLike =
+      task.type === 'discussion' ||
+      context?.task?.type === 'discussion' ||
+      String(collaborationCtx.scenarioMode || '').trim() === 'discussion' ||
+      String(collaborationCtx.collaborationMode || '').trim() === 'discussion';
     const taskText = `${task.title || ''} ${task.description || ''} ${task.type || ''}`.toLowerCase();
     const tags = (skill.tags || []).map((t) => t.toLowerCase());
     const skillName = String(skill.name || '').toLowerCase();
+    const skillCategory = String(skill.category || '').toLowerCase();
 
     if (meetingLike) {
       const meetingPinnedSkills = ['meeting-resilience', 'meeting-sensitive-planner'];
       if (meetingPinnedSkills.some((signal) => skillName.includes(signal) || tags.some((tag) => tag.includes(signal)))) {
+        return true;
+      }
+    }
+
+    if (discussionLike) {
+      const discussionSignals = ['discussion', 'discuss', 'thread', 'debate', 'brainstorm', '讨论'];
+      if (
+        skillCategory === 'discussion' ||
+        discussionSignals.some((signal) => skillName.includes(signal) || tags.some((tag) => tag.includes(signal)))
+      ) {
         return true;
       }
     }

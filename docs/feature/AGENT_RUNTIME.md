@@ -393,7 +393,7 @@
 | `identity-context.builder.ts` | Identity 层注入（guideline + systemPrompt + promptTemplate；identity memo 内容注入已暂停） |
 | `toolset-context.builder.ts` | Toolset 层注入（工具列表与技能） |
 | `domain-context.builder.ts` | Domain 层注入 |
-| `collaboration-context.builder.ts` | Collaboration 层注入（orchestration / meeting 上下文） |
+| `collaboration-context.builder.ts` | Collaboration 层注入（orchestration / meeting / discussion 上下文） |
 | `task-context.builder.ts` | Task 层注入 |
 | `deduction-context.builder.ts` | Deduction 层注入（从 Redis 读取扣分 memo，phase-aware 差异化注入） |
 | `memory-context.builder.ts` | Memory 层注入（历史运行摘要 + memo 动态召回） |

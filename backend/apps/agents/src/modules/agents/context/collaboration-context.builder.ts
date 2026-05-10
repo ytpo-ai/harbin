@@ -23,7 +23,12 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
   constructor(private readonly contextFingerprintService: ContextFingerprintService) {}
 
   shouldInject(input: ContextBuildInput): boolean {
-    if (input.scenarioType === 'orchestration' || input.scenarioType === 'meeting' || input.scenarioType === 'inner-message') {
+    if (
+      input.scenarioType === 'orchestration' ||
+      input.scenarioType === 'meeting' ||
+      input.scenarioType === 'discussion' ||
+      input.scenarioType === 'inner-message'
+    ) {
       return true;
     }
     return Boolean(input.persistedContext?.collaborationContext || input.context.collaborationContext);
@@ -145,6 +150,40 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
       return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
     }
 
+    if (scenarioType === 'discussion') {
+      const discussion = resolvedContext as Record<string, unknown>;
+      const contextPayload: Record<string, unknown> = {
+        scenarioMode: 'discussion',
+        discussionSpaceId: discussion.discussionSpaceId,
+        discussionThreadId: discussion.discussionThreadId,
+        discussionMessageId: discussion.discussionMessageId,
+        participantId: discussion.participantId,
+        participantName: discussion.participantName || undefined,
+        collaborationMode: discussion.collaborationMode || 'discussion',
+      };
+      const outlineSectionId = String(discussion.outlineSectionId || '').trim();
+      if (outlineSectionId) {
+        contextPayload.outlineSectionId = outlineSectionId;
+      }
+      const fullContent = `Working Environment Context (Discussion): ${JSON.stringify(contextPayload)}`;
+      const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
+        scope: input.contextScope,
+        blockType: 'collaboration',
+        fullContent,
+        snapshot: {
+          discussionSpaceId: String(discussion.discussionSpaceId || '').trim() || undefined,
+          discussionThreadId: String(discussion.discussionThreadId || '').trim() || undefined,
+          discussionMessageId: String(discussion.discussionMessageId || '').trim() || undefined,
+          outlineSectionId: outlineSectionId || undefined,
+        },
+        skipDedup: input.skipDedup,
+      });
+      if (!resolvedContent) {
+        return [];
+      }
+      return [{ role: 'system', content: resolvedContent, timestamp: new Date() }];
+    }
+
     const chat = resolvedContext as Record<string, unknown>;
     if (!Object.keys(chat).length) return [];
     const fullContent = `Working Environment Context (Chat): ${JSON.stringify(chat)}`;
@@ -177,7 +216,13 @@ export class CollaborationContextBuilder implements ContextBlockBuilder {
   ): ContextBuildInput['scenarioType'] {
     if ('scenarioMode' in context) {
       const scenarioMode = String((context as CollaborationContext).scenarioMode || '').trim();
-      if (scenarioMode === 'meeting' || scenarioMode === 'orchestration' || scenarioMode === 'inner-message' || scenarioMode === 'chat') {
+      if (
+        scenarioMode === 'meeting' ||
+        scenarioMode === 'orchestration' ||
+        scenarioMode === 'discussion' ||
+        scenarioMode === 'inner-message' ||
+        scenarioMode === 'chat'
+      ) {
         return scenarioMode;
       }
     }

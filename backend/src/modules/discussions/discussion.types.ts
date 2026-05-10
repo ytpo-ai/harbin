@@ -78,6 +78,7 @@ export interface CreateDiscussionThreadDto {
   branchFromMessageId?: string;
   branchOrigin?: DiscussionThreadBranchOrigin;
   contextSummary?: string;
+  outlineSectionId?: string;
 }
 
 export interface UpdateDiscussionThreadDto {
@@ -206,6 +207,11 @@ export interface ListDiscussionKnowledgeQuery {
   limit?: number;
 }
 
+export interface DeleteDiscussionKnowledgeEntryResult {
+  removed: true;
+  knowledgeEntryId: string;
+}
+
 export interface GenerateDiscussionOutlineDto {
   industryContext?: string;
 }
@@ -252,11 +258,37 @@ export interface EnrichDiscussionOutlineSectionResult {
   sectionId: string;
   enrichedCount: number;
   outline: DocumentOutline;
+  enrichmentMeta?: {
+    mode: 'agent' | 'fallback';
+    agentId?: string;
+    acceptedAgentEntries: number;
+    createdFallbackEntries: number;
+    fallbackReason?:
+      | 'no_agent_available'
+      | 'agent_execution_failed'
+      | 'agent_response_empty'
+      | 'agent_response_non_json'
+      | 'agent_entries_invalid'
+      | 'agent_entries_duplicated';
+  };
 }
 
 export interface EnrichAllDiscussionOutlineSectionsResult {
   processedSectionIds: string[];
   enrichedCount: number;
+  outline: DocumentOutline;
+}
+
+export interface DeleteDiscussionOutlineSectionResult {
+  sectionId: string;
+  deletedSectionIds: string[];
+  deletedKnowledgeCount: number;
+  outline: DocumentOutline;
+}
+
+export interface ClearDiscussionOutlineSectionEnrichmentResult {
+  sectionId: string;
+  clearedKnowledgeCount: number;
   outline: DocumentOutline;
 }
 
@@ -277,6 +309,7 @@ export interface DiscussionOutlineTaskSnapshot {
     outline: DocumentOutline;
     enrichedCount?: number;
     processedSectionIds?: string[];
+    enrichmentMeta?: EnrichDiscussionOutlineSectionResult['enrichmentMeta'];
   };
 }
 

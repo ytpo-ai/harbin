@@ -1,6 +1,7 @@
 import {
   ChatCollaborationContext,
   CollaborationContext,
+  DiscussionCollaborationContext,
   InnerMessageCollaborationContext,
   MeetingCollaborationContext,
   OrchestrationCollaborationContext,
@@ -76,6 +77,23 @@ export class CollaborationContextFactory {
     };
   }
 
+  static discussion(params: {
+    discussionSpaceId: string;
+    discussionThreadId?: string;
+    discussionMessageId?: string;
+    initiatorId?: string;
+    participantId?: string;
+    responseDirective?: DiscussionCollaborationContext['responseDirective'];
+  }): DiscussionCollaborationContext {
+    const { responseDirective = 'text', ...rest } = params;
+    return {
+      scenarioMode: 'discussion',
+      responseDirective,
+      collaborationMode: 'discussion',
+      ...rest,
+    };
+  }
+
   static chat(params?: {
     initiator?: ChatCollaborationContext['initiator'];
   }): ChatCollaborationContext {
@@ -108,6 +126,27 @@ export class CollaborationContextFactory {
         roleInPlan: roleInPlan as OrchestrationCollaborationContext['roleInPlan'],
         ...raw,
       } as OrchestrationCollaborationContext;
+    }
+
+    if (
+      raw.discussionSpaceId ||
+      raw.discussionThreadId ||
+      raw.collaborationMode === 'discussion' ||
+      raw.scene === 'discussion'
+    ) {
+      const patched: Record<string, unknown> = { ...raw };
+      // Normalize legacy field names: spaceId → discussionSpaceId, threadId → discussionThreadId
+      if (!patched.discussionSpaceId && patched.spaceId) {
+        patched.discussionSpaceId = patched.spaceId;
+      }
+      if (!patched.discussionThreadId && patched.threadId) {
+        patched.discussionThreadId = patched.threadId;
+      }
+      return {
+        scenarioMode: 'discussion',
+        responseDirective: 'text',
+        ...patched,
+      } as DiscussionCollaborationContext;
     }
 
     return {

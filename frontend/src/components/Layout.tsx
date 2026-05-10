@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
+import { Link, useLocation, useNavigate, Outlet, matchPath } from 'react-router-dom';
 import {
   HomeIcon,
   UserGroupIcon,
@@ -90,6 +90,7 @@ const ASSISTANT_BINDING_SKIP_KEY = 'assistant_binding_skip_user_id';
 const Layout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const isDiscussionDetailPage = Boolean(matchPath('/discussions/:spaceId', location.pathname));
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [currentEmployee, setCurrentEmployee] = useState<any>(null);
   const [checkingAssistant, setCheckingAssistant] = useState(false);
@@ -688,7 +689,7 @@ const Layout: React.FC = () => {
         </header>
 
         <main className="py-6">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className={`${isDiscussionDetailPage ? 'mx-auto w-full px-4 sm:px-6 lg:px-8' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'}`}>
             <Outlet />
           </div>
         </main>

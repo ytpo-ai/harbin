@@ -14,8 +14,8 @@ type OutlinePanelProps = {
   onApplyTemplate?: () => void;
   applyingTemplate?: boolean;
   onGoDataDashboard?: () => void;
-  onEnrichSection?: (section: OutlineSection) => void;
-  enrichingSectionId?: string;
+  onDiscussSection?: (section: OutlineSection) => void;
+  discussingSectionId?: string;
   onEnrichAllSections?: () => void;
   enrichingAllSections?: boolean;
   onAddSection?: () => void;
@@ -31,7 +31,7 @@ type OutlinePanelProps = {
 
 const statusLabelMap: Record<OutlineSection['status'], string> = {
   draft: '草稿',
-  enriching: '丰富中',
+  enriching: '补充中（知识未达充足）',
   sufficient: '充足',
   review: '待评审',
 };
@@ -55,8 +55,8 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
   onApplyTemplate,
   applyingTemplate = false,
   onGoDataDashboard,
-  onEnrichSection,
-  enrichingSectionId,
+  onDiscussSection,
+  discussingSectionId,
   onEnrichAllSections,
   enrichingAllSections = false,
   onAddSection,
@@ -70,9 +70,32 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
   onAddChildSection,
 }) => {
   const sections = (outline?.sections || []).slice().sort((a, b) => a.order - b.order);
+  const [actionMenuSectionId, setActionMenuSectionId] = React.useState('');
+  const actionMenuRootRef = React.useRef<HTMLDivElement | null>(null);
   const coveragePercent = Math.round((coverage?.coverage || 0) * 100);
   const coverageDetailMap = new Map((coverage?.sectionDetails || []).map((item) => [item.sectionId, item]));
   const siblingIndexMap = new Map<string, { index: number; total: number }>();
+
+  React.useEffect(() => {
+    if (!actionMenuSectionId) {
+      return;
+    }
+
+    const handleDocumentMouseDown = (event: MouseEvent) => {
+      if (!actionMenuRootRef.current) {
+        return;
+      }
+      if (actionMenuRootRef.current.contains(event.target as Node)) {
+        return;
+      }
+      setActionMenuSectionId('');
+    };
+
+    document.addEventListener('mousedown', handleDocumentMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleDocumentMouseDown);
+    };
+  }, [actionMenuSectionId]);
 
   const siblingBuckets = new Map<string, OutlineSection[]>();
   for (const section of sections) {
@@ -113,7 +136,7 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
   const missingSections = (coverage?.sectionDetails || []).filter((item) => item.knowledgeCount <= 0);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" ref={actionMenuRootRef}>
       <div className="border border-[#c6c6c6] bg-white p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -206,7 +229,7 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
                 disabled={enrichingAllSections}
                 className="border border-[#0f62fe] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {enrichingAllSections ? '批量丰富中...' : '一键丰富 draft'}
+                {enrichingAllSections ? '批量任务执行中...' : '一键补充 draft'}
               </button>
             ) : null}
           </div>
@@ -217,6 +240,7 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
           {sections.map((section) => {
             const detail = coverageDetailMap.get(section.id);
             const knowledgeCount = detail?.knowledgeCount ?? section.knowledgeCount ?? 0;
+            const status = detail?.status ?? section.status;
             const progress = getSectionProgressPercent(knowledgeCount);
             const siblingIndex = siblingIndexMap.get(section.id);
             const moveUpDisabled = movingSectionId === section.id || (siblingIndex ? siblingIndex.index <= 0 : false);
@@ -227,7 +251,7 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
               <div key={section.id} className="border border-[#e0e0e0] bg-[#f4f4f4] p-3" style={{ marginLeft: `${section.depth * 12}px` }}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="text-sm text-[#161616]">{section.title}</div>
-                  <span className={`px-2 py-0.5 text-[11px] ${statusClassMap[section.status]}`}>{statusLabelMap[section.status]}</span>
+                  <span className={`px-2 py-0.5 text-[11px] ${statusClassMap[status]}`}>{statusLabelMap[status]}</span>
                 </div>
                 {section.description ? <div className="mt-1 text-xs text-[#6f6f6f]">{section.description}</div> : null}
 
@@ -241,68 +265,97 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-2 flex items-center justify-between text-[11px] text-[#6f6f6f]">
-                  <div className="flex items-center gap-2">
-                    {onMoveSection ? (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => onMoveSection(section, 'up')}
-                          disabled={moveUpDisabled}
-                          className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          上移
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => onMoveSection(section, 'down')}
-                          disabled={moveDownDisabled}
-                          className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          下移
-                        </button>
-                      </>
-                    ) : null}
-                    {onEditSection ? (
-                      <button
-                        type="button"
-                        onClick={() => onEditSection(section)}
-                        disabled={editingSectionId === section.id}
-                        className="text-[#525252] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {editingSectionId === section.id ? '编辑中...' : '编辑'}
-                      </button>
-                    ) : null}
-                    {onAddChildSection ? (
-                      <button
-                        type="button"
-                        onClick={() => onAddChildSection(section)}
-                        className="text-[#525252] hover:underline"
-                      >
-                        新增子章节
-                      </button>
-                    ) : null}
-                    {onDeleteSection ? (
-                      <button
-                        type="button"
-                        onClick={() => onDeleteSection(section)}
-                        disabled={deletingSectionId === section.id}
-                        className="text-[#da1e28] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {deletingSectionId === section.id ? '删除中...' : '删除'}
-                      </button>
-                    ) : null}
-                  </div>
-                  {onEnrichSection ? (
+                <div className="mt-2 flex items-center justify-end text-[11px] text-[#6f6f6f]">
+                  <div className="relative">
                     <button
                       type="button"
-                      onClick={() => onEnrichSection(section)}
-                      disabled={enrichingSectionId === section.id}
-                      className="text-[#0f62fe] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => setActionMenuSectionId((prev) => (prev === section.id ? '' : section.id))}
+                      className="border border-[#8d8d8d] px-2 py-0.5 text-[11px] text-[#525252] hover:bg-white"
                     >
-                      {enrichingSectionId === section.id ? '丰富中...' : '丰富此章节'}
+                      操作
                     </button>
-                  ) : null}
+                    {actionMenuSectionId === section.id ? (
+                      <div className="absolute right-0 z-10 mt-1 min-w-[132px] border border-[#c6c6c6] bg-white p-1 shadow-sm">
+                        {onDiscussSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDiscussSection(section);
+                              setActionMenuSectionId('');
+                            }}
+                            disabled={discussingSectionId === section.id}
+                            className="block w-full px-2 py-1 text-left text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {discussingSectionId === section.id ? '切换中...' : '讨论此章节'}
+                          </button>
+                        ) : null}
+                        {onMoveSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onMoveSection(section, 'up');
+                              setActionMenuSectionId('');
+                            }}
+                            disabled={moveUpDisabled}
+                            className="block w-full px-2 py-1 text-left text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            上移
+                          </button>
+                        ) : null}
+                        {onMoveSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onMoveSection(section, 'down');
+                              setActionMenuSectionId('');
+                            }}
+                            disabled={moveDownDisabled}
+                            className="block w-full px-2 py-1 text-left text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            下移
+                          </button>
+                        ) : null}
+                        {onEditSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onEditSection(section);
+                              setActionMenuSectionId('');
+                            }}
+                            disabled={editingSectionId === section.id}
+                            className="block w-full px-2 py-1 text-left text-[#525252] hover:bg-[#f4f4f4] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {editingSectionId === section.id ? '编辑中...' : '编辑'}
+                          </button>
+                        ) : null}
+                        {onAddChildSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onAddChildSection(section);
+                              setActionMenuSectionId('');
+                            }}
+                            className="block w-full px-2 py-1 text-left text-[#525252] hover:bg-[#f4f4f4]"
+                          >
+                            新增子章节
+                          </button>
+                        ) : null}
+                        {onDeleteSection ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onDeleteSection(section);
+                              setActionMenuSectionId('');
+                            }}
+                            disabled={deletingSectionId === section.id}
+                            className="block w-full px-2 py-1 text-left text-[#da1e28] hover:bg-[#fff1f1] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {deletingSectionId === section.id ? '清空中...' : '清空补充'}
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
             );

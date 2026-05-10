@@ -12,27 +12,50 @@ import {
   OutlineSectionStatus,
 } from '../../../shared/schemas/discussion-space.schema';
 import {
+  DiscussionKnowledgeCredibility,
   DiscussionKnowledgeEntry,
   DiscussionKnowledgeEntryDocument,
+  DiscussionKnowledgeEntryType,
+  DiscussionKnowledgeSourceType,
 } from '../../../shared/schemas/discussion-knowledge-entry.schema';
 import {
+  DiscussionParticipant,
+  DiscussionParticipantDocument,
+  DiscussionParticipantType,
+} from '../../../shared/schemas/discussion-participant.schema';
+import {
   CreateDiscussionOutlineSectionDto,
+  ClearDiscussionOutlineSectionEnrichmentResult,
   DiscussionOutlineTaskEventPayload,
   DiscussionOutlineTaskSnapshot,
   DiscussionOutlineTaskStatus,
   DiscussionKnowledgeCoverageResult,
+  DeleteDiscussionOutlineSectionResult,
   EnrichAllDiscussionOutlineSectionsResult,
   EnrichDiscussionOutlineSectionResult,
   UpdateDiscussionOutlineDto,
   UpdateDiscussionOutlineSectionDto,
 } from '../discussion.types';
 import { DiscussionKnowledgeService } from './discussion-knowledge.service';
-import { DiscussionKnowledgeSourceType } from '../../../shared/schemas/discussion-knowledge-entry.schema';
 import { AgentClientService } from '../../agents-client/agent-client.service';
 import { AgentExecutionTask } from '../../../shared/types';
 
 const OUTLINE_TASK_RETENTION_MS = 30 * 60 * 1000;
 const INDUSTRY_RESEARCH_ROLE_CODE = 'industry-research';
+const VALID_KNOWLEDGE_ENTRY_TYPES = new Set<string>([
+  DiscussionKnowledgeEntryType.FACT,
+  DiscussionKnowledgeEntryType.DATA_POINT,
+  DiscussionKnowledgeEntryType.OPINION,
+  DiscussionKnowledgeEntryType.SOURCE_REFERENCE,
+  DiscussionKnowledgeEntryType.ANALYSIS,
+  DiscussionKnowledgeEntryType.ACTION_ITEM,
+]);
+const VALID_KNOWLEDGE_CREDIBILITY = new Set<string>([
+  DiscussionKnowledgeCredibility.HIGH,
+  DiscussionKnowledgeCredibility.MEDIUM,
+  DiscussionKnowledgeCredibility.LOW,
+  DiscussionKnowledgeCredibility.UNVERIFIED,
+]);
 
 @Injectable()
 export class DiscussionOutlineService {
@@ -45,6 +68,8 @@ export class DiscussionOutlineService {
     private readonly discussionSpaceModel: Model<DiscussionSpaceDocument>,
     @InjectModel(DiscussionKnowledgeEntry.name)
     private readonly discussionKnowledgeEntryModel: Model<DiscussionKnowledgeEntryDocument>,
+    @InjectModel(DiscussionParticipant.name)
+    private readonly discussionParticipantModel: Model<DiscussionParticipantDocument>,
     private readonly discussionKnowledgeService: DiscussionKnowledgeService,
     private readonly agentClientService: AgentClientService,
   ) {}
@@ -107,27 +132,91 @@ export class DiscussionOutlineService {
     return labels.includes('行业研究') || labels.includes('industry research') || labels.includes('行业观察');
   }
 
-  private async resolveOutlineAgentId(space: DiscussionSpaceDocument): Promise<string | null> {
-    const defaultReplyAgentId = String(space.settings?.defaultReplyAgentId || '').trim();
-    if (defaultReplyAgentId) {
-      const matched = await this.agentClientService.getAgent(defaultReplyAgentId);
+  private isOutlineWebResearchCapable(candidate: Record<string, unknown>): boolean {
+    const tools = Array.isArray(candidate.tools) ? candidate.tools : [];
+    const toolLabels = tools.map((item) => String(item || '').toLowerCase()).join(' ');
+    const hasWebResearchTool =
+      toolLabels.includes('web.search') ||
+      toolLabels.includes('web-search') ||
+      toolLabels.includes('web.fetch') ||
+      toolLabels.includes('content.extract');
+    if (!hasWebResearchTool) {
+      return false;
+    }
+
+    const name = this.extractAgentCandidateValue(candidate, 'name');
+    const description = this.extractAgentCandidateValue(candidate, 'description');
+    const systemPrompt = this.extractAgentCandidateValue(candidate, 'systemPrompt');
+    const labels = `${name} ${description} ${systemPrompt}`;
+
+    const excludes = ['cto', '研发', 'requirement', '编排', 'orchestration', 'workflow'];
+    if (excludes.some((keyword) => labels.includes(keyword))) {
+      return false;
+    }
+
+    const includes = ['研究', '行业', '能源', 'market', 'radar', 'analyst', 'observation'];
+    return includes.some((keyword) => labels.includes(keyword));
+  }
+
+  private async resolveOutlineAgentId(
+    space: Pick<DiscussionSpace, 'id' | 'projectId' | 'settings'>,
+    options?: { requireResearchRole?: boolean },
+  ): Promise<string | null> {
+    const requireResearchRole = Boolean(options?.requireResearchRole);
+    let defaultActiveAgentId: string | null = null;
+    const defaultReplyParticipantId = String(space.settings?.defaultReplyAgentId || '').trim();
+    if (defaultReplyParticipantId) {
+      const participant = await this.discussionParticipantModel
+        .findOne({
+          id: defaultReplyParticipantId,
+          spaceId: space.id,
+          type: DiscussionParticipantType.AI_AGENT,
+        })
+        .lean()
+        .exec();
+      const mappedAgentId = String((participant as Record<string, unknown> | null)?.agentId || '').trim();
+      const candidateAgentId = mappedAgentId || defaultReplyParticipantId;
+      const matched = await this.agentClientService.getAgent(candidateAgentId);
       if (matched?.id && matched.isActive) {
-        return String(matched.id);
+        const matchedId = String(matched.id);
+        defaultActiveAgentId = matchedId;
+        if (!requireResearchRole || this.isOutlineResearchAgent(matched as unknown as Record<string, unknown>)) {
+          return matchedId;
+        }
       }
     }
 
-    const projectAgents = await this.agentClientService.getActiveAgents(space.projectId ? { projectId: space.projectId } : undefined);
+    const projectAgents =
+      (await this.agentClientService.getActiveAgents(space.projectId ? { projectId: space.projectId } : undefined)) || [];
     const projectMatch = projectAgents.find((item) => this.isOutlineResearchAgent(item as unknown as Record<string, unknown>));
     if (projectMatch?.id) {
       return String(projectMatch.id);
     }
 
+    const projectWebResearchMatch = projectAgents.find((item) =>
+      this.isOutlineWebResearchCapable(item as unknown as Record<string, unknown>),
+    );
+    if (projectWebResearchMatch?.id) {
+      return String(projectWebResearchMatch.id);
+    }
+
     if (space.projectId) {
-      const globalAgents = await this.agentClientService.getActiveAgents();
+      const globalAgents = (await this.agentClientService.getActiveAgents()) || [];
       const globalMatch = globalAgents.find((item) => this.isOutlineResearchAgent(item as unknown as Record<string, unknown>));
       if (globalMatch?.id) {
         return String(globalMatch.id);
       }
+
+      const globalWebResearchMatch = globalAgents.find((item) =>
+        this.isOutlineWebResearchCapable(item as unknown as Record<string, unknown>),
+      );
+      if (globalWebResearchMatch?.id) {
+        return String(globalWebResearchMatch.id);
+      }
+    }
+
+    if (defaultActiveAgentId) {
+      return defaultActiveAgentId;
     }
 
     return null;
@@ -209,6 +298,10 @@ export class DiscussionOutlineService {
     const firstJsonStart = text.search(/[\[{]/);
     if (firstJsonStart >= 0) {
       candidates.push(text.slice(firstJsonStart).trim());
+      const balanced = this.extractBalancedJson(text.slice(firstJsonStart));
+      if (balanced) {
+        candidates.unshift(balanced);
+      }
     }
 
     for (const candidate of candidates) {
@@ -327,6 +420,382 @@ export class DiscussionOutlineService {
     };
   }
 
+  private buildSectionEnrichmentTask(input: {
+    spaceId: string;
+    spaceTitle: string;
+    spaceDescription?: string;
+    industryContext: string;
+    section: OutlineSection;
+    outlineSections: Array<{ title: string; description?: string; depth: number; order: number }>;
+    existingEntries: Array<{ title: string; summary: string }>;
+    expectedCount: number;
+  }): AgentExecutionTask {
+    const existingText = input.existingEntries.length
+      ? input.existingEntries
+          .slice(0, 8)
+          .map((item, index) => `${index + 1}. ${item.title}${item.summary ? ` - ${item.summary}` : ''}`)
+          .join('\n')
+      : '（暂无）';
+    const suggestedDataSources = Array.isArray(input.section.metadata?.suggestedDataSources)
+      ? input.section.metadata?.suggestedDataSources?.filter(Boolean).join('、')
+      : '';
+    const outlineText = input.outlineSections
+      .slice(0, 20)
+      .sort((a, b) => a.order - b.order)
+      .map((item) => `${'  '.repeat(Math.max(0, item.depth))}- ${item.title}${item.description ? `（${item.description}）` : ''}`)
+      .join('\n');
+
+    const description = [
+      '你是行业研究助手。请基于章节主题产出可直接入库的知识条目 JSON。',
+      `讨论空间：${input.spaceTitle}`,
+      `讨论背景：${input.spaceDescription || '（无）'}`,
+      `行业上下文：${input.industryContext}`,
+      `章节标题：${input.section.title}`,
+      `章节说明：${input.section.description || '（无）'}`,
+      `建议数据源：${suggestedDataSources || '（无）'}`,
+      `目标数量：${input.expectedCount}`,
+      '',
+      '大纲框架（保持章节语义一致）：',
+      outlineText || '（无）',
+      '',
+      '已有条目（避免重复）：',
+      existingText,
+      '',
+      '输出要求：',
+      '1. 仅输出 JSON，不要附加解释。',
+      '2. 输出数组或对象；若为对象，使用 searchEvidence + entries 字段。',
+      '3. 每条记录字段：title/content/summary/entryType/sourceUrl/sourceName/credibility/structuredData/topicTags/domainTags/keywordTags/contentDate。',
+      '4. entryType 仅允许：fact/data_point/opinion/source_reference/analysis/action_item。',
+      '5. credibility 仅允许：high/medium/low/unverified。',
+      '6. 若为 data_point，尽量补充 structuredData.value/unit/measureDate/compareTo。',
+      '7. 请优先调用可用搜索工具检索信息，至少引用 2 个独立来源。',
+      '8. searchEvidence 每条建议包含 sourceName/sourceUrl/snippet/query/fetchedAt。',
+      '9. 信息不足时允许先提出最多 1-2 个澄清问题。',
+    ].join('\n');
+
+    return {
+      id: this.buildTaskId(input.spaceId),
+      title: `Discussion outline section enrich | ${input.section.title}`,
+      description,
+      type: 'discussion_outline_enrich_section',
+      priority: 'medium',
+      status: 'pending',
+      assignedAgents: [],
+      teamId: input.spaceId,
+      messages: [],
+    };
+  }
+
+  private parseEnrichmentPayload(raw: string): Array<Record<string, unknown>> {
+    const text = String(raw || '').trim();
+    if (!text) {
+      return [];
+    }
+
+    const candidates: string[] = [text];
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced?.[1]) {
+      candidates.unshift(fenced[1].trim());
+    }
+
+    const firstJsonStart = text.search(/[\[{]/);
+    if (firstJsonStart >= 0) {
+      candidates.push(text.slice(firstJsonStart).trim());
+      const balanced = this.extractBalancedJson(text.slice(firstJsonStart));
+      if (balanced) {
+        candidates.unshift(balanced);
+      }
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const parsed = JSON.parse(candidate) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed.filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>;
+        }
+        if (parsed && typeof parsed === 'object') {
+          const payload = parsed as Record<string, unknown>;
+          const maybeEntries = [payload.entries, payload.knowledgeEntries, payload.items, payload.data].find((item) => Array.isArray(item));
+          if (Array.isArray(maybeEntries)) {
+            return maybeEntries.filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>;
+          }
+        }
+      } catch (_error) {
+        continue;
+      }
+    }
+
+    return [];
+  }
+
+  private extractBalancedJson(input: string): string | null {
+    const text = String(input || '');
+    const start = text.search(/[\[{]/);
+    if (start < 0) {
+      return null;
+    }
+
+    const opening = text[start];
+    const closing = opening === '{' ? '}' : ']';
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+
+    for (let index = start; index < text.length; index += 1) {
+      const ch = text[index];
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaping = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (ch === opening) {
+        depth += 1;
+      } else if (ch === closing) {
+        depth -= 1;
+        if (depth === 0) {
+          return text.slice(start, index + 1).trim();
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private normalizeKnowledgeFingerprint(input: { title?: string; summary?: string; content?: string }): string {
+    const title = String(input.title || '').trim().toLowerCase();
+    const summary = String(input.summary || '').trim().toLowerCase();
+    const content = String(input.content || '').trim().toLowerCase();
+    return `${title}|${summary.slice(0, 80)}|${content.slice(0, 80)}`;
+  }
+
+  private inferFallbackReason(input: {
+    hasAgent: boolean;
+    runtimeFailed: boolean;
+    runtimeResponseText: string;
+    parsedRawEntriesCount: number;
+    normalizedRuntimeEntriesCount: number;
+    acceptedAgentEntriesCount: number;
+  }):
+    | 'no_agent_available'
+    | 'agent_execution_failed'
+    | 'agent_response_empty'
+    | 'agent_response_non_json'
+    | 'agent_entries_invalid'
+    | 'agent_entries_duplicated' {
+    if (!input.hasAgent) {
+      return 'no_agent_available';
+    }
+    if (input.runtimeFailed) {
+      return 'agent_execution_failed';
+    }
+    const runtimeText = input.runtimeResponseText.trim();
+    if (!runtimeText) {
+      return 'agent_response_empty';
+    }
+    if (input.parsedRawEntriesCount <= 0) {
+      return 'agent_response_non_json';
+    }
+    if (input.normalizedRuntimeEntriesCount <= 0) {
+      return 'agent_entries_invalid';
+    }
+    if (input.acceptedAgentEntriesCount <= 0) {
+      return 'agent_entries_duplicated';
+    }
+    return 'agent_entries_invalid';
+  }
+
+  private normalizeRuntimeKnowledgeEntries(rawEntries: Array<Record<string, unknown>>, section: OutlineSection): Array<{
+    title: string;
+    content: string;
+    summary?: string;
+    entryType: DiscussionKnowledgeEntryType;
+    sourceUrl?: string;
+    sourceName?: string;
+    credibility?: DiscussionKnowledgeCredibility;
+    structuredData?: {
+      value?: string | number;
+      unit?: string;
+      measureDate?: string;
+      compareTo?: {
+        value: string | number;
+        period: string;
+        changePercent?: number;
+      };
+    };
+    topicTags?: string[];
+    domainTags?: string[];
+    keywordTags?: string[];
+    contentDate?: string;
+  }> {
+    return rawEntries
+      .map((item) => {
+        const title = String(item.title || item.name || '').trim();
+        const content = String(item.content || item.detail || item.summary || '').trim();
+        if (!title || !content) {
+          return null;
+        }
+
+        const rawEntryType = String(item.entryType || '').trim();
+        const normalizedEntryType = VALID_KNOWLEDGE_ENTRY_TYPES.has(rawEntryType)
+          ? (rawEntryType as DiscussionKnowledgeEntryType)
+          : (section.metadata?.isStructuredData ? DiscussionKnowledgeEntryType.DATA_POINT : DiscussionKnowledgeEntryType.ANALYSIS);
+
+        const rawCredibility = String(item.credibility || '').trim();
+        const credibility = VALID_KNOWLEDGE_CREDIBILITY.has(rawCredibility)
+          ? (rawCredibility as DiscussionKnowledgeCredibility)
+          : undefined;
+
+        const sourceUrl = String(item.sourceUrl || '').trim();
+        const sourceName = String(item.sourceName || '').trim();
+        const rawStructuredData = item.structuredData && typeof item.structuredData === 'object'
+          ? (item.structuredData as Record<string, unknown>)
+          : undefined;
+        const compareTo = rawStructuredData?.compareTo && typeof rawStructuredData.compareTo === 'object'
+          ? (rawStructuredData.compareTo as Record<string, unknown>)
+          : undefined;
+        const compareToValue = compareTo?.value;
+        const compareToPeriod = String(compareTo?.period || '').trim();
+        const compareToChangePercent = Number(compareTo?.changePercent);
+
+        const structuredData = rawStructuredData
+          ? {
+              value:
+                typeof rawStructuredData.value === 'number' || typeof rawStructuredData.value === 'string'
+                  ? (rawStructuredData.value as string | number)
+                  : undefined,
+              unit: typeof rawStructuredData.unit === 'string' ? rawStructuredData.unit : undefined,
+              measureDate: typeof rawStructuredData.measureDate === 'string' ? rawStructuredData.measureDate : undefined,
+              compareTo:
+                (typeof compareToValue === 'number' || typeof compareToValue === 'string') && compareToPeriod
+                  ? {
+                      value: compareToValue as string | number,
+                      period: compareToPeriod,
+                      changePercent: Number.isFinite(compareToChangePercent) ? compareToChangePercent : undefined,
+                    }
+                  : undefined,
+            }
+          : undefined;
+
+        const normalizeStringArray = (value: unknown): string[] | undefined => {
+          if (!Array.isArray(value)) {
+            return undefined;
+          }
+          const list = value.map((item) => String(item || '').trim()).filter(Boolean);
+          return list.length ? list : undefined;
+        };
+
+        const contentDateRaw = String(item.contentDate || '').trim();
+        const contentDate = contentDateRaw && !Number.isNaN(new Date(contentDateRaw).getTime()) ? contentDateRaw : undefined;
+
+        return {
+          title,
+          content,
+          summary: String(item.summary || '').trim() || undefined,
+          entryType: normalizedEntryType,
+          sourceUrl: sourceUrl || undefined,
+          sourceName: sourceName || undefined,
+          credibility,
+          structuredData,
+          topicTags: normalizeStringArray(item.topicTags) || [section.title],
+          domainTags: normalizeStringArray(item.domainTags),
+          keywordTags: normalizeStringArray(item.keywordTags),
+          contentDate,
+        };
+      })
+      .filter(Boolean) as Array<{
+      title: string;
+      content: string;
+      summary?: string;
+      entryType: DiscussionKnowledgeEntryType;
+      sourceUrl?: string;
+      sourceName?: string;
+      credibility?: DiscussionKnowledgeCredibility;
+      structuredData?: {
+        value?: string | number;
+        unit?: string;
+        measureDate?: string;
+        compareTo?: {
+          value: string | number;
+          period: string;
+          changePercent?: number;
+        };
+      };
+      topicTags?: string[];
+      domainTags?: string[];
+      keywordTags?: string[];
+      contentDate?: string;
+    }>;
+  }
+
+  private buildPlainTextRuntimeKnowledgeEntry(input: {
+    responseText: string;
+    section: OutlineSection;
+  }): {
+    title: string;
+    content: string;
+    summary?: string;
+    entryType: DiscussionKnowledgeEntryType;
+    sourceName?: string;
+    credibility?: DiscussionKnowledgeCredibility;
+    topicTags?: string[];
+  } | null {
+    const normalized = String(input.responseText || '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!normalized || normalized.length < 40) {
+      return null;
+    }
+
+    if (this.isClarificationLikeResponse(normalized)) {
+      return null;
+    }
+
+    const summary = normalized.length > 140 ? `${normalized.slice(0, 139)}...` : normalized;
+    return {
+      title: `${input.section.title} 补充观察`,
+      content: normalized,
+      summary,
+      entryType: input.section.metadata?.isStructuredData
+        ? DiscussionKnowledgeEntryType.DATA_POINT
+        : DiscussionKnowledgeEntryType.ANALYSIS,
+      sourceName: 'outline-enricher-runtime-plain',
+      credibility: DiscussionKnowledgeCredibility.UNVERIFIED,
+      topicTags: [input.section.title],
+    };
+  }
+
+  private isClarificationLikeResponse(value: string): boolean {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return false;
+    }
+    const lower = normalized.toLowerCase();
+    return (
+      /\?|？/.test(normalized) ||
+      lower.includes('请告诉我') ||
+      lower.includes('你希望') ||
+      lower.includes('你可以按') ||
+      lower.includes('选一条') ||
+      lower.includes('如果你愿意')
+    );
+  }
+
   private buildSection(input: Partial<OutlineSection> & { title: string; order: number; depth: number }): OutlineSection {
     return {
       id: input.id || randomUUID(),
@@ -439,7 +908,7 @@ export class DiscussionOutlineService {
     let runtimeAgentId: string | undefined;
 
     try {
-      const agentId = await this.resolveOutlineAgentId(space);
+      const agentId = await this.resolveOutlineAgentId(space, { requireResearchRole: true });
       if (agentId) {
         const task = this.buildOutlineGenerationTask({
           spaceId,
@@ -450,7 +919,7 @@ export class DiscussionOutlineService {
         task.assignedAgents = [agentId];
 
         const runtime = await this.agentClientService.executeTaskDetailed(agentId, task, {
-          executionMode: 'chat',
+          executionMode: 'task',
           source: 'discussion_outline_runtime',
           agentSessionId: this.buildTaskId(spaceId),
           collaborationContext: {
@@ -458,6 +927,8 @@ export class DiscussionOutlineService {
             spaceId,
             category: space.category,
             industryContext: context,
+            responseDirective: 'json-only',
+            format: 'json',
           },
           requestMeta: {
             source: 'discussion-outline-service',
@@ -583,8 +1054,12 @@ export class DiscussionOutlineService {
     });
   }
 
-  async deleteSection(spaceId: string, sectionId: string): Promise<DocumentOutline> {
+  async deleteSection(spaceId: string, sectionId: string): Promise<DeleteDiscussionOutlineSectionResult> {
     const current = await this.getOutline(spaceId);
+    const target = current.sections.find((section) => section.id === sectionId);
+    if (!target) {
+      throw new NotFoundException(`章节不存在: ${sectionId}`);
+    }
     const toDelete = new Set<string>([sectionId]);
 
     let changed = true;
@@ -598,11 +1073,74 @@ export class DiscussionOutlineService {
       }
     }
 
-    return this.updateOutline(spaceId, {
+    const deletedSectionIds = Array.from(toDelete);
+    const deletedKnowledgeResult = await this.discussionKnowledgeEntryModel.deleteMany({
+      spaceId,
+      outlineSectionId: { $in: deletedSectionIds },
+    }).exec();
+
+    const outline = await this.updateOutline(spaceId, {
       sections: current.sections.filter((item) => !toDelete.has(item.id)),
       generatedBy: 'human',
       title: current.title,
     });
+
+    return {
+      sectionId,
+      deletedSectionIds,
+      deletedKnowledgeCount: Number(deletedKnowledgeResult?.deletedCount || 0),
+      outline,
+    };
+  }
+
+  async clearSectionEnrichment(spaceId: string, sectionId: string): Promise<ClearDiscussionOutlineSectionEnrichmentResult> {
+    const outline = await this.getOutline(spaceId);
+    const section = outline.sections.find((item) => item.id === sectionId);
+    if (!section) {
+      throw new NotFoundException(`章节不存在: ${sectionId}`);
+    }
+
+    // Clear all agent-generated knowledge entries for this section (enricher + chat runtime).
+    // Only user-created entries (sourceType = 'user_input') are preserved.
+    const deletedResult = await this.discussionKnowledgeEntryModel.deleteMany({
+      spaceId,
+      outlineSectionId: sectionId,
+      sourceType: { $ne: 'user_input' },
+    }).exec();
+
+    const knowledgeCount = await this.discussionKnowledgeEntryModel.countDocuments({
+      spaceId,
+      outlineSectionId: sectionId,
+      isActive: true,
+    });
+
+    const nextStatus: OutlineSectionStatus = section.status === 'review'
+      ? 'review'
+      : knowledgeCount <= 0
+        ? 'draft'
+        : knowledgeCount >= 3
+          ? 'sufficient'
+          : 'enriching';
+
+    const nextOutline = await this.updateOutline(spaceId, {
+      title: outline.title,
+      generatedBy: 'human',
+      sections: outline.sections.map((item) =>
+        item.id === sectionId
+          ? {
+              ...item,
+              knowledgeCount: Number(knowledgeCount || 0),
+              status: nextStatus,
+            }
+          : item,
+      ),
+    });
+
+    return {
+      sectionId,
+      clearedKnowledgeCount: Number(deletedResult?.deletedCount || 0),
+      outline: nextOutline,
+    };
   }
 
   async enrichSection(spaceId: string, sectionId: string): Promise<EnrichDiscussionOutlineSectionResult> {
@@ -612,35 +1150,311 @@ export class DiscussionOutlineService {
       throw new NotFoundException(`章节不存在: ${sectionId}`);
     }
 
-    const existingCount = await this.discussionKnowledgeEntryModel.countDocuments({
-      spaceId,
-      outlineSectionId: sectionId,
-      isActive: true,
-    });
+    const space = await this.discussionSpaceModel.findOne({ id: spaceId }).lean().exec();
+    if (!space) {
+      throw new NotFoundException(`讨论空间不存在: ${spaceId}`);
+    }
 
-    const targetThreshold = 5;
+    const [existingCount, existingEntries] = await Promise.all([
+      this.discussionKnowledgeEntryModel.countDocuments({
+        spaceId,
+        outlineSectionId: sectionId,
+        isActive: true,
+      }),
+      this.discussionKnowledgeEntryModel
+        .find(
+          {
+            spaceId,
+            outlineSectionId: sectionId,
+            isActive: true,
+          },
+          {
+            title: 1,
+            summary: 1,
+            content: 1,
+          },
+        )
+        .sort({ createdAt: -1 })
+        .limit(20)
+        .lean()
+        .exec(),
+    ]);
+
+    const targetThreshold = 3;
     const remaining = Math.max(0, targetThreshold - Number(existingCount || 0));
     const addCount = Math.min(3, remaining);
 
-    for (let index = 0; index < addCount; index += 1) {
-      const generated = this.buildEnrichmentContent(section, index);
-      await this.discussionKnowledgeService.createKnowledgeEntry(spaceId, {
-        participantId: 'system',
+    if (addCount <= 0) {
+      return {
+        sectionId,
+        enrichedCount: 0,
+        outline: await this.getOutline(spaceId),
+      };
+    }
+
+    const existingSummaryEntries = (existingEntries || []).map((item) => ({
+      title: String((item as Record<string, unknown>).title || '').trim(),
+      summary: String((item as Record<string, unknown>).summary || '').trim(),
+      content: String((item as Record<string, unknown>).content || '').trim(),
+    }));
+    const existingFingerprints = new Set(
+      existingSummaryEntries.map((item) => this.normalizeKnowledgeFingerprint(item)).filter(Boolean),
+    );
+
+    let normalizedRuntimeEntries = new Array<{
+      title: string;
+      content: string;
+      summary?: string;
+      entryType: DiscussionKnowledgeEntryType;
+      sourceUrl?: string;
+      sourceName?: string;
+      credibility?: DiscussionKnowledgeCredibility;
+      structuredData?: {
+        value?: string | number;
+        unit?: string;
+        measureDate?: string;
+        compareTo?: {
+          value: string | number;
+          period: string;
+          changePercent?: number;
+        };
+      };
+      topicTags?: string[];
+      domainTags?: string[];
+      keywordTags?: string[];
+      contentDate?: string;
+    }>();
+    let runtimeResponseText = '';
+    let parsedRawEntriesCount = 0;
+    let runtimeFailed = false;
+    let resolvedAgentId: string | undefined;
+    let rerunForClarification = false;
+
+    try {
+      const agentId = await this.resolveOutlineAgentId(space, { requireResearchRole: true });
+      resolvedAgentId = agentId || undefined;
+      if (agentId) {
+        const task = this.buildSectionEnrichmentTask({
+          spaceId,
+          spaceTitle: space.title,
+          spaceDescription: String((space as Record<string, unknown>).description || '').trim() || undefined,
+          industryContext: String((space.metadata as Record<string, unknown>)?.industryContext || '').trim() || '目标行业',
+          section,
+          outlineSections: outline.sections.map((item) => ({
+            title: item.title,
+            description: item.description,
+            depth: Number(item.depth || 0),
+            order: Number(item.order || 0),
+          })),
+          existingEntries: existingSummaryEntries,
+          expectedCount: addCount,
+        });
+        task.assignedAgents = [agentId];
+
+        const runtime = await this.agentClientService.executeTaskDetailed(agentId, task, {
+          executionMode: 'task',
+          source: 'discussion_outline_enrich_runtime',
+          agentSessionId: this.buildTaskId(spaceId),
+          collaborationContext: {
+            scene: 'discussion',
+            spaceId,
+            category: space.category,
+            sectionId: section.id,
+            sectionTitle: section.title,
+            responseDirective: 'json-only',
+            format: 'json',
+          },
+          requestMeta: {
+            source: 'discussion-outline-service',
+          },
+        });
+
+        runtimeResponseText = String(runtime.response || '');
+        const rawEntries = this.parseEnrichmentPayload(runtime.response);
+        parsedRawEntriesCount = rawEntries.length;
+        normalizedRuntimeEntries = this.normalizeRuntimeKnowledgeEntries(rawEntries, section);
+        const shouldRerunForClarification =
+          !normalizedRuntimeEntries.length &&
+          this.isClarificationLikeResponse(runtimeResponseText);
+        if (shouldRerunForClarification) {
+          rerunForClarification = true;
+          const rerunTask = {
+            ...task,
+            id: this.buildTaskId(spaceId),
+            description: [
+              task.description,
+              '',
+              '附加约束（必须遵守）：',
+              '1. 请优先补充可入库 JSON 条目，同时保留 searchEvidence。',
+              '2. 若上下文缺失，可按“全球范围 + 近20年”作默认假设，并可提出最多 1 个澄清问题。',
+              '3. 条目需保留可追溯来源链接。',
+            ].join('\n'),
+          };
+          const rerunRuntime = await this.agentClientService.executeTaskDetailed(agentId, rerunTask, {
+            executionMode: 'task',
+            source: 'discussion_outline_enrich_runtime_retry',
+            agentSessionId: this.buildTaskId(spaceId),
+            collaborationContext: {
+              scene: 'discussion',
+              spaceId,
+              category: space.category,
+              sectionId: section.id,
+              sectionTitle: section.title,
+              responseDirective: 'json-only',
+              format: 'json',
+            },
+            requestMeta: {
+              source: 'discussion-outline-service',
+              retryReason: 'clarification_response',
+            },
+          });
+
+          runtimeResponseText = String(rerunRuntime.response || '');
+          const rerunRawEntries = this.parseEnrichmentPayload(rerunRuntime.response);
+          parsedRawEntriesCount = rerunRawEntries.length;
+          normalizedRuntimeEntries = this.normalizeRuntimeKnowledgeEntries(rerunRawEntries, section);
+        }
+        if (!normalizedRuntimeEntries.length) {
+          const plainTextEntry = this.buildPlainTextRuntimeKnowledgeEntry({
+            responseText: runtimeResponseText,
+            section,
+          });
+          if (plainTextEntry) {
+            normalizedRuntimeEntries = [plainTextEntry];
+          }
+        }
+      }
+    } catch (error) {
+      runtimeFailed = true;
+      this.logger.warn(
+        `Outline section enrichment runtime failed, fallback to local generation: spaceId=${spaceId} sectionId=${sectionId} reason=${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    }
+
+    const selectedEntries = new Array<{
+      title: string;
+      content: string;
+      summary?: string;
+      entryType: DiscussionKnowledgeEntryType;
+      sourceUrl?: string;
+      sourceName?: string;
+      credibility?: DiscussionKnowledgeCredibility;
+      structuredData?: {
+        value?: string | number;
+        unit?: string;
+        measureDate?: string;
+        compareTo?: {
+          value: string | number;
+          period: string;
+          changePercent?: number;
+        };
+      };
+      topicTags?: string[];
+      domainTags?: string[];
+      keywordTags?: string[];
+      contentDate?: string;
+    }>();
+    const selectedFingerprints = new Set(existingFingerprints);
+
+    for (const runtimeEntry of normalizedRuntimeEntries) {
+      if (selectedEntries.length >= addCount) {
+        break;
+      }
+      const fingerprint = this.normalizeKnowledgeFingerprint(runtimeEntry);
+      if (!fingerprint || selectedFingerprints.has(fingerprint)) {
+        continue;
+      }
+      selectedFingerprints.add(fingerprint);
+      selectedEntries.push(runtimeEntry);
+    }
+
+    const acceptedAgentEntriesCount = selectedEntries.length;
+    const fallbackTarget = acceptedAgentEntriesCount > 0 ? 0 : addCount;
+    let fallbackIndex = 0;
+    while (selectedEntries.length < acceptedAgentEntriesCount + fallbackTarget) {
+      const generated = this.buildEnrichmentContent(section, fallbackIndex);
+      fallbackIndex += 1;
+      const fallbackEntry = {
         title: generated.title,
         content: generated.content,
         summary: generated.summary,
-        outlineSectionId: section.id,
-        entryType: section.metadata?.isStructuredData ? 'data_point' : 'analysis',
-        sourceType: DiscussionKnowledgeSourceType.DISCUSSION_DERIVED,
-        sourceName: 'outline-enricher',
+        entryType: section.metadata?.isStructuredData
+          ? DiscussionKnowledgeEntryType.DATA_POINT
+          : DiscussionKnowledgeEntryType.ANALYSIS,
+        sourceUrl: undefined,
+        sourceName: 'outline-enricher-fallback',
+        credibility: DiscussionKnowledgeCredibility.UNVERIFIED,
+        structuredData: undefined,
         topicTags: [section.title],
+        domainTags: undefined,
+        keywordTags: undefined,
+        contentDate: undefined,
+      };
+      const fingerprint = this.normalizeKnowledgeFingerprint(fallbackEntry);
+      if (!fingerprint || selectedFingerprints.has(fingerprint)) {
+        if (fallbackIndex > 20) {
+          break;
+        }
+        continue;
+      }
+      selectedFingerprints.add(fingerprint);
+      selectedEntries.push(fallbackEntry);
+    }
+
+    const createdFallbackEntries = selectedEntries.length - acceptedAgentEntriesCount;
+    const enrichmentMeta: NonNullable<EnrichDiscussionOutlineSectionResult['enrichmentMeta']> = {
+      mode: createdFallbackEntries > 0 ? 'fallback' : 'agent',
+      agentId: resolvedAgentId,
+      acceptedAgentEntries: acceptedAgentEntriesCount,
+      createdFallbackEntries,
+      fallbackReason:
+        createdFallbackEntries > 0
+          ? this.inferFallbackReason({
+              hasAgent: Boolean(resolvedAgentId),
+              runtimeFailed,
+              runtimeResponseText,
+              parsedRawEntriesCount,
+              normalizedRuntimeEntriesCount: normalizedRuntimeEntries.length,
+              acceptedAgentEntriesCount,
+            })
+          : undefined,
+    };
+
+    if (enrichmentMeta.mode === 'fallback') {
+      const responsePreview = String(runtimeResponseText || '').replace(/\s+/g, ' ').slice(0, 200);
+      this.logger.warn(
+        `[outline_enrich_fallback] spaceId=${spaceId} sectionId=${sectionId} reason=${enrichmentMeta.fallbackReason || 'unknown'} hasAgent=${Boolean(resolvedAgentId)} agentId=${resolvedAgentId || 'none'} runtimeResponseLength=${runtimeResponseText.length} parsedRawEntries=${parsedRawEntriesCount} normalizedEntries=${normalizedRuntimeEntries.length} acceptedAgentEntries=${acceptedAgentEntriesCount} rerunForClarification=${rerunForClarification} responsePreview="${responsePreview}"`,
+      );
+    }
+
+    for (const entry of selectedEntries) {
+      await this.discussionKnowledgeService.createKnowledgeEntry(spaceId, {
+        participantId: 'system',
+        title: entry.title,
+        content: entry.content,
+        summary: entry.summary,
+        outlineSectionId: section.id,
+        entryType: entry.entryType,
+        structuredData: entry.structuredData,
+        metadata: {
+          isStructuredData: entry.entryType === DiscussionKnowledgeEntryType.DATA_POINT || Boolean(section.metadata?.isStructuredData),
+        },
+        sourceUrl: entry.sourceUrl,
+        sourceType: entry.sourceUrl ? DiscussionKnowledgeSourceType.WEB_SEARCH : DiscussionKnowledgeSourceType.DISCUSSION_DERIVED,
+        sourceName: entry.sourceName || 'outline-enricher-runtime',
+        domainTags: entry.domainTags,
+        topicTags: entry.topicTags || [section.title],
+        keywordTags: entry.keywordTags,
+        credibility: entry.credibility,
+        contentDate: entry.contentDate,
       });
     }
 
     return {
       sectionId,
-      enrichedCount: addCount,
+      enrichedCount: selectedEntries.length,
       outline: await this.getOutline(spaceId),
+      enrichmentMeta,
     };
   }
 
@@ -728,6 +1542,7 @@ export class DiscussionOutlineService {
           result: {
             outline: result.outline,
             enrichedCount: result.enrichedCount,
+            enrichmentMeta: result.enrichmentMeta,
           },
         });
 
@@ -790,7 +1605,23 @@ export class DiscussionOutlineService {
         },
       });
 
+      const heartbeat = setInterval(() => {
+        const latest = this.outlineTaskStore.get(taskId);
+        if (!latest) {
+          return;
+        }
+        channel.next({
+          data: {
+            type: 'discussion.outline.task.snapshot',
+            data: {
+              task: latest,
+            },
+          },
+        });
+      }, 10_000);
+
       return () => {
+        clearInterval(heartbeat);
         subscription.unsubscribe();
         const target = this.outlineTaskChannels.get(taskId);
         if (!target) {
@@ -848,12 +1679,19 @@ export class DiscussionOutlineService {
 
     const sectionDetails = outline.sections.map((section) => {
       const stat = sectionStatMap.get(section.id);
-      const knowledgeCount = stat?.knowledgeCount || section.knowledgeCount || 0;
+      const knowledgeCount = stat ? Number(stat.knowledgeCount || 0) : 0;
+      const status: OutlineSectionStatus = section.status === 'review'
+        ? 'review'
+        : knowledgeCount <= 0
+          ? 'draft'
+          : knowledgeCount >= 3
+            ? 'sufficient'
+            : 'enriching';
       return {
         sectionId: section.id,
         sectionTitle: section.title,
         knowledgeCount,
-        status: section.status,
+        status,
         latestEntryDate: stat?.latestEntryDate,
       };
     });

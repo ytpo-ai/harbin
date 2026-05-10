@@ -36,6 +36,28 @@ describe('DiscussionMessageStreamService', () => {
     subscription.unsubscribe();
   });
 
+  it('pushes agent execution status events', async () => {
+    const { service, discussionThreadService } = buildService();
+    discussionThreadService.getThreadById.mockResolvedValue({ id: 'thread-1' });
+
+    const observable = await service.streamThreadMessages('space-1', 'thread-1');
+    const events: any[] = [];
+    const subscription = observable.subscribe((event) => events.push(event));
+
+    service.emitAgentExecutionStatus('space-1', 'thread-1', {
+      participantId: 'participant-1',
+      agentId: 'agent-1',
+      status: 'running',
+    });
+
+    const statusEvent = events.find((event) => event?.data?.type === 'discussion.agent.execution.status');
+    expect(statusEvent).toBeTruthy();
+    expect(statusEvent.data.data.participantId).toBe('participant-1');
+    expect(statusEvent.data.data.status).toBe('running');
+
+    subscription.unsubscribe();
+  });
+
   it('throws when target thread does not exist', async () => {
     const { service, discussionThreadService } = buildService();
     discussionThreadService.getThreadById.mockResolvedValue(undefined);

@@ -140,4 +140,78 @@ describe('ContextStrategyService', () => {
 
     expect(activated).toBe(false);
   });
+
+  it('activates discussion category skill in discussion mode', () => {
+    const activated = service.shouldActivateSkillContent(
+      {
+        id: 'skill-5',
+        name: 'discussion-knowledge-radar',
+        description: 'discussion support',
+        category: 'discussion',
+        tags: ['knowledge', 'radar'],
+        proficiencyLevel: 'advanced',
+      },
+      {
+        id: 'task-5',
+        title: 'Discuss roadmap scope',
+        description: 'collect viewpoints',
+        type: 'discussion',
+        priority: 'medium',
+      } as any,
+      {
+        task: {
+          id: 'task-5',
+          title: 'Discuss roadmap scope',
+          description: 'collect viewpoints',
+          type: 'discussion',
+          priority: 'medium',
+        } as any,
+        previousMessages: [],
+        workingMemory: new Map(),
+        collaborationContext: {
+          scenarioMode: 'discussion',
+          collaborationMode: 'discussion',
+        },
+      } as any,
+    );
+
+    expect(activated).toBe(true);
+  });
+
+  it('does not force activate unrelated skill in discussion mode', () => {
+    const activated = service.shouldActivateSkillContent(
+      {
+        id: 'skill-6',
+        name: 'ops-k8s-release-guard',
+        description: 'release checks',
+        category: 'plan',
+        tags: ['k8s', 'release'],
+        proficiencyLevel: 'advanced',
+      },
+      {
+        id: 'task-6',
+        title: '讨论市场输入',
+        description: '聚焦观点收敛',
+        type: 'discussion',
+        priority: 'medium',
+      } as any,
+      {
+        task: {
+          id: 'task-6',
+          title: '讨论市场输入',
+          description: '聚焦观点收敛',
+          type: 'discussion',
+          priority: 'medium',
+        } as any,
+        previousMessages: [],
+        workingMemory: new Map(),
+        collaborationContext: {
+          scenarioMode: 'discussion',
+          collaborationMode: 'discussion',
+        },
+      } as any,
+    );
+
+    expect(activated).toBe(false);
+  });
 });

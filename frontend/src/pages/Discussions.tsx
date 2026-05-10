@@ -61,7 +61,6 @@ const Discussions: React.FC = () => {
     () =>
       discussionService.listSpaces({
         status: statusFilter === 'all' ? undefined : statusFilter,
-        includeArchived: statusFilter === 'all',
       }),
     {
       staleTime: 20_000,

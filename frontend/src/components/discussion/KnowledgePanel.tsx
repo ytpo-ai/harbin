@@ -44,7 +44,30 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
   creatingRequirementForKnowledgeId,
   onToRequirement,
 }) => {
+  const [selectedEntry, setSelectedEntry] = React.useState<DiscussionKnowledgeEntry | null>(null);
   const sectionLabelMap = new Map((outlineSections || []).map((section) => [section.id, section.title]));
+
+  const renderStructuredData = (entry: DiscussionKnowledgeEntry) => {
+    if (!entry.structuredData) {
+      return null;
+    }
+
+    const { value, unit, measureDate, compareTo } = entry.structuredData;
+
+    return (
+      <div className="mt-2 space-y-1 text-[11px] text-[#525252]">
+        {value !== undefined ? <div>数值：{`${value}${unit ? ` ${unit}` : ''}`}</div> : null}
+        {measureDate ? <div>时间：{measureDate}</div> : null}
+        {compareTo ? (
+          <div>
+            对比：{`${compareTo.value} (${compareTo.period}${
+              compareTo.changePercent !== undefined ? `，变化 ${compareTo.changePercent}%` : ''
+            })`}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -80,7 +103,12 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
         {!loading && items.length === 0 ? <div className="text-sm text-[#6f6f6f]">暂无知识条目</div> : null}
         <div className="max-h-[420px] space-y-3 overflow-auto pr-1">
           {items.map((item) => (
-            <div key={item.id} className="border border-[#e0e0e0] bg-[#f4f4f4] p-3">
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelectedEntry(item)}
+              className="w-full border border-[#e0e0e0] bg-[#f4f4f4] p-3 text-left transition-colors hover:bg-[#edf5ff]"
+            >
               <div className="text-sm font-medium text-[#161616]">{item.title}</div>
               <div className="mt-1 text-xs text-[#6f6f6f]">
                 {credibilityLabelMap[item.credibility]} · {entryTypeLabelMap[item.entryType || 'fact'] || '事实'} · {item.sourceType}
@@ -95,7 +123,10 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                 <div className="mt-2">
                   <button
                     type="button"
-                    onClick={() => onToRequirement?.(item)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onToRequirement?.(item);
+                    }}
                     disabled={!onToRequirement || creatingRequirementForKnowledgeId === item.id}
                     className="text-xs text-[#0f62fe] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                   >
@@ -116,10 +147,91 @@ const KnowledgePanel: React.FC<KnowledgePanelProps> = ({
                   ))}
                 </div>
               ) : null}
-            </div>
+            </button>
           ))}
         </div>
       </div>
+
+      {selectedEntry ? (
+        <div className="fixed inset-0 z-40 flex">
+          <button
+            type="button"
+            aria-label="关闭知识条目详情"
+            onClick={() => setSelectedEntry(null)}
+            className="flex-1 bg-black/30"
+          />
+          <div className="h-full w-full max-w-xl overflow-y-auto border-l border-[#c6c6c6] bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs tracking-wide text-[#6f6f6f]">知识条目详情</div>
+                <h3 className="mt-1 text-base font-semibold text-[#161616]">{selectedEntry.title}</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEntry(null)}
+                className="border border-[#c6c6c6] px-2 py-1 text-xs text-[#262626] hover:bg-[#f4f4f4]"
+              >
+                关闭
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3 text-xs text-[#525252]">
+              <div>可信度：{credibilityLabelMap[selectedEntry.credibility]}</div>
+              <div>类型：{entryTypeLabelMap[selectedEntry.entryType || 'fact'] || '事实'}</div>
+              <div>来源：{selectedEntry.sourceType}{selectedEntry.sourceName ? ` · ${selectedEntry.sourceName}` : ''}</div>
+              {selectedEntry.outlineSectionId ? (
+                <div>章节：{sectionLabelMap.get(selectedEntry.outlineSectionId) || selectedEntry.outlineSectionId}</div>
+              ) : null}
+              {selectedEntry.sourceUrl ? (
+                <a
+                  href={selectedEntry.sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block text-[#0f62fe] hover:underline"
+                >
+                  查看来源链接
+                </a>
+              ) : null}
+            </div>
+
+            {selectedEntry.summary ? (
+              <div className="mt-5">
+                <div className="mb-1 text-xs tracking-wide text-[#6f6f6f]">摘要</div>
+                <div className="whitespace-pre-wrap border border-[#e0e0e0] bg-[#f4f4f4] p-3 text-sm leading-6 text-[#262626]">
+                  {selectedEntry.summary}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="mt-4">
+              <div className="mb-1 text-xs tracking-wide text-[#6f6f6f]">内容</div>
+              <div className="whitespace-pre-wrap border border-[#e0e0e0] bg-[#f4f4f4] p-3 text-sm leading-6 text-[#262626]">
+                {selectedEntry.content || '暂无内容'}
+              </div>
+            </div>
+
+            {renderStructuredData(selectedEntry) ? (
+              <div className="mt-4 border border-[#e0e0e0] bg-[#f4f4f4] p-3">
+                <div className="mb-1 text-xs tracking-wide text-[#6f6f6f]">结构化数据</div>
+                {renderStructuredData(selectedEntry)}
+              </div>
+            ) : null}
+
+            {selectedEntry.keywordTags.length > 0 ? (
+              <div className="mt-4">
+                <div className="mb-2 text-xs tracking-wide text-[#6f6f6f]">关键词</div>
+                <div className="flex flex-wrap gap-1">
+                  {selectedEntry.keywordTags.map((tag) => (
+                    <span key={tag} className="bg-[#f4f4f4] px-2 py-1 text-[11px] text-[#525252]">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

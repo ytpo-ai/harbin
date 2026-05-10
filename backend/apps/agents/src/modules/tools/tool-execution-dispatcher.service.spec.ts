@@ -17,6 +17,7 @@ describe('ToolExecutionDispatcherService', () => {
     const communicationToolHandler = { sendSlackMessage: jest.fn() };
     const rdIntelligenceToolHandler = { runEngineeringStatistics: jest.fn() };
     const dataCollectionToolHandler = { getSourceConfig: jest.fn(), writeRecord: jest.fn() };
+    const discussionOutlineToolHandler = { manage: jest.fn() };
     const toolRegistryService = { getToolInputContract: jest.fn() };
 
     const service = new ToolExecutionDispatcherService(
@@ -35,6 +36,7 @@ describe('ToolExecutionDispatcherService', () => {
       communicationToolHandler as any,
       rdIntelligenceToolHandler as any,
       dataCollectionToolHandler as any,
+      discussionOutlineToolHandler as any,
       toolRegistryService as any,
     );
 
@@ -43,6 +45,7 @@ describe('ToolExecutionDispatcherService', () => {
       agentMasterToolHandler,
       requirementToolHandler,
       orchestrationToolHandler,
+      discussionOutlineToolHandler,
       toolRegistryService,
     };
   };
@@ -169,5 +172,25 @@ describe('ToolExecutionDispatcherService', () => {
         { assignedToolIds: ['builtin.engineering.mcp.requirement.list'] } as any,
       ),
     ).rejects.toThrow('tool schema access denied');
+  });
+
+  it('dispatches discussion outline manage tool', async () => {
+    const { service, discussionOutlineToolHandler } = createService();
+    discussionOutlineToolHandler.manage.mockResolvedValue({ ok: true, action: 'get_outline' });
+
+    const executionContext = { collaborationContext: { spaceId: 'space-1' } };
+    const result = await service.executeToolImplementation(
+      { id: 'builtin.engineering.mcp.discussion-outline.manage' } as any,
+      { action: 'get_outline' },
+      'agent-1',
+      executionContext as any,
+    );
+
+    expect(discussionOutlineToolHandler.manage).toHaveBeenCalledWith(
+      { action: 'get_outline' },
+      'agent-1',
+      executionContext,
+    );
+    expect(result).toEqual({ ok: true, action: 'get_outline' });
   });
 });

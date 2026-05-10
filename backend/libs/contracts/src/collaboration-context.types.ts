@@ -1,6 +1,6 @@
 export type ResponseDirective = 'json-only' | 'json-preferred' | 'text';
 
-export type ScenarioMode = 'meeting' | 'orchestration' | 'inner-message' | 'chat';
+export type ScenarioMode = 'meeting' | 'orchestration' | 'discussion' | 'inner-message' | 'chat';
 
 export interface CollaborationContextBase {
   scenarioMode: ScenarioMode;
@@ -89,6 +89,17 @@ export interface InnerMessageCollaborationContext extends CollaborationContextBa
   runtimeTaskType?: 'internal_message' | 'scheduled_task';
 }
 
+export interface DiscussionCollaborationContext extends CollaborationContextBase {
+  scenarioMode: 'discussion';
+  responseDirective: 'text' | 'json-preferred';
+  discussionSpaceId: string;
+  discussionThreadId?: string;
+  discussionMessageId?: string;
+  collaborationMode?: 'discussion';
+  initiatorId?: string;
+  participantId?: string;
+}
+
 export interface ChatCollaborationContext extends CollaborationContextBase {
   scenarioMode: 'chat';
   responseDirective: 'text';
@@ -102,6 +113,7 @@ export interface ChatCollaborationContext extends CollaborationContextBase {
 export type CollaborationContext =
   | MeetingCollaborationContext
   | OrchestrationCollaborationContext
+  | DiscussionCollaborationContext
   | InnerMessageCollaborationContext
   | ChatCollaborationContext;
 
@@ -115,6 +127,10 @@ export function isOrchestrationContext(ctx: CollaborationContext): ctx is Orches
 
 export function isInnerMessageContext(ctx: CollaborationContext): ctx is InnerMessageCollaborationContext {
   return ctx.scenarioMode === 'inner-message';
+}
+
+export function isDiscussionContext(ctx: CollaborationContext): ctx is DiscussionCollaborationContext {
+  return ctx.scenarioMode === 'discussion';
 }
 
 export function isChatContext(ctx: CollaborationContext): ctx is ChatCollaborationContext {

@@ -45,6 +45,7 @@
     - content 加载失败时仅告警，不阻断任务执行（fail-open）。
    - 当前内置场景映射：
      - 会议执行与异常：`meeting-sensitive-planner`、`meeting-resilience`
+     - 讨论场景优先激活：`category=discussion` 或标签/名称命中 discussion 信号
      - 模型管理 grounding：`model-management-grounding`
      - 通用运行时基线：`agent-runtime-baseline`
      - Before-Step 强制动作模板：`forced-action-template`
@@ -68,6 +69,7 @@
 | `AGENT_SKILL_DB_REDIS_PROGRESSIVE_LOADING_PLAN.md` | Skill 正文 DB 内嵌与 Redis 渐进式加载实施计划 |
 | `AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN.md` | 项目功能认知 Skill（feature 文档优先）落地计划 |
 | `SKILL_BINDING_CHECKBOX_SELECT_ALL_PLAN.md` | Skill 详情页 Agent 绑定勾选化与全选交互优化计划 |
+| `AGENT_SKILL_DISCUSSION_MODE_ACTIVATION_PLAN.MD` | Skill 分类新增 discussion + 讨论模式激活策略 |
 
 ### 开发总结 (docs/development/)
 
@@ -131,3 +133,4 @@
 | Plan | Requirement | Development | Fix |
 |------|------------|-------------|-----|
 | [AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN](../plan/AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN.md) | [AGENT_SKILL_REQ-001 项目功能认知 Skill](../requirement/AGENT_SKILL_REQ-001_PROJECT_FEATURE_GROUNDING.md) | [待创建](../development/AGENT_SKILL_REQ-001_DEVELOPMENT.md) | — |
+| [AGENT_SKILL_DISCUSSION_MODE_ACTIVATION_PLAN](../plan/AGENT_SKILL_DISCUSSION_MODE_ACTIVATION_PLAN.MD) | [AGENT_SKILL_REQ-002 discussion 分类与激活](../requirement/AGENT_SKILL_REQ-002_DISCUSSION_CATEGORY_AND_ACTIVATION.md) | [待创建](../development/AGENT_SKILL_REQ-002_DEVELOPMENT.md) | — |

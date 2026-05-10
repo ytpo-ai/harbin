@@ -4,6 +4,8 @@ import { Observable, Subject } from 'rxjs';
 import { DiscussionMessage } from '../../../shared/schemas/discussion-message.schema';
 import { DiscussionThreadService } from './discussion-thread.service';
 
+export type DiscussionAgentExecutionStatus = 'running' | 'completed' | 'failed';
+
 @Injectable()
 export class DiscussionMessageStreamService {
   private readonly streamChannels = new Map<string, Set<Subject<MessageEvent>>>();
@@ -71,6 +73,41 @@ export class DiscussionMessageStreamService {
           spaceId,
           threadId,
           message,
+        },
+      },
+    };
+
+    for (const channel of channels) {
+      channel.next(event);
+    }
+  }
+
+  emitAgentExecutionStatus(
+    spaceId: string,
+    threadId: string,
+    payload: {
+      participantId: string;
+      agentId?: string;
+      status: DiscussionAgentExecutionStatus;
+      reason?: string;
+    },
+  ): void {
+    const streamKey = this.buildStreamKey(spaceId, threadId);
+    const channels = this.streamChannels.get(streamKey);
+    if (!channels?.size) {
+      return;
+    }
+
+    const event: MessageEvent = {
+      data: {
+        type: 'discussion.agent.execution.status',
+        data: {
+          spaceId,
+          threadId,
+          participantId: payload.participantId,
+          agentId: payload.agentId,
+          status: payload.status,
+          reason: payload.reason,
         },
       },
     };

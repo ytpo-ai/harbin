@@ -14,7 +14,9 @@ import { Observable } from 'rxjs';
 import {
   AddDiscussionParticipantDto,
   BranchDiscussionThreadDto,
+  ClearDiscussionOutlineSectionEnrichmentResult,
   CreateDiscussionOutlineSectionDto,
+  DeleteDiscussionOutlineSectionResult,
   DiscussionOutlineTaskSnapshot,
   EnrichAllDiscussionOutlineSectionsResult,
   EnrichDiscussionOutlineSectionResult,
@@ -22,6 +24,7 @@ import {
   CreateDiscussionRequirementResult,
   CreateDiscussionSpaceDto,
   CreateDiscussionKnowledgeEntryDto,
+  DeleteDiscussionKnowledgeEntryResult,
   CreateDiscussionThreadDto,
   DeleteDiscussionThreadResult,
   DeleteDiscussionSedimentHistoryDto,
@@ -365,6 +368,14 @@ export class DiscussionController {
     return this.discussionOutlineService.getKnowledgeCoverage(spaceId);
   }
 
+  @Delete(':spaceId/knowledge/:knowledgeEntryId')
+  async deleteKnowledgeEntry(
+    @Param('spaceId') spaceId: string,
+    @Param('knowledgeEntryId') knowledgeEntryId: string,
+  ): Promise<DeleteDiscussionKnowledgeEntryResult> {
+    return this.discussionKnowledgeService.deleteKnowledgeEntry(spaceId, knowledgeEntryId);
+  }
+
   @Post(':spaceId/outline/generate')
   async generateOutline(@Param('spaceId') spaceId: string, @Body('industryContext') industryContext?: string) {
     return this.discussionOutlineService.generateOutline(spaceId, { industryContext });
@@ -403,8 +414,28 @@ export class DiscussionController {
   }
 
   @Delete(':spaceId/outline/sections/:sectionId')
-  async deleteOutlineSection(@Param('spaceId') spaceId: string, @Param('sectionId') sectionId: string) {
+  async deleteOutlineSection(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+  ): Promise<DeleteDiscussionOutlineSectionResult> {
     return this.discussionOutlineService.deleteSection(spaceId, sectionId);
+  }
+
+  @Delete(':spaceId/outline/sections/:sectionId/enrichments')
+  async clearOutlineSectionEnrichments(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+  ): Promise<ClearDiscussionOutlineSectionEnrichmentResult> {
+    return this.discussionOutlineService.clearSectionEnrichment(spaceId, sectionId);
+  }
+
+  @Post(':spaceId/outline/sections/:sectionId/thread')
+  async getOrCreateSectionThread(
+    @Param('spaceId') spaceId: string,
+    @Param('sectionId') sectionId: string,
+    @Body('sectionTitle') sectionTitle?: string,
+  ) {
+    return this.discussionThreadService.getOrCreateSectionThread(spaceId, sectionId, sectionTitle);
   }
 
   @Post(':spaceId/outline/sections/:sectionId/enrich')

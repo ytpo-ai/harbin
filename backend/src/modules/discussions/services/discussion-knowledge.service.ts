@@ -18,6 +18,7 @@ import { DiscussionMessage, DiscussionMessageDocument } from '../../../shared/sc
 import { DiscussionSpaceService } from './discussion-space.service';
 import {
   CreateDiscussionKnowledgeEntryDto,
+  DeleteDiscussionKnowledgeEntryResult,
   ListDiscussionKnowledgeQuery,
 } from '../discussion.types';
 
@@ -111,7 +112,7 @@ export function resolveOutlineSectionStatusByKnowledgeCount(
     return 'draft';
   }
 
-  if (knowledgeCount >= 5) {
+  if (knowledgeCount >= 3) {
     return 'sufficient';
   }
 
@@ -268,9 +269,17 @@ export class DiscussionKnowledgeService {
       spaceId,
       isActive: true,
     };
+    const andFilters: Array<Record<string, any>> = [];
 
     if (query.threadId) {
-      filter.threadId = query.threadId;
+      andFilters.push({
+        $or: [
+          { threadId: query.threadId },
+          { threadId: { $exists: false } },
+          { threadId: null },
+          { threadId: '' },
+        ],
+      });
     }
     if (query.participantId) {
       filter.participantId = query.participantId;
@@ -282,11 +291,17 @@ export class DiscussionKnowledgeService {
       filter.credibility = query.credibility;
     }
     if (query.keyword) {
-      filter.$or = [
-        { title: { $regex: query.keyword, $options: 'i' } },
-        { summary: { $regex: query.keyword, $options: 'i' } },
-        { keywordTags: { $in: [query.keyword.toLowerCase()] } },
-      ];
+      andFilters.push({
+        $or: [
+          { title: { $regex: query.keyword, $options: 'i' } },
+          { summary: { $regex: query.keyword, $options: 'i' } },
+          { keywordTags: { $in: [query.keyword.toLowerCase()] } },
+        ],
+      });
+    }
+
+    if (andFilters.length > 0) {
+      filter.$and = andFilters;
     }
 
     const limit = Math.max(1, Math.min(Number(query.limit || 50), 200));
@@ -368,5 +383,51 @@ export class DiscussionKnowledgeService {
 
     await this.linkKnowledgeToMessage(input.spaceId, input.messageId, deduplicatedIds);
     return deduplicatedIds;
+  }
+
+  async deleteKnowledgeEntry(spaceId: string, knowledgeEntryId: string): Promise<DeleteDiscussionKnowledgeEntryResult> {
+    const normalizedId = String(knowledgeEntryId || '').trim();
+    if (!normalizedId) {
+      throw new BadRequestException('knowledgeEntryId 不能为空');
+    }
+
+    const target = await this.discussionKnowledgeEntryModel
+      .findOne({ id: normalizedId, spaceId, isActive: true })
+      .lean()
+      .exec();
+    if (!target) {
+      throw new NotFoundException(`知识条目不存在: ${normalizedId}`);
+    }
+
+    await Promise.all([
+      this.discussionKnowledgeEntryModel
+        .updateOne(
+          { id: normalizedId, spaceId },
+          {
+            $set: {
+              isActive: false,
+            },
+          },
+        )
+        .exec(),
+      this.discussionMessageModel
+        .updateMany(
+          { spaceId },
+          {
+            $pull: {
+              knowledgeEntryIds: normalizedId,
+            },
+          },
+        )
+        .exec(),
+      this.discussionSpaceService.incrementStatistics(spaceId, { totalKnowledgeEntries: -1 }),
+    ]);
+
+    await this.syncOutlineSectionProgress(spaceId, String((target as Record<string, unknown>).outlineSectionId || '').trim() || undefined);
+
+    return {
+      removed: true,
+      knowledgeEntryId: normalizedId,
+    };
   }
 }

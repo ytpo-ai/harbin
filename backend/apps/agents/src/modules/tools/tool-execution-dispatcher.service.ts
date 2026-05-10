@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Tool } from '../../schemas/tool.schema';
 import { ToolExecutionContext } from './tool-execution-context.type';
-import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler, DataCollectionToolHandler } from './builtin';
+import { OrchestrationToolHandler, RequirementToolHandler, RepoToolHandler, ModelToolHandler, SkillToolHandler, AuditToolHandler, MeetingToolHandler, PromptRegistryToolHandler, WebToolsService, AgentMasterToolHandler, AgentRoleToolHandler, MemoToolHandler, CommunicationToolHandler, RdIntelligenceToolHandler, DataCollectionToolHandler, DiscussionOutlineToolHandler } from './builtin';
 import {
   TOOL_ID__AGENT_CREATE,
   TOOL_ID__AGENT_LIST,
@@ -48,6 +48,7 @@ import {
   TOOL_ID__REQUIREMENT_SYNC_GITHUB,
   TOOL_ID__REQUIREMENT_UPDATE,
   TOOL_ID__REQUIREMENT_UPDATE_STATUS,
+  TOOL_ID__DISCUSSION_OUTLINE_MANAGE,
   TOOL_ID__SEND_INTERNAL_MESSAGE,
   TOOL_ID__AGENT_SKILL_CREATE,
   TOOL_ID__AGENT_SKILL_LIST,
@@ -77,6 +78,7 @@ export class ToolExecutionDispatcherService {
     private readonly communicationToolHandler: CommunicationToolHandler,
     private readonly rdIntelligenceToolHandler: RdIntelligenceToolHandler,
     private readonly dataCollectionToolHandler: DataCollectionToolHandler,
+    private readonly discussionOutlineToolHandler: DiscussionOutlineToolHandler,
     private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
@@ -168,6 +170,8 @@ export class ToolExecutionDispatcherService {
         return this.meetingToolHandler.updateMeetingStatus(parameters);
       case TOOL_ID__MEETING_SAVE_SUMMARY:
         return this.meetingToolHandler.saveMeetingSummary(parameters, agentId);
+      case TOOL_ID__DISCUSSION_OUTLINE_MANAGE:
+        return this.discussionOutlineToolHandler.manage(parameters, agentId, executionContext);
       default:
         throw new Error(`Tool implementation not found: ${tool.id}`);
     }

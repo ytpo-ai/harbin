@@ -12,23 +12,29 @@ type MessageDataReference = {
 type MessageInputProps = {
   value: string;
   sending: boolean;
+  injectingOutline?: boolean;
+  disableInjectOutline?: boolean;
   disabled?: boolean;
   disabledReason?: string;
   projectId?: string;
   participants: DiscussionParticipant[];
   onChange: (value: string) => void;
   onSend: (dataReferences: MessageDataReference[]) => void;
+  onInjectOutline?: () => void;
 };
 
 const MessageInput: React.FC<MessageInputProps> = ({
   value,
   sending,
+  injectingOutline = false,
+  disableInjectOutline = false,
   disabled = false,
   disabledReason,
   projectId,
   participants,
   onChange,
   onSend,
+  onInjectOutline,
 }) => {
   const [openDataPicker, setOpenDataPicker] = useState(false);
   const [dataKeyword, setDataKeyword] = useState('');
@@ -199,12 +205,21 @@ const MessageInput: React.FC<MessageInputProps> = ({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
+          onClick={() => onInjectOutline?.()}
+          disabled={disabled || sending || injectingOutline || disableInjectOutline || !onInjectOutline}
+          className="border border-[#78a9ff] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {injectingOutline ? '注入中...' : '注入大纲为消息'}
+        </button>
+        <button
+          type="button"
           onClick={appendDataToken}
           disabled={disabled || !projectId}
           className="border border-[#78a9ff] px-2 py-1 text-xs text-[#0f62fe] hover:bg-[#edf5ff] disabled:cursor-not-allowed disabled:opacity-50"
         >
           #data: 引用采集数据
         </button>
+        {!disabled && disableInjectOutline ? <span className="text-xs text-[#6f6f6f]">当前暂无可注入大纲</span> : null}
         {!disabled && !projectId ? <span className="text-xs text-[#6f6f6f]">当前空间未关联项目，暂不可引用数据</span> : null}
       </div>
 

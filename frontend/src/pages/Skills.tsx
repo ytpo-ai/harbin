@@ -19,7 +19,7 @@ import { PromptTemplateRef, Skill } from '../types';
 
 const statusOptions: Array<Skill['status']> = ['active', 'experimental', 'deprecated', 'disabled'];
 const sourceOptions: Array<Skill['sourceType']> = ['manual', 'github', 'web', 'internal'];
-const skillCategoryOptions = ['meeting', 'plan', 'general'] as const;
+const skillCategoryOptions = ['meeting', 'plan', 'discussion', 'general'] as const;
 
 const statusLabelMap: Record<Skill['status'], string> = {
   active: '启用',
@@ -31,18 +31,22 @@ const statusLabelMap: Record<Skill['status'], string> = {
 const categoryLabelMap: Record<string, string> = {
   meeting: '会议',
   plan: '计划',
+  discussion: '讨论',
   general: '通用',
   会议: '会议',
   计划: '计划',
+  讨论: '讨论',
   通用: '通用',
 };
 
 const categoryAliasMap: Record<string, string> = {
   meeting: 'meeting',
   plan: 'plan',
+  discussion: 'discussion',
   general: 'general',
   会议: 'meeting',
   计划: 'plan',
+  讨论: 'discussion',
   通用: 'general',
 };
 

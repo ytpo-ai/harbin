@@ -43,7 +43,7 @@ describe('discussion knowledge helpers', () => {
   });
 
   it('marks section as sufficient when knowledge count reaches threshold', () => {
-    const status = resolveOutlineSectionStatusByKnowledgeCount(5, 'draft');
+    const status = resolveOutlineSectionStatusByKnowledgeCount(3, 'draft');
     expect(status).toBe('sufficient');
   });
 

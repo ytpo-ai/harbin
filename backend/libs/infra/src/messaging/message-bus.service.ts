@@ -26,16 +26,31 @@ export class MessageBusService implements MessageBus, OnModuleInit {
   private readonly registry: TopicRegistry;
   private readonly router: TopicRouterService;
   private readonly enabled: boolean;
+  private adaptersRegistered = false;
 
   constructor(private readonly redis: RedisService) {
     this.enabled = process.env.MESSAGE_BUS_ENABLED !== 'false';
     this.registry = new TopicRegistry(DEFAULT_TOPICS);
     this.router = new TopicRouterService(this.registry);
+
+    // 兼容 provider 初始化顺序：确保在首个 publish/subscribe 前已可路由。
+    this.ensureAdaptersRegistered();
   }
 
   onModuleInit(): void {
     if (!this.enabled) {
       this.logger.log('MessageBus disabled (MESSAGE_BUS_ENABLED=false)');
+      return;
+    }
+
+    this.ensureAdaptersRegistered();
+
+    const topicCount = this.registry.list().length;
+    this.logger.log(`MessageBus initialized — ${topicCount} topics registered, 2 adapters (redis-pubsub, redis-stream)`);
+  }
+
+  private ensureAdaptersRegistered(): void {
+    if (!this.enabled || this.adaptersRegistered) {
       return;
     }
 
@@ -45,9 +60,7 @@ export class MessageBusService implements MessageBus, OnModuleInit {
 
     this.router.registerAdapter(pubsubAdapter);
     this.router.registerAdapter(streamAdapter);
-
-    const topicCount = this.registry.list().length;
-    this.logger.log(`MessageBus initialized — ${topicCount} topics registered, 2 adapters (redis-pubsub, redis-stream)`);
+    this.adaptersRegistered = true;
   }
 
   // ── MessageBus 接口实现 ─────────────────────────────────────────────────
@@ -56,6 +69,8 @@ export class MessageBusService implements MessageBus, OnModuleInit {
     if (!this.enabled) {
       return { messageId: 'disabled', accepted: false };
     }
+
+    this.ensureAdaptersRegistered();
 
     const { adapter, config } = this.router.resolve(topic);
     const envelope = buildMessageEnvelope(topic, message.payload, {
@@ -74,6 +89,8 @@ export class MessageBusService implements MessageBus, OnModuleInit {
     if (!this.enabled) {
       return { unsubscribe: async () => {} };
     }
+
+    this.ensureAdaptersRegistered();
 
     const { adapter, config } = this.router.resolve(topic);
     return adapter.subscribe(config, handler as MessageHandler<unknown>, options);
