@@ -16,12 +16,37 @@ export class TaskContextBuilder implements ContextBlockBuilder {
   ) {}
 
   shouldInject(input: ContextBuildInput): boolean {
-    return input.scenarioType === 'orchestration' || input.scenarioType === 'meeting';
+    return input.scenarioType === 'orchestration' || input.scenarioType === 'meeting' || input.scenarioType === 'discussion';
   }
 
   async build(input: ContextBuildInput): Promise<ChatMessage[]> {
     const messages: ChatMessage[] = [];
     const meetingLikeTask = input.scenarioType === 'meeting';
+    const discussionLikeTask = input.scenarioType === 'discussion';
+
+    // Discussion scenario: inject full task description as system context (contains section title,
+    // outline framework, existing knowledge summary, etc.) without truncation.
+    if (discussionLikeTask) {
+      const normalizedDescription = String(input.task.description || '').trim();
+      if (normalizedDescription) {
+        const fullContent = normalizedDescription;
+        const resolvedContent = await this.contextFingerprintService.resolveSystemContextBlockContent({
+          scope: input.contextScope,
+          blockType: 'task-info',
+          fullContent,
+          snapshot: {
+            title: String(input.task.title || '').trim(),
+            descriptionHash: this.contextFingerprintService.hashFingerprint(normalizedDescription),
+            type: String(input.task.type || '').trim(),
+          },
+          skipDedup: input.skipDedup,
+        });
+        if (resolvedContent) {
+          messages.push({ role: 'system', content: resolvedContent, timestamp: new Date() });
+        }
+      }
+      return messages;
+    }
 
     if (!meetingLikeTask) {
       const normalizedDescription = String(input.task.description || '').trim();
