@@ -1,5 +1,5 @@
 import { fetch as undiciFetch } from 'undici';
-import { AIModel, ChatMessage } from '@libs/contracts';
+import { AIModel, ChatMessage, extractTextContent } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
 import { BaseAIProvider, ProviderChatResult } from './base-provider';
 
@@ -164,15 +164,16 @@ export class AnthropicProvider extends BaseAIProvider {
     const chatMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
     for (const message of messages) {
+      const textContent = extractTextContent(message.content);
       if (message.role === 'system') {
-        systemMessages.push(message.content);
+        systemMessages.push(textContent);
         continue;
       }
 
       if (message.role === 'assistant') {
-        chatMessages.push({ role: 'assistant', content: message.content });
+        chatMessages.push({ role: 'assistant', content: textContent });
       } else {
-        chatMessages.push({ role: 'user', content: message.content });
+        chatMessages.push({ role: 'user', content: textContent });
       }
     }
 

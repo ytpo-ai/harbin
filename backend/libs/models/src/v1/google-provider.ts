@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { AIModel, ChatMessage } from '@libs/contracts';
+import { AIModel, ChatMessage, extractTextContent } from '@libs/contracts';
 import { BaseAIProvider } from './base-provider';
 
 export class GoogleAIProvider extends BaseAIProvider {
@@ -55,12 +55,13 @@ export class GoogleAIProvider extends BaseAIProvider {
     let prompt = '';
 
     for (const message of messages) {
+      const text = extractTextContent(message.content);
       if (message.role === 'system') {
-        prompt += `System: ${message.content}\n\n`;
+        prompt += `System: ${text}\n\n`;
       } else if (message.role === 'user') {
-        prompt += `Human: ${message.content}\n\n`;
+        prompt += `Human: ${text}\n\n`;
       } else if (message.role === 'assistant') {
-        prompt += `Assistant: ${message.content}\n\n`;
+        prompt += `Assistant: ${text}\n\n`;
       }
     }
 

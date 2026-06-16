@@ -3,7 +3,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 import { fetch as undiciFetch } from 'undici';
-import { AIModel, ChatMessage } from '@libs/contracts';
+import { AIModel, ChatMessage, ContentPart, extractTextContent } from '@libs/contracts';
 import { getProxyDispatcher } from '@libs/infra';
 import { BaseAIProvider, LLMCallOptions, ProviderChatResult } from './v1/base-provider';
 
@@ -85,6 +85,34 @@ export class AIV2Provider extends BaseAIProvider {
       default:
         throw new Error(`AIV2Provider does not support provider: ${model.provider}`);
     }
+  }
+
+  /**
+   * Override base formatMessages to support multimodal ContentPart[].
+   * - string content: passthrough as-is (zero impact on existing paths)
+   * - ContentPart[]: convert to Vercel AI SDK CoreMessage content format
+   */
+  protected formatMessages(messages: ChatMessage[]): any[] {
+    return messages.map((msg) => {
+      // Fast path: string content (all existing callers)
+      if (typeof msg.content === 'string') {
+        return { role: msg.role, content: msg.content };
+      }
+
+      // Multimodal path: ContentPart[] → Vercel AI SDK UserContent parts
+      const parts = (msg.content as ContentPart[]).map((part) => {
+        if (part.type === 'text') {
+          return { type: 'text' as const, text: part.text };
+        }
+        if (part.type === 'image_url') {
+          return { type: 'image' as const, image: new URL(part.imageUrl.url) };
+        }
+        // Fallback: unknown part type, extract as text
+        return { type: 'text' as const, text: extractTextContent([part]) };
+      });
+
+      return { role: msg.role, content: parts };
+    });
   }
 
   private isOpenAIReasoningModel(): boolean {

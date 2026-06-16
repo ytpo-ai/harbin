@@ -10,6 +10,7 @@ import {
   LIFECYCLE_HOOK_CONTINUE,
 } from '@agent/modules/runtime/hooks/lifecycle-hook.types';
 import { ChatMessage } from '@legacy/shared/types';
+import { extractTextContent } from '@libs/contracts';
 
 // import { compactLogText, normalizeToolId } from './agent.constants';
 import { AgentBeforeStepHook, AgentExecutorBeforeStepHookResult, AgentExecutorStepContext } from '../agent-executor-step-hooks.types';
@@ -88,6 +89,6 @@ export class AgentBeforeStepOptimizationHook implements AgentBeforeStepHook, Lif
     const latestUserMessage = [...(task.messages || []), ...(messages || [])]
       .reverse()
       .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
-    return latestUserMessage || task.description || task.title || '';
+    return latestUserMessage ? extractTextContent(latestUserMessage) : (task.description || task.title || '');
   }
 }

@@ -1,4 +1,4 @@
-import { AIModel, ChatMessage } from '@libs/contracts';
+import { AIModel, ChatMessage, extractTextContent } from '@libs/contracts';
 
 export interface ProviderUsage {
   inputTokens: number;
@@ -43,7 +43,7 @@ export abstract class BaseAIProvider {
   protected formatMessages(messages: ChatMessage[]): any[] {
     return messages.map((msg) => ({
       role: msg.role,
-      content: msg.content,
+      content: typeof msg.content === 'string' ? msg.content : extractTextContent(msg.content),
     }));
   }
 

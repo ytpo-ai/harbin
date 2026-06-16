@@ -34,9 +34,25 @@ export interface AIModel {
   };
 }
 
+// --- Multimodal content part types ---
+
+export interface TextContentPart {
+  type: 'text';
+  text: string;
+}
+
+export interface ImageContentPart {
+  type: 'image_url';
+  imageUrl: { url: string; detail?: 'auto' | 'low' | 'high' };
+}
+
+export type ContentPart = TextContentPart | ImageContentPart;
+
+// --- ChatMessage ---
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
-  content: string;
+  content: string | ContentPart[];
   timestamp: Date;
   metadata?: any;
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AIModel, ChatMessage, Task } from '../../../../../src/shared/types';
+import { extractTextContent } from '@libs/contracts';
 import { RuntimeOrchestratorService, RuntimeRunContext } from '../runtime/runtime-orchestrator.service';
 
 type ExecutionMode = 'detailed' | 'streaming';
@@ -60,7 +61,7 @@ export class AgentExecutorRuntimeService {
       .filter((msg) => msg.role === 'system')
       .map((msg) => ({
         role: 'system' as const,
-        content: msg.content,
+        content: extractTextContent(msg.content),
         metadata: { source: 'buildMessages', agentId },
       }));
     if (systemMessages.length > 0) {
@@ -178,11 +179,11 @@ export class AgentExecutorRuntimeService {
   private resolveLatestUserContent(task: Task, messages: ChatMessage[]): string {
     const latestTaskMessage = [...(task.messages || [])].reverse().find((msg) => msg.role === 'user')?.content;
     if (latestTaskMessage) {
-      return latestTaskMessage;
+      return extractTextContent(latestTaskMessage);
     }
     const latestCompiledMessage = [...messages].reverse().find((msg) => msg.role === 'user')?.content;
     if (latestCompiledMessage) {
-      return latestCompiledMessage;
+      return extractTextContent(latestCompiledMessage);
     }
     return task.description || task.title || '';
   }

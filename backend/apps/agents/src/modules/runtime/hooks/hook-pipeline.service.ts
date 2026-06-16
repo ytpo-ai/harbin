@@ -186,7 +186,7 @@ export class HookPipelineService {
    * 应用消息过滤规则到消息数组。
    * 调用方在拿到 PipelineResult 后，可使用此方法对 messages 执行 filter/replace。
    */
-  static applyMessageFilters<T extends { role?: string; content?: string }>(
+  static applyMessageFilters<T extends { role?: string; content?: unknown }>(
     messages: T[],
     filters: MessageFilter[],
   ): T[] {
@@ -212,7 +212,7 @@ export class HookPipelineService {
 }
 
 function matchesFilter(
-  msg: { role?: string; content?: string },
+  msg: { role?: string; content?: unknown },
   filter: MessageFilter,
 ): boolean {
   if (filter.matchRole && msg.role !== filter.matchRole) return false;

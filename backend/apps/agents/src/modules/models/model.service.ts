@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AIV2Provider, AnthropicProvider, BaseAIProvider, GoogleAIProvider, MoonshotProvider, OpenAIProvider, ProviderChatResult } from '@libs/models';
+import { AIV2Provider, AnthropicProvider, BaseAIProvider, GoogleAIProvider, OpenAIProvider, ProviderChatResult } from '@libs/models';
 import { AIModel, ChatMessage } from '../../../../../src/shared/types';
 import { ModelPricingService } from './model-pricing.service';
 
@@ -97,11 +97,6 @@ export class ModelService {
       case 'google':
         provider = new GoogleAIProvider(model, apiKey);
         break;
-      case 'moonshotai':
-      case 'moonshot':
-      case 'kimi':
-        provider = new MoonshotProvider(model, apiKey);
-        break;
       default:
         provider = this.createGenericProvider(model);
         break;
@@ -116,6 +111,10 @@ export class ModelService {
     const modelName = String(model.model || '').toLowerCase().trim();
 
     if (provider === 'alibaba' || provider === 'qwen') {
+      return true;
+    }
+
+    if (provider === 'moonshotai' || provider === 'moonshot' || provider === 'kimi') {
       return true;
     }
 
@@ -166,9 +165,7 @@ export class ModelService {
   private createGenericProvider(model: AIModel): BaseAIProvider {
     return new (class extends BaseAIProvider {
       async chat(messages: ChatMessage[], options?: any): Promise<string> {
-        const envKey = ['moonshot', 'moonshotai', 'kimi'].includes(model.provider.toLowerCase())
-          ? 'MOONSHOT_API_KEY (or KIMI_API_KEY)'
-          : `${model.provider.toUpperCase()}_API_KEY`;
+        const envKey = `${model.provider.toUpperCase()}_API_KEY`;
         return `[${model.provider} - ${model.name}] API调用暂未实现。请确保已配置 ${envKey} 环境变量`;
       }
       async streamingChat(messages: ChatMessage[], onToken: (token: string) => void, options?: any): Promise<void> {

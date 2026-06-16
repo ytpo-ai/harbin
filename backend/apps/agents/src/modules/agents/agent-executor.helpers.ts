@@ -1,5 +1,5 @@
 import { AIModel, ChatMessage, Task } from '@legacy/shared/types';
-import { CollaborationContext } from '@libs/contracts';
+import { CollaborationContext, extractTextContent } from '@libs/contracts';
 
 import { compactLogText, toLogError } from './agent.constants';
 
@@ -15,7 +15,7 @@ export function resolveLatestUserContent(task: Task, messages: ChatMessage[]): s
     .reverse()
     .find((item) => item?.role === 'user' && typeof item.content === 'string' && item.content.trim().length > 0)?.content;
 
-  return latestUserMessage || task.description || task.title || '';
+  return latestUserMessage ? extractTextContent(latestUserMessage) : (task.description || task.title || '');
 }
 
 export function isMeetingLikeTask(
