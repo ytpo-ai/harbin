@@ -215,6 +215,7 @@ life_script 后端
 | MULTIMODAL_REQ-001 | 删除 V1 MoonshotProvider + ChatMessage 多模态类型扩展 + AIV2Provider 适配 | **done** | 步骤 1-3 |
 | MULTIMODAL_REQ-002 | 防御性修复现有代码 string 假设点 | **done** | 步骤 4 |
 | MULTIMODAL_REQ-003 | 注册八字分析 Agent + life_script 通过 AgentClientService 调用 + API + 管理台 UI | **done** | 步骤 5-6 |
+| MULTIMODAL_REQ-004 | 动态 Agent 选择：移除 BAZI_ANALYSIS_AGENT_ID 硬编码，通过接口获取 Agent 列表 | **done** | 步骤 7-11 |
 
 ## §6 关键影响点
 
@@ -283,3 +284,72 @@ task.messages (含 ContentPart[])
 ```
 
 中间层不触碰 `content` 内容，只有 `AIV2Provider.formatMessages()` 做最终格式转换。
+
+## §10 优化：动态 Agent 选择（REQ-004）
+
+### 背景
+
+原实现中，八字分析的 Agent ID 通过环境变量 `BAZI_ANALYSIS_AGENT_ID` 硬编码在 life_script 后端。这要求每次注册新 Agent 后手动更新 `.env`，无法在管理台中动态选择不同 Agent 进行分析。
+
+harbin Agent schema 已有 `projectId` 字段关联孵化项目，Agent API 已有 `GET /agents/active?projectId=xxx` 按项目筛选的能力。life_script 在孵化项目系统中已有对应记录。
+
+### 目标
+
+- life_script 管理台通过接口动态获取该项目下的 Agent 列表
+- 管理员在截图分析前选择要使用的 Agent
+- 移除对 `BAZI_ANALYSIS_AGENT_ID` 环境变量的强依赖（降级为可选 fallback）
+
+### 步骤 7：life_script 后端新增 Agent 列表代理接口
+
+**影响文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `workspace/life_script/backend/src/modules/submission/bazi-analysis.service.ts` | 新增 `getAvailableAgents()` 方法，代理调用 `GET /agents/active?projectId=<LIFE_SCRIPT_PROJECT_ID>` |
+| `workspace/life_script/backend/src/modules/submission/admin-submission.controller.ts` | 新增 `GET /admin/agents` 端点 |
+
+新增环境变量 `LIFE_SCRIPT_PROJECT_ID`，标识 life_script 在孵化项目系统中的项目 ID。
+
+### 步骤 8：BaziAnalysisService 接受动态 agentId 参数
+
+**影响文件**：`workspace/life_script/backend/src/modules/submission/bazi-analysis.service.ts`
+
+修改 `analyzeScreenshot(submissionId, agentId?)` 方法签名：
+- 传入 `agentId` → 使用传入值
+- 未传入 → fallback 到 env `BAZI_ANALYSIS_AGENT_ID`
+- 两者都没有 → 抛出 BadRequestException
+
+### 步骤 9：修改 `POST analyze-screenshot` 接口
+
+**影响文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `workspace/life_script/backend/src/modules/submission/admin-submission.controller.ts` | 接口接受 body `{ agentId?: string }` |
+| `workspace/life_script/backend/src/modules/submission/dto/` | 新增 `AnalyzeScreenshotDto` |
+
+### 步骤 10：admin 前端新增 Agent 选择下拉框
+
+**影响文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `workspace/life_script/admin/src/views/submissions/SubmissionDetail.vue` | 截图分析区域添加 `<n-select>` Agent 选择器 |
+| `workspace/life_script/admin/src/types/index.ts` | 新增 `AgentItem` 类型 |
+
+### 步骤 11：更新 .env.example 和文档
+
+**影响文件**：
+
+| 文件 | 改动 |
+|------|------|
+| `workspace/life_script/backend/.env.example` | 新增 `LIFE_SCRIPT_PROJECT_ID`，标记 `BAZI_ANALYSIS_AGENT_ID` 为可选 |
+
+### 关键影响点
+
+| 模块 | 风险 | 说明 |
+|------|------|------|
+| life_script 后端 | **低** | 新增代理接口 + 修改已有接口签名，向后兼容 |
+| admin 前端 | **低** | 增量 UI 改动，`<n-select>` 下拉框 |
+| harbin Agent 服务 | **无** | 已有 `GET /agents/active?projectId=` 接口，无需改动 |
+| 环境变量 | **低** | 新增 `LIFE_SCRIPT_PROJECT_ID`，`BAZI_ANALYSIS_AGENT_ID` 降级为可选 |
