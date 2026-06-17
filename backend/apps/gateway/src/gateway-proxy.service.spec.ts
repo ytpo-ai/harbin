@@ -6,11 +6,13 @@ describe('GatewayProxyService', () => {
   const originalDebugTimeout = process.env.GATEWAY_DEBUG_RUN_TIMEOUT_MS;
   const originalDefaultTimeout = process.env.GATEWAY_PROXY_TIMEOUT_MS;
   const originalSseTimeout = process.env.GATEWAY_SSE_PROXY_TIMEOUT_MS;
+  const originalLifeScriptBaseUrl = process.env.LIFE_SCRIPT_BASE_URL;
 
   afterEach(() => {
     process.env.GATEWAY_DEBUG_RUN_TIMEOUT_MS = originalDebugTimeout;
     process.env.GATEWAY_PROXY_TIMEOUT_MS = originalDefaultTimeout;
     process.env.GATEWAY_SSE_PROXY_TIMEOUT_MS = originalSseTimeout;
+    process.env.LIFE_SCRIPT_BASE_URL = originalLifeScriptBaseUrl;
     jest.restoreAllMocks();
   });
 
@@ -113,6 +115,46 @@ describe('GatewayProxyService', () => {
 
     expect(employeeModel.findOne).not.toHaveBeenCalled();
     expect(operationLogModel.create).not.toHaveBeenCalled();
+  });
+
+  it('routes life-script traffic to dedicated backend', () => {
+    process.env.LIFE_SCRIPT_BASE_URL = 'http://127.0.0.1:3201';
+    const service = createService();
+
+    expect(service.resolveTarget('/api/life-script/admin/submissions')).toBe('http://127.0.0.1:3201');
+  });
+
+  it('routes issue-redirect-token to life-script backend', () => {
+    process.env.LIFE_SCRIPT_BASE_URL = 'http://localhost:3101';
+    const service = createService();
+
+    expect(service.resolveTarget('/api/auth/issue-redirect-token')).toBe('http://localhost:3101');
+  });
+
+  it('rewrites /api/life-script prefix before proxy forwarding', async () => {
+    process.env.LIFE_SCRIPT_BASE_URL = 'http://localhost:3101';
+    const service = createService();
+    const requestSpy = jest.spyOn(axios, 'request').mockResolvedValue({
+      status: 200,
+      headers: {},
+      data: { ok: true },
+    } as any);
+
+    const req: any = {
+      method: 'GET',
+      originalUrl: '/api/life-script/admin/submissions',
+      url: '/api/life-script/admin/submissions',
+      headers: {},
+      query: {},
+      body: undefined,
+    };
+    const res = createRes();
+
+    await service.forward(req, res);
+
+    expect(requestSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'http://localhost:3101/api/admin/submissions' }),
+    );
   });
 
   it('throws gateway timeout for axios timeout errors', async () => {

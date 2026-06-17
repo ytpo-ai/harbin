@@ -12,6 +12,7 @@
 | **engineering-intelligence** | 工程智能 ｜ ✅ |
 | **hr** | HR 管理 | ⚠️ 精简中 |
 | **gateway** | 网关 ｜ ✅ |
+| **life-script** | LifeScript 八字分析预测（孵化项目） | 🔲 规划中 |
 
 ---
 
@@ -73,7 +74,16 @@
 |---------|------|----------|
 | `message-center/system_notifications` | 系统通知中心 | `docs/feature/MESSAGE_CENTER.md` |
 
-### 8. 系统管理模块 (system)
+### 8. LifeScript 模块 (life-script)
+| 2级功能 | 说明 | 功能文档 |
+|---------|------|----------|
+| `life-script/submission` | 八字信息提交 | `docs/feature/LIFE_SCRIPT.md` |
+| `life-script/invite-code` | 邀请码管理 | `docs/feature/LIFE_SCRIPT.md` |
+| `life-script/admin` | 独立管理台 | `docs/feature/LIFE_SCRIPT.md` |
+| `life-script/auth` | 认证集成（Token 跳转 + 独立登录） | `docs/feature/LIFE_SCRIPT.md` |
+| `life-script/report` | 报告生成（Agent 驱动） | `docs/feature/LIFE_SCRIPT.md` |
+
+### 9. 系统管理模块 (system)
 | 2级功能 | 说明 | 功能文档 |
 |---------|------|----------|
 | `system/ui_management` | UI 管理（图标管理） | `docs/feature/SYSTEM_UI_MANAGEMENT.md` |
@@ -105,6 +115,7 @@
 | `docs/feature/MESSAGE_CENTER.md` | message-center/system_notifications |
 | `docs/feature/SYSTEM_UI_MANAGEMENT.md` | system/ui_management |
 | `docs/feature/USAGE_BILLING.md` | system/usage_billing |
+| `docs/feature/LIFE_SCRIPT.md` | life-script/submission, life-script/invite-code, life-script/admin, life-script/auth, life-script/report |
 
 ### 待完善的功能文档
 

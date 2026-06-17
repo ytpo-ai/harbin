@@ -13,6 +13,9 @@ export class GatewayProxyService {
   private readonly logger = new Logger(GatewayProxyService.name);
   private readonly agentsBaseUrl = process.env.AGENTS_SERVICE_URL || 'http://localhost:3002';
   private readonly legacyBaseUrl = process.env.LEGACY_SERVICE_URL || 'http://localhost:3001';
+  private readonly lifeScriptBaseUrl = String(process.env.LIFE_SCRIPT_BASE_URL || 'http://localhost:3101')
+    .trim()
+    .replace(/\/+$/, '');
   private readonly engineeringIntelligenceBaseUrl =
     process.env.ENGINEERING_INTELLIGENCE_SERVICE_URL || 'http://localhost:3004';
   private readonly contextSecret = process.env.INTERNAL_CONTEXT_SECRET || 'internal-context-secret';
@@ -50,11 +53,30 @@ export class GatewayProxyService {
     ) {
       return this.agentsBaseUrl;
     }
+
+    if (originalUrl.startsWith('/api/life-script')) {
+      return this.lifeScriptBaseUrl;
+    }
+
+    if (originalUrl.startsWith('/api/auth/issue-redirect-token')) {
+      return this.lifeScriptBaseUrl;
+    }
+
     return this.legacyBaseUrl;
   }
 
-  private getSourceService(originalUrl: string): 'agents' | 'legacy' {
-    return this.resolveTarget(originalUrl) === this.agentsBaseUrl ? 'agents' : 'legacy';
+  private getSourceService(originalUrl: string): 'agents' | 'legacy' | 'engineering-intelligence' | 'life-script' {
+    const target = this.resolveTarget(originalUrl);
+    if (target === this.agentsBaseUrl) {
+      return 'agents';
+    }
+    if (target === this.engineeringIntelligenceBaseUrl) {
+      return 'engineering-intelligence';
+    }
+    if (target === this.lifeScriptBaseUrl) {
+      return 'life-script';
+    }
+    return 'legacy';
   }
 
   private sanitizeForLog(input: unknown, depth = 0): unknown {
@@ -118,7 +140,7 @@ export class GatewayProxyService {
     statusCode: number;
     durationMs: number;
     requestId: string;
-    sourceService: 'agents' | 'legacy';
+    sourceService: 'agents' | 'legacy' | 'engineering-intelligence' | 'life-script';
     errorMessage?: string;
   }): Promise<void> {
     const { req, userContext, statusCode, durationMs, requestId, sourceService, errorMessage } = params;
@@ -217,7 +239,10 @@ export class GatewayProxyService {
     const sourceService = this.getSourceService(originalUrl);
     const pathOnly = String(originalUrl || '').split('?')[0] || '/';
     const runtimeControl = this.parseRuntimeControlPath(pathOnly);
-    const targetUrl = `${targetBase}${pathOnly}`;
+    const rewrittenPath = pathOnly.startsWith('/api/life-script')
+      ? pathOnly.replace('/api/life-script', '/api')
+      : pathOnly;
+    const targetUrl = `${targetBase}${rewrittenPath}`;
 
     const headers: Record<string, string> = {};
     if (req.headers['content-type']) {

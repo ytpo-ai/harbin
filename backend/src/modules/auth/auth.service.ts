@@ -57,6 +57,11 @@ export interface FeishuBindTokenResponse {
   command: string;
 }
 
+export interface RedirectTokenResponse {
+  redirectToken: string;
+  expiresIn: number;
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -65,6 +70,18 @@ export class AuthService {
   private readonly feishuBindTokenTtlSeconds = Math.max(60, Number(process.env.FEISHU_BIND_TOKEN_TTL_SECONDS || 300));
   private readonly feishuBindTokenRateLimitWindowSeconds = Math.max(30, Number(process.env.FEISHU_BIND_TOKEN_RATE_LIMIT_WINDOW_SECONDS || 60));
   private readonly feishuBindTokenRateLimitMax = Math.max(1, Number(process.env.FEISHU_BIND_TOKEN_RATE_LIMIT_MAX || 3));
+  private readonly lifeScriptRedirectTokenTtlSeconds = Math.max(
+    10,
+    Number(process.env.LIFE_SCRIPT_REDIRECT_TOKEN_TTL_SECONDS || 30),
+  );
+  private readonly lifeScriptRedirectTokenRateLimitWindowSeconds = Math.max(
+    30,
+    Number(process.env.LIFE_SCRIPT_REDIRECT_TOKEN_RATE_LIMIT_WINDOW_SECONDS || 60),
+  );
+  private readonly lifeScriptRedirectTokenRateLimitMax = Math.max(
+    1,
+    Number(process.env.LIFE_SCRIPT_REDIRECT_TOKEN_RATE_LIMIT_MAX || 10),
+  );
 
   constructor(
     @InjectModel(Employee.name) private employeeModel: Model<EmployeeDocument>,
@@ -257,6 +274,56 @@ export class AuthService {
       token,
       expiresIn: this.feishuBindTokenTtlSeconds,
       command: `/bind token:${token}`,
+    };
+  }
+
+  async generateLifeScriptRedirectToken(employeeId: string): Promise<RedirectTokenResponse> {
+    const normalizedEmployeeId = String(employeeId || '').trim();
+    if (!normalizedEmployeeId) {
+      throw new BadRequestException('employeeId is required');
+    }
+
+    const employee = await this.employeeModel
+      .findOne({
+        id: normalizedEmployeeId,
+        type: EmployeeType.HUMAN,
+      })
+      .select({ id: 1, email: 1, name: 1, role: 1 })
+      .lean()
+      .exec();
+
+    if (!employee) {
+      throw new NotFoundException('员工不存在');
+    }
+
+    const rateLimitKey = `redirect:rate:${normalizedEmployeeId}`;
+    const currentCount = await this.redisService.incr(rateLimitKey);
+    if (currentCount === 1) {
+      await this.redisService.expire(rateLimitKey, this.lifeScriptRedirectTokenRateLimitWindowSeconds);
+    }
+    if (currentCount > this.lifeScriptRedirectTokenRateLimitMax) {
+      throw new HttpException('请求过于频繁，请稍后重试', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const redirectToken = crypto.randomBytes(32).toString('hex');
+    const redisKey = `redirect:life-script:${redirectToken}`;
+    const payload = {
+      employeeId: normalizedEmployeeId,
+      email: String(employee.email || ''),
+      name: String(employee.name || ''),
+      role: String(employee.role || ''),
+      issuedAt: Date.now(),
+    };
+
+    await this.redisService.set(
+      redisKey,
+      JSON.stringify(payload),
+      this.lifeScriptRedirectTokenTtlSeconds,
+    );
+
+    return {
+      redirectToken,
+      expiresIn: this.lifeScriptRedirectTokenTtlSeconds,
     };
   }
 

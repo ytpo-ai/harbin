@@ -9,6 +9,8 @@ backups/
 
 data/
 data/*
+workspace/
+workspace/*
 
 # Playwright
 /test-results/

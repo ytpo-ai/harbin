@@ -38,6 +38,19 @@ import {
 } from '../services/messageCenterService';
 import { wsService } from '../services/wsService';
 
+type NavigationItem = {
+  name: string;
+  href?: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  action?: 'lifeScriptRedirect';
+};
+
+type NavigationGroup = {
+  name: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  items: NavigationItem[];
+};
+
 const topLevelNavigation = [
   { name: '仪表板', href: '/', icon: HomeIcon },
   { name: '会议室', href: '/meetings', icon: VideoCameraIcon },
@@ -45,7 +58,7 @@ const topLevelNavigation = [
   { name: '计划编排', href: '/orchestration', icon: DocumentTextIcon },
 ];
 
-const groupedNavigation = [
+const groupedNavigation: NavigationGroup[] = [
   {
     name: '智能体管理',
     icon: Squares2X2Icon,
@@ -80,6 +93,7 @@ const groupedNavigation = [
       { name: 'API密钥', href: '/api-keys', icon: KeyIcon },
       { name: '用量与计费', href: '/usage', icon: ChartBarIcon },
       { name: '日志查询', href: '/operation-logs', icon: DocumentTextIcon },
+      { name: 'LifeScript', icon: SparklesIcon, action: 'lifeScriptRedirect' },
       { name: '人力资源', href: '/hr', icon: UserGroupIcon },
     ],
   },
@@ -104,6 +118,7 @@ const Layout: React.FC = () => {
   const [loadingUnreadMessages, setLoadingUnreadMessages] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [generatingFeishuBindToken, setGeneratingFeishuBindToken] = useState(false);
+  const [redirectingLifeScript, setRedirectingLifeScript] = useState(false);
   const [feishuBindCommand, setFeishuBindCommand] = useState('');
   const [feishuBindExpiresIn, setFeishuBindExpiresIn] = useState(0);
   const [isFeishuBindDialogOpen, setIsFeishuBindDialogOpen] = useState(false);
@@ -394,6 +409,26 @@ const Layout: React.FC = () => {
     }
   };
 
+  const handleLifeScriptRedirect = async () => {
+    if (redirectingLifeScript) {
+      return;
+    }
+
+    setRedirectingLifeScript(true);
+    try {
+      const result = await authService.generateLifeScriptRedirectToken();
+      const adminBaseUrl = (import.meta.env.VITE_LIFE_SCRIPT_ADMIN_URL || 'http://localhost:3200').replace(/\/$/, '');
+      const targetUrl = `${adminBaseUrl}/auth/callback?token=${encodeURIComponent(result.redirectToken)}`;
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } catch (error: any) {
+      const backendMessage = error?.response?.data?.message;
+      const message = Array.isArray(backendMessage) ? backendMessage[0] : backendMessage;
+      window.alert(typeof message === 'string' && message ? message : '跳转 LifeScript 失败，请稍后重试');
+    } finally {
+      setRedirectingLifeScript(false);
+    }
+  };
+
   const openChangePasswordDialog = () => {
     setChangePasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
     setChangePasswordError('');
@@ -437,12 +472,19 @@ const Layout: React.FC = () => {
     }
   };
 
-  const isItemActive = (href: string) =>
+  const isItemActive = (href?: string) => {
+    if (!href) {
+      return false;
+    }
+
+    return (
     href === '/'
       ? location.pathname === '/'
       : href === '/ei'
         ? location.pathname === '/ei'
-        : location.pathname.startsWith(href);
+        : location.pathname.startsWith(href)
+    );
+  };
 
   const [expandedSectionState, setExpandedSectionState] = useState<Record<string, boolean>>(
     () =>
@@ -456,7 +498,9 @@ const Layout: React.FC = () => {
     const pathname = location.pathname;
     const activeSection = groupedNavigation.find((section) =>
       section.items.some((item) =>
-        item.href === '/'
+        !item.href
+          ? false
+          : item.href === '/'
           ? pathname === '/'
           : item.href === '/ei'
             ? pathname === '/ei'
@@ -589,10 +633,26 @@ const Layout: React.FC = () => {
                           isActive ? 'text-primary-500' : 'text-gray-400 group-hover:text-gray-500'
                         }`;
 
+                        if (item.action === 'lifeScriptRedirect') {
+                          return (
+                            <button
+                              key={`${section.name}-${item.name}`}
+                              type="button"
+                              onClick={handleLifeScriptRedirect}
+                              disabled={redirectingLifeScript}
+                              className={`${className} w-full ${redirectingLifeScript ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              title={!isSidebarExpanded ? item.name : undefined}
+                            >
+                              <item.icon className={iconClass} aria-hidden="true" />
+                              {isSidebarExpanded && (redirectingLifeScript ? 'LifeScript 跳转中...' : item.name)}
+                            </button>
+                          );
+                        }
+
                         return (
                           <Link
                             key={`${section.name}-${item.name}`}
-                            to={item.href}
+                            to={item.href || '/'}
                             className={className}
                             title={!isSidebarExpanded ? item.name : undefined}
                           >

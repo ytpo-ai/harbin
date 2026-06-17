@@ -30,6 +30,11 @@ export interface FeishuBindTokenResponse {
   command: string;
 }
 
+export interface LifeScriptRedirectTokenResponse {
+  redirectToken: string;
+  expiresIn: number;
+}
+
 interface ApiEnvelope<T> {
   code: number;
   message: string;
@@ -112,6 +117,11 @@ class AuthService {
   async generateFeishuBindToken(): Promise<FeishuBindTokenResponse> {
     const response = await api.post('/auth/me/feishu-bind-token');
     return this.unwrapApiData<FeishuBindTokenResponse>(response.data);
+  }
+
+  async generateLifeScriptRedirectToken(): Promise<LifeScriptRedirectTokenResponse> {
+    const response = await api.post('/auth/issue-redirect-token');
+    return this.unwrapApiData<LifeScriptRedirectTokenResponse>(response.data);
   }
 
   getToken(): string | null {

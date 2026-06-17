@@ -11,6 +11,19 @@ import { GatewayUserContext } from '@libs/contracts';
 import { Model } from 'mongoose';
 import { Employee, EmployeeDocument } from '../../../src/shared/schemas/employee.schema';
 
+type PublicRouteRule = {
+  path: string;
+  method?: string;
+};
+
+type LifeScriptJwtPayload = {
+  employeeId: string;
+  email?: string;
+  role?: string;
+  iat?: number;
+  exp: number;
+};
+
 const PUBLIC_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/verify',
@@ -19,6 +32,12 @@ const PUBLIC_PATHS = new Set([
   '/api/invitations/accept',
   '/api/health',
 ]);
+
+const PUBLIC_ROUTE_RULES: PublicRouteRule[] = [
+  { path: '/api/life-script/auth/exchange' },
+  { path: '/api/life-script/upload' },
+  { path: '/api/life-script/submissions', method: 'POST' },
+];
 
 @Injectable()
 export class GatewayAuthGuard implements CanActivate {
@@ -33,8 +52,9 @@ export class GatewayAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const path = req.originalUrl?.split('?')[0] || req.url;
+    const method = String(req.method || 'GET').toUpperCase();
 
-    if (PUBLIC_PATHS.has(path)) {
+    if (this.isPublicPath(path, method)) {
       return true;
     }
 
@@ -46,14 +66,15 @@ export class GatewayAuthGuard implements CanActivate {
     }
 
     // 外部 JWT Bearer 认证（支持 header 或 query param，后者用于 SSE/EventSource）
-    const authHeader = req.headers.authorization as string | undefined;
-    const queryToken = String(req.query?.access_token || '').trim();
-    const rawToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : queryToken;
-    if (!rawToken) {
+    const token = this.extractBearerToken(req);
+    if (!token) {
       throw new UnauthorizedException('Missing Bearer token');
     }
 
-    const token = rawToken;
+    if (path.startsWith('/api/life-script')) {
+      return this.authenticateLifeScriptToken(req, token);
+    }
+
     const secret = process.env.JWT_SECRET || 'your-secret-key';
     const payload = verifyEmployeeToken(token, secret);
     if (!payload) {
@@ -71,6 +92,56 @@ export class GatewayAuthGuard implements CanActivate {
       email: payload.email,
       role: String(employee?.role || ''),
       issuedAt: Date.now(),
+      expiresAt: payload.exp,
+    };
+
+    req.userContext = userContext;
+    return true;
+  }
+
+  private isPublicPath(path: string, method: string): boolean {
+    if (PUBLIC_PATHS.has(path)) {
+      return true;
+    }
+
+    return PUBLIC_ROUTE_RULES.some((rule) => {
+      if (rule.path !== path) {
+        return false;
+      }
+      if (!rule.method) {
+        return true;
+      }
+      return rule.method === method;
+    });
+  }
+
+  private extractBearerToken(req: any): string {
+    const authHeader = req.headers.authorization as string | undefined;
+    const queryToken = String(req.query?.access_token || '').trim();
+
+    if (authHeader?.startsWith('Bearer ')) {
+      return authHeader.slice(7);
+    }
+
+    return queryToken;
+  }
+
+  private authenticateLifeScriptToken(req: any, token: string): boolean {
+    const secret = process.env.LS_JWT_SECRET;
+    if (!secret) {
+      throw new UnauthorizedException('LS_JWT_SECRET not configured');
+    }
+
+    const payload = verifyEmployeeToken(token, secret) as LifeScriptJwtPayload | null;
+    if (!payload?.employeeId) {
+      throw new UnauthorizedException('Invalid or expired LifeScript token');
+    }
+
+    const userContext: GatewayUserContext = {
+      employeeId: payload.employeeId,
+      email: payload.email || '',
+      role: String(payload.role || ''),
+      issuedAt: payload.iat || Date.now(),
       expiresAt: payload.exp,
     };
 

@@ -1,5 +1,11 @@
 import { Controller, Get, Post, Body, Headers, UnauthorizedException } from '@nestjs/common';
-import { AuthService, LoginDto, AuthResponse, FeishuBindTokenResponse } from './auth.service';
+import {
+  AuthService,
+  LoginDto,
+  AuthResponse,
+  FeishuBindTokenResponse,
+  RedirectTokenResponse,
+} from './auth.service';
 
 @Controller('auth')
 export class AuthController {
@@ -117,5 +123,24 @@ export class AuthController {
     }
 
     return this.authService.generateFeishuBindToken(employee.id);
+  }
+
+  /**
+   * 签发 LifeScript 跳转一次性 token
+   */
+  @Post('issue-redirect-token')
+  async issueRedirectToken(@Headers('authorization') authHeader: string): Promise<RedirectTokenResponse> {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedException('无效的Token');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const employee = await this.authService.getEmployeeFromToken(token);
+
+    if (!employee) {
+      throw new UnauthorizedException('Token已过期或无效');
+    }
+
+    return this.authService.generateLifeScriptRedirectToken(employee.id);
   }
 }

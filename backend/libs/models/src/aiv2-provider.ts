@@ -9,6 +9,7 @@ import { BaseAIProvider, LLMCallOptions, ProviderChatResult } from './v1/base-pr
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 const DEFAULT_ALIBABA_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024; // 20 MB guard
 
 export class AIV2Provider extends BaseAIProvider {
   private languageModel: any;
@@ -32,12 +33,20 @@ export class AIV2Provider extends BaseAIProvider {
 
     switch (provider) {
       case 'openai': {
+        const resolvedBaseURL = String(
+          process.env.OPENAI_BASE_URL || process.env.OPENAI_API_BASE || process.env.AI_API_ENDPOINT || '',
+        ).trim() || undefined;
         const openai = createOpenAI({
           apiKey: apiKey || process.env.OPENAI_API_KEY,
+          ...(resolvedBaseURL ? { baseURL: resolvedBaseURL } : {}),
           ...(fetcher ? { fetch: fetcher } : {}),
         } as any);
         this.openAICompatibleClient = openai;
-        this.languageModel = openai(this.model.model);
+        // When behind a custom gateway/proxy, use Chat Completions API (.chat()) directly
+        // to avoid 404 from Responses API which proxies may not support.
+        // When hitting OpenAI directly (no baseURL override), use the default which
+        // routes to Responses API for supported models.
+        this.languageModel = resolvedBaseURL ? openai.chat(this.model.model as any) : openai(this.model.model);
         break;
       }
       case 'anthropic': {
@@ -65,7 +74,9 @@ export class AIV2Provider extends BaseAIProvider {
           ...(fetcher ? { fetch: fetcher } : {}),
         } as any);
         this.openAICompatibleClient = moonshot;
-        this.languageModel = moonshot(this.model.model);
+        // Moonshot is OpenAI-compatible but only supports Chat Completions API,
+        // not Responses API. Always use .chat() to avoid 404.
+        this.languageModel = moonshot.chat(this.model.model as any);
         break;
       }
       case 'alibaba':
@@ -87,10 +98,113 @@ export class AIV2Provider extends BaseAIProvider {
     }
   }
 
+  // ---- Multimodal image helpers ----
+
+  private static inferMimeType(url: string): string {
+    const pathname = (() => {
+      try {
+        return new URL(url).pathname.toLowerCase();
+      } catch {
+        return String(url || '').toLowerCase();
+      }
+    })();
+    if (pathname.endsWith('.png')) return 'image/png';
+    if (pathname.endsWith('.webp')) return 'image/webp';
+    if (pathname.endsWith('.gif')) return 'image/gif';
+    if (pathname.endsWith('.bmp')) return 'image/bmp';
+    if (pathname.endsWith('.svg')) return 'image/svg+xml';
+    if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) return 'image/jpeg';
+    return 'image/jpeg';
+  }
+
+  private static isRemoteUrl(url: string): boolean {
+    const lower = String(url || '').trim().toLowerCase();
+    return lower.startsWith('http://') || lower.startsWith('https://');
+  }
+
+  private async fetchImageAsBase64(url: string): Promise<{ base64: string; mimeType: string }> {
+    const dispatcher = getProxyDispatcher();
+    const response = await undiciFetch(url, {
+      ...(dispatcher ? { dispatcher } : {}),
+    } as any);
+
+    if (!response.ok) {
+      throw new Error(`failed to fetch image url=${url} status=${response.status}`);
+    }
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > IMAGE_FETCH_MAX_BYTES) {
+      throw new Error(`image too large: url=${url} size=${contentLength} limit=${IMAGE_FETCH_MAX_BYTES}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > IMAGE_FETCH_MAX_BYTES) {
+      throw new Error(`image too large: url=${url} size=${arrayBuffer.byteLength} limit=${IMAGE_FETCH_MAX_BYTES}`);
+    }
+
+    const contentType = String(response.headers.get('content-type') || '').split(';')[0].trim();
+    const mimeType = contentType || AIV2Provider.inferMimeType(url);
+    const base64 = Buffer.from(arrayBuffer).toString('base64');
+    return { base64, mimeType };
+  }
+
+  /**
+   * Pre-process messages: download remote image URLs and convert to inline base64 data URLs.
+   * This is necessary because many OpenAI-compatible gateways (and OpenAI itself for non-allowlisted
+   * domains like Chinese cloud OSS) reject remote image URLs.
+   * Downloads happen in parallel per message for efficiency.
+   */
+  private async inlineRemoteImages(messages: ChatMessage[]): Promise<ChatMessage[]> {
+    const result: ChatMessage[] = [];
+
+    for (const msg of messages) {
+      if (typeof msg.content === 'string') {
+        result.push(msg);
+        continue;
+      }
+
+      // Collect download tasks for this message
+      const partPromises = msg.content.map(async (part): Promise<ContentPart> => {
+        if (part.type !== 'image_url') return part;
+
+        const url = String(part.imageUrl?.url || '').trim();
+        if (!url || !AIV2Provider.isRemoteUrl(url)) return part;
+
+        const { base64, mimeType } = await this.fetchImageAsBase64(url);
+        return {
+          type: 'image_url',
+          imageUrl: {
+            url: `data:${mimeType};base64,${base64}`,
+            ...(part.imageUrl.detail ? { detail: part.imageUrl.detail } : {}),
+          },
+        };
+      });
+
+      const convertedParts = await Promise.all(partPromises);
+      result.push({ ...msg, content: convertedParts });
+    }
+
+    return result;
+  }
+
+  private hasRemoteImageUrls(messages: ChatMessage[]): boolean {
+    return messages.some((msg) => {
+      if (typeof msg.content === 'string') return false;
+      return msg.content.some(
+        (part) => part.type === 'image_url' && AIV2Provider.isRemoteUrl(part.imageUrl.url),
+      );
+    });
+  }
+
+  // ---- formatMessages ----
+
   /**
    * Override base formatMessages to support multimodal ContentPart[].
    * - string content: passthrough as-is (zero impact on existing paths)
    * - ContentPart[]: convert to Vercel AI SDK CoreMessage content format
+   *
+   * By the time this is called, remote image URLs have already been converted to
+   * data URLs via inlineRemoteImages() in the public entry points (chatWithMeta/streamingChat).
    */
   protected formatMessages(messages: ChatMessage[]): any[] {
     return messages.map((msg) => {
@@ -105,7 +219,21 @@ export class AIV2Provider extends BaseAIProvider {
           return { type: 'text' as const, text: part.text };
         }
         if (part.type === 'image_url') {
-          return { type: 'image' as const, image: new URL(part.imageUrl.url) };
+          const url = String(part.imageUrl?.url || '').trim();
+
+          // data URL → extract base64 + mimeType and pass inline
+          // (Vercel AI SDK rejects data: scheme in new URL() download path)
+          const dataUrlMatch = url.match(/^data:([^;]+);base64,(.+)$/);
+          if (dataUrlMatch) {
+            return {
+              type: 'image' as const,
+              image: Buffer.from(dataUrlMatch[2], 'base64'),
+              mimeType: dataUrlMatch[1],
+            };
+          }
+
+          // Remote URL → pass as URL object (SDK will fetch it)
+          return { type: 'image' as const, image: new URL(url) };
         }
         // Fallback: unknown part type, extract as text
         return { type: 'text' as const, text: extractTextContent([part]) };
@@ -114,6 +242,8 @@ export class AIV2Provider extends BaseAIProvider {
       return { role: msg.role, content: parts };
     });
   }
+
+  // ---- Model / options helpers ----
 
   private isOpenAIReasoningModel(): boolean {
     const provider = String(this.model.provider || '').toLowerCase().trim();
@@ -205,11 +335,21 @@ export class AIV2Provider extends BaseAIProvider {
     };
   }
 
+  // ---- Error classification ----
+
   private isNotFoundError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error || '');
     const lower = message.toLowerCase();
     return lower.includes('not found') || lower.includes('404');
   }
+
+  private isAuthenticationError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error || '');
+    const lower = message.toLowerCase();
+    return lower.includes('invalid authentication') || lower.includes('unauthorized') || lower.includes('401');
+  }
+
+  // ---- Alibaba fallback ----
 
   private getAlibabaFallbackModelName(): string | undefined {
     if (this.providerName !== 'alibaba' && this.providerName !== 'qwen') {
@@ -226,6 +366,8 @@ export class AIV2Provider extends BaseAIProvider {
 
     return fallbackMap[modelName];
   }
+
+  // ---- Usage normalization ----
 
   private normalizeUsage(usage: any): ProviderChatResult['usage'] {
     if (!usage || typeof usage !== 'object') {
@@ -247,29 +389,39 @@ export class AIV2Provider extends BaseAIProvider {
     };
   }
 
-  private async generateWithFallback(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
-    const result = await generateText({
-      model: this.languageModel,
-      messages: this.formatMessages(messages) as any,
-      ...this.buildCallOptions(options),
-    });
-
-    return {
-      response: result.text || '',
-      usage: this.normalizeUsage((result as any).usage),
-      finishReason: (result as any).finishReason,
-    };
-  }
+  // ---- Public API ----
 
   async chatWithMeta(messages: ChatMessage[], options?: LLMCallOptions): Promise<ProviderChatResult> {
+    // Pre-process: inline remote image URLs before any API call
+    const prepared = this.hasRemoteImageUrls(messages)
+      ? await this.inlineRemoteImages(messages)
+      : messages;
+
     try {
-      return await this.generateWithFallback(messages, options);
+      const result = await generateText({
+        model: this.languageModel,
+        messages: this.formatMessages(prepared) as any,
+        ...this.buildCallOptions(options),
+      });
+      return {
+        response: result.text || '',
+        usage: this.normalizeUsage((result as any).usage),
+        finishReason: (result as any).finishReason,
+      };
     } catch (error) {
+      if (this.isAuthenticationError(error)) {
+        const message = error instanceof Error ? error.message : String(error || 'Invalid Authentication');
+        throw new Error(
+          `${message} (provider=${this.providerName}; model=${this.model.model}). `
+            + '请确认：1) Agent 绑定的 apiKeyId 对应 provider 正确；2) 系统环境变量 key 有效；3) 如走代理网关请设置 OPENAI_BASE_URL/OPENAI_API_BASE。',
+        );
+      }
+
       const fallbackModel = this.getAlibabaFallbackModelName();
       if (fallbackModel && this.isNotFoundError(error) && this.openAICompatibleClient) {
         const result = await generateText({
           model: this.openAICompatibleClient.chat(fallbackModel as any),
-          messages: this.formatMessages(messages) as any,
+          messages: this.formatMessages(prepared) as any,
           ...this.buildCallOptions(options),
         });
         return {
@@ -302,10 +454,15 @@ export class AIV2Provider extends BaseAIProvider {
     onToken: (token: string) => void,
     options?: LLMCallOptions,
   ): Promise<void> {
+    // Pre-process: inline remote image URLs before any API call
+    const prepared = this.hasRemoteImageUrls(messages)
+      ? await this.inlineRemoteImages(messages)
+      : messages;
+
     const runStream = async (model: any): Promise<void> => {
       const result = streamText({
         model,
-        messages: this.formatMessages(messages) as any,
+        messages: this.formatMessages(prepared) as any,
         ...this.buildCallOptions(options),
       });
 
@@ -319,6 +476,14 @@ export class AIV2Provider extends BaseAIProvider {
     try {
       await runStream(this.languageModel);
     } catch (error) {
+      if (this.isAuthenticationError(error)) {
+        const message = error instanceof Error ? error.message : String(error || 'Invalid Authentication');
+        throw new Error(
+          `${message} (provider=${this.providerName}; model=${this.model.model}). `
+            + '请确认：1) Agent 绑定的 apiKeyId 对应 provider 正确；2) 系统环境变量 key 有效；3) 如走代理网关请设置 OPENAI_BASE_URL/OPENAI_API_BASE。',
+        );
+      }
+
       const fallbackModel = this.getAlibabaFallbackModelName();
       if (fallbackModel && this.isNotFoundError(error) && this.openAICompatibleClient) {
         await runStream(this.openAICompatibleClient.chat(fallbackModel as any));
