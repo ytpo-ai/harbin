@@ -12,7 +12,7 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
 
 FRONTEND_PORT=3000
-FRONTEND_DEPLOY_DIR="/var/www/html"
+FRONTEND_DEPLOY_DIR="/var/www/html/ytpo"
 
 usage() {
     echo "用法: $0 [environment] [-p|--port <port>]"

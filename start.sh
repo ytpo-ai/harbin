@@ -17,7 +17,7 @@ echo "Node.js版本: $NODE_VERSION"
 ENV=${1:-development}
 echo "启动环境: $ENV"
 
-FRONTEND_DEPLOY_DIR="/var/www/html"
+FRONTEND_DEPLOY_DIR="/var/www/html/ytpo"
 
 pick_backend_env_file() {
     local backend_dir="$SCRIPT_DIR/backend"

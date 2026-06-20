@@ -675,7 +675,7 @@ const Models: React.FC = () => {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-2">Top P</label>
-                  <input type="number" step="0.1" min="0" max="1" value={formData.topP} onChange={(e) => setFormData({ ...formData, topP: Number(e.target.value) })}
+                  <input type="number" step="0.01" min="0" max="1" value={formData.topP} onChange={(e) => setFormData({ ...formData, topP: Number(e.target.value) })}
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all duration-300" />
                 </div>
               </div>

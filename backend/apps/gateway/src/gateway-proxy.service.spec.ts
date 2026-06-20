@@ -173,7 +173,11 @@ describe('GatewayProxyService', () => {
     };
     const res = createRes();
 
-    await expect(service.forward(req, res)).rejects.toBeInstanceOf(GatewayTimeoutException);
+    await expect(service.forward(req, res)).rejects.toMatchObject({
+      response: {
+        message: 'Gateway request timeout 180s',
+      },
+    });
   });
 
   it('throws bad gateway for non-timeout upstream failures', async () => {

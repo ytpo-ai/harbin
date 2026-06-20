@@ -348,7 +348,8 @@ export class GatewayProxyService {
       });
 
       if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
-        throw new GatewayTimeoutException('Gateway proxy timeout');
+        const timeoutSeconds = Math.ceil(timeoutMs / 1000);
+        throw new GatewayTimeoutException(`Gateway request timeout ${timeoutSeconds}s`);
       }
 
       throw new BadGatewayException('Gateway proxy failed');
