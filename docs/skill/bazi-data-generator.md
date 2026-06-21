@@ -91,7 +91,7 @@ cycles:
   - startYear: 1995
     ageRange: "1-4岁"
     name: "小运"
-    tags: "—"
+    tags: "食/杀"
     score: 58
     level: "green"
     theme: "早年定型"
