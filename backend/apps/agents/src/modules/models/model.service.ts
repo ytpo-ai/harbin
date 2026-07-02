@@ -118,6 +118,10 @@ export class ModelService {
       return true;
     }
 
+    if (provider === 'deepseek') {
+      return true;
+    }
+
     const enabled = String(process.env.LLM_PROVIDER_V2_ENABLED || '').toLowerCase();
     if (!['1', 'true', 'yes', 'on'].includes(enabled)) {
       return false;

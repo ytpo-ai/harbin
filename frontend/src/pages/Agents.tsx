@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { PlusIcon, UserGroupIcon } from '@heroicons/react/24/outline';
 import { useQuery } from 'react-query';
 import { useNavigate } from 'react-router-dom';
@@ -19,9 +19,43 @@ import {
   useAgentListData,
 } from '../components/agents';
 
+const AGENTS_FILTER_STORAGE_KEY = 'agents:list:filters:v1';
+const TIER_FILTER_ALLOWLIST: TierFilter[] = ['all', 'leadership', 'operations', 'temporary'];
+
+type AgentListPersistedFilters = {
+  tierFilter?: string;
+  projectIdFilter?: string | null;
+};
+
+const getInitialFilters = (): { tierFilter: TierFilter; projectIdFilter: string | undefined } => {
+  if (typeof window === 'undefined') {
+    return { tierFilter: 'all', projectIdFilter: undefined };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AGENTS_FILTER_STORAGE_KEY);
+    if (!raw) {
+      return { tierFilter: 'all', projectIdFilter: undefined };
+    }
+
+    const parsed = JSON.parse(raw) as AgentListPersistedFilters;
+    const tierFilter = TIER_FILTER_ALLOWLIST.includes(parsed.tierFilter as TierFilter)
+      ? (parsed.tierFilter as TierFilter)
+      : 'all';
+    const projectIdFilter = typeof parsed.projectIdFilter === 'string' && parsed.projectIdFilter.trim()
+      ? parsed.projectIdFilter
+      : undefined;
+
+    return { tierFilter, projectIdFilter };
+  } catch {
+    return { tierFilter: 'all', projectIdFilter: undefined };
+  }
+};
+
 const Agents: React.FC = () => {
   const navigate = useNavigate();
-  const [projectIdFilter, setProjectIdFilter] = useState<string | undefined>(undefined);
+  const [persistedFilters] = useState(getInitialFilters);
+  const [projectIdFilter, setProjectIdFilter] = useState<string | undefined>(persistedFilters.projectIdFilter);
 
   const {
     agents,
@@ -48,7 +82,23 @@ const Agents: React.FC = () => {
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [startingChatAgentId, setStartingChatAgentId] = useState('');
   const [avatarLoadErrors, setAvatarLoadErrors] = useState<Record<string, boolean>>({});
-  const [tierFilter, setTierFilter] = useState<TierFilter>('all');
+  const [tierFilter, setTierFilter] = useState<TierFilter>(persistedFilters.tierFilter);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const next: AgentListPersistedFilters = {
+      tierFilter,
+      projectIdFilter: projectIdFilter || null,
+    };
+    try {
+      window.localStorage.setItem(AGENTS_FILTER_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore localStorage write failures (e.g. disabled storage, quota exceeded)
+    }
+  }, [tierFilter, projectIdFilter]);
 
   const getAgentId = (agent: Agent | null): string => {
     const withMongoId = agent as (Agent & { _id?: string }) | null;

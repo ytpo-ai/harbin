@@ -9,6 +9,7 @@ import { BaseAIProvider, LLMCallOptions, ProviderChatResult } from './v1/base-pr
 
 const DEFAULT_MOONSHOT_BASE_URL = 'https://api.moonshot.cn/v1';
 const DEFAULT_ALIBABA_BASE_URL = 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+const DEFAULT_DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
 const IMAGE_FETCH_MAX_BYTES = 20 * 1024 * 1024; // 20 MB guard
 
 export class AIV2Provider extends BaseAIProvider {
@@ -91,6 +92,21 @@ export class AIV2Provider extends BaseAIProvider {
         this.openAICompatibleClient = alibaba;
         this.alibabaBaseURL = baseURL;
         this.languageModel = alibaba.chat(this.model.model as any);
+        break;
+      }
+      case 'deepseek': {
+        const deepseekApiKey = apiKey || process.env.DEEPSEEK_API_KEY;
+        if (!deepseekApiKey) {
+          throw new Error('DeepSeek API key is missing. Pass it using the apiKey parameter or the DEEPSEEK_API_KEY environment variable.');
+        }
+        const deepseek = createOpenAI({
+          apiKey: deepseekApiKey,
+          baseURL: process.env.DEEPSEEK_BASE_URL || DEFAULT_DEEPSEEK_BASE_URL,
+          compatibility: 'compatible',
+          ...(fetcher ? { fetch: fetcher } : {}),
+        } as any);
+        this.openAICompatibleClient = deepseek;
+        this.languageModel = deepseek.chat(this.model.model as any);
         break;
       }
       default:

@@ -47,6 +47,7 @@
 | Plan | Requirement | Development | Fix |
 |------|------------|-------------|-----|
 | [AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN](../plan/AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN.md) | [AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT](../requirement/AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT.md) | [开发记录](../development/AGENT_MG_REQ-001_DEVELOPMENT.md) | — |
+| [AGENT_MG_AGENT_LIST_FILTER_PERSIST_PLAN](../plan/AGENT_MG_AGENT_LIST_FILTER_PERSIST_PLAN.md) | [AGENT_MG_REQ-002_AGENT_LIST_FILTER_PERSIST](../requirement/AGENT_MG_REQ-002_AGENT_LIST_FILTER_PERSIST.md) | [开发记录](../development/AGENT_MG_REQ-002_DEVELOPMENT.md) | — |
 
 ---
 
@@ -59,12 +60,14 @@
 | `AGENT_MANAGEMENT_PERSON_CARD_UI_PLAN.md` | Agent 管理页人物卡片与创建顺序优化计划 |
 | `AGENTS_PAGE_SPLIT_REFACTOR_PLAN.md` | Agent 管理页页面拆分重构计划 |
 | `AGENT_MG_MODEL_SELECTION_FILTER_SORT_PLAN.md` | Agent 编辑模型选择：按 API Key 供应商过滤并按价格排序 |
+| `AGENT_MG_AGENT_LIST_FILTER_PERSIST_PLAN.md` | Agent 列表筛选状态持久化计划 |
 
 ### 需求文档 (docs/requirement/)
 
 | 文件 | 说明 |
 |------|------|
 | `AGENT_MG_REQ-001_MODEL_SELECTION_FILTER_SORT.md` | Agent 模型候选过滤与价格排序优化 |
+| `AGENT_MG_REQ-002_AGENT_LIST_FILTER_PERSIST.md` | Agent 列表筛选项 localStorage 持久化 |
 
 ### 开发总结 (docs/development/)
 

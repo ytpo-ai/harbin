@@ -532,17 +532,30 @@ export class AgentExecutorService {
       },
     ];
 
-    // 统一模型测试执行器，含 20s 超时保护。
+    const resolveTestTimeoutMs = (): number => {
+      const provider = (modelConfig.provider || '').trim().toLowerCase();
+      if (provider === 'deepseek') {
+        const deepseekTimeoutMs = Number(process.env.DEEPSEEK_MODEL_TEST_TIMEOUT_MS || 60000);
+        if (Number.isFinite(deepseekTimeoutMs) && deepseekTimeoutMs > 0) {
+          return deepseekTimeoutMs;
+        }
+        return 60000;
+      }
+      return 20000;
+    };
+
+    // 统一模型测试执行器，含超时保护。
     const runModelTest = async (customApiKey?: string) => {
       this.modelService.registerProvider(modelConfig, customApiKey);
       const startTime = Date.now();
+      const timeoutMs = resolveTestTimeoutMs();
       const response = await Promise.race([
         this.modelService.chat(modelConfig.id, messages, {
           temperature: modelConfig.temperature ?? 0.7,
           maxTokens: 128,
         }).then((result) => result.response),
         new Promise<string>((_, reject) =>
-          setTimeout(() => reject(new Error('模型测试超时（20s）')), 20000),
+          setTimeout(() => reject(new Error(`模型测试超时（${Math.floor(timeoutMs / 1000)}s）`)), timeoutMs),
         ),
       ]);
       return {
@@ -567,6 +580,11 @@ export class AgentExecutorService {
     const isAuthError = (message: string): boolean => {
       const lower = (message || '').toLowerCase();
       return lower.includes('401') || lower.includes('invalid authentication') || lower.includes('unauthorized');
+    };
+
+    const isTimeoutError = (message: string): boolean => {
+      const lower = (message || '').toLowerCase();
+      return lower.includes('模型测试超时') || lower.includes('timeout');
     };
 
     // 统一提供商别名，避免 key/provider 比较误判。
@@ -632,6 +650,10 @@ export class AgentExecutorService {
 
           if (isAuthError(customMessage)) {
             return buildFailureResult('custom', `自定义API Key鉴权失败，请检查该Key是否有效/可用。详细信息：${customMessage}`);
+          }
+
+          if (isTimeoutError(customMessage)) {
+            return buildFailureResult('custom', `自定义API Key请求超时，请检查网络可达性、代理设置或模型服务状态。详细信息：${customMessage}`);
           }
 
           try {
