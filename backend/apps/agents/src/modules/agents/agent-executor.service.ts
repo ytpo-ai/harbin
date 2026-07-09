@@ -38,6 +38,7 @@ import {
   AGENT_ENABLED_SKILL_CACHE_TTL_SECONDS,
   normalizeToolId,
   uniqueStrings,
+  splitTextByMaxLength,
   compactLogText,
   toLogError,
 } from './agent.constants';
@@ -2524,13 +2525,11 @@ export class AgentExecutorService {
         return null;
       }
 
-      const truncatedTemplate =
-        rawTemplate.length > SKILL_CONTENT_MAX_INJECT_LENGTH
-          ? rawTemplate.slice(0, SKILL_CONTENT_MAX_INJECT_LENGTH) + '\n\n[... 内容已截断，可通过工具查询完整版本]'
-          : rawTemplate;
+      const templateChunks = splitTextByMaxLength(rawTemplate, SKILL_CONTENT_MAX_INJECT_LENGTH);
+      const renderedTemplate = templateChunks.join('\n\n');
 
       const parametersJson = JSON.stringify(forcedToolCall.parameters || {});
-      const rendered = truncatedTemplate
+      const rendered = renderedTemplate
         .replace(/\{\{tool\}\}/g, forcedToolCall.tool)
         .replace(/\{\{parameters\}\}/g, parametersJson)
         .trim();

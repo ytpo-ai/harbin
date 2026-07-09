@@ -288,7 +288,11 @@ export class ToolExecutionDispatcherService {
       (executionContext?.assignedToolIds || []).map((id) => String(id || '').trim()).filter(Boolean),
     );
     if (assignedToolIds.size > 0 && !assignedToolIds.has(queriedToolId)) {
-      throw new Error(`tool schema access denied: ${queriedToolId}`);
+      const looksLikeUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queriedToolId);
+      const hint = looksLikeUuid
+        ? `。该 ID 看起来是 Skill ID 而非工具 ID。Skill 是知识型指令（已通过 system message 注入），不是可调用的工具，请直接根据 Skill 注入的内容完成任务`
+        : '';
+      throw new Error(`tool schema access denied: ${queriedToolId}${hint}`);
     }
 
     const contract = await this.toolRegistryService.getToolInputContract(queriedToolId);

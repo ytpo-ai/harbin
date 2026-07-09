@@ -134,3 +134,4 @@
 |------|------------|-------------|-----|
 | [AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN](../plan/AGENT_SKILL_PROJECT_FEATURE_GROUNDING_PLAN.md) | [AGENT_SKILL_REQ-001 项目功能认知 Skill](../requirement/AGENT_SKILL_REQ-001_PROJECT_FEATURE_GROUNDING.md) | [待创建](../development/AGENT_SKILL_REQ-001_DEVELOPMENT.md) | — |
 | [AGENT_SKILL_DISCUSSION_MODE_ACTIVATION_PLAN](../plan/AGENT_SKILL_DISCUSSION_MODE_ACTIVATION_PLAN.MD) | [AGENT_SKILL_REQ-002 discussion 分类与激活](../requirement/AGENT_SKILL_REQ-002_DISCUSSION_CATEGORY_AND_ACTIVATION.md) | [待创建](../development/AGENT_SKILL_REQ-002_DEVELOPMENT.md) | — |
+| — | — | — | [2026-07-09-agent-skill-injection-truncation](../issue/fix/2026-07-09-agent-skill-injection-truncation.md) |

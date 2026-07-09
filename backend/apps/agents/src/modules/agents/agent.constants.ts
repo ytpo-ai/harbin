@@ -131,6 +131,24 @@ export function compactLogText(input: string | undefined, maxLength = 120): stri
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
+export function splitTextByMaxLength(input: string | undefined, maxLength: number): string[] {
+  const normalized = String(input || '');
+  if (!normalized) {
+    return [];
+  }
+
+  const safeMaxLength = Math.max(1, Math.floor(Number(maxLength) || 1));
+  if (normalized.length <= safeMaxLength) {
+    return [normalized];
+  }
+
+  const chunks: string[] = [];
+  for (let index = 0; index < normalized.length; index += safeMaxLength) {
+    chunks.push(normalized.slice(index, index + safeMaxLength));
+  }
+  return chunks;
+}
+
 export function toLogError(error: unknown): { message: string; stack?: string } {
   if (error instanceof Error) {
     return {

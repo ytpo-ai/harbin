@@ -190,7 +190,7 @@ export const BUILTIN_TOOLS = [
         description:
           '查询指定工具的参数契约（inputSchema），返回 required 字段、属性类型和枚举约束。在调用不熟悉的工具前，先用此工具查询参数格式。',
         prompt:
-          '当你不确定某个工具的参数格式时，先调用 get-tool-schema 查询其 inputSchema，然后根据返回的参数契约正确构造 tool_call。不要猜测参数结构。',
+          '当你不确定某个工具的参数格式时，先调用 get-tool-schema 查询其 inputSchema，然后根据返回的参数契约正确构造 tool_call。不要猜测参数结构。注意：toolId 只能传工具列表中列出的工具 ID，不能传 Skill ID。Skill 是知识型指令（已通过 system message 注入），不是可调用的工具，无需也无法通过 get-tool-schema 查询。',
         type: 'api_call' as const,
         category: 'System',
         authFree: true,

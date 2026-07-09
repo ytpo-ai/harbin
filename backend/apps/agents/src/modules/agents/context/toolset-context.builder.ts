@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AGENT_PROMPTS } from '@agent/modules/prompt-registry/agent-prompt-catalog';
 import { ChatMessage } from '../../../../../../src/shared/types';
-import { SKILL_CONTENT_MAX_INJECT_LENGTH, normalizeToolId } from '../agent.constants';
+import { SKILL_CONTENT_MAX_INJECT_LENGTH, normalizeToolId, splitTextByMaxLength } from '../agent.constants';
 import { ContextBlockBuilder, ContextBuildInput } from './context-block-builder.interface';
 import { ContextFingerprintService } from './context-fingerprint.service';
 import { ContextPromptService } from './context-prompt.service';
@@ -35,7 +35,10 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
 
       messages.push({
         role: 'system',
-        content: `Enabled Skills for this agent:\n${skillLines}\n\n`,
+        content:
+          `Enabled Skills for this agent:\n${skillLines}\n\n` +
+          `注意：Skills 是知识型指令（已在后续 system message 中注入完整内容），不是可调用的工具。` +
+          `请直接根据 skill 注入的指令内容完成任务，不要尝试用 get-tool-schema 查询 Skill ID。`,
         timestamp: new Date(),
       });
 
@@ -56,14 +59,15 @@ export class ToolsetContextBuilder implements ContextBlockBuilder {
         // Skill 激活门控（Tag-Based Activation）已精确控制各阶段加载哪些 skill，
         // 无需在此裁剪 phaseInitialize 段落。
 
-        const content =
-          rawContent.length > SKILL_CONTENT_MAX_INJECT_LENGTH
-            ? rawContent.slice(0, SKILL_CONTENT_MAX_INJECT_LENGTH) + '\n\n[... 内容已截断，可通过工具查询完整版本]'
-            : rawContent;
-        messages.push({
-          role: 'system',
-          content: `【enabled skill - ${skill.name}】\n\n${content}`,
-          timestamp: new Date(),
+        const contentChunks = splitTextByMaxLength(rawContent, SKILL_CONTENT_MAX_INJECT_LENGTH);
+        contentChunks.forEach((contentChunk, index) => {
+          const chunkSuffix =
+            contentChunks.length > 1 ? `（part ${index + 1}/${contentChunks.length}）` : '';
+          messages.push({
+            role: 'system',
+            content: `【enabled skill - ${skill.name}${chunkSuffix}】\n\n${contentChunk}`,
+            timestamp: new Date(),
+          });
         });
       }
     }
